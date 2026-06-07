@@ -1,0 +1,116 @@
+{
+  "App.Title": "OrientDesk",
+
+  "Nav.Dashboard": "Панель",
+  "Nav.Participants": "Учасники",
+  "Nav.Groups": "Групи",
+  "Nav.Courses": "Дистанції",
+  "Nav.PunchImport": "Імпорт відміток",
+  "Nav.Results": "Результати",
+  "Nav.ChipRental": "Оренда чіпів",
+  "Nav.Settings": "Налаштування",
+  "Nav.CompetitionInfo": "Інформація про змагання",
+  "Nav.CompetitionDays": "Дні змагання",
+
+  "Page.Dashboard.Title": "Панель",
+  "Page.Dashboard.Text": "Загальний огляд змагання.",
+
+  "Page.Participants.Title": "Учасники",
+  "Page.Participants.Text": "Тут буде керування учасниками.",
+
+  "Page.Groups.Title": "Групи",
+  "Page.Groups.Text": "Тут буде керування групами.",
+
+  "Page.Courses.Title": "Дистанції",
+  "Page.Courses.Text": "Тут буде налаштування дистанцій.",
+
+  "Page.PunchImport.Title": "Імпорт відміток",
+  "Page.PunchImport.Text": "Тут буде імпорт даних SportIdent.",
+
+  "Page.Results.Title": "Результати",
+  "Page.Results.Text": "Тут буде перегляд і формування результатів.",
+
+  "Page.ChipRental.Title": "Оренда чіпів",
+  "Page.ChipRental.Text": "Тут буде контроль орендованих чіпів.",
+
+  "Page.Settings.Title": "Налаштування",
+  "Page.Settings.Text": "Тут будуть налаштування додатку.",
+
+  "Settings.Language": "Мова інтерфейсу",
+  "Settings.Language.Ukrainian": "Українська",
+  "Settings.Language.English": "Англійська",
+
+  "Menu.File": "Файл",
+  "Menu.File.Settings": "Налаштування",
+  "Menu.File.ChangeEvent": "Змінити змагання",
+  "Menu.File.Exit": "Вихід",
+  "Menu.Competition": "Змагання",
+  "Menu.Competition.Info": "Інформація",
+  "Menu.Competition.Days": "Дні",
+  "Menu.Navigate": "Розділи",
+  "Menu.Help": "Довідка",
+  "Menu.Help.About": "Про програму",
+
+  "Page.CompetitionInfo.Title": "Інформація про змагання",
+  "Page.CompetitionInfo.Text": "Редагування основних даних змагання.",
+  "Page.CompetitionDays.Title": "Дні змагання",
+  "Page.CompetitionDays.Text": "Налаштування днів змагання та вибір поточного дня.",
+
+  "CompetitionInfo.Name": "Назва",
+  "CompetitionInfo.Venue": "Місце проведення",
+  "CompetitionInfo.Organisation": "Організація-проводитель",
+  "CompetitionInfo.StartDate": "Дата початку",
+  "CompetitionInfo.EndDate": "Дата завершення",
+  "CompetitionInfo.Save": "Зберегти",
+  "CompetitionInfo.Saved": "Збережено.",
+
+  "CompetitionDays.Add": "Додати день",
+  "CompetitionDays.Active": "Поточний",
+  "CompetitionDays.Save": "Зберегти",
+  "CompetitionDays.SetActive": "Зробити поточним",
+  "CompetitionDays.Delete": "Видалити",
+  "CompetitionDays.Col.Day": "День",
+  "CompetitionDays.Col.Date": "Дата",
+  "CompetitionDays.Col.Venue": "Місце",
+  "CompetitionDays.Col.Discipline": "Вид змагань",
+  "CompetitionDays.Col.Actions": "Дії",
+
+  "Settings.OverlayTitle": "Налаштування",
+  "Settings.Close": "Закрити",
+  "Settings.InterfaceSize": "Розмір інтерфейсу",
+
+  "Common.Loading": "Завантаження…",
+  "Common.ComingSoon": "Незабаром",
+  "Settings.Paths": "Шляхи даних",
+  "Settings.DataPath": "Папка даних програми",
+  "Settings.EventsPath": "Папка змагань",
+  "Settings.SavePaths": "Зберегти шляхи",
+  "Settings.PathsSavedHint": "Збережено. Застосується після перезапуску.",
+
+  "Header.CurrentEvent": "Змагання:",
+  "Header.Day": "День:",
+  "Header.ChangeEvent": "Змінити змагання",
+
+  "EventSelection.Title": "Вибір змагання",
+  "EventSelection.Subtitle": "Оберіть змагання зі списку або створіть нове.",
+  "EventSelection.Empty": "Змагань не знайдено. Створіть нове.",
+  "EventSelection.Open": "Відкрити",
+  "EventSelection.Create": "Створити змагання",
+  "EventSelection.Col.Identifier": "Ідентифікатор",
+  "EventSelection.Col.Name": "Назва",
+  "EventSelection.Col.Venue": "Місце",
+  "EventSelection.Col.Days": "Днів",
+
+  "CreateEvent.Title": "Нове змагання",
+  "CreateEvent.Name": "Назва",
+  "CreateEvent.Name.Hint": "Наприклад: Чемпіонат міста 2026",
+  "CreateEvent.Identifier": "Ідентифікатор (назва папки)",
+  "CreateEvent.Identifier.Hint": "Наприклад: city-champ-2026",
+  "CreateEvent.Venue": "Місце проведення",
+  "CreateEvent.Venue.Hint": "Наприклад: Голосіївський ліс",
+  "CreateEvent.Submit": "Створити",
+  "CreateEvent.Cancel": "Скасувати",
+  "CreateEvent.Error.Required": "Заповніть назву та ідентифікатор.",
+  "CreateEvent.Error.Duplicate": "Змагання з таким ідентифікатором вже існує.",
+  "CreateEvent.Error.Invalid": "Ідентифікатор має бути коректною назвою папки."
+}

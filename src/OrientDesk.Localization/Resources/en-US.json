@@ -1,0 +1,116 @@
+{
+  "App.Title": "OrientDesk",
+
+  "Nav.Dashboard": "Dashboard",
+  "Nav.Participants": "Participants",
+  "Nav.Groups": "Groups",
+  "Nav.Courses": "Courses",
+  "Nav.PunchImport": "Punch Import",
+  "Nav.Results": "Results",
+  "Nav.ChipRental": "Chip Rental",
+  "Nav.Settings": "Settings",
+  "Nav.CompetitionInfo": "Competition information",
+  "Nav.CompetitionDays": "Competition days",
+
+  "Page.Dashboard.Title": "Dashboard",
+  "Page.Dashboard.Text": "Competition overview.",
+
+  "Page.Participants.Title": "Participants",
+  "Page.Participants.Text": "Participant management will go here.",
+
+  "Page.Groups.Title": "Groups",
+  "Page.Groups.Text": "Group management will go here.",
+
+  "Page.Courses.Title": "Courses",
+  "Page.Courses.Text": "Course configuration will go here.",
+
+  "Page.PunchImport.Title": "Punch Import",
+  "Page.PunchImport.Text": "SportIdent data import will go here.",
+
+  "Page.Results.Title": "Results",
+  "Page.Results.Text": "Results viewing and generation will go here.",
+
+  "Page.ChipRental.Title": "Chip Rental",
+  "Page.ChipRental.Text": "Rented chip tracking will go here.",
+
+  "Page.Settings.Title": "Settings",
+  "Page.Settings.Text": "Application settings will go here.",
+
+  "Settings.Language": "Interface language",
+  "Settings.Language.Ukrainian": "Ukrainian",
+  "Settings.Language.English": "English",
+
+  "Menu.File": "File",
+  "Menu.File.Settings": "Settings",
+  "Menu.File.ChangeEvent": "Change competition",
+  "Menu.File.Exit": "Exit",
+  "Menu.Competition": "Competition",
+  "Menu.Competition.Info": "Information",
+  "Menu.Competition.Days": "Days",
+  "Menu.Navigate": "Sections",
+  "Menu.Help": "Help",
+  "Menu.Help.About": "About",
+
+  "Page.CompetitionInfo.Title": "Competition information",
+  "Page.CompetitionInfo.Text": "Edit the competition's core details.",
+  "Page.CompetitionDays.Title": "Competition days",
+  "Page.CompetitionDays.Text": "Configure competition days and pick the current one.",
+
+  "CompetitionInfo.Name": "Name",
+  "CompetitionInfo.Venue": "Venue",
+  "CompetitionInfo.Organisation": "Organising body",
+  "CompetitionInfo.StartDate": "Start date",
+  "CompetitionInfo.EndDate": "End date",
+  "CompetitionInfo.Save": "Save",
+  "CompetitionInfo.Saved": "Saved.",
+
+  "CompetitionDays.Add": "Add day",
+  "CompetitionDays.Active": "Current",
+  "CompetitionDays.Save": "Save",
+  "CompetitionDays.SetActive": "Make current",
+  "CompetitionDays.Delete": "Delete",
+  "CompetitionDays.Col.Day": "Day",
+  "CompetitionDays.Col.Date": "Date",
+  "CompetitionDays.Col.Venue": "Venue",
+  "CompetitionDays.Col.Discipline": "Discipline",
+  "CompetitionDays.Col.Actions": "Actions",
+
+  "Settings.OverlayTitle": "Settings",
+  "Settings.Close": "Close",
+  "Settings.InterfaceSize": "Interface size",
+
+  "Common.Loading": "Loading…",
+  "Common.ComingSoon": "Coming soon",
+  "Settings.Paths": "Data paths",
+  "Settings.DataPath": "Application data folder",
+  "Settings.EventsPath": "Events folder",
+  "Settings.SavePaths": "Save paths",
+  "Settings.PathsSavedHint": "Saved. Applies after restart.",
+
+  "Header.CurrentEvent": "Competition:",
+  "Header.Day": "Day:",
+  "Header.ChangeEvent": "Change competition",
+
+  "EventSelection.Title": "Select competition",
+  "EventSelection.Subtitle": "Pick a competition from the list or create a new one.",
+  "EventSelection.Empty": "No competitions found. Create a new one.",
+  "EventSelection.Open": "Open",
+  "EventSelection.Create": "Create competition",
+  "EventSelection.Col.Identifier": "Identifier",
+  "EventSelection.Col.Name": "Name",
+  "EventSelection.Col.Venue": "Venue",
+  "EventSelection.Col.Days": "Days",
+
+  "CreateEvent.Title": "New competition",
+  "CreateEvent.Name": "Name",
+  "CreateEvent.Name.Hint": "e.g. City Championship 2026",
+  "CreateEvent.Identifier": "Identifier (folder name)",
+  "CreateEvent.Identifier.Hint": "e.g. city-champ-2026",
+  "CreateEvent.Venue": "Venue",
+  "CreateEvent.Venue.Hint": "e.g. Holosiivskyi forest",
+  "CreateEvent.Submit": "Create",
+  "CreateEvent.Cancel": "Cancel",
+  "CreateEvent.Error.Required": "Fill in name and identifier.",
+  "CreateEvent.Error.Duplicate": "A competition with this identifier already exists.",
+  "CreateEvent.Error.Invalid": "Identifier must be a valid folder name."
+}

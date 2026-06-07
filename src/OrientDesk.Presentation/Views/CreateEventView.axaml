@@ -1,0 +1,64 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:OrientDesk.Presentation.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="640"
+             x:Class="OrientDesk.Presentation.Views.CreateEventView"
+             x:DataType="vm:CreateEventViewModel">
+
+    <Border Background="{DynamicResource SurfacePage}" Padding="40">
+        <Border Classes="card" Padding="32" Width="480"
+                HorizontalAlignment="Center" VerticalAlignment="Center">
+            <StackPanel Spacing="16">
+
+                <StackPanel Spacing="4" Margin="0,0,0,4">
+                    <TextBlock Text="{Binding Localization[CreateEvent.Title]}" Classes="h1"
+                               FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[CreateEvent.Name]}" Classes="label" />
+                    <TextBox Text="{Binding Name, Mode=TwoWay}"
+                             PlaceholderText="{Binding Localization[CreateEvent.Name.Hint]}" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[CreateEvent.Identifier]}" Classes="label" />
+                    <TextBox Text="{Binding Identifier, Mode=TwoWay}"
+                             PlaceholderText="{Binding Localization[CreateEvent.Identifier.Hint]}" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[CreateEvent.Venue]}" Classes="label" />
+                    <TextBox Text="{Binding Venue, Mode=TwoWay}"
+                             PlaceholderText="{Binding Localization[CreateEvent.Venue.Hint]}" />
+                </StackPanel>
+
+                <!-- Inline error -->
+                <Border IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                        Background="{DynamicResource DangerSurface}" CornerRadius="8" Padding="12,8">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <PathIcon Data="M12,2 a10,10 0 1 0 0,20 a10,10 0 0 0 0,-20 z M12,7 v6 M12,16 v0.5"
+                                  Width="16" Height="16" Foreground="{DynamicResource DangerBrush}"
+                                  VerticalAlignment="Top" Margin="0,2,0,0" />
+                        <TextBlock Text="{Binding ErrorMessage}" Foreground="{DynamicResource DangerBrush}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,8,0,0">
+                    <Button Content="{Binding Localization[CreateEvent.Submit]}"
+                            Command="{Binding CreateCommand}"
+                            IsEnabled="{Binding !IsBusy}"
+                            Classes="accent" />
+                    <Button Content="{Binding Localization[CreateEvent.Cancel]}"
+                            Command="{Binding CancelCommand}"
+                            Classes="ghost" />
+                </StackPanel>
+
+            </StackPanel>
+        </Border>
+    </Border>
+
+</UserControl>

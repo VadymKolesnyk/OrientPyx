@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:OrientDesk.Presentation.ViewModels"
+             xmlns:pages="using:OrientDesk.Presentation.ViewModels.Pages"
+             xmlns:views="using:OrientDesk.Presentation.Views.Pages"
+             mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="640"
+             x:Class="OrientDesk.Presentation.Views.ShellView"
+             x:DataType="vm:ShellViewModel">
+
+    <UserControl.DataTemplates>
+        <DataTemplate DataType="pages:SettingsViewModel">
+            <views:SettingsView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:CompetitionInfoViewModel">
+            <views:CompetitionInfoView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:CompetitionDaysViewModel">
+            <views:CompetitionDaysView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:PageViewModelBase">
+            <views:PageView />
+        </DataTemplate>
+    </UserControl.DataTemplates>
+
+    <DockPanel LastChildFill="True" Background="{DynamicResource SurfacePage}">
+
+        <!-- Slim context strip: which competition / day you're working in -->
+        <Border DockPanel.Dock="Top"
+                Background="{DynamicResource SurfaceCard}"
+                BorderBrush="{DynamicResource BorderSubtle}"
+                BorderThickness="0,0,0,1"
+                Padding="28,10">
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <PathIcon Data="M12,2 a7,7 0 0 0 -7,7 c0,5 7,12 7,12 s7,-7 7,-12 a7,7 0 0 0 -7,-7 z M12,11.5 a2.5,2.5 0 1 0 0,-5 a2.5,2.5 0 0 0 0,5 z"
+                          Width="16" Height="16" Foreground="{DynamicResource AccentBrush}" />
+                <TextBlock Text="{Binding CurrentEventName}"
+                           Foreground="{DynamicResource TextPrimary}" FontWeight="SemiBold"
+                           VerticalAlignment="Center" />
+                <Border Classes="badge">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="{Binding Localization[Header.Day]}" />
+                        <TextBlock Text="{Binding CurrentDayNumber}" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- Content -->
+        <ScrollViewer>
+            <Border Padding="28">
+                <ContentControl Content="{Binding SelectedPage}" />
+            </Border>
+        </ScrollViewer>
+
+    </DockPanel>
+
+</UserControl>

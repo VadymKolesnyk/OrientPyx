@@ -1,0 +1,50 @@
+using Microsoft.Extensions.DependencyInjection;
+using OrientDesk.BusinessLogic.DependencyInjection;
+using OrientDesk.DataAccess.DependencyInjection;
+using OrientDesk.Localization.DependencyInjection;
+using OrientDesk.Presentation.Services;
+using OrientDesk.Presentation.ViewModels;
+using OrientDesk.Presentation.ViewModels.Pages;
+
+namespace OrientDesk.Presentation.DependencyInjection;
+
+public static class PresentationServiceCollectionExtensions
+{
+    /// <summary>Builds the application service provider, wiring every layer.</summary>
+    public static IServiceProvider BuildApplicationServices()
+    {
+        var services = new ServiceCollection();
+
+        // Layers
+        services.AddOrientDeskLocalization();
+        services.AddOrientDeskBusinessLogic();
+        services.AddOrientDeskDataAccess();
+
+        // Presentation services
+        services.AddSingleton<INavigationService, NavigationService>();
+        services.AddSingleton<IUiScaleService, UiScaleService>();
+        services.AddSingleton<IBusyService, BusyService>();
+
+        // Root + gating view models
+        services.AddSingleton<MainWindowViewModel>();
+        services.AddSingleton<ShellViewModel>();
+        services.AddSingleton<EventSelectionViewModel>();
+        services.AddSingleton<CreateEventViewModel>();
+
+        // Page view models
+        services.AddTransient<DashboardViewModel>();
+        services.AddTransient<ParticipantsViewModel>();
+        services.AddTransient<GroupsViewModel>();
+        services.AddTransient<CoursesViewModel>();
+        services.AddTransient<PunchImportViewModel>();
+        services.AddTransient<ResultsViewModel>();
+        services.AddTransient<ChipRentalViewModel>();
+        services.AddTransient<SettingsViewModel>();
+
+        // Competition info/days pages (opened from the "Competition" top menu)
+        services.AddSingleton<CompetitionInfoViewModel>();
+        services.AddSingleton<CompetitionDaysViewModel>();
+
+        return services.BuildServiceProvider();
+    }
+}

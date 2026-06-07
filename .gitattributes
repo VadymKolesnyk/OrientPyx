@@ -1,0 +1,22 @@
+# Normalize line endings: let Git decide text vs binary, store LF in the repo.
+* text=auto
+
+# Explicit text files
+*.cs        text
+*.axaml     text
+*.xaml      text
+*.csproj    text
+*.sln       text -crlf
+*.json      text
+*.md        text
+*.manifest  text
+*.gitignore text
+
+# Binary assets
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.ico  binary
+*.ttf  binary
+*.otf  binary
+*.db   binary

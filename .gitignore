@@ -1,0 +1,43 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+
+# .NET / Visual Studio
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+*.rsuser
+*.userprefs
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# VS Code (keep nothing tool-specific; user-level config stays out)
+.vscode/
+
+# Runtime data created by the app (app DB + per-competition event DBs)
+/data/
+/events/
+*.db
+*.db-shm
+*.db-wal
+
+# Logs and temp
+*.log
+*.tmp
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/

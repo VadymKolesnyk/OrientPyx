@@ -1,0 +1,39 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientDesk.Presentation.ViewModels.Pages"
+             mc:Ignorable="d" d:DesignWidth="700" d:DesignHeight="460"
+             x:Class="OrientDesk.Presentation.Views.Pages.PageView"
+             x:DataType="pages:PageViewModelBase">
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Page heading -->
+        <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,20">
+            <TextBlock Text="{Binding Title}" Classes="h1"
+                       FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+        </StackPanel>
+
+        <!-- Empty-state card: makes not-yet-built pages look intentional -->
+        <Border Classes="card" Padding="40">
+            <StackPanel Spacing="16" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420">
+                <Border Width="72" Height="72" CornerRadius="36"
+                        Background="{DynamicResource AccentSurface}"
+                        HorizontalAlignment="Center">
+                    <PathIcon Data="{Binding IconData}" Width="34" Height="34"
+                              Foreground="{DynamicResource AccentBrush}" />
+                </Border>
+                <TextBlock Text="{Binding Title}" Classes="h2" HorizontalAlignment="Center"
+                           FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+                <TextBlock Text="{Binding Text}" Classes="subtitle"
+                           HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+                <Border Classes="badge" HorizontalAlignment="Center" Margin="0,4,0,0">
+                    <TextBlock Text="{Binding Localization[Common.ComingSoon]}" />
+                </Border>
+            </StackPanel>
+        </Border>
+
+    </DockPanel>
+
+</UserControl>

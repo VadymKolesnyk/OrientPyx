@@ -1,0 +1,77 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientDesk.Presentation.ViewModels.Pages"
+             mc:Ignorable="d" d:DesignWidth="640" d:DesignHeight="520"
+             x:Class="OrientDesk.Presentation.Views.Pages.SettingsView"
+             x:DataType="pages:SettingsViewModel">
+
+    <StackPanel Spacing="16" MaxWidth="560">
+
+        <!-- Appearance -->
+        <Border Classes="card" Padding="22">
+            <StackPanel Spacing="14">
+                <TextBlock Text="{Binding Localization[Settings.InterfaceSize]}" Classes="h2"
+                           FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+                <StackPanel Orientation="Horizontal" Spacing="14">
+                    <Slider Minimum="{Binding MinFontScale}"
+                            Maximum="{Binding MaxFontScale}"
+                            Value="{Binding FontScale, Mode=TwoWay}"
+                            TickFrequency="0.1"
+                            IsSnapToTickEnabled="True"
+                            Width="320"
+                            VerticalAlignment="Center" />
+                    <Border Classes="badge" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding FontScalePercent}" MinWidth="40" TextAlignment="Center" />
+                    </Border>
+                </StackPanel>
+
+                <TextBlock Text="{Binding Localization[Settings.Language]}" Classes="label" Margin="0,6,0,0" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="{Binding Localization[Settings.Language.Ukrainian]}"
+                            Classes="ghost"
+                            Command="{Binding SetLanguageCommand}"
+                            CommandParameter="uk-UA" />
+                    <Button Content="{Binding Localization[Settings.Language.English]}"
+                            Classes="ghost"
+                            Command="{Binding SetLanguageCommand}"
+                            CommandParameter="en-US" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Data paths -->
+        <Border Classes="card" Padding="22">
+            <StackPanel Spacing="14">
+                <TextBlock Text="{Binding Localization[Settings.Paths]}" Classes="h2"
+                           FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[Settings.DataPath]}" Classes="label" />
+                    <TextBox Text="{Binding DataPath, Mode=TwoWay}" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[Settings.EventsPath]}" Classes="label" />
+                    <TextBox Text="{Binding EventsPath, Mode=TwoWay}" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button Content="{Binding Localization[Settings.SavePaths]}"
+                            Classes="accent"
+                            Command="{Binding SavePathsCommand}" />
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                                IsVisible="{Binding PathsSaved}">
+                        <PathIcon Data="M5,12 l4,4 l10,-10" Width="16" Height="16"
+                                  Foreground="{DynamicResource SuccessBrush}" />
+                        <TextBlock Text="{Binding Localization[Settings.PathsSavedHint]}"
+                                   Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+    </StackPanel>
+
+</UserControl>

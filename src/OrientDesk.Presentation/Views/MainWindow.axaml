@@ -1,0 +1,157 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:OrientDesk.Presentation.ViewModels"
+        xmlns:views="using:OrientDesk.Presentation.Views"
+        xmlns:pageViews="using:OrientDesk.Presentation.Views.Pages"
+        mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="640"
+        x:Class="OrientDesk.Presentation.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Width="1000" Height="640"
+        MinWidth="760" MinHeight="480"
+        FontSize="14"
+        Icon="/Assets/orientdesk.ico"
+        Title="{Binding WindowTitle}">
+
+    <Window.DataTemplates>
+        <DataTemplate DataType="vm:ShellViewModel">
+            <views:ShellView />
+        </DataTemplate>
+        <DataTemplate DataType="vm:EventSelectionViewModel">
+            <views:EventSelectionView />
+        </DataTemplate>
+        <DataTemplate DataType="vm:CreateEventViewModel">
+            <views:CreateEventView />
+        </DataTemplate>
+    </Window.DataTemplates>
+
+    <!-- One transform scales the WHOLE interface — fonts, inputs, paddings, spacing,
+         icons and borders all grow/shrink together with the Settings "Interface size"
+         slider. HorizontalAlignment/VerticalAlignment Stretch lets the scaled content
+         fill (and overflow) the window so the layout reflows at any scale. -->
+    <LayoutTransformControl HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+        <LayoutTransformControl.LayoutTransform>
+            <ScaleTransform ScaleX="{Binding UiScale.Scale}"
+                            ScaleY="{Binding UiScale.Scale}" />
+        </LayoutTransformControl.LayoutTransform>
+
+        <DockPanel LastChildFill="True">
+
+        <!-- Always-visible top menu, with the page navigation as top-level items -->
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="{Binding Localization[Menu.File]}">
+                <MenuItem Header="{Binding Localization[Menu.File.Settings]}"
+                          Command="{Binding OpenSettingsCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.File.ChangeEvent]}"
+                          Command="{Binding ChangeEventCommand}" />
+                <Separator />
+                <MenuItem Header="{Binding Localization[Menu.File.Exit]}"
+                          Command="{Binding ExitCommand}" />
+            </MenuItem>
+
+            <!-- Competition: metadata + days, shown only while a competition is open -->
+            <MenuItem Header="{Binding Localization[Menu.Competition]}"
+                      IsVisible="{Binding IsEventSelected}">
+                <MenuItem Header="{Binding Localization[Menu.Competition.Info]}"
+                          Command="{Binding OpenCompetitionInfoCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Competition.Days]}"
+                          Command="{Binding OpenCompetitionDaysCommand}" />
+            </MenuItem>
+
+            <!-- Navigation tabs, shown only while a competition is open -->
+            <MenuItem Header="{Binding Localization[Menu.Navigate]}"
+                      IsVisible="{Binding IsEventSelected}"
+                      ItemsSource="{Binding Pages}">
+                <MenuItem.Styles>
+                    <Style Selector="MenuItem > MenuItem">
+                        <Setter Property="Header" Value="{ReflectionBinding NavLabel}" />
+                        <Setter Property="Command"
+                                Value="{ReflectionBinding $parent[Menu].DataContext.NavigateCommand}" />
+                        <Setter Property="CommandParameter" Value="{ReflectionBinding}" />
+                    </Style>
+                </MenuItem.Styles>
+            </MenuItem>
+
+            <MenuItem Header="{Binding Localization[Menu.Help]}">
+                <MenuItem Header="{Binding Localization[Menu.Help.About]}" />
+            </MenuItem>
+        </Menu>
+
+        <!-- Main content with the global settings overlay on top -->
+        <Panel>
+            <ContentControl Content="{Binding CurrentView}" />
+
+            <!-- Settings overlay: covers whatever screen is active -->
+            <Border IsVisible="{Binding IsSettingsOpen}"
+                    Background="#80000000">
+                <Border Background="{DynamicResource SurfacePage}"
+                        CornerRadius="12"
+                        Margin="60"
+                        MaxWidth="720"
+                        BoxShadow="0 10 40 0 #40000000"
+                        Padding="0"
+                        ClipToBounds="True">
+                    <DockPanel LastChildFill="True">
+                        <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
+                                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
+                                Padding="22,16">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding Localization[Settings.OverlayTitle]}"
+                                           Classes="h2"
+                                           FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}"
+                                           VerticalAlignment="Center" />
+                                <Button Grid.Column="1"
+                                        Content="{Binding Localization[Settings.Close]}"
+                                        Classes="ghost"
+                                        Command="{Binding CloseSettingsCommand}" />
+                            </Grid>
+                        </Border>
+                        <ScrollViewer Padding="24">
+                            <pageViews:SettingsView DataContext="{Binding Settings}" />
+                        </ScrollViewer>
+                    </DockPanel>
+                </Border>
+            </Border>
+
+            <!-- Global loading overlay: shown during any async operation, blocks input -->
+            <Border IsVisible="{Binding Busy.IsBusy}"
+                    Background="#66000000">
+                <Border Background="{DynamicResource SurfaceCard}"
+                        CornerRadius="12"
+                        Padding="28,24"
+                        BoxShadow="0 10 40 0 #40000000"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                        <PathIcon Data="M12,4 a8,8 0 1 1 -8,8"
+                                  Width="22" Height="22"
+                                  Foreground="{DynamicResource AccentBrush}">
+                            <PathIcon.Styles>
+                                <Style Selector="PathIcon">
+                                    <Style.Animations>
+                                        <Animation Duration="0:0:0.9" IterationCount="INFINITE">
+                                            <KeyFrame Cue="0%">
+                                                <Setter Property="RotateTransform.Angle" Value="0" />
+                                            </KeyFrame>
+                                            <KeyFrame Cue="100%">
+                                                <Setter Property="RotateTransform.Angle" Value="360" />
+                                            </KeyFrame>
+                                        </Animation>
+                                    </Style.Animations>
+                                </Style>
+                            </PathIcon.Styles>
+                        </PathIcon>
+                        <TextBlock Text="{Binding Localization[Common.Loading]}"
+                                   Foreground="{DynamicResource TextPrimary}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </Border>
+        </Panel>
+
+        </DockPanel>
+    </LayoutTransformControl>
+
+</Window>

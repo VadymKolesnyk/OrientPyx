@@ -1,0 +1,148 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="OrientDesk.Presentation.App"
+             RequestedThemeVariant="Light">
+
+    <Application.Styles>
+        <FluentTheme />
+
+        <!-- ============================================================
+             OrientDesk design system: shared control styling so screens
+             stay consistent without per-View hex codes.
+             ============================================================ -->
+
+        <!-- Card-like bordered container -->
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{DynamicResource SurfaceCard}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtle}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="BoxShadow" Value="0 1 3 0 #14000000" />
+        </Style>
+
+        <!-- Headings -->
+        <Style Selector="TextBlock.h1">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.h2">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.subtitle">
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        </Style>
+        <Style Selector="TextBlock.label">
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+            <Setter Property="FontWeight" Value="Medium" />
+        </Style>
+        <Style Selector="TextBlock.muted">
+            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+        </Style>
+
+        <!-- Inputs: softer corners, consistent height -->
+        <Style Selector="TextBox">
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="Padding" Value="10,6" />
+        </Style>
+        <Style Selector="DatePicker">
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="MinHeight" Value="38" />
+        </Style>
+
+        <!-- Buttons -->
+        <Style Selector="Button">
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="Padding" Value="16,8" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.accent">
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AccentBrushHover}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <!-- Subtle/secondary button -->
+        <Style Selector="Button.ghost">
+            <Setter Property="Background" Value="{DynamicResource SurfaceSubtle}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+        </Style>
+        <!-- Small action button used inside table rows -->
+        <Style Selector="Button.small">
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="Padding" Value="12,5" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <!-- Danger (destructive) link-style action -->
+        <Style Selector="Button.danger">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+        </Style>
+        <Style Selector="Button.danger:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource DangerSurface}" />
+            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+        </Style>
+
+        <!-- Badge / pill -->
+        <Style Selector="Border.badge">
+            <Setter Property="Background" Value="{DynamicResource AccentSurface}" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="8,2" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Border.badge > TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <!-- Top menu: a little more breathing room -->
+        <Style Selector="Menu">
+            <Setter Property="Background" Value="{DynamicResource SurfaceCard}" />
+        </Style>
+        <Style Selector="Menu > MenuItem">
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="FontWeight" Value="Medium" />
+        </Style>
+    </Application.Styles>
+
+    <Application.Resources>
+        <!-- Palette -->
+        <Color x:Key="AccentColor">#7C3AED</Color>
+        <Color x:Key="AccentColorHover">#6D28D9</Color>
+
+        <SolidColorBrush x:Key="AccentBrush" Color="#7C3AED" />
+        <SolidColorBrush x:Key="AccentBrushHover" Color="#6D28D9" />
+        <SolidColorBrush x:Key="AccentSurface" Color="#EDE9FE" />
+
+        <SolidColorBrush x:Key="SurfacePage" Color="#F8FAFC" />
+        <SolidColorBrush x:Key="SurfaceCard" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="SurfaceSubtle" Color="#F1F5F9" />
+        <SolidColorBrush x:Key="SurfaceHeader" Color="#F8FAFC" />
+
+        <SolidColorBrush x:Key="BorderSubtle" Color="#E2E8F0" />
+
+        <SolidColorBrush x:Key="TextPrimary" Color="#0F172A" />
+        <SolidColorBrush x:Key="TextSecondary" Color="#64748B" />
+        <SolidColorBrush x:Key="TextMuted" Color="#94A3B8" />
+
+        <SolidColorBrush x:Key="SuccessBrush" Color="#059669" />
+        <SolidColorBrush x:Key="DangerBrush" Color="#DC2626" />
+        <SolidColorBrush x:Key="DangerSurface" Color="#FEE2E2" />
+
+        <!-- Make Fluent's accent (selection highlights, accent buttons) match brand.
+             These MUST be Color, not SolidColorBrush — Fluent reads them as colors. -->
+        <Color x:Key="SystemAccentColor">#7C3AED</Color>
+        <Color x:Key="SystemAccentColorLight1">#8B5CF6</Color>
+        <Color x:Key="SystemAccentColorLight2">#A78BFA</Color>
+        <Color x:Key="SystemAccentColorLight3">#C4B5FD</Color>
+        <Color x:Key="SystemAccentColorDark1">#6D28D9</Color>
+        <Color x:Key="SystemAccentColorDark2">#5B21B6</Color>
+        <Color x:Key="SystemAccentColorDark3">#4C1D95</Color>
+    </Application.Resources>
+
+</Application>

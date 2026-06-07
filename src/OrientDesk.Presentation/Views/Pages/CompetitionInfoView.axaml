@@ -1,0 +1,62 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientDesk.Presentation.ViewModels.Pages"
+             mc:Ignorable="d" d:DesignWidth="760" d:DesignHeight="560"
+             x:Class="OrientDesk.Presentation.Views.Pages.CompetitionInfoView"
+             x:DataType="pages:CompetitionInfoViewModel">
+
+    <StackPanel Spacing="20" MaxWidth="640" HorizontalAlignment="Left">
+
+        <TextBlock Text="{Binding Title}" Classes="h1"
+                   FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+
+        <Border Classes="card" Padding="28">
+            <StackPanel Spacing="16">
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[CompetitionInfo.Name]}" Classes="label" />
+                    <TextBox Text="{Binding Name, Mode=TwoWay}" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[CompetitionInfo.Venue]}" Classes="label" />
+                    <TextBox Text="{Binding Venue, Mode=TwoWay}" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[CompetitionInfo.Organisation]}" Classes="label" />
+                    <TextBox Text="{Binding Organisation, Mode=TwoWay}" />
+                </StackPanel>
+
+                <Grid ColumnDefinitions="*,20,*">
+                    <StackPanel Grid.Column="0" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CompetitionInfo.StartDate]}" Classes="label" />
+                        <DatePicker SelectedDate="{Binding StartDate, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CompetitionInfo.EndDate]}" Classes="label" />
+                        <DatePicker SelectedDate="{Binding EndDate, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                </Grid>
+
+            </StackPanel>
+        </Border>
+
+        <StackPanel Orientation="Horizontal" Spacing="12">
+            <Button Content="{Binding Localization[CompetitionInfo.Save]}"
+                    Command="{Binding SaveCommand}"
+                    Classes="accent" />
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                        IsVisible="{Binding Saved}">
+                <PathIcon Data="M5,12 l4,4 l10,-10" Width="16" Height="16"
+                          Foreground="{DynamicResource SuccessBrush}" />
+                <TextBlock Text="{Binding Localization[CompetitionInfo.Saved]}"
+                           Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
+            </StackPanel>
+        </StackPanel>
+
+    </StackPanel>
+
+</UserControl>
