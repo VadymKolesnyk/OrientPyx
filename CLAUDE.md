@@ -100,8 +100,27 @@ The window opens with a Ukrainian sidebar and Ukrainian placeholder pages; the d
 page is Панель (Dashboard). A SQLite file is created under the user's local app-data on
 first run.
 
+## Schema management
+
+EF Core **migrations** are the canonical way schema evolves, for both databases:
+`AppDbContext` (`./data/app.db`) and `EventDbContext` (per-competition `event.db`). Apply
+them at runtime with `Database.Migrate()` — the app DB on startup
+(`InitializeOrientDeskDatabase`) and each event DB when it is opened
+(`EventStore.EnsureCreatedAsync`, which now calls `MigrateAsync`). Add a new migration when
+you change an entity, e.g.:
+
+```bash
+dotnet ef migrations add <Name> --context EventDbContext \
+  --project src/OrientDesk.DataAccess --startup-project src/OrientDesk.DataAccess \
+  --output-dir Persistence/Migrations/Event
+```
+
+(Use `--context AppDbContext` + `--output-dir Persistence/Migrations/App` for the app DB.)
+Each context has an `IDesignTimeDbContextFactory` so the EF tools can run without the app.
+Do not reintroduce `EnsureCreated` — it is incompatible with migrations.
+
 ## What NOT to do yet
 
-Do not add: test projects, Clean Architecture / CQRS / MediatR, EF migration pipelines,
-Docker, authentication, cloud sync, real SportIdent parsing, result calculation, report
-(DOCX) generation, or printing. Keep this a lightweight starter.
+Do not add: test projects, Clean Architecture / CQRS / MediatR, Docker, authentication,
+cloud sync, real SportIdent parsing, result calculation, report (DOCX) generation, or
+printing. Keep this a lightweight starter.

@@ -9,7 +9,6 @@ public class AppSettingsRow
     /// <summary>Fixed primary key — there is only ever one settings row.</summary>
     public int Id { get; set; } = 1;
 
-    public string DataPath { get; set; } = string.Empty;
     public string EventsPath { get; set; } = string.Empty;
 
     /// <summary>UI font scale multiplier (1.0 = default). Applied across the whole app.</summary>

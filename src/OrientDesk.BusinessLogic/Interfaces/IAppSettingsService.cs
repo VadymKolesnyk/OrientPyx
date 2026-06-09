@@ -5,7 +5,7 @@ namespace OrientDesk.BusinessLogic.Interfaces;
 /// <summary>Reads/writes configurable application paths, applying defaults when unset.</summary>
 public interface IAppSettingsService
 {
-    /// <summary>Returns configured paths, falling back to defaults (./data, ./events).</summary>
+    /// <summary>Returns the configured events path, falling back to the default (./events).</summary>
     Task<AppPaths> GetPathsAsync(CancellationToken cancellationToken = default);
 
     Task SavePathsAsync(AppPaths paths, CancellationToken cancellationToken = default);

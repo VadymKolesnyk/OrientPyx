@@ -1,0 +1,35 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+using OrientDesk.Presentation.ViewModels.Dialogs;
+
+namespace OrientDesk.Presentation.Services;
+
+/// <summary>
+/// Default <see cref="IDialogService"/>. Holds the active dialog view model and raises change
+/// notifications so the window's overlay shows/hides it. Shows one dialog at a time.
+/// </summary>
+public sealed partial class DialogService : ObservableObject, IDialogService
+{
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsOpen))]
+    private object? _current;
+
+    public bool IsOpen => Current is not null;
+
+    public async Task<ImportOptionsResult?> ShowImportOptionsAsync(ImportOptionsViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            // Clear only if this dialog is still the one on screen (it always is here, but this
+            // keeps the overlay correct if dialogs are ever nested in future).
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
+}

@@ -11,26 +11,10 @@ public sealed class NavigationService : INavigationService
 {
     private readonly ObservableCollection<PageViewModelBase> _pages;
 
-    public NavigationService(
-        DashboardViewModel dashboard,
-        ParticipantsViewModel participants,
-        GroupsViewModel groups,
-        CoursesViewModel courses,
-        PunchImportViewModel punchImport,
-        ResultsViewModel results,
-        ChipRentalViewModel chipRental)
+    public NavigationService(DashboardViewModel dashboard)
     {
         // Settings is global (top menu → overlay), so it is not a sidebar page.
-        _pages =
-        [
-            dashboard,
-            participants,
-            groups,
-            courses,
-            punchImport,
-            results,
-            chipRental
-        ];
+        _pages = [dashboard];
 
         Pages = new ReadOnlyObservableCollection<PageViewModelBase>(_pages);
         CurrentPage = _pages.FirstOrDefault();

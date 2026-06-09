@@ -1,10 +1,20 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="using:OrientDesk.Presentation.Converters"
              x:Class="OrientDesk.Presentation.App"
              RequestedThemeVariant="Light">
 
     <Application.Styles>
         <FluentTheme />
+
+        <!-- Excel-like editable grid (Avalonia.Controls.DataGrid) -->
+        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
+
+        <!-- Make popups (dropdowns, calendar, menus) follow the global UI scale -->
+        <StyleInclude Source="avares://OrientDesk.Presentation/Styles/PopupScaling.axaml" />
+
+        <!-- Reusable compact, spreadsheet-style grid: Border.card wraps it for the rounded frame -->
+        <StyleInclude Source="avares://OrientDesk.Presentation/Styles/Sheet.axaml" />
 
         <!-- ============================================================
              OrientDesk design system: shared control styling so screens
@@ -49,6 +59,11 @@
         <Style Selector="DatePicker">
             <Setter Property="CornerRadius" Value="8" />
             <Setter Property="MinHeight" Value="38" />
+        </Style>
+        <Style Selector="CalendarDatePicker">
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="Padding" Value="10,6" />
         </Style>
 
         <!-- Buttons -->
@@ -111,6 +126,9 @@
     </Application.Styles>
 
     <Application.Resources>
+        <!-- Bridges VM DateTimeOffset? to CalendarDatePicker's DateTime? SelectedDate -->
+        <conv:DateTimeOffsetToDateTimeConverter x:Key="DateTimeOffsetToDateTime" />
+
         <!-- Palette -->
         <Color x:Key="AccentColor">#7C3AED</Color>
         <Color x:Key="AccentColorHover">#6D28D9</Color>

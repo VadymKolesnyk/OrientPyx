@@ -15,9 +15,6 @@ public sealed partial class SettingsViewModel : PageViewModelBase
     private readonly IBusyService _busy;
 
     [ObservableProperty]
-    private string _dataPath = string.Empty;
-
-    [ObservableProperty]
     private string _eventsPath = string.Empty;
 
     [ObservableProperty]
@@ -71,14 +68,13 @@ public sealed partial class SettingsViewModel : PageViewModelBase
     private async Task SavePathsAsync()
     {
         await _busy.RunAsync(() =>
-            _settings.SavePathsAsync(new AppPaths { DataPath = DataPath, EventsPath = EventsPath }));
+            _settings.SavePathsAsync(new AppPaths { EventsPath = EventsPath }));
         PathsSaved = true;
     }
 
     private async Task LoadPathsAsync()
     {
         var paths = await _settings.GetPathsAsync();
-        DataPath = paths.DataPath;
         EventsPath = paths.EventsPath;
     }
 }

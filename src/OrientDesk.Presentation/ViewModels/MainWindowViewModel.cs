@@ -29,9 +29,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     private readonly IUiScaleService _uiScale;
     private readonly IBusyService _busy;
+    private readonly IDialogService _dialogs;
 
     private readonly CompetitionInfoViewModel _competitionInfo;
     private readonly CompetitionDaysViewModel _competitionDays;
+    private readonly ControlPointsViewModel _controlPoints;
 
     public MainWindowViewModel(
         ISessionService session,
@@ -42,9 +44,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         SettingsViewModel settings,
         CompetitionInfoViewModel competitionInfo,
         CompetitionDaysViewModel competitionDays,
+        ControlPointsViewModel controlPoints,
         ILocalizationService localization,
         IUiScaleService uiScale,
-        IBusyService busy)
+        IBusyService busy,
+        IDialogService dialogs)
     {
         _session = session;
         _navigation = navigation;
@@ -54,9 +58,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         Settings = settings;
         _competitionInfo = competitionInfo;
         _competitionDays = competitionDays;
+        _controlPoints = controlPoints;
         Localization = localization;
         _uiScale = uiScale;
         _busy = busy;
+        _dialogs = dialogs;
 
         Pages = navigation.Pages;
 
@@ -79,6 +85,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Exposed for the global loader overlay.</summary>
     public IBusyService Busy => _busy;
+
+    /// <summary>Exposed for the global modal-dialog overlay.</summary>
+    public IDialogService Dialogs => _dialogs;
 
     /// <summary>Settings content shown in the global overlay.</summary>
     public SettingsViewModel Settings { get; }
@@ -129,6 +138,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _shell.SelectedPage = _competitionDays;
     }
 
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenControlPointsAsync()
+    {
+        await _controlPoints.LoadAsync();
+        _shell.SelectedPage = _controlPoints;
+    }
+
     /// <summary>Called once after construction to restore the last session or show the picker.</summary>
     public async Task InitializeAsync()
     {
@@ -176,6 +192,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         ChangeEventCommand.NotifyCanExecuteChanged();
         OpenCompetitionInfoCommand.NotifyCanExecuteChanged();
         OpenCompetitionDaysCommand.NotifyCanExecuteChanged();
+        OpenControlPointsCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsEventSelected));
         OnPropertyChanged(nameof(WindowTitle));
 

@@ -39,15 +39,6 @@ public sealed class UiScaleService : IUiScaleService
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        // Optional diagnostics override for verifying scaling.
-        var overrideScale = Environment.GetEnvironmentVariable("ORIENTDESK_FONT_SCALE");
-        if (!string.IsNullOrWhiteSpace(overrideScale) &&
-            double.TryParse(overrideScale, System.Globalization.CultureInfo.InvariantCulture, out var s))
-        {
-            Scale = s;
-            return;
-        }
-
         Scale = await _settings.GetFontScaleAsync(cancellationToken);
     }
 

@@ -8,7 +8,7 @@ namespace OrientDesk.BusinessLogic.Interfaces;
 /// </summary>
 public interface IAppStore
 {
-    /// <summary>Default paths resolved by the infrastructure (./data, ./events).</summary>
+    /// <summary>Default events path resolved by the infrastructure (./events).</summary>
     AppPaths GetDefaultPaths();
 
     /// <summary>Returns configured paths, or null if never set (caller applies defaults).</summary>

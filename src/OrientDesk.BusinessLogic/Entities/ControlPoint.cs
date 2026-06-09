@@ -1,0 +1,32 @@
+using OrientDesk.BusinessLogic.Enums;
+
+namespace OrientDesk.BusinessLogic.Entities;
+
+/// <summary>
+/// A single control point (контрольний пункт / КП) belonging to one competition day.
+/// Stored in the event database; scoped to a day via <see cref="EventDayId"/>.
+/// </summary>
+public class ControlPoint
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>Owning <see cref="EventDay"/> id (foreign key by convention; no navigation).</summary>
+    public Guid EventDayId { get; set; }
+
+    /// <summary>Stable display/sort order within the day's grid. Kept because Code is free-text.</summary>
+    public int Order { get; set; }
+
+    /// <summary>Control-point code, e.g. "31", "S1". Free-text string (not a number).</summary>
+    public string Code { get; set; } = string.Empty;
+
+    /// <summary>WGS-84 latitude; optional.</summary>
+    public double? Latitude { get; set; }
+
+    /// <summary>WGS-84 longitude; optional.</summary>
+    public double? Longitude { get; set; }
+
+    /// <summary>Kind of point. Persisted as a string in the database.</summary>
+    public ControlPointType Type { get; set; } = ControlPointType.Regular;
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
+}

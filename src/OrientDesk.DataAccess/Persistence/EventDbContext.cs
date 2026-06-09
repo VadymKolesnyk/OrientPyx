@@ -16,8 +16,19 @@ public class EventDbContext : DbContext
 
     public DbSet<CompetitionInfo> Competition => Set<CompetitionInfo>();
     public DbSet<EventDay> Days => Set<EventDay>();
-    public DbSet<Participant> Participants => Set<Participant>();
-    public DbSet<Group> Groups => Set<Group>();
-    public DbSet<Course> Courses => Set<Course>();
-    public DbSet<ChipRental> ChipRentals => Set<ChipRental>();
+    public DbSet<ControlPoint> ControlPoints => Set<ControlPoint>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+
+        // Store enums by their string name (string-enum at the DB level), not as integers.
+        modelBuilder.Entity<ControlPoint>()
+            .Property(cp => cp.Type)
+            .HasConversion<string>();
+
+        modelBuilder.Entity<EventDay>()
+            .Property(d => d.DefaultDiscipline)
+            .HasConversion<string>();
+    }
 }

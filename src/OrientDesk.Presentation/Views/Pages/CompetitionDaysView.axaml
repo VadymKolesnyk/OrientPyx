@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:pages="using:OrientDesk.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientDesk.Presentation.Controls"
              mc:Ignorable="d" d:DesignWidth="940" d:DesignHeight="560"
              x:Class="OrientDesk.Presentation.Views.Pages.CompetitionDaysView"
              x:DataType="pages:CompetitionDaysViewModel">
@@ -18,83 +19,114 @@
             </StackPanel>
             <Button Grid.Column="1" VerticalAlignment="Center"
                     Command="{Binding AddDayCommand}" Classes="accent">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <PathIcon Data="M12,5 v14 M5,12 h14" Width="14" Height="14" Foreground="White" />
+                <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                    <PathIcon Data="M11,5 h2 v6 h6 v2 h-6 v6 h-2 v-6 h-6 v-2 h6 z" Width="14" Height="14" Foreground="White" />
                     <TextBlock Text="{Binding Localization[CompetitionDays.Add]}" />
                 </StackPanel>
             </Button>
         </Grid>
 
+        <!-- Spreadsheet-style grid; the card border supplies the rounded frame.
+             SheetDataGrid adds column sort, column reorder (drag) and focus-to-edit. -->
         <Border Classes="card" ClipToBounds="True">
-            <DockPanel LastChildFill="True">
-                <!-- Column header -->
-                <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceHeader}"
-                        BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1" Padding="16,11">
-                    <Grid ColumnDefinitions="160,2*,3*,3*,Auto">
-                        <TextBlock Grid.Column="0" Text="{Binding Localization[CompetitionDays.Col.Day]}" Classes="label" />
-                        <TextBlock Grid.Column="1" Text="{Binding Localization[CompetitionDays.Col.Date]}" Classes="label" />
-                        <TextBlock Grid.Column="2" Text="{Binding Localization[CompetitionDays.Col.Venue]}" Classes="label" />
-                        <TextBlock Grid.Column="3" Text="{Binding Localization[CompetitionDays.Col.Discipline]}" Classes="label" />
-                        <TextBlock Grid.Column="4" Text="{Binding Localization[CompetitionDays.Col.Actions]}" Classes="label" MinWidth="250" />
-                    </Grid>
-                </Border>
+            <controls:SheetDataGrid Name="Sheet"
+                                    ItemsSource="{Binding Days}"
+                                    AutoGenerateColumns="False">
+                <controls:SheetDataGrid.Columns>
 
-                <ScrollViewer>
-                    <ItemsControl ItemsSource="{Binding Days}">
-                        <ItemsControl.ItemTemplate>
+                    <!-- Day number + active badge (read-only, sorts by number) -->
+                    <DataGridTemplateColumn Width="160" SortMemberPath="Number">
+                        <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate x:DataType="pages:DayRowViewModel">
-                                <Border BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1" Padding="16,10"
-                                        Classes.active="{Binding IsActive}">
-                                    <Border.Styles>
-                                        <!-- Subtly tint the active day's row -->
-                                        <Style Selector="Border.active">
-                                            <Setter Property="Background" Value="{DynamicResource AccentSurface}" />
-                                        </Style>
-                                    </Border.Styles>
-                                    <Grid ColumnDefinitions="160,2*,3*,3*,Auto" VerticalAlignment="Center">
-                                        <!-- Day number + active marker -->
-                                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding NumberLabel}" Foreground="{DynamicResource TextPrimary}"
-                                                       FontWeight="Medium" VerticalAlignment="Center" />
-                                            <Border Classes="badge" IsVisible="{Binding IsActive}">
-                                                <TextBlock Text="{Binding Localization[CompetitionDays.Active]}"
-                                                           FontSize="{ReflectionBinding SmallFontSize, Source={StaticResource UiScale}}" />
-                                            </Border>
-                                        </StackPanel>
-
-                                        <DatePicker Grid.Column="1" SelectedDate="{Binding Date, Mode=TwoWay}" Margin="0,0,10,0" />
-                                        <TextBox Grid.Column="2" Text="{Binding Venue, Mode=TwoWay}" Margin="0,0,10,0"
-                                                 PlaceholderText="—" />
-                                        <TextBox Grid.Column="3" Text="{Binding Discipline, Mode=TwoWay}" Margin="0,0,10,0"
-                                                 PlaceholderText="—" />
-
-                                        <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                            <Button Content="{Binding Localization[CompetitionDays.Save]}"
-                                                    Classes="ghost small"
-                                                    Command="{Binding $parent[ItemsControl].((pages:CompetitionDaysViewModel)DataContext).SaveDayCommand}"
-                                                    CommandParameter="{Binding}"
-                                                    IsEnabled="{Binding IsDirty}" />
-                                            <Button Content="{Binding Localization[CompetitionDays.SetActive]}"
-                                                    Classes="small"
-                                                    Command="{Binding $parent[ItemsControl].((pages:CompetitionDaysViewModel)DataContext).SetActiveCommand}"
-                                                    CommandParameter="{Binding}"
-                                                    IsEnabled="{Binding !IsActive}" />
-                                            <Button Classes="danger small"
-                                                    ToolTip.Tip="{Binding Localization[CompetitionDays.Delete]}"
-                                                    Command="{Binding $parent[ItemsControl].((pages:CompetitionDaysViewModel)DataContext).DeleteDayCommand}"
-                                                    CommandParameter="{Binding}"
-                                                    IsEnabled="{Binding !IsActive}">
-                                                <PathIcon Data="M6,7 h12 M9,7 v-2 h6 v2 M8,7 l1,13 h6 l1,-13"
-                                                          Width="15" Height="15" />
-                                            </Button>
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
+                                <StackPanel Orientation="Horizontal" Spacing="8"
+                                            VerticalAlignment="Center" Margin="10,0">
+                                    <TextBlock Text="{Binding NumberLabel}" Foreground="{DynamicResource TextPrimary}"
+                                               FontWeight="Medium" VerticalAlignment="Center" />
+                                    <Border Classes="badge" IsVisible="{Binding IsActive}">
+                                        <TextBlock Text="{Binding Localization[CompetitionDays.Active]}"
+                                                   FontSize="{ReflectionBinding SmallFontSize, Source={StaticResource UiScale}}" />
+                                    </Border>
+                                </StackPanel>
                             </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
-            </DockPanel>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Date -->
+                    <DataGridTemplateColumn Width="160" MinWidth="140" SortMemberPath="Date">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:DayRowViewModel">
+                                <CalendarDatePicker SelectedDate="{Binding Date, Mode=TwoWay,
+                                                        Converter={StaticResource DateTimeOffsetToDateTime}}"
+                                                    SelectedDateFormat="Custom"
+                                                    CustomDateFormatString="dd.MM.yyyy"
+                                                    PlaceholderText="{Binding Localization[Common.DatePlaceholder]}"
+                                                    HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Venue -->
+                    <DataGridTemplateColumn Width="Auto" MinWidth="120" SortMemberPath="Venue">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:DayRowViewModel">
+                                <TextBlock Text="{Binding Venue}" VerticalAlignment="Center" Padding="10,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                        <DataGridTemplateColumn.CellEditingTemplate>
+                            <DataTemplate x:DataType="pages:DayRowViewModel">
+                                <TextBox Text="{Binding Venue, Mode=TwoWay}" PlaceholderText="—" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellEditingTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Discipline -->
+                    <DataGridTemplateColumn Width="180" MinWidth="160" SortMemberPath="SelectedDiscipline.Value">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:DayRowViewModel">
+                                <ComboBox HorizontalAlignment="Stretch"
+                                          ItemsSource="{Binding DisciplineOptions}"
+                                          SelectedItem="{Binding SelectedDiscipline, Mode=TwoWay}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="pages:DisciplineTypeOption">
+                                            <TextBlock Text="{Binding Label}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Actions: Save / Make current / Delete -->
+                    <DataGridTemplateColumn Width="Auto" CanUserSort="False">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:DayRowViewModel">
+                                <StackPanel Orientation="Horizontal" Spacing="6"
+                                            VerticalAlignment="Center" Margin="10,0">
+                                    <Button Content="{Binding Localization[CompetitionDays.Save]}"
+                                            Classes="ghost small"
+                                            Command="{Binding $parent[DataGrid].((pages:CompetitionDaysViewModel)DataContext).SaveDayCommand}"
+                                            CommandParameter="{Binding}"
+                                            IsEnabled="{Binding IsDirty}" />
+                                    <Button Content="{Binding Localization[CompetitionDays.SetActive]}"
+                                            Classes="small"
+                                            Command="{Binding $parent[DataGrid].((pages:CompetitionDaysViewModel)DataContext).SetActiveCommand}"
+                                            CommandParameter="{Binding}"
+                                            IsEnabled="{Binding !IsActive}" />
+                                    <Button Classes="danger small"
+                                            ToolTip.Tip="{Binding Localization[CompetitionDays.Delete]}"
+                                            Command="{Binding $parent[DataGrid].((pages:CompetitionDaysViewModel)DataContext).DeleteDayCommand}"
+                                            CommandParameter="{Binding}"
+                                            IsEnabled="{Binding !IsActive}">
+                                        <PathIcon Data="M6,7 h12 M9,7 v-2 h6 v2 M8,7 l1,13 h6 l1,-13"
+                                                  Width="15" Height="15" />
+                                    </Button>
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                </controls:SheetDataGrid.Columns>
+            </controls:SheetDataGrid>
         </Border>
 
     </DockPanel>

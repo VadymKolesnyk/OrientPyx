@@ -21,7 +21,6 @@ public sealed class AppStore : IAppStore
 
     public AppPaths GetDefaultPaths() => new()
     {
-        DataPath = AppDatabasePaths.DefaultDataPath,
         EventsPath = AppDatabasePaths.DefaultEventsPath
     };
 
@@ -32,7 +31,7 @@ public sealed class AppStore : IAppStore
         if (row is null)
             return null;
 
-        return new AppPaths { DataPath = row.DataPath, EventsPath = row.EventsPath };
+        return new AppPaths { EventsPath = row.EventsPath };
     }
 
     public async Task SavePathsAsync(AppPaths paths, CancellationToken cancellationToken = default)
@@ -41,11 +40,10 @@ public sealed class AppStore : IAppStore
         var row = await db.Settings.FirstOrDefaultAsync(cancellationToken);
         if (row is null)
         {
-            db.Settings.Add(new AppSettingsRow { Id = 1, DataPath = paths.DataPath, EventsPath = paths.EventsPath });
+            db.Settings.Add(new AppSettingsRow { Id = 1, EventsPath = paths.EventsPath });
         }
         else
         {
-            row.DataPath = paths.DataPath;
             row.EventsPath = paths.EventsPath;
         }
 

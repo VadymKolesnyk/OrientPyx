@@ -28,6 +28,9 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         _editor = editor;
         _session = session;
         _busy = busy;
+        // Singleton VM: reload the day rows whenever the competition/day changes so a switched
+        // event never leaves the previous competition's days on screen.
+        _session.SessionChanged += (_, _) => _ = LoadAsync();
     }
 
     public override string NavKey => "Nav.CompetitionDays";

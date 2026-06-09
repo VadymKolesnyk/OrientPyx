@@ -48,6 +48,9 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
         _editor = editor;
         _session = session;
         _busy = busy;
+        // Singleton VM: re-read the form whenever the competition changes so a switched event
+        // never leaves the previous competition's metadata on screen.
+        _session.SessionChanged += (_, _) => _ = LoadAsync();
     }
 
     public override string NavKey => "Nav.CompetitionInfo";

@@ -1,0 +1,100 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ============================================================
+         "Sheet": a compact, Excel-like DataGrid skin. The reusable
+         control is `controls:SheetDataGrid` (Controls/SheetDataGrid.cs),
+         which adds it to the "sheet" class and bakes in sort / column
+         reorder / focus-to-edit behaviour. Plain DataGrids can still opt
+         into just the look with Classes="sheet".
+         ============================================================ -->
+
+    <Style Selector="DataGrid.sheet">
+        <Setter Property="GridLinesVisibility" Value="All" />
+        <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource BorderSubtle}" />
+        <Setter Property="VerticalGridLinesBrush" Value="{DynamicResource BorderSubtle}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="RowHeight" Value="34" />
+        <Setter Property="ColumnHeaderHeight" Value="32" />
+        <Setter Property="HeadersVisibility" Value="Column" />
+        <Setter Property="SelectionMode" Value="Single" />
+        <Setter Property="Background" Value="{DynamicResource SurfaceCard}" />
+        <!-- Show the grid's own horizontal scrollbar whenever the columns are wider than the
+             viewport — e.g. after a column is dragged wider or the window is narrowed. NOTE: this
+             is DataGrid's native HorizontalScrollBarVisibility, NOT the attached
+             ScrollViewer.HorizontalScrollBarVisibility (DataGrid drives its own scrollbars and
+             ignores the attached one). -->
+        <Setter Property="HorizontalScrollBarVisibility" Value="Auto" />
+        <!-- Drag-and-drop reorder preview: a bold accent bar marking where the dragged column will
+             land. The default Fluent indicator is a hairline that's easy to miss; this makes the
+             drop target obvious. (This template lives on DataGrid, not the column header.) -->
+        <Setter Property="DropLocationIndicatorTemplate">
+            <Template>
+                <Rectangle Fill="{DynamicResource AccentBrush}" Width="3" />
+            </Template>
+        </Setter>
+    </Style>
+
+    <!-- Column headers: lighter, denser than the default Fluent header -->
+    <Style Selector="DataGrid.sheet DataGridColumnHeader">
+        <Setter Property="Background" Value="{DynamicResource SurfaceHeader}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        <Setter Property="FontWeight" Value="Medium" />
+        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="SeparatorBrush" Value="{DynamicResource BorderSubtle}" />
+        <Setter Property="Cursor" Value="Hand" />
+    </Style>
+
+    <!-- The dragged header itself: a translucent accent "ghost" that follows the cursor. -->
+    <Style Selector="DataGrid.sheet DataGridColumnHeader:dragIndicator">
+        <Setter Property="Opacity" Value="0.65" />
+        <Setter Property="Background" Value="{DynamicResource AccentSurface}" />
+    </Style>
+
+    <!-- Read-state cells: tight padding so rows feel like spreadsheet cells -->
+    <Style Selector="DataGrid.sheet DataGridCell">
+        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="FontSize" Value="13" />
+    </Style>
+
+    <!-- The focused (current) cell gets an Excel-style accent outline. Since focusing a cell now
+         only SELECTS it (editing waits for typing / Enter / Ctrl+V), this outline is the cue that
+         tells the user which cell the keyboard is on. -->
+    <Style Selector="DataGrid.sheet DataGridCell:current">
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="BorderThickness" Value="1.5" />
+    </Style>
+
+    <!-- Editing controls inside the grid: borderless, FILL the cell (full row height),
+         no rounded corners. Stretch vertically so dropdowns/inputs match the row. -->
+    <Style Selector="DataGrid.sheet DataGridCell TextBox">
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="CornerRadius" Value="0" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="DataGrid.sheet DataGridCell ComboBox">
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="CornerRadius" Value="0" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="DataGrid.sheet DataGridCell CalendarDatePicker">
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="CornerRadius" Value="0" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+</Styles>

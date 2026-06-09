@@ -7,6 +7,9 @@
              x:Class="OrientDesk.Presentation.Views.Pages.CompetitionInfoView"
              x:DataType="pages:CompetitionInfoViewModel">
 
+    <!-- Own ScrollViewer: the ShellView no longer wraps pages in one (that broke the DataGrid
+         pages), so this form scrolls itself when the window is short. -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <StackPanel Spacing="20" MaxWidth="640" HorizontalAlignment="Left">
 
         <TextBlock Text="{Binding Title}" Classes="h1"
@@ -33,11 +36,21 @@
                 <Grid ColumnDefinitions="*,20,*">
                     <StackPanel Grid.Column="0" Spacing="6">
                         <TextBlock Text="{Binding Localization[CompetitionInfo.StartDate]}" Classes="label" />
-                        <DatePicker SelectedDate="{Binding StartDate, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+                        <CalendarDatePicker SelectedDate="{Binding StartDate, Mode=TwoWay,
+                                                Converter={StaticResource DateTimeOffsetToDateTime}}"
+                                            SelectedDateFormat="Custom"
+                                            CustomDateFormatString="dd.MM.yyyy"
+                                            PlaceholderText="{Binding Localization[Common.DatePlaceholder]}"
+                                            HorizontalAlignment="Stretch" />
                     </StackPanel>
                     <StackPanel Grid.Column="2" Spacing="6">
                         <TextBlock Text="{Binding Localization[CompetitionInfo.EndDate]}" Classes="label" />
-                        <DatePicker SelectedDate="{Binding EndDate, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+                        <CalendarDatePicker SelectedDate="{Binding EndDate, Mode=TwoWay,
+                                                Converter={StaticResource DateTimeOffsetToDateTime}}"
+                                            SelectedDateFormat="Custom"
+                                            CustomDateFormatString="dd.MM.yyyy"
+                                            PlaceholderText="{Binding Localization[Common.DatePlaceholder]}"
+                                            HorizontalAlignment="Stretch" />
                     </StackPanel>
                 </Grid>
 
@@ -58,5 +71,6 @@
         </StackPanel>
 
     </StackPanel>
+    </ScrollViewer>
 
 </UserControl>

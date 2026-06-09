@@ -1,3 +1,5 @@
+using OrientDesk.BusinessLogic.Enums;
+
 namespace OrientDesk.BusinessLogic.Entities;
 
 /// <summary>A single competition day. Stored in the event database.</summary>
@@ -14,8 +16,8 @@ public class EventDay
     /// <summary>Per-day venue / location (may differ from the competition's).</summary>
     public string Venue { get; set; } = string.Empty;
 
-    /// <summary>Free-text discipline / kind of the day (e.g. "Маркована траса").</summary>
-    public string Discipline { get; set; } = string.Empty;
+    /// <summary>Default competition type for all groups on this day (groups may override later).</summary>
+    public DisciplineType DefaultDiscipline { get; set; } = DisciplineType.SetCourse;
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

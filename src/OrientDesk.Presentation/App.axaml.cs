@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using OrientDesk.DataAccess.DependencyInjection;
 using OrientDesk.Presentation.DependencyInjection;
@@ -19,6 +20,15 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // Catch exceptions raised on the UI thread (e.g. during a page's render/binding):
+        // log them and show the crash dialog. Marking them handled keeps the app alive so the
+        // dialog can be read, instead of the whole process tearing down.
+        Dispatcher.UIThread.UnhandledException += (_, e) =>
+        {
+            Program.HandleCrash("Dispatcher.UIThread.UnhandledException", e.Exception);
+            e.Handled = true;
+        };
+
         var services = PresentationServiceCollectionExtensions.BuildApplicationServices();
         services.InitializeOrientDeskDatabase();
 
@@ -33,10 +43,6 @@ public partial class App : Application
 
             // Restore the last session (or show the picker) once the UI is up.
             _ = mainViewModel.InitializeAsync();
-
-            // Diagnostics hook: open Settings immediately (used for UI verification).
-            if (Environment.GetEnvironmentVariable("ORIENTDESK_OPEN_SETTINGS") == "1")
-                mainViewModel.OpenSettingsCommand.Execute(null);
         }
 
         base.OnFrameworkInitializationCompleted();

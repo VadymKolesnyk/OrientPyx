@@ -23,7 +23,6 @@ public sealed class AppSettingsService : IAppSettingsService
 
         return new AppPaths
         {
-            DataPath = string.IsNullOrWhiteSpace(stored.DataPath) ? defaults.DataPath : stored.DataPath,
             EventsPath = string.IsNullOrWhiteSpace(stored.EventsPath) ? defaults.EventsPath : stored.EventsPath
         };
     }

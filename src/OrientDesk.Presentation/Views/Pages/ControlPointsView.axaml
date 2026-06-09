@@ -1,0 +1,132 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientDesk.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientDesk.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="940" d:DesignHeight="560"
+             x:Class="OrientDesk.Presentation.Views.Pages.ControlPointsView"
+             x:DataType="pages:ControlPointsViewModel">
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Heading + add action on one line -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="{Binding Title}" Classes="h1"
+                           FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+                <TextBlock Text="{Binding Text}" Classes="subtitle" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
+                        VerticalAlignment="Center" IsVisible="{Binding HasDay}">
+                <Button Name="ImportButton" Classes="ghost" Click="OnImportClick"
+                        ToolTip.Tip="{Binding Localization[ControlPoints.Import.Hint]}">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <PathIcon Data="M12,3 v10 M8,9 l4,4 l4,-4 M5,15 v3 a1,1 0 0 0 1,1 h12 a1,1 0 0 0 1,-1 v-3"
+                                  Width="14" Height="14" />
+                        <TextBlock Text="{Binding Localization[ControlPoints.Import]}" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding AddPointCommand}" Classes="accent">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <PathIcon Data="M11,5 h2 v6 h6 v2 h-6 v6 h-2 v-6 h-6 v-2 h6 z" Width="14" Height="14" Foreground="White" />
+                        <TextBlock Text="{Binding Localization[ControlPoints.Add]}" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- Shown when no day is selected -->
+        <Border Classes="card" Padding="24" IsVisible="{Binding !HasDay}">
+            <TextBlock Text="{Binding Localization[ControlPoints.NoDaySelected]}"
+                       Classes="muted" HorizontalAlignment="Center" />
+        </Border>
+
+        <!-- Spreadsheet-style grid; the card border supplies the rounded frame.
+             SheetDataGrid adds column sort, column reorder (drag) and focus-to-edit. -->
+        <Border Classes="card" ClipToBounds="True" IsVisible="{Binding HasDay}">
+            <controls:SheetDataGrid Name="Sheet"
+                                    ItemsSource="{Binding Points}"
+                                    AutoGenerateColumns="False">
+                <controls:SheetDataGrid.Columns>
+
+                    <DataGridTemplateColumn Width="Auto" MinWidth="100" SortMemberPath="Code">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
+                                <TextBlock Text="{Binding Code}" VerticalAlignment="Center" Padding="10,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                        <DataGridTemplateColumn.CellEditingTemplate>
+                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
+                                <TextBox PlaceholderText="—"
+                                         Text="{Binding Code, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellEditingTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Width="Auto" MinWidth="120" SortMemberPath="SelectedType.Value">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
+                                <ComboBox HorizontalAlignment="Stretch"
+                                          ItemsSource="{Binding TypeOptions}"
+                                          SelectedItem="{Binding SelectedType, Mode=TwoWay}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="pages:ControlPointTypeOption">
+                                            <TextBlock Text="{Binding Label}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Width="Auto" MinWidth="100" SortMemberPath="LatitudeText">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
+                                <TextBlock Text="{Binding LatitudeText}" VerticalAlignment="Center" Padding="10,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                        <DataGridTemplateColumn.CellEditingTemplate>
+                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
+                                <TextBox PlaceholderText="—"
+                                         Text="{Binding LatitudeText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellEditingTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Width="Auto" MinWidth="100" SortMemberPath="LongitudeText">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
+                                <TextBlock Text="{Binding LongitudeText}" VerticalAlignment="Center" Padding="10,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                        <DataGridTemplateColumn.CellEditingTemplate>
+                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
+                                <TextBox PlaceholderText="—"
+                                         Text="{Binding LongitudeText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellEditingTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Width="48" CanUserSort="False">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
+                                <Button Classes="danger small" Padding="0"
+                                        HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                        ToolTip.Tip="{Binding Localization[ControlPoints.Delete]}"
+                                        Command="{Binding $parent[DataGrid].((pages:ControlPointsViewModel)DataContext).DeletePointCommand}"
+                                        CommandParameter="{Binding}">
+                                    <PathIcon Data="M6,7 h12 M9,7 v-2 h6 v2 M8,7 l1,13 h6 l1,-13"
+                                              Width="14" Height="14" />
+                                </Button>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                </controls:SheetDataGrid.Columns>
+            </controls:SheetDataGrid>
+        </Border>
+
+    </DockPanel>
+
+</UserControl>

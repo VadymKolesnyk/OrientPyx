@@ -28,6 +28,10 @@ public sealed class JsonLocalizationService : ILocalizationService
         CurrentCulture = defaultCulture;
         _byCulture.TryGetValue(CurrentCulture.Name, out var dict);
         _current = dict ?? new Dictionary<string, string>();
+
+        // Align the thread/app culture with the active language so culture-driven controls
+        // (e.g. the calendar's month names and first-day-of-week) match the UI from the start.
+        ApplyThreadCulture(CurrentCulture);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -58,10 +62,24 @@ public sealed class JsonLocalizationService : ILocalizationService
 
         CurrentCulture = culture;
         _current = dict;
-        CultureInfo.CurrentUICulture = culture;
+        ApplyThreadCulture(culture);
 
         // Empty/null property name refreshes every binding, including the indexer.
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+    }
+
+    /// <summary>
+    /// Pushes <paramref name="culture"/> onto the current and default thread cultures so that
+    /// culture-aware controls (the calendar date picker, number/date formatting) follow the
+    /// selected UI language without a restart. Newly created controls read these immediately;
+    /// an already-open calendar dropdown refreshes the next time it is opened.
+    /// </summary>
+    private static void ApplyThreadCulture(CultureInfo culture)
+    {
+        CultureInfo.CurrentCulture = culture;
+        CultureInfo.CurrentUICulture = culture;
+        CultureInfo.DefaultThreadCurrentCulture = culture;
+        CultureInfo.DefaultThreadCurrentUICulture = culture;
     }
 
     private void LoadAllCultures()

@@ -48,11 +48,6 @@
                            FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
 
                 <StackPanel Spacing="6">
-                    <TextBlock Text="{Binding Localization[Settings.DataPath]}" Classes="label" />
-                    <TextBox Text="{Binding DataPath, Mode=TwoWay}" />
-                </StackPanel>
-
-                <StackPanel Spacing="6">
                     <TextBlock Text="{Binding Localization[Settings.EventsPath]}" Classes="label" />
                     <TextBox Text="{Binding EventsPath, Mode=TwoWay}" />
                 </StackPanel>

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using OrientDesk.BusinessLogic.Entities;
+using OrientDesk.BusinessLogic.Enums;
 using OrientDesk.Localization;
 
 namespace OrientDesk.Presentation.ViewModels.Pages;
@@ -18,7 +19,7 @@ public sealed partial class DayRowViewModel : ObservableObject
     private string _venue;
 
     [ObservableProperty]
-    private string _discipline;
+    private DisciplineTypeOption _selectedDiscipline;
 
     [ObservableProperty]
     private bool _isActive;
@@ -33,15 +34,23 @@ public sealed partial class DayRowViewModel : ObservableObject
         Number = day.Number;
         _date = day.Date;
         _venue = day.Venue;
-        _discipline = day.Discipline;
-        _isActive = isActive;
         Localization = localization;
+
+        DisciplineOptions = Enum.GetValues<DisciplineType>()
+            .Select(t => new DisciplineTypeOption(t, localization))
+            .ToList();
+        _selectedDiscipline = DisciplineOptions.First(o => o.Value == day.DefaultDiscipline);
+
+        _isActive = isActive;
         Localization.PropertyChanged += OnLocalizationChanged;
     }
 
     public ILocalizationService Localization { get; }
 
     public Guid Id => _id;
+
+    /// <summary>Discipline options (value + localized label) shown in the Type ComboBox.</summary>
+    public IReadOnlyList<DisciplineTypeOption> DisciplineOptions { get; }
 
     /// <summary>1-based day number (immutable label).</summary>
     public int Number { get; }
@@ -55,7 +64,7 @@ public sealed partial class DayRowViewModel : ObservableObject
         Number = Number,
         Date = Date,
         Venue = (Venue ?? string.Empty).Trim(),
-        Discipline = (Discipline ?? string.Empty).Trim(),
+        DefaultDiscipline = SelectedDiscipline.Value,
         CreatedAt = _createdAt
     };
 
@@ -63,7 +72,7 @@ public sealed partial class DayRowViewModel : ObservableObject
 
     partial void OnDateChanged(DateTimeOffset? value) => IsDirty = true;
     partial void OnVenueChanged(string value) => IsDirty = true;
-    partial void OnDisciplineChanged(string value) => IsDirty = true;
+    partial void OnSelectedDisciplineChanged(DisciplineTypeOption value) => IsDirty = true;
 
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e)
         => OnPropertyChanged(nameof(NumberLabel));

@@ -5,6 +5,8 @@
         xmlns:vm="using:OrientDesk.Presentation.ViewModels"
         xmlns:views="using:OrientDesk.Presentation.Views"
         xmlns:pageViews="using:OrientDesk.Presentation.Views.Pages"
+        xmlns:dialogs="using:OrientDesk.Presentation.ViewModels.Dialogs"
+        xmlns:dialogViews="using:OrientDesk.Presentation.Views.Dialogs"
         mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="640"
         x:Class="OrientDesk.Presentation.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -23,6 +25,9 @@
         </DataTemplate>
         <DataTemplate DataType="vm:CreateEventViewModel">
             <views:CreateEventView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:ImportOptionsViewModel">
+            <dialogViews:ImportOptionsView />
         </DataTemplate>
     </Window.DataTemplates>
 
@@ -57,6 +62,8 @@
                           Command="{Binding OpenCompetitionInfoCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Competition.Days]}"
                           Command="{Binding OpenCompetitionDaysCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Competition.ControlPoints]}"
+                          Command="{Binding OpenControlPointsCommand}" />
             </MenuItem>
 
             <!-- Navigation tabs, shown only while a competition is open -->
@@ -82,13 +89,19 @@
         <Panel>
             <ContentControl Content="{Binding CurrentView}" />
 
-            <!-- Settings overlay: covers whatever screen is active -->
-            <Border IsVisible="{Binding IsSettingsOpen}"
+            <!-- Settings overlay: covers whatever screen is active.
+                 The backdrop Border stretches to fill the Panel (which is inside
+                 LayoutTransformControl and has a known logical height). The inner card
+                 Border uses VerticalAlignment=Stretch so DockPanel gets a finite height
+                 and ScrollViewer can actually scroll. -->
+            <Border x:Name="SettingsBackdrop"
+                    IsVisible="{Binding IsSettingsOpen}"
                     Background="#80000000">
                 <Border Background="{DynamicResource SurfacePage}"
                         CornerRadius="12"
                         Margin="60"
                         MaxWidth="720"
+                        VerticalAlignment="Stretch"
                         BoxShadow="0 10 40 0 #40000000"
                         Padding="0"
                         ClipToBounds="True">
@@ -108,11 +121,20 @@
                                         Command="{Binding CloseSettingsCommand}" />
                             </Grid>
                         </Border>
-                        <ScrollViewer Padding="24">
-                            <pageViews:SettingsView DataContext="{Binding Settings}" />
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <pageViews:SettingsView DataContext="{Binding Settings}"
+                                                   Margin="24" />
                         </ScrollViewer>
                     </DockPanel>
                 </Border>
+            </Border>
+
+            <!-- Application-modal dialog overlay (e.g. import options). The backdrop blocks input
+                 to whatever is behind it; the dialog view supplies its own centered card. -->
+            <Border IsVisible="{Binding Dialogs.IsOpen}"
+                    Background="#80000000">
+                <ContentControl Content="{Binding Dialogs.Current}" Margin="40" />
             </Border>
 
             <!-- Global loading overlay: shown during any async operation, blocks input -->

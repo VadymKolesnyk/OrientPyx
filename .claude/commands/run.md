@@ -30,6 +30,3 @@ Databases are created relative to the application directory:
 
 Both `./data` and `./events` default to the app directory and are editable on the
 Settings page.
-
-Diagnostics: set `ORIENTDESK_OPEN_SETTINGS=1` to open the Settings overlay immediately on
-startup (used for UI verification).

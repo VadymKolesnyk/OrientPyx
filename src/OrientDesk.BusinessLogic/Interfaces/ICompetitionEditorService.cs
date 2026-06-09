@@ -1,4 +1,5 @@
 using OrientDesk.BusinessLogic.Entities;
+using OrientDesk.BusinessLogic.Models;
 
 namespace OrientDesk.BusinessLogic.Interfaces;
 
@@ -26,4 +27,32 @@ public interface ICompetitionEditorService
 
     /// <summary>Removes a day from the current competition.</summary>
     Task DeleteDayAsync(Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>Loads the current day's control points, ordered for display.</summary>
+    Task<IReadOnlyList<ControlPoint>> GetControlPointsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Appends a new control point to the current day and returns it.</summary>
+    Task<ControlPoint> AddControlPointAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Saves an edited control point (code, coordinates, type).</summary>
+    Task UpdateControlPointAsync(ControlPoint point, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a control point from the current day.</summary>
+    Task DeleteControlPointAsync(Guid pointId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Imports the control points from a parsed IOF file into the current day. When
+    /// <paramref name="replaceAll"/> is true the day's existing points are cleared and fully
+    /// replaced; otherwise only codes not already present are appended (existing rows untouched).
+    /// </summary>
+    Task<ControlPointImportResult> ImportControlPointsAsync(
+        IofCourseData data,
+        bool replaceAll,
+        CancellationToken cancellationToken = default);
 }
+
+/// <summary>Outcome of a control-point import, for reporting back to the user.</summary>
+/// <param name="Imported">How many control points ended up in the day after the import.</param>
+/// <param name="Added">How many points were newly added (in add-only mode).</param>
+/// <param name="Replaced">True when the whole set was replaced.</param>
+public readonly record struct ControlPointImportResult(int Imported, int Added, bool Replaced);

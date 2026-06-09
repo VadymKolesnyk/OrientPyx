@@ -7,10 +7,6 @@ public sealed class BusyService : IBusyService
 {
     private int _activeCount;
 
-    // Diagnostics: artificially slow operations to make the loader observable. Off by default.
-    private static readonly int ArtificialDelayMs =
-        int.TryParse(Environment.GetEnvironmentVariable("ORIENTDESK_SLOW_OPS"), out var ms) ? ms : 0;
-
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public bool IsBusy => _activeCount > 0;
@@ -20,8 +16,6 @@ public sealed class BusyService : IBusyService
         Enter();
         try
         {
-            if (ArtificialDelayMs > 0)
-                await Task.Delay(ArtificialDelayMs);
             return await operation();
         }
         finally
@@ -35,8 +29,6 @@ public sealed class BusyService : IBusyService
         Enter();
         try
         {
-            if (ArtificialDelayMs > 0)
-                await Task.Delay(ArtificialDelayMs);
             await operation();
         }
         finally

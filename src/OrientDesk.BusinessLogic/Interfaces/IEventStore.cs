@@ -28,4 +28,22 @@ public interface IEventStore
 
     /// <summary>Removes a day by id. Does nothing if it is missing.</summary>
     Task DeleteDayAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns a day's control points ordered by their sort order.</summary>
+    Task<IReadOnlyList<ControlPoint>> GetControlPointsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds a control point to a day.</summary>
+    Task AddControlPointAsync(string eventFolderPath, ControlPoint point, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds several control points to a day in one transaction (e.g. an XML import).</summary>
+    Task AddControlPointsAsync(string eventFolderPath, IReadOnlyList<ControlPoint> points, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes a day's existing control points and inserts the supplied set in one transaction.</summary>
+    Task ReplaceControlPointsAsync(string eventFolderPath, Guid dayId, IReadOnlyList<ControlPoint> points, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates an existing control point's editable fields (code, coordinates, type).</summary>
+    Task UpdateControlPointAsync(string eventFolderPath, ControlPoint point, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a control point by id. Does nothing if it is missing.</summary>
+    Task DeleteControlPointAsync(string eventFolderPath, Guid pointId, CancellationToken cancellationToken = default);
 }

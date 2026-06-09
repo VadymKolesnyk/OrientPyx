@@ -2,36 +2,13 @@
   "App.Title": "OrientDesk",
 
   "Nav.Dashboard": "Панель",
-  "Nav.Participants": "Учасники",
-  "Nav.Groups": "Групи",
-  "Nav.Courses": "Дистанції",
-  "Nav.PunchImport": "Імпорт відміток",
-  "Nav.Results": "Результати",
-  "Nav.ChipRental": "Оренда чіпів",
   "Nav.Settings": "Налаштування",
   "Nav.CompetitionInfo": "Інформація про змагання",
   "Nav.CompetitionDays": "Дні змагання",
+  "Nav.ControlPoints": "Контрольні пункти",
 
   "Page.Dashboard.Title": "Панель",
   "Page.Dashboard.Text": "Загальний огляд змагання.",
-
-  "Page.Participants.Title": "Учасники",
-  "Page.Participants.Text": "Тут буде керування учасниками.",
-
-  "Page.Groups.Title": "Групи",
-  "Page.Groups.Text": "Тут буде керування групами.",
-
-  "Page.Courses.Title": "Дистанції",
-  "Page.Courses.Text": "Тут буде налаштування дистанцій.",
-
-  "Page.PunchImport.Title": "Імпорт відміток",
-  "Page.PunchImport.Text": "Тут буде імпорт даних SportIdent.",
-
-  "Page.Results.Title": "Результати",
-  "Page.Results.Text": "Тут буде перегляд і формування результатів.",
-
-  "Page.ChipRental.Title": "Оренда чіпів",
-  "Page.ChipRental.Text": "Тут буде контроль орендованих чіпів.",
 
   "Page.Settings.Title": "Налаштування",
   "Page.Settings.Text": "Тут будуть налаштування додатку.",
@@ -47,6 +24,7 @@
   "Menu.Competition": "Змагання",
   "Menu.Competition.Info": "Інформація",
   "Menu.Competition.Days": "Дні",
+  "Menu.Competition.ControlPoints": "Контрольні пункти",
   "Menu.Navigate": "Розділи",
   "Menu.Help": "Довідка",
   "Menu.Help.About": "Про програму",
@@ -55,6 +33,8 @@
   "Page.CompetitionInfo.Text": "Редагування основних даних змагання.",
   "Page.CompetitionDays.Title": "Дні змагання",
   "Page.CompetitionDays.Text": "Налаштування днів змагання та вибір поточного дня.",
+  "Page.ControlPoints.Title": "Контрольні пункти",
+  "Page.ControlPoints.Text": "Довідник контрольних пунктів поточного дня.",
 
   "CompetitionInfo.Name": "Назва",
   "CompetitionInfo.Venue": "Місце проведення",
@@ -63,6 +43,8 @@
   "CompetitionInfo.EndDate": "Дата завершення",
   "CompetitionInfo.Save": "Зберегти",
   "CompetitionInfo.Saved": "Збережено.",
+
+  "Common.DatePlaceholder": "дд.мм.рррр",
 
   "CompetitionDays.Add": "Додати день",
   "CompetitionDays.Active": "Поточний",
@@ -75,14 +57,37 @@
   "CompetitionDays.Col.Discipline": "Вид змагань",
   "CompetitionDays.Col.Actions": "Дії",
 
+  "ControlPoints.Add": "Додати КП",
+  "ControlPoints.Delete": "Видалити",
+  "ControlPoints.Col.Code": "Код",
+  "ControlPoints.Col.Type": "Тип",
+  "ControlPoints.Col.Lat": "Широта",
+  "ControlPoints.Col.Lon": "Довгота",
+  "ControlPoints.Col.Actions": "Дії",
+  "ControlPoints.Type.Regular": "Звичайний",
+  "ControlPoints.Type.Start": "Старт",
+  "ControlPoints.Type.Finish": "Фініш",
+  "ControlPoints.NoDaySelected": "Спершу оберіть день змагання.",
+  "ControlPoints.Import": "Імпорт з XML",
+  "ControlPoints.Import.Hint": "Імпортувати контрольні пункти з файлу IOF XML (OCAD/Condes).",
+  "ControlPoints.Import.PickerTitle": "Оберіть файл IOF XML",
+  "ControlPoints.Import.Title": "Імпорт контрольних пунктів",
+  "ControlPoints.Import.Message": "Імпортувати контрольні пункти з обраного файлу?",
+  "ControlPoints.Import.ReplaceAll": "Замінити всі наявні КП",
+  "ControlPoints.Import.Error": "Не вдалося прочитати файл: це не коректний файл IOF XML.",
+
+  "Discipline.Type.SetCourse": "Заданий напрямок",
+  "Discipline.Type.ScoreByCount": "За вибором по кількості КП",
+
   "Settings.OverlayTitle": "Налаштування",
   "Settings.Close": "Закрити",
   "Settings.InterfaceSize": "Розмір інтерфейсу",
 
   "Common.Loading": "Завантаження…",
   "Common.ComingSoon": "Незабаром",
+  "Common.Ok": "ОК",
+  "Common.Cancel": "Скасувати",
   "Settings.Paths": "Шляхи даних",
-  "Settings.DataPath": "Папка даних програми",
   "Settings.EventsPath": "Папка змагань",
   "Settings.SavePaths": "Зберегти шляхи",
   "Settings.PathsSavedHint": "Збережено. Застосується після перезапуску.",

@@ -24,6 +24,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<INavigationService, NavigationService>();
         services.AddSingleton<IUiScaleService, UiScaleService>();
         services.AddSingleton<IBusyService, BusyService>();
+        services.AddSingleton<IDialogService, DialogService>();
 
         // Root + gating view models
         services.AddSingleton<MainWindowViewModel>();
@@ -33,17 +34,12 @@ public static class PresentationServiceCollectionExtensions
 
         // Page view models
         services.AddTransient<DashboardViewModel>();
-        services.AddTransient<ParticipantsViewModel>();
-        services.AddTransient<GroupsViewModel>();
-        services.AddTransient<CoursesViewModel>();
-        services.AddTransient<PunchImportViewModel>();
-        services.AddTransient<ResultsViewModel>();
-        services.AddTransient<ChipRentalViewModel>();
         services.AddTransient<SettingsViewModel>();
 
         // Competition info/days pages (opened from the "Competition" top menu)
         services.AddSingleton<CompetitionInfoViewModel>();
         services.AddSingleton<CompetitionDaysViewModel>();
+        services.AddSingleton<ControlPointsViewModel>();
 
         return services.BuildServiceProvider();
     }

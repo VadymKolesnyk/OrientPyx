@@ -2,36 +2,13 @@
   "App.Title": "OrientDesk",
 
   "Nav.Dashboard": "Dashboard",
-  "Nav.Participants": "Participants",
-  "Nav.Groups": "Groups",
-  "Nav.Courses": "Courses",
-  "Nav.PunchImport": "Punch Import",
-  "Nav.Results": "Results",
-  "Nav.ChipRental": "Chip Rental",
   "Nav.Settings": "Settings",
   "Nav.CompetitionInfo": "Competition information",
   "Nav.CompetitionDays": "Competition days",
+  "Nav.ControlPoints": "Control points",
 
   "Page.Dashboard.Title": "Dashboard",
   "Page.Dashboard.Text": "Competition overview.",
-
-  "Page.Participants.Title": "Participants",
-  "Page.Participants.Text": "Participant management will go here.",
-
-  "Page.Groups.Title": "Groups",
-  "Page.Groups.Text": "Group management will go here.",
-
-  "Page.Courses.Title": "Courses",
-  "Page.Courses.Text": "Course configuration will go here.",
-
-  "Page.PunchImport.Title": "Punch Import",
-  "Page.PunchImport.Text": "SportIdent data import will go here.",
-
-  "Page.Results.Title": "Results",
-  "Page.Results.Text": "Results viewing and generation will go here.",
-
-  "Page.ChipRental.Title": "Chip Rental",
-  "Page.ChipRental.Text": "Rented chip tracking will go here.",
 
   "Page.Settings.Title": "Settings",
   "Page.Settings.Text": "Application settings will go here.",
@@ -47,6 +24,7 @@
   "Menu.Competition": "Competition",
   "Menu.Competition.Info": "Information",
   "Menu.Competition.Days": "Days",
+  "Menu.Competition.ControlPoints": "Control points",
   "Menu.Navigate": "Sections",
   "Menu.Help": "Help",
   "Menu.Help.About": "About",
@@ -55,6 +33,8 @@
   "Page.CompetitionInfo.Text": "Edit the competition's core details.",
   "Page.CompetitionDays.Title": "Competition days",
   "Page.CompetitionDays.Text": "Configure competition days and pick the current one.",
+  "Page.ControlPoints.Title": "Control points",
+  "Page.ControlPoints.Text": "Control-point reference for the current day.",
 
   "CompetitionInfo.Name": "Name",
   "CompetitionInfo.Venue": "Venue",
@@ -63,6 +43,8 @@
   "CompetitionInfo.EndDate": "End date",
   "CompetitionInfo.Save": "Save",
   "CompetitionInfo.Saved": "Saved.",
+
+  "Common.DatePlaceholder": "dd.mm.yyyy",
 
   "CompetitionDays.Add": "Add day",
   "CompetitionDays.Active": "Current",
@@ -75,14 +57,37 @@
   "CompetitionDays.Col.Discipline": "Discipline",
   "CompetitionDays.Col.Actions": "Actions",
 
+  "ControlPoints.Add": "Add control point",
+  "ControlPoints.Delete": "Delete",
+  "ControlPoints.Col.Code": "Code",
+  "ControlPoints.Col.Type": "Type",
+  "ControlPoints.Col.Lat": "Latitude",
+  "ControlPoints.Col.Lon": "Longitude",
+  "ControlPoints.Col.Actions": "Actions",
+  "ControlPoints.Type.Regular": "Regular",
+  "ControlPoints.Type.Start": "Start",
+  "ControlPoints.Type.Finish": "Finish",
+  "ControlPoints.NoDaySelected": "Select a competition day first.",
+  "ControlPoints.Import": "Import from XML",
+  "ControlPoints.Import.Hint": "Import control points from an IOF XML file (OCAD/Condes).",
+  "ControlPoints.Import.PickerTitle": "Choose an IOF XML file",
+  "ControlPoints.Import.Title": "Import control points",
+  "ControlPoints.Import.Message": "Import control points from the selected file?",
+  "ControlPoints.Import.ReplaceAll": "Replace all existing control points",
+  "ControlPoints.Import.Error": "Couldn't read the file: it is not a valid IOF XML file.",
+
+  "Discipline.Type.SetCourse": "Set course",
+  "Discipline.Type.ScoreByCount": "Score by control count",
+
   "Settings.OverlayTitle": "Settings",
   "Settings.Close": "Close",
   "Settings.InterfaceSize": "Interface size",
 
   "Common.Loading": "Loading…",
   "Common.ComingSoon": "Coming soon",
+  "Common.Ok": "OK",
+  "Common.Cancel": "Cancel",
   "Settings.Paths": "Data paths",
-  "Settings.DataPath": "Application data folder",
   "Settings.EventsPath": "Events folder",
   "Settings.SavePaths": "Save paths",
   "Settings.PathsSavedHint": "Saved. Applies after restart.",
