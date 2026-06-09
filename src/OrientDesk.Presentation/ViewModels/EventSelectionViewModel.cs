@@ -16,6 +16,7 @@ public sealed partial class EventSelectionViewModel : ViewModelBase
 {
     private readonly IEventCatalogService _catalog;
     private readonly IEventStore _eventStore;
+    private readonly IAppStore _appStore;
     private readonly ISessionService _session;
     private readonly IBusyService _busy;
 
@@ -25,12 +26,14 @@ public sealed partial class EventSelectionViewModel : ViewModelBase
     public EventSelectionViewModel(
         IEventCatalogService catalog,
         IEventStore eventStore,
+        IAppStore appStore,
         ISessionService session,
         IBusyService busy,
         ILocalizationService localization)
     {
         _catalog = catalog;
         _eventStore = eventStore;
+        _appStore = appStore;
         _session = session;
         _busy = busy;
         Localization = localization;
@@ -63,8 +66,15 @@ public sealed partial class EventSelectionViewModel : ViewModelBase
         if (days.Count == 0)
             return;
 
-        // Open the first day; per-day picking can be added later.
-        await _session.SelectAsync(SelectedEvent, days[0]);
+        // Land on the remembered day for this competition (the app DB keeps a single last
+        // session), otherwise the first day. The per-page dropdown can switch days afterwards.
+        var (lastId, lastDay) = await _appStore.GetLastSessionAsync();
+        var day = (lastId == SelectedEvent.Identifier
+                      ? days.FirstOrDefault(d => d.Number == lastDay)
+                      : null)
+                  ?? days[0];
+
+        await _session.SelectAsync(SelectedEvent, day);
     });
 
     [RelayCommand]

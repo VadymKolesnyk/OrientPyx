@@ -32,7 +32,7 @@
   "Page.CompetitionInfo.Title": "Інформація про змагання",
   "Page.CompetitionInfo.Text": "Редагування основних даних змагання.",
   "Page.CompetitionDays.Title": "Дні змагання",
-  "Page.CompetitionDays.Text": "Налаштування днів змагання та вибір поточного дня.",
+  "Page.CompetitionDays.Text": "Налаштування днів змагання.",
   "Page.ControlPoints.Title": "Контрольні пункти",
   "Page.ControlPoints.Text": "Довідник контрольних пунктів поточного дня.",
 
@@ -47,9 +47,7 @@
   "Common.DatePlaceholder": "дд.мм.рррр",
 
   "CompetitionDays.Add": "Додати день",
-  "CompetitionDays.Active": "Поточний",
   "CompetitionDays.Save": "Зберегти",
-  "CompetitionDays.SetActive": "Зробити поточним",
   "CompetitionDays.Delete": "Видалити",
   "CompetitionDays.Col.Day": "День",
   "CompetitionDays.Col.Date": "Дата",
@@ -67,7 +65,6 @@
   "ControlPoints.Type.Regular": "Звичайний",
   "ControlPoints.Type.Start": "Старт",
   "ControlPoints.Type.Finish": "Фініш",
-  "ControlPoints.NoDaySelected": "Спершу оберіть день змагання.",
   "ControlPoints.Import": "Імпорт з XML",
   "ControlPoints.Import.Hint": "Імпортувати контрольні пункти з файлу IOF XML (OCAD/Condes).",
   "ControlPoints.Import.PickerTitle": "Оберіть файл IOF XML",
@@ -93,7 +90,7 @@
   "Settings.PathsSavedHint": "Збережено. Застосується після перезапуску.",
 
   "Header.CurrentEvent": "Змагання:",
-  "Header.Day": "День:",
+  "Header.Day": "День",
   "Header.ChangeEvent": "Змінити змагання",
 
   "EventSelection.Title": "Вибір змагання",

@@ -99,8 +99,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public ReadOnlyObservableCollection<PageViewModelBase> Pages { get; }
 
     /// <summary>
-    /// Window title: the app name, plus the active competition and day once one is selected,
-    /// e.g. "OrientDesk — City Championship 2026 (Day 1)".
+    /// Window title: the app name, plus the active competition once one is selected,
+    /// e.g. "OrientDesk — City Championship 2026". The day is now a per-page concern.
     /// </summary>
     public string WindowTitle
     {
@@ -111,9 +111,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 return appName;
 
             var name = _session.CurrentEvent?.Name ?? string.Empty;
-            var dayLabel = Localization.Get("Header.Day");
-            var day = _session.CurrentDay?.Number ?? 0;
-            return $"{appName} — {name} ({dayLabel} {day})";
+            return $"{appName} — {name}";
         }
     }
 
@@ -197,10 +195,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(WindowTitle));
 
         if (_session.HasSelection)
-        {
-            _shell.RefreshSessionHeader();
             ShowShell();
-        }
     }
 
     partial void OnIsSettingsOpenChanged(bool value) => OnPropertyChanged(nameof(IsEventSelected));

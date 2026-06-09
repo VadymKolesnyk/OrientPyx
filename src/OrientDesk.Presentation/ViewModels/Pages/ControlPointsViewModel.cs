@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using OrientDesk.BusinessLogic.Entities;
 using OrientDesk.BusinessLogic.Interfaces;
 using OrientDesk.Localization;
 using OrientDesk.Presentation.Services;
@@ -48,17 +50,50 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
 
     public ObservableCollection<ControlPointRowViewModel> Points { get; } = [];
 
-    /// <summary>True when a day is selected; otherwise the page shows a "pick a day" hint.</summary>
-    public bool HasDay => _session.CurrentDay is not null;
+    /// <summary>Selectable days for the top-right day picker.</summary>
+    public ObservableCollection<DayOption> DayOptions { get; } = [];
+
+    [ObservableProperty]
+    private DayOption? _selectedDay;
+
+    /// <summary>Day picker is shown only when the competition has more than one day.</summary>
+    public bool ShowDaySelector => DayOptions.Count > 1;
+
+    // True while LoadAsync syncs SelectedDay to the session, so the setter does NOT call
+    // SetCurrentDayAsync (which would re-raise SessionChanged → LoadAsync in a loop).
+    private bool _syncingDay;
 
     /// <summary>Reloads the control points for the current day. Called when the page is shown.</summary>
     public async Task LoadAsync()
     {
         CancelAllTimers();
         Points.Clear();
-        OnPropertyChanged(nameof(HasDay));
 
-        if (!HasDay)
+        _syncingDay = true;
+        try
+        {
+            // Rebuild the options only when the day set actually changed; otherwise keep the
+            // existing DayOption instances so the ComboBox's SelectedItem stays a valid reference
+            // (a fresh list would leave the picker showing nothing after a day switch).
+            var days = await _editor.GetDaysAsync();
+            if (!SameDays(days))
+            {
+                DayOptions.Clear();
+                foreach (var day in days)
+                    DayOptions.Add(new DayOption(day, Localization));
+            }
+
+            var current = _session.CurrentDay?.Number;
+            SelectedDay = DayOptions.FirstOrDefault(o => o.Number == current) ?? DayOptions.FirstOrDefault();
+        }
+        finally
+        {
+            _syncingDay = false;
+        }
+
+        OnPropertyChanged(nameof(ShowDaySelector));
+
+        if (_session.CurrentDay is null)
             return;
 
         var points = await _editor.GetControlPointsAsync();
@@ -66,10 +101,34 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
             Points.Add(new ControlPointRowViewModel(point, Localization, RequestRowSave));
     }
 
+    // True when the current options already represent exactly these days (same count and numbers,
+    // in order), so the list can be reused instead of rebuilt.
+    private bool SameDays(IReadOnlyList<EventDay> days)
+    {
+        if (DayOptions.Count != days.Count)
+            return false;
+        for (var i = 0; i < days.Count; i++)
+            if (DayOptions[i].Number != days[i].Number)
+                return false;
+        return true;
+    }
+
+    // Driven by the day ComboBox. Switching the session's day re-raises SessionChanged, which
+    // reloads this page; the _syncingDay guard stops LoadAsync's reassignment from re-entering.
+    partial void OnSelectedDayChanged(DayOption? value)
+    {
+        if (_syncingDay || value is null)
+            return;
+        if (_session.CurrentDay?.Number == value.Number)
+            return;
+
+        _ = _session.SetCurrentDayAsync(value.Day);
+    }
+
     [RelayCommand]
     private async Task AddPointAsync()
     {
-        if (!HasDay)
+        if (_session.CurrentDay is null)
             return;
 
         // Persist immediately so the new row carries its real id for later debounced updates.
@@ -88,7 +147,7 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
     /// </summary>
     public async Task ImportFromXmlAsync(string xml)
     {
-        if (!HasDay || string.IsNullOrWhiteSpace(xml))
+        if (_session.CurrentDay is null || string.IsNullOrWhiteSpace(xml))
             return;
 
         // Parse up front so a malformed file is reported before the user sees the options modal.

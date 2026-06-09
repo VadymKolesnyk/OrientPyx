@@ -32,7 +32,7 @@
   "Page.CompetitionInfo.Title": "Competition information",
   "Page.CompetitionInfo.Text": "Edit the competition's core details.",
   "Page.CompetitionDays.Title": "Competition days",
-  "Page.CompetitionDays.Text": "Configure competition days and pick the current one.",
+  "Page.CompetitionDays.Text": "Configure the competition's days.",
   "Page.ControlPoints.Title": "Control points",
   "Page.ControlPoints.Text": "Control-point reference for the current day.",
 
@@ -47,9 +47,7 @@
   "Common.DatePlaceholder": "dd.mm.yyyy",
 
   "CompetitionDays.Add": "Add day",
-  "CompetitionDays.Active": "Current",
   "CompetitionDays.Save": "Save",
-  "CompetitionDays.SetActive": "Make current",
   "CompetitionDays.Delete": "Delete",
   "CompetitionDays.Col.Day": "Day",
   "CompetitionDays.Col.Date": "Date",
@@ -67,7 +65,6 @@
   "ControlPoints.Type.Regular": "Regular",
   "ControlPoints.Type.Start": "Start",
   "ControlPoints.Type.Finish": "Finish",
-  "ControlPoints.NoDaySelected": "Select a competition day first.",
   "ControlPoints.Import": "Import from XML",
   "ControlPoints.Import.Hint": "Import control points from an IOF XML file (OCAD/Condes).",
   "ControlPoints.Import.PickerTitle": "Choose an IOF XML file",
@@ -93,7 +90,7 @@
   "Settings.PathsSavedHint": "Saved. Applies after restart.",
 
   "Header.CurrentEvent": "Competition:",
-  "Header.Day": "Day:",
+  "Header.Day": "Day",
   "Header.ChangeEvent": "Change competition",
 
   "EventSelection.Title": "Select competition",

@@ -34,19 +34,12 @@
                                     AutoGenerateColumns="False">
                 <controls:SheetDataGrid.Columns>
 
-                    <!-- Day number + active badge (read-only, sorts by number) -->
-                    <DataGridTemplateColumn Width="160" SortMemberPath="Number">
+                    <!-- Day number (read-only, sorts by number) -->
+                    <DataGridTemplateColumn Width="120" SortMemberPath="Number">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate x:DataType="pages:DayRowViewModel">
-                                <StackPanel Orientation="Horizontal" Spacing="8"
-                                            VerticalAlignment="Center" Margin="10,0">
-                                    <TextBlock Text="{Binding NumberLabel}" Foreground="{DynamicResource TextPrimary}"
-                                               FontWeight="Medium" VerticalAlignment="Center" />
-                                    <Border Classes="badge" IsVisible="{Binding IsActive}">
-                                        <TextBlock Text="{Binding Localization[CompetitionDays.Active]}"
-                                                   FontSize="{ReflectionBinding SmallFontSize, Source={StaticResource UiScale}}" />
-                                    </Border>
-                                </StackPanel>
+                                <TextBlock Text="{Binding NumberLabel}" Foreground="{DynamicResource TextPrimary}"
+                                           FontWeight="Medium" VerticalAlignment="Center" Margin="10,0" />
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
@@ -96,7 +89,7 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
 
-                    <!-- Actions: Save / Make current / Delete -->
+                    <!-- Actions: Save / Delete -->
                     <DataGridTemplateColumn Width="Auto" CanUserSort="False">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate x:DataType="pages:DayRowViewModel">
@@ -107,11 +100,6 @@
                                             Command="{Binding $parent[DataGrid].((pages:CompetitionDaysViewModel)DataContext).SaveDayCommand}"
                                             CommandParameter="{Binding}"
                                             IsEnabled="{Binding IsDirty}" />
-                                    <Button Content="{Binding Localization[CompetitionDays.SetActive]}"
-                                            Classes="small"
-                                            Command="{Binding $parent[DataGrid].((pages:CompetitionDaysViewModel)DataContext).SetActiveCommand}"
-                                            CommandParameter="{Binding}"
-                                            IsEnabled="{Binding !IsActive}" />
                                     <Button Classes="danger small"
                                             ToolTip.Tip="{Binding Localization[CompetitionDays.Delete]}"
                                             Command="{Binding $parent[DataGrid].((pages:CompetitionDaysViewModel)DataContext).DeleteDayCommand}"

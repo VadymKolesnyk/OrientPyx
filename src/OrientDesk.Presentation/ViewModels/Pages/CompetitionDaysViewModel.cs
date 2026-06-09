@@ -80,16 +80,4 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         await _busy.RunAsync(() => _editor.DeleteDayAsync(row.Id));
         await LoadAsync();
     }
-
-    [RelayCommand]
-    private async Task SetActiveAsync(DayRowViewModel? row)
-    {
-        if (row is null || row.IsActive)
-            return;
-
-        await _busy.RunAsync(() => _session.SetCurrentDayAsync(row.ToEntity()));
-
-        foreach (var r in Days)
-            r.IsActive = ReferenceEquals(r, row);
-    }
 }

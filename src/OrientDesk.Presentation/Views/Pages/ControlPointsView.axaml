@@ -18,7 +18,17 @@
                 <TextBlock Text="{Binding Text}" Classes="subtitle" />
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
-                        VerticalAlignment="Center" IsVisible="{Binding HasDay}">
+                        VerticalAlignment="Center">
+                <ComboBox IsVisible="{Binding ShowDaySelector}"
+                          MinWidth="120" VerticalAlignment="Center"
+                          ItemsSource="{Binding DayOptions}"
+                          SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="pages:DayOption">
+                            <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
                 <Button Name="ImportButton" Classes="ghost" Click="OnImportClick"
                         ToolTip.Tip="{Binding Localization[ControlPoints.Import.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
@@ -36,15 +46,9 @@
             </StackPanel>
         </Grid>
 
-        <!-- Shown when no day is selected -->
-        <Border Classes="card" Padding="24" IsVisible="{Binding !HasDay}">
-            <TextBlock Text="{Binding Localization[ControlPoints.NoDaySelected]}"
-                       Classes="muted" HorizontalAlignment="Center" />
-        </Border>
-
         <!-- Spreadsheet-style grid; the card border supplies the rounded frame.
              SheetDataGrid adds column sort, column reorder (drag) and focus-to-edit. -->
-        <Border Classes="card" ClipToBounds="True" IsVisible="{Binding HasDay}">
+        <Border Classes="card" ClipToBounds="True">
             <controls:SheetDataGrid Name="Sheet"
                                     ItemsSource="{Binding Points}"
                                     AutoGenerateColumns="False">
