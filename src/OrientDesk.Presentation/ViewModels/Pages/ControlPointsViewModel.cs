@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientDesk.BusinessLogic.Entities;
@@ -40,8 +41,9 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
         _dialogs = dialogs;
         _busy = busy;
         // Singleton VM: when the competition/day changes, drop the previous event's rows so the
-        // page never shows stale data before it is next opened.
-        _session.SessionChanged += (_, _) => _ = LoadAsync();
+        // page never shows stale data before it is next opened. The event can be raised on a pool
+        // thread (session writes run inside RunAsync), so marshal LoadAsync onto the UI thread.
+        _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
     }
 
     public override string NavKey => "Nav.ControlPoints";
@@ -67,6 +69,17 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
     public async Task LoadAsync()
     {
         CancelAllTimers();
+
+        // Both BD reads run off the UI thread; every collection/property write below happens
+        // afterwards on the UI thread (SQLite has no real async I/O, so this can't stay inline).
+        var hasDay = _session.CurrentDay is not null;
+        var (days, points) = await _busy.RunAsync(async () =>
+        {
+            var d = await _editor.GetDaysAsync();
+            var p = hasDay ? await _editor.GetControlPointsAsync() : (IReadOnlyList<ControlPoint>)[];
+            return (d, p);
+        });
+
         Points.Clear();
 
         _syncingDay = true;
@@ -75,7 +88,6 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
             // Rebuild the options only when the day set actually changed; otherwise keep the
             // existing DayOption instances so the ComboBox's SelectedItem stays a valid reference
             // (a fresh list would leave the picker showing nothing after a day switch).
-            var days = await _editor.GetDaysAsync();
             if (!SameDays(days))
             {
                 DayOptions.Clear();
@@ -93,10 +105,6 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
 
         OnPropertyChanged(nameof(ShowDaySelector));
 
-        if (_session.CurrentDay is null)
-            return;
-
-        var points = await _editor.GetControlPointsAsync();
         foreach (var point in points)
             Points.Add(new ControlPointRowViewModel(point, Localization, RequestRowSave));
     }
@@ -132,7 +140,7 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
             return;
 
         // Persist immediately so the new row carries its real id for later debounced updates.
-        var entity = await _editor.AddControlPointAsync();
+        var entity = await _busy.RunAsync(() => _editor.AddControlPointAsync());
         Points.Add(new ControlPointRowViewModel(entity, Localization, RequestRowSave));
     }
 
@@ -151,16 +159,9 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
             return;
 
         // Parse up front so a malformed file is reported before the user sees the options modal.
-        IofCourseDataParseOutcome outcome;
-        try
-        {
-            var data = _xmlParser.Parse(xml);
-            outcome = IofCourseDataParseOutcome.Ok(data);
-        }
-        catch (IofXmlFormatException ex)
-        {
-            outcome = IofCourseDataParseOutcome.Failed(ex.Message);
-        }
+        // Parsing is CPU-bound and synchronous (XDocument + coordinate projection), so it runs
+        // off the UI thread to avoid the freeze on large files.
+        var outcome = await _busy.RunAsync(() => Task.FromResult(ParseXml(xml)));
 
         if (!outcome.Success)
         {
@@ -183,11 +184,22 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
             return; // cancelled
 
         var replaceAll = result.Get(ReplaceAllOptionKey, fallback: true);
-        await _busy.RunAsync(async () =>
+        await _busy.RunAsync(() => _editor.ImportControlPointsAsync(outcome.Data!, replaceAll));
+        // LoadAsync wraps its own BD reads in RunAsync and writes the collections on the UI thread.
+        await LoadAsync();
+    }
+
+    // Runs the synchronous parser and wraps success/failure so it can be marshalled off the UI thread.
+    private IofCourseDataParseOutcome ParseXml(string xml)
+    {
+        try
         {
-            await _editor.ImportControlPointsAsync(outcome.Data!, replaceAll);
-            await LoadAsync();
-        });
+            return IofCourseDataParseOutcome.Ok(_xmlParser.Parse(xml));
+        }
+        catch (IofXmlFormatException ex)
+        {
+            return IofCourseDataParseOutcome.Failed(ex.Message);
+        }
     }
 
     // Small local outcome wrapper so a parse failure can be surfaced through the same modal path.
@@ -220,7 +232,7 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
             _saveTimers.Remove(row.Id);
         }
 
-        await _editor.DeleteControlPointAsync(row.Id);
+        await _busy.RunAsync(() => _editor.DeleteControlPointAsync(row.Id));
         Points.Remove(row);
     }
 
@@ -240,8 +252,10 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
         try
         {
             await Task.Delay(SaveDebounce, token);
-            // ToEntity() is read after the delay, so the latest typed values are persisted.
-            await _editor.UpdateControlPointAsync(row.ToEntity(), token);
+            // ToEntity() reads VM state, so snapshot it here (UI thread) before offloading the
+            // synchronous SQLite write to the pool. Autosave bypasses the busy overlay on purpose.
+            var entity = row.ToEntity();
+            await Task.Run(() => _editor.UpdateControlPointAsync(entity, token), token);
         }
         catch (OperationCanceledException)
         {

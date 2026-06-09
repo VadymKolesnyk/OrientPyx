@@ -46,10 +46,13 @@ public sealed partial class EventSelectionViewModel : ViewModelBase
     /// <summary>Raised when the user wants to create a new competition.</summary>
     public event EventHandler? CreateRequested;
 
-    public async Task LoadAsync()
+    /// <summary>Reads the competition list (off the UI thread when called inside a busy scope).</summary>
+    public Task<IReadOnlyList<EventSummary>> FetchEventsAsync() => _catalog.GetEventsAsync();
+
+    /// <summary>Replaces the displayed list. Must run on the UI thread (touches the collection).</summary>
+    public void Populate(IReadOnlyList<EventSummary> items)
     {
         Events.Clear();
-        var items = await _catalog.GetEventsAsync();
         foreach (var item in items)
             Events.Add(item);
     }

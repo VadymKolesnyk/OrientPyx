@@ -69,12 +69,11 @@ public sealed partial class CreateEventViewModel : ViewModelBase
         try
         {
             IsBusy = true;
-            await _busy.RunAsync(async () =>
-            {
-                var summary = await _catalog.CreateEventAsync(Name, Identifier, Venue);
-                if (OnCreatedAsync is not null)
-                    await OnCreatedAsync(summary);
-            });
+            // Creation (file + migrations) runs off the UI thread; the post-create callback may
+            // touch the UI (refresh + show the list), so it runs after the await on the UI thread.
+            var summary = await _busy.RunAsync(() => _catalog.CreateEventAsync(Name, Identifier, Venue));
+            if (OnCreatedAsync is not null)
+                await OnCreatedAsync(summary);
         }
         catch (InvalidOperationException)
         {

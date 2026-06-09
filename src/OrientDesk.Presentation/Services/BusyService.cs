@@ -11,12 +11,17 @@ public sealed class BusyService : IBusyService
 
     public bool IsBusy => _activeCount > 0;
 
+    // The operation runs on a thread-pool thread (Task.Run), not the UI thread. SQLite has no
+    // real async I/O — EF Core's *Async methods over Microsoft.Data.Sqlite complete synchronously —
+    // so awaiting them on the UI thread would block it and the busy overlay would never paint.
+    // Offloading here keeps the UI thread free; callers must therefore do all UI-state writes
+    // (ObservableCollection edits, navigation) AFTER awaiting RunAsync, back on the UI thread.
     public async Task<T> RunAsync<T>(Func<Task<T>> operation)
     {
         Enter();
         try
         {
-            return await operation();
+            return await Task.Run(operation);
         }
         finally
         {
@@ -29,7 +34,7 @@ public sealed class BusyService : IBusyService
         Enter();
         try
         {
-            await operation();
+            await Task.Run(operation);
         }
         finally
         {

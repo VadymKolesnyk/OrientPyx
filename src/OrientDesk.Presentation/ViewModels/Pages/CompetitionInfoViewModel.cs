@@ -1,3 +1,4 @@
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientDesk.BusinessLogic.Entities;
@@ -49,8 +50,9 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
         _session = session;
         _busy = busy;
         // Singleton VM: re-read the form whenever the competition changes so a switched event
-        // never leaves the previous competition's metadata on screen.
-        _session.SessionChanged += (_, _) => _ = LoadAsync();
+        // never leaves the previous competition's metadata on screen. The event may arrive on a
+        // pool thread (session writes run inside RunAsync), so marshal LoadAsync onto the UI thread.
+        _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
     }
 
     public override string NavKey => "Nav.CompetitionInfo";
@@ -61,7 +63,8 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
     public async Task LoadAsync()
     {
         Saved = false;
-        _info = await _editor.GetInfoAsync();
+        // BD read runs off the UI thread; the form fields are set afterwards on the UI thread.
+        _info = await _busy.RunAsync(() => _editor.GetInfoAsync());
         Name = _info?.Name ?? string.Empty;
         Venue = _info?.Venue ?? string.Empty;
         Organisation = _info?.Organisation ?? string.Empty;

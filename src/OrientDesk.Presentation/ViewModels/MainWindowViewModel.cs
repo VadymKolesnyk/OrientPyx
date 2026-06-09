@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientDesk.BusinessLogic.Interfaces;
@@ -68,7 +69,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         _selection.CreateRequested += (_, _) => ShowCreate();
         // Runs inside the create operation's busy scope, so the loader stays up until the list is ready.
-        _create.OnCreatedAsync = async _ => await LoadSelectionAsync();
+        _create.OnCreatedAsync = async _ => await ShowSelectionAsync();
         _create.Cancelled += async (_, _) => await ShowSelectionAsync();
         _shell.ChangeEventRequested += async (_, _) => await ChangeEventInternalAsync();
         _session.SessionChanged += OnSessionChanged;
@@ -146,15 +147,17 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>Called once after construction to restore the last session or show the picker.</summary>
     public async Task InitializeAsync()
     {
-        await _busy.RunAsync(async () =>
+        // BD work runs off the UI thread inside RunAsync; UI-state writes happen after the await.
+        var restored = await _busy.RunAsync(async () =>
         {
             await _uiScale.InitializeAsync();
-            var restored = await _session.TryRestoreLastAsync();
-            if (restored)
-                ShowShell();
-            else
-                await LoadSelectionAsync();
+            return await _session.TryRestoreLastAsync();
         });
+
+        if (restored)
+            ShowShell();
+        else
+            await ShowSelectionAsync();
     }
 
     [RelayCommand]
@@ -187,6 +190,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     private void OnSessionChanged(object? sender, EventArgs e)
     {
+        // SessionChanged can be raised on a pool thread (session writes run inside RunAsync); this
+        // handler touches commands and CurrentView, so hop to the UI thread before doing anything.
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => OnSessionChanged(sender, e));
+            return;
+        }
+
         ChangeEventCommand.NotifyCanExecuteChanged();
         OpenCompetitionInfoCommand.NotifyCanExecuteChanged();
         OpenCompetitionDaysCommand.NotifyCanExecuteChanged();
@@ -200,11 +211,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     partial void OnIsSettingsOpenChanged(bool value) => OnPropertyChanged(nameof(IsEventSelected));
 
-    private Task ShowSelectionAsync() => _busy.RunAsync(LoadSelectionAsync);
-
-    private async Task LoadSelectionAsync()
+    private async Task ShowSelectionAsync()
     {
-        await _selection.LoadAsync();
+        // Fetch the list off the UI thread, then populate the collection and swap views on it.
+        var events = await _busy.RunAsync(() => _selection.FetchEventsAsync());
+        _selection.Populate(events);
         CurrentView = _selection;
     }
 

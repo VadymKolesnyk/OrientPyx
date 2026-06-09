@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientDesk.BusinessLogic.Interfaces;
@@ -29,8 +30,9 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         _session = session;
         _busy = busy;
         // Singleton VM: reload the day rows whenever the competition/day changes so a switched
-        // event never leaves the previous competition's days on screen.
-        _session.SessionChanged += (_, _) => _ = LoadAsync();
+        // event never leaves the previous competition's days on screen. The event may arrive on a
+        // pool thread (session writes run inside RunAsync), so marshal LoadAsync onto the UI thread.
+        _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
     }
 
     public override string NavKey => "Nav.CompetitionDays";
@@ -42,10 +44,11 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
     /// <summary>Reloads the day rows from the current competition. Called when the page is shown.</summary>
     public async Task LoadAsync()
     {
-        Days.Clear();
-
         var activeNumber = _session.CurrentDay?.Number;
-        var days = await _editor.GetDaysAsync();
+        // BD read runs off the UI thread; the collection is rebuilt afterwards on the UI thread.
+        var days = await _busy.RunAsync(() => _editor.GetDaysAsync());
+
+        Days.Clear();
         foreach (var day in days)
             Days.Add(new DayRowViewModel(day, day.Number == activeNumber, Localization));
     }
