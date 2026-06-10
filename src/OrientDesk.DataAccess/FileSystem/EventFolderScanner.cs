@@ -45,7 +45,9 @@ public sealed class EventFolderScanner : IEventFolderScanner
                 Venue = info.Venue,
                 FolderPath = folder,
                 CreatedAt = info.CreatedAt,
-                DayCount = days.Count
+                DayCount = days.Count,
+                StartDate = info.StartDate,
+                EndDate = info.EndDate
             });
         }
 

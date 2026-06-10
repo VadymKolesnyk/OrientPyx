@@ -35,6 +35,59 @@
                              PlaceholderText="{Binding Localization[CreateEvent.Venue.Hint]}" />
                 </StackPanel>
 
+                <!-- Day count on its own row. A custom +/- stepper, not NumericUpDown, whose
+                     Windows automation peer crashes on spin ("UnsupportedType Decimal"). -->
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[CreateEvent.DayCount]}" Classes="label" />
+                    <Border BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1"
+                            CornerRadius="6" Padding="2" HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal" Spacing="2">
+                            <Button Content="−" Command="{Binding DecrementDaysCommand}"
+                                    Width="36" Classes="ghost" Padding="0"
+                                    HorizontalContentAlignment="Center" />
+                            <TextBlock Text="{Binding DayCount}" MinWidth="44"
+                                       VerticalAlignment="Center" HorizontalAlignment="Center"
+                                       TextAlignment="Center" FontWeight="Medium" />
+                            <Button Content="+" Command="{Binding IncrementDaysCommand}"
+                                    Width="36" Classes="ghost" Padding="0"
+                                    HorizontalContentAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Single day: one full-width "Date" field (saved as both start and end). -->
+                <StackPanel Spacing="6" IsVisible="{Binding !IsMultiDay}">
+                    <TextBlock Text="{Binding Localization[CreateEvent.Date]}" Classes="label" />
+                    <CalendarDatePicker SelectedDate="{Binding StartDate, Mode=TwoWay,
+                                            Converter={StaticResource DateTimeOffsetToDateTime}}"
+                                        SelectedDateFormat="Custom"
+                                        CustomDateFormatString="dd.MM.yyyy"
+                                        PlaceholderText="{Binding Localization[Common.DatePlaceholder]}"
+                                        HorizontalAlignment="Stretch" />
+                </StackPanel>
+
+                <!-- Multi-day: editable start and end dates side by side, filling the width. -->
+                <Grid ColumnDefinitions="*,20,*" IsVisible="{Binding IsMultiDay}">
+                    <StackPanel Grid.Column="0" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CreateEvent.StartDate]}" Classes="label" />
+                        <CalendarDatePicker SelectedDate="{Binding StartDate, Mode=TwoWay,
+                                                Converter={StaticResource DateTimeOffsetToDateTime}}"
+                                            SelectedDateFormat="Custom"
+                                            CustomDateFormatString="dd.MM.yyyy"
+                                            PlaceholderText="{Binding Localization[Common.DatePlaceholder]}"
+                                            HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CreateEvent.EndDate]}" Classes="label" />
+                        <CalendarDatePicker SelectedDate="{Binding EndDate, Mode=TwoWay,
+                                                Converter={StaticResource DateTimeOffsetToDateTime}}"
+                                            SelectedDateFormat="Custom"
+                                            CustomDateFormatString="dd.MM.yyyy"
+                                            PlaceholderText="{Binding Localization[Common.DatePlaceholder]}"
+                                            HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                </Grid>
+
                 <!-- Inline error -->
                 <Border IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                         Background="{DynamicResource DangerSurface}" CornerRadius="8" Padding="12,8">

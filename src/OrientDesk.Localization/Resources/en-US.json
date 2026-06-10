@@ -101,6 +101,7 @@
   "EventSelection.Col.Identifier": "Identifier",
   "EventSelection.Col.Name": "Name",
   "EventSelection.Col.Venue": "Venue",
+  "EventSelection.Col.Dates": "Dates",
   "EventSelection.Col.Days": "Days",
 
   "CreateEvent.Title": "New competition",
@@ -110,6 +111,10 @@
   "CreateEvent.Identifier.Hint": "e.g. city-champ-2026",
   "CreateEvent.Venue": "Venue",
   "CreateEvent.Venue.Hint": "e.g. Holosiivskyi forest",
+  "CreateEvent.DayCount": "Number of days",
+  "CreateEvent.Date": "Date",
+  "CreateEvent.StartDate": "Start date",
+  "CreateEvent.EndDate": "End date",
   "CreateEvent.Submit": "Create",
   "CreateEvent.Cancel": "Cancel",
   "CreateEvent.Error.Required": "Fill in name and identifier.",

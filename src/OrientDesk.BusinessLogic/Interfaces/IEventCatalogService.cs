@@ -13,8 +13,24 @@ public interface IEventCatalogService
 
     /// <summary>
     /// Creates a competition: a folder named <paramref name="identifier"/> under the events
-    /// path, its event database, the metadata row, and an initial day. Throws if the
-    /// identifier is invalid or already exists.
+    /// path, its event database, the metadata row, and <paramref name="dayCount"/> days. Throws
+    /// if the identifier is invalid or already exists.
     /// </summary>
-    Task<EventSummary> CreateEventAsync(string name, string identifier, string venue, CancellationToken cancellationToken = default);
+    /// <param name="dayCount">Number of competition days to create (at least 1).</param>
+    /// <param name="startDate">
+    /// Date of the first day. Each subsequent day is offset by one calendar day. When null, days
+    /// are created without dates.
+    /// </param>
+    /// <param name="endDate">
+    /// Last day of the competition, stored as metadata. For a single-day competition this equals
+    /// <paramref name="startDate"/>.
+    /// </param>
+    Task<EventSummary> CreateEventAsync(
+        string name,
+        string identifier,
+        string venue,
+        int dayCount,
+        DateTimeOffset? startDate,
+        DateTimeOffset? endDate,
+        CancellationToken cancellationToken = default);
 }

@@ -30,7 +30,14 @@ public sealed class EventCatalogService : IEventCatalogService
         return events.FirstOrDefault(e => string.Equals(e.Identifier, identifier, StringComparison.OrdinalIgnoreCase));
     }
 
-    public async Task<EventSummary> CreateEventAsync(string name, string identifier, string venue, CancellationToken cancellationToken = default)
+    public async Task<EventSummary> CreateEventAsync(
+        string name,
+        string identifier,
+        string venue,
+        int dayCount,
+        DateTimeOffset? startDate,
+        DateTimeOffset? endDate,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Name is required.", nameof(name));
@@ -38,6 +45,9 @@ public sealed class EventCatalogService : IEventCatalogService
         identifier = (identifier ?? string.Empty).Trim();
         if (!IsValidIdentifier(identifier))
             throw new ArgumentException("Identifier must be a valid folder name.", nameof(identifier));
+
+        // Always create at least one day; ignore nonsensical counts.
+        dayCount = Math.Max(1, dayCount);
 
         var paths = await _settings.GetPathsAsync(cancellationToken);
         Directory.CreateDirectory(paths.EventsPath);
@@ -48,16 +58,33 @@ public sealed class EventCatalogService : IEventCatalogService
 
         await _eventStore.EnsureCreatedAsync(folderPath, cancellationToken);
 
+        // For a single day, end == start; otherwise fall back to start + dayCount-1 if no end given.
+        endDate ??= dayCount == 1 ? startDate : startDate?.AddDays(dayCount - 1);
+
         var info = new CompetitionInfo
         {
             Name = name.Trim(),
             Identifier = identifier,
-            Venue = (venue ?? string.Empty).Trim()
+            Venue = (venue ?? string.Empty).Trim(),
+            StartDate = startDate,
+            EndDate = endDate
         };
         await _eventStore.SaveCompetitionInfoAsync(folderPath, info, cancellationToken);
 
-        // Every competition starts with one day.
-        await _eventStore.AddDayAsync(folderPath, new EventDay { Number = 1 }, cancellationToken);
+        // Create the requested days, numbered from 1, each one calendar day after the previous.
+        // Each day defaults to the competition venue (editable per day on the Days page later).
+        for (var i = 0; i < dayCount; i++)
+        {
+            await _eventStore.AddDayAsync(
+                folderPath,
+                new EventDay
+                {
+                    Number = i + 1,
+                    Date = startDate?.AddDays(i),
+                    Venue = info.Venue
+                },
+                cancellationToken);
+        }
 
         return new EventSummary
         {
@@ -66,7 +93,9 @@ public sealed class EventCatalogService : IEventCatalogService
             Venue = info.Venue,
             FolderPath = folderPath,
             CreatedAt = info.CreatedAt,
-            DayCount = 1
+            DayCount = dayCount,
+            StartDate = startDate,
+            EndDate = endDate
         };
     }
 

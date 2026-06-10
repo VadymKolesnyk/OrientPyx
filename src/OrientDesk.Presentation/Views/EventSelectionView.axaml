@@ -28,11 +28,12 @@
                     <!-- Column header -->
                     <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceHeader}"
                             BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1" Padding="16,11">
-                        <Grid ColumnDefinitions="2*,2*,3*,Auto">
+                        <Grid ColumnDefinitions="2*,2*,3*,2*,Auto">
                             <TextBlock Grid.Column="0" Text="{Binding Localization[EventSelection.Col.Identifier]}" Classes="label" />
                             <TextBlock Grid.Column="1" Text="{Binding Localization[EventSelection.Col.Name]}" Classes="label" />
                             <TextBlock Grid.Column="2" Text="{Binding Localization[EventSelection.Col.Venue]}" Classes="label" />
-                            <TextBlock Grid.Column="3" Text="{Binding Localization[EventSelection.Col.Days]}" Classes="label" MinWidth="60" />
+                            <TextBlock Grid.Column="3" Text="{Binding Localization[EventSelection.Col.Dates]}" Classes="label" />
+                            <TextBlock Grid.Column="4" Text="{Binding Localization[EventSelection.Col.Days]}" Classes="label" MinWidth="60" />
                         </Grid>
                     </Border>
 
@@ -62,11 +63,12 @@
                         </ListBox.Styles>
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="models:EventSummary">
-                                <Grid ColumnDefinitions="2*,2*,3*,Auto" Margin="12,10">
+                                <Grid ColumnDefinitions="2*,2*,3*,2*,Auto" Margin="12,10">
                                     <TextBlock Grid.Column="0" Text="{Binding Identifier}" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" />
                                     <TextBlock Grid.Column="1" Text="{Binding Name}" Foreground="{DynamicResource TextPrimary}" FontWeight="Medium" VerticalAlignment="Center" />
                                     <TextBlock Grid.Column="2" Text="{Binding Venue}" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" />
-                                    <Border Grid.Column="3" Classes="badge" MinWidth="60" HorizontalAlignment="Left">
+                                    <TextBlock Grid.Column="3" Text="{Binding DateRange}" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" />
+                                    <Border Grid.Column="4" Classes="badge" MinWidth="60" HorizontalAlignment="Left">
                                         <TextBlock Text="{Binding DayCount}" HorizontalAlignment="Center" />
                                     </Border>
                                 </Grid>

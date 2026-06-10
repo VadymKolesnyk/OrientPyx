@@ -61,7 +61,8 @@ internal static class Program
         }
         catch
         {
-            // swallow — the crash is already on disk
+            // Showing the dialog failed; release the guard so the next crash can still try.
+            _showingCrashDialog = false;
         }
     }
 
@@ -96,7 +97,15 @@ internal static class Program
     /// </summary>
     private static void ShowCrashDialog(string source, string? message)
     {
-        void Show() => new CrashWindow(source, message, CrashLogPath).Show();
+        void Show()
+        {
+            var window = new CrashWindow(source, message, CrashLogPath);
+            // Clear the guard once this dialog closes so a later, unrelated crash shows its own
+            // dialog instead of being only logged. The guard exists to avoid stacking/looping
+            // dialogs while one is already open, not to suppress every crash after the first.
+            window.Closed += (_, _) => _showingCrashDialog = false;
+            window.Show();
+        }
 
         try
         {

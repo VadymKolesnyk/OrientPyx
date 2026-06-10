@@ -130,7 +130,15 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
         if (_session.CurrentDay?.Number == value.Number)
             return;
 
-        _ = _session.SetCurrentDayAsync(value.Day);
+        _ = SwitchDayAsync(value.Day);
+    }
+
+    // Persisting the new day writes the last-session row (a synchronous SQLite write), so it goes
+    // through the busy overlay/offload like every other DB access; otherwise the UI thread would
+    // block on the write before SessionChanged → LoadAsync even runs.
+    private async Task SwitchDayAsync(EventDay day)
+    {
+        await _busy.RunAsync(() => _session.SetCurrentDayAsync(day));
     }
 
     [RelayCommand]

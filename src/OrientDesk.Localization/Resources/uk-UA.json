@@ -101,6 +101,7 @@
   "EventSelection.Col.Identifier": "Ідентифікатор",
   "EventSelection.Col.Name": "Назва",
   "EventSelection.Col.Venue": "Місце",
+  "EventSelection.Col.Dates": "Дати",
   "EventSelection.Col.Days": "Днів",
 
   "CreateEvent.Title": "Нове змагання",
@@ -110,6 +111,10 @@
   "CreateEvent.Identifier.Hint": "Наприклад: city-champ-2026",
   "CreateEvent.Venue": "Місце проведення",
   "CreateEvent.Venue.Hint": "Наприклад: Голосіївський ліс",
+  "CreateEvent.DayCount": "Кількість днів",
+  "CreateEvent.Date": "Дата",
+  "CreateEvent.StartDate": "Дата початку",
+  "CreateEvent.EndDate": "Дата завершення",
   "CreateEvent.Submit": "Створити",
   "CreateEvent.Cancel": "Скасувати",
   "CreateEvent.Error.Required": "Заповніть назву та ідентифікатор.",

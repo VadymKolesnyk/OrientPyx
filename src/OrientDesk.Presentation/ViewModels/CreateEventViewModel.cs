@@ -22,6 +22,24 @@ public sealed partial class CreateEventViewModel : ViewModelBase
     [ObservableProperty]
     private string _venue = string.Empty;
 
+    private const int MinDays = 1;
+    private const int MaxDays = 31;
+
+    // A plain int with a custom +/- stepper in the view. We avoid Avalonia's NumericUpDown: its
+    // Windows automation peer crashes ("UnsupportedType Decimal") when it raises a value-changed
+    // automation event while spinning.
+    [ObservableProperty]
+    private int _dayCount = 1;
+
+    [ObservableProperty]
+    private DateTimeOffset? _startDate;
+
+    [ObservableProperty]
+    private DateTimeOffset? _endDate;
+
+    [ObservableProperty]
+    private bool _isMultiDay;
+
     [ObservableProperty]
     private string? _errorMessage;
 
@@ -51,8 +69,46 @@ public sealed partial class CreateEventViewModel : ViewModelBase
         Name = string.Empty;
         Identifier = string.Empty;
         Venue = string.Empty;
+        DayCount = 1;
+        StartDate = null;
+        EndDate = null;
+        IsMultiDay = false;
         ErrorMessage = null;
         IsBusy = false;
+    }
+
+    [RelayCommand]
+    private void IncrementDays()
+    {
+        if (DayCount < MaxDays)
+            DayCount++;
+    }
+
+    [RelayCommand]
+    private void DecrementDays()
+    {
+        if (DayCount > MinDays)
+            DayCount--;
+    }
+
+    // Day count drives the multi-day flag (which reveals the end-date field) and auto-fills
+    // a suggested end date; the user can still override the end date afterwards.
+    partial void OnDayCountChanged(int value)
+    {
+        IsMultiDay = value > 1;
+        AutoFillEndDate();
+    }
+
+    partial void OnStartDateChanged(DateTimeOffset? value) => AutoFillEndDate();
+
+    // Suggests an end date when the start date or day count changes (last day = start + count-1).
+    // The user can still edit the end date afterwards; it only re-fills on the next start/count change.
+    private void AutoFillEndDate()
+    {
+        if (!IsMultiDay || StartDate is not { } start)
+            return;
+
+        EndDate = start.AddDays(Math.Max(1, DayCount) - 1);
     }
 
     [RelayCommand]
@@ -71,7 +127,15 @@ public sealed partial class CreateEventViewModel : ViewModelBase
             IsBusy = true;
             // Creation (file + migrations) runs off the UI thread; the post-create callback may
             // touch the UI (refresh + show the list), so it runs after the await on the UI thread.
-            var summary = await _busy.RunAsync(() => _catalog.CreateEventAsync(Name, Identifier, Venue));
+            var dayCount = Math.Max(1, DayCount);
+            // Single-day: the one "Дата" field is both start and end. Multi-day: use the (possibly
+            // edited) end date, falling back to start + count-1 when it was left unset.
+            var startDate = StartDate;
+            var endDate = dayCount == 1
+                ? startDate
+                : EndDate ?? startDate?.AddDays(dayCount - 1);
+            var summary = await _busy.RunAsync(
+                () => _catalog.CreateEventAsync(Name, Identifier, Venue, dayCount, startDate, endDate));
             if (OnCreatedAsync is not null)
                 await OnCreatedAsync(summary);
         }
