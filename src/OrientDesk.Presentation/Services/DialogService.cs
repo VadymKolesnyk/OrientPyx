@@ -32,4 +32,20 @@ public sealed partial class DialogService : ObservableObject, IDialogService
                 Current = null;
         }
     }
+
+    public async Task<bool> ConfirmAsync(ConfirmDialogViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
 }

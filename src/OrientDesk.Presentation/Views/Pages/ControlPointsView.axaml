@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:pages="using:OrientDesk.Presentation.ViewModels.Pages"
              xmlns:controls="using:OrientDesk.Presentation.Controls"
+             xmlns:behaviors="using:OrientDesk.Presentation.Behaviors"
              mc:Ignorable="d" d:DesignWidth="940" d:DesignHeight="560"
              x:Class="OrientDesk.Presentation.Views.Pages.ControlPointsView"
              x:DataType="pages:ControlPointsViewModel">
@@ -30,11 +31,11 @@
                     </ComboBox.ItemTemplate>
                 </ComboBox>
                 <Button Name="ImportButton" Classes="ghost" Click="OnImportClick"
-                        ToolTip.Tip="{Binding Localization[ControlPoints.Import.Hint]}">
+                        ToolTip.Tip="{Binding Localization[Import.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <PathIcon Data="M12,3 v10 M8,9 l4,4 l4,-4 M5,15 v3 a1,1 0 0 0 1,1 h12 a1,1 0 0 0 1,-1 v-3"
                                   Width="14" Height="14" />
-                        <TextBlock Text="{Binding Localization[ControlPoints.Import]}" />
+                        <TextBlock Text="{Binding Localization[Import]}" />
                     </StackPanel>
                 </Button>
                 <Button Command="{Binding AddPointCommand}" Classes="accent">
@@ -51,6 +52,8 @@
         <Border Classes="card" ClipToBounds="True">
             <controls:SheetDataGrid Name="Sheet"
                                     ItemsSource="{Binding Points}"
+                                    SelectedItem="{Binding SelectedPoint, Mode=TwoWay}"
+                                    KeyDown="OnSheetKeyDown"
                                     AutoGenerateColumns="False">
                 <controls:SheetDataGrid.Columns>
 
@@ -92,7 +95,7 @@
                         </DataGridTemplateColumn.CellTemplate>
                         <DataGridTemplateColumn.CellEditingTemplate>
                             <DataTemplate x:DataType="pages:ControlPointRowViewModel">
-                                <TextBox PlaceholderText="—"
+                                <TextBox PlaceholderText="—" behaviors:NumericInput.Decimal="True"
                                          Text="{Binding LatitudeText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                             </DataTemplate>
                         </DataGridTemplateColumn.CellEditingTemplate>
@@ -106,8 +109,22 @@
                         </DataGridTemplateColumn.CellTemplate>
                         <DataGridTemplateColumn.CellEditingTemplate>
                             <DataTemplate x:DataType="pages:ControlPointRowViewModel">
-                                <TextBox PlaceholderText="—"
+                                <TextBox PlaceholderText="—" behaviors:NumericInput.Decimal="True"
                                          Text="{Binding LongitudeText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellEditingTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Width="Auto" MinWidth="80" SortMemberPath="PointsText">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
+                                <TextBlock Text="{Binding PointsText}" VerticalAlignment="Center" Padding="10,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                        <DataGridTemplateColumn.CellEditingTemplate>
+                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
+                                <TextBox PlaceholderText="—" behaviors:NumericInput.Integer="True"
+                                         Text="{Binding PointsText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                             </DataTemplate>
                         </DataGridTemplateColumn.CellEditingTemplate>
                     </DataGridTemplateColumn>
@@ -115,11 +132,13 @@
                     <DataGridTemplateColumn Width="48" CanUserSort="False">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate x:DataType="pages:ControlPointRowViewModel">
+                                <!-- Click confirms before deleting; Ctrl+Click deletes immediately.
+                                     Handled in code-behind so we can read the Ctrl modifier. -->
                                 <Button Classes="danger small" Padding="0"
                                         HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                                         ToolTip.Tip="{Binding Localization[ControlPoints.Delete]}"
-                                        Command="{Binding $parent[DataGrid].((pages:ControlPointsViewModel)DataContext).DeletePointCommand}"
-                                        CommandParameter="{Binding}">
+                                        Click="OnDeleteClick"
+                                        Tag="{Binding}">
                                     <PathIcon Data="M6,7 h12 M9,7 v-2 h6 v2 M8,7 l1,13 h6 l1,-13"
                                               Width="14" Height="14" />
                                 </Button>

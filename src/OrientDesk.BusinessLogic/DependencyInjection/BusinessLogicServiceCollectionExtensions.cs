@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using OrientDesk.BusinessLogic.Disciplines;
 using OrientDesk.BusinessLogic.Interfaces;
 using OrientDesk.BusinessLogic.Services;
 
@@ -15,8 +16,19 @@ public static class BusinessLogicServiceCollectionExtensions
         services.AddSingleton<ISessionService, SessionService>();
         services.AddSingleton<ICompetitionEditorService, CompetitionEditorService>();
 
-        // IOF XML import (shared by control-point and, later, course/group imports)
+        // Competition-type strategies (Open/Closed): one class per discipline, resolved by enum.
+        // Add a new discipline by adding a strategy class + a registration line here — nothing else.
+        services.AddSingleton<IDisciplineStrategy, SetCourseStrategy>();
+        services.AddSingleton<IDisciplineStrategy, ScoreByCountStrategy>();
+        services.AddSingleton<IDisciplineStrategy, ScoreByTimeStrategy>();
+        services.AddSingleton<IDisciplineStrategy, RogaineStrategy>();
+        services.AddSingleton<IDisciplineStrategyProvider, DisciplineStrategyProvider>();
+
+        // IOF XML import (shared by control-point and course/group imports)
         services.AddSingleton<IIofXmlParser, IofXmlParser>();
+
+        // Course-length calculation (shared: group import today, distance display later)
+        services.AddSingleton<ICourseDistanceCalculator, CourseDistanceCalculator>();
 
         // Placeholder competition data service (dashboard)
         services.AddSingleton<ICompetitionService, CompetitionService>();

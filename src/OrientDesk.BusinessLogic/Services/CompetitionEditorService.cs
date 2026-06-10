@@ -13,11 +13,16 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 {
     private readonly ISessionService _session;
     private readonly IEventStore _eventStore;
+    private readonly ICourseDistanceCalculator _distance;
 
-    public CompetitionEditorService(ISessionService session, IEventStore eventStore)
+    public CompetitionEditorService(
+        ISessionService session,
+        IEventStore eventStore,
+        ICourseDistanceCalculator distance)
     {
         _session = session;
         _eventStore = eventStore;
+        _distance = distance;
     }
 
     private string FolderPath =>
@@ -27,6 +32,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     private Guid CurrentDayId =>
         _session.CurrentDay?.Id
         ?? throw new InvalidOperationException("No competition day is currently selected.");
+
+    private DisciplineType CurrentDayDefaultDiscipline =>
+        _session.CurrentDay?.DefaultDiscipline ?? DisciplineType.SetCourse;
 
     public Task<CompetitionInfo?> GetInfoAsync(CancellationToken cancellationToken = default)
     {
@@ -163,4 +171,248 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         Longitude = control.Longitude,
         Type = control.Type
     };
+
+    public async Task<IReadOnlyList<GroupDayRow>> GetGroupDayRowsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+            return [];
+
+        var settings = await _eventStore.GetGroupDaySettingsAsync(FolderPath, CurrentDayId, cancellationToken);
+        var groups = await _eventStore.GetGroupsAsync(FolderPath, cancellationToken);
+        var byId = groups.ToDictionary(g => g.Id);
+
+        var rows = new List<GroupDayRow>(settings.Count);
+        foreach (var s in settings)
+        {
+            // Defensive: skip a settings row whose group was removed out from under it.
+            if (byId.TryGetValue(s.GroupId, out var group))
+                rows.Add(ToRow(s, group.Name));
+        }
+        return rows;
+    }
+
+    public async Task<GroupDayRow> AddGroupToDayAsync(string name, CancellationToken cancellationToken = default)
+    {
+        var dayId = CurrentDayId;
+        var trimmed = (name ?? string.Empty).Trim();
+
+        // Reuse an existing group with the same name (case-insensitive), or create a new one.
+        var groups = await _eventStore.GetGroupsAsync(FolderPath, cancellationToken);
+        var group = groups.FirstOrDefault(g => string.Equals(g.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+        if (group is null)
+        {
+            group = new Group { Name = trimmed };
+            await _eventStore.AddGroupAsync(FolderPath, group, cancellationToken);
+        }
+
+        // If the group is already on this day, return its existing row instead of duplicating.
+        var settings = await _eventStore.GetGroupDaySettingsAsync(FolderPath, dayId, cancellationToken);
+        var existing = settings.FirstOrDefault(s => s.GroupId == group.Id);
+        if (existing is not null)
+            return ToRow(existing, group.Name);
+
+        var nextOrder = settings.Count == 0 ? 1 : settings.Max(s => s.Order) + 1;
+        var row = new GroupDaySettings
+        {
+            EventDayId = dayId,
+            GroupId = group.Id,
+            Order = nextOrder
+        };
+        await _eventStore.AddGroupDaySettingsAsync(FolderPath, row, cancellationToken);
+        return ToRow(row, group.Name);
+    }
+
+    public async Task<IReadOnlyList<GroupDayRow>> PullAllGroupsIntoDayAsync(CancellationToken cancellationToken = default)
+    {
+        var dayId = CurrentDayId;
+
+        var groups = await _eventStore.GetGroupsAsync(FolderPath, cancellationToken);
+        var settings = await _eventStore.GetGroupDaySettingsAsync(FolderPath, dayId, cancellationToken);
+        var present = settings.Select(s => s.GroupId).ToHashSet();
+        var nextOrder = settings.Count == 0 ? 1 : settings.Max(s => s.Order) + 1;
+
+        var toAdd = new List<GroupDaySettings>();
+        foreach (var group in groups)
+        {
+            if (present.Contains(group.Id))
+                continue;
+            toAdd.Add(new GroupDaySettings
+            {
+                EventDayId = dayId,
+                GroupId = group.Id,
+                Order = nextOrder++
+            });
+        }
+
+        await _eventStore.AddGroupDaySettingsRangeAsync(FolderPath, toAdd, cancellationToken);
+        return await GetGroupDayRowsAsync(cancellationToken);
+    }
+
+    public async Task UpdateGroupDayRowAsync(GroupDayRow row, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+
+        // Rename the group (affects every day it runs on). Ignore empty names and collisions with a
+        // different group, keeping the previous name — the row text reverts on the next reload.
+        var target = (row.Name ?? string.Empty).Trim();
+        if (target.Length > 0)
+        {
+            var groups = await _eventStore.GetGroupsAsync(FolderPath, cancellationToken);
+            var collides = groups.Any(g =>
+                g.Id != row.GroupId && string.Equals(g.Name, target, StringComparison.OrdinalIgnoreCase));
+            if (!collides)
+                await _eventStore.UpdateGroupAsync(FolderPath, new Group { Id = row.GroupId, Name = target }, cancellationToken);
+        }
+
+        await _eventStore.UpdateGroupDaySettingsAsync(FolderPath, new GroupDaySettings
+        {
+            Id = row.SettingsId,
+            EventDayId = CurrentDayId,
+            GroupId = row.GroupId,
+            Order = row.Order,
+            CourseOrder = (row.CourseOrder ?? string.Empty).Trim(),
+            DistanceKm = row.DistanceKm,
+            DisciplineOverride = row.DisciplineOverride,
+            TimeLimitSeconds = row.TimeLimitSeconds,
+            RequiredControlCount = row.RequiredControlCount,
+            PenaltyPerMinute = row.PenaltyPerMinute
+        }, cancellationToken);
+    }
+
+    public async Task RemoveGroupFromDayAsync(Guid settingsId, Guid groupId, CancellationToken cancellationToken = default)
+    {
+        await _eventStore.DeleteGroupDaySettingsAsync(FolderPath, settingsId, cancellationToken);
+
+        // A group that no longer runs on any day is removed entirely.
+        var remaining = await _eventStore.CountGroupDaySettingsForGroupAsync(FolderPath, groupId, cancellationToken);
+        if (remaining == 0)
+            await _eventStore.DeleteGroupAsync(FolderPath, groupId, cancellationToken);
+    }
+
+    public async Task<GroupImportResult> ImportGroupsAsync(
+        IofCourseData data,
+        bool updateExisting,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        var dayId = CurrentDayId;
+        var folder = FolderPath;
+
+        // Coordinate lookup for distance, keyed by control code (case-insensitive). The day's saved
+        // control points win (they may be hand-edited); the file's own controls fill any gap so the
+        // import still computes a distance even before КП were imported. A code missing from both, or
+        // with no coordinates, makes its legs count as 0 km.
+        var coordsByCode = new Dictionary<string, GeoPoint>(StringComparer.OrdinalIgnoreCase);
+        foreach (var control in data.Controls)
+        {
+            var code = control.Code.Trim();
+            if (code.Length > 0)
+                coordsByCode[code] = new GeoPoint(control.Latitude, control.Longitude);
+        }
+        var controlPoints = await _eventStore.GetControlPointsAsync(folder, dayId, cancellationToken);
+        foreach (var cp in controlPoints)
+        {
+            // Let a saved point override the file only when it actually carries coordinates, so a
+            // blank КP row doesn't wipe out usable coordinates parsed from the same file.
+            var point = new GeoPoint(cp.Latitude, cp.Longitude);
+            if (point.HasCoordinates || !coordsByCode.ContainsKey(cp.Code.Trim()))
+                coordsByCode[cp.Code.Trim()] = point;
+        }
+
+        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var groupsByName = groups
+            .GroupBy(g => g.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
+        var settingsByGroupId = settings.ToDictionary(s => s.GroupId);
+        var nextOrder = settings.Count == 0 ? 1 : settings.Max(s => s.Order) + 1;
+
+        var added = 0;
+        var updated = 0;
+
+        // Collapse duplicate course names within the file (keep the first), so a repeated course
+        // does not create a second group or fight itself for the same day row.
+        var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var course in data.Courses)
+        {
+            var name = course.Name.Trim();
+            if (name.Length == 0 || !seenNames.Add(name))
+                continue;
+
+            var courseOrder = string.Join(' ', course.ControlCodes.Select(c => c.Trim()).Where(c => c.Length > 0));
+            var distanceKm = ComputeDistance(course.ControlCodes, coordsByCode);
+
+            // Resolve (or create) the competition-level group for this course name.
+            if (!groupsByName.TryGetValue(name, out var group))
+            {
+                group = new Group { Name = name };
+                await _eventStore.AddGroupAsync(folder, group, cancellationToken);
+                groupsByName[name] = group;
+            }
+
+            if (settingsByGroupId.TryGetValue(group.Id, out var existing))
+            {
+                // Already on the day. In add-only mode leave it as-is; otherwise overwrite the course
+                // order/distance and reset the discipline override to the day default (null).
+                if (!updateExisting)
+                    continue;
+
+                existing.CourseOrder = courseOrder;
+                existing.DistanceKm = distanceKm;
+                existing.DisciplineOverride = null;
+                await _eventStore.UpdateGroupDaySettingsAsync(folder, existing, cancellationToken);
+                updated++;
+            }
+            else
+            {
+                var row = new GroupDaySettings
+                {
+                    EventDayId = dayId,
+                    GroupId = group.Id,
+                    Order = nextOrder++,
+                    CourseOrder = courseOrder,
+                    DistanceKm = distanceKm
+                };
+                await _eventStore.AddGroupDaySettingsAsync(folder, row, cancellationToken);
+                settingsByGroupId[group.Id] = row;
+                added++;
+            }
+        }
+
+        return new GroupImportResult(Added: added, Updated: updated);
+    }
+
+    // Maps a course's running control codes to their day coordinates and sums the straight-line
+    // distance. Unknown codes resolve to a coordinate-less point, so their legs count as 0 km.
+    private decimal? ComputeDistance(
+        IReadOnlyList<string> controlCodes,
+        IReadOnlyDictionary<string, GeoPoint> coordsByCode)
+    {
+        if (controlCodes.Count < 2)
+            return null;
+
+        var points = new List<GeoPoint>(controlCodes.Count);
+        foreach (var code in controlCodes)
+        {
+            var key = code.Trim();
+            points.Add(coordsByCode.TryGetValue(key, out var p) ? p : new GeoPoint(null, null));
+        }
+
+        return _distance.TotalKilometres(points);
+    }
+
+    private GroupDayRow ToRow(GroupDaySettings s, string name) => new(
+        SettingsId: s.Id,
+        GroupId: s.GroupId,
+        Order: s.Order,
+        Name: name,
+        CourseOrder: s.CourseOrder,
+        DistanceKm: s.DistanceKm,
+        DisciplineOverride: s.DisciplineOverride,
+        DayDefaultDiscipline: CurrentDayDefaultDiscipline,
+        TimeLimitSeconds: s.TimeLimitSeconds,
+        RequiredControlCount: s.RequiredControlCount,
+        PenaltyPerMinute: s.PenaltyPerMinute);
 }

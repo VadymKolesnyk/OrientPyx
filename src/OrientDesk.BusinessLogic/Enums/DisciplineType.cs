@@ -10,5 +10,17 @@ public enum DisciplineType
     SetCourse,
 
     /// <summary>Score: competitor picks any control points; ranked by count (then time).</summary>
-    ScoreByCount
+    ScoreByCount,
+
+    /// <summary>
+    /// Score by time: competitor picks control points within a time limit; ranked by points
+    /// collected, with a penalty deducted per minute of finishing late.
+    /// </summary>
+    ScoreByTime,
+
+    /// <summary>
+    /// Rogaine: long score format; competitor picks control points within a (usually long) time
+    /// limit and is ranked by the points collected.
+    /// </summary>
+    Rogaine
 }

@@ -31,6 +31,8 @@
         <Border Classes="card" ClipToBounds="True">
             <controls:SheetDataGrid Name="Sheet"
                                     ItemsSource="{Binding Days}"
+                                    SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
+                                    KeyDown="OnSheetKeyDown"
                                     AutoGenerateColumns="False">
                 <controls:SheetDataGrid.Columns>
 
@@ -100,10 +102,12 @@
                                             Command="{Binding $parent[DataGrid].((pages:CompetitionDaysViewModel)DataContext).SaveDayCommand}"
                                             CommandParameter="{Binding}"
                                             IsEnabled="{Binding IsDirty}" />
+                                    <!-- Click confirms before deleting; Ctrl+Click deletes immediately.
+                                         Handled in code-behind so we can read the Ctrl modifier. -->
                                     <Button Classes="danger small"
                                             ToolTip.Tip="{Binding Localization[CompetitionDays.Delete]}"
-                                            Command="{Binding $parent[DataGrid].((pages:CompetitionDaysViewModel)DataContext).DeleteDayCommand}"
-                                            CommandParameter="{Binding}"
+                                            Click="OnDeleteClick"
+                                            Tag="{Binding}"
                                             IsEnabled="{Binding !IsActive}">
                                         <PathIcon Data="M6,7 h12 M9,7 v-2 h6 v2 M8,7 l1,13 h6 l1,-13"
                                                   Width="15" Height="15" />

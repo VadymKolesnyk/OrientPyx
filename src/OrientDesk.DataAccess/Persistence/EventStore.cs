@@ -143,6 +143,7 @@ public sealed class EventStore : IEventStore
         existing.Latitude = point.Latitude;
         existing.Longitude = point.Longitude;
         existing.Type = point.Type;
+        existing.Points = point.Points;
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -155,6 +156,110 @@ public sealed class EventStore : IEventStore
             return;
 
         db.ControlPoints.Remove(existing);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Group>> GetGroupsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.Groups
+            .AsNoTracking()
+            .OrderBy(g => g.Name)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task AddGroupAsync(string eventFolderPath, Group group, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        db.Groups.Add(group);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateGroupAsync(string eventFolderPath, Group group, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.Groups.FirstOrDefaultAsync(g => g.Id == group.Id, cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.Name = group.Name;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteGroupAsync(string eventFolderPath, Guid groupId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.Groups.FirstOrDefaultAsync(g => g.Id == groupId, cancellationToken);
+        if (existing is null)
+            return;
+
+        db.Groups.Remove(existing);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<GroupDaySettings>> GetGroupDaySettingsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        // Order alone is a stable, unique-per-day sort key (each add is max+1). We avoid a
+        // CreatedAt tie-break because SQLite can't ORDER BY a DateTimeOffset column.
+        return await db.GroupDaySettings
+            .AsNoTracking()
+            .Where(s => s.EventDayId == dayId)
+            .OrderBy(s => s.Order)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<int> CountGroupDaySettingsForGroupAsync(string eventFolderPath, Guid groupId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.GroupDaySettings.CountAsync(s => s.GroupId == groupId, cancellationToken);
+    }
+
+    public async Task AddGroupDaySettingsAsync(string eventFolderPath, GroupDaySettings settings, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        db.GroupDaySettings.Add(settings);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task AddGroupDaySettingsRangeAsync(string eventFolderPath, IReadOnlyList<GroupDaySettings> settings, CancellationToken cancellationToken = default)
+    {
+        if (settings.Count == 0)
+            return;
+
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        db.GroupDaySettings.AddRange(settings);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateGroupDaySettingsAsync(string eventFolderPath, GroupDaySettings settings, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.GroupDaySettings.FirstOrDefaultAsync(s => s.Id == settings.Id, cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.CourseOrder = settings.CourseOrder;
+        existing.DistanceKm = settings.DistanceKm;
+        existing.DisciplineOverride = settings.DisciplineOverride;
+        existing.TimeLimitSeconds = settings.TimeLimitSeconds;
+        existing.RequiredControlCount = settings.RequiredControlCount;
+        existing.PenaltyPerMinute = settings.PenaltyPerMinute;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteGroupDaySettingsAsync(string eventFolderPath, Guid settingsId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.GroupDaySettings.FirstOrDefaultAsync(s => s.Id == settingsId, cancellationToken);
+        if (existing is null)
+            return;
+
+        db.GroupDaySettings.Remove(existing);
         await db.SaveChangesAsync(cancellationToken);
     }
 }

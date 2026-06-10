@@ -22,6 +22,9 @@
         <DataTemplate DataType="pages:ControlPointsViewModel">
             <views:ControlPointsView />
         </DataTemplate>
+        <DataTemplate DataType="pages:GroupsViewModel">
+            <views:GroupsView />
+        </DataTemplate>
         <DataTemplate DataType="pages:PageViewModelBase">
             <views:PageView />
         </DataTemplate>

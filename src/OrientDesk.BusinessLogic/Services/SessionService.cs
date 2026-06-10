@@ -32,6 +32,11 @@ public sealed class SessionService : ISessionService
         ArgumentNullException.ThrowIfNull(competition);
         ArgumentNullException.ThrowIfNull(day);
 
+        // Bring the event database up to the current schema before it is used. Migrations are only
+        // applied on create otherwise, so a competition made before a new migration would be missing
+        // the new tables until opened here.
+        await _eventStore.EnsureCreatedAsync(competition.FolderPath, cancellationToken);
+
         CurrentEvent = competition;
         CurrentDay = day;
 
@@ -76,6 +81,9 @@ public sealed class SessionService : ISessionService
         var summary = await _catalog.FindByIdentifierAsync(identifier, cancellationToken);
         if (summary is null)
             return false;
+
+        // Apply any pending migrations to the restored event database before reading from it.
+        await _eventStore.EnsureCreatedAsync(summary.FolderPath, cancellationToken);
 
         var days = await _eventStore.GetDaysAsync(summary.FolderPath, cancellationToken);
         if (days.Count == 0)

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using OrientDesk.Presentation.ViewModels.Pages;
@@ -17,6 +18,47 @@ public partial class ControlPointsView : UserControl
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += (_, _) => Unsubscribe();
+
+        // Capture the Ctrl modifier before the delete button consumes the press (it marks
+        // PointerPressed handled), so Ctrl+Click on Delete can skip the confirmation prompt.
+        AddHandler(PointerPressedEvent, OnTunnelPointerPressed, RoutingStrategies.Tunnel);
+    }
+
+    // Delete on the table deletes the selected control point. Ctrl+Delete skips the confirmation.
+    // Ignored while a cell editor (TextBox) has focus, so Delete still edits text inside a cell.
+    private void OnSheetKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (_vm is null || e.Key != Key.Delete)
+            return;
+
+        if (TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is TextBox)
+            return;
+
+        var skipConfirm = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+        e.Handled = true;
+        _ = _vm.DeleteSelectedPointAsync(skipConfirm);
+    }
+
+    // The per-row delete button. Button.Click doesn't carry key modifiers, and the button marks its
+    // own PointerPressed handled — so we capture the Ctrl state in the tunnel phase. A plain click
+    // confirms first; Ctrl+Click deletes immediately.
+    private bool _deleteCtrlDown;
+
+    private void OnTunnelPointerPressed(object? sender, PointerPressedEventArgs e)
+        => _deleteCtrlDown = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+
+    private void OnDeleteClick(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null || sender is not Control { Tag: ControlPointRowViewModel row })
+            return;
+
+        var skipConfirm = _deleteCtrlDown;
+        _deleteCtrlDown = false;
+
+        if (skipConfirm)
+            _ = _vm.DeletePointNoConfirmAsync(row);
+        else
+            _ = _vm.DeletePointCommand.ExecuteAsync(row);
     }
 
     // DataGrid column headers live outside the visual tree, so they can't bind to
@@ -29,10 +71,23 @@ public partial class ControlPointsView : UserControl
             return;
 
         _vm.Localization.PropertyChanged += OnLocalizationChanged;
+        _vm.ColumnsChanged += OnColumnsChanged;
         ApplyHeaders();
+        ApplyColumnVisibility();
     }
 
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => ApplyHeaders();
+
+    private void OnColumnsChanged(object? sender, System.EventArgs e) => ApplyColumnVisibility();
+
+    // The points column appears only when the day's discipline (or a group on the day) scores points.
+    private void ApplyColumnVisibility()
+    {
+        if (_vm is null)
+            return;
+
+        Sheet.Columns[4].IsVisible = _vm.ShowPointsColumn;
+    }
 
     // File picking is a view concern (it needs the window's StorageProvider), so it lives here
     // rather than in the view model. We read the chosen file's text and hand it to the VM, which
@@ -48,7 +103,7 @@ public partial class ControlPointsView : UserControl
 
         var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = _vm.Localization.Get("ControlPoints.Import.PickerTitle"),
+            Title = _vm.Localization.Get("Import.PickerTitle"),
             AllowMultiple = false,
             FileTypeFilter =
             [
@@ -90,13 +145,17 @@ public partial class ControlPointsView : UserControl
         columns[1].Header = loc.Get("ControlPoints.Col.Type");
         columns[2].Header = loc.Get("ControlPoints.Col.Lat");
         columns[3].Header = loc.Get("ControlPoints.Col.Lon");
-        columns[4].Header = loc.Get("ControlPoints.Col.Actions");
+        columns[4].Header = loc.Get("ControlPoints.Col.Points");
+        columns[5].Header = loc.Get("ControlPoints.Col.Actions");
     }
 
     private void Unsubscribe()
     {
         if (_vm is not null)
+        {
             _vm.Localization.PropertyChanged -= OnLocalizationChanged;
+            _vm.ColumnsChanged -= OnColumnsChanged;
+        }
         _vm = null;
     }
 }

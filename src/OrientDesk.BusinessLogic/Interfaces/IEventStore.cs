@@ -46,4 +46,34 @@ public interface IEventStore
 
     /// <summary>Removes a control point by id. Does nothing if it is missing.</summary>
     Task DeleteControlPointAsync(string eventFolderPath, Guid pointId, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the competition's groups, ordered by name.</summary>
+    Task<IReadOnlyList<Group>> GetGroupsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds a competition-level group.</summary>
+    Task AddGroupAsync(string eventFolderPath, Group group, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates an existing group's editable fields (name). Does nothing if it is missing.</summary>
+    Task UpdateGroupAsync(string eventFolderPath, Group group, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a group by id. Does nothing if it is missing.</summary>
+    Task DeleteGroupAsync(string eventFolderPath, Guid groupId, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns a day's group settings rows, ordered by their sort order.</summary>
+    Task<IReadOnlyList<GroupDaySettings>> GetGroupDaySettingsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>Counts a group's settings rows across all days (used to decide cascade deletion).</summary>
+    Task<int> CountGroupDaySettingsForGroupAsync(string eventFolderPath, Guid groupId, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds a group-day settings row (attaches a group to a day).</summary>
+    Task AddGroupDaySettingsAsync(string eventFolderPath, GroupDaySettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds several group-day settings rows in one transaction (e.g. "pull all groups").</summary>
+    Task AddGroupDaySettingsRangeAsync(string eventFolderPath, IReadOnlyList<GroupDaySettings> settings, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates a group-day settings row (course order, distance, override). Does nothing if it is missing.</summary>
+    Task UpdateGroupDaySettingsAsync(string eventFolderPath, GroupDaySettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a group-day settings row by id (detaches a group from a day). Does nothing if it is missing.</summary>
+    Task DeleteGroupDaySettingsAsync(string eventFolderPath, Guid settingsId, CancellationToken cancellationToken = default);
 }

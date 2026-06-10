@@ -28,5 +28,11 @@ public class ControlPoint
     /// <summary>Kind of point. Persisted as a string in the database.</summary>
     public ControlPointType Type { get; set; } = ControlPointType.Regular;
 
+    /// <summary>
+    /// Score value awarded when this control point is taken on a score/rogaine day; optional
+    /// (null = not scored).
+    /// </summary>
+    public int? Points { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

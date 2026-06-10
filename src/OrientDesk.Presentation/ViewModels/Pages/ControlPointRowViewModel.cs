@@ -34,6 +34,9 @@ public sealed partial class ControlPointRowViewModel : ObservableObject
     [ObservableProperty]
     private ControlPointTypeOption _selectedType;
 
+    [ObservableProperty]
+    private string _pointsText;
+
     public ControlPointRowViewModel(
         ControlPoint point,
         ILocalizationService localization,
@@ -53,6 +56,7 @@ public sealed partial class ControlPointRowViewModel : ObservableObject
         _code = point.Code;
         _latitudeText = FormatCoord(point.Latitude);
         _longitudeText = FormatCoord(point.Longitude);
+        _pointsText = FormatPoints(point.Points);
         _selectedType = TypeOptions.First(o => o.Value == point.Type);
 
         _initialized = true;
@@ -74,12 +78,14 @@ public sealed partial class ControlPointRowViewModel : ObservableObject
         Latitude = ParseCoord(LatitudeText),
         Longitude = ParseCoord(LongitudeText),
         Type = SelectedType.Value,
+        Points = ParsePoints(PointsText),
         CreatedAt = _createdAt
     };
 
     partial void OnCodeChanged(string value) => QueueSave();
     partial void OnLatitudeTextChanged(string value) => QueueSave();
     partial void OnLongitudeTextChanged(string value) => QueueSave();
+    partial void OnPointsTextChanged(string value) => QueueSave();
     partial void OnSelectedTypeChanged(ControlPointTypeOption value) => QueueSave();
 
     private void QueueSave()
@@ -99,6 +105,19 @@ public sealed partial class ControlPointRowViewModel : ObservableObject
         // Accept both comma and dot as the decimal separator; store canonically.
         var normalized = text.Trim().Replace(',', '.');
         return double.TryParse(normalized, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : null;
+    }
+
+    private static string FormatPoints(int? value)
+        => value?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+
+    private static int? ParsePoints(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return null;
+
+        return int.TryParse(text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
             ? value
             : null;
     }

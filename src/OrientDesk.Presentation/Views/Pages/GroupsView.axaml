@@ -1,0 +1,245 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientDesk.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientDesk.Presentation.Controls"
+             xmlns:behaviors="using:OrientDesk.Presentation.Behaviors"
+             mc:Ignorable="d" d:DesignWidth="940" d:DesignHeight="560"
+             x:Class="OrientDesk.Presentation.Views.Pages.GroupsView"
+             x:DataType="pages:GroupsViewModel">
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Heading + actions on one line -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="{Binding Title}" Classes="h1"
+                           FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+                <TextBlock Text="{Binding Text}" Classes="subtitle" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
+                        VerticalAlignment="Center">
+                <ComboBox IsVisible="{Binding ShowDaySelector}"
+                          MinWidth="120" VerticalAlignment="Center"
+                          ItemsSource="{Binding DayOptions}"
+                          SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="pages:DayOption">
+                            <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Name="ImportButton" Classes="ghost" Click="OnImportClick"
+                        ToolTip.Tip="{Binding Localization[Import.Hint]}">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <PathIcon Data="M12,3 v10 M8,9 l4,4 l4,-4 M5,15 v3 a1,1 0 0 0 1,1 h12 a1,1 0 0 0 1,-1 v-3"
+                                  Width="14" Height="14" />
+                        <TextBlock Text="{Binding Localization[Import]}" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding PullAllGroupsCommand}" Classes="ghost"
+                        ToolTip.Tip="{Binding Localization[Groups.PullAll.Hint]}">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <PathIcon Data="M12,3 v10 M8,9 l4,4 l4,-4 M5,15 v3 a1,1 0 0 0 1,1 h12 a1,1 0 0 0 1,-1 v-3"
+                                  Width="14" Height="14" />
+                        <TextBlock Text="{Binding Localization[Groups.PullAll]}" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding AddGroupCommand}" Classes="accent">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <PathIcon Data="M11,5 h2 v6 h6 v2 h-6 v6 h-2 v-6 h-6 v-2 h6 z" Width="14" Height="14" Foreground="White" />
+                        <TextBlock Text="{Binding Localization[Groups.Add]}" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- Grid + a resizable bottom editor for the selected group's course / control list.
+             Row 0 (the table) takes the remaining space; the GridSplitter on row 1 drags the
+             editor (row 2) taller/shorter. The editor's starting height is fixed but user-resizable. -->
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" MinHeight="80" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="160" MinHeight="64" />
+            </Grid.RowDefinitions>
+
+        <!-- Spreadsheet-style grid; the card border supplies the rounded frame.
+             SheetDataGrid adds column sort, column reorder (drag) and focus-to-edit. -->
+        <Border Grid.Row="0" Classes="card" ClipToBounds="True">
+            <controls:SheetDataGrid Name="Sheet"
+                                    ItemsSource="{Binding Groups}"
+                                    SelectedItem="{Binding SelectedGroup, Mode=TwoWay}"
+                                    KeyDown="OnSheetKeyDown"
+                                    AutoGenerateColumns="False">
+                <controls:SheetDataGrid.Columns>
+
+                    <DataGridTemplateColumn Width="Auto" MinWidth="140" SortMemberPath="Name">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:GroupDayRowViewModel">
+                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" Padding="10,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                        <DataGridTemplateColumn.CellEditingTemplate>
+                            <DataTemplate x:DataType="pages:GroupDayRowViewModel">
+                                <TextBox PlaceholderText="—"
+                                         Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellEditingTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Course order (set course) / list of allowed control points (score formats) -->
+                    <DataGridTemplateColumn Width="Auto" MinWidth="160" SortMemberPath="CourseOrder">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:GroupDayRowViewModel">
+                                <TextBlock Text="{Binding CourseOrder}" VerticalAlignment="Center" Padding="10,0"
+                                           Opacity="{Binding UsesCourseOrder, Converter={StaticResource BoolToOpacity}}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                        <DataGridTemplateColumn.CellEditingTemplate>
+                            <DataTemplate x:DataType="pages:GroupDayRowViewModel">
+                                <TextBox PlaceholderText="S1 31 32 33 F" IsEnabled="{Binding UsesCourseOrder}"
+                                         Text="{Binding CourseOrder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellEditingTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Control count: auto-computed from the course/control list, read-only -->
+                    <DataGridTemplateColumn Width="Auto" MinWidth="90" SortMemberPath="ControlCountText">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:GroupDayRowViewModel">
+                                <TextBlock Text="{Binding ControlCountText}" VerticalAlignment="Center" Padding="10,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Required minimum control count (score by count) -->
+                    <DataGridTemplateColumn Width="Auto" MinWidth="90" SortMemberPath="RequiredCountText">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:GroupDayRowViewModel">
+                                <TextBlock Text="{Binding RequiredCountText}" VerticalAlignment="Center" Padding="10,0"
+                                           Opacity="{Binding UsesRequiredCount, Converter={StaticResource BoolToOpacity}}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                        <DataGridTemplateColumn.CellEditingTemplate>
+                            <DataTemplate x:DataType="pages:GroupDayRowViewModel">
+                                <TextBox PlaceholderText="—" IsEnabled="{Binding UsesRequiredCount}"
+                                         Text="{Binding RequiredCountText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellEditingTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Penalty per minute late (score by time) -->
+                    <DataGridTemplateColumn Width="Auto" MinWidth="100" SortMemberPath="PenaltyText">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:GroupDayRowViewModel">
+                                <TextBlock Text="{Binding PenaltyText}" VerticalAlignment="Center" Padding="10,0"
+                                           Opacity="{Binding UsesPenalty, Converter={StaticResource BoolToOpacity}}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                        <DataGridTemplateColumn.CellEditingTemplate>
+                            <DataTemplate x:DataType="pages:GroupDayRowViewModel">
+                                <TextBox PlaceholderText="—" IsEnabled="{Binding UsesPenalty}"
+                                         Text="{Binding PenaltyText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellEditingTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Time limit (контрольний час) — applies to every discipline -->
+                    <DataGridTemplateColumn Width="Auto" MinWidth="100" SortMemberPath="TimeLimitText">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:GroupDayRowViewModel">
+                                <TextBlock Text="{Binding TimeLimitText}" VerticalAlignment="Center" Padding="10,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                        <DataGridTemplateColumn.CellEditingTemplate>
+                            <DataTemplate x:DataType="pages:GroupDayRowViewModel">
+                                <TextBox PlaceholderText="гг:хх:сс" behaviors:NumericInput.Time="True"
+                                         Text="{Binding TimeLimitText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellEditingTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Width="Auto" MinWidth="110" SortMemberPath="DistanceText">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:GroupDayRowViewModel">
+                                <TextBlock Text="{Binding DistanceText}" VerticalAlignment="Center" Padding="10,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                        <DataGridTemplateColumn.CellEditingTemplate>
+                            <DataTemplate x:DataType="pages:GroupDayRowViewModel">
+                                <TextBox PlaceholderText="—" behaviors:NumericInput.Decimal="True"
+                                         Text="{Binding DistanceText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellEditingTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Width="Auto" MinWidth="170" SortMemberPath="SelectedDiscipline.Value">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:GroupDayRowViewModel">
+                                <ComboBox HorizontalAlignment="Stretch"
+                                          ItemsSource="{Binding DisciplineOptions}"
+                                          SelectedItem="{Binding SelectedDiscipline, Mode=TwoWay}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="pages:DisciplineOverrideOption">
+                                            <TextBlock Text="{Binding Label}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Width="48" CanUserSort="False">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="pages:GroupDayRowViewModel">
+                                <!-- Click confirms before deleting; Ctrl+Click deletes immediately.
+                                     Handled in code-behind so we can read the Ctrl modifier. -->
+                                <Button Classes="danger small" Padding="0"
+                                        HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                        ToolTip.Tip="{Binding Localization[Groups.Delete]}"
+                                        Click="OnDeleteClick"
+                                        Tag="{Binding}">
+                                    <PathIcon Data="M6,7 h12 M9,7 v-2 h6 v2 M8,7 l1,13 h6 l1,-13"
+                                              Width="14" Height="14" />
+                                </Button>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                </controls:SheetDataGrid.Columns>
+            </controls:SheetDataGrid>
+        </Border>
+
+        <!-- Vertical resizer between the table and the course editor. -->
+        <GridSplitter Grid.Row="1"
+                      Height="6"
+                      Margin="0,6"
+                      HorizontalAlignment="Stretch"
+                      ResizeDirection="Rows"
+                      Background="Transparent" />
+
+        <!-- Large editor for the selected group's course / control list. Disabled (and showing a
+             hint caption) until a group is selected. Row 2 carries the height; the GridSplitter
+             above adjusts that row, and the Border stretches to fill it. -->
+        <Border Grid.Row="2" Classes="card" Padding="12">
+            <DockPanel LastChildFill="True">
+                <TextBlock DockPanel.Dock="Top"
+                           Text="{Binding SelectedCourseHeader}"
+                           Classes="subtitle"
+                           Margin="2,0,0,8" />
+                <TextBox AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         VerticalContentAlignment="Top"
+                         IsEnabled="{Binding HasSelectedGroup}"
+                         PlaceholderText="{Binding Localization[Groups.SelectedCourse.Placeholder]}"
+                         Text="{Binding SelectedGroup.CourseOrder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}" />
+            </DockPanel>
+        </Border>
+
+        </Grid>
+
+    </DockPanel>
+
+</UserControl>

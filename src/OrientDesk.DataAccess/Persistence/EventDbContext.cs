@@ -17,6 +17,8 @@ public class EventDbContext : DbContext
     public DbSet<CompetitionInfo> Competition => Set<CompetitionInfo>();
     public DbSet<EventDay> Days => Set<EventDay>();
     public DbSet<ControlPoint> ControlPoints => Set<ControlPoint>();
+    public DbSet<Group> Groups => Set<Group>();
+    public DbSet<GroupDaySettings> GroupDaySettings => Set<GroupDaySettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -29,6 +31,11 @@ public class EventDbContext : DbContext
 
         modelBuilder.Entity<EventDay>()
             .Property(d => d.DefaultDiscipline)
+            .HasConversion<string>();
+
+        // Nullable enum: null persists as NULL (= inherit the day's default discipline).
+        modelBuilder.Entity<GroupDaySettings>()
+            .Property(g => g.DisciplineOverride)
             .HasConversion<string>();
     }
 }

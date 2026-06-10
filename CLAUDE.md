@@ -83,6 +83,20 @@ instances over the same `./data`, and runtime state must not be shared through i
   `[ObservableProperty]`, `[RelayCommand]`.
 - DI via plain `Microsoft.Extensions.DependencyInjection` (no Generic Host).
 
+## Editable tables (SheetDataGrid)
+
+Spreadsheet-style screens (control points, groups, days) use the reusable
+`controls:SheetDataGrid` wrapped in a `Border Classes="card" ClipToBounds="True"`. The shell
+hosts pages **without an outer ScrollViewer** (see `ShellView.axaml`) so the grid keeps a
+bounded height and scrolls its own rows/columns internally — an outer ScrollViewer would hand
+the grid infinite height, making it render every row and lose both scrollbars.
+
+For this to work, **size every column `Width="Auto"` (or a fixed/px width), never `Width="*"`.**
+A star column stretches the grid to exactly fill the viewport, which suppresses the horizontal
+scrollbar and breaks the auto-width cap; the result is the "stuck scroll" bug. `Auto` columns
+are content-sized and capped at 200px on first layout by `SheetDataGrid`, then freely resizable.
+Match the column setup in `ControlPointsView.axaml` for any new grid page.
+
 ## How to build
 
 ```bash

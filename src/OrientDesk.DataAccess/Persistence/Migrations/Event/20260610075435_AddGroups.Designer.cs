@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using OrientDesk.DataAccess.Persistence;
 
@@ -10,9 +11,11 @@ using OrientDesk.DataAccess.Persistence;
 namespace OrientDesk.DataAccess.Persistence.Migrations.Event
 {
     [DbContext(typeof(EventDbContext))]
-    partial class EventDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260610075435_AddGroups")]
+    partial class AddGroups
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.8");
@@ -76,9 +79,6 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                         .HasColumnType("REAL");
 
                     b.Property<int>("Order")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int?>("Points")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("Type")
@@ -152,8 +152,8 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                     b.Property<string>("DisciplineOverride")
                         .HasColumnType("TEXT");
 
-                    b.Property<decimal?>("DistanceKm")
-                        .HasColumnType("TEXT");
+                    b.Property<int?>("DistanceMeters")
+                        .HasColumnType("INTEGER");
 
                     b.Property<Guid>("EventDayId")
                         .HasColumnType("TEXT");
@@ -162,15 +162,6 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Order")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<decimal?>("PenaltyPerMinute")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("RequiredControlCount")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int?>("TimeLimitSeconds")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");

@@ -29,6 +29,9 @@
         <DataTemplate DataType="dialogs:ImportOptionsViewModel">
             <dialogViews:ImportOptionsView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:ConfirmDialogViewModel">
+            <dialogViews:ConfirmDialogView />
+        </DataTemplate>
     </Window.DataTemplates>
 
     <!-- One transform scales the WHOLE interface — fonts, inputs, paddings, spacing,
@@ -64,6 +67,8 @@
                           Command="{Binding OpenCompetitionDaysCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Competition.ControlPoints]}"
                           Command="{Binding OpenControlPointsCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Competition.Groups]}"
+                          Command="{Binding OpenGroupsCommand}" />
             </MenuItem>
 
             <!-- Navigation tabs, shown only while a competition is open -->

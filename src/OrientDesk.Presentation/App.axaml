@@ -129,6 +129,9 @@
         <!-- Bridges VM DateTimeOffset? to CalendarDatePicker's DateTime? SelectedDate -->
         <conv:DateTimeOffsetToDateTimeConverter x:Key="DateTimeOffsetToDateTime" />
 
+        <!-- Dims grid cells that aren't relevant for a row's discipline -->
+        <conv:BoolToOpacityConverter x:Key="BoolToOpacity" />
+
         <!-- Palette -->
         <Color x:Key="AccentColor">#7C3AED</Color>
         <Color x:Key="AccentColorHover">#6D28D9</Color>

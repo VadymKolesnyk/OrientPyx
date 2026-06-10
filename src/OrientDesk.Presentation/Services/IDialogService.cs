@@ -21,4 +21,10 @@ public interface IDialogService : INotifyPropertyChanged
     /// OK, or null when cancelled/closed. Only one dialog is shown at a time.
     /// </summary>
     Task<ImportOptionsResult?> ShowImportOptionsAsync(ImportOptionsViewModel dialog);
+
+    /// <summary>
+    /// Shows a yes/no confirmation modal and awaits the user's choice. Returns true when confirmed,
+    /// false when cancelled/closed. Only one dialog is shown at a time.
+    /// </summary>
+    Task<bool> ConfirmAsync(ConfirmDialogViewModel dialog);
 }
