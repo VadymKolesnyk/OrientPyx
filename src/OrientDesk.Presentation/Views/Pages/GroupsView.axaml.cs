@@ -35,11 +35,18 @@ public partial class GroupsView : UserControl
 
         _vm.Localization.PropertyChanged += OnLocalizationChanged;
         _vm.ColumnsChanged += OnColumnsChanged;
+        _vm.FocusGridRequested += OnFocusGridRequested;
         ApplyHeaders();
         ApplyColumnVisibility();
     }
 
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => ApplyHeaders();
+
+    // After the delete-confirmation modal closes, keyboard focus is on the overlay and would
+    // otherwise land on the top menu. Return it to the grid (on its new selected row). Posted so it
+    // runs once the overlay has been torn down and the grid is interactive again.
+    private void OnFocusGridRequested(object? sender, System.EventArgs e)
+        => Avalonia.Threading.Dispatcher.UIThread.Post(() => Sheet.Focus());
 
     // File picking is a view concern (it needs the window's StorageProvider), so it lives here rather
     // than in the view model. We read the chosen file's text and hand it to the VM, which owns
@@ -70,11 +77,20 @@ public partial class GroupsView : UserControl
         if (files.Count == 0)
             return;
 
+        // Read the raw bytes once so we can both parse the text and archive the exact original file
+        // into the day's folder. Decode through a StreamReader so any byte-order mark is detected and
+        // stripped (matching the previous behaviour); the kept bytes stay the untouched original.
         string xml;
+        byte[]? content = null;
+        var fileName = files[0].Name;
         try
         {
             await using var stream = await files[0].OpenReadAsync();
-            using var reader = new StreamReader(stream);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            content = memory.ToArray();
+
+            using var reader = new StreamReader(new MemoryStream(content), detectEncodingFromByteOrderMarks: true);
             xml = await reader.ReadToEndAsync();
         }
         catch
@@ -83,7 +99,7 @@ public partial class GroupsView : UserControl
             xml = string.Empty;
         }
 
-        await _vm.ImportFromXmlAsync(xml);
+        await _vm.ImportFromXmlAsync(xml, fileName, content);
     }
 
     private void OnColumnsChanged(object? sender, System.EventArgs e) => ApplyColumnVisibility();
@@ -164,6 +180,7 @@ public partial class GroupsView : UserControl
         {
             _vm.Localization.PropertyChanged -= OnLocalizationChanged;
             _vm.ColumnsChanged -= OnColumnsChanged;
+            _vm.FocusGridRequested -= OnFocusGridRequested;
         }
         _vm = null;
     }

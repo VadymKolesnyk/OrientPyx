@@ -69,6 +69,37 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         await LoadAsync();
     }
 
+    /// <summary>
+    /// Opens the change-day-number modal for a row and applies the chosen number: the editor updates
+    /// the day's number and renames its files folder. If the renumbered day was the active one, the
+    /// session is pointed at its new number. The grid is reloaded either way.
+    /// </summary>
+    [RelayCommand]
+    private async Task ChangeDayNumberAsync(DayRowViewModel? row)
+    {
+        if (row is null)
+            return;
+
+        var taken = Days.Where(d => d.Id != row.Id).Select(d => d.Number).ToHashSet();
+        var dialog = new ChangeDayNumberViewModel(Localization, row.Number, taken);
+        var newNumber = await _dialogs.ShowChangeDayNumberAsync(dialog);
+        if (newNumber is null)
+            return;
+
+        var wasActive = row.IsActive;
+        var updated = await _busy.RunAsync(() => _editor.ChangeDayNumberAsync(row.Id, newNumber.Value));
+        if (updated is null)
+            return; // rejected (e.g. number taken in a race) — leave the grid as-is
+
+        // The active day's in-memory number is now stale; re-point the session so the day picker and
+        // last-session pointer carry the new number. This re-raises SessionChanged, which already
+        // reloads this page, so we only reload directly when the renumbered day wasn't the active one.
+        if (wasActive)
+            await _busy.RunAsync(() => _session.SetCurrentDayAsync(updated));
+        else
+            await LoadAsync();
+    }
+
     [RelayCommand]
     private async Task SaveDayAsync(DayRowViewModel? row)
     {
@@ -100,9 +131,10 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         if (Days.Count <= 1 || row.IsActive)
             return;
 
+        var confirmed = false;
         if (!skipConfirm)
         {
-            var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+            confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
                 Localization,
                 titleKey: "CompetitionDays.Delete.ConfirmTitle",
                 messageKey: "CompetitionDays.Delete.ConfirmMessage"));
@@ -110,7 +142,20 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
                 return;
         }
 
-        await _busy.RunAsync(() => _editor.DeleteDayAsync(row.Id));
-        await LoadAsync();
+        // Remove from the grid immediately and run the SQLite delete in the background — the user
+        // never waits on the DB for a delete. If the removed row was the focused one, move the
+        // selection onto its neighbour so the grid keeps a sensible focus instead of clearing it.
+        // (Day numbers are stable ids assigned on add, not positions, so nothing renumbers here.)
+        if (ReferenceEquals(SelectedRow, row))
+            SelectedRow = GridSelection.NeighbourAfterRemoval(Days, row);
+        Days.Remove(row);
+
+        var id = row.Id;
+        _ = Task.Run(() => _editor.DeleteDayAsync(id));
+
+        // The confirmation modal stole keyboard focus to the overlay; pull it back to the grid
+        // (now on the new selected row) so focus doesn't end up on the top menu.
+        if (confirmed)
+            RequestGridFocus();
     }
 }

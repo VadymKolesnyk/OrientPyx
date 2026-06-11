@@ -7,6 +7,7 @@
         xmlns:pageViews="using:OrientDesk.Presentation.Views.Pages"
         xmlns:dialogs="using:OrientDesk.Presentation.ViewModels.Dialogs"
         xmlns:dialogViews="using:OrientDesk.Presentation.Views.Dialogs"
+        xmlns:services="using:OrientDesk.Presentation.Services"
         mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="640"
         x:Class="OrientDesk.Presentation.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -35,6 +36,12 @@
         <DataTemplate DataType="dialogs:BulkAddChipsViewModel">
             <dialogViews:BulkAddChipsView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:SplitGroupsViewModel">
+            <dialogViews:SplitGroupsView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:ChangeDayNumberViewModel">
+            <dialogViews:ChangeDayNumberView />
+        </DataTemplate>
     </Window.DataTemplates>
 
     <!-- One transform scales the WHOLE interface — fonts, inputs, paddings, spacing,
@@ -49,8 +56,110 @@
 
         <DockPanel LastChildFill="True">
 
+        <!-- Top bar: the menu fills the row; the background-processes block sits at the right. -->
+        <DockPanel DockPanel.Dock="Top" LastChildFill="True">
+
+        <!-- Running background processes: a clickable icon with a count badge, opening a popup that
+             lists each active process with pause/resume, stop, and "go to its settings page". Hidden
+             when nothing is running. The whole block is generic — it binds to IBackgroundActivityService
+             and never knows which concrete processes exist. -->
+        <Button DockPanel.Dock="Right" Classes="ghost"
+                VerticalAlignment="Center" Margin="0,0,8,0" Padding="8,4"
+                IsVisible="{Binding Activities.IsAnyActive}"
+                ToolTip.Tip="{Binding Localization[Activity.Title]}">
+            <Panel>
+                <!-- Gear-ish activity glyph -->
+                <PathIcon Data="M12,4 a8,8 0 1 1 -8,8 M12,4 v4 M4,12 h4"
+                          Width="18" Height="18"
+                          Foreground="{DynamicResource AccentBrush}" />
+                <!-- Count badge -->
+                <Border Background="{DynamicResource AccentBrush}"
+                        CornerRadius="8" MinWidth="16" Height="16"
+                        Padding="4,0" Margin="0,-8,-10,0"
+                        HorizontalAlignment="Right" VerticalAlignment="Top">
+                    <TextBlock Text="{Binding Activities.ActiveCount}"
+                               Foreground="White" FontSize="10" FontWeight="Bold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+            </Panel>
+            <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedRight">
+                    <!-- The flyout is hosted in its own PopupRoot, outside the window's scale
+                         transform, so wrap its content in a LayoutTransformControl tracking the
+                         same UiScale (same approach as the date-picker / menu popups). -->
+                    <LayoutTransformControl>
+                        <LayoutTransformControl.LayoutTransform>
+                            <ScaleTransform ScaleX="{ReflectionBinding Scale, Source={StaticResource UiScale}}"
+                                            ScaleY="{ReflectionBinding Scale, Source={StaticResource UiScale}}" />
+                        </LayoutTransformControl.LayoutTransform>
+                    <Border Padding="6" MinWidth="320" MaxWidth="420">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[Activity.Title]}"
+                                       Classes="h2" Margin="6,2,6,6" />
+                            <ItemsControl ItemsSource="{Binding Activities.Activities}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="services:IBackgroundActivity">
+                                        <Border Classes="card" Padding="12" Margin="0,0,0,6">
+                                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto"
+                                                  ColumnSpacing="8">
+                                                <!-- Title + live status -->
+                                                <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2">
+                                                    <TextBlock Text="{Binding Title}" FontWeight="Medium" />
+                                                    <TextBlock Text="{Binding StatusText}" Classes="subtitle"
+                                                               TextWrapping="Wrap" />
+                                                </StackPanel>
+
+                                                <!-- State chip (Running / Paused) -->
+                                                <TextBlock Grid.Row="0" Grid.Column="1"
+                                                           VerticalAlignment="Top"
+                                                           FontSize="11" FontWeight="Bold"
+                                                           IsVisible="{Binding !IsPaused}"
+                                                           Foreground="{DynamicResource AccentBrush}"
+                                                           Text="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).Localization[Activity.State.Running]}" />
+                                                <TextBlock Grid.Row="0" Grid.Column="1"
+                                                           VerticalAlignment="Top"
+                                                           FontSize="11" FontWeight="Bold"
+                                                           IsVisible="{Binding IsPaused}"
+                                                           Foreground="{DynamicResource TextSecondary}"
+                                                           Text="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).Localization[Activity.State.Paused]}" />
+
+                                                <!-- Actions -->
+                                                <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                                                            Orientation="Horizontal" Spacing="6" Margin="0,10,0,0">
+                                                    <!-- Pause / Resume (single toggling button) -->
+                                                    <Button Classes="ghost small"
+                                                            Command="{Binding TogglePauseCommand}"
+                                                            IsVisible="{Binding CanPause}">
+                                                        <TextBlock IsVisible="{Binding !IsPaused}"
+                                                                   Text="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).Localization[Activity.Pause]}" />
+                                                    </Button>
+                                                    <Button Classes="accent small"
+                                                            Command="{Binding TogglePauseCommand}"
+                                                            IsVisible="{Binding IsPaused}"
+                                                            Content="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).Localization[Activity.Resume]}" />
+                                                    <Button Classes="ghost danger small"
+                                                            Command="{Binding StopCommand}"
+                                                            IsVisible="{Binding CanStop}"
+                                                            Content="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).Localization[Activity.Stop]}" />
+                                                    <Button Classes="ghost small"
+                                                            Command="{Binding OpenSettingsCommand}"
+                                                            IsVisible="{Binding CanOpenSettings}"
+                                                            Content="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).Localization[Activity.OpenSettings]}" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                    </LayoutTransformControl>
+                </Flyout>
+            </Button.Flyout>
+        </Button>
+
         <!-- Always-visible top menu, with the page navigation as top-level items -->
-        <Menu DockPanel.Dock="Top">
+        <Menu>
             <MenuItem Header="{Binding Localization[Menu.File]}">
                 <MenuItem Header="{Binding Localization[Menu.File.Settings]}"
                           Command="{Binding OpenSettingsCommand}" />
@@ -74,6 +183,8 @@
                           Command="{Binding OpenGroupsCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Competition.Chips]}"
                           Command="{Binding OpenChipsCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Competition.Participants]}"
+                          Command="{Binding OpenParticipantsCommand}" />
             </MenuItem>
 
             <!-- Navigation tabs, shown only while a competition is open -->
@@ -94,6 +205,8 @@
                 <MenuItem Header="{Binding Localization[Menu.Help.About]}" />
             </MenuItem>
         </Menu>
+
+        </DockPanel>
 
         <!-- Main content with the global settings overlay on top -->
         <Panel>

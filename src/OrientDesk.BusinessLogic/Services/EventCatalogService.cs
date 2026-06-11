@@ -73,17 +73,22 @@ public sealed class EventCatalogService : IEventCatalogService
 
         // Create the requested days, numbered from 1, each one calendar day after the previous.
         // Each day defaults to the competition venue (editable per day on the Days page later).
+        // Alongside each day row we create its day{N} folder, where files imported for that day
+        // (e.g. the IOF XML the courses came from) are stored.
         for (var i = 0; i < dayCount; i++)
         {
+            var number = i + 1;
             await _eventStore.AddDayAsync(
                 folderPath,
                 new EventDay
                 {
-                    Number = i + 1,
+                    Number = number,
                     Date = startDate?.AddDays(i),
                     Venue = info.Venue
                 },
                 cancellationToken);
+
+            Directory.CreateDirectory(DayFolders.PathFor(folderPath, number));
         }
 
         return new EventSummary

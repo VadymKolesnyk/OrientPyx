@@ -22,6 +22,9 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
     public virtual bool UsesColumn(GroupColumn column)
         => column is GroupColumn.ControlCount or GroupColumn.TimeLimit;
 
+    /// <summary>By default no participant column is discipline-specific; concrete strategies opt in.</summary>
+    public virtual bool UsesParticipantColumn(ParticipantColumn column) => false;
+
     /// <summary>
     /// Counts control points in a free-text course order, skipping start/finish markers. A token is
     /// treated as a start/finish marker when it begins with 'S' or 'F' (case-insensitive) and is not

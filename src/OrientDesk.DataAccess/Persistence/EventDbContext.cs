@@ -20,6 +20,8 @@ public class EventDbContext : DbContext
     public DbSet<Group> Groups => Set<Group>();
     public DbSet<GroupDaySettings> GroupDaySettings => Set<GroupDaySettings>();
     public DbSet<RentalChip> RentalChips => Set<RentalChip>();
+    public DbSet<Participant> Participants => Set<Participant>();
+    public DbSet<ParticipantDay> ParticipantDays => Set<ParticipantDay>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -44,5 +46,14 @@ public class EventDbContext : DbContext
         modelBuilder.Entity<RentalChip>()
             .HasIndex(c => c.Number)
             .IsUnique();
+
+        // Per-day links are queried by day (the day's grid) and by participant (the cascade-delete
+        // and roster aggregation). Number/chip uniqueness is enforced in the service layer rather
+        // than by a DB index, because blank values are allowed and must not collide with each other.
+        modelBuilder.Entity<ParticipantDay>()
+            .HasIndex(p => p.EventDayId);
+
+        modelBuilder.Entity<ParticipantDay>()
+            .HasIndex(p => p.ParticipantId);
     }
 }

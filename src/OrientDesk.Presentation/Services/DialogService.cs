@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using OrientDesk.BusinessLogic.Models;
 using OrientDesk.Presentation.ViewModels.Dialogs;
 
 namespace OrientDesk.Presentation.Services;
@@ -50,6 +51,38 @@ public sealed partial class DialogService : ObservableObject, IDialogService
     }
 
     public async Task<BulkAddChipsResult?> ShowBulkAddChipsAsync(BulkAddChipsViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
+
+    public async Task<IofCourseData?> ShowSplitGroupsAsync(SplitGroupsViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
+
+    public async Task<int?> ShowChangeDayNumberAsync(ChangeDayNumberViewModel dialog)
     {
         ArgumentNullException.ThrowIfNull(dialog);
 

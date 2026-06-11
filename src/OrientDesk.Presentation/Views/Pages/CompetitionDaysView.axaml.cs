@@ -68,10 +68,17 @@ public partial class CompetitionDaysView : UserControl
             return;
 
         _vm.Localization.PropertyChanged += OnLocalizationChanged;
+        _vm.FocusGridRequested += OnFocusGridRequested;
         ApplyHeaders();
     }
 
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => ApplyHeaders();
+
+    // After the delete-confirmation modal closes, keyboard focus is on the overlay and would
+    // otherwise land on the top menu. Return it to the grid (on its new selected row). Posted so it
+    // runs once the overlay has been torn down and the grid is interactive again.
+    private void OnFocusGridRequested(object? sender, System.EventArgs e)
+        => Avalonia.Threading.Dispatcher.UIThread.Post(() => Sheet.Focus());
 
     private void ApplyHeaders()
     {
@@ -90,7 +97,10 @@ public partial class CompetitionDaysView : UserControl
     private void Unsubscribe()
     {
         if (_vm is not null)
+        {
             _vm.Localization.PropertyChanged -= OnLocalizationChanged;
+            _vm.FocusGridRequested -= OnFocusGridRequested;
+        }
         _vm = null;
     }
 }

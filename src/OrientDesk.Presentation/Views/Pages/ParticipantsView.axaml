@@ -1,0 +1,304 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientDesk.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientDesk.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="940" d:DesignHeight="560"
+             x:Class="OrientDesk.Presentation.Views.Pages.ParticipantsView"
+             x:DataType="pages:ParticipantsViewModel">
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Heading + actions on one line -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="{Binding Title}" Classes="h1"
+                           FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+                <TextBlock Text="{Binding Text}" Classes="subtitle" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
+                        VerticalAlignment="Center">
+                <ComboBox IsVisible="{Binding ShowDaySelector}"
+                          MinWidth="140" VerticalAlignment="Center"
+                          ItemsSource="{Binding DayOptions}"
+                          SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="pages:DayOption">
+                            <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <!-- Add works in both modes: on a day it attaches to that day; on Мандатка it attaches
+                     the new participant to every day that has a group. -->
+                <Button Command="{Binding AddParticipantCommand}" Classes="accent">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <PathIcon Data="M11,5 h2 v6 h6 v2 h-6 v6 h-2 v-6 h-6 v-2 h6 z" Width="14" Height="14" Foreground="White" />
+                        <TextBlock Text="{Binding Localization[Participants.Add]}" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- Two grids share the card; only one is visible at a time (day mode vs roster). -->
+        <Grid>
+            <!-- Day-mode grid: identity (competition-level) + this day's group/chip/team. -->
+            <Border Classes="card" ClipToBounds="True" IsVisible="{Binding IsDayMode}">
+                <controls:SheetDataGrid Name="DaySheet"
+                                        ItemsSource="{Binding Participants}"
+                                        SelectedItem="{Binding SelectedParticipant, Mode=TwoWay}"
+                                        KeyDown="OnDaySheetKeyDown"
+                                        AutoGenerateColumns="False">
+                    <controls:SheetDataGrid.Columns>
+
+                        <DataGridTemplateColumn Width="Auto" MinWidth="28" SortMemberPath="Surname">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantDayRowViewModel">
+                                    <TextBlock Text="{Binding Surname}" VerticalAlignment="Center" Padding="10,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantDayRowViewModel">
+                                    <TextBox PlaceholderText="—"
+                                             Text="{Binding Surname, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="Auto" MinWidth="28" SortMemberPath="Name">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantDayRowViewModel">
+                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" Padding="10,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantDayRowViewModel">
+                                    <TextBox PlaceholderText="—"
+                                             Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="Auto" MinWidth="28" SortMemberPath="Number">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantDayRowViewModel">
+                                    <TextBlock Text="{Binding Number}" VerticalAlignment="Center" Padding="10,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantDayRowViewModel">
+                                    <TextBox PlaceholderText="—"
+                                             Text="{Binding Number, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="Auto" MinWidth="28" SortMemberPath="Rank">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantDayRowViewModel">
+                                    <TextBlock Text="{Binding Rank}" VerticalAlignment="Center" Padding="10,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantDayRowViewModel">
+                                    <TextBox PlaceholderText="—"
+                                             Text="{Binding Rank, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="Auto" MinWidth="28" SortMemberPath="Coach">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantDayRowViewModel">
+                                    <TextBlock Text="{Binding Coach}" VerticalAlignment="Center" Padding="10,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantDayRowViewModel">
+                                    <TextBox PlaceholderText="—"
+                                             Text="{Binding Coach, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+
+                        <!-- Birth date (dd.MM.yyyy convention, like the days page) -->
+                        <DataGridTemplateColumn Width="160" MinWidth="28" SortMemberPath="BirthDate">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantDayRowViewModel">
+                                    <CalendarDatePicker SelectedDate="{Binding BirthDate, Mode=TwoWay,
+                                                            Converter={StaticResource DateTimeOffsetToDateTime}}"
+                                                        SelectedDateFormat="Custom"
+                                                        CustomDateFormatString="dd.MM.yyyy"
+                                                        PlaceholderText="{Binding Localization[Common.DatePlaceholder]}"
+                                                        HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <!-- Group for this day (id + name dropdown; "(none)" sentinel first) -->
+                        <DataGridTemplateColumn Width="Auto" MinWidth="28" SortMemberPath="SelectedGroup.Label">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantDayRowViewModel">
+                                    <ComboBox HorizontalAlignment="Stretch"
+                                              ItemsSource="{Binding GroupOptions}"
+                                              SelectedItem="{Binding SelectedGroup, Mode=TwoWay}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="pages:GroupOption">
+                                                <TextBlock Text="{Binding Label}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <!-- Chip for this day (free text, unique within the day) -->
+                        <DataGridTemplateColumn Width="Auto" MinWidth="28" SortMemberPath="Chip">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantDayRowViewModel">
+                                    <TextBlock Text="{Binding Chip}" VerticalAlignment="Center" Padding="10,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantDayRowViewModel">
+                                    <TextBox PlaceholderText="—"
+                                             Text="{Binding Chip, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+
+                        <!-- Team (rogaine only; visibility toggled in code-behind) -->
+                        <DataGridTemplateColumn Width="Auto" MinWidth="28" SortMemberPath="Team">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantDayRowViewModel">
+                                    <TextBlock Text="{Binding Team}" VerticalAlignment="Center" Padding="10,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantDayRowViewModel">
+                                    <TextBox PlaceholderText="—"
+                                             Text="{Binding Team, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="48" CanUserSort="False">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantDayRowViewModel">
+                                    <Button Classes="danger small" Padding="0"
+                                            HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                            ToolTip.Tip="{Binding Localization[Participants.Delete]}"
+                                            Click="OnDeleteClick"
+                                            Tag="{Binding}">
+                                        <PathIcon Data="M6,7 h12 M9,7 v-2 h6 v2 M8,7 l1,13 h6 l1,-13"
+                                                  Width="14" Height="14" />
+                                    </Button>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                    </controls:SheetDataGrid.Columns>
+                </controls:SheetDataGrid>
+            </Border>
+
+            <!-- Roster ("Мандатка") grid: identity columns are fixed; per-day group columns are
+                 built at runtime in code-behind (one per day). -->
+            <Border Classes="card" ClipToBounds="True" IsVisible="{Binding IsRosterMode}">
+                <controls:SheetDataGrid Name="RosterSheet"
+                                        ItemsSource="{Binding Roster}"
+                                        AutoGenerateColumns="False">
+                    <controls:SheetDataGrid.Columns>
+
+                        <DataGridTemplateColumn Width="Auto" MinWidth="28" SortMemberPath="Surname">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantRosterRowViewModel">
+                                    <TextBlock Text="{Binding Surname}" VerticalAlignment="Center" Padding="10,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantRosterRowViewModel">
+                                    <TextBox PlaceholderText="—"
+                                             Text="{Binding Surname, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="Auto" MinWidth="28" SortMemberPath="Name">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantRosterRowViewModel">
+                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" Padding="10,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantRosterRowViewModel">
+                                    <TextBox PlaceholderText="—"
+                                             Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="Auto" MinWidth="28" SortMemberPath="Number">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantRosterRowViewModel">
+                                    <TextBlock Text="{Binding Number}" VerticalAlignment="Center" Padding="10,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantRosterRowViewModel">
+                                    <TextBox PlaceholderText="—"
+                                             Text="{Binding Number, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="Auto" MinWidth="28" SortMemberPath="Rank">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantRosterRowViewModel">
+                                    <TextBlock Text="{Binding Rank}" VerticalAlignment="Center" Padding="10,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantRosterRowViewModel">
+                                    <TextBox PlaceholderText="—"
+                                             Text="{Binding Rank, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="Auto" MinWidth="28" SortMemberPath="Coach">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantRosterRowViewModel">
+                                    <TextBlock Text="{Binding Coach}" VerticalAlignment="Center" Padding="10,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                            <DataGridTemplateColumn.CellEditingTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantRosterRowViewModel">
+                                    <TextBox PlaceholderText="—"
+                                             Text="{Binding Coach, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellEditingTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="160" MinWidth="28" SortMemberPath="BirthDate">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="pages:ParticipantRosterRowViewModel">
+                                    <CalendarDatePicker SelectedDate="{Binding BirthDate, Mode=TwoWay,
+                                                            Converter={StaticResource DateTimeOffsetToDateTime}}"
+                                                        SelectedDateFormat="Custom"
+                                                        CustomDateFormatString="dd.MM.yyyy"
+                                                        PlaceholderText="{Binding Localization[Common.DatePlaceholder]}"
+                                                        HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <!-- Per-day group columns are appended here at runtime (one per day). -->
+
+                    </controls:SheetDataGrid.Columns>
+                </controls:SheetDataGrid>
+            </Border>
+        </Grid>
+
+    </DockPanel>
+
+</UserControl>

@@ -28,6 +28,9 @@
         <DataTemplate DataType="pages:ChipsViewModel">
             <views:ChipsView />
         </DataTemplate>
+        <DataTemplate DataType="pages:ParticipantsViewModel">
+            <views:ParticipantsView />
+        </DataTemplate>
         <DataTemplate DataType="pages:PageViewModelBase">
             <views:PageView />
         </DataTemplate>

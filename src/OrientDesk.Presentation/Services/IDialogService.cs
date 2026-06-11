@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using OrientDesk.BusinessLogic.Models;
 using OrientDesk.Presentation.ViewModels.Dialogs;
 
 namespace OrientDesk.Presentation.Services;
@@ -33,4 +34,17 @@ public interface IDialogService : INotifyPropertyChanged
     /// or null when cancelled/closed. Only one dialog is shown at a time.
     /// </summary>
     Task<BulkAddChipsResult?> ShowBulkAddChipsAsync(BulkAddChipsViewModel dialog);
+
+    /// <summary>
+    /// Shows the group-splitting preprocessing modal and awaits the user's choice. Returns the
+    /// rewritten course data (one course per split group) on confirm, or null when cancelled/closed.
+    /// Only one dialog is shown at a time.
+    /// </summary>
+    Task<IofCourseData?> ShowSplitGroupsAsync(SplitGroupsViewModel dialog);
+
+    /// <summary>
+    /// Shows the change-day-number modal and awaits the user's choice. Returns the chosen new number
+    /// on confirm, or null when cancelled/closed. Only one dialog is shown at a time.
+    /// </summary>
+    Task<int?> ShowChangeDayNumberAsync(ChangeDayNumberViewModel dialog);
 }

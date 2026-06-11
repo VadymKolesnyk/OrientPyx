@@ -74,6 +74,18 @@ public sealed class EventStore : IEventStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task UpdateDayNumberAsync(string eventFolderPath, Guid dayId, int newNumber, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.Days.FirstOrDefaultAsync(d => d.Id == dayId, cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.Number = newNumber;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task DeleteDayAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
@@ -318,5 +330,111 @@ public sealed class EventStore : IEventStore
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
         return await db.RentalChips.ExecuteDeleteAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Participant>> GetParticipantsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.Participants
+            .AsNoTracking()
+            .OrderBy(p => p.Surname)
+            .ThenBy(p => p.Name)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task AddParticipantAsync(string eventFolderPath, Participant participant, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        db.Participants.Add(participant);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateParticipantAsync(string eventFolderPath, Participant participant, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.Participants.FirstOrDefaultAsync(p => p.Id == participant.Id, cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.Surname = participant.Surname;
+        existing.Name = participant.Name;
+        existing.Number = participant.Number;
+        existing.Rank = participant.Rank;
+        existing.Coach = participant.Coach;
+        existing.BirthDate = participant.BirthDate;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteParticipantAsync(string eventFolderPath, Guid participantId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.Participants.FirstOrDefaultAsync(p => p.Id == participantId, cancellationToken);
+        if (existing is null)
+            return;
+
+        db.Participants.Remove(existing);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ParticipantDay>> GetParticipantDaysAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        // Order alone is a stable, unique-per-day sort key (each add is max+1). We avoid a
+        // CreatedAt tie-break because SQLite can't ORDER BY a DateTimeOffset column.
+        return await db.ParticipantDays
+            .AsNoTracking()
+            .Where(p => p.EventDayId == dayId)
+            .OrderBy(p => p.Order)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ParticipantDay>> GetAllParticipantDaysAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.ParticipantDays
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<int> CountParticipantDaysForParticipantAsync(string eventFolderPath, Guid participantId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.ParticipantDays.CountAsync(p => p.ParticipantId == participantId, cancellationToken);
+    }
+
+    public async Task AddParticipantDayAsync(string eventFolderPath, ParticipantDay link, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        db.ParticipantDays.Add(link);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateParticipantDayAsync(string eventFolderPath, ParticipantDay link, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.ParticipantDays.FirstOrDefaultAsync(p => p.Id == link.Id, cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.Order = link.Order;
+        existing.GroupId = link.GroupId;
+        existing.Chip = link.Chip;
+        existing.Team = link.Team;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteParticipantDayAsync(string eventFolderPath, Guid linkId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.ParticipantDays.FirstOrDefaultAsync(p => p.Id == linkId, cancellationToken);
+        if (existing is null)
+            return;
+
+        db.ParticipantDays.Remove(existing);
+        await db.SaveChangesAsync(cancellationToken);
     }
 }

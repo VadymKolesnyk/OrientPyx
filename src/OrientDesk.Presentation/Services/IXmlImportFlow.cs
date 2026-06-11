@@ -13,6 +13,10 @@ public interface IXmlImportFlow
     /// Runs the full import for the supplied IOF XML text. Returns true when the user confirmed and
     /// the import ran (so the caller should reload), or false when the file was unreadable/invalid,
     /// no day is selected, or the user cancelled.
+    ///
+    /// When the import runs, the original file (<paramref name="fileName"/> + <paramref name="content"/>)
+    /// is also archived into the current day's folder. Pass null for both to skip archiving (e.g. when
+    /// the source wasn't a file).
     /// </summary>
-    Task<bool> RunAsync(string xml);
+    Task<bool> RunAsync(string xml, string? fileName = null, byte[]? content = null);
 }

@@ -25,6 +25,10 @@ public interface IDisciplineStrategy
     /// <summary>True when the given group column is meaningful for this discipline.</summary>
     bool UsesColumn(GroupColumn column);
 
+    /// <summary>True when the given participant column is meaningful for this discipline (e.g. the
+    /// team column for rogaine).</summary>
+    bool UsesParticipantColumn(ParticipantColumn column);
+
     /// <summary>
     /// True when control points on this discipline's days carry a per-point value (score / rogaine),
     /// which the control-points screen exposes as an editable "points" column.

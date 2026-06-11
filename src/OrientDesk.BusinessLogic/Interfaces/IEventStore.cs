@@ -26,6 +26,9 @@ public interface IEventStore
     /// <summary>Updates an existing day's editable fields (date, venue, discipline).</summary>
     Task UpdateDayAsync(string eventFolderPath, EventDay day, CancellationToken cancellationToken = default);
 
+    /// <summary>Sets a day's 1-based number. Does nothing if the day is missing.</summary>
+    Task UpdateDayNumberAsync(string eventFolderPath, Guid dayId, int newNumber, CancellationToken cancellationToken = default);
+
     /// <summary>Removes a day by id. Does nothing if it is missing.</summary>
     Task DeleteDayAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
 
@@ -94,4 +97,34 @@ public interface IEventStore
 
     /// <summary>Removes every rental chip from the competition. Returns how many were deleted.</summary>
     Task<int> DeleteAllRentalChipsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the competition's participants, ordered by surname then name.</summary>
+    Task<IReadOnlyList<Participant>> GetParticipantsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds a competition-level participant.</summary>
+    Task AddParticipantAsync(string eventFolderPath, Participant participant, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates a participant's identity fields (surname, name, number, rank, coach, birth date). Does nothing if it is missing.</summary>
+    Task UpdateParticipantAsync(string eventFolderPath, Participant participant, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a participant by id. Does nothing if it is missing.</summary>
+    Task DeleteParticipantAsync(string eventFolderPath, Guid participantId, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns a day's participant links, ordered by their sort order.</summary>
+    Task<IReadOnlyList<ParticipantDay>> GetParticipantDaysAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns every participant link across all days (used to build the roster / Мандатка view).</summary>
+    Task<IReadOnlyList<ParticipantDay>> GetAllParticipantDaysAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>Counts a participant's links across all days (used to decide cascade deletion).</summary>
+    Task<int> CountParticipantDaysForParticipantAsync(string eventFolderPath, Guid participantId, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds a participant-day link (attaches a participant to a day).</summary>
+    Task AddParticipantDayAsync(string eventFolderPath, ParticipantDay link, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates a participant-day link (group, chip, team, order). Does nothing if it is missing.</summary>
+    Task UpdateParticipantDayAsync(string eventFolderPath, ParticipantDay link, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a participant-day link by id (detaches a participant from a day). Does nothing if it is missing.</summary>
+    Task DeleteParticipantDayAsync(string eventFolderPath, Guid linkId, CancellationToken cancellationToken = default);
 }

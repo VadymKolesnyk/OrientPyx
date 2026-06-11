@@ -17,4 +17,10 @@ public sealed class RogaineStrategy : DisciplineStrategyBase
         GroupColumn.CourseOrder => true,           // the list of allowed control points
         _ => base.UsesColumn(column)
     };
+
+    public override bool UsesParticipantColumn(ParticipantColumn column) => column switch
+    {
+        ParticipantColumn.Team => true,            // rogaine competitors run as teams
+        _ => base.UsesParticipantColumn(column)
+    };
 }

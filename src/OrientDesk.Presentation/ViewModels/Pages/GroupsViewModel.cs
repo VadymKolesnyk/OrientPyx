@@ -190,7 +190,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     // reloads this page; the _syncingDay guard stops LoadAsync's reassignment from re-entering.
     partial void OnSelectedDayChanged(DayOption? value)
     {
-        if (_syncingDay || value is null)
+        if (_syncingDay || value?.Day is null)
             return;
         if (_session.CurrentDay?.Number == value.Number)
             return;
@@ -232,9 +232,9 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     /// parses the file, shows the two-toggle modal, and imports both control points and groups for
     /// the current day. This page then reloads its groups.
     /// </summary>
-    public async Task ImportFromXmlAsync(string xml)
+    public async Task ImportFromXmlAsync(string xml, string? fileName = null, byte[]? content = null)
     {
-        if (await _importFlow.RunAsync(xml))
+        if (await _importFlow.RunAsync(xml, fileName, content))
             await LoadAsync();
     }
 
@@ -255,9 +255,10 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         if (row is null)
             return;
 
+        var confirmed = false;
         if (!skipConfirm)
         {
-            var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+            confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
                 Localization,
                 titleKey: "Groups.Delete.ConfirmTitle",
                 messageKey: "Groups.Delete.ConfirmMessage"));
@@ -271,12 +272,22 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             _saveTimers.Remove(row.Id);
         }
 
-        await _busy.RunAsync(() => _editor.RemoveGroupFromDayAsync(row.Id, row.GroupId));
+        // Remove from the grid immediately and run the SQLite delete in the background — the user
+        // never waits on the DB for a delete. If the removed row was the focused one, move the
+        // selection onto its neighbour so the grid keeps a sensible focus instead of clearing it.
         row.PropertyChanged -= OnRowPropertyChanged;
         if (ReferenceEquals(SelectedGroup, row))
-            SelectedGroup = null;
+            SelectedGroup = GridSelection.NeighbourAfterRemoval(Groups, row);
         Groups.Remove(row);
         RaiseColumnVisibility();
+
+        var (id, groupId) = (row.Id, row.GroupId);
+        _ = Task.Run(() => _editor.RemoveGroupFromDayAsync(id, groupId));
+
+        // The confirmation modal stole keyboard focus to the overlay; pull it back to the grid
+        // (now on the new selected row) so focus doesn't end up on the top menu.
+        if (confirmed)
+            RequestGridFocus();
     }
 
     // Invoked by a row on every edit (UI thread). Resets that row's debounce timer.

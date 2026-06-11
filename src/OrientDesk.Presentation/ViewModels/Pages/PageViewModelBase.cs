@@ -38,6 +38,18 @@ public abstract class PageViewModelBase : ViewModelBase
     public string Title => Localization.Get(TitleKey);
     public string Text => Localization.Get(TextKey);
 
+    /// <summary>
+    /// Raised when the page wants keyboard focus moved back onto its main grid. Showing a modal
+    /// dialog (e.g. the delete confirmation) hands focus to the overlay; once it closes, focus does
+    /// not return to the grid on its own and lands on the top menu instead. The View handles this
+    /// by focusing its grid. Only fired after a path that opened a dialog — direct (no-confirm)
+    /// deletes never lose grid focus.
+    /// </summary>
+    public event EventHandler? FocusGridRequested;
+
+    /// <summary>Asks the View to return keyboard focus to the page's grid (see <see cref="FocusGridRequested"/>).</summary>
+    protected void RequestGridFocus() => FocusGridRequested?.Invoke(this, EventArgs.Empty);
+
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e)
     {
         // Language switched — re-evaluate all resolved strings.

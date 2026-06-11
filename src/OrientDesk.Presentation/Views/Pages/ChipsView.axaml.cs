@@ -101,10 +101,17 @@ public partial class ChipsView : UserControl
             return;
 
         _vm.Localization.PropertyChanged += OnLocalizationChanged;
+        _vm.FocusGridRequested += OnFocusGridRequested;
         ApplyHeaders();
     }
 
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => ApplyHeaders();
+
+    // After the delete-confirmation modal closes, keyboard focus is on the overlay and would
+    // otherwise land on the top menu. Return it to the grid (on its new selected row). Posted so it
+    // runs once the overlay has been torn down and the grid is interactive again.
+    private void OnFocusGridRequested(object? sender, EventArgs e)
+        => Avalonia.Threading.Dispatcher.UIThread.Post(() => Sheet.Focus());
 
     // DataGrid column headers live outside the visual tree, so they can't bind to Localization[...]
     // like cells do. We resolve them here and re-apply on language change.
@@ -123,7 +130,10 @@ public partial class ChipsView : UserControl
     private void Unsubscribe()
     {
         if (_vm is not null)
+        {
             _vm.Localization.PropertyChanged -= OnLocalizationChanged;
+            _vm.FocusGridRequested -= OnFocusGridRequested;
+        }
         _vm = null;
     }
 }

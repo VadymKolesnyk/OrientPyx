@@ -102,6 +102,11 @@
                                             Command="{Binding $parent[DataGrid].((pages:CompetitionDaysViewModel)DataContext).SaveDayCommand}"
                                             CommandParameter="{Binding}"
                                             IsEnabled="{Binding IsDirty}" />
+                                    <Button Content="{Binding Localization[CompetitionDays.ChangeNumber]}"
+                                            Classes="ghost small"
+                                            ToolTip.Tip="{Binding Localization[CompetitionDays.ChangeNumber.Hint]}"
+                                            Command="{Binding $parent[DataGrid].((pages:CompetitionDaysViewModel)DataContext).ChangeDayNumberCommand}"
+                                            CommandParameter="{Binding}" />
                                     <!-- Click confirms before deleting; Ctrl+Click deletes immediately.
                                          Handled in code-behind so we can read the Ctrl modifier. -->
                                     <Button Classes="danger small"

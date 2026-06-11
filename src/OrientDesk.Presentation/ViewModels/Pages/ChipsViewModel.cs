@@ -27,7 +27,14 @@ public sealed partial class ChipsViewModel : PageViewModelBase
     private readonly IFileReadoutPoller _poller;
     private readonly IBusyService _busy;
     private readonly IDialogService _dialogs;
+    private readonly IBackgroundActivityService _activities;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
+
+    /// <summary>
+    /// The top-bar background-activity handle for auto-read, created while it is active. Lets the user
+    /// pause/stop/jump-here from the menu bar without opening this page. Null when auto-read is off.
+    /// </summary>
+    private ChipAutoReadActivity? _autoReadActivity;
 
     public ChipsViewModel(
         ILocalizationService localization,
@@ -36,7 +43,8 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         IReadoutParser readoutParser,
         IFileReadoutPoller poller,
         IBusyService busy,
-        IDialogService dialogs)
+        IDialogService dialogs,
+        IBackgroundActivityService activities)
         : base(localization)
     {
         _editor = editor;
@@ -45,6 +53,7 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         _poller = poller;
         _busy = busy;
         _dialogs = dialogs;
+        _activities = activities;
 
         // Singleton VM: when the competition changes, drop the previous event's rows and stop any
         // watch (the file belongs to the old event). The event can be raised on a pool thread.
@@ -58,6 +67,12 @@ public sealed partial class ChipsViewModel : PageViewModelBase
     public override string NavKey => "Nav.Chips";
     public override string TitleKey => "Page.Chips.Title";
     public override string TextKey => "Page.Chips.Text";
+
+    /// <summary>
+    /// Raised when the user clicks "go to settings" on the top-bar auto-read activity, asking the host
+    /// to bring this page into view. The shell, not the page, owns navigation, so the page only signals.
+    /// </summary>
+    public event EventHandler? NavigateToSelfRequested;
 
     public ObservableCollection<RentalChipRowViewModel> Chips { get; } = [];
 
@@ -85,6 +100,14 @@ public sealed partial class ChipsViewModel : PageViewModelBase
     /// <summary>When true, the watched file is read every N seconds and new chips are added silently.</summary>
     [ObservableProperty]
     private bool _autoReadEnabled;
+
+    /// <summary>
+    /// True while auto-read is on but paused from the top-bar activity block: the toggle stays "enabled"
+    /// (settings kept) yet the poller is stopped until the user resumes. The page reflects this so the
+    /// in-page UI and the menu-bar block never disagree.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isAutoReadPaused;
 
     /// <summary>Note stamped on each chip picked up by auto-read (e.g. who is reading them in).</summary>
     [ObservableProperty]
@@ -191,9 +214,10 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         if (row is null)
             return;
 
+        var confirmed = false;
         if (!skipConfirm)
         {
-            var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+            confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
                 Localization,
                 titleKey: "Chips.Delete.ConfirmTitle",
                 messageKey: "Chips.Delete.ConfirmMessage"));
@@ -207,11 +231,21 @@ public sealed partial class ChipsViewModel : PageViewModelBase
             _saveTimers.Remove(row.Id);
         }
 
-        await _busy.RunAsync(() => _editor.DeleteRentalChipAsync(row.Id));
+        // Remove from the grid immediately and run the SQLite delete in the background — the user
+        // never waits on the DB for a delete. If the removed row was the focused one, move the
+        // selection onto its neighbour so the grid keeps a sensible focus instead of clearing it.
         row.PropertyChanged -= OnRowPropertyChanged;
         if (ReferenceEquals(SelectedChip, row))
-            SelectedChip = null;
+            SelectedChip = GridSelection.NeighbourAfterRemoval(Chips, row);
         Chips.Remove(row);
+
+        var id = row.Id;
+        _ = Task.Run(() => _editor.DeleteRentalChipAsync(id));
+
+        // The confirmation modal stole keyboard focus to the overlay; pull it back to the grid
+        // (now on the new selected row) so focus doesn't end up on the top menu.
+        if (confirmed)
+            RequestGridFocus();
     }
 
     // --- Auto-read wiring --------------------------------------------------------------------------
@@ -219,22 +253,31 @@ public sealed partial class ChipsViewModel : PageViewModelBase
     partial void OnAutoReadEnabledChanged(bool value)
     {
         if (value)
+        {
             StartAutoRead();
+            ShowActivity();
+        }
         else
+        {
             _poller.Stop();
+            HideActivity();
+        }
     }
 
-    // A path or interval change while watching restarts the poll with the new settings.
+    // A path or interval change while watching restarts the poll with the new settings. Skip the
+    // restart while paused — the poller is intentionally stopped and Resume will pick up the new value.
     partial void OnAutoReadFilePathChanged(string value)
     {
-        if (AutoReadEnabled)
+        if (AutoReadEnabled && !IsAutoReadPaused)
             StartAutoRead();
+        UpdateActivityStatus();
     }
 
     partial void OnAutoReadIntervalSecondsChanged(int value)
     {
-        if (AutoReadEnabled)
+        if (AutoReadEnabled && !IsAutoReadPaused)
             StartAutoRead();
+        UpdateActivityStatus();
     }
 
     [RelayCommand]
@@ -282,6 +325,66 @@ public sealed partial class ChipsViewModel : PageViewModelBase
     // Used on competition switch: turning the toggle off runs OnAutoReadEnabledChanged → Stop, which
     // is idempotent, so a plain assignment both stops the poll and reflects it in the UI.
     private void StopAutoRead() => AutoReadEnabled = false;
+
+    // --- Top-bar background activity ---------------------------------------------------------------
+
+    // Creates the activity handle and registers it so the menu-bar block shows auto-read while it runs.
+    private void ShowActivity()
+    {
+        IsAutoReadPaused = false;
+        _autoReadActivity = new ChipAutoReadActivity(
+            Localization,
+            pause: PauseAutoRead,
+            resume: ResumeAutoRead,
+            stop: StopAutoRead,
+            openSettings: () => NavigateToSelfRequested?.Invoke(this, EventArgs.Empty));
+        UpdateActivityStatus();
+        _activities.Register(_autoReadActivity);
+    }
+
+    // Removes the activity from the block (on Stop or competition switch).
+    private void HideActivity()
+    {
+        IsAutoReadPaused = false;
+        if (_autoReadActivity is null)
+            return;
+        _activities.Unregister(_autoReadActivity);
+        _autoReadActivity = null;
+    }
+
+    // Pause: stop the poller but keep the toggle on and the path intact, so Resume restarts cleanly.
+    private void PauseAutoRead()
+    {
+        if (!AutoReadEnabled || IsAutoReadPaused)
+            return;
+        _poller.Stop();
+        IsAutoReadPaused = true;
+        UpdateActivityStatus();
+    }
+
+    private void ResumeAutoRead()
+    {
+        if (!AutoReadEnabled || !IsAutoReadPaused)
+            return;
+        IsAutoReadPaused = false;
+        StartAutoRead();
+        UpdateActivityStatus();
+    }
+
+    // Keeps the activity's status line in sync with the watched file / interval / paused state.
+    private void UpdateActivityStatus()
+    {
+        if (_autoReadActivity is null)
+            return;
+
+        var fileName = string.IsNullOrWhiteSpace(AutoReadFilePath)
+            ? "—"
+            : Path.GetFileName(AutoReadFilePath);
+        var key = IsAutoReadPaused
+            ? "Activity.ChipAutoRead.StatusPaused"
+            : "Activity.ChipAutoRead.Status";
+        _autoReadActivity.StatusText = string.Format(Localization.Get(key), fileName, AutoReadIntervalSeconds);
+    }
 
     // --- Debounced save ----------------------------------------------------------------------------
 

@@ -20,6 +20,7 @@ public sealed class XmlImportFlow : IXmlImportFlow
     private readonly ICompetitionEditorService _editor;
     private readonly ISessionService _session;
     private readonly IIofXmlParser _xmlParser;
+    private readonly ICourseNameSplitter _splitter;
     private readonly IDialogService _dialogs;
     private readonly IBusyService _busy;
 
@@ -28,6 +29,7 @@ public sealed class XmlImportFlow : IXmlImportFlow
         ICompetitionEditorService editor,
         ISessionService session,
         IIofXmlParser xmlParser,
+        ICourseNameSplitter splitter,
         IDialogService dialogs,
         IBusyService busy)
     {
@@ -35,11 +37,12 @@ public sealed class XmlImportFlow : IXmlImportFlow
         _editor = editor;
         _session = session;
         _xmlParser = xmlParser;
+        _splitter = splitter;
         _dialogs = dialogs;
         _busy = busy;
     }
 
-    public async Task<bool> RunAsync(string xml)
+    public async Task<bool> RunAsync(string xml, string? fileName = null, byte[]? content = null)
     {
         if (_session.CurrentDay is null || string.IsNullOrWhiteSpace(xml))
             return false;
@@ -55,6 +58,13 @@ public sealed class XmlImportFlow : IXmlImportFlow
                 options: []));
             return false;
         }
+
+        // Preprocessing: review/edit the groups each course splits into (e.g. "ЧЖ55" → "Ч55", "Ж55")
+        // before importing. Returns the rewritten course data, or null if the user cancelled here.
+        var split = await _dialogs.ShowSplitGroupsAsync(
+            new SplitGroupsViewModel(_localization, _splitter, outcome.Data!));
+        if (split is null)
+            return false; // cancelled in the splitter
 
         var dialog = new ImportOptionsViewModel(
             _localization,
@@ -72,14 +82,18 @@ public sealed class XmlImportFlow : IXmlImportFlow
 
         var replaceControlPoints = result.Get(ReplaceControlPointsKey, fallback: true);
         var updateGroups = result.Get(UpdateGroupsKey, fallback: true);
-        var data = outcome.Data!;
+        var data = split;
 
         // One file, one action: import control points first (so groups can compute distances from the
-        // freshly saved points), then groups.
+        // freshly saved points), then groups. Finally archive the original file into the day's folder
+        // (skipped when no file was supplied, e.g. a non-file source).
         await _busy.RunAsync(async () =>
         {
             await _editor.ImportControlPointsAsync(data, replaceControlPoints);
             await _editor.ImportGroupsAsync(data, updateGroups);
+
+            if (!string.IsNullOrEmpty(fileName) && content is not null)
+                await _editor.SaveDayFileAsync(fileName, content);
         });
         return true;
     }

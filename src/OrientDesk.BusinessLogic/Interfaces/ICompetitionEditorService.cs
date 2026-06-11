@@ -28,6 +28,14 @@ public interface ICompetitionEditorService
     /// <summary>Removes a day from the current competition.</summary>
     Task DeleteDayAsync(Guid dayId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Changes a day's 1-based number to <paramref name="newNumber"/> and renames its files folder
+    /// (<c>day{old}</c> → <c>day{new}</c>) to match. The other days keep their numbers — this is a
+    /// single-day re-label, not a re-ordering. Returns the updated day, or null when the change is
+    /// rejected (number unchanged, out of range, or already used by another day).
+    /// </summary>
+    Task<EventDay?> ChangeDayNumberAsync(Guid dayId, int newNumber, CancellationToken cancellationToken = default);
+
     /// <summary>Loads the current day's control points, ordered for display.</summary>
     Task<IReadOnlyList<ControlPoint>> GetControlPointsAsync(CancellationToken cancellationToken = default);
 
@@ -94,6 +102,15 @@ public interface ICompetitionEditorService
         bool updateExisting,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Saves a file imported for the current day into that day's folder (<c>&lt;event&gt;/day{N}</c>),
+    /// e.g. the IOF XML the courses came from. If a file with the same name and identical content is
+    /// already there, nothing is written and the existing path is returned. If the name is taken by a
+    /// file with different content, a short content hash is appended to keep both. Returns null when no
+    /// day is selected.
+    /// </summary>
+    Task<string?> SaveDayFileAsync(string fileName, byte[] content, CancellationToken cancellationToken = default);
+
     /// <summary>Loads the current competition's rental chips, ordered by number.</summary>
     Task<IReadOnlyList<RentalChip>> GetRentalChipsAsync(CancellationToken cancellationToken = default);
 
@@ -133,6 +150,61 @@ public interface ICompetitionEditorService
         ChipReadData data,
         string note,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Loads the current day's participants (one row per competitor on the day), ordered for display.</summary>
+    Task<IReadOnlyList<ParticipantDayRow>> GetParticipantDayRowsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Loads the roster ("Мандатка"): one row per competition participant with a cell per day,
+    /// aggregating membership and per-day group across every day. Independent of the current day.
+    /// </summary>
+    Task<IReadOnlyList<ParticipantRosterRow>> GetParticipantRosterAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates a new, blank participant and attaches it to the current day, assigning the day's first
+    /// group (a member always has a group). Returns the resulting row, or null when the day has no
+    /// groups yet (a participant cannot be added without a group to put them in).
+    /// </summary>
+    Task<ParticipantDayRow?> AddParticipantToDayAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates a new, blank participant that does not yet run on any day (no day links). Used by the
+    /// roster ("Мандатка") add: the participant appears as a non-member on every day and is assigned
+    /// days by picking a group in the roster's per-day columns. Returns the new participant's roster
+    /// row, or null when no competition is selected.
+    /// </summary>
+    Task<ParticipantRosterRow?> AddRosterParticipantAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Persists an edited participant-day row: saves the participant identity fields (affecting all
+    /// days; a number colliding with another participant is ignored) and the day's group, chip and
+    /// team. A chip colliding with another participant on the same day is ignored (the previous value
+    /// is kept); both revert on the next reload.
+    /// </summary>
+    Task UpdateParticipantDayRowAsync(ParticipantDayRow row, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes a participant from a day (deletes its link row). If the participant then has no links
+    /// left on any day, the participant itself is hard-deleted.
+    /// </summary>
+    Task RemoveParticipantFromDayAsync(Guid linkId, Guid participantId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets a participant's group on a specific day (roster edit). Creates the day link when missing
+    /// (joining the day); passing a null group clears the assignment but keeps the membership.
+    /// Returns the id of the affected link (the new or existing one).
+    /// </summary>
+    Task<Guid> SetParticipantDayGroupAsync(Guid participantId, Guid dayId, Guid? groupId, CancellationToken cancellationToken = default);
+
+    /// <summary>Loads the groups attached to a given day (id + name), for the in-cell group dropdown.</summary>
+    Task<IReadOnlyList<GroupDayRow>> GetGroupsForDayAsync(Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Saves a participant's identity fields only (surname, name, number, rank, coach, birth date),
+    /// used by the roster ("Мандатка") view where there is no single day. A number colliding with
+    /// another participant is ignored (the previous value is kept; the row reverts on the next reload).
+    /// </summary>
+    Task UpdateParticipantIdentityAsync(ParticipantRosterRow row, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Outcome of a bulk rental-chip range add, for reporting back to the user.</summary>

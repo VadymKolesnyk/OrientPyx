@@ -66,6 +66,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         var day = new EventDay { Number = nextNumber };
         await _eventStore.AddDayAsync(FolderPath, day, cancellationToken);
+
+        // Give the new day its files folder (where imported XML for the day is stored).
+        Directory.CreateDirectory(DayFolders.PathFor(FolderPath, nextNumber));
         return day;
     }
 
@@ -77,6 +80,115 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
     public Task DeleteDayAsync(Guid dayId, CancellationToken cancellationToken = default)
         => _eventStore.DeleteDayAsync(FolderPath, dayId, cancellationToken);
+
+    public async Task<EventDay?> ChangeDayNumberAsync(Guid dayId, int newNumber, CancellationToken cancellationToken = default)
+    {
+        if (newNumber < 1)
+            return null;
+
+        var folder = FolderPath;
+        var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+
+        var day = days.FirstOrDefault(d => d.Id == dayId);
+        if (day is null || day.Number == newNumber)
+            return null;
+
+        // The target number must be free — we swap a single day's number, we don't shift the others.
+        if (days.Any(d => d.Id != dayId && d.Number == newNumber))
+            return null;
+
+        var oldFolder = DayFolders.PathFor(folder, day.Number);
+        var newFolder = DayFolders.PathFor(folder, newNumber);
+
+        await _eventStore.UpdateDayNumberAsync(folder, dayId, newNumber, cancellationToken);
+
+        // Keep the day's files folder name in step with its number. The target name is free (its
+        // number was), so a plain move works; if the old folder was never created, just create the
+        // new one so the day always has its folder.
+        try
+        {
+            if (Directory.Exists(oldFolder) && !Directory.Exists(newFolder))
+                Directory.Move(oldFolder, newFolder);
+            else if (!Directory.Exists(newFolder))
+                Directory.CreateDirectory(newFolder);
+        }
+        catch
+        {
+            // A locked/again-renamed folder shouldn't fail the renumber — the DB is the source of
+            // truth for the number; the folder is just where imported files are kept.
+        }
+
+        return new EventDay
+        {
+            Id = day.Id,
+            Number = newNumber,
+            Date = day.Date,
+            Venue = day.Venue,
+            DefaultDiscipline = day.DefaultDiscipline,
+            CreatedAt = day.CreatedAt
+        };
+    }
+
+    public async Task<string?> SaveDayFileAsync(string fileName, byte[] content, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        if (_session.CurrentDay is not { } day)
+            return null;
+
+        var safeName = Path.GetFileName((fileName ?? string.Empty).Trim());
+        if (string.IsNullOrEmpty(safeName))
+            safeName = "import.xml";
+
+        var folder = DayFolders.PathFor(FolderPath, day.Number);
+        Directory.CreateDirectory(folder);
+
+        var target = Path.Combine(folder, safeName);
+
+        // If the exact name already holds identical bytes, reuse it — don't write a duplicate.
+        if (File.Exists(target) && SameContent(target, content))
+            return target;
+
+        // Name free → write it as-is.
+        if (!File.Exists(target))
+        {
+            await File.WriteAllBytesAsync(target, content, cancellationToken);
+            return target;
+        }
+
+        // Name taken by different content → append a short content hash so both survive. If a file
+        // with that hashed name is itself already identical (a re-import of the same file), reuse it.
+        var stem = Path.GetFileNameWithoutExtension(safeName);
+        var ext = Path.GetExtension(safeName);
+        var hash = ShortHash(content);
+        var hashedName = $"{stem}-{hash}{ext}";
+        var hashedTarget = Path.Combine(folder, hashedName);
+
+        if (File.Exists(hashedTarget) && SameContent(hashedTarget, content))
+            return hashedTarget;
+
+        await File.WriteAllBytesAsync(hashedTarget, content, cancellationToken);
+        return hashedTarget;
+    }
+
+    private static bool SameContent(string path, byte[] content)
+    {
+        try
+        {
+            var existing = File.ReadAllBytes(path);
+            return existing.AsSpan().SequenceEqual(content);
+        }
+        catch
+        {
+            // Unreadable existing file — treat as different so we fall through to a hashed copy.
+            return false;
+        }
+    }
+
+    private static string ShortHash(byte[] content)
+    {
+        var hash = System.Security.Cryptography.SHA256.HashData(content);
+        return Convert.ToHexString(hash, 0, 4).ToLowerInvariant(); // 8 hex chars
+    }
 
     public Task<IReadOnlyList<ControlPoint>> GetControlPointsAsync(CancellationToken cancellationToken = default)
     {
@@ -519,6 +631,276 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         await _eventStore.AddRentalChipsAsync(folder, toAdd, cancellationToken);
         return new RentalChipImportResult(Added: toAdd.Count, Skipped: skipped);
+    }
+
+    public async Task<IReadOnlyList<ParticipantDayRow>> GetParticipantDayRowsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+            return [];
+
+        var folder = FolderPath;
+        var links = await _eventStore.GetParticipantDaysAsync(folder, CurrentDayId, cancellationToken);
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var byParticipant = participants.ToDictionary(p => p.Id);
+        var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
+
+        var rows = new List<ParticipantDayRow>(links.Count);
+        foreach (var link in links)
+        {
+            // Defensive: skip a link whose participant was removed out from under it.
+            if (byParticipant.TryGetValue(link.ParticipantId, out var participant))
+                rows.Add(ToRow(link, participant, groupName));
+        }
+        return rows;
+    }
+
+    public async Task<IReadOnlyList<ParticipantRosterRow>> GetParticipantRosterAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return [];
+
+        var folder = FolderPath;
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        var links = await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
+        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
+
+        // Index links by (participant, day) so each roster cell is a quick lookup.
+        var linkByKey = links.ToDictionary(l => (l.ParticipantId, l.EventDayId));
+
+        var rows = new List<ParticipantRosterRow>(participants.Count);
+        foreach (var participant in participants)
+        {
+            var cells = new List<RosterDayCell>(days.Count);
+            foreach (var day in days)
+            {
+                if (linkByKey.TryGetValue((participant.Id, day.Id), out var link))
+                {
+                    var name = link.GroupId is { } gid && groupName.TryGetValue(gid, out var n) ? n : string.Empty;
+                    cells.Add(new RosterDayCell(day.Id, day.Number, link.Id, IsMember: true, link.GroupId, name));
+                }
+                else
+                {
+                    cells.Add(new RosterDayCell(day.Id, day.Number, LinkId: null, IsMember: false, GroupId: null, GroupName: string.Empty));
+                }
+            }
+            rows.Add(new ParticipantRosterRow(
+                participant.Id,
+                participant.Surname,
+                participant.Name,
+                participant.Number,
+                participant.Rank,
+                participant.Coach,
+                participant.BirthDate,
+                cells));
+        }
+        return rows;
+    }
+
+    public async Task<ParticipantDayRow?> AddParticipantToDayAsync(CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        var dayId = CurrentDayId;
+
+        // A member always has a group; refuse to add when the day has no groups to assign.
+        var dayGroups = await GetGroupsForDayAsync(dayId, cancellationToken);
+        if (dayGroups.Count == 0)
+            return null;
+        var firstGroup = dayGroups[0];
+
+        var participant = new Participant();
+        await _eventStore.AddParticipantAsync(folder, participant, cancellationToken);
+
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var nextOrder = links.Count == 0 ? 1 : links.Max(l => l.Order) + 1;
+        var link = new ParticipantDay
+        {
+            EventDayId = dayId,
+            ParticipantId = participant.Id,
+            Order = nextOrder,
+            GroupId = firstGroup.GroupId
+        };
+        await _eventStore.AddParticipantDayAsync(folder, link, cancellationToken);
+
+        return ToRow(link, participant, new Dictionary<Guid, string> { [firstGroup.GroupId] = firstGroup.Name });
+    }
+
+    public async Task<ParticipantRosterRow?> AddRosterParticipantAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return null;
+
+        var folder = FolderPath;
+
+        // The participant starts out "not participating" on every day: just create the identity row
+        // with no day links. The user assigns days by picking a group in the roster's per-day columns.
+        var participant = new Participant();
+        await _eventStore.AddParticipantAsync(folder, participant, cancellationToken);
+
+        // Re-read the roster and return this participant's row so the UI can append it.
+        var roster = await GetParticipantRosterAsync(cancellationToken);
+        return roster.FirstOrDefault(r => r.ParticipantId == participant.Id);
+    }
+
+    public async Task UpdateParticipantDayRowAsync(ParticipantDayRow row, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+
+        var folder = FolderPath;
+        var dayId = CurrentDayId;
+
+        // Save the participant identity (affects every day). A number colliding with a different
+        // participant is dropped, keeping the stored number — the row reverts on the next reload.
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var number = (row.Number ?? string.Empty).Trim();
+        var numberCollides = number.Length > 0 && participants.Any(p =>
+            p.Id != row.ParticipantId && string.Equals(p.Number.Trim(), number, StringComparison.OrdinalIgnoreCase));
+        if (numberCollides)
+            number = participants.FirstOrDefault(p => p.Id == row.ParticipantId)?.Number ?? number;
+
+        await _eventStore.UpdateParticipantAsync(folder, new Participant
+        {
+            Id = row.ParticipantId,
+            Surname = (row.Surname ?? string.Empty).Trim(),
+            Name = (row.Name ?? string.Empty).Trim(),
+            Number = number,
+            Rank = (row.Rank ?? string.Empty).Trim(),
+            Coach = (row.Coach ?? string.Empty).Trim(),
+            BirthDate = row.BirthDate
+        }, cancellationToken);
+
+        // Save the day link. A chip colliding with another participant on the same day is dropped,
+        // keeping the stored chip — the row reverts on the next reload.
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var chip = (row.Chip ?? string.Empty).Trim();
+        var chipCollides = chip.Length > 0 && links.Any(l =>
+            l.Id != row.LinkId && string.Equals(l.Chip.Trim(), chip, StringComparison.OrdinalIgnoreCase));
+        if (chipCollides)
+            chip = links.FirstOrDefault(l => l.Id == row.LinkId)?.Chip ?? chip;
+
+        await _eventStore.UpdateParticipantDayAsync(folder, new ParticipantDay
+        {
+            Id = row.LinkId,
+            EventDayId = dayId,
+            ParticipantId = row.ParticipantId,
+            Order = row.Order,
+            GroupId = row.GroupId,
+            Chip = chip,
+            Team = (row.Team ?? string.Empty).Trim()
+        }, cancellationToken);
+    }
+
+    public async Task RemoveParticipantFromDayAsync(Guid linkId, Guid participantId, CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        await _eventStore.DeleteParticipantDayAsync(folder, linkId, cancellationToken);
+
+        // A participant that no longer runs on any day is removed entirely.
+        var remaining = await _eventStore.CountParticipantDaysForParticipantAsync(folder, participantId, cancellationToken);
+        if (remaining == 0)
+            await _eventStore.DeleteParticipantAsync(folder, participantId, cancellationToken);
+    }
+
+    public async Task<Guid> SetParticipantDayGroupAsync(Guid participantId, Guid dayId, Guid? groupId, CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var existing = links.FirstOrDefault(l => l.ParticipantId == participantId);
+
+        if (existing is null)
+        {
+            // Joining the day: create the link carrying the chosen group.
+            var nextOrder = links.Count == 0 ? 1 : links.Max(l => l.Order) + 1;
+            var link = new ParticipantDay
+            {
+                EventDayId = dayId,
+                ParticipantId = participantId,
+                Order = nextOrder,
+                GroupId = groupId
+            };
+            await _eventStore.AddParticipantDayAsync(folder, link, cancellationToken);
+            return link.Id;
+        }
+
+        // Already a member: update only the group, preserving the day's chip/team/order.
+        await _eventStore.UpdateParticipantDayAsync(folder, new ParticipantDay
+        {
+            Id = existing.Id,
+            EventDayId = dayId,
+            ParticipantId = participantId,
+            Order = existing.Order,
+            GroupId = groupId,
+            Chip = existing.Chip,
+            Team = existing.Team
+        }, cancellationToken);
+        return existing.Id;
+    }
+
+    public async Task<IReadOnlyList<GroupDayRow>> GetGroupsForDayAsync(Guid dayId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return [];
+
+        var folder = FolderPath;
+        var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
+        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var byId = groups.ToDictionary(g => g.Id);
+
+        var rows = new List<GroupDayRow>(settings.Count);
+        foreach (var s in settings)
+        {
+            if (byId.TryGetValue(s.GroupId, out var group))
+                rows.Add(ToRow(s, group.Name));
+        }
+        return rows;
+    }
+
+    public async Task UpdateParticipantIdentityAsync(ParticipantRosterRow row, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+
+        var folder = FolderPath;
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+
+        // A number colliding with a different participant is dropped, keeping the stored number.
+        var number = (row.Number ?? string.Empty).Trim();
+        var collides = number.Length > 0 && participants.Any(p =>
+            p.Id != row.ParticipantId && string.Equals(p.Number.Trim(), number, StringComparison.OrdinalIgnoreCase));
+        if (collides)
+            number = participants.FirstOrDefault(p => p.Id == row.ParticipantId)?.Number ?? number;
+
+        await _eventStore.UpdateParticipantAsync(folder, new Participant
+        {
+            Id = row.ParticipantId,
+            Surname = (row.Surname ?? string.Empty).Trim(),
+            Name = (row.Name ?? string.Empty).Trim(),
+            Number = number,
+            Rank = (row.Rank ?? string.Empty).Trim(),
+            Coach = (row.Coach ?? string.Empty).Trim(),
+            BirthDate = row.BirthDate
+        }, cancellationToken);
+    }
+
+    private ParticipantDayRow ToRow(ParticipantDay link, Participant p, IReadOnlyDictionary<Guid, string> groupName)
+    {
+        var name = link.GroupId is { } gid && groupName.TryGetValue(gid, out var n) ? n : string.Empty;
+        return new ParticipantDayRow(
+            LinkId: link.Id,
+            ParticipantId: p.Id,
+            Order: link.Order,
+            Surname: p.Surname,
+            Name: p.Name,
+            Number: p.Number,
+            Rank: p.Rank,
+            Coach: p.Coach,
+            BirthDate: p.BirthDate,
+            GroupId: link.GroupId,
+            GroupName: name,
+            Chip: link.Chip,
+            Team: link.Team,
+            DayDefaultDiscipline: CurrentDayDefaultDiscipline);
     }
 
     private GroupDayRow ToRow(GroupDaySettings s, string name) => new(

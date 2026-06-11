@@ -31,12 +31,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly IUiScaleService _uiScale;
     private readonly IBusyService _busy;
     private readonly IDialogService _dialogs;
+    private readonly IBackgroundActivityService _activities;
 
     private readonly CompetitionInfoViewModel _competitionInfo;
     private readonly CompetitionDaysViewModel _competitionDays;
     private readonly ControlPointsViewModel _controlPoints;
     private readonly GroupsViewModel _groups;
     private readonly ChipsViewModel _chips;
+    private readonly ParticipantsViewModel _participants;
 
     public MainWindowViewModel(
         ISessionService session,
@@ -50,10 +52,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         ControlPointsViewModel controlPoints,
         GroupsViewModel groups,
         ChipsViewModel chips,
+        ParticipantsViewModel participants,
         ILocalizationService localization,
         IUiScaleService uiScale,
         IBusyService busy,
-        IDialogService dialogs)
+        IDialogService dialogs,
+        IBackgroundActivityService activities)
     {
         _session = session;
         _navigation = navigation;
@@ -66,10 +70,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _controlPoints = controlPoints;
         _groups = groups;
         _chips = chips;
+        _participants = participants;
         Localization = localization;
         _uiScale = uiScale;
         _busy = busy;
         _dialogs = dialogs;
+        _activities = activities;
 
         Pages = navigation.Pages;
 
@@ -78,6 +84,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _create.OnCreatedAsync = async _ => await ShowSelectionAsync();
         _create.Cancelled += async (_, _) => await ShowSelectionAsync();
         _shell.ChangeEventRequested += async (_, _) => await ChangeEventInternalAsync();
+        // "Go to settings" on the chip auto-read activity opens the Chips page.
+        _chips.NavigateToSelfRequested += async (_, _) => await OpenChipsAsync();
         _session.SessionChanged += OnSessionChanged;
         Localization.PropertyChanged += (_, _) => OnPropertyChanged(nameof(WindowTitle));
 
@@ -95,6 +103,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Exposed for the global modal-dialog overlay.</summary>
     public IDialogService Dialogs => _dialogs;
+
+    /// <summary>Exposed for the top-bar running-processes block.</summary>
+    public IBackgroundActivityService Activities => _activities;
 
     /// <summary>Settings content shown in the global overlay.</summary>
     public SettingsViewModel Settings { get; }
@@ -164,6 +175,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _shell.SelectedPage = _chips;
     }
 
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenParticipantsAsync()
+    {
+        await _participants.LoadAsync();
+        _shell.SelectedPage = _participants;
+    }
+
     /// <summary>Called once after construction to restore the last session or show the picker.</summary>
     public async Task InitializeAsync()
     {
@@ -224,6 +242,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenControlPointsCommand.NotifyCanExecuteChanged();
         OpenGroupsCommand.NotifyCanExecuteChanged();
         OpenChipsCommand.NotifyCanExecuteChanged();
+        OpenParticipantsCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsEventSelected));
         OnPropertyChanged(nameof(WindowTitle));
 
