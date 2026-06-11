@@ -19,6 +19,7 @@ public class EventDbContext : DbContext
     public DbSet<ControlPoint> ControlPoints => Set<ControlPoint>();
     public DbSet<Group> Groups => Set<Group>();
     public DbSet<GroupDaySettings> GroupDaySettings => Set<GroupDaySettings>();
+    public DbSet<RentalChip> RentalChips => Set<RentalChip>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -37,5 +38,11 @@ public class EventDbContext : DbContext
         modelBuilder.Entity<GroupDaySettings>()
             .Property(g => g.DisciplineOverride)
             .HasConversion<string>();
+
+        // A chip number identifies one rental chip per competition; the unique index both enforces
+        // that and speeds the future join against participant entries by chip number.
+        modelBuilder.Entity<RentalChip>()
+            .HasIndex(c => c.Number)
+            .IsUnique();
     }
 }

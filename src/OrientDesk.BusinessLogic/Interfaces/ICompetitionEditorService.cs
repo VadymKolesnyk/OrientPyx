@@ -93,7 +93,57 @@ public interface ICompetitionEditorService
         IofCourseData data,
         bool updateExisting,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Loads the current competition's rental chips, ordered by number.</summary>
+    Task<IReadOnlyList<RentalChip>> GetRentalChipsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Appends a new, blank rental chip to the current competition and returns it.</summary>
+    Task<RentalChip> AddRentalChipAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Saves an edited rental chip (number, note). A change to a number already used by another
+    /// chip is ignored (the previous number is kept), keeping numbers unique per competition.
+    /// </summary>
+    Task UpdateRentalChipAsync(RentalChip chip, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a rental chip from the current competition.</summary>
+    Task DeleteRentalChipAsync(Guid chipId, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes every rental chip from the current competition. Returns how many were deleted.</summary>
+    Task<int> ClearRentalChipsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Adds a contiguous range of rental chips numbered from <paramref name="startNumber"/> (e.g.
+    /// 100 chips from "9007400"). Numeric increment preserves the start's digit width (leading
+    /// zeros). Numbers already present are skipped, never duplicated; the note is applied to the
+    /// chips that are added.
+    /// </summary>
+    Task<RentalChipBulkResult> AddRentalChipRangeAsync(
+        string startNumber,
+        int count,
+        string note,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Imports the chip numbers from a parsed readout file into the rental-chip database. Adds each
+    /// distinct number that is not already present (existing chips are left untouched and nothing is
+    /// removed); the note is applied to the chips that are added.
+    /// </summary>
+    Task<RentalChipImportResult> ImportRentalChipsAsync(
+        ChipReadData data,
+        string note,
+        CancellationToken cancellationToken = default);
 }
+
+/// <summary>Outcome of a bulk rental-chip range add, for reporting back to the user.</summary>
+/// <param name="Added">How many chips were newly added.</param>
+/// <param name="Skipped">How many requested numbers already existed and were skipped.</param>
+public readonly record struct RentalChipBulkResult(int Added, int Skipped);
+
+/// <summary>Outcome of a rental-chip file import, for reporting back to the user.</summary>
+/// <param name="Added">How many chips were newly added.</param>
+/// <param name="Skipped">How many distinct numbers in the file already existed and were skipped.</param>
+public readonly record struct RentalChipImportResult(int Added, int Skipped);
 
 /// <summary>Outcome of a group import, for reporting back to the user.</summary>
 /// <param name="Added">How many groups were newly attached to the day.</param>

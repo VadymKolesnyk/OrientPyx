@@ -36,6 +36,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly CompetitionDaysViewModel _competitionDays;
     private readonly ControlPointsViewModel _controlPoints;
     private readonly GroupsViewModel _groups;
+    private readonly ChipsViewModel _chips;
 
     public MainWindowViewModel(
         ISessionService session,
@@ -48,6 +49,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         CompetitionDaysViewModel competitionDays,
         ControlPointsViewModel controlPoints,
         GroupsViewModel groups,
+        ChipsViewModel chips,
         ILocalizationService localization,
         IUiScaleService uiScale,
         IBusyService busy,
@@ -63,6 +65,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _competitionDays = competitionDays;
         _controlPoints = controlPoints;
         _groups = groups;
+        _chips = chips;
         Localization = localization;
         _uiScale = uiScale;
         _busy = busy;
@@ -154,6 +157,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _shell.SelectedPage = _groups;
     }
 
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenChipsAsync()
+    {
+        await _chips.LoadAsync();
+        _shell.SelectedPage = _chips;
+    }
+
     /// <summary>Called once after construction to restore the last session or show the picker.</summary>
     public async Task InitializeAsync()
     {
@@ -213,6 +223,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenCompetitionDaysCommand.NotifyCanExecuteChanged();
         OpenControlPointsCommand.NotifyCanExecuteChanged();
         OpenGroupsCommand.NotifyCanExecuteChanged();
+        OpenChipsCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsEventSelected));
         OnPropertyChanged(nameof(WindowTitle));
 

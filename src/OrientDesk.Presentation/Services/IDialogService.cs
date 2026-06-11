@@ -27,4 +27,10 @@ public interface IDialogService : INotifyPropertyChanged
     /// false when cancelled/closed. Only one dialog is shown at a time.
     /// </summary>
     Task<bool> ConfirmAsync(ConfirmDialogViewModel dialog);
+
+    /// <summary>
+    /// Shows the bulk-add-chips modal and awaits the user's input. Returns the entered values on OK,
+    /// or null when cancelled/closed. Only one dialog is shown at a time.
+    /// </summary>
+    Task<BulkAddChipsResult?> ShowBulkAddChipsAsync(BulkAddChipsViewModel dialog);
 }

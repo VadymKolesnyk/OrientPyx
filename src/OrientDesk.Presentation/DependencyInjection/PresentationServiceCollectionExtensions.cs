@@ -26,6 +26,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<IBusyService, BusyService>();
         services.AddSingleton<IDialogService, DialogService>();
         services.AddSingleton<IXmlImportFlow, XmlImportFlow>();
+        services.AddSingleton<IFileReadoutPoller, FileReadoutPoller>();
 
         // Root + gating view models
         services.AddSingleton<MainWindowViewModel>();
@@ -42,6 +43,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<CompetitionDaysViewModel>();
         services.AddSingleton<ControlPointsViewModel>();
         services.AddSingleton<GroupsViewModel>();
+        services.AddSingleton<ChipsViewModel>();
 
         return services.BuildServiceProvider();
     }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using OrientDesk.BusinessLogic.Entities;
 using OrientDesk.BusinessLogic.Enums;
 using OrientDesk.BusinessLogic.Interfaces;
@@ -401,6 +402,123 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         }
 
         return _distance.TotalKilometres(points);
+    }
+
+    public Task<IReadOnlyList<RentalChip>> GetRentalChipsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return Task.FromResult<IReadOnlyList<RentalChip>>([]);
+
+        return _eventStore.GetRentalChipsAsync(FolderPath, cancellationToken);
+    }
+
+    public async Task<RentalChip> AddRentalChipAsync(CancellationToken cancellationToken = default)
+    {
+        var chip = new RentalChip();
+        await _eventStore.AddRentalChipAsync(FolderPath, chip, cancellationToken);
+        return chip;
+    }
+
+    public async Task UpdateRentalChipAsync(RentalChip chip, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(chip);
+
+        // Keep numbers unique per competition: a change colliding with a different chip is dropped
+        // (the row reverts on the next reload), mirroring the group rename behaviour.
+        var number = (chip.Number ?? string.Empty).Trim();
+        var chips = await _eventStore.GetRentalChipsAsync(FolderPath, cancellationToken);
+        var collides = number.Length > 0 && chips.Any(c =>
+            c.Id != chip.Id && string.Equals(c.Number.Trim(), number, StringComparison.OrdinalIgnoreCase));
+        if (collides)
+            number = chips.First(c => c.Id == chip.Id).Number; // revert to the stored number
+
+        await _eventStore.UpdateRentalChipAsync(
+            FolderPath,
+            new RentalChip { Id = chip.Id, Number = number, Note = (chip.Note ?? string.Empty).Trim() },
+            cancellationToken);
+    }
+
+    public Task DeleteRentalChipAsync(Guid chipId, CancellationToken cancellationToken = default)
+        => _eventStore.DeleteRentalChipAsync(FolderPath, chipId, cancellationToken);
+
+    public Task<int> ClearRentalChipsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return Task.FromResult(0);
+
+        return _eventStore.DeleteAllRentalChipsAsync(FolderPath, cancellationToken);
+    }
+
+    public async Task<RentalChipBulkResult> AddRentalChipRangeAsync(
+        string startNumber,
+        int count,
+        string note,
+        CancellationToken cancellationToken = default)
+    {
+        var start = (startNumber ?? string.Empty).Trim();
+        if (count <= 0 || start.Length == 0 || !ulong.TryParse(start, out var first))
+            return new RentalChipBulkResult(0, 0);
+
+        var folder = FolderPath;
+        var existing = await _eventStore.GetRentalChipsAsync(folder, cancellationToken);
+        var existingNumbers = new HashSet<string>(
+            existing.Select(c => c.Number.Trim()),
+            StringComparer.OrdinalIgnoreCase);
+
+        // Preserve the start's digit width so e.g. "0042" yields "0042", "0043", … not "42".
+        var width = start.Length;
+        var trimmedNote = (note ?? string.Empty).Trim();
+
+        var toAdd = new List<RentalChip>();
+        var skipped = 0;
+        for (var i = 0; i < count; i++)
+        {
+            var number = (first + (ulong)i).ToString(CultureInfo.InvariantCulture).PadLeft(width, '0');
+            if (!existingNumbers.Add(number))
+            {
+                skipped++;
+                continue;
+            }
+            toAdd.Add(new RentalChip { Number = number, Note = trimmedNote });
+        }
+
+        await _eventStore.AddRentalChipsAsync(folder, toAdd, cancellationToken);
+        return new RentalChipBulkResult(Added: toAdd.Count, Skipped: skipped);
+    }
+
+    public async Task<RentalChipImportResult> ImportRentalChipsAsync(
+        ChipReadData data,
+        string note,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+
+        var folder = FolderPath;
+        var existing = await _eventStore.GetRentalChipsAsync(folder, cancellationToken);
+        var existingNumbers = new HashSet<string>(
+            existing.Select(c => c.Number.Trim()),
+            StringComparer.OrdinalIgnoreCase);
+        var trimmedNote = (note ?? string.Empty).Trim();
+
+        // The readout is a raw log: collapse duplicate numbers and add only the ones we don't have.
+        // Existing chips are never touched and none are removed for being absent from the file.
+        var toAdd = new List<RentalChip>();
+        var skipped = 0;
+        foreach (var record in data.Records)
+        {
+            var number = record.ChipNumber.Trim();
+            if (number.Length == 0)
+                continue;
+            if (!existingNumbers.Add(number))
+            {
+                skipped++;
+                continue;
+            }
+            toAdd.Add(new RentalChip { Number = number, Note = trimmedNote });
+        }
+
+        await _eventStore.AddRentalChipsAsync(folder, toAdd, cancellationToken);
+        return new RentalChipImportResult(Added: toAdd.Count, Skipped: skipped);
     }
 
     private GroupDayRow ToRow(GroupDaySettings s, string name) => new(

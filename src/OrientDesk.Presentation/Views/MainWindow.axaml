@@ -32,6 +32,9 @@
         <DataTemplate DataType="dialogs:ConfirmDialogViewModel">
             <dialogViews:ConfirmDialogView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:BulkAddChipsViewModel">
+            <dialogViews:BulkAddChipsView />
+        </DataTemplate>
     </Window.DataTemplates>
 
     <!-- One transform scales the WHOLE interface — fonts, inputs, paddings, spacing,
@@ -69,6 +72,8 @@
                           Command="{Binding OpenControlPointsCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Competition.Groups]}"
                           Command="{Binding OpenGroupsCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Competition.Chips]}"
+                          Command="{Binding OpenChipsCommand}" />
             </MenuItem>
 
             <!-- Navigation tabs, shown only while a competition is open -->

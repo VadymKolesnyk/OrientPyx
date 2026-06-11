@@ -25,6 +25,9 @@
         <DataTemplate DataType="pages:GroupsViewModel">
             <views:GroupsView />
         </DataTemplate>
+        <DataTemplate DataType="pages:ChipsViewModel">
+            <views:ChipsView />
+        </DataTemplate>
         <DataTemplate DataType="pages:PageViewModelBase">
             <views:PageView />
         </DataTemplate>

@@ -262,4 +262,61 @@ public sealed class EventStore : IEventStore
         db.GroupDaySettings.Remove(existing);
         await db.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<RentalChip>> GetRentalChipsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.RentalChips
+            .AsNoTracking()
+            .OrderBy(c => c.Number)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task AddRentalChipAsync(string eventFolderPath, RentalChip chip, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        db.RentalChips.Add(chip);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task AddRentalChipsAsync(string eventFolderPath, IReadOnlyList<RentalChip> chips, CancellationToken cancellationToken = default)
+    {
+        if (chips.Count == 0)
+            return;
+
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        db.RentalChips.AddRange(chips);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateRentalChipAsync(string eventFolderPath, RentalChip chip, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.RentalChips.FirstOrDefaultAsync(c => c.Id == chip.Id, cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.Number = chip.Number;
+        existing.Note = chip.Note;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteRentalChipAsync(string eventFolderPath, Guid chipId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.RentalChips.FirstOrDefaultAsync(c => c.Id == chipId, cancellationToken);
+        if (existing is null)
+            return;
+
+        db.RentalChips.Remove(existing);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<int> DeleteAllRentalChipsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.RentalChips.ExecuteDeleteAsync(cancellationToken);
+    }
 }

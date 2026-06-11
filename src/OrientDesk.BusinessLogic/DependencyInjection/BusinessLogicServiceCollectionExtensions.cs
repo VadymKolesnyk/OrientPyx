@@ -27,6 +27,10 @@ public static class BusinessLogicServiceCollectionExtensions
         // IOF XML import (shared by control-point and course/group imports)
         services.AddSingleton<IIofXmlParser, IofXmlParser>();
 
+        // Chip-readout file parsing (shared: rental-chip import today, participant timing later).
+        // One implementation per file format; register the new one here when another format is added.
+        services.AddSingleton<IReadoutParser, SportIdentCsvReadoutParser>();
+
         // Course-length calculation (shared: group import today, distance display later)
         services.AddSingleton<ICourseDistanceCalculator, CourseDistanceCalculator>();
 

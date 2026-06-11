@@ -76,4 +76,22 @@ public interface IEventStore
 
     /// <summary>Removes a group-day settings row by id (detaches a group from a day). Does nothing if it is missing.</summary>
     Task DeleteGroupDaySettingsAsync(string eventFolderPath, Guid settingsId, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the competition's rental chips, ordered by number.</summary>
+    Task<IReadOnlyList<RentalChip>> GetRentalChipsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds a rental chip to the competition.</summary>
+    Task AddRentalChipAsync(string eventFolderPath, RentalChip chip, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds several rental chips in one transaction (e.g. a bulk range or a file import).</summary>
+    Task AddRentalChipsAsync(string eventFolderPath, IReadOnlyList<RentalChip> chips, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates an existing rental chip's editable fields (number, note). Does nothing if it is missing.</summary>
+    Task UpdateRentalChipAsync(string eventFolderPath, RentalChip chip, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a rental chip by id. Does nothing if it is missing.</summary>
+    Task DeleteRentalChipAsync(string eventFolderPath, Guid chipId, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes every rental chip from the competition. Returns how many were deleted.</summary>
+    Task<int> DeleteAllRentalChipsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 }
