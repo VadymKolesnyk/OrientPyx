@@ -63,6 +63,16 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     /// <summary>Roster ("Мандатка") rows (one per participant, all days aggregated).</summary>
     public ObservableCollection<ParticipantRosterRowViewModel> Roster { get; } = [];
 
+    /// <summary>
+    /// The roster's collapsible per-day field blocks, in display order. Groups span every day; chips
+    /// span only the days a participant runs. Both start collapsed; state is in-memory only.
+    /// </summary>
+    public ObservableCollection<RosterFieldBlockViewModel> Blocks { get; } =
+    [
+        new(RosterField.Groups, "Participants.Roster.Block.Groups", _ => true),
+        new(RosterField.Chips, "Participants.Roster.Block.Chips", c => c.IsMember)
+    ];
+
     /// <summary>Selectable options: a leading roster sentinel, then each real day.</summary>
     public ObservableCollection<DayOption> DayOptions { get; } = [];
 
@@ -238,7 +248,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             var options = groupsByDay.TryGetValue(cell.DayId, out var o)
                 ? o
                 : [new GroupOption(null, string.Empty, Localization)];
-            cells.Add(new RosterDayCellViewModel(row.ParticipantId, cell, options, Localization, RequestCellGroupChange));
+            cells.Add(new RosterDayCellViewModel(row.ParticipantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange));
         }
         return new ParticipantRosterRowViewModel(row, cells, Localization, RequestRosterRowSave);
     }
@@ -428,12 +438,35 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         catch { }
     }
 
+    // ── Roster block collapse/expand ──────────────────────────────────────────────────────────
+    // Flips a block between its merged (collapsed) and per-day (expanded) views. The view rebuilds
+    // the roster's per-day columns in response to RosterColumnsChanged.
+    [RelayCommand]
+    private void ToggleBlock(RosterFieldBlockViewModel? block)
+    {
+        if (block is null)
+            return;
+        block.IsCollapsed = !block.IsCollapsed;
+        RosterColumnsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     // ── Roster per-day group change ───────────────────────────────────────────────────────────
     // Picking a real group joins the day (or changes the group); picking "не участвує" (null) leaves
     // the day. Either way the write runs in the background and the cell's membership is updated.
     private void RequestCellGroupChange(RosterDayCellViewModel cell)
     {
         _ = ApplyCellGroupChangeAsync(cell);
+    }
+
+    // ── Roster per-day chip change ────────────────────────────────────────────────────────────
+    // Editing a member day's chip (expanded cell, or a collapsed all-days edit) persists in the
+    // background. Only member days carry a chip, so there is no membership change to apply here.
+    private void RequestCellChipChange(RosterDayCellViewModel cell)
+    {
+        if (!cell.IsMember)
+            return;
+        var (participantId, dayId, chip) = (cell.ParticipantId, cell.DayId, (cell.Chip ?? string.Empty).Trim());
+        _ = Task.Run(() => _editor.SetParticipantDayChipAsync(participantId, dayId, chip));
     }
 
     private async Task ApplyCellGroupChangeAsync(RosterDayCellViewModel cell)

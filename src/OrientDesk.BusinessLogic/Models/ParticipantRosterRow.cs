@@ -20,6 +20,7 @@ public sealed record ParticipantRosterRow(
 /// One participant's standing on one day in the roster view. <see cref="IsMember"/> false (and a
 /// null <see cref="LinkId"/>) means the participant does not run that day — the cell renders greyed.
 /// Picking a group on a non-member cell creates the link (joins the day); clearing it removes the link.
+/// <see cref="Chip"/> is that day's chip number (empty for a non-member).
 /// </summary>
 public sealed record RosterDayCell(
     Guid DayId,
@@ -27,4 +28,5 @@ public sealed record RosterDayCell(
     Guid? LinkId,
     bool IsMember,
     Guid? GroupId,
-    string GroupName);
+    string GroupName,
+    string Chip);

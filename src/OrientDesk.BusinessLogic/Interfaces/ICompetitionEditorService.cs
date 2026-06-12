@@ -196,6 +196,13 @@ public interface ICompetitionEditorService
     /// </summary>
     Task<Guid> SetParticipantDayGroupAsync(Guid participantId, Guid dayId, Guid? groupId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Sets a participant's chip on a specific day (roster edit). A no-op when the participant is not
+    /// a member that day. A chip colliding with another participant on the same day is ignored (the
+    /// previous value is kept; the cell reverts on the next reload), keeping chips unique per day.
+    /// </summary>
+    Task SetParticipantDayChipAsync(Guid participantId, Guid dayId, string chip, CancellationToken cancellationToken = default);
+
     /// <summary>Loads the groups attached to a given day (id + name), for the in-cell group dropdown.</summary>
     Task<IReadOnlyList<GroupDayRow>> GetGroupsForDayAsync(Guid dayId, CancellationToken cancellationToken = default);
 

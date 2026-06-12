@@ -14,6 +14,7 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
 {
     private readonly Guid _participantId;
     private readonly Action<RosterDayCellViewModel> _requestGroupChange;
+    private readonly Action<RosterDayCellViewModel> _requestChipChange;
     private bool _initialized;
 
     [ObservableProperty]
@@ -22,12 +23,16 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     [ObservableProperty]
     private GroupOption _selectedGroup;
 
+    [ObservableProperty]
+    private string _chip;
+
     public RosterDayCellViewModel(
         Guid participantId,
         RosterDayCell cell,
         IReadOnlyList<GroupOption> groupOptions,
         ILocalizationService localization,
-        Action<RosterDayCellViewModel> requestGroupChange)
+        Action<RosterDayCellViewModel> requestGroupChange,
+        Action<RosterDayCellViewModel> requestChipChange)
     {
         _participantId = participantId;
         DayId = cell.DayId;
@@ -35,10 +40,12 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         LinkId = cell.LinkId;
         _isMember = cell.IsMember;
         _requestGroupChange = requestGroupChange;
+        _requestChipChange = requestChipChange;
         Localization = localization;
 
         GroupOptions = groupOptions;
         _selectedGroup = groupOptions.FirstOrDefault(o => o.Id == cell.GroupId) ?? groupOptions[0];
+        _chip = cell.Chip;
 
         _initialized = true;
     }
@@ -65,9 +72,16 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
             _requestGroupChange(this);
     }
 
+    partial void OnChipChanged(string value)
+    {
+        if (_initialized)
+            _requestChipChange(this);
+    }
+
     /// <summary>
     /// Updates the cell after a membership change persisted (joined/left), without re-triggering the
-    /// save callback. Called by the page once the background write has applied.
+    /// save callback. Called by the page once the background write has applied. Leaving a day also
+    /// clears the chip (it is per-day and meaningless for a non-member).
     /// </summary>
     public void ApplyMembership(bool isMember, Guid? linkId)
     {
@@ -75,7 +89,10 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         IsMember = isMember;
         LinkId = linkId;
         if (!isMember)
+        {
             SelectedGroup = GroupOptions[0];
+            Chip = string.Empty;
+        }
         _initialized = true;
     }
 }

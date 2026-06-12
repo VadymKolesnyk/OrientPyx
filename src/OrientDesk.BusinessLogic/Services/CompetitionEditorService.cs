@@ -679,11 +679,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 if (linkByKey.TryGetValue((participant.Id, day.Id), out var link))
                 {
                     var name = link.GroupId is { } gid && groupName.TryGetValue(gid, out var n) ? n : string.Empty;
-                    cells.Add(new RosterDayCell(day.Id, day.Number, link.Id, IsMember: true, link.GroupId, name));
+                    cells.Add(new RosterDayCell(day.Id, day.Number, link.Id, IsMember: true, link.GroupId, name, link.Chip));
                 }
                 else
                 {
-                    cells.Add(new RosterDayCell(day.Id, day.Number, LinkId: null, IsMember: false, GroupId: null, GroupName: string.Empty));
+                    cells.Add(new RosterDayCell(day.Id, day.Number, LinkId: null, IsMember: false, GroupId: null, GroupName: string.Empty, Chip: string.Empty));
                 }
             }
             rows.Add(new ParticipantRosterRow(
@@ -836,6 +836,36 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Team = existing.Team
         }, cancellationToken);
         return existing.Id;
+    }
+
+    public async Task SetParticipantDayChipAsync(Guid participantId, Guid dayId, string chip, CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var existing = links.FirstOrDefault(l => l.ParticipantId == participantId);
+
+        // The chip is per-day and only meaningful for a member; nothing to do otherwise.
+        if (existing is null)
+            return;
+
+        // A chip colliding with another participant on the same day is dropped, keeping the stored
+        // chip — the cell reverts on the next reload (matches UpdateParticipantDayRowAsync).
+        var trimmed = (chip ?? string.Empty).Trim();
+        var collides = trimmed.Length > 0 && links.Any(l =>
+            l.Id != existing.Id && string.Equals(l.Chip.Trim(), trimmed, StringComparison.OrdinalIgnoreCase));
+        if (collides)
+            trimmed = existing.Chip;
+
+        await _eventStore.UpdateParticipantDayAsync(folder, new ParticipantDay
+        {
+            Id = existing.Id,
+            EventDayId = dayId,
+            ParticipantId = participantId,
+            Order = existing.Order,
+            GroupId = existing.GroupId,
+            Chip = trimmed,
+            Team = existing.Team
+        }, cancellationToken);
     }
 
     public async Task<IReadOnlyList<GroupDayRow>> GetGroupsForDayAsync(Guid dayId, CancellationToken cancellationToken = default)
