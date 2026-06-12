@@ -8,8 +8,7 @@ namespace OrientDesk.BusinessLogic.Models;
 /// </summary>
 public sealed record ParticipantRosterRow(
     Guid ParticipantId,
-    string Surname,
-    string Name,
+    string FullName,
     string Number,
     string Rank,
     string Coach,

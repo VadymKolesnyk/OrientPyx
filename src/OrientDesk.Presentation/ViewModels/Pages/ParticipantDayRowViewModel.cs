@@ -25,15 +25,14 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private readonly IDisciplineStrategyProvider _strategies;
     private readonly Action<ParticipantDayRowViewModel> _requestSave;
     private readonly Action<ParticipantDayRowViewModel> _requestLeaveDay;
+    private readonly Action<ParticipantDayRowViewModel> _requestChipChange;
 
-    // Suppresses save requests while the constructor seeds initial values.
-    private readonly bool _initialized;
+    // Suppresses save requests while the constructor seeds initial values, and while a rejected
+    // reassignment reverts the chip.
+    private bool _initialized;
 
     [ObservableProperty]
-    private string _surname;
-
-    [ObservableProperty]
-    private string _name;
+    private string _fullName;
 
     [ObservableProperty]
     private string _number;
@@ -62,7 +61,8 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         ILocalizationService localization,
         IDisciplineStrategyProvider strategies,
         Action<ParticipantDayRowViewModel> requestSave,
-        Action<ParticipantDayRowViewModel> requestLeaveDay)
+        Action<ParticipantDayRowViewModel> requestLeaveDay,
+        Action<ParticipantDayRowViewModel> requestChipChange)
     {
         _linkId = row.LinkId;
         _participantId = row.ParticipantId;
@@ -71,23 +71,33 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         _strategies = strategies;
         _requestSave = requestSave;
         _requestLeaveDay = requestLeaveDay;
+        _requestChipChange = requestChipChange;
         Localization = localization;
 
         GroupOptions = groupOptions;
 
-        _surname = row.Surname;
-        _name = row.Name;
+        _fullName = row.FullName;
         _number = row.Number;
         _rank = row.Rank;
         _coach = row.Coach;
         _birthDate = row.BirthDate;
         _chip = row.Chip;
+        _committedChip = row.Chip;
         _team = row.Team;
         // Match by id; fall back to the "(none)" option (the first) when the group is unset/missing.
         _selectedGroup = groupOptions.FirstOrDefault(o => o.Id == row.GroupId) ?? groupOptions[0];
 
         _initialized = true;
     }
+
+    // The last chip value the page accepted/persisted, so a rejected reassignment can revert to it.
+    private string _committedChip;
+
+    /// <summary>The previously committed chip (to restore after a rejected reassignment).</summary>
+    public string CommittedChip => _committedChip;
+
+    /// <summary>Records the chip the page has accepted (after a successful save/reassign).</summary>
+    public void MarkChipCommitted(string value) => _committedChip = value;
 
     public ILocalizationService Localization { get; }
 
@@ -107,8 +117,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         LinkId: _linkId,
         ParticipantId: _participantId,
         Order: _order,
-        Surname: (Surname ?? string.Empty).Trim(),
-        Name: (Name ?? string.Empty).Trim(),
+        FullName: (FullName ?? string.Empty).Trim(),
         Number: (Number ?? string.Empty).Trim(),
         Rank: (Rank ?? string.Empty).Trim(),
         Coach: (Coach ?? string.Empty).Trim(),
@@ -119,8 +128,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         Team: (Team ?? string.Empty).Trim(),
         DayDefaultDiscipline: _dayDefaultDiscipline);
 
-    partial void OnSurnameChanged(string value) => QueueSave();
-    partial void OnNameChanged(string value) => QueueSave();
+    partial void OnFullNameChanged(string value) => QueueSave();
     partial void OnNumberChanged(string value) => QueueSave();
     partial void OnRankChanged(string value) => QueueSave();
     partial void OnCoachChanged(string value) => QueueSave();
@@ -137,8 +145,24 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         else
             QueueSave();
     }
-    partial void OnChipChanged(string value) => QueueSave();
+    // The chip is NOT part of the debounced row save: a chip edit may collide with another competitor
+    // on the day and must be resolved (confirm + reassign, or revert) before it is persisted, so the
+    // page owns it via a dedicated callback.
+    partial void OnChipChanged(string value)
+    {
+        if (_initialized)
+            _requestChipChange(this);
+    }
     partial void OnTeamChanged(string value) => QueueSave();
+
+    /// <summary>Restores the chip to a value without re-triggering the chip-change callback (used to revert a rejected reassignment).</summary>
+    public void SetChipSilently(string value)
+    {
+        var wasInitialized = _initialized;
+        _initialized = false;
+        Chip = value;
+        _initialized = wasInitialized;
+    }
 
     private void QueueSave()
     {

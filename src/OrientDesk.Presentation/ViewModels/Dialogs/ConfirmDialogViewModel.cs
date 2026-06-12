@@ -46,8 +46,17 @@ public sealed partial class ConfirmDialogViewModel : ObservableObject
     public string ConfirmKey { get; }
     public string CancelKey { get; }
 
+    /// <summary>
+    /// Optional arguments formatted into the localized message via <see cref="string.Format(string, object?[])"/>.
+    /// Lets a confirmation include dynamic values (e.g. a chip number and its current holder) while the
+    /// message text itself stays a localizable resource with <c>{0}</c>/<c>{1}</c> placeholders.
+    /// </summary>
+    public object[]? MessageArgs { get; init; }
+
     public string Title => Localization.Get(TitleKey);
-    public string Message => Localization.Get(MessageKey);
+    public string Message => MessageArgs is { Length: > 0 }
+        ? string.Format(Localization.Get(MessageKey), MessageArgs)
+        : Localization.Get(MessageKey);
     public string ConfirmText => Localization.Get(ConfirmKey);
     public string CancelText => Localization.Get(CancelKey);
 

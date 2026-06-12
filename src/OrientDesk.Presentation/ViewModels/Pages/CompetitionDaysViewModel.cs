@@ -106,8 +106,16 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         if (row is null)
             return;
 
-        await _busy.RunAsync(() => _editor.UpdateDayAsync(row.ToEntity()));
+        var entity = row.ToEntity();
+        await _busy.RunAsync(() => _editor.UpdateDayAsync(entity));
         row.MarkSaved();
+
+        // The session caches the active day (incl. its DefaultDiscipline). When the edited row IS the
+        // active day, re-point the session so other pages (Participants, Groups) pick up a discipline
+        // change immediately — they read it from the session and refresh on SessionChanged. Without
+        // this they keep the stale discipline until the app is restarted.
+        if (row.IsActive)
+            await _busy.RunAsync(() => _session.SetCurrentDayAsync(entity));
     }
 
     // The grid's delete button binds to this command. A plain click asks for confirmation first;

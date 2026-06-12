@@ -190,6 +190,13 @@ public interface ICompetitionEditorService
     Task RemoveParticipantFromDayAsync(Guid linkId, Guid participantId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Hard-deletes a participant entirely (and all their day links), regardless of how many days they
+    /// run. Used by the roster ("Мандатка") delete, where a participant may run on zero days and so has
+    /// no link to remove. A no-op when the participant does not exist.
+    /// </summary>
+    Task DeleteParticipantAsync(Guid participantId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Sets a participant's group on a specific day (roster edit). Creates the day link when missing
     /// (joining the day); passing a null group clears the assignment but keeps the membership.
     /// Returns the id of the affected link (the new or existing one).
@@ -202,6 +209,29 @@ public interface ICompetitionEditorService
     /// previous value is kept; the cell reverts on the next reload), keeping chips unique per day.
     /// </summary>
     Task SetParticipantDayChipAsync(Guid participantId, Guid dayId, string chip, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finds the participant who already holds <paramref name="chip"/> on <paramref name="dayId"/>,
+    /// other than <paramref name="excludeParticipantId"/>. Returns that participant's full name (for a
+    /// reassignment prompt), or null when the chip is free (or only held by the excluded participant).
+    /// A blank chip is always free.
+    /// </summary>
+    Task<string?> FindChipHolderAsync(Guid dayId, string chip, Guid excludeParticipantId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets a participant's chip on a specific day, taking it away from any OTHER participant who held
+    /// the same chip that day (their chip is cleared). The caller is expected to have already confirmed
+    /// the reassignment with the user. A no-op when the participant is not a member that day. Returns
+    /// the participant id whose chip was cleared (the previous holder), or null when none.
+    /// </summary>
+    Task<Guid?> ReassignParticipantDayChipAsync(Guid participantId, Guid dayId, string chip, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Toggles a chip number's presence in the rental-chip database: adds it when absent, removes it
+    /// when present (matched case-insensitively on the trimmed number). Returns true when the chip is
+    /// now in the database (was added), false when it was removed (or the number was blank).
+    /// </summary>
+    Task<bool> ToggleRentalChipAsync(string number, CancellationToken cancellationToken = default);
 
     /// <summary>Loads the groups attached to a given day (id + name), for the in-cell group dropdown.</summary>
     Task<IReadOnlyList<GroupDayRow>> GetGroupsForDayAsync(Guid dayId, CancellationToken cancellationToken = default);

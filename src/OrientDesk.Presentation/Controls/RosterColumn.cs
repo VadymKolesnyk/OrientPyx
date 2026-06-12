@@ -1,0 +1,136 @@
+using System.Collections.Generic;
+using CommunityToolkit.Mvvm.ComponentModel;
+using OrientDesk.Presentation.ViewModels.Pages;
+
+namespace OrientDesk.Presentation.Controls;
+
+/// <summary>
+/// What a roster cell renders/edits. Drives <see cref="RosterCellFactory"/> and tells the table
+/// which value path on the bound row the cell reads.
+/// </summary>
+public enum RosterCellKind
+{
+    /// <summary>A competition-level identity text field (surname, name, …) edited on the row.</summary>
+    IdentityText,
+
+    /// <summary>
+    /// A digits-only text field edited directly on the row by its <see cref="RosterColumn.IdentityPath"/>
+    /// (like <see cref="IdentityText"/> but only accepts digits). Used by the day-mode chip column.
+    /// </summary>
+    ChipText,
+
+    /// <summary>The competition-level birth date (CalendarDatePicker).</summary>
+    BirthDate,
+
+    /// <summary>A single day's group (ComboBox of <see cref="GroupOption"/>), bound to Days[i].</summary>
+    Group,
+
+    /// <summary>A single day's chip (TextBox), bound to Days[i].</summary>
+    Chip,
+
+    /// <summary>
+    /// A group ComboBox bound directly on the row (GroupOptions/SelectedGroup), not via Days[i].
+    /// Used by the flat day-mode table where each row already represents a single day.
+    /// </summary>
+    RowGroup,
+
+    /// <summary>A collapsed block's merged group cell (combo when shared, "різні" when days differ).</summary>
+    CollapsedGroup,
+
+    /// <summary>A collapsed block's merged chip cell (input when shared, "різні" when days differ).</summary>
+    CollapsedChip,
+
+    /// <summary>The trailing delete-action button column.</summary>
+    Actions
+}
+
+/// <summary>
+/// One leaf column in the roster table — the unit a header sub-cell and every body cell line up on.
+/// Width is observable so the header and all (virtualized) rows share a single live width: the
+/// resize grip writes here and every realized cell re-binds instantly. Pure presentation DTO.
+/// </summary>
+public sealed partial class RosterColumn : ObservableObject
+{
+    public RosterColumn(RosterCellKind kind)
+    {
+        Kind = kind;
+    }
+
+    /// <summary>What the cell renders/edits.</summary>
+    public RosterCellKind Kind { get; }
+
+    /// <summary>Resolved (already localized) sub-header text — e.g. "День 2", or an identity label.</summary>
+    public string Header { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Day index into the row's <c>Days</c> collection for per-day cells (Group/Chip); ignored for
+    /// identity/collapsed/action columns.
+    /// </summary>
+    public int DayIndex { get; set; }
+
+    /// <summary>
+    /// Identity property name for <see cref="RosterCellKind.IdentityText"/> columns (e.g. "Surname"),
+    /// used as the cell's two-way binding path on the row.
+    /// </summary>
+    public string IdentityPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Property path on the bound row to sort by when this column's header is clicked. Empty ⇒ the
+    /// column is not sortable (e.g. the actions column). For identity text this is the same as
+    /// <see cref="IdentityPath"/>; per-day cells point at <c>Days[i].SortKey</c>-style paths.
+    /// </summary>
+    public string SortPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The live, shared column width in pixels. The resize grip writes it; the header sub-cell and
+    /// every (virtualized) body cell bind to it, so a drag resizes the whole column at once.
+    /// </summary>
+    [ObservableProperty]
+    private double _width = DefaultWidth;
+
+    /// <summary>Default starting width for content columns the builder doesn't fix explicitly.</summary>
+    public const double DefaultWidth = 130;
+
+    /// <summary>Smallest width the resize grip allows.</summary>
+    public double MinWidth { get; set; } = 48;
+
+    /// <summary>True when the builder set an explicit width (vs. the default), used when carrying widths.</summary>
+    public bool WidthCapped { get; set; }
+}
+
+/// <summary>
+/// A top-level header unit: either a single ungrouped identity column (spanning both header tiers)
+/// or a collapsible field block (a band over one column per day, or one merged column when
+/// collapsed). The band is the unit that drag-reorders as a whole in v2.
+/// </summary>
+public sealed class RosterBand
+{
+    public enum BandKind
+    {
+        /// <summary>An ungrouped column; its header spans both tiers (no sub-row).</summary>
+        Identity,
+
+        /// <summary>A field block (Groups/Chips); a band label over its day sub-columns.</summary>
+        FieldBlock
+    }
+
+    public RosterBand(BandKind kind, IReadOnlyList<RosterColumn> columns)
+    {
+        Kind = kind;
+        Columns = columns;
+    }
+
+    public BandKind Kind { get; }
+
+    /// <summary>The leaf columns under this band, left-to-right.</summary>
+    public IReadOnlyList<RosterColumn> Columns { get; }
+
+    /// <summary>Resolved (localized) band/identity header text shown on the top tier.</summary>
+    public string Header { get; set; } = string.Empty;
+
+    /// <summary>The source field block, for the collapse toggle; null for identity bands.</summary>
+    public RosterFieldBlockViewModel? Block { get; set; }
+
+    /// <summary>True when this is a field block currently collapsed to one merged column.</summary>
+    public bool IsCollapsed => Block?.IsCollapsed ?? false;
+}

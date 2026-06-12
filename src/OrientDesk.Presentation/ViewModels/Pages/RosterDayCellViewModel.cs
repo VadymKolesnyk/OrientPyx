@@ -46,8 +46,27 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         GroupOptions = groupOptions;
         _selectedGroup = groupOptions.FirstOrDefault(o => o.Id == cell.GroupId) ?? groupOptions[0];
         _chip = cell.Chip;
+        _committedChip = cell.Chip;
 
         _initialized = true;
+    }
+
+    // The last chip value the page accepted/persisted, so a rejected reassignment can revert to it.
+    private string _committedChip;
+
+    /// <summary>The previously committed chip (to restore after a rejected reassignment).</summary>
+    public string CommittedChip => _committedChip;
+
+    /// <summary>Records the chip the page has accepted (after a successful save/reassign).</summary>
+    public void MarkChipCommitted(string value) => _committedChip = value;
+
+    /// <summary>Restores the chip without re-triggering the chip-change callback (revert / external clear).</summary>
+    public void SetChipSilently(string value)
+    {
+        var wasInitialized = _initialized;
+        _initialized = false;
+        Chip = value;
+        _initialized = wasInitialized;
     }
 
     public ILocalizationService Localization { get; }

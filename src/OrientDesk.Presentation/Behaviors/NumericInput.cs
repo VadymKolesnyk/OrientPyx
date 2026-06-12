@@ -17,6 +17,7 @@ namespace OrientDesk.Presentation.Behaviors;
 /// parsed leniently on save. Three masks are offered via attached properties:
 ///
 /// <list type="bullet">
+///   <item><see cref="DigitsProperty"/> — digits only, no sign or separator ("300").</item>
 ///   <item><see cref="IntegerProperty"/> — optional sign then digits ("-12", "300").</item>
 ///   <item><see cref="DecimalProperty"/> — optional sign, digits and a single '.' or ',' ("4.5").</item>
 ///   <item><see cref="TimeProperty"/> — an <c>hh:mm:ss</c> stopwatch mask ("1:30:00").</item>
@@ -24,6 +25,9 @@ namespace OrientDesk.Presentation.Behaviors;
 /// </summary>
 public static class NumericInput
 {
+    public static readonly AttachedProperty<bool> DigitsProperty =
+        AvaloniaProperty.RegisterAttached<TextBox, bool>("Digits", typeof(NumericInput));
+
     public static readonly AttachedProperty<bool> IntegerProperty =
         AvaloniaProperty.RegisterAttached<TextBox, bool>("Integer", typeof(NumericInput));
 
@@ -32,6 +36,9 @@ public static class NumericInput
 
     public static readonly AttachedProperty<bool> TimeProperty =
         AvaloniaProperty.RegisterAttached<TextBox, bool>("Time", typeof(NumericInput));
+
+    public static void SetDigits(TextBox box, bool value) => box.SetValue(DigitsProperty, value);
+    public static bool GetDigits(TextBox box) => box.GetValue(DigitsProperty);
 
     public static void SetInteger(TextBox box, bool value) => box.SetValue(IntegerProperty, value);
     public static bool GetInteger(TextBox box) => box.GetValue(IntegerProperty);
@@ -44,6 +51,7 @@ public static class NumericInput
 
     static NumericInput()
     {
+        DigitsProperty.Changed.AddClassHandler<TextBox>((box, e) => Toggle(box, (bool)e.NewValue!));
         IntegerProperty.Changed.AddClassHandler<TextBox>((box, e) => Toggle(box, (bool)e.NewValue!));
         DecimalProperty.Changed.AddClassHandler<TextBox>((box, e) => Toggle(box, (bool)e.NewValue!));
         TimeProperty.Changed.AddClassHandler<TextBox>((box, e) => Toggle(box, (bool)e.NewValue!));
@@ -91,6 +99,8 @@ public static class NumericInput
         if (text.Length == 0)
             return true;
 
+        if (GetDigits(box))
+            return IsDigitsShape(text);
         if (GetInteger(box))
             return IsIntegerShape(text);
         if (GetDecimal(box))
@@ -98,6 +108,16 @@ public static class NumericInput
         if (GetTime(box))
             return IsTimeShape(text);
 
+        return true;
+    }
+
+    // Digits only — no sign, no separator. The value stays a string; this just blocks any non-digit
+    // character (used by the roster's chip column).
+    private static bool IsDigitsShape(string text)
+    {
+        foreach (var c in text)
+            if (!char.IsAsciiDigit(c))
+                return false;
         return true;
     }
 

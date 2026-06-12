@@ -33,6 +33,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private readonly IDisciplineStrategyProvider _strategies;
     private readonly IDialogService _dialogs;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
+    // Serialises chip-reassignment prompts so a collapsed-block edit that fans a chip out to several
+    // days never stacks overlapping confirm dialogs (the overlay shows one dialog at a time).
+    private readonly SemaphoreSlim _chipGate = new(1, 1);
 
     public ParticipantsViewModel(
         ILocalizationService localization,
@@ -51,6 +54,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         // Singleton VM: reload when the competition/day changes. SessionChanged may be raised on a
         // pool thread (session writes run inside RunAsync), so marshal onto the UI thread.
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        // Re-localize the day-table column headers on a language switch (their text is baked into the
+        // band model at build time, so the bands must be rebuilt — the RosterTable picks it up).
+        Localization.PropertyChanged += (_, _) => RebuildDayBands();
     }
 
     public override string NavKey => "Nav.Participants";
@@ -77,10 +83,36 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     public ObservableCollection<DayOption> DayOptions { get; } = [];
 
     /// <summary>
+    /// The competition's rental-chip numbers, shared with the table so chip cells bold-red a number
+    /// that is not in the rental database. Reloaded with the page and mutated live on a toggle.
+    /// </summary>
+    public RentalChipRegistry RentalChips { get; } = new();
+
+    /// <summary>
     /// The competition's days, in order — the source of truth for the roster's per-day columns. Kept
     /// independent of the roster rows so the columns can be built even when the roster is empty.
     /// </summary>
-    public IReadOnlyList<EventDay> RosterDays { get; private set; } = [];
+    private IReadOnlyList<EventDay> _rosterDays = [];
+    public IReadOnlyList<EventDay> RosterDays
+    {
+        get => _rosterDays;
+        private set => SetProperty(ref _rosterDays, value);
+    }
+
+    /// <summary>
+    /// The flat (non-banded) column model for the day-mode table, so it reuses the same custom
+    /// <c>RosterTable</c> control. Rebuilt when the team column toggles or the language changes; the
+    /// builder carries user-set widths forward.
+    /// </summary>
+    private IReadOnlyList<Controls.RosterBand> _dayBands = [];
+    public IReadOnlyList<Controls.RosterBand> DayBands
+    {
+        get => _dayBands;
+        private set => SetProperty(ref _dayBands, value);
+    }
+
+    private void RebuildDayBands()
+        => DayBands = new Controls.DayColumnBuilder(Localization).Build(ShowTeamColumn, _dayBands);
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsRosterMode))]
@@ -100,9 +132,6 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     public bool ShowTeamColumn =>
         _session.CurrentDay is { } day && _strategies.For(day.DefaultDiscipline)
             .UsesParticipantColumn(BusinessLogic.Enums.ParticipantColumn.Team);
-
-    /// <summary>Raised when the set of visible columns (team) or the roster day columns may have changed.</summary>
-    public event EventHandler? ColumnsChanged;
 
     /// <summary>Raised when the roster's day set changed, so the view rebuilds its per-day columns.</summary>
     public event EventHandler? RosterColumnsChanged;
@@ -124,6 +153,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             ? await _busy.RunAsync(() => _editor.GetDaysAsync())
             : (IReadOnlyList<EventDay>)[];
         RosterDays = days;
+
+        // Refresh the rental-chip set so cells highlight non-rental numbers against the current DB.
+        await RefreshRentalChipsAsync(hasEvent);
 
         _syncingDay = true;
         try
@@ -206,10 +238,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             });
             foreach (var row in rows)
                 Participants.Add(CreateDayRow(row, groupOptions));
-            ColumnsChanged?.Invoke(this, EventArgs.Empty);
         }
 
         OnPropertyChanged(nameof(ShowTeamColumn));
+        RebuildDayBands();
     }
 
     // Builds the "(none)" + day-group options list for a given day.
@@ -236,7 +268,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     }
 
     private ParticipantDayRowViewModel CreateDayRow(ParticipantDayRow row, IReadOnlyList<GroupOption> groupOptions)
-        => new(row, groupOptions, Localization, _strategies, RequestRowSave, LeaveDay);
+        => new(row, groupOptions, Localization, _strategies, RequestRowSave, LeaveDay, RequestDayRowChipChange);
 
     private ParticipantRosterRowViewModel CreateRosterRow(
         ParticipantRosterRow row,
@@ -350,6 +382,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     [ObservableProperty]
     private ParticipantDayRowViewModel? _selectedParticipant;
 
+    /// <summary>The roster ("Мандатка") row the table has selected (for keyboard delete).</summary>
+    [ObservableProperty]
+    private ParticipantRosterRowViewModel? _selectedRosterRow;
+
     private async Task RemoveAsync(ParticipantDayRowViewModel? row, bool skipConfirm)
     {
         if (row is null)
@@ -382,6 +418,130 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
         if (confirmed)
             RequestGridFocus();
+    }
+
+    // ── Roster ("Мандатка") delete ────────────────────────────────────────────────────────────
+    // The roster table binds this command (the trailing delete button) and raises a keyboard delete
+    // request. A roster participant may run on zero days, so we hard-delete the participant entirely
+    // rather than removing a day link.
+    [RelayCommand]
+    private Task DeleteRosterParticipantAsync(ParticipantRosterRowViewModel? row) => RemoveRosterAsync(row, skipConfirm: false);
+
+    public Task DeleteRosterParticipantNoConfirmAsync(ParticipantRosterRowViewModel? row) => RemoveRosterAsync(row, skipConfirm: true);
+
+    public Task DeleteSelectedRosterAsync(bool skipConfirm) => RemoveRosterAsync(SelectedRosterRow, skipConfirm);
+
+    private async Task RemoveRosterAsync(ParticipantRosterRowViewModel? row, bool skipConfirm)
+    {
+        if (row is null)
+            return;
+
+        if (!skipConfirm)
+        {
+            var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+                Localization,
+                titleKey: "Participants.Delete.ConfirmTitle",
+                messageKey: "Participants.Delete.ConfirmMessage"));
+            if (!confirmed)
+                return;
+        }
+
+        if (_saveTimers.TryGetValue(row.ParticipantId, out var cts))
+        {
+            cts.Cancel();
+            _saveTimers.Remove(row.ParticipantId);
+        }
+
+        // Remove from the grid immediately; run the SQLite delete in the background.
+        if (ReferenceEquals(SelectedRosterRow, row))
+            SelectedRosterRow = GridSelection.NeighbourAfterRemoval(Roster, row);
+        Roster.Remove(row);
+
+        var participantId = row.ParticipantId;
+        _ = Task.Run(() => _editor.DeleteParticipantAsync(participantId));
+    }
+
+    // ── Day-row chip change (conflict-resolved, not part of the debounced save) ─────────────────
+    // A chip edit on the day grid may collide with another competitor on the same day. Confirm the
+    // reassignment; on yes, the editor moves the chip (clearing the previous holder); on no, the cell
+    // reverts to the last committed value. Resolved off the debounced row save so the prompt is shown
+    // exactly when the edit commits (the chip box updates on lost focus).
+    private void RequestDayRowChipChange(ParticipantDayRowViewModel row)
+    {
+        _ = ResolveDayRowChipAsync(row);
+    }
+
+    private async Task ResolveDayRowChipAsync(ParticipantDayRowViewModel row)
+    {
+        if (_session.CurrentDay is not { } day)
+            return;
+
+        var newChip = (row.Chip ?? string.Empty).Trim();
+        var (participantId, dayId) = (row.ParticipantId, day.Id);
+
+        await _chipGate.WaitAsync();
+        try
+        {
+            var ok = await ResolveChipReassignmentAsync(participantId, dayId, newChip);
+            if (!ok)
+            {
+                // Rejected: restore the previous chip without re-triggering this handler.
+                row.SetChipSilently(row.CommittedChip);
+                return;
+            }
+
+            row.MarkChipCommitted(newChip);
+            await Task.Run(() => _editor.ReassignParticipantDayChipAsync(participantId, dayId, newChip));
+            // The other holder (if any) had their chip cleared in the DB; refresh that row in the grid.
+            ClearChipOnConflictingDayRow(participantId, newChip);
+        }
+        finally
+        {
+            _chipGate.Release();
+        }
+    }
+
+    // After a reassignment, drop the chip from whatever OTHER day-grid row was showing it, so the UI
+    // matches the DB (only one competitor holds a chip per day).
+    private void ClearChipOnConflictingDayRow(Guid keepParticipantId, string chip)
+    {
+        if (chip.Length == 0)
+            return;
+        foreach (var other in Participants)
+        {
+            if (other.ParticipantId == keepParticipantId)
+                continue;
+            if (string.Equals((other.Chip ?? string.Empty).Trim(), chip, StringComparison.OrdinalIgnoreCase))
+            {
+                other.SetChipSilently(string.Empty);
+                other.MarkChipCommitted(string.Empty);
+            }
+        }
+    }
+
+    // Shared confirm step for a chip reassignment (day grid and roster). Returns true when the chip is
+    // free or the user confirmed taking it; false when another competitor holds it and the user
+    // declined. A blank chip is always free.
+    private async Task<bool> ResolveChipReassignmentAsync(Guid participantId, Guid dayId, string chip)
+    {
+        if (chip.Length == 0)
+            return true;
+
+        var holder = await _busy.RunAsync(() => _editor.FindChipHolderAsync(dayId, chip, participantId));
+        if (holder is null)
+            return true;
+
+        var who = string.IsNullOrWhiteSpace(holder) ? Localization.Get("Participants.Chip.UnnamedHolder") : holder;
+        var dialog = new ConfirmDialogViewModel(
+            Localization,
+            titleKey: "Participants.Chip.Reassign.Title",
+            messageKey: "Participants.Chip.Reassign.Message",
+            confirmKey: "Participants.Chip.Reassign.Confirm",
+            cancelKey: "Common.Cancel")
+        {
+            MessageArgs = [chip, who]
+        };
+        return await _dialogs.ConfirmAsync(dialog);
     }
 
     // ── Day-row autosave (debounced per row) ──────────────────────────────────────────────────
@@ -425,8 +585,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             await Task.Delay(SaveDebounce, token);
             var dto = new ParticipantRosterRow(
                 row.ParticipantId,
-                (row.Surname ?? string.Empty).Trim(),
-                (row.Name ?? string.Empty).Trim(),
+                (row.FullName ?? string.Empty).Trim(),
                 (row.Number ?? string.Empty).Trim(),
                 (row.Rank ?? string.Empty).Trim(),
                 (row.Coach ?? string.Empty).Trim(),
@@ -459,14 +618,61 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     }
 
     // ── Roster per-day chip change ────────────────────────────────────────────────────────────
-    // Editing a member day's chip (expanded cell, or a collapsed all-days edit) persists in the
-    // background. Only member days carry a chip, so there is no membership change to apply here.
+    // Editing a member day's chip (expanded cell, or a collapsed all-days edit) may collide with
+    // another competitor on that day: confirm the reassignment, then persist (clearing the previous
+    // holder) or revert. Only member days carry a chip, so there is no membership change to apply here.
     private void RequestCellChipChange(RosterDayCellViewModel cell)
     {
         if (!cell.IsMember)
             return;
-        var (participantId, dayId, chip) = (cell.ParticipantId, cell.DayId, (cell.Chip ?? string.Empty).Trim());
-        _ = Task.Run(() => _editor.SetParticipantDayChipAsync(participantId, dayId, chip));
+        _ = ResolveCellChipAsync(cell);
+    }
+
+    private async Task ResolveCellChipAsync(RosterDayCellViewModel cell)
+    {
+        var newChip = (cell.Chip ?? string.Empty).Trim();
+        var (participantId, dayId) = (cell.ParticipantId, cell.DayId);
+
+        await _chipGate.WaitAsync();
+        try
+        {
+            var ok = await ResolveChipReassignmentAsync(participantId, dayId, newChip);
+            if (!ok)
+            {
+                cell.SetChipSilently(cell.CommittedChip);
+                return;
+            }
+
+            cell.MarkChipCommitted(newChip);
+            await Task.Run(() => _editor.ReassignParticipantDayChipAsync(participantId, dayId, newChip));
+            // Mirror the DB: drop the chip from any other roster cell on the SAME day that showed it.
+            ClearChipOnConflictingRosterCell(participantId, dayId, newChip);
+        }
+        finally
+        {
+            _chipGate.Release();
+        }
+    }
+
+    // After a roster reassignment, clear the chip from the other participant's cell on the same day.
+    private void ClearChipOnConflictingRosterCell(Guid keepParticipantId, Guid dayId, string chip)
+    {
+        if (chip.Length == 0)
+            return;
+        foreach (var row in Roster)
+        {
+            if (row.ParticipantId == keepParticipantId)
+                continue;
+            foreach (var cell in row.Days)
+            {
+                if (cell.DayId == dayId && cell.IsMember &&
+                    string.Equals((cell.Chip ?? string.Empty).Trim(), chip, StringComparison.OrdinalIgnoreCase))
+                {
+                    cell.SetChipSilently(string.Empty);
+                    cell.MarkChipCommitted(string.Empty);
+                }
+            }
+        }
     }
 
     private async Task ApplyCellGroupChangeAsync(RosterDayCellViewModel cell)
@@ -487,9 +693,43 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             {
                 var linkId = await Task.Run(() => _editor.SetParticipantDayGroupAsync(participantId, dayId, groupId));
                 cell.ApplyMembership(isMember: true, linkId: linkId);
+                // Joining a day may have copied a chip from another member day (see
+                // ParticipantRosterRowViewModel.CopyChipOnJoin); ApplyMembership ran with saves
+                // suppressed, so persist the (possibly copied) chip now.
+                var chip = (cell.Chip ?? string.Empty).Trim();
+                if (chip.Length > 0)
+                    await Task.Run(() => _editor.SetParticipantDayChipAsync(participantId, dayId, chip));
             }
         }
         catch { }
+    }
+
+    // ── Rental-chip highlight + toggle ────────────────────────────────────────────────────────────
+    private async Task RefreshRentalChipsAsync(bool hasEvent)
+    {
+        var chips = hasEvent
+            ? await _busy.RunAsync(() => _editor.GetRentalChipsAsync())
+            : (IReadOnlyList<BusinessLogic.Entities.RentalChip>)[];
+        RentalChips.Reset(chips.Select(c => c.Number));
+    }
+
+    // Double-clicking a chip cell toggles its number in the rental database: a non-rental chip is
+    // added, a rental one removed. The registry is updated optimistically so the cell's bold-red
+    // highlight flips immediately; the DB write runs in the background.
+    [RelayCommand]
+    private void ToggleRentalChip(string? chip)
+    {
+        var number = (chip ?? string.Empty).Trim();
+        if (number.Length == 0 || _session.CurrentEvent is null)
+            return;
+
+        var wasRental = RentalChips.Contains(number);
+        if (wasRental)
+            RentalChips.Remove(number);
+        else
+            RentalChips.Add(number);
+
+        _ = Task.Run(() => _editor.ToggleRentalChipAsync(number));
     }
 
     private void ClearParticipantRows()

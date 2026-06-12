@@ -1,7 +1,7 @@
 namespace OrientDesk.BusinessLogic.Entities;
 
 /// <summary>
-/// A competition-level competitor. Identity (surname, name, number, rank, coach, birth date) is
+/// A competition-level competitor. Identity (full name, number, rank, coach, birth date) is
 /// shared across every day of the competition; a participant's presence on a given day is expressed
 /// by a <see cref="ParticipantDay"/> row referencing it. The number is unique per competition
 /// (enforced in the service layer), and only when non-blank.
@@ -10,11 +10,8 @@ public class Participant
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 
-    /// <summary>Family name.</summary>
-    public string Surname { get; set; } = string.Empty;
-
-    /// <summary>Given name.</summary>
-    public string Name { get; set; } = string.Empty;
+    /// <summary>Full name (ПІБ); surname and given name held together in one field.</summary>
+    public string FullName { get; set; } = string.Empty;
 
     /// <summary>Bib / start number; unique per competition when non-blank. Free text.</summary>
     public string Number { get; set; } = string.Empty;

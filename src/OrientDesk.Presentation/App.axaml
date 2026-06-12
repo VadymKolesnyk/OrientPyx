@@ -16,6 +16,9 @@
         <!-- Reusable compact, spreadsheet-style grid: Border.card wraps it for the rounded frame -->
         <StyleInclude Source="avares://OrientDesk.Presentation/Styles/Sheet.axaml" />
 
+        <!-- Custom roster table with a true two-tier banded header (controls:RosterTable) -->
+        <StyleInclude Source="avares://OrientDesk.Presentation/Styles/RosterTable.axaml" />
+
         <!-- ============================================================
              OrientDesk design system: shared control styling so screens
              stay consistent without per-View hex codes.
@@ -146,6 +149,7 @@
         <SolidColorBrush x:Key="SurfaceHeader" Color="#F8FAFC" />
 
         <SolidColorBrush x:Key="BorderSubtle" Color="#E2E8F0" />
+        <SolidColorBrush x:Key="BorderStrong" Color="#CBD5E1" />
 
         <SolidColorBrush x:Key="TextPrimary" Color="#0F172A" />
         <SolidColorBrush x:Key="TextSecondary" Color="#64748B" />

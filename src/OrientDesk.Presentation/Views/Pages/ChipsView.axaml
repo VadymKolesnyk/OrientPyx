@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:pages="using:OrientDesk.Presentation.ViewModels.Pages"
              xmlns:controls="using:OrientDesk.Presentation.Controls"
+             xmlns:behaviors="using:OrientDesk.Presentation.Behaviors"
              mc:Ignorable="d" d:DesignWidth="940" d:DesignHeight="560"
              x:Class="OrientDesk.Presentation.Views.Pages.ChipsView"
              x:DataType="pages:ChipsViewModel">
@@ -130,7 +131,7 @@
                         </DataGridTemplateColumn.CellTemplate>
                         <DataGridTemplateColumn.CellEditingTemplate>
                             <DataTemplate x:DataType="pages:RentalChipRowViewModel">
-                                <TextBox PlaceholderText="—"
+                                <TextBox PlaceholderText="—" behaviors:NumericInput.Digits="True"
                                          Text="{Binding Number, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                             </DataTemplate>
                         </DataGridTemplateColumn.CellEditingTemplate>

@@ -1,0 +1,162 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:OrientDesk.Presentation.Controls">
+
+    <!-- ============================================================
+         Skin + template for the custom roster table (controls:RosterTable).
+         A true two-tier banded header the DataGrid cannot do. The body is a
+         virtualized ListBox; the header is built in code into PART_HeaderSlot.
+         Wrap in Border.card for the rounded frame, like the sheet grids.
+         ============================================================ -->
+
+    <Style Selector="controls|RosterTable">
+        <Setter Property="Template">
+            <ControlTemplate>
+                <!-- The body ListBox owns BOTH scrollbars (vertical + horizontal) so they stay
+                     pinned to the visible viewport edges. The header sits in its own clip viewport
+                     and its horizontal offset is slaved to the body's scroller in code, so the two
+                     scroll left/right in lockstep while the header stays frozen vertically. -->
+                <DockPanel LastChildFill="True" MinWidth="200"
+                           Background="{DynamicResource SurfaceCard}">
+                    <!-- Frozen, code-built banded header. Its own ScrollViewer clips horizontally;
+                         scrollbars are hidden — the body drives the offset. -->
+                    <Border DockPanel.Dock="Top"
+                            Background="{DynamicResource SurfaceHeader}"
+                            BorderBrush="{DynamicResource BorderSubtle}"
+                            BorderThickness="0,0,0,1"
+                            ClipToBounds="True">
+                        <ScrollViewer Name="PART_HeaderScroll"
+                                      HorizontalScrollBarVisibility="Hidden"
+                                      VerticalScrollBarVisibility="Disabled">
+                            <Decorator Name="PART_HeaderSlot" />
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- Virtualized rows. Fills the remaining height; rows align to the top so they
+                         sit directly under the header (no centered gap). Owns both scrollbars; the
+                         horizontal one drives the header. -->
+                    <ListBox Name="PART_Body"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             SelectionMode="Single"
+                             VerticalAlignment="Stretch"
+                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <VirtualizingStackPanel Orientation="Vertical" VerticalAlignment="Top" />
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                    </ListBox>
+                </DockPanel>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+
+    <!-- Header sub-cells: dense, header-toned, like the sheet grid headers -->
+    <Style Selector="controls|RosterTable Border > TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+
+    <!-- Header band/sub-cell separators: stronger, more visible vertical rules -->
+    <Style Selector="controls|RosterTable Grid#PART_HeaderSlot Border">
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderStrong}" />
+        <Setter Property="BorderThickness" Value="0,0,1,0" />
+        <Setter Property="MinHeight" Value="38" />
+    </Style>
+
+    <!-- Sort icon button on the right of each header cell -->
+    <Style Selector="controls|RosterTable Button.rosterSort">
+        <Setter Property="Width" Value="26" />
+        <Setter Property="Height" Value="26" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="controls|RosterTable Button.rosterSort:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource BorderSubtle}" />
+    </Style>
+
+    <!-- Resize grips in the header: a wide transparent hit zone with a centered grip line that
+         strengthens to the accent colour on hover so the draggable edge is discoverable. -->
+    <Style Selector="controls|RosterTable Thumb.rosterResize">
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Background="Transparent">
+                    <!-- Right-aligned so the visible line sits exactly on the column's right edge,
+                         lining up with the body cell border (not floating left of it). -->
+                    <Rectangle Name="grip"
+                               Width="2"
+                               HorizontalAlignment="Right"
+                               VerticalAlignment="Stretch"
+                               Margin="0,6"
+                               Fill="{DynamicResource BorderStrong}" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="controls|RosterTable Thumb.rosterResize:pointerover /template/ Rectangle#grip">
+        <Setter Property="Fill" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="Width" Value="2.5" />
+    </Style>
+
+    <!-- Rows: compact, gridlined like the sheet -->
+    <Style Selector="controls|RosterTable ListBoxItem">
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtle}" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+
+    <!-- Cell hosts: vertical gridlines + the focused-cell accent outline (Excel cue) -->
+    <Style Selector="controls|RosterTable controls|RosterCell">
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtle}" />
+        <Setter Property="BorderThickness" Value="0,0,1,0" />
+        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style Selector="controls|RosterTable controls|RosterCell:focus">
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="BorderThickness" Value="1.5" />
+    </Style>
+
+    <!-- In-cell editors: borderless, fill the cell, no rounded corners (match Sheet.axaml) -->
+    <Style Selector="controls|RosterTable controls|RosterCell TextBox">
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="CornerRadius" Value="0" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="controls|RosterTable controls|RosterCell ComboBox">
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="CornerRadius" Value="0" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- The ComboBox's content presenter must stretch too, or the control paints its selected text in
+         a short intrinsic-height box centred in the cell rather than filling the row's height. -->
+    <Style Selector="controls|RosterTable controls|RosterCell ComboBox /template/ ContentControl#ContentPresenter">
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="controls|RosterTable controls|RosterCell CalendarDatePicker">
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="CornerRadius" Value="0" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+</Styles>

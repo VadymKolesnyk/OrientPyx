@@ -337,8 +337,7 @@ public sealed class EventStore : IEventStore
         await using var db = EventDbContextFactory.Create(eventFolderPath);
         return await db.Participants
             .AsNoTracking()
-            .OrderBy(p => p.Surname)
-            .ThenBy(p => p.Name)
+            .OrderBy(p => p.FullName)
             .ToListAsync(cancellationToken);
     }
 
@@ -357,8 +356,7 @@ public sealed class EventStore : IEventStore
         if (existing is null)
             return;
 
-        existing.Surname = participant.Surname;
-        existing.Name = participant.Name;
+        existing.FullName = participant.FullName;
         existing.Number = participant.Number;
         existing.Rank = participant.Rank;
         existing.Coach = participant.Coach;

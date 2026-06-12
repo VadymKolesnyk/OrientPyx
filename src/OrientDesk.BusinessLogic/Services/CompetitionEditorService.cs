@@ -688,8 +688,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             }
             rows.Add(new ParticipantRosterRow(
                 participant.Id,
-                participant.Surname,
-                participant.Name,
+                participant.FullName,
                 participant.Number,
                 participant.Rank,
                 participant.Coach,
@@ -763,8 +762,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         await _eventStore.UpdateParticipantAsync(folder, new Participant
         {
             Id = row.ParticipantId,
-            Surname = (row.Surname ?? string.Empty).Trim(),
-            Name = (row.Name ?? string.Empty).Trim(),
+            FullName = (row.FullName ?? string.Empty).Trim(),
             Number = number,
             Rank = (row.Rank ?? string.Empty).Trim(),
             Coach = (row.Coach ?? string.Empty).Trim(),
@@ -802,6 +800,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         if (remaining == 0)
             await _eventStore.DeleteParticipantAsync(folder, participantId, cancellationToken);
     }
+
+    public Task DeleteParticipantAsync(Guid participantId, CancellationToken cancellationToken = default)
+        => _eventStore.DeleteParticipantAsync(FolderPath, participantId, cancellationToken);
 
     public async Task<Guid> SetParticipantDayGroupAsync(Guid participantId, Guid dayId, Guid? groupId, CancellationToken cancellationToken = default)
     {
@@ -868,6 +869,97 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         }, cancellationToken);
     }
 
+    public async Task<string?> FindChipHolderAsync(Guid dayId, string chip, Guid excludeParticipantId, CancellationToken cancellationToken = default)
+    {
+        var trimmed = (chip ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+            return null;
+
+        var folder = FolderPath;
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var holder = links.FirstOrDefault(l =>
+            l.ParticipantId != excludeParticipantId &&
+            string.Equals(l.Chip.Trim(), trimmed, StringComparison.OrdinalIgnoreCase));
+        if (holder is null)
+            return null;
+
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var name = participants.FirstOrDefault(p => p.Id == holder.ParticipantId)?.FullName ?? string.Empty;
+        return name;
+    }
+
+    public async Task<Guid?> ReassignParticipantDayChipAsync(Guid participantId, Guid dayId, string chip, CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        var trimmed = (chip ?? string.Empty).Trim();
+
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var target = links.FirstOrDefault(l => l.ParticipantId == participantId);
+        // The chip is per-day and only meaningful for a member; nothing to do otherwise.
+        if (target is null)
+            return null;
+
+        // Take the chip away from any OTHER participant who holds it on this day, so it ends up unique.
+        Guid? previousHolder = null;
+        if (trimmed.Length > 0)
+        {
+            var other = links.FirstOrDefault(l =>
+                l.Id != target.Id &&
+                string.Equals(l.Chip.Trim(), trimmed, StringComparison.OrdinalIgnoreCase));
+            if (other is not null)
+            {
+                await _eventStore.UpdateParticipantDayAsync(folder, new ParticipantDay
+                {
+                    Id = other.Id,
+                    EventDayId = dayId,
+                    ParticipantId = other.ParticipantId,
+                    Order = other.Order,
+                    GroupId = other.GroupId,
+                    Chip = string.Empty,
+                    Team = other.Team
+                }, cancellationToken);
+                previousHolder = other.ParticipantId;
+            }
+        }
+
+        await _eventStore.UpdateParticipantDayAsync(folder, new ParticipantDay
+        {
+            Id = target.Id,
+            EventDayId = dayId,
+            ParticipantId = participantId,
+            Order = target.Order,
+            GroupId = target.GroupId,
+            Chip = trimmed,
+            Team = target.Team
+        }, cancellationToken);
+
+        return previousHolder;
+    }
+
+    public async Task<bool> ToggleRentalChipAsync(string number, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return false;
+
+        var trimmed = (number ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+            return false;
+
+        var folder = FolderPath;
+        var chips = await _eventStore.GetRentalChipsAsync(folder, cancellationToken);
+        var existing = chips.FirstOrDefault(c =>
+            string.Equals(c.Number.Trim(), trimmed, StringComparison.OrdinalIgnoreCase));
+
+        if (existing is not null)
+        {
+            await _eventStore.DeleteRentalChipAsync(folder, existing.Id, cancellationToken);
+            return false;
+        }
+
+        await _eventStore.AddRentalChipAsync(folder, new RentalChip { Number = trimmed }, cancellationToken);
+        return true;
+    }
+
     public async Task<IReadOnlyList<GroupDayRow>> GetGroupsForDayAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null)
@@ -904,8 +996,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         await _eventStore.UpdateParticipantAsync(folder, new Participant
         {
             Id = row.ParticipantId,
-            Surname = (row.Surname ?? string.Empty).Trim(),
-            Name = (row.Name ?? string.Empty).Trim(),
+            FullName = (row.FullName ?? string.Empty).Trim(),
             Number = number,
             Rank = (row.Rank ?? string.Empty).Trim(),
             Coach = (row.Coach ?? string.Empty).Trim(),
@@ -920,8 +1011,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             LinkId: link.Id,
             ParticipantId: p.Id,
             Order: link.Order,
-            Surname: p.Surname,
-            Name: p.Name,
+            FullName: p.FullName,
             Number: p.Number,
             Rank: p.Rank,
             Coach: p.Coach,

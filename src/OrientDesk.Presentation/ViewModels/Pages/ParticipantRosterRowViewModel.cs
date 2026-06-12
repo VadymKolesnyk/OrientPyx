@@ -20,10 +20,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     private readonly bool _initialized;
 
     [ObservableProperty]
-    private string _surname;
-
-    [ObservableProperty]
-    private string _name;
+    private string _fullName;
 
     [ObservableProperty]
     private string _number;
@@ -53,8 +50,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         foreach (var cell in Days)
             cell.PropertyChanged += OnDayCellChanged;
 
-        _surname = row.Surname;
-        _name = row.Name;
+        _fullName = row.FullName;
         _number = row.Number;
         _rank = row.Rank;
         _coach = row.Coach;
@@ -70,8 +66,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     /// <summary>Per-day cells, in day order. Bound by the runtime per-day columns in the view.</summary>
     public ObservableCollection<RosterDayCellViewModel> Days { get; }
 
-    partial void OnSurnameChanged(string value) => QueueSave();
-    partial void OnNameChanged(string value) => QueueSave();
+    partial void OnFullNameChanged(string value) => QueueSave();
     partial void OnNumberChanged(string value) => QueueSave();
     partial void OnRankChanged(string value) => QueueSave();
     partial void OnCoachChanged(string value) => QueueSave();
@@ -165,11 +160,30 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
                 RaiseChipAggregates();
                 break;
             case nameof(RosterDayCellViewModel.IsMember):
+                // A participant who just joined a day inherits the chip they already use on their
+                // other days, so the same card carries across the competition without re-typing.
+                if (sender is RosterDayCellViewModel joined)
+                    CopyChipOnJoin(joined);
                 // Membership shifts which cells are relevant for every aggregate.
                 RaiseGroupAggregates();
                 RaiseChipAggregates();
                 break;
         }
+    }
+
+    // When a day cell flips to "member" with no chip of its own, copy a chip the participant already
+    // uses on another member day. Setting Chip on the (now initialized) cell fires its save callback,
+    // so the copied chip persists like any edit. No-op when the cell already has a chip or when no
+    // other day carries one — and only acts on a join (IsMember just turned true).
+    private void CopyChipOnJoin(RosterDayCellViewModel joined)
+    {
+        if (!joined.IsMember || !string.IsNullOrWhiteSpace(joined.Chip))
+            return;
+
+        var source = Days.FirstOrDefault(d =>
+            !ReferenceEquals(d, joined) && d.IsMember && !string.IsNullOrWhiteSpace(d.Chip));
+        if (source is not null)
+            joined.Chip = source.Chip;
     }
 
     private void RaiseGroupAggregates()
