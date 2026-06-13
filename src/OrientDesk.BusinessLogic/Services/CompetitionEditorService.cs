@@ -15,15 +15,18 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     private readonly ISessionService _session;
     private readonly IEventStore _eventStore;
     private readonly ICourseDistanceCalculator _distance;
+    private readonly Disciplines.IDisciplineStrategyProvider _strategies;
 
     public CompetitionEditorService(
         ISessionService session,
         IEventStore eventStore,
-        ICourseDistanceCalculator distance)
+        ICourseDistanceCalculator distance,
+        Disciplines.IDisciplineStrategyProvider strategies)
     {
         _session = session;
         _eventStore = eventStore;
         _distance = distance;
+        _strategies = strategies;
     }
 
     private string FolderPath =>
@@ -1233,6 +1236,174 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         await _eventStore.UpdateParticipantDayAsync(folder, existing, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<FinishReadoutRow>> GetFinishReadoutRowsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+            return [];
+
+        var folder = FolderPath;
+        var dayId = CurrentDayId;
+        var readouts = await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
+
+        // Resolve each chip against the day's participants (chip → number/name/group), case-insensitive.
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var byId = participants.ToDictionary(p => p.Id);
+        var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
+
+        // For the order-check: each group's prescribed course + settings, and the day's start/finish
+        // control codes (so they're dropped from both the expected course and the punched sequence).
+        var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
+        var settingsByGroup = settings.ToDictionary(s => s.GroupId);
+        var controlPoints = await _eventStore.GetControlPointsAsync(folder, dayId, cancellationToken);
+        var startFinishCodes = new HashSet<string>(
+            controlPoints
+                .Where(c => c.Type is ControlPointType.Start or ControlPointType.Finish)
+                .Select(c => c.Code.Trim()),
+            StringComparer.OrdinalIgnoreCase);
+        var dayDefault = CurrentDayDefaultDiscipline;
+
+        // A chip on a day is unique (enforced when assigning), so first match by trimmed chip wins.
+        var holderByChip = new Dictionary<string, ParticipantDay>(StringComparer.OrdinalIgnoreCase);
+        foreach (var link in links)
+        {
+            var key = link.Chip.Trim();
+            if (key.Length > 0)
+                holderByChip.TryAdd(key, link);
+        }
+
+        var rows = new List<FinishReadoutRow>(readouts.Count);
+        foreach (var r in readouts)
+        {
+            if (holderByChip.TryGetValue(r.ChipNumber.Trim(), out var link) && byId.TryGetValue(link.ParticipantId, out var p))
+            {
+                var group = link.GroupId is { } gid && groupName.TryGetValue(gid, out var gn) ? gn : string.Empty;
+                var (status, detail) = EvaluateFinish(r, link, settingsByGroup, startFinishCodes, dayDefault);
+                rows.Add(new FinishReadoutRow(r.Id, r.Order, r.ChipNumber, r.StartTime, r.FinishTime,
+                    IsKnown: true, p.Number, p.FullName, group, status, detail));
+            }
+            else
+            {
+                // An unrecognised chip has no group/course to judge against — no status.
+                rows.Add(new FinishReadoutRow(r.Id, r.Order, r.ChipNumber, r.StartTime, r.FinishTime,
+                    IsKnown: false, ParticipantNumber: string.Empty, FullName: string.Empty, GroupName: string.Empty,
+                    Status: FinishStatus.None, StatusDetail: string.Empty));
+            }
+        }
+        return rows;
+    }
+
+    // Builds the FinishContext for one read-out + its holder and asks the group's discipline strategy
+    // for the status. Start time is the chip's read-out start when present, else the assigned start.
+    private (FinishStatus Status, string Detail) EvaluateFinish(
+        FinishReadout readout,
+        ParticipantDay link,
+        IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup,
+        HashSet<string> startFinishCodes,
+        DisciplineType dayDefault)
+    {
+        GroupDaySettings? gs = link.GroupId is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
+        var discipline = gs?.DisciplineOverride ?? dayDefault;
+
+        // Expected = course-order codes minus the day's start/finish controls; punched = read codes
+        // minus the same (the chip records start/finish boxes too, which are not course controls).
+        var expected = SplitCodes(gs?.CourseOrder).Where(c => !startFinishCodes.Contains(c)).ToList();
+        var punched = SplitCodes(readout.Punches).Where(c => !startFinishCodes.Contains(c)).ToList();
+
+        // Start = chip read-out start when present, else the assigned start (a time-of-day) paired with
+        // the finish's date so finish − start is a meaningful duration.
+        var start = readout.StartTime ?? CombineWithFinishDate(link.StartTime, readout.FinishTime);
+
+        var context = new FinishContext
+        {
+            ExpectedControls = expected,
+            PunchedControls = punched,
+            StartTime = start,
+            FinishTime = readout.FinishTime,
+            TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null
+        };
+
+        var result = _strategies.For(discipline).EvaluateFinish(context);
+        return (result.Status, result.Detail);
+    }
+
+    // Pairs an assigned start time-of-day with the read-out finish's date, so the time-limit check
+    // compares two same-day timestamps. Null when either part is missing.
+    private static DateTimeOffset? CombineWithFinishDate(TimeSpan? startOfDay, DateTimeOffset? finish) =>
+        startOfDay is { } t && finish is { } f ? new DateTimeOffset(f.Date + t, f.Offset) : null;
+
+    private static IEnumerable<string> SplitCodes(string? text) =>
+        string.IsNullOrWhiteSpace(text)
+            ? []
+            : text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    public async Task<FinishReadoutImportResult> ImportFinishReadoutsAsync(ChipReadData data, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+            return default;
+
+        var folder = FolderPath;
+        var dayId = CurrentDayId;
+        var existing = await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
+
+        // Seed the dedup set with what's already logged (content keys), and continue the sequence.
+        var seen = new HashSet<string>(existing.Select(r => r.ContentKey), StringComparer.Ordinal);
+        var nextOrder = existing.Count == 0 ? 1 : existing.Max(r => r.Order) + 1;
+
+        var toAdd = new List<FinishReadout>();
+        var skipped = 0;
+        foreach (var record in data.Records)
+        {
+            var chip = record.ChipNumber.Trim();
+            if (chip.Length == 0)
+                continue;
+
+            var key = ContentKeyFor(record);
+            // Skip rows already logged (identical content) — re-reading the same file is idempotent.
+            // Two identical rows within one file collapse to one for the same reason.
+            if (!seen.Add(key))
+            {
+                skipped++;
+                continue;
+            }
+
+            toAdd.Add(new FinishReadout
+            {
+                EventDayId = dayId,
+                Order = nextOrder++,
+                ChipNumber = chip,
+                StartTime = record.StartTime,
+                FinishTime = record.FinishTime,
+                Punches = string.Join(' ', record.Punches.Select(p => p.ControlCode.Trim()).Where(c => c.Length > 0)),
+                ContentKey = key
+            });
+        }
+
+        await _eventStore.AddFinishReadoutsAsync(folder, toAdd, cancellationToken);
+        return new FinishReadoutImportResult(Added: toAdd.Count, Skipped: skipped);
+    }
+
+    public Task<int> ClearFinishReadoutsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+            return Task.FromResult(0);
+        return _eventStore.DeleteFinishReadoutsForDayAsync(FolderPath, CurrentDayId, cancellationToken);
+    }
+
+    // Stable signature of a read-out record's content, so re-reading the same physical row is detected
+    // as already-logged while genuinely different reads of the same chip remain distinct.
+    private static string ContentKeyFor(ChipReadRecord record)
+    {
+        var punches = string.Join(",", record.Punches.Select(p => $"{p.ControlCode}@{p.Time?.UtcTicks.ToString(CultureInfo.InvariantCulture) ?? "-"}"));
+        return string.Join("|",
+            record.ChipNumber.Trim(),
+            record.StartTime?.UtcTicks.ToString(CultureInfo.InvariantCulture) ?? "-",
+            record.FinishTime?.UtcTicks.ToString(CultureInfo.InvariantCulture) ?? "-",
+            punches);
+    }
+
     public async Task<string?> FindChipHolderAsync(Guid dayId, string chip, Guid excludeParticipantId, CancellationToken cancellationToken = default)
     {
         var trimmed = (chip ?? string.Empty).Trim();
@@ -1382,32 +1553,21 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     public async Task<ParticipantImportResult> ImportParticipantsAsync(
         UofParticipantData data,
         bool clearFirst,
+        IProgress<ImportProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(data);
         if (_session.CurrentEvent is null)
             return default;
 
-        var folder = FolderPath;
-
-        // 1. Organiser: fill it from <Orgs> when the file carries one (don't clobber with blank).
-        if (!string.IsNullOrWhiteSpace(data.Organisation))
-        {
-            var info = await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken);
-            if (info is not null)
-            {
-                info.Organisation = data.Organisation.Trim();
-                await _eventStore.SaveCompetitionInfoAsync(folder, info, cancellationToken);
-            }
-        }
-
-        // 2. Ensure every day referenced by a ProgEvent exists; create the missing ones (numbered up
-        //    to the highest reference). AddDayAsync appends after the current last and makes the folder.
+        // Ensure every day referenced by a ProgEvent exists; create the missing ones (numbered up to
+        // the highest reference) here, because AddDayAsync also makes each day's files folder (I/O).
+        // The actual roster write then happens in one transaction inside the store (fast for big files).
         var maxDay = data.Participants
             .SelectMany(p => p.DayNumbers)
             .DefaultIfEmpty(0)
             .Max();
-        var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        var days = await _eventStore.GetDaysAsync(FolderPath, cancellationToken);
         var daysCreated = 0;
         var highestExisting = days.Count == 0 ? 0 : days.Max(d => d.Number);
         for (var n = highestExisting + 1; n <= maxDay; n++)
@@ -1415,204 +1575,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             await AddDayAsync(cancellationToken);
             daysCreated++;
         }
-        if (daysCreated > 0)
-            days = await _eventStore.GetDaysAsync(folder, cancellationToken);
-        var dayByNumber = days.ToDictionary(d => d.Number);
 
-        // 3. Optional wipe: clear the whole participant database so the file becomes the full roster.
-        if (clearFirst)
-            await _eventStore.DeleteAllParticipantsAsync(folder, cancellationToken);
-
-        // 4. Get-or-create caches for the lookups, seeded from what's already there (case-insensitive).
-        var regions = (await _eventStore.GetRegionsAsync(folder, cancellationToken)).ToList();
-        var clubs = (await _eventStore.GetClubsAsync(folder, cancellationToken)).ToList();
-        var dusshes = (await _eventStore.GetDusshesAsync(folder, cancellationToken)).ToList();
-        var groups = (await _eventStore.GetGroupsAsync(folder, cancellationToken)).ToList();
-
-        async Task<Guid?> ResolveRegionAsync(string name)
-        {
-            var trimmed = name.Trim();
-            if (trimmed.Length == 0) return null;
-            var existing = regions.FirstOrDefault(r => string.Equals(r.Name, trimmed, StringComparison.OrdinalIgnoreCase));
-            if (existing is null)
-            {
-                existing = new Region { Name = trimmed };
-                await _eventStore.AddRegionAsync(folder, existing, cancellationToken);
-                regions.Add(existing);
-            }
-            return existing.Id;
-        }
-
-        async Task<Guid?> ResolveClubAsync(string name)
-        {
-            var trimmed = name.Trim();
-            if (trimmed.Length == 0) return null;
-            var existing = clubs.FirstOrDefault(c => string.Equals(c.Name, trimmed, StringComparison.OrdinalIgnoreCase));
-            if (existing is null)
-            {
-                existing = new Club { Name = trimmed };
-                await _eventStore.AddClubAsync(folder, existing, cancellationToken);
-                clubs.Add(existing);
-            }
-            return existing.Id;
-        }
-
-        async Task<Guid?> ResolveDusshAsync(string name)
-        {
-            var trimmed = name.Trim();
-            if (trimmed.Length == 0) return null;
-            var existing = dusshes.FirstOrDefault(d => string.Equals(d.Name, trimmed, StringComparison.OrdinalIgnoreCase));
-            if (existing is null)
-            {
-                existing = new Dussh { Name = trimmed };
-                await _eventStore.AddDusshAsync(folder, existing, cancellationToken);
-                dusshes.Add(existing);
-            }
-            return existing.Id;
-        }
-
-        async Task<Group?> ResolveGroupAsync(string name)
-        {
-            var trimmed = name.Trim();
-            if (trimmed.Length == 0) return null;
-            var existing = groups.FirstOrDefault(g => string.Equals(g.Name, trimmed, StringComparison.OrdinalIgnoreCase));
-            if (existing is null)
-            {
-                existing = new Group { Name = trimmed };
-                await _eventStore.AddGroupAsync(folder, existing, cancellationToken);
-                groups.Add(existing);
-            }
-            return existing;
-        }
-
-        // Per-day group attachment (GroupDaySettings) + the per-day running order counters, so each
-        // group is attached once per day and ParticipantDay.Order continues after existing rows.
-        var settingsByDay = new Dictionary<Guid, HashSet<Guid>>();
-        var groupOrderByDay = new Dictionary<Guid, int>();
-        var linkOrderByDay = new Dictionary<Guid, int>();
-        foreach (var day in days)
-        {
-            var settings = await _eventStore.GetGroupDaySettingsAsync(folder, day.Id, cancellationToken);
-            settingsByDay[day.Id] = new HashSet<Guid>(settings.Select(s => s.GroupId));
-            groupOrderByDay[day.Id] = settings.Count == 0 ? 0 : settings.Max(s => s.Order);
-            var links = await _eventStore.GetParticipantDaysAsync(folder, day.Id, cancellationToken);
-            linkOrderByDay[day.Id] = links.Count == 0 ? 0 : links.Max(l => l.Order);
-        }
-
-        async Task EnsureGroupOnDayAsync(Guid dayId, Guid groupId)
-        {
-            var attached = settingsByDay[dayId];
-            if (attached.Add(groupId))
-            {
-                await _eventStore.AddGroupDaySettingsAsync(folder, new GroupDaySettings
-                {
-                    EventDayId = dayId,
-                    GroupId = groupId,
-                    Order = ++groupOrderByDay[dayId]
-                }, cancellationToken);
-            }
-        }
-
-        // 5. Existing participants (for FOU-code matching in keep mode). After a clear there are none.
-        var existingParticipants = clearFirst
-            ? new List<Participant>()
-            : (await _eventStore.GetParticipantsAsync(folder, cancellationToken)).ToList();
-        var byFsouCode = existingParticipants
-            .Where(p => !string.IsNullOrWhiteSpace(p.FsouCode))
-            .GroupBy(p => p.FsouCode.Trim(), StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-        // Existing links per matched participant, so a re-import updates the same day rows in place.
-        var allLinks = clearFirst
-            ? new List<ParticipantDay>()
-            : (await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken)).ToList();
-        var linksByParticipant = allLinks
-            .GroupBy(l => l.ParticipantId)
-            .ToDictionary(g => g.Key, g => g.ToList());
-
-        var added = 0;
-        var updated = 0;
-
-        foreach (var src in data.Participants)
-        {
-            var regionId = await ResolveRegionAsync(src.Region);
-            var clubId = await ResolveClubAsync(src.Club);
-            var dusshId = await ResolveDusshAsync(src.Dussh);
-
-            // Match an existing participant by non-blank FOU code (keep mode) or create a new one.
-            var code = src.FsouCode.Trim();
-            Participant? participant = null;
-            if (code.Length > 0 && byFsouCode.TryGetValue(code, out var matched))
-                participant = matched;
-
-            if (participant is null)
-            {
-                participant = new Participant
-                {
-                    FullName = src.FullName,
-                    Rank = src.Rank,
-                    Coach = src.Coach,
-                    BirthDate = src.BirthDate,
-                    RegionId = regionId,
-                    ClubId = clubId,
-                    DusshId = dusshId,
-                    Representative = src.Representative,
-                    FsouCode = code,
-                    IsFsouMember = src.IsFsouMember,
-                    Payment = src.Payment
-                };
-                await _eventStore.AddParticipantAsync(folder, participant, cancellationToken);
-                added++;
-            }
-            else
-            {
-                participant.FullName = src.FullName;
-                participant.Rank = src.Rank;
-                participant.Coach = src.Coach;
-                participant.BirthDate = src.BirthDate;
-                participant.RegionId = regionId;
-                participant.ClubId = clubId;
-                participant.DusshId = dusshId;
-                participant.Representative = src.Representative;
-                participant.IsFsouMember = src.IsFsouMember;
-                participant.Payment = src.Payment;
-                await _eventStore.UpdateParticipantAsync(folder, participant, cancellationToken);
-                updated++;
-            }
-
-            var group = await ResolveGroupAsync(src.Group);
-            var existingLinks = linksByParticipant.TryGetValue(participant.Id, out var l) ? l : [];
-
-            // 6. One ParticipantDay per referenced day (membership). Reuse an existing link in keep mode.
-            foreach (var dayNumber in src.DayNumbers)
-            {
-                if (!dayByNumber.TryGetValue(dayNumber, out var day))
-                    continue; // a number with no matching day (shouldn't happen — we created them) is skipped
-
-                if (group is not null)
-                    await EnsureGroupOnDayAsync(day.Id, group.Id);
-
-                var link = existingLinks.FirstOrDefault(x => x.EventDayId == day.Id);
-                if (link is null)
-                {
-                    await _eventStore.AddParticipantDayAsync(folder, new ParticipantDay
-                    {
-                        EventDayId = day.Id,
-                        ParticipantId = participant.Id,
-                        Order = ++linkOrderByDay[day.Id],
-                        GroupId = group?.Id,
-                        Chip = src.Chip
-                    }, cancellationToken);
-                }
-                else
-                {
-                    link.GroupId = group?.Id;
-                    link.Chip = src.Chip;
-                    await _eventStore.UpdateParticipantDayAsync(folder, link, cancellationToken);
-                }
-            }
-        }
-
-        return new ParticipantImportResult(Added: added, Updated: updated, DaysCreated: daysCreated);
+        return await _eventStore.ImportParticipantsBatchAsync(
+            FolderPath, data, clearFirst, daysCreated, progress, cancellationToken);
     }
 
     private ParticipantDayRow ToRow(

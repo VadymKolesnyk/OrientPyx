@@ -1,4 +1,5 @@
 using OrientDesk.BusinessLogic.Enums;
+using OrientDesk.BusinessLogic.Models;
 
 namespace OrientDesk.BusinessLogic.Disciplines;
 
@@ -55,4 +56,10 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
         // reach here (they don't start with S/F), so any non-numeric S*/F* token is a marker.
         return !ulong.TryParse(token, out _);
     }
+
+    /// <summary>
+    /// No finish evaluation by default — the score formats don't judge by order/finish-punch and will
+    /// get their own rules later. Set-course overrides this.
+    /// </summary>
+    public virtual FinishStatusResult EvaluateFinish(FinishContext context) => FinishStatusResult.Of(FinishStatus.None);
 }

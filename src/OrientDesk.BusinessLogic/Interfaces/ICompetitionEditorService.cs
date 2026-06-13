@@ -329,6 +329,24 @@ public interface ICompetitionEditorService
     Task SetParticipantDayOutOfCompetitionAsync(Guid participantId, Guid dayId, bool outOfCompetition, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Loads the current day's finish-read log (ordered by sequence), each row resolved against the
+    /// day's participants so a known chip carries its holder's number, full name and group. Returns an
+    /// empty list when no day is selected.
+    /// </summary>
+    Task<IReadOnlyList<FinishReadoutRow>> GetFinishReadoutRowsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Imports parsed read-out records into the current day's finish log. Append-only: each record that
+    /// is not already logged (by content — chip + start/finish + punches) is added; identical records
+    /// already present are skipped, so re-reading the same file never doubles rows. Duplicates of a chip
+    /// with different content are kept. A no-op when no day is selected.
+    /// </summary>
+    Task<FinishReadoutImportResult> ImportFinishReadoutsAsync(ChipReadData data, CancellationToken cancellationToken = default);
+
+    /// <summary>Clears the current day's finish-read log. Returns how many rows were removed.</summary>
+    Task<int> ClearFinishReadoutsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Finds the participant who already holds <paramref name="chip"/> on <paramref name="dayId"/>,
     /// other than <paramref name="excludeParticipantId"/>. Returns that participant's full name (for a
     /// reassignment prompt), or null when the chip is free (or only held by the excluded participant).
@@ -377,6 +395,7 @@ public interface ICompetitionEditorService
     Task<ParticipantImportResult> ImportParticipantsAsync(
         UofParticipantData data,
         bool clearFirst,
+        IProgress<ImportProgress>? progress = null,
         CancellationToken cancellationToken = default);
 }
 
@@ -395,6 +414,11 @@ public readonly record struct RentalChipBulkResult(int Added, int Skipped);
 /// <param name="Added">How many chips were newly added.</param>
 /// <param name="Skipped">How many distinct numbers in the file already existed and were skipped.</param>
 public readonly record struct RentalChipImportResult(int Added, int Skipped);
+
+/// <summary>Outcome of a finish read-out import, for reporting back to the user.</summary>
+/// <param name="Added">How many read-out rows were newly logged.</param>
+/// <param name="Skipped">How many records were already logged (identical content) and were skipped.</param>
+public readonly record struct FinishReadoutImportResult(int Added, int Skipped);
 
 /// <summary>Outcome of a group import, for reporting back to the user.</summary>
 /// <param name="Added">How many groups were newly attached to the day.</param>

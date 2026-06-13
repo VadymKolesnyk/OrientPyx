@@ -40,6 +40,9 @@
         <DataTemplate DataType="pages:DusshViewModel">
             <views:DusshView />
         </DataTemplate>
+        <DataTemplate DataType="pages:FinishReadViewModel">
+            <views:FinishReadView />
+        </DataTemplate>
         <DataTemplate DataType="pages:RanksViewModel">
             <views:RanksView />
         </DataTemplate>

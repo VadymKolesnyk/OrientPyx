@@ -25,6 +25,7 @@ public class EventDbContext : DbContext
     public DbSet<Dussh> Dusshes => Set<Dussh>();
     public DbSet<Participant> Participants => Set<Participant>();
     public DbSet<ParticipantDay> ParticipantDays => Set<ParticipantDay>();
+    public DbSet<FinishReadout> FinishReadouts => Set<FinishReadout>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -74,5 +75,9 @@ public class EventDbContext : DbContext
 
         modelBuilder.Entity<ParticipantDay>()
             .HasIndex(p => p.ParticipantId);
+
+        // Finish read-outs are queried by day (the day's log) and de-duplicated by content within a day.
+        modelBuilder.Entity<FinishReadout>()
+            .HasIndex(r => r.EventDayId);
     }
 }

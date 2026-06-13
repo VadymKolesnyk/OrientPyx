@@ -1,4 +1,5 @@
 using OrientDesk.BusinessLogic.Entities;
+using OrientDesk.BusinessLogic.Models;
 
 namespace OrientDesk.BusinessLogic.Interfaces;
 
@@ -179,4 +180,30 @@ public interface IEventStore
 
     /// <summary>Removes a participant-day link by id (detaches a participant from a day). Does nothing if it is missing.</summary>
     Task DeleteParticipantDayAsync(string eventFolderPath, Guid linkId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Imports a whole parsed UOF roster in a single database transaction. Resolves/creates the
+    /// referenced regions, clubs, sports schools and groups, matches existing participants by FOU
+    /// code (unless <paramref name="clearFirst"/> wipes the roster first), attaches groups to the
+    /// days their members run, and writes one participant-day link per referenced day. The days must
+    /// already exist — the caller creates any missing ones (with their folders) beforehand. Reports
+    /// coarse progress through <paramref name="progress"/> as it works. One <see cref="SaveChangesAsync"/>
+    /// at the end keeps it fast for large files (instead of a transaction per row).
+    /// </summary>
+    Task<ParticipantImportResult> ImportParticipantsBatchAsync(
+        string eventFolderPath,
+        UofParticipantData data,
+        bool clearFirst,
+        int daysCreated,
+        IProgress<ImportProgress>? progress,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Returns a day's finish read-outs, ordered by their sequence (Order).</summary>
+    Task<IReadOnlyList<FinishReadout>> GetFinishReadoutsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds several finish read-outs to a day in one transaction (an auto-read tick).</summary>
+    Task AddFinishReadoutsAsync(string eventFolderPath, IReadOnlyList<FinishReadout> readouts, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes every finish read-out from a day. Returns how many were deleted.</summary>
+    Task<int> DeleteFinishReadoutsForDayAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
 }

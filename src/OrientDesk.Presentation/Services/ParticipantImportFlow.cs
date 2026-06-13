@@ -72,8 +72,66 @@ public sealed class ParticipantImportFlow : IParticipantImportFlow
         var clearFirst = result.Get(ClearParticipantsKey, fallback: false);
         var data = outcome.Data!;
 
-        await _busy.RunAsync(() => _editor.ImportParticipantsAsync(data, clearFirst));
+        await _busy.RunAsync(reporter =>
+            _editor.ImportParticipantsAsync(data, clearFirst, new ProgressRelay(this, reporter)));
         return true;
+    }
+
+    private string Format(string key, params object[] args)
+        => string.Format(_localization.Get(key), args);
+
+    /// <summary>
+    /// Turns the import's layer-neutral steps into localized overlay lines. We invoke the reporter
+    /// synchronously (not via <see cref="Progress{T}"/>) so ordering is preserved — the import calls
+    /// us on its single worker thread and the reporter hops to the UI thread itself. The first
+    /// per-row tick opens its own line; later ticks replace it in place so the counter doesn't spam
+    /// a line per participant.
+    /// </summary>
+    private sealed class ProgressRelay : IProgress<ImportProgress>
+    {
+        private readonly ParticipantImportFlow _flow;
+        private readonly IProgressReporter _reporter;
+        private bool _counterStarted;
+
+        public ProgressRelay(ParticipantImportFlow flow, IProgressReporter reporter)
+        {
+            _flow = flow;
+            _reporter = reporter;
+        }
+
+        public void Report(ImportProgress p)
+        {
+            switch (p.Stage)
+            {
+                case ImportStage.Parsed:
+                    _reporter.Report(_flow.Format("ParticipantsImport.Progress.Found", p.Total));
+                    break;
+                case ImportStage.DaysCreated:
+                    _reporter.Report(_flow.Format("ParticipantsImport.Progress.DaysCreated", p.Current));
+                    break;
+                case ImportStage.Cleared:
+                    _reporter.Report(_flow._localization.Get("ParticipantsImport.Progress.Cleared"));
+                    break;
+                case ImportStage.ResolvingLookups:
+                    _reporter.Report(_flow._localization.Get("ParticipantsImport.Progress.Lookups"));
+                    break;
+                case ImportStage.Participants:
+                    var line = _flow.Format("ParticipantsImport.Progress.Importing", p.Current, p.Total);
+                    if (_counterStarted)
+                    {
+                        _reporter.ReportReplace(line);
+                    }
+                    else
+                    {
+                        _reporter.Report(line);
+                        _counterStarted = true;
+                    }
+                    break;
+                case ImportStage.Done:
+                    _reporter.Report(_flow._localization.Get("ParticipantsImport.Progress.Done"));
+                    break;
+            }
+        }
     }
 
     // Runs the synchronous parser and wraps success/failure so it can be marshalled off the UI thread.

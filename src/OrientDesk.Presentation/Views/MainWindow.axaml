@@ -194,6 +194,8 @@
                           Command="{Binding OpenChipsCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Competition.Participants]}"
                           Command="{Binding OpenParticipantsCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Competition.FinishRead]}"
+                          Command="{Binding OpenFinishReadCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Competition.Regions]}"
                           Command="{Binding OpenRegionsCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Competition.Clubs]}"
@@ -286,28 +288,52 @@
                         BoxShadow="0 10 40 0 #40000000"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
-                        <PathIcon Data="M12,4 a8,8 0 1 1 -8,8"
-                                  Width="22" Height="22"
-                                  Foreground="{DynamicResource AccentBrush}">
-                            <PathIcon.Styles>
-                                <Style Selector="PathIcon">
-                                    <Style.Animations>
-                                        <Animation Duration="0:0:0.9" IterationCount="INFINITE">
-                                            <KeyFrame Cue="0%">
-                                                <Setter Property="RotateTransform.Angle" Value="0" />
-                                            </KeyFrame>
-                                            <KeyFrame Cue="100%">
-                                                <Setter Property="RotateTransform.Angle" Value="360" />
-                                            </KeyFrame>
-                                        </Animation>
-                                    </Style.Animations>
-                                </Style>
-                            </PathIcon.Styles>
-                        </PathIcon>
-                        <TextBlock Text="{Binding Localization[Common.Loading]}"
-                                   Foreground="{DynamicResource TextPrimary}"
-                                   VerticalAlignment="Center" />
+                    <StackPanel Spacing="12" MaxWidth="460">
+                        <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                            <PathIcon Data="M12,4 a8,8 0 1 1 -8,8"
+                                      Width="22" Height="22"
+                                      Foreground="{DynamicResource AccentBrush}">
+                                <PathIcon.Styles>
+                                    <Style Selector="PathIcon">
+                                        <Style.Animations>
+                                            <Animation Duration="0:0:0.9" IterationCount="INFINITE">
+                                                <KeyFrame Cue="0%">
+                                                    <Setter Property="RotateTransform.Angle" Value="0" />
+                                                </KeyFrame>
+                                                <KeyFrame Cue="100%">
+                                                    <Setter Property="RotateTransform.Angle" Value="360" />
+                                                </KeyFrame>
+                                            </Animation>
+                                        </Style.Animations>
+                                    </Style>
+                                </PathIcon.Styles>
+                            </PathIcon>
+                            <TextBlock Text="{Binding Localization[Common.Loading]}"
+                                       Foreground="{DynamicResource TextPrimary}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <!-- Live step-by-step progress for long operations (imports, etc.) -->
+                        <Border IsVisible="{Binding !!Busy.Progress.Count}"
+                                Background="{DynamicResource SurfaceSubtle}"
+                                CornerRadius="8"
+                                Padding="12,8"
+                                MaxHeight="180">
+                            <ScrollViewer x:Name="ProgressScroll"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding Busy.Progress}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}"
+                                                       TextWrapping="Wrap"
+                                                       FontSize="12"
+                                                       Foreground="{DynamicResource TextSecondary}" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
                     </StackPanel>
                 </Border>
             </Border>

@@ -39,6 +39,8 @@ public sealed class SessionService : ISessionService
         // the new tables until opened here.
         await _eventStore.EnsureCreatedAsync(competition.FolderPath, cancellationToken);
 
+        // Move logging into this competition's own folder so its diagnostics live alongside its data.
+        _log.UseEventFolder(competition.FolderPath);
         _log.Action($"Select competition '{competition.Identifier}', day {day.Number}");
         CurrentEvent = competition;
         CurrentDay = day;
@@ -88,6 +90,7 @@ public sealed class SessionService : ISessionService
 
         // Apply any pending migrations to the restored event database before reading from it.
         await _eventStore.EnsureCreatedAsync(summary.FolderPath, cancellationToken);
+        _log.UseEventFolder(summary.FolderPath);
 
         var days = await _eventStore.GetDaysAsync(summary.FolderPath, cancellationToken);
         if (days.Count == 0)

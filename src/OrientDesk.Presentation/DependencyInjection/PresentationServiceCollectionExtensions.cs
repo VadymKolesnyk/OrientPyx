@@ -46,6 +46,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<ControlPointsViewModel>();
         services.AddSingleton<GroupsViewModel>();
         services.AddSingleton<ChipsViewModel>();
+        services.AddSingleton<FinishReadViewModel>();
         services.AddSingleton<ParticipantsViewModel>();
         services.AddSingleton<RegionsViewModel>();
         services.AddSingleton<ClubsViewModel>();

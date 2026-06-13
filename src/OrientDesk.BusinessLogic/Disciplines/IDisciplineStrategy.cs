@@ -1,4 +1,5 @@
 using OrientDesk.BusinessLogic.Enums;
+using OrientDesk.BusinessLogic.Models;
 
 namespace OrientDesk.BusinessLogic.Disciplines;
 
@@ -40,4 +41,12 @@ public interface IDisciplineStrategy
     /// Used for the read-only "control count" column on set-course days.
     /// </summary>
     int ControlCount(string courseOrder);
+
+    /// <summary>
+    /// Derives a participant's finish status from one read-out (see <see cref="FinishContext"/>). The
+    /// rules vary by discipline — set-course checks the control order and the finish punch; score
+    /// formats will judge by points/count later. Returns <see cref="Enums.FinishStatus.None"/> when the
+    /// discipline does not yet evaluate finishes this way.
+    /// </summary>
+    FinishStatusResult EvaluateFinish(FinishContext context);
 }

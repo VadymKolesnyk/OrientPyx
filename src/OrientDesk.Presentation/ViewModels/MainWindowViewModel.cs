@@ -38,6 +38,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly ControlPointsViewModel _controlPoints;
     private readonly GroupsViewModel _groups;
     private readonly ChipsViewModel _chips;
+    private readonly FinishReadViewModel _finishRead;
     private readonly ParticipantsViewModel _participants;
     private readonly RegionsViewModel _regions;
     private readonly ClubsViewModel _clubs;
@@ -56,6 +57,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         ControlPointsViewModel controlPoints,
         GroupsViewModel groups,
         ChipsViewModel chips,
+        FinishReadViewModel finishRead,
         ParticipantsViewModel participants,
         RegionsViewModel regions,
         ClubsViewModel clubs,
@@ -78,6 +80,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _controlPoints = controlPoints;
         _groups = groups;
         _chips = chips;
+        _finishRead = finishRead;
         _participants = participants;
         _regions = regions;
         _clubs = clubs;
@@ -98,6 +101,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _shell.ChangeEventRequested += async (_, _) => await ChangeEventInternalAsync();
         // "Go to settings" on the chip auto-read activity opens the Chips page.
         _chips.NavigateToSelfRequested += async (_, _) => await OpenChipsAsync();
+        // Same for the finish-read auto-read activity.
+        _finishRead.NavigateToSelfRequested += async (_, _) => await OpenFinishReadAsync();
         _session.SessionChanged += OnSessionChanged;
         Localization.PropertyChanged += (_, _) => OnPropertyChanged(nameof(WindowTitle));
 
@@ -195,6 +200,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenFinishReadAsync()
+    {
+        await _finishRead.LoadAsync();
+        _shell.SelectedPage = _finishRead;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
     private async Task OpenRegionsAsync()
     {
         await _regions.LoadAsync();
@@ -282,6 +294,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenControlPointsCommand.NotifyCanExecuteChanged();
         OpenGroupsCommand.NotifyCanExecuteChanged();
         OpenChipsCommand.NotifyCanExecuteChanged();
+        OpenFinishReadCommand.NotifyCanExecuteChanged();
         OpenParticipantsCommand.NotifyCanExecuteChanged();
         OpenRegionsCommand.NotifyCanExecuteChanged();
         OpenClubsCommand.NotifyCanExecuteChanged();

@@ -16,6 +16,13 @@ public interface IActivityLog
     /// <summary>Records an exception together with a short context describing where it happened.</summary>
     void Error(string context, Exception exception);
 
+    /// <summary>
+    /// Re-points logging into the selected competition's own folder. The next file is created under
+    /// <paramref name="eventFolderPath"/>/<c>logs</c>; lines written before any competition is selected
+    /// stay in the shared startup log. Called once per session selection. Best-effort; never throws.
+    /// </summary>
+    void UseEventFolder(string eventFolderPath);
+
     /// <summary>Absolute path of the current launch's log file, for surfacing to the user.</summary>
     string LogFilePath { get; }
 }

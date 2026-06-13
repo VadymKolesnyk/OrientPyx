@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using OrientDesk.BusinessLogic.Entities;
 using OrientDesk.BusinessLogic.Interfaces;
+using OrientDesk.BusinessLogic.Models;
 
 namespace OrientDesk.DataAccess.Persistence;
 
@@ -596,4 +597,259 @@ public sealed class EventStore : IEventStore
         db.ParticipantDays.Remove(existing);
         await db.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<FinishReadout>> GetFinishReadoutsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        // Order is a stable, unique-per-day sequence; we never sort by the DateTimeOffset read times
+        // (SQLite can't ORDER BY a DateTimeOffset column).
+        return await db.FinishReadouts
+            .AsNoTracking()
+            .Where(r => r.EventDayId == dayId)
+            .OrderBy(r => r.Order)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task AddFinishReadoutsAsync(string eventFolderPath, IReadOnlyList<FinishReadout> readouts, CancellationToken cancellationToken = default)
+    {
+        if (readouts.Count == 0)
+            return;
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        db.FinishReadouts.AddRange(readouts);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<int> DeleteFinishReadoutsForDayAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.FinishReadouts
+            .Where(r => r.EventDayId == dayId)
+            .ExecuteDeleteAsync(cancellationToken);
+    }
+
+    public async Task<ParticipantImportResult> ImportParticipantsBatchAsync(
+        string eventFolderPath,
+        UofParticipantData data,
+        bool clearFirst,
+        int daysCreated,
+        IProgress<ImportProgress>? progress,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        progress?.Report(ImportProgress.Counted(ImportStage.Parsed, 0, data.Participants.Count));
+
+        // 1. Organiser: fill it from the file when present (don't clobber an existing value with blank).
+        if (!string.IsNullOrWhiteSpace(data.Organisation))
+        {
+            var info = await db.Competition.FirstOrDefaultAsync(cancellationToken);
+            if (info is not null)
+                info.Organisation = data.Organisation.Trim();
+        }
+
+        // 2. Optional wipe: clear the whole participant database so the file becomes the full roster.
+        if (clearFirst)
+        {
+            await db.ParticipantDays.ExecuteDeleteAsync(cancellationToken);
+            await db.Participants.ExecuteDeleteAsync(cancellationToken);
+            progress?.Report(ImportProgress.Of(ImportStage.Cleared));
+        }
+
+        if (daysCreated > 0)
+            progress?.Report(ImportProgress.Counted(ImportStage.DaysCreated, daysCreated, 0));
+
+        // 3. Load everything we resolve against once, up front, and track it. New rows added to these
+        //    sets below are written together by the single SaveChanges at the end.
+        progress?.Report(ImportProgress.Of(ImportStage.ResolvingLookups));
+        var days = await db.Days.ToListAsync(cancellationToken);
+        var dayByNumber = days.ToDictionary(d => d.Number);
+        var regions = await db.Regions.ToListAsync(cancellationToken);
+        var clubs = await db.Clubs.ToListAsync(cancellationToken);
+        var dusshes = await db.Dusshes.ToListAsync(cancellationToken);
+        var groups = await db.Groups.ToListAsync(cancellationToken);
+
+        Guid? ResolveRegion(string name) => ResolveLookup(name, regions, n => new Region { Name = n }, db.Regions);
+        Guid? ResolveClub(string name) => ResolveLookup(name, clubs, n => new Club { Name = n }, db.Clubs);
+        Guid? ResolveDussh(string name) => ResolveLookup(name, dusshes, n => new Dussh { Name = n }, db.Dusshes);
+
+        Group? ResolveGroup(string name)
+        {
+            var trimmed = name.Trim();
+            if (trimmed.Length == 0) return null;
+            var existing = groups.FirstOrDefault(g => string.Equals(g.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
+            {
+                existing = new Group { Name = trimmed };
+                db.Groups.Add(existing);
+                groups.Add(existing);
+            }
+            return existing;
+        }
+
+        // Per-day group-attachment sets + running-order counters, seeded from existing rows so a
+        // re-import continues the order rather than colliding.
+        var existingSettings = await db.GroupDaySettings.ToListAsync(cancellationToken);
+        var existingLinks = await db.ParticipantDays.ToListAsync(cancellationToken);
+        var attachedByDay = new Dictionary<Guid, HashSet<Guid>>();
+        var groupOrderByDay = new Dictionary<Guid, int>();
+        var linkOrderByDay = new Dictionary<Guid, int>();
+        foreach (var day in days)
+        {
+            var settings = existingSettings.Where(s => s.EventDayId == day.Id).ToList();
+            attachedByDay[day.Id] = new HashSet<Guid>(settings.Select(s => s.GroupId));
+            groupOrderByDay[day.Id] = settings.Count == 0 ? 0 : settings.Max(s => s.Order);
+            var links = existingLinks.Where(l => l.EventDayId == day.Id).ToList();
+            linkOrderByDay[day.Id] = links.Count == 0 ? 0 : links.Max(l => l.Order);
+        }
+
+        void EnsureGroupOnDay(Guid dayId, Guid groupId)
+        {
+            if (attachedByDay[dayId].Add(groupId))
+            {
+                db.GroupDaySettings.Add(new GroupDaySettings
+                {
+                    EventDayId = dayId,
+                    GroupId = groupId,
+                    Order = ++groupOrderByDay[dayId]
+                });
+            }
+        }
+
+        // Existing participants for FOU-code matching (keep mode); none after a clear.
+        var byFsouCode = (clearFirst ? [] : await db.Participants.ToListAsync(cancellationToken))
+            .Where(p => !string.IsNullOrWhiteSpace(p.FsouCode))
+            .GroupBy(p => p.FsouCode.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var linksByParticipant = existingLinks
+            .GroupBy(l => l.ParticipantId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var added = 0;
+        var updated = 0;
+        var processed = 0;
+        var total = data.Participants.Count;
+
+        foreach (var src in data.Participants)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var regionId = ResolveRegion(src.Region);
+            var clubId = ResolveClub(src.Club);
+            var dusshId = ResolveDussh(src.Dussh);
+
+            var code = src.FsouCode.Trim();
+            Participant? participant = null;
+            if (code.Length > 0 && byFsouCode.TryGetValue(code, out var matched))
+                participant = matched;
+
+            if (participant is null)
+            {
+                participant = new Participant
+                {
+                    FullName = src.FullName,
+                    Rank = src.Rank,
+                    Coach = src.Coach,
+                    BirthDate = src.BirthDate,
+                    RegionId = regionId,
+                    ClubId = clubId,
+                    DusshId = dusshId,
+                    Representative = src.Representative,
+                    FsouCode = code,
+                    IsFsouMember = src.IsFsouMember,
+                    Payment = src.Payment
+                };
+                db.Participants.Add(participant);
+                added++;
+            }
+            else
+            {
+                participant.FullName = src.FullName;
+                participant.Rank = src.Rank;
+                participant.Coach = src.Coach;
+                participant.BirthDate = src.BirthDate;
+                participant.RegionId = regionId;
+                participant.ClubId = clubId;
+                participant.DusshId = dusshId;
+                participant.Representative = src.Representative;
+                participant.IsFsouMember = src.IsFsouMember;
+                participant.Payment = src.Payment;
+                updated++;
+            }
+
+            var group = ResolveGroup(src.Group);
+            var priorLinks = linksByParticipant.TryGetValue(participant.Id, out var l) ? l : [];
+
+            foreach (var dayNumber in src.DayNumbers)
+            {
+                if (!dayByNumber.TryGetValue(dayNumber, out var day))
+                    continue; // a number with no matching day (shouldn't happen — caller created them)
+
+                if (group is not null)
+                    EnsureGroupOnDay(day.Id, group.Id);
+
+                var link = priorLinks.FirstOrDefault(x => x.EventDayId == day.Id);
+                if (link is null)
+                {
+                    db.ParticipantDays.Add(new ParticipantDay
+                    {
+                        EventDayId = day.Id,
+                        ParticipantId = participant.Id,
+                        Order = ++linkOrderByDay[day.Id],
+                        GroupId = group?.Id,
+                        Chip = src.Chip
+                    });
+                }
+                else
+                {
+                    link.GroupId = group?.Id;
+                    link.Chip = src.Chip;
+                }
+            }
+
+            processed++;
+            // Tick the counter in place every so often (and on the last row) so the overlay updates
+            // without one log line per participant.
+            if (processed % 25 == 0 || processed == total)
+                progress?.Report(ImportProgress.Counted(ImportStage.Participants, processed, total));
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        progress?.Report(ImportProgress.Of(ImportStage.Done));
+
+        return new ParticipantImportResult(Added: added, Updated: updated, DaysCreated: daysCreated);
+    }
+
+    // Get-or-create against an in-memory tracked list + the DbSet (added rows are saved with the batch).
+    private static Guid? ResolveLookup<T>(string name, List<T> cache, Func<string, T> create, DbSet<T> set)
+        where T : class
+    {
+        var trimmed = name.Trim();
+        if (trimmed.Length == 0) return null;
+        var existing = cache.FirstOrDefault(e => string.Equals(NameOf(e), trimmed, StringComparison.OrdinalIgnoreCase));
+        if (existing is null)
+        {
+            existing = create(trimmed);
+            set.Add(existing);
+            cache.Add(existing);
+        }
+        return IdOf(existing);
+    }
+
+    private static string NameOf(object e) => e switch
+    {
+        Region r => r.Name,
+        Club c => c.Name,
+        Dussh d => d.Name,
+        _ => string.Empty
+    };
+
+    private static Guid IdOf(object e) => e switch
+    {
+        Region r => r.Id,
+        Club c => c.Id,
+        Dussh d => d.Id,
+        _ => Guid.Empty
+    };
 }
