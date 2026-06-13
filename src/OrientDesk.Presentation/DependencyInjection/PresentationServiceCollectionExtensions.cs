@@ -26,6 +26,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<IBusyService, BusyService>();
         services.AddSingleton<IDialogService, DialogService>();
         services.AddSingleton<IXmlImportFlow, XmlImportFlow>();
+        services.AddSingleton<IParticipantImportFlow, ParticipantImportFlow>();
         services.AddSingleton<IFileReadoutPoller, FileReadoutPoller>();
         services.AddSingleton<IBackgroundActivityService, BackgroundActivityService>();
 
@@ -48,6 +49,8 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<ParticipantsViewModel>();
         services.AddSingleton<RegionsViewModel>();
         services.AddSingleton<ClubsViewModel>();
+        services.AddSingleton<DusshViewModel>();
+        services.AddSingleton<RanksViewModel>();
 
         return services.BuildServiceProvider();
     }

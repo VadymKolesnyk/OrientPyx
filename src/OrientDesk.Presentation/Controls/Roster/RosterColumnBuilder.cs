@@ -26,7 +26,8 @@ public sealed class RosterColumnBuilder
     [
         (SheetCellKind.IdentityText, "Participants.Col.Number",    nameof(ParticipantRosterRowViewModel.Number),    70),
         (SheetCellKind.IdentityText, "Participants.Col.FullName",  nameof(ParticipantRosterRowViewModel.FullName),  220),
-        (SheetCellKind.IdentityText, "Participants.Col.Rank",      nameof(ParticipantRosterRowViewModel.Rank),      110),
+        (SheetCellKind.RowRank,      "Participants.Col.Rank",
+            $"{nameof(ParticipantRosterRowViewModel.SelectedRank)}.{nameof(RankOption.Label)}", 110),
         (SheetCellKind.IdentityText, "Participants.Col.Coach",     nameof(ParticipantRosterRowViewModel.Coach),     130),
         (SheetCellKind.BirthDate,    "Participants.Col.BirthDate", nameof(ParticipantRosterRowViewModel.BirthDate), 130),
         // Region / Club (competition-level combos on the row). The path is the sort key (the combo
@@ -35,6 +36,8 @@ public sealed class RosterColumnBuilder
             $"{nameof(ParticipantRosterRowViewModel.SelectedRegion)}.{nameof(RegionOption.Label)}", 150),
         (SheetCellKind.RowClub,      "Participants.Col.Club",
             $"{nameof(ParticipantRosterRowViewModel.SelectedClub)}.{nameof(ClubOption.Label)}", 150),
+        (SheetCellKind.RowDussh,     "Participants.Col.Dussh",
+            $"{nameof(ParticipantRosterRowViewModel.SelectedDussh)}.{nameof(DusshOption.Label)}", 150),
         // Competition-level text + boolean participant fields.
         (SheetCellKind.IdentityText, "Participants.Col.Representative", nameof(ParticipantRosterRowViewModel.Representative), 140),
         (SheetCellKind.IdentityText, "Participants.Col.FsouCode",      nameof(ParticipantRosterRowViewModel.FsouCode),      120),

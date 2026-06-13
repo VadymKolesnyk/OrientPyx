@@ -30,6 +30,10 @@ public partial class App : Application
             e.Handled = true;
         };
 
+        // Make legacy code pages (windows-1251 etc.) available for participant-file decoding on every
+        // platform — .NET ships only UTF/ASCII by default off Windows. Idempotent.
+        XmlEncodingReader.EnsureCodePagesRegistered();
+
         var services = PresentationServiceCollectionExtensions.BuildApplicationServices();
 
         // Start the per-launch activity log and route global crashes through it.

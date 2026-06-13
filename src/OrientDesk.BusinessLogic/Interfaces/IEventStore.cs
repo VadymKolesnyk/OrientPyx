@@ -128,11 +128,33 @@ public interface IEventStore
     /// <summary>Clears a club from every participant that references it (sets their ClubId to null).</summary>
     Task ClearParticipantsClubAsync(string eventFolderPath, Guid clubId, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the competition's sports schools (ДЮСШ), ordered by name.</summary>
+    Task<IReadOnlyList<Dussh>> GetDusshesAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds a competition-level sports school.</summary>
+    Task AddDusshAsync(string eventFolderPath, Dussh dussh, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates an existing sports school's editable fields (name). Does nothing if it is missing.</summary>
+    Task UpdateDusshAsync(string eventFolderPath, Dussh dussh, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a sports school by id. Does nothing if it is missing.</summary>
+    Task DeleteDusshAsync(string eventFolderPath, Guid dusshId, CancellationToken cancellationToken = default);
+
+    /// <summary>Clears a sports school from every participant that references it (sets their DusshId to null).</summary>
+    Task ClearParticipantsDusshAsync(string eventFolderPath, Guid dusshId, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the competition's participants, ordered by surname then name.</summary>
     Task<IReadOnlyList<Participant>> GetParticipantsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
     /// <summary>Adds a competition-level participant.</summary>
     Task AddParticipantAsync(string eventFolderPath, Participant participant, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes every participant and every participant-day link from the competition in one
+    /// transaction (used by the participant import's "clear first" option). Returns how many
+    /// participants were deleted.
+    /// </summary>
+    Task<int> DeleteAllParticipantsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
     /// <summary>Updates a participant's identity fields (surname, name, number, rank, coach, birth date). Does nothing if it is missing.</summary>
     Task UpdateParticipantAsync(string eventFolderPath, Participant participant, CancellationToken cancellationToken = default);

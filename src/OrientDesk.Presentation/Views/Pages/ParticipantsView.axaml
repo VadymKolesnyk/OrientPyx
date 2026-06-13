@@ -30,6 +30,14 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </controls:SearchableComboBox>
+                <!-- Import participants from a UOF XML file. File picking lives in code-behind (it needs
+                     the window's StorageProvider); the decoded text is handed to the VM's import flow. -->
+                <Button Click="OnImportClick" Classes="ghost">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <PathIcon Data="M12,3 v10 m0,0 l-4,-4 m4,4 l4,-4 M5,17 v2 h14 v-2" Width="14" Height="14" />
+                        <TextBlock Text="{Binding Localization[Participants.Import]}" />
+                    </StackPanel>
+                </Button>
                 <!-- Add works in both modes: on a day it attaches to that day; on Мандатка it attaches
                      the new participant to every day that has a group. -->
                 <Button Command="{Binding AddParticipantCommand}" Classes="accent">

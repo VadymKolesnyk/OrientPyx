@@ -96,4 +96,77 @@ public sealed class AppStore : IAppStore
 
         await db.SaveChangesAsync(cancellationToken);
     }
+
+    // ── Sports ranks ───────────────────────────────────────────────────────────────────────────────
+
+    public async Task SeedRanksIfEmptyAsync(IReadOnlyList<SportRank> ranks, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        if (await db.Ranks.AnyAsync(cancellationToken))
+            return;
+
+        db.Ranks.AddRange(ranks);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<SportRank>> GetRanksAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await db.Ranks
+            .AsNoTracking()
+            .OrderBy(r => r.Order)
+            .ThenBy(r => r.Name)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<SportRank> AddRankAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+
+        var maxOrder = await db.Ranks.AnyAsync(cancellationToken)
+            ? await db.Ranks.MaxAsync(r => r.Order, cancellationToken)
+            : -1;
+
+        var rank = new SportRank { Name = string.Empty, Points = 0, Order = maxOrder + 1 };
+        db.Ranks.Add(rank);
+        await db.SaveChangesAsync(cancellationToken);
+        return rank;
+    }
+
+    public async Task UpdateRankAsync(SportRank rank, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+
+        var existing = await db.Ranks.FirstOrDefaultAsync(r => r.Id == rank.Id, cancellationToken);
+        if (existing is null)
+            return;
+
+        // Reject a rename that would collide with another rank (case-insensitive); keep the old name.
+        var name = (rank.Name ?? string.Empty).Trim();
+        if (name.Length > 0)
+        {
+            var clash = await db.Ranks.AnyAsync(
+                r => r.Id != rank.Id && r.Name == name, cancellationToken);
+            if (!clash)
+                existing.Name = name;
+        }
+        else
+        {
+            existing.Name = string.Empty;
+        }
+
+        existing.Points = rank.Points;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteRankAsync(Guid rankId, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var existing = await db.Ranks.FirstOrDefaultAsync(r => r.Id == rankId, cancellationToken);
+        if (existing is null)
+            return;
+
+        db.Ranks.Remove(existing);
+        await db.SaveChangesAsync(cancellationToken);
+    }
 }

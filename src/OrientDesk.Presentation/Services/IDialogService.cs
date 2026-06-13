@@ -59,4 +59,10 @@ public interface IDialogService : INotifyPropertyChanged
     /// or null when cancelled/closed. Only one dialog is shown at a time.
     /// </summary>
     Task<string?> ShowAddClubAsync(AddClubViewModel dialog);
+
+    /// <summary>
+    /// Shows the add-ДЮСШ modal and awaits the user's input. Returns the trimmed name on confirm,
+    /// or null when cancelled/closed. Only one dialog is shown at a time.
+    /// </summary>
+    Task<string?> ShowAddDusshAsync(AddDusshViewModel dialog);
 }

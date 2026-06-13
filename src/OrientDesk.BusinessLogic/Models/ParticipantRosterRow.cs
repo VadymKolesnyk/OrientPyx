@@ -17,6 +17,8 @@ public sealed record ParticipantRosterRow(
     string RegionName,
     Guid? ClubId,
     string ClubName,
+    Guid? DusshId,
+    string DusshName,
     string Representative,
     string FsouCode,
     bool IsFsouMember,

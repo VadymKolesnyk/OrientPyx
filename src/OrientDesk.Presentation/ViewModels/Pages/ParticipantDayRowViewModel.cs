@@ -30,6 +30,8 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private readonly Action<ParticipantDayRowViewModel> _requestAddRegion;
     private readonly Action<ParticipantDayRowViewModel> _requestClubChange;
     private readonly Action<ParticipantDayRowViewModel> _requestAddClub;
+    private readonly Action<ParticipantDayRowViewModel> _requestDusshChange;
+    private readonly Action<ParticipantDayRowViewModel> _requestAddDussh;
 
     // Suppresses save requests while the constructor seeds initial values, and while a rejected
     // reassignment reverts the chip.
@@ -60,6 +62,12 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private ClubOption _selectedClub;
 
     [ObservableProperty]
+    private DusshOption _selectedDussh;
+
+    [ObservableProperty]
+    private RankOption _selectedRank;
+
+    [ObservableProperty]
     private string _representative;
 
     [ObservableProperty]
@@ -82,6 +90,8 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         IReadOnlyList<GroupOption> groupOptions,
         IReadOnlyList<RegionOption> regionOptions,
         IReadOnlyList<ClubOption> clubOptions,
+        IReadOnlyList<DusshOption> dusshOptions,
+        IReadOnlyList<RankOption> rankOptions,
         ILocalizationService localization,
         IDisciplineStrategyProvider strategies,
         Action<ParticipantDayRowViewModel> requestSave,
@@ -90,7 +100,9 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         Action<ParticipantDayRowViewModel> requestRegionChange,
         Action<ParticipantDayRowViewModel> requestAddRegion,
         Action<ParticipantDayRowViewModel> requestClubChange,
-        Action<ParticipantDayRowViewModel> requestAddClub)
+        Action<ParticipantDayRowViewModel> requestAddClub,
+        Action<ParticipantDayRowViewModel> requestDusshChange,
+        Action<ParticipantDayRowViewModel> requestAddDussh)
     {
         _linkId = row.LinkId;
         _participantId = row.ParticipantId;
@@ -104,15 +116,23 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         _requestAddRegion = requestAddRegion;
         _requestClubChange = requestClubChange;
         _requestAddClub = requestAddClub;
+        _requestDusshChange = requestDusshChange;
+        _requestAddDussh = requestAddDussh;
         Localization = localization;
 
         GroupOptions = groupOptions;
         RegionOptions = regionOptions;
         ClubOptions = clubOptions;
+        DusshOptions = dusshOptions;
 
         _fullName = row.FullName;
         _number = row.Number;
         _rank = row.Rank;
+        // Rank stores text; resolve the dropdown selection by matching the stored name (case-insensitive).
+        // A stored value not in the list gets a one-off "unknown" option prepended so it still shows.
+        var (rankOpts, rankSel) = RankOptionResolver.Resolve(rankOptions, row.Rank, localization);
+        _rankOptions = rankOpts;
+        _selectedRank = rankSel;
         _coach = row.Coach;
         _birthDate = row.BirthDate;
         _representative = row.Representative;
@@ -129,13 +149,16 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         _committedRegion = _selectedRegion;
         _selectedClub = clubOptions.FirstOrDefault(o => !o.IsAdd && o.Id == row.ClubId) ?? clubOptions[0];
         _committedClub = _selectedClub;
+        _selectedDussh = dusshOptions.FirstOrDefault(o => !o.IsAdd && o.Id == row.DusshId) ?? dusshOptions[0];
+        _committedDussh = _selectedDussh;
 
         _initialized = true;
     }
 
-    // The last region/club the page accepted, so a cancelled "+ new" can revert the selection.
+    // The last region/club/ДЮСШ the page accepted, so a cancelled "+ new" can revert the selection.
     private RegionOption _committedRegion;
     private ClubOption _committedClub;
+    private DusshOption _committedDussh;
 
     /// <summary>Region choices for the competition (shared list): "(none)", regions A→Z, "+ new".</summary>
     [ObservableProperty]
@@ -144,6 +167,19 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     /// <summary>Club choices for the competition (shared list): "(none)", clubs A→Z, "+ new".</summary>
     [ObservableProperty]
     private IReadOnlyList<ClubOption> _clubOptions;
+
+    /// <summary>ДЮСШ choices for the competition (shared list): "(none)", schools A→Z, "+ new".</summary>
+    [ObservableProperty]
+    private IReadOnlyList<DusshOption> _dusshOptions;
+
+    /// <summary>
+    /// Rank choices (shared list): "(none)", then the application-level ranks. Rank is stored as text,
+    /// so picking an option writes its name into <see cref="Rank"/> (saved with the row); there is no
+    /// "+ new" option. When the participant's stored rank is not in the list, a one-off "unknown" option
+    /// carrying that value is prepended for this row so the dropdown can still show it.
+    /// </summary>
+    [ObservableProperty]
+    private IReadOnlyList<RankOption> _rankOptions;
 
     /// <summary>
     /// Swaps in a rebuilt shared options list (e.g. after a "+ new" added a region) while keeping the
@@ -169,6 +205,18 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         ClubOptions = options;
         SelectedClub = options.FirstOrDefault(o => !o.IsAdd && o.Id == keepId) ?? options[0];
         _committedClub = SelectedClub;
+        _initialized = wasInitialized;
+    }
+
+    /// <summary>Swaps in a rebuilt shared ДЮСШ options list while keeping the selection by id (silent).</summary>
+    public void ResetDusshOptions(IReadOnlyList<DusshOption> options)
+    {
+        var keepId = SelectedDussh?.Id;
+        var wasInitialized = _initialized;
+        _initialized = false;
+        DusshOptions = options;
+        SelectedDussh = options.FirstOrDefault(o => !o.IsAdd && o.Id == keepId) ?? options[0];
+        _committedDussh = SelectedDussh;
         _initialized = wasInitialized;
     }
 
@@ -210,6 +258,8 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         RegionName: SelectedRegion.Label,
         ClubId: SelectedClub.Id,
         ClubName: SelectedClub.Label,
+        DusshId: SelectedDussh.Id,
+        DusshName: SelectedDussh.Label,
         Representative: (Representative ?? string.Empty).Trim(),
         FsouCode: (FsouCode ?? string.Empty).Trim(),
         IsFsouMember: IsFsouMember,
@@ -310,6 +360,58 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         _initialized = false;
         SelectedClub = value;
         _committedClub = value;
+        _initialized = wasInitialized;
+    }
+
+    // ДЮСШ mirrors Region/Club: NOT part of the debounced save (the "+ new" sentinel opens a modal).
+    partial void OnSelectedDusshChanged(DusshOption value)
+    {
+        if (!_initialized || value is null)
+            return;
+
+        if (value.IsAdd)
+            _requestAddDussh(this);
+        else
+        {
+            _committedDussh = value;
+            _requestDusshChange(this);
+        }
+    }
+
+    /// <summary>The previously committed ДЮСШ (to restore after a cancelled "+ new").</summary>
+    public DusshOption CommittedDussh => _committedDussh;
+
+    /// <summary>Sets the ДЮСШ without re-triggering the change callback (revert after a cancelled "+ new").</summary>
+    public void SetDusshSilently(DusshOption value)
+    {
+        var wasInitialized = _initialized;
+        _initialized = false;
+        SelectedDussh = value;
+        _committedDussh = value;
+        _initialized = wasInitialized;
+    }
+
+    // Rank is stored as text: picking an option writes its name into Rank, which persists through the
+    // debounced row save (OnRankChanged). "(none)" writes blank. No modal side effect, so no special
+    // routing — unlike region/club.
+    partial void OnSelectedRankChanged(RankOption value)
+    {
+        if (!_initialized || value is null)
+            return;
+        Rank = value.Value;
+    }
+
+    /// <summary>
+    /// Swaps in a rebuilt rank list (e.g. after the Ranks page changed) while keeping the current
+    /// selection by value. Done silently so it doesn't re-fire the rank change / a save.
+    /// </summary>
+    public void ResetRankOptions(IReadOnlyList<RankOption> options)
+    {
+        var wasInitialized = _initialized;
+        _initialized = false;
+        var (rankOpts, rankSel) = RankOptionResolver.Resolve(options, Rank, Localization);
+        RankOptions = rankOpts;
+        SelectedRank = rankSel;
         _initialized = wasInitialized;
     }
 

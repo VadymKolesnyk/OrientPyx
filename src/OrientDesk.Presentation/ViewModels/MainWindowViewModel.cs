@@ -41,6 +41,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly ParticipantsViewModel _participants;
     private readonly RegionsViewModel _regions;
     private readonly ClubsViewModel _clubs;
+    private readonly DusshViewModel _dussh;
+    private readonly RanksViewModel _ranks;
 
     public MainWindowViewModel(
         ISessionService session,
@@ -57,6 +59,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         ParticipantsViewModel participants,
         RegionsViewModel regions,
         ClubsViewModel clubs,
+        DusshViewModel dussh,
+        RanksViewModel ranks,
         ILocalizationService localization,
         IUiScaleService uiScale,
         IBusyService busy,
@@ -77,6 +81,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _participants = participants;
         _regions = regions;
         _clubs = clubs;
+        _dussh = dussh;
+        _ranks = ranks;
         Localization = localization;
         _uiScale = uiScale;
         _busy = busy;
@@ -202,6 +208,20 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _shell.SelectedPage = _clubs;
     }
 
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenDusshAsync()
+    {
+        await _dussh.LoadAsync();
+        _shell.SelectedPage = _dussh;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenRanksAsync()
+    {
+        await _ranks.LoadAsync();
+        _shell.SelectedPage = _ranks;
+    }
+
     /// <summary>Called once after construction to restore the last session or show the picker.</summary>
     public async Task InitializeAsync()
     {
@@ -265,6 +285,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenParticipantsCommand.NotifyCanExecuteChanged();
         OpenRegionsCommand.NotifyCanExecuteChanged();
         OpenClubsCommand.NotifyCanExecuteChanged();
+        OpenDusshCommand.NotifyCanExecuteChanged();
+        OpenRanksCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsEventSelected));
         OnPropertyChanged(nameof(WindowTitle));
 

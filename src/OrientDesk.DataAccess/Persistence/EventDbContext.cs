@@ -22,6 +22,7 @@ public class EventDbContext : DbContext
     public DbSet<RentalChip> RentalChips => Set<RentalChip>();
     public DbSet<Region> Regions => Set<Region>();
     public DbSet<Club> Clubs => Set<Club>();
+    public DbSet<Dussh> Dusshes => Set<Dussh>();
     public DbSet<Participant> Participants => Set<Participant>();
     public DbSet<ParticipantDay> ParticipantDays => Set<ParticipantDay>();
 
@@ -58,6 +59,11 @@ public class EventDbContext : DbContext
         // A club name is likewise unique per competition.
         modelBuilder.Entity<Club>()
             .HasIndex(c => c.Name)
+            .IsUnique();
+
+        // A sports-school (ДЮСШ) name is likewise unique per competition.
+        modelBuilder.Entity<Dussh>()
+            .HasIndex(d => d.Name)
             .IsUnique();
 
         // Per-day links are queried by day (the day's grid) and by participant (the cascade-delete

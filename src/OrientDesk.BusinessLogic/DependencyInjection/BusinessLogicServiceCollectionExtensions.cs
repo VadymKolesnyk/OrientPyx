@@ -27,6 +27,9 @@ public static class BusinessLogicServiceCollectionExtensions
         // IOF XML import (shared by control-point and course/group imports)
         services.AddSingleton<IIofXmlParser, IofXmlParser>();
 
+        // UOF participant import (the Ukrainian registration export)
+        services.AddSingleton<IUofXmlParser, UofXmlParser>();
+
         // Combined course-name splitting (e.g. "ЧЖ55" → "Ч55", "Ж55") for the import splitter dialog.
         services.AddSingleton<ICourseNameSplitter, CourseNameSplitter>();
 

@@ -57,6 +57,8 @@ internal sealed class RosterCellFactory
         SheetCellKind.RowGroup => BuildGroupCombo(pathPrefix: string.Empty),
         SheetCellKind.RowRegion => BuildRegionCombo(),
         SheetCellKind.RowClub => BuildClubCombo(),
+        SheetCellKind.RowDussh => BuildDusshCombo(),
+        SheetCellKind.RowRank => BuildRankCombo(),
         SheetCellKind.IdentityBool => BuildBoolCheckBox(column.IdentityPath),
         SheetCellKind.CollapsedGroup => BuildCollapsedGroup(),
         SheetCellKind.CollapsedChip => BuildCollapsedChip(),
@@ -225,6 +227,43 @@ internal sealed class RosterCellFactory
             new Binding(nameof(ParticipantRosterRowViewModel.ClubOptions));
         combo[!SelectingItemsControl.SelectedItemProperty] =
             new Binding(nameof(ParticipantRosterRowViewModel.SelectedClub)) { Mode = BindingMode.TwoWay };
+        return combo;
+    }
+
+    // A ДЮСШ ComboBox bound on the row. Both row VMs expose DusshOptions/SelectedDussh with these names.
+    private ComboBox BuildDusshCombo()
+    {
+        var combo = new SearchableComboBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            SearchWatermark = _loc.Get("Common.Search"),
+            ItemTemplate = new FuncDataTemplate<DusshOption>((_, _) =>
+                new TextBlock { [!TextBlock.TextProperty] = new Binding(nameof(DusshOption.Label)) })
+        };
+        combo[!ItemsControl.ItemsSourceProperty] =
+            new Binding(nameof(ParticipantRosterRowViewModel.DusshOptions));
+        combo[!SelectingItemsControl.SelectedItemProperty] =
+            new Binding(nameof(ParticipantRosterRowViewModel.SelectedDussh)) { Mode = BindingMode.TwoWay };
+        return combo;
+    }
+
+    // A rank ComboBox bound on the row. Both row VMs expose RankOptions/SelectedRank with these names.
+    // Rank stores text, so the dropdown has no "+ new" option (ranks are managed on the Ranks page).
+    private ComboBox BuildRankCombo()
+    {
+        var combo = new SearchableComboBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            SearchWatermark = _loc.Get("Common.Search"),
+            ItemTemplate = new FuncDataTemplate<RankOption>((_, _) =>
+                new TextBlock { [!TextBlock.TextProperty] = new Binding(nameof(RankOption.Label)) })
+        };
+        combo[!ItemsControl.ItemsSourceProperty] =
+            new Binding(nameof(ParticipantRosterRowViewModel.RankOptions));
+        combo[!SelectingItemsControl.SelectedItemProperty] =
+            new Binding(nameof(ParticipantRosterRowViewModel.SelectedRank)) { Mode = BindingMode.TwoWay };
         return combo;
     }
 

@@ -1,5 +1,9 @@
+using System.IO;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using OrientDesk.Presentation.Controls;
+using OrientDesk.Presentation.Services;
 using OrientDesk.Presentation.ViewModels.Pages;
 
 namespace OrientDesk.Presentation.Views.Pages;
@@ -28,6 +32,53 @@ public partial class ParticipantsView : UserControl
 
     private void OnFocusGridRequested(object? sender, System.EventArgs e)
         => Avalonia.Threading.Dispatcher.UIThread.Post(() => DayTable.Focus());
+
+    // File picking is a view concern (it needs the window's StorageProvider). We read the chosen
+    // file's bytes and decode them honouring the encoding declared in the XML prolog (UOF files are
+    // windows-1251), then hand the text to the VM, which owns the import flow. Mirrors GroupsView.
+    private async void OnImportClick(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null)
+            return;
+
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null)
+            return;
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = _vm.Localization.Get("ParticipantsImport.PickerTitle"),
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("UOF XML")
+                {
+                    Patterns = ["*.xml"],
+                    MimeTypes = ["application/xml", "text/xml"]
+                }
+            ]
+        });
+
+        if (files.Count == 0)
+            return;
+
+        string xml;
+        try
+        {
+            await using var stream = await files[0].OpenReadAsync();
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            // Decode by the declared encoding (windows-1251 for these files), not a fixed UTF-8 reader.
+            xml = XmlEncodingReader.DecodeXml(memory.ToArray());
+        }
+        catch
+        {
+            // Couldn't read the file (permissions, removed, etc.) — let the VM report via the modal.
+            xml = string.Empty;
+        }
+
+        await _vm.ImportFromXmlAsync(xml);
+    }
 
     // A collapse/expand toggle (or day-set change) asks the roster table to rebuild its columns.
     private void OnRosterColumnsChanged(object? sender, System.EventArgs e) => RosterTable.Rebuild();

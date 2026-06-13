@@ -21,6 +21,8 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     private readonly Action<ParticipantRosterRowViewModel> _requestAddRegion;
     private readonly Action<ParticipantRosterRowViewModel> _requestClubChange;
     private readonly Action<ParticipantRosterRowViewModel> _requestAddClub;
+    private readonly Action<ParticipantRosterRowViewModel> _requestDusshChange;
+    private readonly Action<ParticipantRosterRowViewModel> _requestAddDussh;
     private bool _initialized;
 
     [ObservableProperty]
@@ -45,6 +47,12 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     private ClubOption _selectedClub;
 
     [ObservableProperty]
+    private DusshOption _selectedDussh;
+
+    [ObservableProperty]
+    private RankOption _selectedRank;
+
+    [ObservableProperty]
     private string _representative;
 
     [ObservableProperty]
@@ -61,12 +69,16 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         IReadOnlyList<RosterDayCellViewModel> dayCells,
         IReadOnlyList<RegionOption> regionOptions,
         IReadOnlyList<ClubOption> clubOptions,
+        IReadOnlyList<DusshOption> dusshOptions,
+        IReadOnlyList<RankOption> rankOptions,
         ILocalizationService localization,
         Action<ParticipantRosterRowViewModel> requestSave,
         Action<ParticipantRosterRowViewModel> requestRegionChange,
         Action<ParticipantRosterRowViewModel> requestAddRegion,
         Action<ParticipantRosterRowViewModel> requestClubChange,
-        Action<ParticipantRosterRowViewModel> requestAddClub)
+        Action<ParticipantRosterRowViewModel> requestAddClub,
+        Action<ParticipantRosterRowViewModel> requestDusshChange,
+        Action<ParticipantRosterRowViewModel> requestAddDussh)
     {
         _participantId = row.ParticipantId;
         _requestSave = requestSave;
@@ -74,6 +86,8 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         _requestAddRegion = requestAddRegion;
         _requestClubChange = requestClubChange;
         _requestAddClub = requestAddClub;
+        _requestDusshChange = requestDusshChange;
+        _requestAddDussh = requestAddDussh;
         Localization = localization;
 
         Days = new ObservableCollection<RosterDayCellViewModel>(dayCells);
@@ -84,10 +98,15 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
 
         RegionOptions = regionOptions;
         ClubOptions = clubOptions;
+        DusshOptions = dusshOptions;
 
         _fullName = row.FullName;
         _number = row.Number;
         _rank = row.Rank;
+        // Rank stores text; resolve the dropdown selection by matching the stored name (case-insensitive).
+        var (rankOpts, rankSel) = RankOptionResolver.Resolve(rankOptions, row.Rank, localization);
+        _rankOptions = rankOpts;
+        _selectedRank = rankSel;
         _coach = row.Coach;
         _birthDate = row.BirthDate;
         _representative = row.Representative;
@@ -99,13 +118,16 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         _committedRegion = _selectedRegion;
         _selectedClub = clubOptions.FirstOrDefault(o => !o.IsAdd && o.Id == row.ClubId) ?? clubOptions[0];
         _committedClub = _selectedClub;
+        _selectedDussh = dusshOptions.FirstOrDefault(o => !o.IsAdd && o.Id == row.DusshId) ?? dusshOptions[0];
+        _committedDussh = _selectedDussh;
 
         _initialized = true;
     }
 
-    // The last region/club the page accepted, so a cancelled "+ new" can revert the selection.
+    // The last region/club/ДЮСШ the page accepted, so a cancelled "+ new" can revert the selection.
     private RegionOption _committedRegion;
     private ClubOption _committedClub;
+    private DusshOption _committedDussh;
 
     public ILocalizationService Localization { get; }
 
@@ -118,6 +140,18 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     /// <summary>Club choices for the competition (shared list): "(none)", clubs A→Z, "+ new".</summary>
     [ObservableProperty]
     private IReadOnlyList<ClubOption> _clubOptions;
+
+    /// <summary>ДЮСШ choices for the competition (shared list): "(none)", schools A→Z, "+ new".</summary>
+    [ObservableProperty]
+    private IReadOnlyList<DusshOption> _dusshOptions;
+
+    /// <summary>
+    /// Rank choices (shared list): "(none)", then the application-level ranks. Rank is stored as text,
+    /// so picking an option writes its name into <see cref="Rank"/> (saved with the row); no "+ new".
+    /// A stored value not in the list is preserved as a one-off "unknown" option on this row.
+    /// </summary>
+    [ObservableProperty]
+    private IReadOnlyList<RankOption> _rankOptions;
 
     /// <summary>
     /// Swaps in a rebuilt shared options list (e.g. after a "+ new" added a region) while keeping the
@@ -143,6 +177,18 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         ClubOptions = options;
         SelectedClub = options.FirstOrDefault(o => !o.IsAdd && o.Id == keepId) ?? options[0];
         _committedClub = SelectedClub;
+        _initialized = wasInitialized;
+    }
+
+    /// <summary>Swaps in a rebuilt shared ДЮСШ options list while keeping the selection by id (silent).</summary>
+    public void ResetDusshOptions(IReadOnlyList<DusshOption> options)
+    {
+        var keepId = SelectedDussh?.Id;
+        var wasInitialized = _initialized;
+        _initialized = false;
+        DusshOptions = options;
+        SelectedDussh = options.FirstOrDefault(o => !o.IsAdd && o.Id == keepId) ?? options[0];
+        _committedDussh = SelectedDussh;
         _initialized = wasInitialized;
     }
 
@@ -209,6 +255,56 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         _initialized = false;
         SelectedClub = value;
         _committedClub = value;
+        _initialized = wasInitialized;
+    }
+
+    // ДЮСШ mirrors Region/Club: NOT part of the debounced save (the "+ new" sentinel opens a modal).
+    partial void OnSelectedDusshChanged(DusshOption value)
+    {
+        if (!_initialized || value is null)
+            return;
+
+        if (value.IsAdd)
+            _requestAddDussh(this);
+        else
+        {
+            _committedDussh = value;
+            _requestDusshChange(this);
+        }
+    }
+
+    /// <summary>The previously committed ДЮСШ (to restore after a cancelled "+ new").</summary>
+    public DusshOption CommittedDussh => _committedDussh;
+
+    /// <summary>Sets the ДЮСШ without re-triggering the change callback (revert after a cancelled "+ new").</summary>
+    public void SetDusshSilently(DusshOption value)
+    {
+        var wasInitialized = _initialized;
+        _initialized = false;
+        SelectedDussh = value;
+        _committedDussh = value;
+        _initialized = wasInitialized;
+    }
+
+    // Rank is stored as text: picking an option writes its name into Rank, which persists through the
+    // debounced identity save (OnRankChanged). "(none)" writes blank.
+    partial void OnSelectedRankChanged(RankOption value)
+    {
+        if (!_initialized || value is null)
+            return;
+        Rank = value.Value;
+    }
+
+    /// <summary>
+    /// Swaps in a rebuilt rank list while keeping the current selection by value (silent — no save).
+    /// </summary>
+    public void ResetRankOptions(IReadOnlyList<RankOption> options)
+    {
+        var wasInitialized = _initialized;
+        _initialized = false;
+        var (rankOpts, rankSel) = RankOptionResolver.Resolve(options, Rank, Localization);
+        RankOptions = rankOpts;
+        SelectedRank = rankSel;
         _initialized = wasInitialized;
     }
 

@@ -45,6 +45,18 @@ public enum SheetCellKind
     /// <see cref="RowRegion"/>.</summary>
     RowClub,
 
+    /// <summary>A sports-school (ДЮСШ) ComboBox bound directly on the row (DusshOptions/SelectedDussh);
+    /// same shape as <see cref="RowRegion"/>.</summary>
+    RowDussh,
+
+    /// <summary>
+    /// A rank ComboBox bound directly on the row (RankOptions/SelectedRank). Rank is a competition-level
+    /// participant field stored as text (the rank name); the dropdown carries a "(none)" sentinel and
+    /// offers the application-level rank list, plus the participant's own value when it is not in the
+    /// list (old/renamed). Unlike region/club it has no "+ new" option — ranks are edited on their page.
+    /// </summary>
+    RowRank,
+
     /// <summary>
     /// A competition-level boolean field (CheckBox) edited on the row by its
     /// <see cref="SheetColumn.IdentityPath"/>. Used by the participant "FSOU member" column.

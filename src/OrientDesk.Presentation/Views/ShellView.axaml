@@ -37,6 +37,12 @@
         <DataTemplate DataType="pages:ClubsViewModel">
             <views:ClubsView />
         </DataTemplate>
+        <DataTemplate DataType="pages:DusshViewModel">
+            <views:DusshView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:RanksViewModel">
+            <views:RanksView />
+        </DataTemplate>
         <DataTemplate DataType="pages:PageViewModelBase">
             <views:PageView />
         </DataTemplate>

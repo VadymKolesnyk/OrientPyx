@@ -34,7 +34,14 @@
 
                     <!-- Virtualized rows. Fills the remaining height; rows align to the top so they
                          sit directly under the header (no centered gap). Owns both scrollbars; the
-                         horizontal one drives the header. -->
+                         horizontal one drives the header.
+                         NOTE: the VirtualizingStackPanel must stretch to fill the ListBox viewport.
+                         Giving it VerticalAlignment="Top" sizes it to the content of only the rows
+                         realized on the first pass, so the panel never grows to the viewport and the
+                         remaining rows are never materialized — the table then shows a subset and
+                         shuffles which rows appear when the source is sorted/refiltered. The ListBox
+                         already lays its rows out top-down, so stretching the panel keeps them under
+                         the header without dropping rows. -->
                     <ListBox Name="PART_Body"
                              Background="Transparent"
                              BorderThickness="0"
@@ -44,7 +51,7 @@
                              ScrollViewer.VerticalScrollBarVisibility="Auto">
                         <ListBox.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <VirtualizingStackPanel Orientation="Vertical" VerticalAlignment="Top" />
+                                <VirtualizingStackPanel Orientation="Vertical" />
                             </ItemsPanelTemplate>
                         </ListBox.ItemsPanel>
                     </ListBox>

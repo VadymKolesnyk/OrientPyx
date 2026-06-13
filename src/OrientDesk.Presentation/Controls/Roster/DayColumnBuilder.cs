@@ -30,7 +30,9 @@ public sealed class DayColumnBuilder
 
         bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Number", nameof(ParticipantDayRowViewModel.Number)));
         bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.FullName", nameof(ParticipantDayRowViewModel.FullName), fixedWidth: 220));
-        bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Rank", nameof(ParticipantDayRowViewModel.Rank)));
+        // Rank: a combo bound on the row (RankOptions/SelectedRank); sorted by the selected label.
+        bands.Add(Identity(SheetCellKind.RowRank, "Participants.Col.Rank", path: string.Empty,
+            sortPath: $"{nameof(ParticipantDayRowViewModel.SelectedRank)}.{nameof(RankOption.Label)}"));
         bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Coach", nameof(ParticipantDayRowViewModel.Coach)));
         bands.Add(Identity(SheetCellKind.BirthDate, "Participants.Col.BirthDate", nameof(ParticipantDayRowViewModel.BirthDate), fixedWidth: 160));
 
@@ -39,6 +41,8 @@ public sealed class DayColumnBuilder
             sortPath: $"{nameof(ParticipantDayRowViewModel.SelectedRegion)}.{nameof(RegionOption.Label)}"));
         bands.Add(Identity(SheetCellKind.RowClub, "Participants.Col.Club", path: string.Empty,
             sortPath: $"{nameof(ParticipantDayRowViewModel.SelectedClub)}.{nameof(ClubOption.Label)}"));
+        bands.Add(Identity(SheetCellKind.RowDussh, "Participants.Col.Dussh", path: string.Empty,
+            sortPath: $"{nameof(ParticipantDayRowViewModel.SelectedDussh)}.{nameof(DusshOption.Label)}"));
 
         // Competition-level text + boolean participant fields.
         bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Representative", nameof(ParticipantDayRowViewModel.Representative)));

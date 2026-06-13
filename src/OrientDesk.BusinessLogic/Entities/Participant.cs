@@ -32,6 +32,9 @@ public class Participant
     /// <summary>The club this participant belongs to; optional, null = none. Competition-level.</summary>
     public Guid? ClubId { get; set; }
 
+    /// <summary>The sports school (ДЮСШ) this participant attends; optional, null = none. Competition-level.</summary>
+    public Guid? DusshId { get; set; }
+
     /// <summary>Team representative / contact (Представник). Free text.</summary>
     public string Representative { get; set; } = string.Empty;
 

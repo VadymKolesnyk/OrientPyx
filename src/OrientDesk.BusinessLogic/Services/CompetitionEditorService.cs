@@ -844,6 +844,91 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         await _eventStore.UpdateParticipantAsync(folder, participant, cancellationToken);
     }
 
+    public Task<IReadOnlyList<Dussh>> GetDusshesAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return Task.FromResult<IReadOnlyList<Dussh>>([]);
+
+        return _eventStore.GetDusshesAsync(FolderPath, cancellationToken);
+    }
+
+    public async Task<Dussh> AddDusshRowAsync(CancellationToken cancellationToken = default)
+    {
+        var dussh = new Dussh();
+        await _eventStore.AddDusshAsync(FolderPath, dussh, cancellationToken);
+        return dussh;
+    }
+
+    public async Task<Dussh?> AddDusshAsync(string name, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return null;
+
+        var trimmed = (name ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+            return null;
+
+        var dusshes = await _eventStore.GetDusshesAsync(FolderPath, cancellationToken);
+        var dussh = dusshes.FirstOrDefault(d => string.Equals(d.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+        if (dussh is null)
+        {
+            dussh = new Dussh { Name = trimmed };
+            await _eventStore.AddDusshAsync(FolderPath, dussh, cancellationToken);
+        }
+        return dussh;
+    }
+
+    public async Task UpdateDusshAsync(Dussh dussh, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dussh);
+
+        var name = (dussh.Name ?? string.Empty).Trim();
+        var dusshes = await _eventStore.GetDusshesAsync(FolderPath, cancellationToken);
+        var collides = name.Length > 0 && dusshes.Any(d =>
+            d.Id != dussh.Id && string.Equals(d.Name.Trim(), name, StringComparison.OrdinalIgnoreCase));
+        if (collides || name.Length == 0)
+            name = dusshes.FirstOrDefault(d => d.Id == dussh.Id)?.Name ?? name;
+
+        await _eventStore.UpdateDusshAsync(FolderPath, new Dussh { Id = dussh.Id, Name = name }, cancellationToken);
+    }
+
+    public async Task DeleteDusshAsync(Guid dusshId, CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        await _eventStore.ClearParticipantsDusshAsync(folder, dusshId, cancellationToken);
+        await _eventStore.DeleteDusshAsync(folder, dusshId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, int>> GetDusshParticipantCountsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return new Dictionary<Guid, int>();
+
+        var folder = FolderPath;
+        var dusshes = await _eventStore.GetDusshesAsync(folder, cancellationToken);
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+
+        var counts = dusshes.ToDictionary(d => d.Id, _ => 0);
+        foreach (var p in participants)
+        {
+            if (p.DusshId is { } id && counts.ContainsKey(id))
+                counts[id]++;
+        }
+        return counts;
+    }
+
+    public async Task SetParticipantDusshAsync(Guid participantId, Guid? dusshId, CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var participant = participants.FirstOrDefault(p => p.Id == participantId);
+        if (participant is null)
+            return;
+
+        participant.DusshId = dusshId;
+        await _eventStore.UpdateParticipantAsync(folder, participant, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<ParticipantDayRow>> GetParticipantDayRowsAsync(CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null || _session.CurrentDay is null)
@@ -855,17 +940,19 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
         var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
         var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
+        var dusshes = await _eventStore.GetDusshesAsync(folder, cancellationToken);
         var byParticipant = participants.ToDictionary(p => p.Id);
         var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
         var regionName = regions.ToDictionary(r => r.Id, r => r.Name);
         var clubName = clubs.ToDictionary(c => c.Id, c => c.Name);
+        var dusshName = dusshes.ToDictionary(d => d.Id, d => d.Name);
 
         var rows = new List<ParticipantDayRow>(links.Count);
         foreach (var link in links)
         {
             // Defensive: skip a link whose participant was removed out from under it.
             if (byParticipant.TryGetValue(link.ParticipantId, out var participant))
-                rows.Add(ToRow(link, participant, groupName, regionName, clubName));
+                rows.Add(ToRow(link, participant, groupName, regionName, clubName, dusshName));
         }
         return rows;
     }
@@ -882,9 +969,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
         var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
         var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
+        var dusshes = await _eventStore.GetDusshesAsync(folder, cancellationToken);
         var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
         var regionName = regions.ToDictionary(r => r.Id, r => r.Name);
         var clubName = clubs.ToDictionary(c => c.Id, c => c.Name);
+        var dusshName = dusshes.ToDictionary(d => d.Id, d => d.Name);
 
         // Index links by (participant, day) so each roster cell is a quick lookup.
         var linkByKey = links.ToDictionary(l => (l.ParticipantId, l.EventDayId));
@@ -907,6 +996,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             }
             var region = participant.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
             var club = participant.ClubId is { } cid && clubName.TryGetValue(cid, out var cn) ? cn : string.Empty;
+            var dussh = participant.DusshId is { } did && dusshName.TryGetValue(did, out var dn) ? dn : string.Empty;
             rows.Add(new ParticipantRosterRow(
                 participant.Id,
                 participant.FullName,
@@ -918,6 +1008,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 region,
                 participant.ClubId,
                 club,
+                participant.DusshId,
+                dussh,
                 participant.Representative,
                 participant.FsouCode,
                 participant.IsFsouMember,
@@ -952,9 +1044,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         };
         await _eventStore.AddParticipantDayAsync(folder, link, cancellationToken);
 
-        // A fresh participant has no region/club yet, so empty name maps are fine.
+        // A fresh participant has no region/club/ДЮСШ yet, so empty name maps are fine.
         return ToRow(link, participant,
             new Dictionary<Guid, string> { [firstGroup.GroupId] = firstGroup.Name },
+            new Dictionary<Guid, string>(),
             new Dictionary<Guid, string>(),
             new Dictionary<Guid, string>());
     }
@@ -1002,6 +1095,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             BirthDate = row.BirthDate,
             RegionId = row.RegionId,
             ClubId = row.ClubId,
+            DusshId = row.DusshId,
             Representative = (row.Representative ?? string.Empty).Trim(),
             FsouCode = (row.FsouCode ?? string.Empty).Trim(),
             IsFsouMember = row.IsFsouMember,
@@ -1242,6 +1336,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             BirthDate = row.BirthDate,
             RegionId = row.RegionId,
             ClubId = row.ClubId,
+            DusshId = row.DusshId,
             Representative = (row.Representative ?? string.Empty).Trim(),
             FsouCode = (row.FsouCode ?? string.Empty).Trim(),
             IsFsouMember = row.IsFsouMember,
@@ -1249,16 +1344,254 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         }, cancellationToken);
     }
 
+    public async Task<ParticipantImportResult> ImportParticipantsAsync(
+        UofParticipantData data,
+        bool clearFirst,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        if (_session.CurrentEvent is null)
+            return default;
+
+        var folder = FolderPath;
+
+        // 1. Organiser: fill it from <Orgs> when the file carries one (don't clobber with blank).
+        if (!string.IsNullOrWhiteSpace(data.Organisation))
+        {
+            var info = await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken);
+            if (info is not null)
+            {
+                info.Organisation = data.Organisation.Trim();
+                await _eventStore.SaveCompetitionInfoAsync(folder, info, cancellationToken);
+            }
+        }
+
+        // 2. Ensure every day referenced by a ProgEvent exists; create the missing ones (numbered up
+        //    to the highest reference). AddDayAsync appends after the current last and makes the folder.
+        var maxDay = data.Participants
+            .SelectMany(p => p.DayNumbers)
+            .DefaultIfEmpty(0)
+            .Max();
+        var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        var daysCreated = 0;
+        var highestExisting = days.Count == 0 ? 0 : days.Max(d => d.Number);
+        for (var n = highestExisting + 1; n <= maxDay; n++)
+        {
+            await AddDayAsync(cancellationToken);
+            daysCreated++;
+        }
+        if (daysCreated > 0)
+            days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        var dayByNumber = days.ToDictionary(d => d.Number);
+
+        // 3. Optional wipe: clear the whole participant database so the file becomes the full roster.
+        if (clearFirst)
+            await _eventStore.DeleteAllParticipantsAsync(folder, cancellationToken);
+
+        // 4. Get-or-create caches for the lookups, seeded from what's already there (case-insensitive).
+        var regions = (await _eventStore.GetRegionsAsync(folder, cancellationToken)).ToList();
+        var clubs = (await _eventStore.GetClubsAsync(folder, cancellationToken)).ToList();
+        var dusshes = (await _eventStore.GetDusshesAsync(folder, cancellationToken)).ToList();
+        var groups = (await _eventStore.GetGroupsAsync(folder, cancellationToken)).ToList();
+
+        async Task<Guid?> ResolveRegionAsync(string name)
+        {
+            var trimmed = name.Trim();
+            if (trimmed.Length == 0) return null;
+            var existing = regions.FirstOrDefault(r => string.Equals(r.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
+            {
+                existing = new Region { Name = trimmed };
+                await _eventStore.AddRegionAsync(folder, existing, cancellationToken);
+                regions.Add(existing);
+            }
+            return existing.Id;
+        }
+
+        async Task<Guid?> ResolveClubAsync(string name)
+        {
+            var trimmed = name.Trim();
+            if (trimmed.Length == 0) return null;
+            var existing = clubs.FirstOrDefault(c => string.Equals(c.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
+            {
+                existing = new Club { Name = trimmed };
+                await _eventStore.AddClubAsync(folder, existing, cancellationToken);
+                clubs.Add(existing);
+            }
+            return existing.Id;
+        }
+
+        async Task<Guid?> ResolveDusshAsync(string name)
+        {
+            var trimmed = name.Trim();
+            if (trimmed.Length == 0) return null;
+            var existing = dusshes.FirstOrDefault(d => string.Equals(d.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
+            {
+                existing = new Dussh { Name = trimmed };
+                await _eventStore.AddDusshAsync(folder, existing, cancellationToken);
+                dusshes.Add(existing);
+            }
+            return existing.Id;
+        }
+
+        async Task<Group?> ResolveGroupAsync(string name)
+        {
+            var trimmed = name.Trim();
+            if (trimmed.Length == 0) return null;
+            var existing = groups.FirstOrDefault(g => string.Equals(g.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
+            {
+                existing = new Group { Name = trimmed };
+                await _eventStore.AddGroupAsync(folder, existing, cancellationToken);
+                groups.Add(existing);
+            }
+            return existing;
+        }
+
+        // Per-day group attachment (GroupDaySettings) + the per-day running order counters, so each
+        // group is attached once per day and ParticipantDay.Order continues after existing rows.
+        var settingsByDay = new Dictionary<Guid, HashSet<Guid>>();
+        var groupOrderByDay = new Dictionary<Guid, int>();
+        var linkOrderByDay = new Dictionary<Guid, int>();
+        foreach (var day in days)
+        {
+            var settings = await _eventStore.GetGroupDaySettingsAsync(folder, day.Id, cancellationToken);
+            settingsByDay[day.Id] = new HashSet<Guid>(settings.Select(s => s.GroupId));
+            groupOrderByDay[day.Id] = settings.Count == 0 ? 0 : settings.Max(s => s.Order);
+            var links = await _eventStore.GetParticipantDaysAsync(folder, day.Id, cancellationToken);
+            linkOrderByDay[day.Id] = links.Count == 0 ? 0 : links.Max(l => l.Order);
+        }
+
+        async Task EnsureGroupOnDayAsync(Guid dayId, Guid groupId)
+        {
+            var attached = settingsByDay[dayId];
+            if (attached.Add(groupId))
+            {
+                await _eventStore.AddGroupDaySettingsAsync(folder, new GroupDaySettings
+                {
+                    EventDayId = dayId,
+                    GroupId = groupId,
+                    Order = ++groupOrderByDay[dayId]
+                }, cancellationToken);
+            }
+        }
+
+        // 5. Existing participants (for FOU-code matching in keep mode). After a clear there are none.
+        var existingParticipants = clearFirst
+            ? new List<Participant>()
+            : (await _eventStore.GetParticipantsAsync(folder, cancellationToken)).ToList();
+        var byFsouCode = existingParticipants
+            .Where(p => !string.IsNullOrWhiteSpace(p.FsouCode))
+            .GroupBy(p => p.FsouCode.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        // Existing links per matched participant, so a re-import updates the same day rows in place.
+        var allLinks = clearFirst
+            ? new List<ParticipantDay>()
+            : (await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken)).ToList();
+        var linksByParticipant = allLinks
+            .GroupBy(l => l.ParticipantId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var added = 0;
+        var updated = 0;
+
+        foreach (var src in data.Participants)
+        {
+            var regionId = await ResolveRegionAsync(src.Region);
+            var clubId = await ResolveClubAsync(src.Club);
+            var dusshId = await ResolveDusshAsync(src.Dussh);
+
+            // Match an existing participant by non-blank FOU code (keep mode) or create a new one.
+            var code = src.FsouCode.Trim();
+            Participant? participant = null;
+            if (code.Length > 0 && byFsouCode.TryGetValue(code, out var matched))
+                participant = matched;
+
+            if (participant is null)
+            {
+                participant = new Participant
+                {
+                    FullName = src.FullName,
+                    Rank = src.Rank,
+                    Coach = src.Coach,
+                    BirthDate = src.BirthDate,
+                    RegionId = regionId,
+                    ClubId = clubId,
+                    DusshId = dusshId,
+                    Representative = src.Representative,
+                    FsouCode = code,
+                    IsFsouMember = src.IsFsouMember,
+                    Payment = src.Payment
+                };
+                await _eventStore.AddParticipantAsync(folder, participant, cancellationToken);
+                added++;
+            }
+            else
+            {
+                participant.FullName = src.FullName;
+                participant.Rank = src.Rank;
+                participant.Coach = src.Coach;
+                participant.BirthDate = src.BirthDate;
+                participant.RegionId = regionId;
+                participant.ClubId = clubId;
+                participant.DusshId = dusshId;
+                participant.Representative = src.Representative;
+                participant.IsFsouMember = src.IsFsouMember;
+                participant.Payment = src.Payment;
+                await _eventStore.UpdateParticipantAsync(folder, participant, cancellationToken);
+                updated++;
+            }
+
+            var group = await ResolveGroupAsync(src.Group);
+            var existingLinks = linksByParticipant.TryGetValue(participant.Id, out var l) ? l : [];
+
+            // 6. One ParticipantDay per referenced day (membership). Reuse an existing link in keep mode.
+            foreach (var dayNumber in src.DayNumbers)
+            {
+                if (!dayByNumber.TryGetValue(dayNumber, out var day))
+                    continue; // a number with no matching day (shouldn't happen — we created them) is skipped
+
+                if (group is not null)
+                    await EnsureGroupOnDayAsync(day.Id, group.Id);
+
+                var link = existingLinks.FirstOrDefault(x => x.EventDayId == day.Id);
+                if (link is null)
+                {
+                    await _eventStore.AddParticipantDayAsync(folder, new ParticipantDay
+                    {
+                        EventDayId = day.Id,
+                        ParticipantId = participant.Id,
+                        Order = ++linkOrderByDay[day.Id],
+                        GroupId = group?.Id,
+                        Chip = src.Chip
+                    }, cancellationToken);
+                }
+                else
+                {
+                    link.GroupId = group?.Id;
+                    link.Chip = src.Chip;
+                    await _eventStore.UpdateParticipantDayAsync(folder, link, cancellationToken);
+                }
+            }
+        }
+
+        return new ParticipantImportResult(Added: added, Updated: updated, DaysCreated: daysCreated);
+    }
+
     private ParticipantDayRow ToRow(
         ParticipantDay link,
         Participant p,
         IReadOnlyDictionary<Guid, string> groupName,
         IReadOnlyDictionary<Guid, string> regionName,
-        IReadOnlyDictionary<Guid, string> clubName)
+        IReadOnlyDictionary<Guid, string> clubName,
+        IReadOnlyDictionary<Guid, string> dusshName)
     {
         var name = link.GroupId is { } gid && groupName.TryGetValue(gid, out var n) ? n : string.Empty;
         var region = p.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
         var club = p.ClubId is { } cid && clubName.TryGetValue(cid, out var cn) ? cn : string.Empty;
+        var dussh = p.DusshId is { } did && dusshName.TryGetValue(did, out var dn) ? dn : string.Empty;
         return new ParticipantDayRow(
             LinkId: link.Id,
             ParticipantId: p.Id,
@@ -1272,6 +1605,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             RegionName: region,
             ClubId: p.ClubId,
             ClubName: club,
+            DusshId: p.DusshId,
+            DusshName: dussh,
             Representative: p.Representative,
             FsouCode: p.FsouCode,
             IsFsouMember: p.IsFsouMember,

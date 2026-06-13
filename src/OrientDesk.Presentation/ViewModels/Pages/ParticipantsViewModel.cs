@@ -28,10 +28,12 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private static readonly TimeSpan SaveDebounce = TimeSpan.FromMilliseconds(600);
 
     private readonly ICompetitionEditorService _editor;
+    private readonly IAppStore _appStore;
     private readonly ISessionService _session;
     private readonly IBusyService _busy;
     private readonly IDisciplineStrategyProvider _strategies;
     private readonly IDialogService _dialogs;
+    private readonly IParticipantImportFlow _importFlow;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
     // Serialises chip-reassignment prompts so a collapsed-block edit that fans a chip out to several
     // days never stacks overlapping confirm dialogs (the overlay shows one dialog at a time).
@@ -40,17 +42,21 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     public ParticipantsViewModel(
         ILocalizationService localization,
         ICompetitionEditorService editor,
+        IAppStore appStore,
         ISessionService session,
         IBusyService busy,
         IDisciplineStrategyProvider strategies,
-        IDialogService dialogs)
+        IDialogService dialogs,
+        IParticipantImportFlow importFlow)
         : base(localization)
     {
         _editor = editor;
+        _appStore = appStore;
         _session = session;
         _busy = busy;
         _strategies = strategies;
         _dialogs = dialogs;
+        _importFlow = importFlow;
         // Singleton VM: reload when the competition/day changes. SessionChanged may be raised on a
         // pool thread (session writes run inside RunAsync), so marshal onto the UI thread.
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
@@ -96,10 +102,21 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     /// </summary>
     private IReadOnlyList<RegionOption> _regionOptions = [];
     private IReadOnlyList<ClubOption> _clubOptions = [];
+    private IReadOnlyList<DusshOption> _dusshOptions = [];
 
-    // Serialises "+ new" region/club prompts so two overlapping add-modals never stack.
+    /// <summary>
+    /// The application-level rank options, shared by every row's rank dropdown: a leading "(none)"
+    /// sentinel then the ranks in their configured order. Rank is stored as text, so (unlike region/club)
+    /// it has no "+ new" option and a row whose stored value is unknown prepends its own one-off option.
+    /// Rebuilt on reload (the Ranks page may have changed the list since this page was last shown).
+    /// Built in <see cref="RefreshRankOptionsAsync"/> before any row is created.
+    /// </summary>
+    private IReadOnlyList<RankOption> _rankOptions = [];
+
+    // Serialises "+ new" region/club/ДЮСШ prompts so two overlapping add-modals never stack.
     private readonly SemaphoreSlim _regionGate = new(1, 1);
     private readonly SemaphoreSlim _clubGate = new(1, 1);
+    private readonly SemaphoreSlim _dusshGate = new(1, 1);
 
     /// <summary>
     /// The competition's days, in order — the source of truth for the roster's per-day columns. Kept
@@ -174,6 +191,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         // Rebuild the shared region/club options ("(none)" + A→Z + "+ new") for every row's dropdown.
         await RefreshRegionOptionsAsync(hasEvent);
         await RefreshClubOptionsAsync(hasEvent);
+        await RefreshDusshOptionsAsync(hasEvent);
+        // Rank options come from the app database (shared across competitions), so they load regardless
+        // of whether a competition is selected.
+        await RefreshRankOptionsAsync();
 
         _syncingDay = true;
         try
@@ -202,6 +223,16 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
         OnPropertyChanged(nameof(ShowDaySelector));
         await ReloadContentAsync();
+    }
+
+    /// <summary>
+    /// Imports participants from a UOF XML file (the view reads the file and hands over the decoded
+    /// text). Runs the shared flow (parse → clear-vs-keep modal → import) and reloads on success.
+    /// </summary>
+    public async Task ImportFromXmlAsync(string xml)
+    {
+        if (await _importFlow.RunAsync(xml))
+            await LoadAsync();
     }
 
     // Rebuilds the day options only when the day set changed, so the ComboBox keeps a valid
@@ -288,10 +319,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     }
 
     private ParticipantDayRowViewModel CreateDayRow(ParticipantDayRow row, IReadOnlyList<GroupOption> groupOptions)
-        => new(row, groupOptions, _regionOptions, _clubOptions, Localization, _strategies,
+        => new(row, groupOptions, _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Localization, _strategies,
             RequestRowSave, LeaveDay, RequestDayRowChipChange,
             RequestDayRowRegionChange, RequestDayRowAddRegion,
-            RequestDayRowClubChange, RequestDayRowAddClub);
+            RequestDayRowClubChange, RequestDayRowAddClub,
+            RequestDayRowDusshChange, RequestDayRowAddDussh);
 
     private ParticipantRosterRowViewModel CreateRosterRow(
         ParticipantRosterRow row,
@@ -305,10 +337,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 : [new GroupOption(null, string.Empty, Localization)];
             cells.Add(new RosterDayCellViewModel(row.ParticipantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange));
         }
-        return new ParticipantRosterRowViewModel(row, cells, _regionOptions, _clubOptions, Localization,
+        return new ParticipantRosterRowViewModel(row, cells, _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Localization,
             RequestRosterRowSave,
             RequestRosterRowRegionChange, RequestRosterRowAddRegion,
-            RequestRosterRowClubChange, RequestRosterRowAddClub);
+            RequestRosterRowClubChange, RequestRosterRowAddClub,
+            RequestRosterRowDusshChange, RequestRosterRowAddDussh);
     }
 
     // Driven by the day ComboBox. A real day switches the session (so other pages follow); the roster
@@ -620,6 +653,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 row.SelectedRegion.Label,
                 row.SelectedClub.Id,
                 row.SelectedClub.Label,
+                row.SelectedDussh.Id,
+                row.SelectedDussh.Label,
                 (row.Representative ?? string.Empty).Trim(),
                 (row.FsouCode ?? string.Empty).Trim(),
                 row.IsFsouMember,
@@ -940,6 +975,116 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             row.SetClubSilently(option);
             RequestRosterRowClubChange(row);
         }
+    }
+
+    // ── ДЮСШ options + per-row school edit (mirrors the region/club flow above) ─────────────────────
+    private async Task RefreshDusshOptionsAsync(bool hasEvent)
+    {
+        var dusshes = hasEvent
+            ? await _busy.RunAsync(() => _editor.GetDusshesAsync())
+            : (IReadOnlyList<BusinessLogic.Entities.Dussh>)[];
+        _dusshOptions = BuildDusshOptions(dusshes);
+    }
+
+    private IReadOnlyList<DusshOption> BuildDusshOptions(IReadOnlyList<BusinessLogic.Entities.Dussh> dusshes)
+    {
+        var options = new List<DusshOption>(dusshes.Count + 2) { DusshOption.None(Localization) };
+        foreach (var d in dusshes.OrderBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase))
+            options.Add(new DusshOption(d.Id, d.Name, Localization));
+        options.Add(DusshOption.Add(Localization));
+        return options;
+    }
+
+    private void RequestDayRowDusshChange(ParticipantDayRowViewModel row)
+        => _ = Task.Run(() => _editor.SetParticipantDusshAsync(row.ParticipantId, row.SelectedDussh.Id));
+
+    private void RequestRosterRowDusshChange(ParticipantRosterRowViewModel row)
+        => _ = Task.Run(() => _editor.SetParticipantDusshAsync(row.ParticipantId, row.SelectedDussh.Id));
+
+    private void RequestDayRowAddDussh(ParticipantDayRowViewModel row)
+        => _ = AddDusshForRowAsync(
+            select: id => SelectDusshOnDayRow(row, id),
+            revert: () => row.SetDusshSilently(row.CommittedDussh));
+
+    private void RequestRosterRowAddDussh(ParticipantRosterRowViewModel row)
+        => _ = AddDusshForRowAsync(
+            select: id => SelectDusshOnRosterRow(row, id),
+            revert: () => row.SetDusshSilently(row.CommittedDussh));
+
+    private async Task AddDusshForRowAsync(Action<Guid> select, Action revert)
+    {
+        if (_session.CurrentEvent is null)
+        {
+            revert();
+            return;
+        }
+
+        await _dusshGate.WaitAsync();
+        try
+        {
+            var name = await _dialogs.ShowAddDusshAsync(new Dialogs.AddDusshViewModel(Localization));
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                revert();
+                return;
+            }
+
+            var dussh = await _busy.RunAsync(() => _editor.AddDusshAsync(name));
+            if (dussh is null)
+            {
+                revert();
+                return;
+            }
+
+            await RefreshDusshOptionsAsync(hasEvent: true);
+            ApplyDusshOptionsToRows();
+            select(dussh.Id);
+        }
+        finally
+        {
+            _dusshGate.Release();
+        }
+    }
+
+    private void ApplyDusshOptionsToRows()
+    {
+        foreach (var row in Participants)
+            row.ResetDusshOptions(_dusshOptions);
+        foreach (var row in Roster)
+            row.ResetDusshOptions(_dusshOptions);
+    }
+
+    private void SelectDusshOnDayRow(ParticipantDayRowViewModel row, Guid dusshId)
+    {
+        var option = _dusshOptions.FirstOrDefault(o => !o.IsAdd && o.Id == dusshId);
+        if (option is not null)
+        {
+            row.SetDusshSilently(option);
+            RequestDayRowDusshChange(row);
+        }
+    }
+
+    private void SelectDusshOnRosterRow(ParticipantRosterRowViewModel row, Guid dusshId)
+    {
+        var option = _dusshOptions.FirstOrDefault(o => !o.IsAdd && o.Id == dusshId);
+        if (option is not null)
+        {
+            row.SetDusshSilently(option);
+            RequestRosterRowDusshChange(row);
+        }
+    }
+
+    // ── Rank options (application-level, no "+ new") ───────────────────────────────────────────────
+    // Rebuilds the shared rank options from the app database: "(none)" then the ranks in order. Rank is
+    // stored as text, so there is no create flow here — ranks are managed on their own page.
+    private async Task RefreshRankOptionsAsync()
+    {
+        var ranks = await _busy.RunAsync(() => _appStore.GetRanksAsync());
+        var options = new List<RankOption>(ranks.Count + 1) { RankOption.None(Localization) };
+        foreach (var r in ranks)
+            if (!string.IsNullOrWhiteSpace(r.Name))
+                options.Add(new RankOption(r.Name, Localization));
+        _rankOptions = options;
     }
 
     // ── Rental-chip highlight + toggle ────────────────────────────────────────────────────────────

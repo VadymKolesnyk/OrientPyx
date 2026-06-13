@@ -226,6 +226,37 @@ public interface ICompetitionEditorService
     /// <summary>Sets a participant's club (competition-level, independent of any day). A null club clears it.</summary>
     Task SetParticipantClubAsync(Guid participantId, Guid? clubId, CancellationToken cancellationToken = default);
 
+    /// <summary>Loads the current competition's sports schools (ДЮСШ), ordered by name.</summary>
+    Task<IReadOnlyList<Dussh>> GetDusshesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Appends a new, blank sports school to the current competition (ДЮСШ page "+ add") and returns it.</summary>
+    Task<Dussh> AddDusshRowAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves a sports school by name for the current competition: reuses an existing one with the
+    /// same name (case-insensitive) or creates it. Returns the resulting school. Used by the "+ новий"
+    /// flow on the participants page and by the participant import. A blank name is rejected (returns null).
+    /// </summary>
+    Task<Dussh?> AddDusshAsync(string name, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Saves an edited sports school (name). A change to a name already used by another school is
+    /// ignored (the previous name is kept), keeping names unique per competition.
+    /// </summary>
+    Task UpdateDusshAsync(Dussh dussh, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes a sports school from the current competition, first clearing it from any participant
+    /// that referenced it (their school falls back to none).
+    /// </summary>
+    Task DeleteDusshAsync(Guid dusshId, CancellationToken cancellationToken = default);
+
+    /// <summary>Maps each sports-school id to how many participants attend it (across the whole competition).</summary>
+    Task<IReadOnlyDictionary<Guid, int>> GetDusshParticipantCountsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Sets a participant's sports school (competition-level, independent of any day). A null school clears it.</summary>
+    Task SetParticipantDusshAsync(Guid participantId, Guid? dusshId, CancellationToken cancellationToken = default);
+
     /// <summary>Loads the current day's participants (one row per competitor on the day), ordered for display.</summary>
     Task<IReadOnlyList<ParticipantDayRow>> GetParticipantDayRowsAsync(CancellationToken cancellationToken = default);
 
@@ -317,7 +348,31 @@ public interface ICompetitionEditorService
     /// another participant is ignored (the previous value is kept; the row reverts on the next reload).
     /// </summary>
     Task UpdateParticipantIdentityAsync(ParticipantRosterRow row, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Imports a parsed UOF participant file into the current competition. Each athlete becomes a
+    /// competition-level participant with a per-day link (<c>ParticipantDay</c>) for every day their
+    /// <c>ProgEvent</c> lists; days that do not yet exist are created. Regions, clubs, sports schools
+    /// (ДЮСШ) and groups referenced by the file are created on demand (case-insensitive), and groups
+    /// are attached to the days their members run. The competition organiser is set from the file's
+    /// <c>&lt;Orgs&gt;</c> value when present.
+    ///
+    /// When <paramref name="clearFirst"/> is true the participant database (participants + all day
+    /// links) is wiped before importing, so the file becomes the full roster. When false, an athlete
+    /// matching an existing one by non-blank FOU code is updated in place (idempotent re-import);
+    /// others are added.
+    /// </summary>
+    Task<ParticipantImportResult> ImportParticipantsAsync(
+        UofParticipantData data,
+        bool clearFirst,
+        CancellationToken cancellationToken = default);
 }
+
+/// <summary>Outcome of a participant import, for reporting back to the user.</summary>
+/// <param name="Added">How many participants were newly created.</param>
+/// <param name="Updated">How many existing participants were matched by FOU code and updated.</param>
+/// <param name="DaysCreated">How many days were created to satisfy referenced ProgEvent numbers.</param>
+public readonly record struct ParticipantImportResult(int Added, int Updated, int DaysCreated);
 
 /// <summary>Outcome of a bulk rental-chip range add, for reporting back to the user.</summary>
 /// <param name="Added">How many chips were newly added.</param>

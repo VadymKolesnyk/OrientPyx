@@ -17,10 +17,24 @@ public class AppDbContext : DbContext
     public DbSet<AppSettingsRow> Settings => Set<AppSettingsRow>();
     public DbSet<LastSessionRow> LastSession => Set<LastSessionRow>();
 
+    /// <summary>Application-level sports ranks (розряди), shared across every competition.</summary>
+    public DbSet<SportRank> Ranks => Set<SportRank>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Single-row tables; key is not generated (fixed value 1).
         modelBuilder.Entity<AppSettingsRow>().Property(x => x.Id).ValueGeneratedNever();
         modelBuilder.Entity<LastSessionRow>().Property(x => x.Id).ValueGeneratedNever();
+
+        // Rank names are unique (case-insensitive) but blanks are exempt, so a freshly added (still
+        // unnamed) row never collides with another blank one. SQLite's NOCASE collation gives the
+        // case-insensitivity; a filtered index ('' excluded) gives the blank exemption.
+        modelBuilder.Entity<SportRank>()
+            .HasIndex(r => r.Name)
+            .IsUnique()
+            .HasFilter("\"Name\" <> ''");
+        modelBuilder.Entity<SportRank>()
+            .Property(r => r.Name)
+            .UseCollation("NOCASE");
     }
 }

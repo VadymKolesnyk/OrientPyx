@@ -428,6 +428,54 @@ public sealed class EventStore : IEventStore
             .ExecuteUpdateAsync(s => s.SetProperty(p => p.ClubId, (Guid?)null), cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Dussh>> GetDusshesAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.Dusshes
+            .AsNoTracking()
+            .OrderBy(d => d.Name)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task AddDusshAsync(string eventFolderPath, Dussh dussh, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        db.Dusshes.Add(dussh);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateDusshAsync(string eventFolderPath, Dussh dussh, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.Dusshes.FirstOrDefaultAsync(d => d.Id == dussh.Id, cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.Name = dussh.Name;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteDusshAsync(string eventFolderPath, Guid dusshId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.Dusshes.FirstOrDefaultAsync(d => d.Id == dusshId, cancellationToken);
+        if (existing is null)
+            return;
+
+        db.Dusshes.Remove(existing);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ClearParticipantsDusshAsync(string eventFolderPath, Guid dusshId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        await db.Participants
+            .Where(p => p.DusshId == dusshId)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.DusshId, (Guid?)null), cancellationToken);
+    }
+
     public async Task<IReadOnlyList<Participant>> GetParticipantsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
@@ -459,6 +507,7 @@ public sealed class EventStore : IEventStore
         existing.BirthDate = participant.BirthDate;
         existing.RegionId = participant.RegionId;
         existing.ClubId = participant.ClubId;
+        existing.DusshId = participant.DusshId;
         existing.Representative = participant.Representative;
         existing.FsouCode = participant.FsouCode;
         existing.IsFsouMember = participant.IsFsouMember;
@@ -476,6 +525,14 @@ public sealed class EventStore : IEventStore
 
         db.Participants.Remove(existing);
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<int> DeleteAllParticipantsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        // Drop the per-day links first (membership), then the participants themselves.
+        await db.ParticipantDays.ExecuteDeleteAsync(cancellationToken);
+        return await db.Participants.ExecuteDeleteAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<ParticipantDay>> GetParticipantDaysAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
