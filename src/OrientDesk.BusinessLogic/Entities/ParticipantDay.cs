@@ -28,5 +28,11 @@ public class ParticipantDay
     /// <summary>Team name (used by the rogaine discipline); empty otherwise.</summary>
     public string Team { get; set; } = string.Empty;
 
+    /// <summary>Start time (time of day) for this day; null when not set. Per-day, member-only.</summary>
+    public TimeSpan? StartTime { get; set; }
+
+    /// <summary>Whether the participant runs out of competition (поза конкурсом) this day. Per-day, member-only.</summary>
+    public bool OutOfCompetition { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

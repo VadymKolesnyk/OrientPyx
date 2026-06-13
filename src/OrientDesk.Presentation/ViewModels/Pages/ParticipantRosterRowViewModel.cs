@@ -395,6 +395,74 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             cell.Chip = value;
     }
 
+    // ── Start time (member-only, like Chips) ─────────────────────────────────────────────────────
+    /// <summary>
+    /// The shared start time across member days as "HH:mm" text (empty when they differ/none). Setting
+    /// it fans out to every member day. Bound TwoWay by the collapsed Start-times cell.
+    /// </summary>
+    public string CollapsedStartTimeText
+    {
+        get
+        {
+            var members = Days.Where(d => d.IsMember).ToList();
+            return members.Count == 0 || StartTimeValuesDiffer ? string.Empty : members[0].StartTimeText;
+        }
+        set => SetStartTimeForMemberDays(value ?? string.Empty);
+    }
+
+    /// <summary>True when the member days do not all share one start time.</summary>
+    public bool StartTimeValuesDiffer =>
+        Days.Where(d => d.IsMember).Select(d => d.StartTime).Distinct().Count() > 1;
+
+    /// <summary>True when the collapsed Start-times cell should show the editable input.</summary>
+    public bool StartTimeShowsInput => HasAnyChipMember && !StartTimeValuesDiffer;
+
+    /// <summary>True when the collapsed Start-times cell should show the read-only "різні" label.</summary>
+    public bool StartTimeShowsDifferent => HasAnyChipMember && StartTimeValuesDiffer;
+
+    /// <summary>Sets the start-time text on every member day (each cell persists itself).</summary>
+    public void SetStartTimeForMemberDays(string value)
+    {
+        foreach (var cell in Days.Where(d => d.IsMember))
+            cell.StartTimeText = value;
+    }
+
+    // ── Out of competition (member-only, like Chips) ─────────────────────────────────────────────
+    /// <summary>
+    /// The shared "out of competition" flag across member days (null when they differ/none). Setting
+    /// it fans out to every member day. Bound TwoWay by the collapsed cell's CheckBox.
+    /// </summary>
+    public bool? CollapsedOutOfCompetition
+    {
+        get
+        {
+            var members = Days.Where(d => d.IsMember).ToList();
+            return members.Count == 0 || OutOfCompetitionValuesDiffer ? null : members[0].OutOfCompetition;
+        }
+        set
+        {
+            if (value is { } v)
+                SetOutOfCompetitionForMemberDays(v);
+        }
+    }
+
+    /// <summary>True when the member days do not all share one flag value.</summary>
+    public bool OutOfCompetitionValuesDiffer =>
+        Days.Where(d => d.IsMember).Select(d => d.OutOfCompetition).Distinct().Count() > 1;
+
+    /// <summary>True when the collapsed cell should show the editable CheckBox (a member day, all equal).</summary>
+    public bool OutOfCompetitionShowsInput => HasAnyChipMember && !OutOfCompetitionValuesDiffer;
+
+    /// <summary>True when the collapsed cell should show the read-only "різні" label.</summary>
+    public bool OutOfCompetitionShowsDifferent => HasAnyChipMember && OutOfCompetitionValuesDiffer;
+
+    /// <summary>Sets the flag on every member day (each cell persists itself).</summary>
+    public void SetOutOfCompetitionForMemberDays(bool value)
+    {
+        foreach (var cell in Days.Where(d => d.IsMember))
+            cell.OutOfCompetition = value;
+    }
+
     private void OnDayCellChanged(object? sender, PropertyChangedEventArgs e)
     {
         switch (e.PropertyName)
@@ -405,6 +473,12 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             case nameof(RosterDayCellViewModel.Chip):
                 RaiseChipAggregates();
                 break;
+            case nameof(RosterDayCellViewModel.StartTime):
+                RaiseStartTimeAggregates();
+                break;
+            case nameof(RosterDayCellViewModel.OutOfCompetition):
+                RaiseOutOfCompetitionAggregates();
+                break;
             case nameof(RosterDayCellViewModel.IsMember):
                 // A participant who just joined a day inherits the chip they already use on their
                 // other days, so the same card carries across the competition without re-typing.
@@ -413,6 +487,8 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
                 // Membership shifts which cells are relevant for every aggregate.
                 RaiseGroupAggregates();
                 RaiseChipAggregates();
+                RaiseStartTimeAggregates();
+                RaiseOutOfCompetitionAggregates();
                 break;
         }
     }
@@ -446,5 +522,21 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         OnPropertyChanged(nameof(HasAnyChipMember));
         OnPropertyChanged(nameof(ChipShowsInput));
         OnPropertyChanged(nameof(ChipShowsDifferent));
+    }
+
+    private void RaiseStartTimeAggregates()
+    {
+        OnPropertyChanged(nameof(CollapsedStartTimeText));
+        OnPropertyChanged(nameof(StartTimeValuesDiffer));
+        OnPropertyChanged(nameof(StartTimeShowsInput));
+        OnPropertyChanged(nameof(StartTimeShowsDifferent));
+    }
+
+    private void RaiseOutOfCompetitionAggregates()
+    {
+        OnPropertyChanged(nameof(CollapsedOutOfCompetition));
+        OnPropertyChanged(nameof(OutOfCompetitionValuesDiffer));
+        OnPropertyChanged(nameof(OutOfCompetitionShowsInput));
+        OnPropertyChanged(nameof(OutOfCompetitionShowsDifferent));
     }
 }

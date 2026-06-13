@@ -580,6 +580,8 @@ public sealed class EventStore : IEventStore
         existing.GroupId = link.GroupId;
         existing.Chip = link.Chip;
         existing.Team = link.Team;
+        existing.StartTime = link.StartTime;
+        existing.OutOfCompetition = link.OutOfCompetition;
         await db.SaveChangesAsync(cancellationToken);
     }
 

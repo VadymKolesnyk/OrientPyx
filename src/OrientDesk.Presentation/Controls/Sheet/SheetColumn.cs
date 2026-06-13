@@ -19,6 +19,10 @@ public enum SheetCellKind
     /// </summary>
     ChipText,
 
+    /// <summary>A start-time text field (HH:mm) edited directly on the row by its
+    /// <see cref="SheetColumn.IdentityPath"/>. Used by the day-mode start-time column.</summary>
+    StartTimeText,
+
     /// <summary>The competition-level birth date (CalendarDatePicker).</summary>
     BirthDate,
 
@@ -27,6 +31,12 @@ public enum SheetCellKind
 
     /// <summary>A single day's chip (TextBox), bound to Days[i].</summary>
     Chip,
+
+    /// <summary>A single day's start time (TextBox HH:mm), bound to Days[i].</summary>
+    StartTime,
+
+    /// <summary>A single day's "out of competition" flag (CheckBox), bound to Days[i].</summary>
+    OutOfCompetition,
 
     /// <summary>
     /// A group ComboBox bound directly on the row (GroupOptions/SelectedGroup), not via Days[i].
@@ -68,6 +78,12 @@ public enum SheetCellKind
 
     /// <summary>A collapsed block's merged chip cell (input when shared, "різні" when days differ).</summary>
     CollapsedChip,
+
+    /// <summary>A collapsed block's merged start-time cell (input when shared, "різні" when days differ).</summary>
+    CollapsedStartTime,
+
+    /// <summary>A collapsed block's merged out-of-competition cell (CheckBox when shared, "різні" when days differ).</summary>
+    CollapsedOutOfCompetition,
 
     /// <summary>The trailing delete-action button column.</summary>
     Actions,

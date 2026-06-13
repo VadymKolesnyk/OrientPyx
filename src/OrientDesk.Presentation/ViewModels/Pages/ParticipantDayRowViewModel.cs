@@ -85,6 +85,12 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     [ObservableProperty]
     private string _team;
 
+    [ObservableProperty]
+    private TimeSpan? _startTime;
+
+    [ObservableProperty]
+    private bool _outOfCompetition;
+
     public ParticipantDayRowViewModel(
         ParticipantDayRow row,
         IReadOnlyList<GroupOption> groupOptions,
@@ -142,6 +148,8 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         _chip = row.Chip;
         _committedChip = row.Chip;
         _team = row.Team;
+        _startTime = row.StartTime;
+        _outOfCompetition = row.OutOfCompetition;
         // Match by id; fall back to the "(none)" option (the first) when the group is unset/missing.
         _selectedGroup = groupOptions.FirstOrDefault(o => o.Id == row.GroupId) ?? groupOptions[0];
         // Region/Club match by id across their shared lists; fall back to "(none)" (the first option).
@@ -268,7 +276,36 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         GroupName: SelectedGroup.Label,
         Chip: (Chip ?? string.Empty).Trim(),
         Team: (Team ?? string.Empty).Trim(),
+        StartTime: StartTime,
+        OutOfCompetition: OutOfCompetition,
         DayDefaultDiscipline: _dayDefaultDiscipline);
+
+    /// <summary>
+    /// The start time as editable "HH:mm" text (mirrors <see cref="RosterDayCellViewModel.StartTimeText"/>).
+    /// Empty clears it; an unparseable value is ignored and the box reverts on the next notification.
+    /// </summary>
+    public string StartTimeText
+    {
+        get => StartTime is { } t ? t.ToString(@"hh\:mm") : string.Empty;
+        set
+        {
+            var trimmed = (value ?? string.Empty).Trim();
+            if (trimmed.Length == 0)
+                StartTime = null;
+            else if (TimeSpan.TryParseExact(trimmed, [@"hh\:mm", @"h\:mm"], System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+                     || TimeSpan.TryParse(trimmed, System.Globalization.CultureInfo.InvariantCulture, out parsed))
+                StartTime = parsed;
+            else
+                OnPropertyChanged();
+        }
+    }
+
+    partial void OnStartTimeChanged(TimeSpan? value)
+    {
+        OnPropertyChanged(nameof(StartTimeText));
+        QueueSave();
+    }
+    partial void OnOutOfCompetitionChanged(bool value) => QueueSave();
 
     partial void OnFullNameChanged(string value) => QueueSave();
     partial void OnNumberChanged(string value) => QueueSave();

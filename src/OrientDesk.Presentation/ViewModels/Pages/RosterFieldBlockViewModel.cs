@@ -6,7 +6,9 @@ namespace OrientDesk.Presentation.ViewModels.Pages;
 public enum RosterField
 {
     Groups,
-    Chips
+    Chips,
+    StartTimes,
+    OutOfCompetition
 }
 
 /// <summary>

@@ -987,11 +987,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 if (linkByKey.TryGetValue((participant.Id, day.Id), out var link))
                 {
                     var name = link.GroupId is { } gid && groupName.TryGetValue(gid, out var n) ? n : string.Empty;
-                    cells.Add(new RosterDayCell(day.Id, day.Number, link.Id, IsMember: true, link.GroupId, name, link.Chip));
+                    cells.Add(new RosterDayCell(day.Id, day.Number, link.Id, IsMember: true, link.GroupId, name, link.Chip, link.StartTime, link.OutOfCompetition));
                 }
                 else
                 {
-                    cells.Add(new RosterDayCell(day.Id, day.Number, LinkId: null, IsMember: false, GroupId: null, GroupName: string.Empty, Chip: string.Empty));
+                    cells.Add(new RosterDayCell(day.Id, day.Number, LinkId: null, IsMember: false, GroupId: null, GroupName: string.Empty, Chip: string.Empty, StartTime: null, OutOfCompetition: false));
                 }
             }
             var region = participant.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
@@ -1119,7 +1119,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Order = row.Order,
             GroupId = row.GroupId,
             Chip = chip,
-            Team = (row.Team ?? string.Empty).Trim()
+            Team = (row.Team ?? string.Empty).Trim(),
+            StartTime = row.StartTime,
+            OutOfCompetition = row.OutOfCompetition
         }, cancellationToken);
     }
 
@@ -1167,7 +1169,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Order = existing.Order,
             GroupId = groupId,
             Chip = existing.Chip,
-            Team = existing.Team
+            Team = existing.Team,
+            StartTime = existing.StartTime,
+            OutOfCompetition = existing.OutOfCompetition
         }, cancellationToken);
         return existing.Id;
     }
@@ -1198,8 +1202,35 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Order = existing.Order,
             GroupId = existing.GroupId,
             Chip = trimmed,
-            Team = existing.Team
+            Team = existing.Team,
+            StartTime = existing.StartTime,
+            OutOfCompetition = existing.OutOfCompetition
         }, cancellationToken);
+    }
+
+    public async Task SetParticipantDayStartTimeAsync(Guid participantId, Guid dayId, TimeSpan? startTime, CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var existing = links.FirstOrDefault(l => l.ParticipantId == participantId);
+        // Per-day, member-only — nothing to do for a non-member. No uniqueness rule, so set directly.
+        if (existing is null)
+            return;
+
+        existing.StartTime = startTime;
+        await _eventStore.UpdateParticipantDayAsync(folder, existing, cancellationToken);
+    }
+
+    public async Task SetParticipantDayOutOfCompetitionAsync(Guid participantId, Guid dayId, bool outOfCompetition, CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var existing = links.FirstOrDefault(l => l.ParticipantId == participantId);
+        if (existing is null)
+            return;
+
+        existing.OutOfCompetition = outOfCompetition;
+        await _eventStore.UpdateParticipantDayAsync(folder, existing, cancellationToken);
     }
 
     public async Task<string?> FindChipHolderAsync(Guid dayId, string chip, Guid excludeParticipantId, CancellationToken cancellationToken = default)
@@ -1249,7 +1280,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     Order = other.Order,
                     GroupId = other.GroupId,
                     Chip = string.Empty,
-                    Team = other.Team
+                    Team = other.Team,
+                    StartTime = other.StartTime,
+                    OutOfCompetition = other.OutOfCompetition
                 }, cancellationToken);
                 previousHolder = other.ParticipantId;
             }
@@ -1263,7 +1296,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Order = target.Order,
             GroupId = target.GroupId,
             Chip = trimmed,
-            Team = target.Team
+            Team = target.Team,
+            StartTime = target.StartTime,
+            OutOfCompetition = target.OutOfCompetition
         }, cancellationToken);
 
         return previousHolder;
@@ -1615,6 +1650,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             GroupName: name,
             Chip: link.Chip,
             Team: link.Team,
+            StartTime: link.StartTime,
+            OutOfCompetition: link.OutOfCompetition,
             DayDefaultDiscipline: CurrentDayDefaultDiscipline);
     }
 

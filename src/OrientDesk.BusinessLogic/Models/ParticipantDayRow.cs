@@ -32,4 +32,6 @@ public sealed record ParticipantDayRow(
     string GroupName,
     string Chip,
     string Team,
+    TimeSpan? StartTime,
+    bool OutOfCompetition,
     DisciplineType DayDefaultDiscipline);

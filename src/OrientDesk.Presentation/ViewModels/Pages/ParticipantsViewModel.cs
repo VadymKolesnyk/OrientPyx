@@ -82,7 +82,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     public ObservableCollection<RosterFieldBlockViewModel> Blocks { get; } =
     [
         new(RosterField.Groups, "Participants.Roster.Block.Groups", _ => true),
-        new(RosterField.Chips, "Participants.Roster.Block.Chips", c => c.IsMember)
+        new(RosterField.Chips, "Participants.Roster.Block.Chips", c => c.IsMember),
+        new(RosterField.StartTimes, "Participants.Roster.Block.StartTimes", c => c.IsMember),
+        new(RosterField.OutOfCompetition, "Participants.Roster.Block.OutOfCompetition", c => c.IsMember)
     ];
 
     /// <summary>Selectable options: a leading roster sentinel, then each real day.</summary>
@@ -335,7 +337,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             var options = groupsByDay.TryGetValue(cell.DayId, out var o)
                 ? o
                 : [new GroupOption(null, string.Empty, Localization)];
-            cells.Add(new RosterDayCellViewModel(row.ParticipantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange));
+            cells.Add(new RosterDayCellViewModel(row.ParticipantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange, RequestCellStartTimeChange, RequestCellOutOfCompetitionChange));
         }
         return new ParticipantRosterRowViewModel(row, cells, _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Localization,
             RequestRosterRowSave,
@@ -695,6 +697,24 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (!cell.IsMember)
             return;
         _ = ResolveCellChipAsync(cell);
+    }
+
+    // Start time / out-of-competition have no uniqueness rule, so they persist directly in the
+    // background (no confirm flow). Member-only — a non-member cell is ignored.
+    private void RequestCellStartTimeChange(RosterDayCellViewModel cell)
+    {
+        if (!cell.IsMember)
+            return;
+        var (participantId, dayId, startTime) = (cell.ParticipantId, cell.DayId, cell.StartTime);
+        _ = Task.Run(() => _editor.SetParticipantDayStartTimeAsync(participantId, dayId, startTime));
+    }
+
+    private void RequestCellOutOfCompetitionChange(RosterDayCellViewModel cell)
+    {
+        if (!cell.IsMember)
+            return;
+        var (participantId, dayId, value) = (cell.ParticipantId, cell.DayId, cell.OutOfCompetition);
+        _ = Task.Run(() => _editor.SetParticipantDayOutOfCompetitionAsync(participantId, dayId, value));
     }
 
     private async Task ResolveCellChipAsync(RosterDayCellViewModel cell)

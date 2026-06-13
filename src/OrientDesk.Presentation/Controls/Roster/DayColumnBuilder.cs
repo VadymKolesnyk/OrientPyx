@@ -54,6 +54,10 @@ public sealed class DayColumnBuilder
         bands.Add(Identity(SheetCellKind.RowGroup, "Participants.Col.Group", path: string.Empty,
             sortPath: $"{nameof(ParticipantDayRowViewModel.SelectedGroup)}.{nameof(GroupOption.Label)}"));
         bands.Add(Identity(SheetCellKind.ChipText, "Participants.Col.Chip", nameof(ParticipantDayRowViewModel.Chip)));
+        // This day's start time (HH:mm text) and out-of-competition flag.
+        bands.Add(Identity(SheetCellKind.StartTimeText, "Participants.Col.StartTime", nameof(ParticipantDayRowViewModel.StartTimeText),
+            sortPath: nameof(ParticipantDayRowViewModel.StartTime)));
+        bands.Add(Identity(SheetCellKind.IdentityBool, "Participants.Col.OutOfCompetition", nameof(ParticipantDayRowViewModel.OutOfCompetition), fixedWidth: 110));
 
         if (showTeam)
             bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Team", nameof(ParticipantDayRowViewModel.Team)));

@@ -15,6 +15,8 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     private readonly Guid _participantId;
     private readonly Action<RosterDayCellViewModel> _requestGroupChange;
     private readonly Action<RosterDayCellViewModel> _requestChipChange;
+    private readonly Action<RosterDayCellViewModel> _requestStartTimeChange;
+    private readonly Action<RosterDayCellViewModel> _requestOutOfCompetitionChange;
     private bool _initialized;
 
     [ObservableProperty]
@@ -26,13 +28,21 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     [ObservableProperty]
     private string _chip;
 
+    [ObservableProperty]
+    private TimeSpan? _startTime;
+
+    [ObservableProperty]
+    private bool _outOfCompetition;
+
     public RosterDayCellViewModel(
         Guid participantId,
         RosterDayCell cell,
         IReadOnlyList<GroupOption> groupOptions,
         ILocalizationService localization,
         Action<RosterDayCellViewModel> requestGroupChange,
-        Action<RosterDayCellViewModel> requestChipChange)
+        Action<RosterDayCellViewModel> requestChipChange,
+        Action<RosterDayCellViewModel> requestStartTimeChange,
+        Action<RosterDayCellViewModel> requestOutOfCompetitionChange)
     {
         _participantId = participantId;
         DayId = cell.DayId;
@@ -41,14 +51,46 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         _isMember = cell.IsMember;
         _requestGroupChange = requestGroupChange;
         _requestChipChange = requestChipChange;
+        _requestStartTimeChange = requestStartTimeChange;
+        _requestOutOfCompetitionChange = requestOutOfCompetitionChange;
         Localization = localization;
 
         GroupOptions = groupOptions;
         _selectedGroup = groupOptions.FirstOrDefault(o => o.Id == cell.GroupId) ?? groupOptions[0];
         _chip = cell.Chip;
         _committedChip = cell.Chip;
+        _startTime = cell.StartTime;
+        _outOfCompetition = cell.OutOfCompetition;
 
         _initialized = true;
+    }
+
+    /// <summary>
+    /// The start time as editable "HH:mm" text. Empty clears it; an unparseable value is ignored
+    /// (the cell reverts on the next notification). Kept as a string so the cell reuses a plain text
+    /// editor like the chip cell, without a converter or masked-time control.
+    /// </summary>
+    public string StartTimeText
+    {
+        get => StartTime is { } t ? t.ToString(@"hh\:mm") : string.Empty;
+        set
+        {
+            var trimmed = (value ?? string.Empty).Trim();
+            if (trimmed.Length == 0)
+            {
+                StartTime = null;
+            }
+            else if (TimeSpan.TryParseExact(trimmed, [@"hh\:mm", @"h\:mm"], System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+                     || TimeSpan.TryParse(trimmed, System.Globalization.CultureInfo.InvariantCulture, out parsed))
+            {
+                StartTime = parsed;
+            }
+            else
+            {
+                // Unparseable — keep the stored value and re-raise so the box reverts to it.
+                OnPropertyChanged();
+            }
+        }
     }
 
     // The last chip value the page accepted/persisted, so a rejected reassignment can revert to it.
@@ -97,6 +139,29 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
             _requestChipChange(this);
     }
 
+    partial void OnStartTimeChanged(TimeSpan? value)
+    {
+        // Keep the editable text in sync, then persist (no uniqueness rule, so a plain save).
+        OnPropertyChanged(nameof(StartTimeText));
+        if (_initialized)
+            _requestStartTimeChange(this);
+    }
+
+    partial void OnOutOfCompetitionChanged(bool value)
+    {
+        if (_initialized)
+            _requestOutOfCompetitionChange(this);
+    }
+
+    /// <summary>Sets the start time without re-triggering the change callback (external clear / leave-day).</summary>
+    public void SetStartTimeSilently(TimeSpan? value)
+    {
+        var wasInitialized = _initialized;
+        _initialized = false;
+        StartTime = value;
+        _initialized = wasInitialized;
+    }
+
     /// <summary>
     /// Updates the cell after a membership change persisted (joined/left), without re-triggering the
     /// save callback. Called by the page once the background write has applied. Leaving a day also
@@ -111,6 +176,8 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         {
             SelectedGroup = GroupOptions[0];
             Chip = string.Empty;
+            StartTime = null;
+            OutOfCompetition = false;
         }
         _initialized = true;
     }

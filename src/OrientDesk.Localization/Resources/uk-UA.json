@@ -184,6 +184,8 @@
   "Participants.Roster": "Мандатка",
   "Participants.Roster.Block.Groups": "Група",
   "Participants.Roster.Block.Chips": "Чіп",
+  "Participants.Roster.Block.StartTimes": "Час старту",
+  "Participants.Roster.Block.OutOfCompetition": "Поза конкурсом",
   "Participants.Roster.Different": "різні",
   "Participants.Roster.Collapse": "Згорнути",
   "Participants.Roster.Expand": "Розгорнути",
@@ -222,6 +224,8 @@
   "Participants.Col.Payment": "Оплата",
   "Participants.Col.Group": "Група",
   "Participants.Col.Chip": "Чіп",
+  "Participants.Col.StartTime": "Час старту",
+  "Participants.Col.OutOfCompetition": "Поза конкурсом",
   "Participants.Col.Team": "Команда",
   "Participants.Col.Actions": "Дії",
 

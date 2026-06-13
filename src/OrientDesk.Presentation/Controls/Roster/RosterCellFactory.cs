@@ -51,9 +51,12 @@ internal sealed class RosterCellFactory
     {
         SheetCellKind.IdentityText => BuildIdentityText(column.IdentityPath),
         SheetCellKind.ChipText => BuildChipEditor(pathPrefix: string.Empty, chipPath: column.IdentityPath, numericOnly: true, highlight: true),
+        SheetCellKind.StartTimeText => BuildIdentityText(column.IdentityPath),
         SheetCellKind.BirthDate => BuildBirthDate(),
         SheetCellKind.Group => BuildDayCell(column, isGroup: true),
         SheetCellKind.Chip => BuildDayCell(column, isGroup: false),
+        SheetCellKind.StartTime => BuildDayStartTimeCell(column),
+        SheetCellKind.OutOfCompetition => BuildDayOutOfCompetitionCell(column),
         SheetCellKind.RowGroup => BuildGroupCombo(pathPrefix: string.Empty),
         SheetCellKind.RowRegion => BuildRegionCombo(),
         SheetCellKind.RowClub => BuildClubCombo(),
@@ -62,6 +65,8 @@ internal sealed class RosterCellFactory
         SheetCellKind.IdentityBool => BuildBoolCheckBox(column.IdentityPath),
         SheetCellKind.CollapsedGroup => BuildCollapsedGroup(),
         SheetCellKind.CollapsedChip => BuildCollapsedChip(),
+        SheetCellKind.CollapsedStartTime => BuildCollapsedStartTime(),
+        SheetCellKind.CollapsedOutOfCompetition => BuildCollapsedOutOfCompetition(),
         SheetCellKind.Actions => BuildDeleteButton(),
         SheetCellKind.Custom => column.CellBuilder?.Invoke() ?? new Control(),
         _ => new Control()
@@ -136,6 +141,52 @@ internal sealed class RosterCellFactory
         return panel;
     }
 
+    // A per-day start-time cell: a HH:mm text box, disabled + greyed on days the participant doesn't run.
+    private Control BuildDayStartTimeCell(SheetColumn column)
+    {
+        var i = column.DayIndex;
+        var box = new TextBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            [!TextBox.TextProperty] = new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.StartTimeText)}")
+                { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.LostFocus },
+            [!InputElement.IsEnabledProperty] = new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.IsMember)}"),
+        };
+        return WrapWithNonMemberBackdrop(box, i);
+    }
+
+    // A per-day out-of-competition cell: a centered CheckBox, disabled + greyed for non-members.
+    private Control BuildDayOutOfCompetitionCell(SheetColumn column)
+    {
+        var i = column.DayIndex;
+        var box = new CheckBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            [!ToggleButton.IsCheckedProperty] = new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.OutOfCompetition)}")
+                { Mode = BindingMode.TwoWay },
+            [!InputElement.IsEnabledProperty] = new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.IsMember)}"),
+        };
+        return WrapWithNonMemberBackdrop(box, i);
+    }
+
+    // Lays a grey backdrop behind an editor that is only visible on days the participant doesn't run,
+    // so a disabled per-day cell reads as a flat tint (matches the chip cell).
+    private static Control WrapWithNonMemberBackdrop(Control editor, int dayIndex)
+    {
+        var backdrop = new Border
+        {
+            [!Visual.IsVisibleProperty] =
+                new Binding($"Days[{dayIndex}].{nameof(RosterDayCellViewModel.IsMember)}") { Converter = NotMember },
+            [!Border.BackgroundProperty] = new DynamicResourceExtension("SurfaceSubtle"),
+        };
+        var panel = new Panel();
+        panel.Children.Add(backdrop);
+        panel.Children.Add(editor);
+        return panel;
+    }
+
     // ── Collapsed merged cells ────────────────────────────────────────────────────────────────────
     private Control BuildCollapsedGroup()
     {
@@ -168,6 +219,44 @@ internal sealed class RosterCellFactory
         different[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.ChipShowsDifferent));
         panel.Children.Add(different);
         // A participant who runs no day shows neither child.
+        return panel;
+    }
+
+    private Control BuildCollapsedStartTime()
+    {
+        var panel = new Panel();
+        var editor = new TextBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            [!TextBox.TextProperty] = new Binding(nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText))
+                { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.LostFocus },
+            [!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.StartTimeShowsInput)),
+        };
+        panel.Children.Add(editor);
+
+        var different = BuildDifferentLabel();
+        different[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.StartTimeShowsDifferent));
+        panel.Children.Add(different);
+        return panel;
+    }
+
+    private Control BuildCollapsedOutOfCompetition()
+    {
+        var panel = new Panel();
+        var box = new CheckBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            [!ToggleButton.IsCheckedProperty] = new Binding(nameof(ParticipantRosterRowViewModel.CollapsedOutOfCompetition))
+                { Mode = BindingMode.TwoWay },
+            [!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.OutOfCompetitionShowsInput)),
+        };
+        panel.Children.Add(box);
+
+        var different = BuildDifferentLabel();
+        different[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.OutOfCompetitionShowsDifferent));
+        panel.Children.Add(different);
         return panel;
     }
 

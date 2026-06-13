@@ -317,6 +317,18 @@ public interface ICompetitionEditorService
     Task SetParticipantDayChipAsync(Guid participantId, Guid dayId, string chip, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Sets a participant's start time on a specific day (roster edit). A no-op when the participant is
+    /// not a member that day. No uniqueness rule, so it is stored directly. A null time clears it.
+    /// </summary>
+    Task SetParticipantDayStartTimeAsync(Guid participantId, Guid dayId, TimeSpan? startTime, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets a participant's "out of competition" (поза конкурсом) flag on a specific day (roster edit).
+    /// A no-op when the participant is not a member that day.
+    /// </summary>
+    Task SetParticipantDayOutOfCompetitionAsync(Guid participantId, Guid dayId, bool outOfCompetition, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Finds the participant who already holds <paramref name="chip"/> on <paramref name="dayId"/>,
     /// other than <paramref name="excludeParticipantId"/>. Returns that participant's full name (for a
     /// reassignment prompt), or null when the chip is free (or only held by the excluded participant).

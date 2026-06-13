@@ -38,4 +38,6 @@ public sealed record RosterDayCell(
     bool IsMember,
     Guid? GroupId,
     string GroupName,
-    string Chip);
+    string Chip,
+    TimeSpan? StartTime,
+    bool OutOfCompetition);

@@ -184,6 +184,8 @@
   "Participants.Roster": "Roster",
   "Participants.Roster.Block.Groups": "Group",
   "Participants.Roster.Block.Chips": "Chip",
+  "Participants.Roster.Block.StartTimes": "Start time",
+  "Participants.Roster.Block.OutOfCompetition": "Out of competition",
   "Participants.Roster.Different": "mixed",
   "Participants.Roster.Collapse": "Collapse",
   "Participants.Roster.Expand": "Expand",
@@ -222,6 +224,8 @@
   "Participants.Col.Payment": "Payment",
   "Participants.Col.Group": "Group",
   "Participants.Col.Chip": "Chip",
+  "Participants.Col.StartTime": "Start time",
+  "Participants.Col.OutOfCompetition": "Out of competition",
   "Participants.Col.Team": "Team",
   "Participants.Col.Actions": "Actions",
 

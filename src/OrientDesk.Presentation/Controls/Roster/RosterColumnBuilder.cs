@@ -87,9 +87,7 @@ public sealed class RosterColumnBuilder
                     Width = fieldWidth,
                     WidthCapped = true,
                     // A collapsed block is one sortable column: sort by the row's merged aggregate.
-                    SortPath = block.Field == RosterField.Groups
-                        ? $"{nameof(ParticipantRosterRowViewModel.CollapsedGroupValue)}.{nameof(GroupOption.Label)}"
-                        : nameof(ParticipantRosterRowViewModel.CollapsedChipValue),
+                    SortPath = CollapsedSortPath(block.Field),
                 });
             }
             else
@@ -102,9 +100,7 @@ public sealed class RosterColumnBuilder
                         DayIndex = i,
                         Width = fieldWidth,
                         WidthCapped = true,
-                        SortPath = block.Field == RosterField.Groups
-                            ? $"Days[{i}].{nameof(RosterDayCellViewModel.SelectedGroup)}.{nameof(GroupOption.Label)}"
-                            : $"Days[{i}].{nameof(RosterDayCellViewModel.Chip)}",
+                        SortPath = LeafSortPath(block.Field, i),
                     });
                 }
             }
@@ -125,11 +121,37 @@ public sealed class RosterColumnBuilder
         return bands;
     }
 
-    private static SheetCellKind LeafKind(RosterField field) =>
-        field == RosterField.Groups ? SheetCellKind.Group : SheetCellKind.Chip;
+    private static SheetCellKind LeafKind(RosterField field) => field switch
+    {
+        RosterField.Groups => SheetCellKind.Group,
+        RosterField.Chips => SheetCellKind.Chip,
+        RosterField.StartTimes => SheetCellKind.StartTime,
+        _ => SheetCellKind.OutOfCompetition,
+    };
 
-    private static SheetCellKind MergedKind(RosterField field) =>
-        field == RosterField.Groups ? SheetCellKind.CollapsedGroup : SheetCellKind.CollapsedChip;
+    private static SheetCellKind MergedKind(RosterField field) => field switch
+    {
+        RosterField.Groups => SheetCellKind.CollapsedGroup,
+        RosterField.Chips => SheetCellKind.CollapsedChip,
+        RosterField.StartTimes => SheetCellKind.CollapsedStartTime,
+        _ => SheetCellKind.CollapsedOutOfCompetition,
+    };
+
+    private static string CollapsedSortPath(RosterField field) => field switch
+    {
+        RosterField.Groups => $"{nameof(ParticipantRosterRowViewModel.CollapsedGroupValue)}.{nameof(GroupOption.Label)}",
+        RosterField.Chips => nameof(ParticipantRosterRowViewModel.CollapsedChipValue),
+        RosterField.StartTimes => nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText),
+        _ => nameof(ParticipantRosterRowViewModel.CollapsedOutOfCompetition),
+    };
+
+    private static string LeafSortPath(RosterField field, int i) => field switch
+    {
+        RosterField.Groups => $"Days[{i}].{nameof(RosterDayCellViewModel.SelectedGroup)}.{nameof(GroupOption.Label)}",
+        RosterField.Chips => $"Days[{i}].{nameof(RosterDayCellViewModel.Chip)}",
+        RosterField.StartTimes => $"Days[{i}].{nameof(RosterDayCellViewModel.StartTime)}",
+        _ => $"Days[{i}].{nameof(RosterDayCellViewModel.OutOfCompetition)}",
+    };
 
     // Preserve widths the user dragged: match old→new columns by their flat index where the kind
     // lines up. A best-effort heuristic; on shape change (collapse/expand) mismatches just re-auto-size.
