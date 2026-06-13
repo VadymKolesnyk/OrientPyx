@@ -33,7 +33,7 @@ public partial class ParticipantsView : UserControl
     private void OnRosterColumnsChanged(object? sender, System.EventArgs e) => RosterTable.Rebuild();
 
     // The day table raises this on a keyboard Delete (Ctrl+Delete ⇒ skip the prompt).
-    private void OnDayDeleteRequested(object? sender, RosterDeleteEventArgs e)
+    private void OnDayDeleteRequested(object? sender, SheetDeleteEventArgs e)
     {
         if (_vm is null || e.Row is not ParticipantDayRowViewModel row)
             return;
@@ -44,7 +44,7 @@ public partial class ParticipantsView : UserControl
     }
 
     // The roster table raises this on a keyboard Delete (Ctrl+Delete ⇒ skip the prompt).
-    private void OnRosterDeleteRequested(object? sender, RosterDeleteEventArgs e)
+    private void OnRosterDeleteRequested(object? sender, SheetDeleteEventArgs e)
     {
         if (_vm is null || e.Row is not ParticipantRosterRowViewModel row)
             return;

@@ -25,5 +25,24 @@ public class Participant
     /// <summary>Date of birth; optional.</summary>
     public DateTimeOffset? BirthDate { get; set; }
 
+    /// <summary>The region (place) this participant comes from; optional, null = none.
+    /// Region is competition-level (shared across days), like the other identity fields.</summary>
+    public Guid? RegionId { get; set; }
+
+    /// <summary>The club this participant belongs to; optional, null = none. Competition-level.</summary>
+    public Guid? ClubId { get; set; }
+
+    /// <summary>Team representative / contact (Представник). Free text.</summary>
+    public string Representative { get; set; } = string.Empty;
+
+    /// <summary>FSOU (Федерація Спортивного Орієнтування України) code. Free text.</summary>
+    public string FsouCode { get; set; } = string.Empty;
+
+    /// <summary>Whether the participant is a member of the FSOU.</summary>
+    public bool IsFsouMember { get; set; }
+
+    /// <summary>Payment note (Оплата). Free text.</summary>
+    public string Payment { get; set; } = string.Empty;
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

@@ -17,7 +17,7 @@ using OrientDesk.Presentation.ViewModels.Pages;
 namespace OrientDesk.Presentation.Controls;
 
 /// <summary>
-/// Builds the editor control for a roster cell from its <see cref="RosterColumn"/>. This is the
+/// Builds the editor control for a roster cell from its <see cref="SheetColumn"/>. This is the
 /// logic that used to live in <c>ParticipantsView.axaml.cs</c> (BuildGroupCombo / BuildChipEditor /
 /// BuildRosterDayCell / BuildRosterCollapsedCell / BuildDifferentLabel), relocated into the control
 /// and re-pointed at the column model. The bound DataContext for every cell is a
@@ -47,17 +47,21 @@ internal sealed class RosterCellFactory
         _onToggleRental = onToggleRental;
     }
 
-    public Control Build(RosterColumn column) => column.Kind switch
+    public Control Build(SheetColumn column) => column.Kind switch
     {
-        RosterCellKind.IdentityText => BuildIdentityText(column.IdentityPath),
-        RosterCellKind.ChipText => BuildChipEditor(pathPrefix: string.Empty, chipPath: column.IdentityPath, numericOnly: true, highlight: true),
-        RosterCellKind.BirthDate => BuildBirthDate(),
-        RosterCellKind.Group => BuildDayCell(column, isGroup: true),
-        RosterCellKind.Chip => BuildDayCell(column, isGroup: false),
-        RosterCellKind.RowGroup => BuildGroupCombo(pathPrefix: string.Empty),
-        RosterCellKind.CollapsedGroup => BuildCollapsedGroup(),
-        RosterCellKind.CollapsedChip => BuildCollapsedChip(),
-        RosterCellKind.Actions => BuildDeleteButton(),
+        SheetCellKind.IdentityText => BuildIdentityText(column.IdentityPath),
+        SheetCellKind.ChipText => BuildChipEditor(pathPrefix: string.Empty, chipPath: column.IdentityPath, numericOnly: true, highlight: true),
+        SheetCellKind.BirthDate => BuildBirthDate(),
+        SheetCellKind.Group => BuildDayCell(column, isGroup: true),
+        SheetCellKind.Chip => BuildDayCell(column, isGroup: false),
+        SheetCellKind.RowGroup => BuildGroupCombo(pathPrefix: string.Empty),
+        SheetCellKind.RowRegion => BuildRegionCombo(),
+        SheetCellKind.RowClub => BuildClubCombo(),
+        SheetCellKind.IdentityBool => BuildBoolCheckBox(column.IdentityPath),
+        SheetCellKind.CollapsedGroup => BuildCollapsedGroup(),
+        SheetCellKind.CollapsedChip => BuildCollapsedChip(),
+        SheetCellKind.Actions => BuildDeleteButton(),
+        SheetCellKind.Custom => column.CellBuilder?.Invoke() ?? new Control(),
         _ => new Control()
     };
 
@@ -92,11 +96,12 @@ internal sealed class RosterCellFactory
                 Converter = (Avalonia.Application.Current!.Resources["DateTimeOffsetToDateTime"] as IValueConverter)
             };
         picker[!CalendarDatePicker.PlaceholderTextProperty] = new Binding("Localization[Common.DatePlaceholder]");
+        NumericInput.SetDate(picker, true);
         return new BirthDateCell(picker);
     }
 
     // ── Expanded per-day cell ─────────────────────────────────────────────────────────────────────
-    private Control BuildDayCell(RosterColumn column, bool isGroup)
+    private Control BuildDayCell(SheetColumn column, bool isGroup)
     {
         var i = column.DayIndex;
         if (isGroup)
@@ -165,15 +170,16 @@ internal sealed class RosterCellFactory
     }
 
     // ── Shared editors ────────────────────────────────────────────────────────────────────────────
-    private static ComboBox BuildGroupCombo(
+    private ComboBox BuildGroupCombo(
         string pathPrefix,
         string? groupOptionsPath = null,
         string? selectedPath = null)
     {
-        var combo = new ComboBox
+        var combo = new SearchableComboBox
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch,
+            SearchWatermark = _loc.Get("Common.Search"),
             ItemTemplate = new FuncDataTemplate<GroupOption>((_, _) =>
                 new TextBlock { [!TextBlock.TextProperty] = new Binding(nameof(GroupOption.Label)) })
         };
@@ -183,6 +189,56 @@ internal sealed class RosterCellFactory
             new Binding(selectedPath ?? $"{pathPrefix}{nameof(RosterDayCellViewModel.SelectedGroup)}")
             { Mode = BindingMode.TwoWay };
         return combo;
+    }
+
+    // A region ComboBox bound on the row. Both ParticipantDayRowViewModel and
+    // ParticipantRosterRowViewModel expose RegionOptions/SelectedRegion with these names.
+    private ComboBox BuildRegionCombo()
+    {
+        var combo = new SearchableComboBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            SearchWatermark = _loc.Get("Common.Search"),
+            ItemTemplate = new FuncDataTemplate<RegionOption>((_, _) =>
+                new TextBlock { [!TextBlock.TextProperty] = new Binding(nameof(RegionOption.Label)) })
+        };
+        combo[!ItemsControl.ItemsSourceProperty] =
+            new Binding(nameof(ParticipantRosterRowViewModel.RegionOptions));
+        combo[!SelectingItemsControl.SelectedItemProperty] =
+            new Binding(nameof(ParticipantRosterRowViewModel.SelectedRegion)) { Mode = BindingMode.TwoWay };
+        return combo;
+    }
+
+    // A club ComboBox bound on the row. Both row VMs expose ClubOptions/SelectedClub with these names.
+    private ComboBox BuildClubCombo()
+    {
+        var combo = new SearchableComboBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            SearchWatermark = _loc.Get("Common.Search"),
+            ItemTemplate = new FuncDataTemplate<ClubOption>((_, _) =>
+                new TextBlock { [!TextBlock.TextProperty] = new Binding(nameof(ClubOption.Label)) })
+        };
+        combo[!ItemsControl.ItemsSourceProperty] =
+            new Binding(nameof(ParticipantRosterRowViewModel.ClubOptions));
+        combo[!SelectingItemsControl.SelectedItemProperty] =
+            new Binding(nameof(ParticipantRosterRowViewModel.SelectedClub)) { Mode = BindingMode.TwoWay };
+        return combo;
+    }
+
+    // A boolean CheckBox bound on the row by the given property path (e.g. IsFsouMember). Centered so
+    // it reads as a flag cell rather than a stretched control.
+    private static CheckBox BuildBoolCheckBox(string path)
+    {
+        var box = new CheckBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            [!ToggleButton.IsCheckedProperty] = new Binding(path) { Mode = BindingMode.TwoWay }
+        };
+        return box;
     }
 
     private TextBox BuildChipEditor(string pathPrefix, string? chipPath = null, bool numericOnly = false, bool highlight = false)
@@ -201,10 +257,14 @@ internal sealed class RosterCellFactory
             NumericInput.SetDigits(box, true);
         if (highlight && _rentalChips is not null)
         {
-            // Bold-red a number that isn't in the rental database, and let a double-click toggle it.
+            // Bold-red a number that isn't in the rental database, and let Ctrl+double-click or the
+            // cell's context menu toggle it.
             ChipHighlight.SetRegistry(box, _rentalChips);
             if (_onToggleRental is not null)
+            {
                 ChipHighlight.SetToggle(box, _onToggleRental);
+                ChipHighlight.SetLocalization(box, _loc);
+            }
         }
         return box;
     }

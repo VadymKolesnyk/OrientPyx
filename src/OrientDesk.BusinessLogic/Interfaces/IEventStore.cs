@@ -98,6 +98,36 @@ public interface IEventStore
     /// <summary>Removes every rental chip from the competition. Returns how many were deleted.</summary>
     Task<int> DeleteAllRentalChipsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the competition's regions, ordered by name.</summary>
+    Task<IReadOnlyList<Region>> GetRegionsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds a competition-level region.</summary>
+    Task AddRegionAsync(string eventFolderPath, Region region, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates an existing region's editable fields (name). Does nothing if it is missing.</summary>
+    Task UpdateRegionAsync(string eventFolderPath, Region region, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a region by id. Does nothing if it is missing.</summary>
+    Task DeleteRegionAsync(string eventFolderPath, Guid regionId, CancellationToken cancellationToken = default);
+
+    /// <summary>Clears a region from every participant that references it (sets their RegionId to null).</summary>
+    Task ClearParticipantsRegionAsync(string eventFolderPath, Guid regionId, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the competition's clubs, ordered by name.</summary>
+    Task<IReadOnlyList<Club>> GetClubsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds a competition-level club.</summary>
+    Task AddClubAsync(string eventFolderPath, Club club, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates an existing club's editable fields (name). Does nothing if it is missing.</summary>
+    Task UpdateClubAsync(string eventFolderPath, Club club, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a club by id. Does nothing if it is missing.</summary>
+    Task DeleteClubAsync(string eventFolderPath, Guid clubId, CancellationToken cancellationToken = default);
+
+    /// <summary>Clears a club from every participant that references it (sets their ClubId to null).</summary>
+    Task ClearParticipantsClubAsync(string eventFolderPath, Guid clubId, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the competition's participants, ordered by surname then name.</summary>
     Task<IReadOnlyList<Participant>> GetParticipantsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 

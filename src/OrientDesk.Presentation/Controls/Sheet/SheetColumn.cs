@@ -8,13 +8,13 @@ namespace OrientDesk.Presentation.Controls;
 /// What a roster cell renders/edits. Drives <see cref="RosterCellFactory"/> and tells the table
 /// which value path on the bound row the cell reads.
 /// </summary>
-public enum RosterCellKind
+public enum SheetCellKind
 {
     /// <summary>A competition-level identity text field (surname, name, …) edited on the row.</summary>
     IdentityText,
 
     /// <summary>
-    /// A digits-only text field edited directly on the row by its <see cref="RosterColumn.IdentityPath"/>
+    /// A digits-only text field edited directly on the row by its <see cref="SheetColumn.IdentityPath"/>
     /// (like <see cref="IdentityText"/> but only accepts digits). Used by the day-mode chip column.
     /// </summary>
     ChipText,
@@ -34,6 +34,23 @@ public enum RosterCellKind
     /// </summary>
     RowGroup,
 
+    /// <summary>
+    /// A region ComboBox bound directly on the row (RegionOptions/SelectedRegion). Region is a
+    /// competition-level participant field, so it is one column for the whole row (both the day grid
+    /// and the roster). The dropdown carries a "(none)" sentinel and a trailing "+ new" option.
+    /// </summary>
+    RowRegion,
+
+    /// <summary>A club ComboBox bound directly on the row (ClubOptions/SelectedClub); same shape as
+    /// <see cref="RowRegion"/>.</summary>
+    RowClub,
+
+    /// <summary>
+    /// A competition-level boolean field (CheckBox) edited on the row by its
+    /// <see cref="SheetColumn.IdentityPath"/>. Used by the participant "FSOU member" column.
+    /// </summary>
+    IdentityBool,
+
     /// <summary>A collapsed block's merged group cell (combo when shared, "різні" when days differ).</summary>
     CollapsedGroup,
 
@@ -41,7 +58,14 @@ public enum RosterCellKind
     CollapsedChip,
 
     /// <summary>The trailing delete-action button column.</summary>
-    Actions
+    Actions,
+
+    /// <summary>
+    /// A page-supplied cell: the column carries a <see cref="SheetColumn.CellBuilder"/> that builds
+    /// the editor/display control. This is how non-participant pages (control points, groups, days,
+    /// chips) reuse the table without baking their bindings into <see cref="RosterCellFactory"/>.
+    /// </summary>
+    Custom
 }
 
 /// <summary>
@@ -49,15 +73,15 @@ public enum RosterCellKind
 /// Width is observable so the header and all (virtualized) rows share a single live width: the
 /// resize grip writes here and every realized cell re-binds instantly. Pure presentation DTO.
 /// </summary>
-public sealed partial class RosterColumn : ObservableObject
+public sealed partial class SheetColumn : ObservableObject
 {
-    public RosterColumn(RosterCellKind kind)
+    public SheetColumn(SheetCellKind kind)
     {
         Kind = kind;
     }
 
     /// <summary>What the cell renders/edits.</summary>
-    public RosterCellKind Kind { get; }
+    public SheetCellKind Kind { get; }
 
     /// <summary>Resolved (already localized) sub-header text — e.g. "День 2", or an identity label.</summary>
     public string Header { get; set; } = string.Empty;
@@ -69,7 +93,7 @@ public sealed partial class RosterColumn : ObservableObject
     public int DayIndex { get; set; }
 
     /// <summary>
-    /// Identity property name for <see cref="RosterCellKind.IdentityText"/> columns (e.g. "Surname"),
+    /// Identity property name for <see cref="SheetCellKind.IdentityText"/> columns (e.g. "Surname"),
     /// used as the cell's two-way binding path on the row.
     /// </summary>
     public string IdentityPath { get; set; } = string.Empty;
@@ -96,6 +120,13 @@ public sealed partial class RosterColumn : ObservableObject
 
     /// <summary>True when the builder set an explicit width (vs. the default), used when carrying widths.</summary>
     public bool WidthCapped { get; set; }
+
+    /// <summary>
+    /// For <see cref="SheetCellKind.Custom"/> columns: builds the cell's content control. Called
+    /// once per realized row; the produced control inherits the row's DataContext, so its bindings
+    /// resolve against the bound row view model. Ignored for every other kind.
+    /// </summary>
+    public System.Func<Avalonia.Controls.Control>? CellBuilder { get; set; }
 }
 
 /// <summary>
@@ -103,7 +134,7 @@ public sealed partial class RosterColumn : ObservableObject
 /// or a collapsible field block (a band over one column per day, or one merged column when
 /// collapsed). The band is the unit that drag-reorders as a whole in v2.
 /// </summary>
-public sealed class RosterBand
+public sealed class SheetBand
 {
     public enum BandKind
     {
@@ -114,7 +145,7 @@ public sealed class RosterBand
         FieldBlock
     }
 
-    public RosterBand(BandKind kind, IReadOnlyList<RosterColumn> columns)
+    public SheetBand(BandKind kind, IReadOnlyList<SheetColumn> columns)
     {
         Kind = kind;
         Columns = columns;
@@ -123,7 +154,7 @@ public sealed class RosterBand
     public BandKind Kind { get; }
 
     /// <summary>The leaf columns under this band, left-to-right.</summary>
-    public IReadOnlyList<RosterColumn> Columns { get; }
+    public IReadOnlyList<SheetColumn> Columns { get; }
 
     /// <summary>Resolved (localized) band/identity header text shown on the top tier.</summary>
     public string Header { get; set; } = string.Empty;

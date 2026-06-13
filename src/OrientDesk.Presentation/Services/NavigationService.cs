@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using OrientDesk.BusinessLogic.Interfaces;
 using OrientDesk.Presentation.ViewModels.Pages;
 
 namespace OrientDesk.Presentation.Services;
@@ -10,9 +11,11 @@ namespace OrientDesk.Presentation.Services;
 public sealed class NavigationService : INavigationService
 {
     private readonly ObservableCollection<PageViewModelBase> _pages;
+    private readonly IActivityLog _log;
 
-    public NavigationService(DashboardViewModel dashboard)
+    public NavigationService(DashboardViewModel dashboard, IActivityLog log)
     {
+        _log = log;
         // Settings is global (top menu → overlay), so it is not a sidebar page.
         _pages = [dashboard];
 
@@ -31,6 +34,7 @@ public sealed class NavigationService : INavigationService
         if (ReferenceEquals(page, CurrentPage))
             return;
 
+        _log.Action($"Navigate to page: {page.GetType().Name}");
         CurrentPage = page;
         CurrentPageChanged?.Invoke(this, EventArgs.Empty);
     }

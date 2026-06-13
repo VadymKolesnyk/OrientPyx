@@ -18,16 +18,16 @@ namespace OrientDesk.Presentation.Controls;
 /// The roster's two-tier (banded) header. Top tier carries identity headers (spanning both rows)
 /// and field-block band labels (spanning their day sub-columns, with a collapse chevron); bottom
 /// tier carries the "День N" sub-headers. Each leaf has a right-edge resize grip writing the shared
-/// <see cref="RosterColumn.Width"/>. Clicking a header sorts by that column. The whole band is a
+/// <see cref="SheetColumn.Width"/>. Clicking a header sorts by that column. The whole band is a
 /// drag unit for reordering (a grouped field-block never splits) with a drop indicator line.
 /// </summary>
-internal sealed class RosterHeaderPanel : Grid
+internal sealed class SheetHeaderPanel : Grid
 {
     private readonly ILocalizationService _loc;
 
     // Per-band top-tier cell, so the drop indicator can be positioned at a band boundary.
     private readonly List<Control> _bandHeaders = [];
-    private IReadOnlyList<RosterBand> _bands = [];
+    private IReadOnlyList<SheetBand> _bands = [];
     private readonly Rectangle _dropLine;
     // Translucent overlay over the band currently being dragged, so the user sees what they're moving.
     private readonly Rectangle _dragHighlight;
@@ -38,7 +38,7 @@ internal sealed class RosterHeaderPanel : Grid
     private Point _pressOrigin;
     private int _dragBandIndex = -1;
 
-    public RosterHeaderPanel(ILocalizationService localization)
+    public SheetHeaderPanel(ILocalizationService localization)
     {
         _loc = localization;
         RowDefinitions = new RowDefinitions("20,Auto");
@@ -70,7 +70,7 @@ internal sealed class RosterHeaderPanel : Grid
     public System.Windows.Input.ICommand? ToggleBlock { get; set; }
 
     /// <summary>Invoked when a header is clicked to sort by the given column.</summary>
-    public Action<RosterColumn>? SortBy { get; set; }
+    public Action<SheetColumn>? SortBy { get; set; }
 
     /// <summary>Invoked to move a band from one top-level index to another (reorder).</summary>
     public Action<int, int>? MoveBand { get; set; }
@@ -82,26 +82,26 @@ internal sealed class RosterHeaderPanel : Grid
     private const double SortRightMargin = 3;
 
     /// <summary>The column currently sorted, and the direction, so the arrow indicator can render.</summary>
-    public RosterColumn? SortColumn { get; set; }
+    public SheetColumn? SortColumn { get; set; }
     public bool SortDescending { get; set; }
 
     /// <summary>Rebuilds the header grid for the given bands.</summary>
-    public void Rebuild(IReadOnlyList<RosterBand> bands)
+    public void Rebuild(IReadOnlyList<SheetBand> bands)
     {
         _bands = bands;
         _bandHeaders.Clear();
         Children.Clear();
         ColumnDefinitions.Clear();
 
-        // One grid column per leaf, its width two-way bound to the shared RosterColumn.Width.
-        var leaves = new List<RosterColumn>();
+        // One grid column per leaf, its width two-way bound to the shared SheetColumn.Width.
+        var leaves = new List<SheetColumn>();
         foreach (var band in bands)
             leaves.AddRange(band.Columns);
 
         for (var i = 0; i < leaves.Count; i++)
         {
             var def = new ColumnDefinition { MinWidth = leaves[i].MinWidth };
-            def[!ColumnDefinition.WidthProperty] = new Binding(nameof(RosterColumn.Width))
+            def[!ColumnDefinition.WidthProperty] = new Binding(nameof(SheetColumn.Width))
             {
                 Source = leaves[i],
                 Mode = BindingMode.TwoWay,
@@ -116,7 +116,7 @@ internal sealed class RosterHeaderPanel : Grid
             var band = bands[b];
             var span = band.Columns.Count;
 
-            if (band.Kind == RosterBand.BandKind.Identity)
+            if (band.Kind == SheetBand.BandKind.Identity)
             {
                 var header = BuildHeaderText(band.Header, band.Columns[0], band, b);
                 SetColumn(header, col);
@@ -186,7 +186,7 @@ internal sealed class RosterHeaderPanel : Grid
     // ── Header cells ────────────────────────────────────────────────────────────────────────────
     // An identity header: label (stretch) + a small sort button on the right; the whole cell is a
     // band-drag handle (sort button excluded so its click sorts rather than drags).
-    private Border BuildHeaderText(string text, RosterColumn column, RosterBand band, int bandIndex)
+    private Border BuildHeaderText(string text, SheetColumn column, SheetBand band, int bandIndex)
     {
         var inner = BuildLabelWithSort(text, column);
         // Left-only padding: the sort button must reach the column's right edge (matching the banner);
@@ -199,7 +199,7 @@ internal sealed class RosterHeaderPanel : Grid
 
     // A "День N" sub-header: label + per-day sort button. The whole sub-header is also a band-drag
     // handle (the band drags as a whole from any of its sub-columns), with the sort button excluded.
-    private Border BuildSubHeaderText(RosterColumn column, int bandIndex)
+    private Border BuildSubHeaderText(SheetColumn column, int bandIndex)
     {
         var inner = BuildLabelWithSort(column.Header, column);
         // Left-only padding so the per-day sort button reaches the sub-column's right edge (see
@@ -211,7 +211,7 @@ internal sealed class RosterHeaderPanel : Grid
 
     // Label + right-pinned sort icon button for a sortable column. The sort button is sized large and
     // hugs the right edge (clear of the resize grip); the label gets the remaining space.
-    private Grid BuildLabelWithSort(string text, RosterColumn column)
+    private Grid BuildLabelWithSort(string text, SheetColumn column)
     {
         var grid = new Grid
         {
@@ -244,7 +244,7 @@ internal sealed class RosterHeaderPanel : Grid
 
     // Small ghost icon button that sorts by the column. Shows a neutral up/down glyph when inactive,
     // a directional arrow when this column is the active sort.
-    private Button BuildSortButton(RosterColumn column)
+    private Button BuildSortButton(SheetColumn column)
     {
         var active = SortColumn == column;
         var icon = new PathIcon
@@ -270,7 +270,7 @@ internal sealed class RosterHeaderPanel : Grid
         return btn;
     }
 
-    private Border BuildBandBanner(RosterBand band, int bandIndex)
+    private Border BuildBandBanner(SheetBand band, int bandIndex)
     {
         var chevron = new PathIcon
         {
@@ -513,7 +513,7 @@ internal sealed class RosterHeaderPanel : Grid
     private void HideDropLine() => _dropLine.IsVisible = false;
 
     // ── Resize grip ─────────────────────────────────────────────────────────────────────────────
-    private void AddResizeGrip(RosterColumn column, int col, int rowSpan, int row = 0)
+    private void AddResizeGrip(SheetColumn column, int col, int rowSpan, int row = 0)
     {
         var grip = new Thumb
         {
@@ -541,8 +541,8 @@ internal sealed class PixelToGridLength : Avalonia.Data.Converters.IValueConvert
     public static readonly PixelToGridLength Instance = new();
 
     public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-        => new GridLength(value is double d && d > 0 ? d : RosterColumn.DefaultWidth, GridUnitType.Pixel);
+        => new GridLength(value is double d && d > 0 ? d : SheetColumn.DefaultWidth, GridUnitType.Pixel);
 
     public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-        => value is GridLength g ? g.Value : RosterColumn.DefaultWidth;
+        => value is GridLength g ? g.Value : SheetColumn.DefaultWidth;
 }

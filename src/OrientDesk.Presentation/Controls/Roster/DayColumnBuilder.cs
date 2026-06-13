@@ -1,0 +1,101 @@
+using System.Collections.Generic;
+using OrientDesk.Localization;
+using OrientDesk.Presentation.ViewModels.Pages;
+
+namespace OrientDesk.Presentation.Controls;
+
+/// <summary>
+/// Builds the flat (non-banded) column set for the day-mode participants table so it can reuse
+/// <see cref="SheetTable"/> without the roster's per-day banding. Every column is a single-column
+/// <see cref="SheetBand.BandKind.Identity"/> band, giving a plain one-tier header. Cells bind
+/// directly on <see cref="ParticipantDayRowViewModel"/> (each row already represents one day).
+/// </summary>
+public sealed class DayColumnBuilder
+{
+    private readonly ILocalizationService _loc;
+
+    public DayColumnBuilder(ILocalizationService localization)
+    {
+        _loc = localization;
+    }
+
+    /// <summary>
+    /// Builds the day-grid bands. The Team column is included only for disciplines that use teams
+    /// (rogaine) — the caller passes <paramref name="showTeam"/>; rebuild when discipline changes.
+    /// Existing <paramref name="previous"/> bands carry user-set widths forward.
+    /// </summary>
+    public IReadOnlyList<SheetBand> Build(bool showTeam, IReadOnlyList<SheetBand>? previous)
+    {
+        var bands = new List<SheetBand>();
+
+        bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Number", nameof(ParticipantDayRowViewModel.Number)));
+        bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.FullName", nameof(ParticipantDayRowViewModel.FullName), fixedWidth: 220));
+        bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Rank", nameof(ParticipantDayRowViewModel.Rank)));
+        bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Coach", nameof(ParticipantDayRowViewModel.Coach)));
+        bands.Add(Identity(SheetCellKind.BirthDate, "Participants.Col.BirthDate", nameof(ParticipantDayRowViewModel.BirthDate), fixedWidth: 160));
+
+        // Region / Club (competition-level combos bound on the row), sorted by their labels.
+        bands.Add(Identity(SheetCellKind.RowRegion, "Participants.Col.Region", path: string.Empty,
+            sortPath: $"{nameof(ParticipantDayRowViewModel.SelectedRegion)}.{nameof(RegionOption.Label)}"));
+        bands.Add(Identity(SheetCellKind.RowClub, "Participants.Col.Club", path: string.Empty,
+            sortPath: $"{nameof(ParticipantDayRowViewModel.SelectedClub)}.{nameof(ClubOption.Label)}"));
+
+        // Competition-level text + boolean participant fields.
+        bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Representative", nameof(ParticipantDayRowViewModel.Representative)));
+        bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.FsouCode", nameof(ParticipantDayRowViewModel.FsouCode)));
+        bands.Add(Identity(SheetCellKind.IdentityBool, "Participants.Col.IsFsouMember", nameof(ParticipantDayRowViewModel.IsFsouMember), fixedWidth: 110));
+        bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Payment", nameof(ParticipantDayRowViewModel.Payment)));
+
+        // This day's group (combo bound directly on the row) and chip (free text, unique per day).
+        bands.Add(Identity(SheetCellKind.RowGroup, "Participants.Col.Group", path: string.Empty,
+            sortPath: $"{nameof(ParticipantDayRowViewModel.SelectedGroup)}.{nameof(GroupOption.Label)}"));
+        bands.Add(Identity(SheetCellKind.ChipText, "Participants.Col.Chip", nameof(ParticipantDayRowViewModel.Chip)));
+
+        if (showTeam)
+            bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Team", nameof(ParticipantDayRowViewModel.Team)));
+
+        // Trailing delete action.
+        var actions = new SheetColumn(SheetCellKind.Actions) { Width = 48, WidthCapped = true, MinWidth = 48 };
+        bands.Add(new SheetBand(SheetBand.BandKind.Identity, [actions]) { Header = string.Empty });
+
+        CarryWidths(previous, bands);
+        return bands;
+    }
+
+    private SheetBand Identity(SheetCellKind kind, string headerKey, string path, double? fixedWidth = null, string? sortPath = null)
+    {
+        var col = new SheetColumn(kind)
+        {
+            Header = _loc.Get(headerKey),
+            IdentityPath = path,
+            SortPath = sortPath ?? path,
+        };
+        if (fixedWidth is { } w)
+        {
+            col.Width = w;
+            col.WidthCapped = true;
+        }
+        return new SheetBand(SheetBand.BandKind.Identity, [col]) { Header = col.Header };
+    }
+
+    // Carry widths forward by flat index where the kind lines up (best effort across rebuilds).
+    private static void CarryWidths(IReadOnlyList<SheetBand>? previous, List<SheetBand> next)
+    {
+        if (previous is null)
+            return;
+        var oldCols = Flatten(previous);
+        var newCols = Flatten(next);
+        var count = oldCols.Count < newCols.Count ? oldCols.Count : newCols.Count;
+        for (var i = 0; i < count; i++)
+            if (oldCols[i].Kind == newCols[i].Kind)
+                newCols[i].Width = oldCols[i].Width;
+    }
+
+    private static List<SheetColumn> Flatten(IReadOnlyList<SheetBand> bands)
+    {
+        var list = new List<SheetColumn>();
+        foreach (var band in bands)
+            list.AddRange(band.Columns);
+        return list;
+    }
+}

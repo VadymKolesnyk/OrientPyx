@@ -7,17 +7,11 @@
     <Application.Styles>
         <FluentTheme />
 
-        <!-- Excel-like editable grid (Avalonia.Controls.DataGrid) -->
-        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
-
         <!-- Make popups (dropdowns, calendar, menus) follow the global UI scale -->
         <StyleInclude Source="avares://OrientDesk.Presentation/Styles/PopupScaling.axaml" />
 
-        <!-- Reusable compact, spreadsheet-style grid: Border.card wraps it for the rounded frame -->
-        <StyleInclude Source="avares://OrientDesk.Presentation/Styles/Sheet.axaml" />
-
-        <!-- Custom roster table with a true two-tier banded header (controls:RosterTable) -->
-        <StyleInclude Source="avares://OrientDesk.Presentation/Styles/RosterTable.axaml" />
+        <!-- Shared editable sheet table; supports a true two-tier banded header (controls:SheetTable) -->
+        <StyleInclude Source="avares://OrientDesk.Presentation/Styles/SheetTable.axaml" />
 
         <!-- ============================================================
              OrientDesk design system: shared control styling so screens

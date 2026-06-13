@@ -17,6 +17,27 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.8");
 
+            modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.Club", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Clubs");
+                });
+
             modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.CompetitionInfo", b =>
                 {
                     b.Property<Guid>("Id")
@@ -187,6 +208,9 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                     b.Property<DateTimeOffset?>("BirthDate")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("ClubId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Coach")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -194,15 +218,33 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("FsouCode")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("FullName")
                         .IsRequired()
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsFsouMember")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Number")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Payment")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Rank")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("RegionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Representative")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
@@ -247,6 +289,27 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                     b.HasIndex("ParticipantId");
 
                     b.ToTable("ParticipantDays");
+                });
+
+            modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.Region", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("Regions");
                 });
 
             modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.RentalChip", b =>

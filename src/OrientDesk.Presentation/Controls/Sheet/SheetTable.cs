@@ -20,57 +20,60 @@ using OrientDesk.Presentation.ViewModels.Pages;
 namespace OrientDesk.Presentation.Controls;
 
 /// <summary>
-/// A purpose-built table for the participant roster ("Мандатка") that the Avalonia DataGrid cannot
-/// express: a true two-tier (banded) header where per-day field columns sit under a spanning band
-/// label. Rows are virtualized by an inner <see cref="ListBox"/>; the header is frozen vertically
-/// and scrolls horizontally in lockstep with the body via one shared outer scroller.
+/// The app's shared editable table — a spreadsheet-style grid built imperatively from a
+/// <see cref="SheetColumn"/>/<see cref="SheetBand"/> model. Every editable screen (control points,
+/// groups, days, chips, and the participant roster) uses it; it replaced the Avalonia-DataGrid-based
+/// <c>SheetDataGrid</c>.
 ///
-/// Built imperatively from a <see cref="RosterColumn"/>/<see cref="RosterBand"/> model so columns
-/// can be rebuilt on collapse/expand and language change. Excel-style selection + focus-to-edit and
-/// Delete-with-confirmation match the rest of the app's tables (see <c>SheetDataGrid</c>).
+/// Most pages build a flat one-tier header with <see cref="SheetColumnBuilder"/>. The participant
+/// roster ("Мандатка") additionally uses the feature the DataGrid could not express: a true two-tier
+/// (banded) header where per-day field columns sit under a spanning band label
+/// (see <c>RosterColumnBuilder</c>). Rows are virtualized by an inner <see cref="ListBox"/>; the
+/// header is frozen vertically and scrolls horizontally in lockstep with the body via one shared
+/// outer scroller. Excel-style selection + focus-to-edit and Delete-with-confirmation are built in.
 /// </summary>
-public sealed class RosterTable : TemplatedControl
+public sealed class SheetTable : TemplatedControl
 {
     // ── Bindable properties ───────────────────────────────────────────────────────────────────────
     public static readonly StyledProperty<IEnumerable?> ItemsSourceProperty =
-        AvaloniaProperty.Register<RosterTable, IEnumerable?>(nameof(ItemsSource));
+        AvaloniaProperty.Register<SheetTable, IEnumerable?>(nameof(ItemsSource));
 
     public static readonly StyledProperty<ILocalizationService?> LocalizationProperty =
-        AvaloniaProperty.Register<RosterTable, ILocalizationService?>(nameof(Localization));
+        AvaloniaProperty.Register<SheetTable, ILocalizationService?>(nameof(Localization));
 
     public static readonly StyledProperty<IReadOnlyList<EventDay>?> DaysProperty =
-        AvaloniaProperty.Register<RosterTable, IReadOnlyList<EventDay>?>(nameof(Days));
+        AvaloniaProperty.Register<SheetTable, IReadOnlyList<EventDay>?>(nameof(Days));
 
     public static readonly StyledProperty<IEnumerable<RosterFieldBlockViewModel>?> BlocksProperty =
-        AvaloniaProperty.Register<RosterTable, IEnumerable<RosterFieldBlockViewModel>?>(nameof(Blocks));
+        AvaloniaProperty.Register<SheetTable, IEnumerable<RosterFieldBlockViewModel>?>(nameof(Blocks));
 
     public static readonly StyledProperty<ICommand?> ToggleBlockCommandProperty =
-        AvaloniaProperty.Register<RosterTable, ICommand?>(nameof(ToggleBlockCommand));
+        AvaloniaProperty.Register<SheetTable, ICommand?>(nameof(ToggleBlockCommand));
 
     public static readonly StyledProperty<object?> SelectedItemProperty =
-        AvaloniaProperty.Register<RosterTable, object?>(nameof(SelectedItem), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
+        AvaloniaProperty.Register<SheetTable, object?>(nameof(SelectedItem), defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
 
     public static readonly StyledProperty<ICommand?> DeleteCommandProperty =
-        AvaloniaProperty.Register<RosterTable, ICommand?>(nameof(DeleteCommand));
+        AvaloniaProperty.Register<SheetTable, ICommand?>(nameof(DeleteCommand));
 
     /// <summary>The shared rental-chip set chip cells highlight against (bold-red when not rental).</summary>
     public static readonly StyledProperty<RentalChipRegistry?> RentalChipsProperty =
-        AvaloniaProperty.Register<RosterTable, RentalChipRegistry?>(nameof(RentalChips));
+        AvaloniaProperty.Register<SheetTable, RentalChipRegistry?>(nameof(RentalChips));
 
     /// <summary>Command invoked (with the chip number) when a chip cell is double-clicked, to toggle it in the rental DB.</summary>
     public static readonly StyledProperty<ICommand?> ToggleRentalChipCommandProperty =
-        AvaloniaProperty.Register<RosterTable, ICommand?>(nameof(ToggleRentalChipCommand));
+        AvaloniaProperty.Register<SheetTable, ICommand?>(nameof(ToggleRentalChipCommand));
 
     /// <summary>
     /// Pre-built bands supplied by the caller. When set, the table renders these verbatim and does
     /// NOT build columns from <see cref="Days"/>/<see cref="Blocks"/> — this is how the flat day-mode
     /// table reuses the control without the roster's per-day banding.
     /// </summary>
-    public static readonly StyledProperty<IReadOnlyList<RosterBand>?> BandsProperty =
-        AvaloniaProperty.Register<RosterTable, IReadOnlyList<RosterBand>?>(nameof(Bands));
+    public static readonly StyledProperty<IReadOnlyList<SheetBand>?> BandsProperty =
+        AvaloniaProperty.Register<SheetTable, IReadOnlyList<SheetBand>?>(nameof(Bands));
 
     /// <summary>Raised when the user asks to delete a row via the keyboard; arg = skip-confirm.</summary>
-    public event EventHandler<RosterDeleteEventArgs>? DeleteRequested;
+    public event EventHandler<SheetDeleteEventArgs>? DeleteRequested;
 
     public IEnumerable? ItemsSource
     {
@@ -116,7 +119,7 @@ public sealed class RosterTable : TemplatedControl
     }
 
     /// <summary>Caller-supplied bands; when set, used instead of building from Days/Blocks.</summary>
-    public IReadOnlyList<RosterBand>? Bands
+    public IReadOnlyList<SheetBand>? Bands
     {
         get => GetValue(BandsProperty);
         set => SetValue(BandsProperty, value);
@@ -135,16 +138,16 @@ public sealed class RosterTable : TemplatedControl
     }
 
     // ── Template parts ────────────────────────────────────────────────────────────────────────────
-    private RosterHeaderPanel? _header;
+    private SheetHeaderPanel? _header;
     private ListBox? _body;
     private ScrollViewer? _headerScroll;
     private ScrollViewer? _bodyScroll;
 
-    private IReadOnlyList<RosterBand> _bands = [];
+    private IReadOnlyList<SheetBand> _bands = [];
     private RosterCellFactory? _cellFactory;
     private bool _editing;
 
-    public RosterTable()
+    public SheetTable()
     {
         AddHandler(KeyDownEvent, OnTunnelKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnBubbleKeyDown, RoutingStrategies.Bubble);
@@ -181,7 +184,7 @@ public sealed class RosterTable : TemplatedControl
         // The banded header is built in code (its column set is dynamic); host it in a template slot.
         if (Localization is not null && e.NameScope.Find<Decorator>("PART_HeaderSlot") is { } slot)
         {
-            _header = new RosterHeaderPanel(Localization);
+            _header = new SheetHeaderPanel(Localization);
             slot.Child = _header;
         }
 
@@ -253,10 +256,10 @@ public sealed class RosterTable : TemplatedControl
     // ── Band reorder (drag) ─────────────────────────────────────────────────────────────────────
     // The desired top-level band order, as stable signatures. Null until the user reorders.
     private List<string>? _bandOrder;
-    private RosterColumn? _sortColumn;
+    private SheetColumn? _sortColumn;
     private bool _sortDescending;
 
-    private static string Signature(RosterBand band)
+    private static string Signature(SheetBand band)
     {
         // Field blocks are identified by their block reference; identity/action bands by first kind+header.
         if (band.Block is not null)
@@ -264,16 +267,16 @@ public sealed class RosterTable : TemplatedControl
         return "id:" + band.Columns[0].Kind + ":" + band.Header;
     }
 
-    private IReadOnlyList<RosterBand> ApplyBandOrder(IReadOnlyList<RosterBand> bands)
+    private IReadOnlyList<SheetBand> ApplyBandOrder(IReadOnlyList<SheetBand> bands)
     {
         if (_bandOrder is null)
             return bands;
 
-        var bySig = new Dictionary<string, RosterBand>();
+        var bySig = new Dictionary<string, SheetBand>();
         foreach (var b in bands)
             bySig[Signature(b)] = b;
 
-        var ordered = new List<RosterBand>(bands.Count);
+        var ordered = new List<SheetBand>(bands.Count);
         foreach (var sig in _bandOrder)
             if (bySig.Remove(sig, out var b))
                 ordered.Add(b);
@@ -319,7 +322,7 @@ public sealed class RosterTable : TemplatedControl
     // Click cycles: unsorted → ascending → descending → ascending… on the same column; a new column
     // starts ascending. Sorting reorders a display copy of the items; the source collection is left
     // untouched so the VM's selection/delete keep working by reference.
-    private void ApplySort(RosterColumn column)
+    private void ApplySort(SheetColumn column)
     {
         if (string.IsNullOrEmpty(column.SortPath))
             return;
@@ -418,7 +421,7 @@ public sealed class RosterTable : TemplatedControl
 
     // ── Row assembly ──────────────────────────────────────────────────────────────────────────────
     // One body row: a horizontal Grid mirroring the header's leaf columns, each cell width bound to
-    // the same RosterColumn.Width so header and rows stay aligned.
+    // the same SheetColumn.Width so header and rows stay aligned.
     private Control BuildRow()
     {
         var grid = new Grid { HorizontalAlignment = HorizontalAlignment.Left };
@@ -428,14 +431,14 @@ public sealed class RosterTable : TemplatedControl
             foreach (var column in band.Columns)
             {
                 var def = new ColumnDefinition { MinWidth = column.MinWidth };
-                def[!ColumnDefinition.WidthProperty] = new Avalonia.Data.Binding(nameof(RosterColumn.Width))
+                def[!ColumnDefinition.WidthProperty] = new Avalonia.Data.Binding(nameof(SheetColumn.Width))
                 {
                     Source = column,
                     Converter = PixelToGridLength.Instance
                 };
                 grid.ColumnDefinitions.Add(def);
 
-                var cell = new RosterCell(column) { Content = _cellFactory!.Build(column) };
+                var cell = new SheetCell(column, col) { Content = _cellFactory!.Build(column) };
                 Grid.SetColumn(cell, col);
                 grid.Children.Add(cell);
                 col++;
@@ -452,7 +455,7 @@ public sealed class RosterTable : TemplatedControl
     }
 
     /// <summary>Forwards the body scroller's offset to <see cref="SyncHeaderOffset"/>.</summary>
-    private sealed class OffsetSync(RosterTable owner) : IObserver<Vector>
+    private sealed class OffsetSync(SheetTable owner) : IObserver<Vector>
     {
         public void OnCompleted() { }
         public void OnError(Exception error) { }
@@ -473,20 +476,164 @@ public sealed class RosterTable : TemplatedControl
 
     // ── Excel-style edit + delete keyboard handling ───────────────────────────────────────────────
     private bool _ctrlDown;
+    // The leaf-column index of the currently selected cell, carried across rows during up/down nav.
+    private int _focusedColumn;
 
     private void OnTunnelPointerPressed(object? sender, PointerPressedEventArgs e)
-        => _ctrlDown = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+    {
+        _ctrlDown = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+
+        // A click anywhere in a cell selects that cell (Excel-style focused-cell outline). We focus the
+        // SheetCell host itself, not the inner editor, so a single click selects and a second
+        // click / Enter / typing begins editing. A click that lands directly on an interactive editor
+        // (TextBox/ComboBox/date picker) is left alone so the user can place the caret in one click.
+        var cell = CellFromSource(e.Source as Visual);
+        if (cell is null)
+            return;
+
+        _focusedColumn = cell.ColumnIndex;
+
+        // Select the clicked cell's row. The ListBox would normally do this itself on bubble, but a
+        // click that lands in an editor (and focuses it / begins editing) never reaches that path, so
+        // the row would stay unselected. Set it explicitly from the row's data context.
+        if (RowItemFromCell(cell) is { } row)
+            SelectedItem = row;
+
+        if (e.Source is Visual src && IsInsideEditor(src, cell))
+            return; // let the editor take the click (caret placement)
+        cell.Focus();
+    }
+
+    // The row item a cell belongs to: the cell inherits the row container's DataContext (the item).
+    private object? RowItemFromCell(SheetCell cell)
+    {
+        var row = cell.DataContext;
+        if (row is null || _body?.ItemsSource is null)
+            return row;
+        // Make sure it's actually one of the rows we display (guards against header/stray contexts).
+        foreach (var item in _body.ItemsSource)
+            if (ReferenceEquals(item, row))
+                return row;
+        return null;
+    }
+
+    // Walks up from a hit-tested visual to the SheetCell that contains it (or null).
+    private static SheetCell? CellFromSource(Visual? source)
+    {
+        var v = source;
+        while (v is not null)
+        {
+            if (v is SheetCell cell)
+                return cell;
+            v = v.GetVisualParent();
+        }
+        return null;
+    }
+
+    // True when the clicked visual is (inside) an interactive editor within the cell.
+    private static bool IsInsideEditor(Visual source, SheetCell cell)
+    {
+        var v = source;
+        while (v is not null && v != cell)
+        {
+            if (v is TextBox or ComboBox or CalendarDatePicker or Button or CheckBox)
+                return true;
+            v = v.GetVisualParent();
+        }
+        return false;
+    }
 
     private void OnTunnelKeyDown(object? sender, KeyEventArgs e)
     {
         // The focused element decides whether we're already editing (a focused TextBox in a cell).
         var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
+
+        // A combo opened via Enter drives its own keyboard: arrows move the highlight, Enter commits,
+        // Escape closes. When the dropdown opens focus lands on a ComboBoxItem *inside the popup*, not
+        // on the ComboBox itself, so resolve the owning combo by walking up. Stay out of its way so
+        // cell-nav doesn't hijack those keys — except we step down a row after a commit, like text cells.
+        if (OwningComboBox(focused as Visual) is { } combo)
+        {
+            if (e.Key == Key.Enter && combo.IsDropDownOpen)
+                Dispatcher.UIThread.Post(() => MoveRow(+1), DispatcherPriority.Background);
+            return;
+        }
+
         _editing = focused is TextBox;
 
         if (_editing)
+        {
+            var box = focused as TextBox;
+
+            // Enter/Escape leave edit mode by returning focus to the cell host (the TextBox commits on
+            // LostFocus); Enter then advances down a row like a spreadsheet.
+            if (e.Key is Key.Enter or Key.Escape && FindFocusedCell() is { } editingCell)
+            {
+                editingCell.Focus();
+                e.Handled = true;
+                if (e.Key == Key.Enter)
+                    Dispatcher.UIThread.Post(() => MoveRow(+1), DispatcherPriority.Background);
+                return;
+            }
+
+            // Up/Down commit the edit and move to the adjacent row's same-column cell, like a
+            // spreadsheet. Without this the key would leak to the body ListBox, which moves its
+            // selection but leaves no cell focused (forcing a second click to resume editing).
+            if (e.Key is Key.Up or Key.Down && CommitEdit())
+            {
+                e.Handled = true;
+                var delta = e.Key == Key.Down ? +1 : -1;
+                Dispatcher.UIThread.Post(() => MoveRow(delta), DispatcherPriority.Background);
+                return;
+            }
+
+            // Left/Right move the caret within the text until it reaches an edge; at the edge they
+            // commit and step to the neighbouring cell (Tab still works mid-text for an explicit jump).
+            if (e.Key == Key.Left && box is not null && box.CaretIndex == 0 && CommitEdit())
+            {
+                e.Handled = true;
+                MoveColumn(-1);
+                return;
+            }
+            if (e.Key == Key.Right && box is not null && box.CaretIndex >= (box.Text?.Length ?? 0) && CommitEdit())
+            {
+                e.Handled = true;
+                MoveColumn(+1);
+                return;
+            }
+
+            // Anything else (incl. mid-text arrows/Tab) stays with the editor for caret movement / typing.
             return;
+        }
+
+        // Arrow / Tab navigation between cells (only when a cell, not an editor, holds focus).
+        switch (e.Key)
+        {
+            case Key.Left:
+                if (MoveColumn(-1)) e.Handled = true;
+                return;
+            case Key.Right:
+                if (MoveColumn(+1)) e.Handled = true;
+                return;
+            case Key.Tab:
+                if (MoveColumn(e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? -1 : +1)) e.Handled = true;
+                return;
+            case Key.Up:
+                if (MoveRow(-1)) e.Handled = true;
+                return;
+            case Key.Down:
+                if (MoveRow(+1)) e.Handled = true;
+                return;
+        }
 
         var ctrlOrAlt = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt);
+
+        if (e.Key == Key.C && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            if (CopyFocusedCell())
+                e.Handled = true;
+            return;
+        }
 
         if (e.Key == Key.V && e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
@@ -526,14 +673,19 @@ public sealed class RosterTable : TemplatedControl
             return;
 
         e.Handled = true;
-        DeleteRequested?.Invoke(this, new RosterDeleteEventArgs(SelectedItem, e.KeyModifiers.HasFlag(KeyModifiers.Control)));
+        DeleteRequested?.Invoke(this, new SheetDeleteEventArgs(SelectedItem, e.KeyModifiers.HasFlag(KeyModifiers.Control)));
     }
 
-    // Find the focused cell and put its inner TextBox (if any) into edit by focusing it.
+    // Find the focused cell and put its editor into edit by focusing it. A text cell focuses its
+    // TextBox; a combo cell opens its dropdown and focuses it so the user can pick with the keyboard
+    // straight away (Enter on the open list commits the highlighted item).
     private bool BeginEditFocusedCell()
     {
         if (FindFocusedCell()?.Content is not Control content)
             return false;
+
+        if (FindVisibleCombo(content) is { } combo)
+            return OpenCombo(combo);
 
         var box = content as TextBox ?? FindDescendantTextBox(content);
         if (box is null)
@@ -543,16 +695,138 @@ public sealed class RosterTable : TemplatedControl
         return true;
     }
 
-    private RosterCell? FindFocusedCell()
+    // The combo whose dropdown the table opened (via Enter/F2), so the key handler can recognise its
+    // popup focus and step away. Cleared when it closes.
+    private ComboBox? _openCombo;
+
+    // Open a combo's dropdown and move focus into it so arrow keys move the highlight and Enter
+    // commits — no mouse needed. Focusing the ComboBox before opening lets its own key handling drive
+    // the open popup; opening moves focus to the selected ComboBoxItem inside the popup.
+    private bool OpenCombo(ComboBox combo)
+    {
+        _openCombo = combo;
+        EventHandler? onClosed = null;
+        onClosed = (_, _) =>
+        {
+            if (ReferenceEquals(_openCombo, combo))
+                _openCombo = null;
+            combo.DropDownClosed -= onClosed;
+        };
+        combo.DropDownClosed += onClosed;
+
+        combo.Focus();
+        combo.IsDropDownOpen = true;
+        return true;
+    }
+
+    // The combo that currently owns keyboard focus: the focused element itself, the combo we opened
+    // (focus is on a ComboBoxItem in its popup, a separate visual tree), or a combo we can walk up to.
+    private ComboBox? OwningComboBox(Visual? focused)
+    {
+        if (focused is null)
+            return null;
+        if (_openCombo is { IsDropDownOpen: true })
+            return _openCombo;
+        var v = focused;
+        while (v is not null)
+        {
+            if (v is ComboBox combo)
+                return combo;
+            v = v.GetVisualParent();
+        }
+        return null;
+    }
+
+    // The combo a cell edits, if any. A cell may host a bare ComboBox or wrap it in a Panel (the
+    // roster's collapsed group cell), so fall back to the first visible descendant combo.
+    private static ComboBox? FindVisibleCombo(Control content)
+    {
+        if (content is ComboBox direct)
+            return direct;
+        foreach (var d in content.GetVisualDescendants())
+            if (d is ComboBox combo && combo.IsVisible && combo.IsEnabled)
+                return combo;
+        return null;
+    }
+
+    // Leave edit mode by moving focus back to the cell host — the editor's TwoWay/LostFocus binding
+    // commits as it loses focus. Returns false if there's no focused cell to fall back to.
+    private bool CommitEdit()
+    {
+        if (FindFocusedCell() is not { } cell)
+            return false;
+        cell.Focus();
+        return true;
+    }
+
+    private SheetCell? FindFocusedCell()
     {
         var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Visual;
         while (focused is not null)
         {
-            if (focused is RosterCell cell)
+            if (focused is SheetCell cell)
                 return cell;
             focused = focused.GetVisualParent();
         }
         return null;
+    }
+
+    // ── Cell navigation ───────────────────────────────────────────────────────────────────────────
+    // Move the focused cell left/right within its own row (delta = ±1). Returns false at the edges.
+    private bool MoveColumn(int delta)
+    {
+        var current = FindFocusedCell();
+        if (current?.GetVisualParent() is not Grid rowGrid)
+            return false;
+
+        var target = current.ColumnIndex + delta;
+        foreach (var child in rowGrid.Children)
+            if (child is SheetCell cell && cell.ColumnIndex == target)
+            {
+                _focusedColumn = target;
+                cell.Focus();
+                return true;
+            }
+        return false;
+    }
+
+    // Move the selection to the row above/below (delta = ±1) and focus the cell at the same column.
+    // Driving the ListBox selection scrolls the (possibly virtualized) target row into view first.
+    private bool MoveRow(int delta)
+    {
+        if (_body?.ItemsSource is null)
+            return false;
+
+        var items = new List<object?>();
+        foreach (var item in _body.ItemsSource)
+            items.Add(item);
+
+        var index = items.IndexOf(_body.SelectedItem);
+        var target = index + delta;
+        if (target < 0 || target >= items.Count)
+            return false;
+
+        _body.SelectedItem = items[target];
+        _body.ScrollIntoView(target);
+        // The target row may need a layout pass to realize; focus its cell once it exists.
+        Dispatcher.UIThread.Post(FocusSelectedRowCell, DispatcherPriority.Loaded);
+        return true;
+    }
+
+    // Focus the cell at _focusedColumn in the currently selected row's container.
+    private void FocusSelectedRowCell()
+    {
+        if (_body is null || _body.SelectedItem is null)
+            return;
+        if (_body.ContainerFromItem(_body.SelectedItem) is not Control container)
+            return;
+
+        foreach (var d in container.GetVisualDescendants())
+            if (d is SheetCell cell && cell.ColumnIndex == _focusedColumn)
+            {
+                cell.Focus();
+                return;
+            }
     }
 
     private static TextBox? FindDescendantTextBox(Control root)
@@ -572,6 +846,60 @@ public sealed class RosterTable : TemplatedControl
         }
     }
 
+    // Copy the focused cell's text to the clipboard (Ctrl+C). Returns false if there's no focused
+    // cell or it has no copyable text. Reads the cell's display value rather than a binding path so
+    // it works uniformly across every cell kind (text editors, group combos, dates, "різні").
+    private bool CopyFocusedCell()
+    {
+        if (FindFocusedCell() is not { } cell)
+            return false;
+        if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
+            return false;
+
+        var text = ExtractCellText(cell.Content as Control);
+        if (string.IsNullOrEmpty(text))
+            return false;
+
+        _ = clipboard.SetTextAsync(text);
+        return true;
+    }
+
+    // Pulls the visible text out of a cell's content control, regardless of how it renders it.
+    private static string? ExtractCellText(Control? content)
+    {
+        switch (content)
+        {
+            case null:
+                return null;
+            case TextBox box:
+                return box.Text;
+            case TextBlock block:
+                return block.Text;
+            case ComboBox combo:
+                return combo.SelectedItem is GroupOption option ? option.Label : combo.SelectionBoxItem?.ToString();
+            case CalendarDatePicker picker:
+                return picker.SelectedDate?.ToString("dd.MM.yyyy");
+        }
+
+        // Composite cells (per-day chip Panel with backdrop+editor, collapsed merged cells): pick the
+        // first visible descendant that directly carries text.
+        foreach (var d in content.GetVisualDescendants())
+        {
+            if (d is not Control c || !c.IsVisible)
+                continue;
+            var text = c switch
+            {
+                TextBox box => box.Text,
+                TextBlock block => block.Text,
+                ComboBox combo => combo.SelectedItem is GroupOption option ? option.Label : combo.SelectionBoxItem?.ToString(),
+                _ => null
+            };
+            if (!string.IsNullOrEmpty(text))
+                return text;
+        }
+        return null;
+    }
+
     private async void PasteIntoEditor()
     {
         if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard || FocusedEditor() is not { } box)
@@ -589,21 +917,25 @@ public sealed class RosterTable : TemplatedControl
 }
 
 /// <summary>A focusable cell host so the table can select cells and start editing on keystrokes.</summary>
-internal sealed class RosterCell : ContentControl
+internal sealed class SheetCell : ContentControl
 {
-    public RosterCell(RosterColumn column)
+    public SheetCell(SheetColumn column, int columnIndex)
     {
         Column = column;
+        ColumnIndex = columnIndex;
         Focusable = true;
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         VerticalContentAlignment = VerticalAlignment.Stretch;
     }
 
-    public RosterColumn Column { get; }
+    public SheetColumn Column { get; }
+
+    /// <summary>This cell's leaf-column index across the whole row, for up/down navigation.</summary>
+    public int ColumnIndex { get; }
 }
 
 /// <summary>Delete-key request payload.</summary>
-public sealed class RosterDeleteEventArgs(object row, bool skipConfirm) : EventArgs
+public sealed class SheetDeleteEventArgs(object row, bool skipConfirm) : EventArgs
 {
     public object Row { get; } = row;
     public bool SkipConfirm { get; } = skipConfirm;

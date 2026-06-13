@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.IO;
-using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using OrientDesk.Presentation.Controls;
 using OrientDesk.Presentation.ViewModels.Pages;
 
 namespace OrientDesk.Presentation.Views.Pages;
@@ -24,8 +24,6 @@ public partial class GroupsView : UserControl
         AddHandler(PointerPressedEvent, OnTunnelPointerPressed, RoutingStrategies.Tunnel);
     }
 
-    // DataGrid column headers live outside the visual tree, so they can't bind to
-    // Localization[...] like cells do. We resolve them here and re-apply on language change.
     private void OnDataContextChanged(object? sender, System.EventArgs e)
     {
         Unsubscribe();
@@ -33,20 +31,111 @@ public partial class GroupsView : UserControl
         if (_vm is null)
             return;
 
+        // Column headers and which columns appear are baked into the band model, so a language
+        // switch or a change to the day's disciplines is handled by rebuilding the bands.
         _vm.Localization.PropertyChanged += OnLocalizationChanged;
         _vm.ColumnsChanged += OnColumnsChanged;
         _vm.FocusGridRequested += OnFocusGridRequested;
-        ApplyHeaders();
-        ApplyColumnVisibility();
+        BuildBands();
     }
 
-    private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => ApplyHeaders();
+    private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => BuildBands();
 
-    // After the delete-confirmation modal closes, keyboard focus is on the overlay and would
-    // otherwise land on the top menu. Return it to the grid (on its new selected row). Posted so it
-    // runs once the overlay has been torn down and the grid is interactive again.
+    private void OnColumnsChanged(object? sender, System.EventArgs e) => BuildBands();
+
+    // After the delete-confirmation modal closes, return keyboard focus to the table (on its new
+    // selected row). Posted so it runs once the overlay has been torn down and the table is live again.
     private void OnFocusGridRequested(object? sender, System.EventArgs e)
         => Avalonia.Threading.Dispatcher.UIThread.Post(() => Sheet.Focus());
+
+    // Builds the table's columns. The required-count and penalty columns appear only when some group
+    // on the day uses that scoring format; the rest are always shown.
+    private void BuildBands()
+    {
+        if (_vm is null)
+            return;
+
+        var loc = _vm.Localization;
+        var builder = new SheetColumnBuilder(loc)
+            .Text("Groups.Col.Name", nameof(GroupDayRowViewModel.Name),
+                  editPath: nameof(GroupDayRowViewModel.Name), minWidth: 140)
+            // Course order (set course) / list of allowed control points (score formats). Dimmed and
+            // disabled for disciplines that don't use it.
+            .Text("Groups.Col.CourseOrder", nameof(GroupDayRowViewModel.CourseOrder),
+                  editPath: nameof(GroupDayRowViewModel.CourseOrder), minWidth: 160,
+                  placeholder: "S1 31 32 33 F",
+                  enabledPath: nameof(GroupDayRowViewModel.UsesCourseOrder),
+                  opacityPath: nameof(GroupDayRowViewModel.UsesCourseOrder))
+            // Control count: auto-computed from the course/control list, read-only.
+            .Text("Groups.Col.ControlCount", nameof(GroupDayRowViewModel.ControlCountText), minWidth: 90);
+
+        // Required minimum control count (score by count).
+        if (_vm.ShowRequiredCountColumn)
+            builder.Text("Groups.Col.RequiredCount", nameof(GroupDayRowViewModel.RequiredCountText),
+                         editPath: nameof(GroupDayRowViewModel.RequiredCountText), minWidth: 90,
+                         mask: SheetColumnBuilder.NumericMask.Integer,
+                         enabledPath: nameof(GroupDayRowViewModel.UsesRequiredCount),
+                         opacityPath: nameof(GroupDayRowViewModel.UsesRequiredCount));
+
+        // Penalty per minute late (score by time).
+        if (_vm.ShowPenaltyColumn)
+            builder.Text("Groups.Col.Penalty", nameof(GroupDayRowViewModel.PenaltyText),
+                         editPath: nameof(GroupDayRowViewModel.PenaltyText), minWidth: 100,
+                         mask: SheetColumnBuilder.NumericMask.Decimal,
+                         enabledPath: nameof(GroupDayRowViewModel.UsesPenalty),
+                         opacityPath: nameof(GroupDayRowViewModel.UsesPenalty));
+
+        builder
+            // Time limit (контрольний час) — applies to every discipline.
+            .Text("Groups.Col.TimeLimit", nameof(GroupDayRowViewModel.TimeLimitText),
+                  editPath: nameof(GroupDayRowViewModel.TimeLimitText), minWidth: 100,
+                  placeholder: "гг:хх:сс", mask: SheetColumnBuilder.NumericMask.Time)
+            .Text("Groups.Col.Distance", nameof(GroupDayRowViewModel.DistanceText),
+                  editPath: nameof(GroupDayRowViewModel.DistanceText), minWidth: 110,
+                  mask: SheetColumnBuilder.NumericMask.Decimal)
+            .Combo("Groups.Col.Discipline",
+                   nameof(GroupDayRowViewModel.DisciplineOptions),
+                   nameof(GroupDayRowViewModel.SelectedDiscipline),
+                   nameof(DisciplineOverrideOption.Label),
+                   minWidth: 170,
+                   sortPath: $"{nameof(GroupDayRowViewModel.SelectedDiscipline)}.Value")
+            .DeleteAction(OnDeleteButton, "Groups.Delete");
+
+        Sheet.Bands = builder.Bands;
+    }
+
+    // The table raises this on a keyboard Delete (Ctrl+Delete ⇒ skip the prompt).
+    private void OnDeleteRequested(object? sender, SheetDeleteEventArgs e)
+    {
+        if (_vm is null || e.Row is not GroupDayRowViewModel row)
+            return;
+        DeleteRow(row, e.SkipConfirm);
+    }
+
+    // The per-row delete button. Button.Click doesn't carry key modifiers, and the button marks its
+    // own PointerPressed handled — so we capture the Ctrl state in the tunnel phase. A plain click
+    // confirms first; Ctrl+Click deletes immediately.
+    private bool _deleteCtrlDown;
+
+    private void OnTunnelPointerPressed(object? sender, PointerPressedEventArgs e)
+        => _deleteCtrlDown = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+
+    private void OnDeleteButton(object row)
+    {
+        if (_vm is null || row is not GroupDayRowViewModel group)
+            return;
+        var skipConfirm = _deleteCtrlDown;
+        _deleteCtrlDown = false;
+        DeleteRow(group, skipConfirm);
+    }
+
+    private void DeleteRow(GroupDayRowViewModel row, bool skipConfirm)
+    {
+        if (skipConfirm)
+            _ = _vm!.DeleteGroupNoConfirmAsync(row);
+        else
+            _ = _vm!.DeleteGroupCommand.ExecuteAsync(row);
+    }
 
     // File picking is a view concern (it needs the window's StorageProvider), so it lives here rather
     // than in the view model. We read the chosen file's text and hand it to the VM, which owns
@@ -100,78 +189,6 @@ public partial class GroupsView : UserControl
         }
 
         await _vm.ImportFromXmlAsync(xml, fileName, content);
-    }
-
-    private void OnColumnsChanged(object? sender, System.EventArgs e) => ApplyColumnVisibility();
-
-    // Delete on the table deletes the selected group. Ctrl+Delete skips the confirmation prompt.
-    // We only handle it when the grid itself (not an open cell editor) has focus, so Delete still
-    // edits text inside a cell.
-    private void OnSheetKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (_vm is null || e.Key != Key.Delete)
-            return;
-
-        // Ignore the key while a cell editor (or any text box) is focused — let it edit text.
-        if (TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is TextBox)
-            return;
-
-        var skipConfirm = e.KeyModifiers.HasFlag(KeyModifiers.Control);
-        e.Handled = true;
-        _ = _vm.DeleteSelectedGroupAsync(skipConfirm);
-    }
-
-    // The per-row delete button. Button.Click doesn't carry key modifiers, and the button marks its
-    // own PointerPressed handled — so we capture the Ctrl state in the tunnel phase (OnTunnelPointerPressed,
-    // registered in the constructor), which always runs before the button. A plain click confirms
-    // first; Ctrl+Click deletes immediately.
-    private bool _deleteCtrlDown;
-
-    private void OnTunnelPointerPressed(object? sender, PointerPressedEventArgs e)
-        => _deleteCtrlDown = e.KeyModifiers.HasFlag(KeyModifiers.Control);
-
-    private void OnDeleteClick(object? sender, RoutedEventArgs e)
-    {
-        if (_vm is null || sender is not Control { Tag: GroupDayRowViewModel row })
-            return;
-
-        var skipConfirm = _deleteCtrlDown;
-        _deleteCtrlDown = false;
-
-        if (skipConfirm)
-            _ = _vm.DeleteGroupNoConfirmAsync(row);
-        else
-            _ = _vm.DeleteGroupCommand.ExecuteAsync(row);
-    }
-
-    private void ApplyHeaders()
-    {
-        if (_vm is null)
-            return;
-
-        var loc = _vm.Localization;
-        var columns = Sheet.Columns;
-        columns[0].Header = loc.Get("Groups.Col.Name");
-        columns[1].Header = loc.Get("Groups.Col.CourseOrder");
-        columns[2].Header = loc.Get("Groups.Col.ControlCount");
-        columns[3].Header = loc.Get("Groups.Col.RequiredCount");
-        columns[4].Header = loc.Get("Groups.Col.Penalty");
-        columns[5].Header = loc.Get("Groups.Col.TimeLimit");
-        columns[6].Header = loc.Get("Groups.Col.Distance");
-        columns[7].Header = loc.Get("Groups.Col.Discipline");
-        columns[8].Header = loc.Get("Groups.Col.Actions");
-    }
-
-    // Hide the type-specific columns no group on the day uses. Course order, time limit, distance,
-    // discipline and actions are always shown.
-    private void ApplyColumnVisibility()
-    {
-        if (_vm is null)
-            return;
-
-        var columns = Sheet.Columns;
-        columns[3].IsVisible = _vm.ShowRequiredCountColumn;
-        columns[4].IsVisible = _vm.ShowPenaltyColumn;
     }
 
     private void Unsubscribe()

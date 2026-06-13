@@ -1,8 +1,10 @@
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 
 namespace OrientDesk.Presentation.Behaviors;
 
@@ -55,6 +57,7 @@ public static class NumericInput
         IntegerProperty.Changed.AddClassHandler<TextBox>((box, e) => Toggle(box, (bool)e.NewValue!));
         DecimalProperty.Changed.AddClassHandler<TextBox>((box, e) => Toggle(box, (bool)e.NewValue!));
         TimeProperty.Changed.AddClassHandler<TextBox>((box, e) => Toggle(box, (bool)e.NewValue!));
+        DateProperty.Changed.AddClassHandler<CalendarDatePicker>((picker, e) => OnDateChanged(picker, (bool)e.NewValue!));
     }
 
     private static void Toggle(TextBox box, bool enabled)
@@ -181,6 +184,104 @@ public static class NumericInput
             if (g > 0 && part.Length == 2 &&
                 int.Parse(part, CultureInfo.InvariantCulture) > 59)
                 return false;
+        }
+
+        return true;
+    }
+
+    // ── Date mask (dd.MM.yyyy) on a CalendarDatePicker ────────────────────────────────────────────
+    /// <summary>
+    /// Attached to a <see cref="CalendarDatePicker"/>: constrains its inner <c>PART_TextBox</c> to a
+    /// valid <c>dd.MM.yyyy</c> shape while typing and auto-inserts the '.' separator after a complete
+    /// day and month. The picker still owns parsing/formatting on blur — this only shapes manual entry.
+    /// </summary>
+    public static readonly AttachedProperty<bool> DateProperty =
+        AvaloniaProperty.RegisterAttached<CalendarDatePicker, bool>("Date", typeof(NumericInput));
+
+    public static void SetDate(CalendarDatePicker picker, bool value) => picker.SetValue(DateProperty, value);
+    public static bool GetDate(CalendarDatePicker picker) => picker.GetValue(DateProperty);
+
+    private static void OnDateChanged(CalendarDatePicker picker, bool enabled)
+    {
+        picker.TemplateApplied -= OnDatePickerTemplateApplied;
+        if (enabled)
+        {
+            picker.TemplateApplied += OnDatePickerTemplateApplied;
+            // The template may already be applied (e.g. when the property is set after first measure).
+            if (picker.GetVisualDescendants().OfType<TextBox>().FirstOrDefault() is { } box)
+                AttachDateBox(box);
+        }
+    }
+
+    private static void OnDatePickerTemplateApplied(object? sender, TemplateAppliedEventArgs e)
+    {
+        if (e.NameScope.Find<TextBox>("PART_TextBox") is { } box)
+            AttachDateBox(box);
+    }
+
+    private static void AttachDateBox(TextBox box)
+    {
+        box.RemoveHandler(InputElement.TextInputEvent, OnDateInput);
+        box.AddHandler(InputElement.TextInputEvent, OnDateInput, RoutingStrategies.Tunnel);
+    }
+
+    private static void OnDateInput(object? sender, TextInputEventArgs e)
+    {
+        if (sender is not TextBox box || string.IsNullOrEmpty(e.Text))
+            return;
+
+        // Only single-character keystrokes are auto-formatted; reject any non-digit that isn't a dot.
+        var resulting = Project(box, e.Text);
+        if (!IsDateShape(resulting))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        // Auto-insert '.' after a completed day or month when the caret sits at the end of that group
+        // and the user just typed the second digit (so "12" becomes "12." ready for the next group).
+        if (e.Text.Length == 1 && char.IsAsciiDigit(e.Text[0]) &&
+            box.SelectionStart == box.SelectionEnd &&
+            box.SelectionStart == (box.Text?.Length ?? 0))
+        {
+            if (resulting.Length is 2 or 5 && !resulting.EndsWith('.'))
+            {
+                e.Handled = true;
+                box.Text = resulting + ".";
+                box.CaretIndex = box.Text.Length;
+            }
+        }
+    }
+
+    // dd.MM.yyyy being typed left-to-right: digits in three groups split by '.', the day and month at
+    // most two digits (and ≤ 31 / ≤ 12 once complete), the year at most four. Partial groups pass.
+    private static bool IsDateShape(string text)
+    {
+        if (text.Length == 0)
+            return true;
+
+        var groups = text.Split('.');
+        if (groups.Length > 3)
+            return false;
+
+        var caps = new[] { (2, 31), (2, 12), (4, 9999) };
+        for (var g = 0; g < groups.Length; g++)
+        {
+            var part = groups[g];
+            if (part.Length == 0)
+                continue;
+
+            var (maxLen, maxVal) = caps[g];
+            if (part.Length > maxLen || !part.All(char.IsAsciiDigit))
+                return false;
+
+            // Day/month cap once the group is complete (two digits); also reject a leading "00".
+            if (g < 2 && part.Length == 2)
+            {
+                var value = int.Parse(part, CultureInfo.InvariantCulture);
+                if (value == 0 || value > maxVal)
+                    return false;
+            }
         }
 
         return true;

@@ -83,19 +83,34 @@ instances over the same `./data`, and runtime state must not be shared through i
   `[ObservableProperty]`, `[RelayCommand]`.
 - DI via plain `Microsoft.Extensions.DependencyInjection` (no Generic Host).
 
-## Editable tables (SheetDataGrid)
+## Editable tables (SheetTable)
 
-Spreadsheet-style screens (control points, groups, days) use the reusable
-`controls:SheetDataGrid` wrapped in a `Border Classes="card" ClipToBounds="True"`. The shell
-hosts pages **without an outer ScrollViewer** (see `ShellView.axaml`) so the grid keeps a
-bounded height and scrolls its own rows/columns internally — an outer ScrollViewer would hand
-the grid infinite height, making it render every row and lose both scrollbars.
+Every spreadsheet-style screen (control points, groups, days, chips, and the participant roster)
+uses the one shared `controls:SheetTable` (`Controls/Sheet/`), wrapped in a
+`Border Classes="card" ClipToBounds="True"`. It is a purpose-built control — **not** an Avalonia
+DataGrid — with a virtualized `ListBox` body and a code-built header; it owns its own scrollbars.
+The shell hosts pages **without an outer ScrollViewer** (see `ShellView.axaml`) so the table keeps
+a bounded height and scrolls internally; an outer ScrollViewer would hand it infinite height and
+make it render every row. (The old `SheetDataGrid` + `Avalonia.Controls.DataGrid` package were
+removed in favour of this.)
 
-For this to work, **size every column `Width="Auto"` (or a fixed/px width), never `Width="*"`.**
-A star column stretches the grid to exactly fill the viewport, which suppresses the horizontal
-scrollbar and breaks the auto-width cap; the result is the "stuck scroll" bug. `Auto` columns
-are content-sized and capped at 200px on first layout by `SheetDataGrid`, then freely resizable.
-Match the column setup in `ControlPointsView.axaml` for any new grid page.
+Columns are built **in the View's code-behind**, not in XAML. Use the fluent `SheetColumnBuilder`
+(`Controls/Sheet/`) to declare columns — `Text(...)` (optionally a numeric `mask`, `enabledPath`,
+`opacityPath`, or rental-chip highlight), `Combo(...)`, `Date(...)`, `Custom(...)` for an arbitrary
+cell, and `DeleteAction(...)` for the trailing delete column — then assign `Sheet.Bands = builder.Bands`.
+Rebuild the bands on a language change and whenever the visible column set changes (headers are baked
+into the band model at build time). Wire keyboard delete via the table's `DeleteRequested` event and
+per-row delete buttons via the `DeleteAction` callback (capture Ctrl in a tunnel `PointerPressed` to
+support Ctrl+Click = skip confirm). `ChipsView.axaml.cs` is the simplest template; `GroupsView` shows
+conditional columns + per-cell enabled/opacity; `CompetitionDaysView` shows a multi-button action cell.
+
+The participant roster ("Мандатка") additionally needs a true two-tier (banded) header — per-day
+columns under a spanning band label — which it builds with the roster-specific `RosterColumnBuilder`
+/ `RosterCellFactory` (`Controls/Roster/`) and the table's `Days`/`Blocks` properties instead of `Bands`.
+
+Column widths are content-sized then user-resizable; explicit fixed widths are set via the builder's
+`width:` argument. There is no star/`*` sizing — the table left-aligns content-width columns and
+scrolls horizontally.
 
 ## How to build
 

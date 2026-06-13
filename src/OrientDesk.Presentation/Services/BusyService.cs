@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using OrientDesk.BusinessLogic.Interfaces;
 
 namespace OrientDesk.Presentation.Services;
 
@@ -6,6 +7,9 @@ namespace OrientDesk.Presentation.Services;
 public sealed class BusyService : IBusyService
 {
     private int _activeCount;
+    private readonly IActivityLog _log;
+
+    public BusyService(IActivityLog log) => _log = log;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -23,6 +27,11 @@ public sealed class BusyService : IBusyService
         {
             return await Task.Run(operation);
         }
+        catch (Exception ex)
+        {
+            _log.Error("Background operation failed", ex);
+            throw;
+        }
         finally
         {
             Exit();
@@ -35,6 +44,11 @@ public sealed class BusyService : IBusyService
         try
         {
             await Task.Run(operation);
+        }
+        catch (Exception ex)
+        {
+            _log.Error("Background operation failed", ex);
+            throw;
         }
         finally
         {

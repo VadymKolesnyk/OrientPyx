@@ -19,8 +19,9 @@
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
                         VerticalAlignment="Center">
-                <ComboBox IsVisible="{Binding ShowDaySelector}"
+                <controls:SearchableComboBox IsVisible="{Binding ShowDaySelector}"
                           MinWidth="140" VerticalAlignment="Center"
+                          SearchWatermark="{Binding Localization[Common.Search]}"
                           ItemsSource="{Binding DayOptions}"
                           SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
                     <ComboBox.ItemTemplate>
@@ -28,7 +29,7 @@
                             <TextBlock Text="{Binding Label}" />
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
-                </ComboBox>
+                </controls:SearchableComboBox>
                 <!-- Add works in both modes: on a day it attaches to that day; on Мандатка it attaches
                      the new participant to every day that has a group. -->
                 <Button Command="{Binding AddParticipantCommand}" Classes="accent">
@@ -43,10 +44,10 @@
         <!-- Two grids share the card; only one is visible at a time (day mode vs roster). -->
         <Grid>
             <!-- Day-mode grid: identity (competition-level) + this day's group/chip/team.
-                 Reuses the same custom RosterTable as the roster, with a flat (single-tier) header
+                 Reuses the same custom SheetTable as the roster, with a flat (single-tier) header
                  built from the VM's DayBands. -->
             <Border Classes="card" ClipToBounds="True" IsVisible="{Binding IsDayMode}">
-                <controls:RosterTable Name="DayTable"
+                <controls:SheetTable Name="DayTable"
                                       ItemsSource="{Binding Participants}"
                                       Localization="{Binding Localization}"
                                       Bands="{Binding DayBands}"
@@ -61,7 +62,7 @@
                  the per-day Group/Chip columns sit under a spanning band label, which the DataGrid
                  cannot do. Columns/cells are built in code from the VM's day set + blocks. -->
             <Border Classes="card" ClipToBounds="True" IsVisible="{Binding IsRosterMode}">
-                <controls:RosterTable Name="RosterTable"
+                <controls:SheetTable Name="RosterTable"
                                       ItemsSource="{Binding Roster}"
                                       Localization="{Binding Localization}"
                                       Days="{Binding RosterDays}"

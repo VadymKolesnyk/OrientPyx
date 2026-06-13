@@ -13,6 +13,14 @@ public sealed record ParticipantRosterRow(
     string Rank,
     string Coach,
     DateTimeOffset? BirthDate,
+    Guid? RegionId,
+    string RegionName,
+    Guid? ClubId,
+    string ClubName,
+    string Representative,
+    string FsouCode,
+    bool IsFsouMember,
+    string Payment,
     IReadOnlyList<RosterDayCell> Days);
 
 /// <summary>

@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
+using OrientDesk.BusinessLogic.Interfaces;
 using OrientDesk.DataAccess.DependencyInjection;
 using OrientDesk.Presentation.DependencyInjection;
 using OrientDesk.Presentation.Services;
@@ -30,6 +31,12 @@ public partial class App : Application
         };
 
         var services = PresentationServiceCollectionExtensions.BuildApplicationServices();
+
+        // Start the per-launch activity log and route global crashes through it.
+        var activityLog = services.GetRequiredService<IActivityLog>();
+        Program.ActivityLog = activityLog;
+        activityLog.Info("Application services built; initializing database.");
+
         services.InitializeOrientDeskDatabase();
 
         // Expose the scale service app-wide so any View can bind scaled font sizes

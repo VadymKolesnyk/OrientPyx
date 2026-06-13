@@ -31,6 +31,12 @@
         <DataTemplate DataType="pages:ParticipantsViewModel">
             <views:ParticipantsView />
         </DataTemplate>
+        <DataTemplate DataType="pages:RegionsViewModel">
+            <views:RegionsView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:ClubsViewModel">
+            <views:ClubsView />
+        </DataTemplate>
         <DataTemplate DataType="pages:PageViewModelBase">
             <views:PageView />
         </DataTemplate>

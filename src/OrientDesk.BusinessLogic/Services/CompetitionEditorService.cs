@@ -553,6 +553,41 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     public Task DeleteRentalChipAsync(Guid chipId, CancellationToken cancellationToken = default)
         => _eventStore.DeleteRentalChipAsync(FolderPath, chipId, cancellationToken);
 
+    public async Task<IReadOnlyDictionary<string, string>> GetRentalChipHoldersAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return new Dictionary<string, string>();
+
+        var folder = FolderPath;
+        var links = await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var nameById = participants.ToDictionary(p => p.Id, p => p.FullName);
+
+        // Group every (chip → participant) assignment by chip number (case-insensitive). The same
+        // participant may hold a chip on several days; dedupe by participant id so a name appears once.
+        // A blank chip or a link whose participant has gone missing is skipped.
+        var holders = new Dictionary<string, (List<string> Names, HashSet<Guid> Seen)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var link in links)
+        {
+            var number = link.Chip.Trim();
+            if (number.Length == 0 || !nameById.TryGetValue(link.ParticipantId, out var name))
+                continue;
+
+            if (!holders.TryGetValue(number, out var entry))
+            {
+                entry = ([], []);
+                holders[number] = entry;
+            }
+            if (entry.Seen.Add(link.ParticipantId))
+                entry.Names.Add(name);
+        }
+
+        return holders.ToDictionary(
+            kvp => kvp.Key,
+            kvp => string.Join(", ", kvp.Value.Names),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
     public Task<int> ClearRentalChipsAsync(CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null)
@@ -633,6 +668,182 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return new RentalChipImportResult(Added: toAdd.Count, Skipped: skipped);
     }
 
+    public Task<IReadOnlyList<Region>> GetRegionsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return Task.FromResult<IReadOnlyList<Region>>([]);
+
+        return _eventStore.GetRegionsAsync(FolderPath, cancellationToken);
+    }
+
+    public async Task<Region> AddRegionRowAsync(CancellationToken cancellationToken = default)
+    {
+        var region = new Region();
+        await _eventStore.AddRegionAsync(FolderPath, region, cancellationToken);
+        return region;
+    }
+
+    public async Task<Region?> AddRegionAsync(string name, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return null;
+
+        var trimmed = (name ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+            return null;
+
+        // Reuse an existing region with the same name (case-insensitive), or create a new one.
+        var regions = await _eventStore.GetRegionsAsync(FolderPath, cancellationToken);
+        var region = regions.FirstOrDefault(r => string.Equals(r.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+        if (region is null)
+        {
+            region = new Region { Name = trimmed };
+            await _eventStore.AddRegionAsync(FolderPath, region, cancellationToken);
+        }
+        return region;
+    }
+
+    public async Task UpdateRegionAsync(Region region, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(region);
+
+        // Keep names unique per competition: a change colliding with a different region is dropped
+        // (the row reverts on the next reload), mirroring the group rename / rental-chip behaviour.
+        var name = (region.Name ?? string.Empty).Trim();
+        var regions = await _eventStore.GetRegionsAsync(FolderPath, cancellationToken);
+        var collides = name.Length > 0 && regions.Any(r =>
+            r.Id != region.Id && string.Equals(r.Name.Trim(), name, StringComparison.OrdinalIgnoreCase));
+        if (collides || name.Length == 0)
+            name = regions.FirstOrDefault(r => r.Id == region.Id)?.Name ?? name;
+
+        await _eventStore.UpdateRegionAsync(FolderPath, new Region { Id = region.Id, Name = name }, cancellationToken);
+    }
+
+    public async Task DeleteRegionAsync(Guid regionId, CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        // Region is optional on a participant; clear it from anyone using it, then delete the region.
+        await _eventStore.ClearParticipantsRegionAsync(folder, regionId, cancellationToken);
+        await _eventStore.DeleteRegionAsync(folder, regionId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, int>> GetRegionParticipantCountsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return new Dictionary<Guid, int>();
+
+        var folder = FolderPath;
+        var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+
+        // Seed every region at 0 so a region with no participants still shows a count.
+        var counts = regions.ToDictionary(r => r.Id, _ => 0);
+        foreach (var p in participants)
+        {
+            if (p.RegionId is { } id && counts.ContainsKey(id))
+                counts[id]++;
+        }
+        return counts;
+    }
+
+    public async Task SetParticipantRegionAsync(Guid participantId, Guid? regionId, CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var participant = participants.FirstOrDefault(p => p.Id == participantId);
+        if (participant is null)
+            return;
+
+        // Region is competition-level: update the participant identity row, preserving its other fields.
+        participant.RegionId = regionId;
+        await _eventStore.UpdateParticipantAsync(folder, participant, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<Club>> GetClubsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return Task.FromResult<IReadOnlyList<Club>>([]);
+
+        return _eventStore.GetClubsAsync(FolderPath, cancellationToken);
+    }
+
+    public async Task<Club> AddClubRowAsync(CancellationToken cancellationToken = default)
+    {
+        var club = new Club();
+        await _eventStore.AddClubAsync(FolderPath, club, cancellationToken);
+        return club;
+    }
+
+    public async Task<Club?> AddClubAsync(string name, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return null;
+
+        var trimmed = (name ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+            return null;
+
+        var clubs = await _eventStore.GetClubsAsync(FolderPath, cancellationToken);
+        var club = clubs.FirstOrDefault(c => string.Equals(c.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+        if (club is null)
+        {
+            club = new Club { Name = trimmed };
+            await _eventStore.AddClubAsync(FolderPath, club, cancellationToken);
+        }
+        return club;
+    }
+
+    public async Task UpdateClubAsync(Club club, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(club);
+
+        var name = (club.Name ?? string.Empty).Trim();
+        var clubs = await _eventStore.GetClubsAsync(FolderPath, cancellationToken);
+        var collides = name.Length > 0 && clubs.Any(c =>
+            c.Id != club.Id && string.Equals(c.Name.Trim(), name, StringComparison.OrdinalIgnoreCase));
+        if (collides || name.Length == 0)
+            name = clubs.FirstOrDefault(c => c.Id == club.Id)?.Name ?? name;
+
+        await _eventStore.UpdateClubAsync(FolderPath, new Club { Id = club.Id, Name = name }, cancellationToken);
+    }
+
+    public async Task DeleteClubAsync(Guid clubId, CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        await _eventStore.ClearParticipantsClubAsync(folder, clubId, cancellationToken);
+        await _eventStore.DeleteClubAsync(folder, clubId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, int>> GetClubParticipantCountsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return new Dictionary<Guid, int>();
+
+        var folder = FolderPath;
+        var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+
+        var counts = clubs.ToDictionary(c => c.Id, _ => 0);
+        foreach (var p in participants)
+        {
+            if (p.ClubId is { } id && counts.ContainsKey(id))
+                counts[id]++;
+        }
+        return counts;
+    }
+
+    public async Task SetParticipantClubAsync(Guid participantId, Guid? clubId, CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var participant = participants.FirstOrDefault(p => p.Id == participantId);
+        if (participant is null)
+            return;
+
+        participant.ClubId = clubId;
+        await _eventStore.UpdateParticipantAsync(folder, participant, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<ParticipantDayRow>> GetParticipantDayRowsAsync(CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null || _session.CurrentDay is null)
@@ -642,15 +853,19 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var links = await _eventStore.GetParticipantDaysAsync(folder, CurrentDayId, cancellationToken);
         var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
         var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
+        var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
         var byParticipant = participants.ToDictionary(p => p.Id);
         var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
+        var regionName = regions.ToDictionary(r => r.Id, r => r.Name);
+        var clubName = clubs.ToDictionary(c => c.Id, c => c.Name);
 
         var rows = new List<ParticipantDayRow>(links.Count);
         foreach (var link in links)
         {
             // Defensive: skip a link whose participant was removed out from under it.
             if (byParticipant.TryGetValue(link.ParticipantId, out var participant))
-                rows.Add(ToRow(link, participant, groupName));
+                rows.Add(ToRow(link, participant, groupName, regionName, clubName));
         }
         return rows;
     }
@@ -665,7 +880,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
         var links = await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
         var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
+        var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
         var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
+        var regionName = regions.ToDictionary(r => r.Id, r => r.Name);
+        var clubName = clubs.ToDictionary(c => c.Id, c => c.Name);
 
         // Index links by (participant, day) so each roster cell is a quick lookup.
         var linkByKey = links.ToDictionary(l => (l.ParticipantId, l.EventDayId));
@@ -686,6 +905,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     cells.Add(new RosterDayCell(day.Id, day.Number, LinkId: null, IsMember: false, GroupId: null, GroupName: string.Empty, Chip: string.Empty));
                 }
             }
+            var region = participant.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
+            var club = participant.ClubId is { } cid && clubName.TryGetValue(cid, out var cn) ? cn : string.Empty;
             rows.Add(new ParticipantRosterRow(
                 participant.Id,
                 participant.FullName,
@@ -693,6 +914,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 participant.Rank,
                 participant.Coach,
                 participant.BirthDate,
+                participant.RegionId,
+                region,
+                participant.ClubId,
+                club,
+                participant.Representative,
+                participant.FsouCode,
+                participant.IsFsouMember,
+                participant.Payment,
                 cells));
         }
         return rows;
@@ -723,7 +952,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         };
         await _eventStore.AddParticipantDayAsync(folder, link, cancellationToken);
 
-        return ToRow(link, participant, new Dictionary<Guid, string> { [firstGroup.GroupId] = firstGroup.Name });
+        // A fresh participant has no region/club yet, so empty name maps are fine.
+        return ToRow(link, participant,
+            new Dictionary<Guid, string> { [firstGroup.GroupId] = firstGroup.Name },
+            new Dictionary<Guid, string>(),
+            new Dictionary<Guid, string>());
     }
 
     public async Task<ParticipantRosterRow?> AddRosterParticipantAsync(CancellationToken cancellationToken = default)
@@ -766,7 +999,13 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Number = number,
             Rank = (row.Rank ?? string.Empty).Trim(),
             Coach = (row.Coach ?? string.Empty).Trim(),
-            BirthDate = row.BirthDate
+            BirthDate = row.BirthDate,
+            RegionId = row.RegionId,
+            ClubId = row.ClubId,
+            Representative = (row.Representative ?? string.Empty).Trim(),
+            FsouCode = (row.FsouCode ?? string.Empty).Trim(),
+            IsFsouMember = row.IsFsouMember,
+            Payment = (row.Payment ?? string.Empty).Trim()
         }, cancellationToken);
 
         // Save the day link. A chip colliding with another participant on the same day is dropped,
@@ -1000,13 +1239,26 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Number = number,
             Rank = (row.Rank ?? string.Empty).Trim(),
             Coach = (row.Coach ?? string.Empty).Trim(),
-            BirthDate = row.BirthDate
+            BirthDate = row.BirthDate,
+            RegionId = row.RegionId,
+            ClubId = row.ClubId,
+            Representative = (row.Representative ?? string.Empty).Trim(),
+            FsouCode = (row.FsouCode ?? string.Empty).Trim(),
+            IsFsouMember = row.IsFsouMember,
+            Payment = (row.Payment ?? string.Empty).Trim()
         }, cancellationToken);
     }
 
-    private ParticipantDayRow ToRow(ParticipantDay link, Participant p, IReadOnlyDictionary<Guid, string> groupName)
+    private ParticipantDayRow ToRow(
+        ParticipantDay link,
+        Participant p,
+        IReadOnlyDictionary<Guid, string> groupName,
+        IReadOnlyDictionary<Guid, string> regionName,
+        IReadOnlyDictionary<Guid, string> clubName)
     {
         var name = link.GroupId is { } gid && groupName.TryGetValue(gid, out var n) ? n : string.Empty;
+        var region = p.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
+        var club = p.ClubId is { } cid && clubName.TryGetValue(cid, out var cn) ? cn : string.Empty;
         return new ParticipantDayRow(
             LinkId: link.Id,
             ParticipantId: p.Id,
@@ -1016,6 +1268,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Rank: p.Rank,
             Coach: p.Coach,
             BirthDate: p.BirthDate,
+            RegionId: p.RegionId,
+            RegionName: region,
+            ClubId: p.ClubId,
+            ClubName: club,
+            Representative: p.Representative,
+            FsouCode: p.FsouCode,
+            IsFsouMember: p.IsFsouMember,
+            Payment: p.Payment,
             GroupId: link.GroupId,
             GroupName: name,
             Chip: link.Chip,

@@ -4,7 +4,6 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:pages="using:OrientDesk.Presentation.ViewModels.Pages"
              xmlns:controls="using:OrientDesk.Presentation.Controls"
-             xmlns:behaviors="using:OrientDesk.Presentation.Behaviors"
              mc:Ignorable="d" d:DesignWidth="940" d:DesignHeight="560"
              x:Class="OrientDesk.Presentation.Views.Pages.ControlPointsView"
              x:DataType="pages:ControlPointsViewModel">
@@ -20,8 +19,9 @@
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
                         VerticalAlignment="Center">
-                <ComboBox IsVisible="{Binding ShowDaySelector}"
+                <controls:SearchableComboBox IsVisible="{Binding ShowDaySelector}"
                           MinWidth="120" VerticalAlignment="Center"
+                          SearchWatermark="{Binding Localization[Common.Search]}"
                           ItemsSource="{Binding DayOptions}"
                           SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
                     <ComboBox.ItemTemplate>
@@ -29,7 +29,7 @@
                             <TextBlock Text="{Binding Label}" />
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
-                </ComboBox>
+                </controls:SearchableComboBox>
                 <Button Name="ImportButton" Classes="ghost" Click="OnImportClick"
                         ToolTip.Tip="{Binding Localization[Import.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
@@ -47,107 +47,14 @@
             </StackPanel>
         </Grid>
 
-        <!-- Spreadsheet-style grid; the card border supplies the rounded frame.
-             SheetDataGrid adds column sort, column reorder (drag) and focus-to-edit. -->
+        <!-- Spreadsheet-style table; the card border supplies the rounded frame. Columns are built
+             in code-behind (SheetColumnBuilder) and handed to the shared SheetTable via Bands. -->
         <Border Classes="card" ClipToBounds="True">
-            <controls:SheetDataGrid Name="Sheet"
-                                    ItemsSource="{Binding Points}"
-                                    SelectedItem="{Binding SelectedPoint, Mode=TwoWay}"
-                                    KeyDown="OnSheetKeyDown"
-                                    AutoGenerateColumns="False">
-                <controls:SheetDataGrid.Columns>
-
-                    <DataGridTemplateColumn Width="Auto" MinWidth="100" SortMemberPath="Code">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
-                                <TextBlock Text="{Binding Code}" VerticalAlignment="Center" Padding="10,0" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                        <DataGridTemplateColumn.CellEditingTemplate>
-                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
-                                <TextBox PlaceholderText="—"
-                                         Text="{Binding Code, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellEditingTemplate>
-                    </DataGridTemplateColumn>
-
-                    <DataGridTemplateColumn Width="Auto" MinWidth="120" SortMemberPath="SelectedType.Value">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
-                                <ComboBox HorizontalAlignment="Stretch"
-                                          ItemsSource="{Binding TypeOptions}"
-                                          SelectedItem="{Binding SelectedType, Mode=TwoWay}">
-                                    <ComboBox.ItemTemplate>
-                                        <DataTemplate x:DataType="pages:ControlPointTypeOption">
-                                            <TextBlock Text="{Binding Label}" />
-                                        </DataTemplate>
-                                    </ComboBox.ItemTemplate>
-                                </ComboBox>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-
-                    <DataGridTemplateColumn Width="Auto" MinWidth="100" SortMemberPath="LatitudeText">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
-                                <TextBlock Text="{Binding LatitudeText}" VerticalAlignment="Center" Padding="10,0" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                        <DataGridTemplateColumn.CellEditingTemplate>
-                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
-                                <TextBox PlaceholderText="—" behaviors:NumericInput.Decimal="True"
-                                         Text="{Binding LatitudeText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellEditingTemplate>
-                    </DataGridTemplateColumn>
-
-                    <DataGridTemplateColumn Width="Auto" MinWidth="100" SortMemberPath="LongitudeText">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
-                                <TextBlock Text="{Binding LongitudeText}" VerticalAlignment="Center" Padding="10,0" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                        <DataGridTemplateColumn.CellEditingTemplate>
-                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
-                                <TextBox PlaceholderText="—" behaviors:NumericInput.Decimal="True"
-                                         Text="{Binding LongitudeText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellEditingTemplate>
-                    </DataGridTemplateColumn>
-
-                    <DataGridTemplateColumn Width="Auto" MinWidth="80" SortMemberPath="PointsText">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
-                                <TextBlock Text="{Binding PointsText}" VerticalAlignment="Center" Padding="10,0" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                        <DataGridTemplateColumn.CellEditingTemplate>
-                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
-                                <TextBox PlaceholderText="—" behaviors:NumericInput.Integer="True"
-                                         Text="{Binding PointsText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellEditingTemplate>
-                    </DataGridTemplateColumn>
-
-                    <DataGridTemplateColumn Width="48" CanUserSort="False">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate x:DataType="pages:ControlPointRowViewModel">
-                                <!-- Click confirms before deleting; Ctrl+Click deletes immediately.
-                                     Handled in code-behind so we can read the Ctrl modifier. -->
-                                <Button Classes="danger small" Padding="0"
-                                        HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                                        ToolTip.Tip="{Binding Localization[ControlPoints.Delete]}"
-                                        Click="OnDeleteClick"
-                                        Tag="{Binding}">
-                                    <PathIcon Data="M6,7 h12 M9,7 v-2 h6 v2 M8,7 l1,13 h6 l1,-13"
-                                              Width="14" Height="14" />
-                                </Button>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-
-                </controls:SheetDataGrid.Columns>
-            </controls:SheetDataGrid>
+            <controls:SheetTable Name="Sheet"
+                                 ItemsSource="{Binding Points}"
+                                 Localization="{Binding Localization}"
+                                 SelectedItem="{Binding SelectedPoint, Mode=TwoWay}"
+                                 DeleteRequested="OnDeleteRequested" />
         </Border>
 
     </DockPanel>

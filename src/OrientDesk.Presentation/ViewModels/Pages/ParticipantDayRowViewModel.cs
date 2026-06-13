@@ -26,6 +26,10 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private readonly Action<ParticipantDayRowViewModel> _requestSave;
     private readonly Action<ParticipantDayRowViewModel> _requestLeaveDay;
     private readonly Action<ParticipantDayRowViewModel> _requestChipChange;
+    private readonly Action<ParticipantDayRowViewModel> _requestRegionChange;
+    private readonly Action<ParticipantDayRowViewModel> _requestAddRegion;
+    private readonly Action<ParticipantDayRowViewModel> _requestClubChange;
+    private readonly Action<ParticipantDayRowViewModel> _requestAddClub;
 
     // Suppresses save requests while the constructor seeds initial values, and while a rejected
     // reassignment reverts the chip.
@@ -50,6 +54,24 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private GroupOption _selectedGroup;
 
     [ObservableProperty]
+    private RegionOption _selectedRegion;
+
+    [ObservableProperty]
+    private ClubOption _selectedClub;
+
+    [ObservableProperty]
+    private string _representative;
+
+    [ObservableProperty]
+    private string _fsouCode;
+
+    [ObservableProperty]
+    private bool _isFsouMember;
+
+    [ObservableProperty]
+    private string _payment;
+
+    [ObservableProperty]
     private string _chip;
 
     [ObservableProperty]
@@ -58,11 +80,17 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     public ParticipantDayRowViewModel(
         ParticipantDayRow row,
         IReadOnlyList<GroupOption> groupOptions,
+        IReadOnlyList<RegionOption> regionOptions,
+        IReadOnlyList<ClubOption> clubOptions,
         ILocalizationService localization,
         IDisciplineStrategyProvider strategies,
         Action<ParticipantDayRowViewModel> requestSave,
         Action<ParticipantDayRowViewModel> requestLeaveDay,
-        Action<ParticipantDayRowViewModel> requestChipChange)
+        Action<ParticipantDayRowViewModel> requestChipChange,
+        Action<ParticipantDayRowViewModel> requestRegionChange,
+        Action<ParticipantDayRowViewModel> requestAddRegion,
+        Action<ParticipantDayRowViewModel> requestClubChange,
+        Action<ParticipantDayRowViewModel> requestAddClub)
     {
         _linkId = row.LinkId;
         _participantId = row.ParticipantId;
@@ -72,22 +100,76 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         _requestSave = requestSave;
         _requestLeaveDay = requestLeaveDay;
         _requestChipChange = requestChipChange;
+        _requestRegionChange = requestRegionChange;
+        _requestAddRegion = requestAddRegion;
+        _requestClubChange = requestClubChange;
+        _requestAddClub = requestAddClub;
         Localization = localization;
 
         GroupOptions = groupOptions;
+        RegionOptions = regionOptions;
+        ClubOptions = clubOptions;
 
         _fullName = row.FullName;
         _number = row.Number;
         _rank = row.Rank;
         _coach = row.Coach;
         _birthDate = row.BirthDate;
+        _representative = row.Representative;
+        _fsouCode = row.FsouCode;
+        _isFsouMember = row.IsFsouMember;
+        _payment = row.Payment;
         _chip = row.Chip;
         _committedChip = row.Chip;
         _team = row.Team;
         // Match by id; fall back to the "(none)" option (the first) when the group is unset/missing.
         _selectedGroup = groupOptions.FirstOrDefault(o => o.Id == row.GroupId) ?? groupOptions[0];
+        // Region/Club match by id across their shared lists; fall back to "(none)" (the first option).
+        _selectedRegion = regionOptions.FirstOrDefault(o => !o.IsAdd && o.Id == row.RegionId) ?? regionOptions[0];
+        _committedRegion = _selectedRegion;
+        _selectedClub = clubOptions.FirstOrDefault(o => !o.IsAdd && o.Id == row.ClubId) ?? clubOptions[0];
+        _committedClub = _selectedClub;
 
         _initialized = true;
+    }
+
+    // The last region/club the page accepted, so a cancelled "+ new" can revert the selection.
+    private RegionOption _committedRegion;
+    private ClubOption _committedClub;
+
+    /// <summary>Region choices for the competition (shared list): "(none)", regions A→Z, "+ new".</summary>
+    [ObservableProperty]
+    private IReadOnlyList<RegionOption> _regionOptions;
+
+    /// <summary>Club choices for the competition (shared list): "(none)", clubs A→Z, "+ new".</summary>
+    [ObservableProperty]
+    private IReadOnlyList<ClubOption> _clubOptions;
+
+    /// <summary>
+    /// Swaps in a rebuilt shared options list (e.g. after a "+ new" added a region) while keeping the
+    /// current selection by id. Done silently so it doesn't re-fire the region-change callback.
+    /// </summary>
+    public void ResetRegionOptions(IReadOnlyList<RegionOption> options)
+    {
+        var keepId = SelectedRegion?.Id;
+        var wasInitialized = _initialized;
+        _initialized = false;
+        RegionOptions = options;
+        SelectedRegion = options.FirstOrDefault(o => !o.IsAdd && o.Id == keepId) ?? options[0];
+        _committedRegion = SelectedRegion;
+        _initialized = wasInitialized;
+    }
+
+    /// <summary>Swaps in a rebuilt shared club options list while keeping the selection by id (silent).</summary>
+    public void ResetClubOptions(IReadOnlyList<ClubOption> options)
+    {
+        var keepId = SelectedClub?.Id;
+        var wasInitialized = _initialized;
+        _initialized = false;
+        ClubOptions = options;
+        SelectedClub = options.FirstOrDefault(o => !o.IsAdd && o.Id == keepId) ?? options[0];
+        _committedClub = SelectedClub;
+        _initialized = wasInitialized;
     }
 
     // The last chip value the page accepted/persisted, so a rejected reassignment can revert to it.
@@ -107,7 +189,9 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     /// <summary>Parent participant id; needed for the cascade-delete check on removal.</summary>
     public Guid ParticipantId => _participantId;
 
-    /// <summary>Group choices for this day (id + name), with a leading "не участвує" sentinel that leaves the day.</summary>
+    /// <summary>Group choices for this day (id + name). The day grid offers only real groups — no
+    /// "не участвує" sentinel — since a participant shown here is always a day member (leave the day
+    /// via the row's delete button instead).</summary>
     public IReadOnlyList<GroupOption> GroupOptions { get; }
 
     /// <summary>True when this day's discipline uses the team column (rogaine).</summary>
@@ -122,6 +206,14 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         Rank: (Rank ?? string.Empty).Trim(),
         Coach: (Coach ?? string.Empty).Trim(),
         BirthDate: BirthDate,
+        RegionId: SelectedRegion.Id,
+        RegionName: SelectedRegion.Label,
+        ClubId: SelectedClub.Id,
+        ClubName: SelectedClub.Label,
+        Representative: (Representative ?? string.Empty).Trim(),
+        FsouCode: (FsouCode ?? string.Empty).Trim(),
+        IsFsouMember: IsFsouMember,
+        Payment: (Payment ?? string.Empty).Trim(),
         GroupId: SelectedGroup.Id,
         GroupName: SelectedGroup.Label,
         Chip: (Chip ?? string.Empty).Trim(),
@@ -155,6 +247,22 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     }
     partial void OnTeamChanged(string value) => QueueSave();
 
+    // Region is competition-level and NOT part of the debounced row save: picking "+ new" has a modal
+    // side effect, so the page owns it. Picking a real region / "(none)" persists via its own callback.
+    partial void OnSelectedRegionChanged(RegionOption value)
+    {
+        if (!_initialized || value is null)
+            return;
+
+        if (value.IsAdd)
+            _requestAddRegion(this);
+        else
+        {
+            _committedRegion = value;
+            _requestRegionChange(this);
+        }
+    }
+
     /// <summary>Restores the chip to a value without re-triggering the chip-change callback (used to revert a rejected reassignment).</summary>
     public void SetChipSilently(string value)
     {
@@ -163,6 +271,53 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         Chip = value;
         _initialized = wasInitialized;
     }
+
+    /// <summary>The previously committed region (to restore after a cancelled "+ new").</summary>
+    public RegionOption CommittedRegion => _committedRegion;
+
+    /// <summary>Sets the region without re-triggering the change callback (revert after a cancelled "+ new").</summary>
+    public void SetRegionSilently(RegionOption value)
+    {
+        var wasInitialized = _initialized;
+        _initialized = false;
+        SelectedRegion = value;
+        _committedRegion = value;
+        _initialized = wasInitialized;
+    }
+
+    // Club mirrors Region: NOT part of the debounced save (the "+ new" sentinel opens a modal).
+    partial void OnSelectedClubChanged(ClubOption value)
+    {
+        if (!_initialized || value is null)
+            return;
+
+        if (value.IsAdd)
+            _requestAddClub(this);
+        else
+        {
+            _committedClub = value;
+            _requestClubChange(this);
+        }
+    }
+
+    /// <summary>The previously committed club (to restore after a cancelled "+ new").</summary>
+    public ClubOption CommittedClub => _committedClub;
+
+    /// <summary>Sets the club without re-triggering the change callback (revert after a cancelled "+ new").</summary>
+    public void SetClubSilently(ClubOption value)
+    {
+        var wasInitialized = _initialized;
+        _initialized = false;
+        SelectedClub = value;
+        _committedClub = value;
+        _initialized = wasInitialized;
+    }
+
+    // The competition-level text/bool fields persist through the debounced row save like the identity.
+    partial void OnRepresentativeChanged(string value) => QueueSave();
+    partial void OnFsouCodeChanged(string value) => QueueSave();
+    partial void OnIsFsouMemberChanged(bool value) => QueueSave();
+    partial void OnPaymentChanged(string value) => QueueSave();
 
     private void QueueSave()
     {

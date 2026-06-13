@@ -89,6 +89,19 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     public RentalChipRegistry RentalChips { get; } = new();
 
     /// <summary>
+    /// The competition's region options, shared by every row's region dropdown: a leading "(none)"
+    /// sentinel, then regions A→Z, then a trailing "+ new" sentinel. Region is competition-level, so
+    /// (unlike per-day groups) one shared list matched by id is correct. Rebuilt on reload and when a
+    /// region is created via "+ new". Reassigned to each live row so the new option appears everywhere.
+    /// </summary>
+    private IReadOnlyList<RegionOption> _regionOptions = [];
+    private IReadOnlyList<ClubOption> _clubOptions = [];
+
+    // Serialises "+ new" region/club prompts so two overlapping add-modals never stack.
+    private readonly SemaphoreSlim _regionGate = new(1, 1);
+    private readonly SemaphoreSlim _clubGate = new(1, 1);
+
+    /// <summary>
     /// The competition's days, in order — the source of truth for the roster's per-day columns. Kept
     /// independent of the roster rows so the columns can be built even when the roster is empty.
     /// </summary>
@@ -104,8 +117,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     /// <c>RosterTable</c> control. Rebuilt when the team column toggles or the language changes; the
     /// builder carries user-set widths forward.
     /// </summary>
-    private IReadOnlyList<Controls.RosterBand> _dayBands = [];
-    public IReadOnlyList<Controls.RosterBand> DayBands
+    private IReadOnlyList<Controls.SheetBand> _dayBands = [];
+    public IReadOnlyList<Controls.SheetBand> DayBands
     {
         get => _dayBands;
         private set => SetProperty(ref _dayBands, value);
@@ -140,8 +153,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private bool _syncingDay;
 
     // Remembers that the user chose Мандатка, so a reload (incl. one triggered by another page's day
-    // switch) keeps the page on the roster rather than snapping back to the session day.
-    private bool _rosterChosen;
+    // switch) keeps the page on the roster rather than snapping back to the session day. Defaults to
+    // true so the page opens on the roster until the user picks a real day.
+    private bool _rosterChosen = true;
 
     /// <summary>Reloads the page for the current selection. Called when the page is shown.</summary>
     public async Task LoadAsync()
@@ -156,6 +170,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
         // Refresh the rental-chip set so cells highlight non-rental numbers against the current DB.
         await RefreshRentalChipsAsync(hasEvent);
+
+        // Rebuild the shared region/club options ("(none)" + A→Z + "+ new") for every row's dropdown.
+        await RefreshRegionOptionsAsync(hasEvent);
+        await RefreshClubOptionsAsync(hasEvent);
 
         _syncingDay = true;
         try
@@ -244,31 +262,36 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         RebuildDayBands();
     }
 
-    // Builds the "(none)" + day-group options list for a given day.
-    private async Task<IReadOnlyList<GroupOption>> BuildGroupOptionsAsync(Guid dayId)
+    // Builds the day-group options list for a given day. The roster prepends the "(none)" / "не
+    // участвує" sentinel (picking it leaves the day); the day grid passes includeNone: false so its
+    // dropdown offers only real groups — a participant shown there is always a day member.
+    private async Task<IReadOnlyList<GroupOption>> BuildGroupOptionsAsync(Guid dayId, bool includeNone = false)
     {
         var groups = await _editor.GetGroupsForDayAsync(dayId);
-        var options = new List<GroupOption>(groups.Count + 1)
-        {
-            new(null, string.Empty, Localization)
-        };
+        var options = new List<GroupOption>(groups.Count + (includeNone ? 1 : 0));
+        if (includeNone)
+            options.Add(new GroupOption(null, string.Empty, Localization));
         foreach (var g in groups)
             options.Add(new GroupOption(g.GroupId, g.Name, Localization));
         return options;
     }
 
-    // For the roster: a per-day map of group options, so each cell offers its own day's groups.
+    // For the roster: a per-day map of group options, so each cell offers its own day's groups. The
+    // roster keeps the "(none)" sentinel so a cell can mark a member as having no group / leave the day.
     private async Task<Dictionary<Guid, IReadOnlyList<GroupOption>>> LoadGroupsByDayAsync()
     {
         var days = await _editor.GetDaysAsync();
         var map = new Dictionary<Guid, IReadOnlyList<GroupOption>>(days.Count);
         foreach (var day in days)
-            map[day.Id] = await BuildGroupOptionsAsync(day.Id);
+            map[day.Id] = await BuildGroupOptionsAsync(day.Id, includeNone: true);
         return map;
     }
 
     private ParticipantDayRowViewModel CreateDayRow(ParticipantDayRow row, IReadOnlyList<GroupOption> groupOptions)
-        => new(row, groupOptions, Localization, _strategies, RequestRowSave, LeaveDay, RequestDayRowChipChange);
+        => new(row, groupOptions, _regionOptions, _clubOptions, Localization, _strategies,
+            RequestRowSave, LeaveDay, RequestDayRowChipChange,
+            RequestDayRowRegionChange, RequestDayRowAddRegion,
+            RequestDayRowClubChange, RequestDayRowAddClub);
 
     private ParticipantRosterRowViewModel CreateRosterRow(
         ParticipantRosterRow row,
@@ -282,7 +305,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 : [new GroupOption(null, string.Empty, Localization)];
             cells.Add(new RosterDayCellViewModel(row.ParticipantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange));
         }
-        return new ParticipantRosterRowViewModel(row, cells, Localization, RequestRosterRowSave);
+        return new ParticipantRosterRowViewModel(row, cells, _regionOptions, _clubOptions, Localization,
+            RequestRosterRowSave,
+            RequestRosterRowRegionChange, RequestRosterRowAddRegion,
+            RequestRosterRowClubChange, RequestRosterRowAddClub);
     }
 
     // Driven by the day ComboBox. A real day switches the session (so other pages follow); the roster
@@ -590,6 +616,14 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 (row.Rank ?? string.Empty).Trim(),
                 (row.Coach ?? string.Empty).Trim(),
                 row.BirthDate,
+                row.SelectedRegion.Id,
+                row.SelectedRegion.Label,
+                row.SelectedClub.Id,
+                row.SelectedClub.Label,
+                (row.Representative ?? string.Empty).Trim(),
+                (row.FsouCode ?? string.Empty).Trim(),
+                row.IsFsouMember,
+                (row.Payment ?? string.Empty).Trim(),
                 []);
             await Task.Run(() => _editor.UpdateParticipantIdentityAsync(dto, token), token);
         }
@@ -702,6 +736,210 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             }
         }
         catch { }
+    }
+
+    // ── Region options + per-row region edit ──────────────────────────────────────────────────────
+    // Rebuilds the shared region options list from the current DB. Called on reload and after a "+ new"
+    // create, so the list is always: "(none)", regions A→Z, "+ new".
+    private async Task RefreshRegionOptionsAsync(bool hasEvent)
+    {
+        var regions = hasEvent
+            ? await _busy.RunAsync(() => _editor.GetRegionsAsync())
+            : (IReadOnlyList<BusinessLogic.Entities.Region>)[];
+        _regionOptions = BuildRegionOptions(regions);
+    }
+
+    private IReadOnlyList<RegionOption> BuildRegionOptions(IReadOnlyList<BusinessLogic.Entities.Region> regions)
+    {
+        var options = new List<RegionOption>(regions.Count + 2) { RegionOption.None(Localization) };
+        foreach (var r in regions.OrderBy(r => r.Name, StringComparer.CurrentCultureIgnoreCase))
+            options.Add(new RegionOption(r.Id, r.Name, Localization));
+        options.Add(RegionOption.Add(Localization));
+        return options;
+    }
+
+    // A real region / "(none)" was picked on a row: persist the participant's region in the background.
+    private void RequestDayRowRegionChange(ParticipantDayRowViewModel row)
+        => _ = Task.Run(() => _editor.SetParticipantRegionAsync(row.ParticipantId, row.SelectedRegion.Id));
+
+    private void RequestRosterRowRegionChange(ParticipantRosterRowViewModel row)
+        => _ = Task.Run(() => _editor.SetParticipantRegionAsync(row.ParticipantId, row.SelectedRegion.Id));
+
+    // "+ new" was picked: prompt for a name, create the region, refresh every row's options, and
+    // select the new region on the originating row. On cancel, revert the row to its previous region.
+    private void RequestDayRowAddRegion(ParticipantDayRowViewModel row)
+        => _ = AddRegionForRowAsync(
+            select: id => SelectRegionOnDayRow(row, id),
+            revert: () => row.SetRegionSilently(row.CommittedRegion));
+
+    private void RequestRosterRowAddRegion(ParticipantRosterRowViewModel row)
+        => _ = AddRegionForRowAsync(
+            select: id => SelectRegionOnRosterRow(row, id),
+            revert: () => row.SetRegionSilently(row.CommittedRegion));
+
+    private async Task AddRegionForRowAsync(Action<Guid> select, Action revert)
+    {
+        if (_session.CurrentEvent is null)
+        {
+            revert();
+            return;
+        }
+
+        await _regionGate.WaitAsync();
+        try
+        {
+            var name = await _dialogs.ShowAddRegionAsync(new Dialogs.AddRegionViewModel(Localization));
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                revert();
+                return;
+            }
+
+            var region = await _busy.RunAsync(() => _editor.AddRegionAsync(name));
+            if (region is null)
+            {
+                revert();
+                return;
+            }
+
+            // Rebuild the shared options so the new region appears in every row's dropdown, then push
+            // the rebuilt list onto every live row and select the new region on the originating one.
+            await RefreshRegionOptionsAsync(hasEvent: true);
+            ApplyRegionOptionsToRows();
+            select(region.Id);
+        }
+        finally
+        {
+            _regionGate.Release();
+        }
+    }
+
+    // Reassigns the rebuilt shared options list onto every live row, preserving each row's current
+    // selection by id. RegionOptions is set-once per row, so rebuild the rows' lists by recreating
+    // the option set reference: each row holds the same shared list, so we re-seed selection by id.
+    private void ApplyRegionOptionsToRows()
+    {
+        foreach (var row in Participants)
+            row.ResetRegionOptions(_regionOptions);
+        foreach (var row in Roster)
+            row.ResetRegionOptions(_regionOptions);
+    }
+
+    private void SelectRegionOnDayRow(ParticipantDayRowViewModel row, Guid regionId)
+    {
+        var option = _regionOptions.FirstOrDefault(o => !o.IsAdd && o.Id == regionId);
+        if (option is not null)
+        {
+            row.SetRegionSilently(option);
+            RequestDayRowRegionChange(row);
+        }
+    }
+
+    private void SelectRegionOnRosterRow(ParticipantRosterRowViewModel row, Guid regionId)
+    {
+        var option = _regionOptions.FirstOrDefault(o => !o.IsAdd && o.Id == regionId);
+        if (option is not null)
+        {
+            row.SetRegionSilently(option);
+            RequestRosterRowRegionChange(row);
+        }
+    }
+
+    // ── Club options + per-row club edit (mirrors the region flow above) ───────────────────────────
+    private async Task RefreshClubOptionsAsync(bool hasEvent)
+    {
+        var clubs = hasEvent
+            ? await _busy.RunAsync(() => _editor.GetClubsAsync())
+            : (IReadOnlyList<BusinessLogic.Entities.Club>)[];
+        _clubOptions = BuildClubOptions(clubs);
+    }
+
+    private IReadOnlyList<ClubOption> BuildClubOptions(IReadOnlyList<BusinessLogic.Entities.Club> clubs)
+    {
+        var options = new List<ClubOption>(clubs.Count + 2) { ClubOption.None(Localization) };
+        foreach (var c in clubs.OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase))
+            options.Add(new ClubOption(c.Id, c.Name, Localization));
+        options.Add(ClubOption.Add(Localization));
+        return options;
+    }
+
+    private void RequestDayRowClubChange(ParticipantDayRowViewModel row)
+        => _ = Task.Run(() => _editor.SetParticipantClubAsync(row.ParticipantId, row.SelectedClub.Id));
+
+    private void RequestRosterRowClubChange(ParticipantRosterRowViewModel row)
+        => _ = Task.Run(() => _editor.SetParticipantClubAsync(row.ParticipantId, row.SelectedClub.Id));
+
+    private void RequestDayRowAddClub(ParticipantDayRowViewModel row)
+        => _ = AddClubForRowAsync(
+            select: id => SelectClubOnDayRow(row, id),
+            revert: () => row.SetClubSilently(row.CommittedClub));
+
+    private void RequestRosterRowAddClub(ParticipantRosterRowViewModel row)
+        => _ = AddClubForRowAsync(
+            select: id => SelectClubOnRosterRow(row, id),
+            revert: () => row.SetClubSilently(row.CommittedClub));
+
+    private async Task AddClubForRowAsync(Action<Guid> select, Action revert)
+    {
+        if (_session.CurrentEvent is null)
+        {
+            revert();
+            return;
+        }
+
+        await _clubGate.WaitAsync();
+        try
+        {
+            var name = await _dialogs.ShowAddClubAsync(new Dialogs.AddClubViewModel(Localization));
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                revert();
+                return;
+            }
+
+            var club = await _busy.RunAsync(() => _editor.AddClubAsync(name));
+            if (club is null)
+            {
+                revert();
+                return;
+            }
+
+            await RefreshClubOptionsAsync(hasEvent: true);
+            ApplyClubOptionsToRows();
+            select(club.Id);
+        }
+        finally
+        {
+            _clubGate.Release();
+        }
+    }
+
+    private void ApplyClubOptionsToRows()
+    {
+        foreach (var row in Participants)
+            row.ResetClubOptions(_clubOptions);
+        foreach (var row in Roster)
+            row.ResetClubOptions(_clubOptions);
+    }
+
+    private void SelectClubOnDayRow(ParticipantDayRowViewModel row, Guid clubId)
+    {
+        var option = _clubOptions.FirstOrDefault(o => !o.IsAdd && o.Id == clubId);
+        if (option is not null)
+        {
+            row.SetClubSilently(option);
+            RequestDayRowClubChange(row);
+        }
+    }
+
+    private void SelectClubOnRosterRow(ParticipantRosterRowViewModel row, Guid clubId)
+    {
+        var option = _clubOptions.FirstOrDefault(o => !o.IsAdd && o.Id == clubId);
+        if (option is not null)
+        {
+            row.SetClubSilently(option);
+            RequestRosterRowClubChange(row);
+        }
     }
 
     // ── Rental-chip highlight + toggle ────────────────────────────────────────────────────────────

@@ -42,6 +42,12 @@
         <DataTemplate DataType="dialogs:ChangeDayNumberViewModel">
             <dialogViews:ChangeDayNumberView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:AddRegionViewModel">
+            <dialogViews:AddRegionView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:AddClubViewModel">
+            <dialogViews:AddClubView />
+        </DataTemplate>
     </Window.DataTemplates>
 
     <!-- One transform scales the WHOLE interface — fonts, inputs, paddings, spacing,
@@ -185,6 +191,10 @@
                           Command="{Binding OpenChipsCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Competition.Participants]}"
                           Command="{Binding OpenParticipantsCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Competition.Regions]}"
+                          Command="{Binding OpenRegionsCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Competition.Clubs]}"
+                          Command="{Binding OpenClubsCommand}" />
             </MenuItem>
 
             <!-- Navigation tabs, shown only while a competition is open -->

@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using OrientDesk.Presentation.Controls;
 using OrientDesk.Presentation.ViewModels.Pages;
 
 namespace OrientDesk.Presentation.Views.Pages;
@@ -24,19 +25,12 @@ public partial class ChipsView : UserControl
         AddHandler(PointerPressedEvent, OnTunnelPointerPressed, RoutingStrategies.Tunnel);
     }
 
-    // Delete on the table deletes the selected chip. Ctrl+Delete skips the confirmation. Ignored
-    // while a cell editor (TextBox) has focus, so Delete still edits text inside a cell.
-    private void OnSheetKeyDown(object? sender, KeyEventArgs e)
+    // The table raises this on a keyboard Delete (Ctrl+Delete ⇒ skip the prompt).
+    private void OnDeleteRequested(object? sender, SheetDeleteEventArgs e)
     {
-        if (_vm is null || e.Key != Key.Delete)
+        if (_vm is null || e.Row is not RentalChipRowViewModel row)
             return;
-
-        if (TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is TextBox)
-            return;
-
-        var skipConfirm = e.KeyModifiers.HasFlag(KeyModifiers.Control);
-        e.Handled = true;
-        _ = _vm.DeleteSelectedChipAsync(skipConfirm);
+        DeleteRow(row, e.SkipConfirm);
     }
 
     private bool _deleteCtrlDown;
@@ -44,18 +38,21 @@ public partial class ChipsView : UserControl
     private void OnTunnelPointerPressed(object? sender, PointerPressedEventArgs e)
         => _deleteCtrlDown = e.KeyModifiers.HasFlag(KeyModifiers.Control);
 
-    private void OnDeleteClick(object? sender, RoutedEventArgs e)
+    private void OnDeleteButton(object row)
     {
-        if (_vm is null || sender is not Control { Tag: RentalChipRowViewModel row })
+        if (_vm is null || row is not RentalChipRowViewModel chip)
             return;
-
         var skipConfirm = _deleteCtrlDown;
         _deleteCtrlDown = false;
+        DeleteRow(chip, skipConfirm);
+    }
 
+    private void DeleteRow(RentalChipRowViewModel row, bool skipConfirm)
+    {
         if (skipConfirm)
-            _ = _vm.DeleteChipNoConfirmAsync(row);
+            _ = _vm!.DeleteChipNoConfirmAsync(row);
         else
-            _ = _vm.DeleteChipCommand.ExecuteAsync(row);
+            _ = _vm!.DeleteChipCommand.ExecuteAsync(row);
     }
 
     // File picking needs the window's StorageProvider, so it lives in the view. The auto-read picker
@@ -102,10 +99,10 @@ public partial class ChipsView : UserControl
 
         _vm.Localization.PropertyChanged += OnLocalizationChanged;
         _vm.FocusGridRequested += OnFocusGridRequested;
-        ApplyHeaders();
+        BuildBands();
     }
 
-    private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => ApplyHeaders();
+    private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => BuildBands();
 
     // After the delete-confirmation modal closes, keyboard focus is on the overlay and would
     // otherwise land on the top menu. Return it to the grid (on its new selected row). Posted so it
@@ -113,18 +110,24 @@ public partial class ChipsView : UserControl
     private void OnFocusGridRequested(object? sender, EventArgs e)
         => Avalonia.Threading.Dispatcher.UIThread.Post(() => Sheet.Focus());
 
-    // DataGrid column headers live outside the visual tree, so they can't bind to Localization[...]
-    // like cells do. We resolve them here and re-apply on language change.
-    private void ApplyHeaders()
+    // Builds the table's columns. Headers are baked into the band model, so a language switch is
+    // handled by rebuilding. The chip number is digits-only; this page is the rental database itself,
+    // so (unlike the participants page) chip numbers carry no rental highlight here.
+    private void BuildBands()
     {
         if (_vm is null)
             return;
 
-        var loc = _vm.Localization;
-        var columns = Sheet.Columns;
-        columns[0].Header = loc.Get("Chips.Col.Number");
-        columns[1].Header = loc.Get("Chips.Col.Note");
-        columns[2].Header = loc.Get("Chips.Col.Actions");
+        Sheet.Bands = new SheetColumnBuilder(_vm.Localization)
+            .Text("Chips.Col.Number", nameof(RentalChipRowViewModel.Number),
+                  editPath: nameof(RentalChipRowViewModel.Number), minWidth: 140,
+                  mask: SheetColumnBuilder.NumericMask.Digits)
+            .Text("Chips.Col.Note", nameof(RentalChipRowViewModel.Note),
+                  editPath: nameof(RentalChipRowViewModel.Note), minWidth: 240)
+            // Read-only: who holds this chip (full names across all days, comma-separated). No editPath.
+            .Text("Chips.Col.AssignedTo", nameof(RentalChipRowViewModel.AssignedTo), minWidth: 240)
+            .DeleteAction(OnDeleteButton, "Chips.Delete")
+            .Bands;
     }
 
     private void Unsubscribe()

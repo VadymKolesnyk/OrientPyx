@@ -13,12 +13,14 @@ public sealed class SessionService : ISessionService
     private readonly IAppStore _appStore;
     private readonly IEventCatalogService _catalog;
     private readonly IEventStore _eventStore;
+    private readonly IActivityLog _log;
 
-    public SessionService(IAppStore appStore, IEventCatalogService catalog, IEventStore eventStore)
+    public SessionService(IAppStore appStore, IEventCatalogService catalog, IEventStore eventStore, IActivityLog log)
     {
         _appStore = appStore;
         _catalog = catalog;
         _eventStore = eventStore;
+        _log = log;
     }
 
     public EventSummary? CurrentEvent { get; private set; }
@@ -37,6 +39,7 @@ public sealed class SessionService : ISessionService
         // the new tables until opened here.
         await _eventStore.EnsureCreatedAsync(competition.FolderPath, cancellationToken);
 
+        _log.Action($"Select competition '{competition.Identifier}', day {day.Number}");
         CurrentEvent = competition;
         CurrentDay = day;
 
@@ -50,6 +53,7 @@ public sealed class SessionService : ISessionService
         if (CurrentEvent is null)
             return;
 
+        _log.Action($"Switch to day {day.Number}");
         CurrentDay = day;
         await _appStore.SaveLastSessionAsync(CurrentEvent.Identifier, day.Number, cancellationToken);
         SessionChanged?.Invoke(this, EventArgs.Empty);

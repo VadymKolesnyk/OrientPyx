@@ -26,104 +26,14 @@
             </Button>
         </Grid>
 
-        <!-- Spreadsheet-style grid; the card border supplies the rounded frame.
-             SheetDataGrid adds column sort, column reorder (drag) and focus-to-edit. -->
+        <!-- Spreadsheet-style table; the card border supplies the rounded frame. Columns (including
+             the multi-button action cell) are built in code-behind and handed to SheetTable via Bands. -->
         <Border Classes="card" ClipToBounds="True">
-            <controls:SheetDataGrid Name="Sheet"
-                                    ItemsSource="{Binding Days}"
-                                    SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
-                                    KeyDown="OnSheetKeyDown"
-                                    AutoGenerateColumns="False">
-                <controls:SheetDataGrid.Columns>
-
-                    <!-- Day number (read-only, sorts by number) -->
-                    <DataGridTemplateColumn Width="120" SortMemberPath="Number">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate x:DataType="pages:DayRowViewModel">
-                                <TextBlock Text="{Binding NumberLabel}" Foreground="{DynamicResource TextPrimary}"
-                                           FontWeight="Medium" VerticalAlignment="Center" Margin="10,0" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-
-                    <!-- Date -->
-                    <DataGridTemplateColumn Width="160" MinWidth="140" SortMemberPath="Date">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate x:DataType="pages:DayRowViewModel">
-                                <CalendarDatePicker SelectedDate="{Binding Date, Mode=TwoWay,
-                                                        Converter={StaticResource DateTimeOffsetToDateTime}}"
-                                                    SelectedDateFormat="Custom"
-                                                    CustomDateFormatString="dd.MM.yyyy"
-                                                    PlaceholderText="{Binding Localization[Common.DatePlaceholder]}"
-                                                    HorizontalAlignment="Stretch" VerticalAlignment="Center" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-
-                    <!-- Venue -->
-                    <DataGridTemplateColumn Width="Auto" MinWidth="120" SortMemberPath="Venue">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate x:DataType="pages:DayRowViewModel">
-                                <TextBlock Text="{Binding Venue}" VerticalAlignment="Center" Padding="10,0" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                        <DataGridTemplateColumn.CellEditingTemplate>
-                            <DataTemplate x:DataType="pages:DayRowViewModel">
-                                <TextBox Text="{Binding Venue, Mode=TwoWay}" PlaceholderText="—" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellEditingTemplate>
-                    </DataGridTemplateColumn>
-
-                    <!-- Discipline -->
-                    <DataGridTemplateColumn Width="180" MinWidth="160" SortMemberPath="SelectedDiscipline.Value">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate x:DataType="pages:DayRowViewModel">
-                                <ComboBox HorizontalAlignment="Stretch"
-                                          ItemsSource="{Binding DisciplineOptions}"
-                                          SelectedItem="{Binding SelectedDiscipline, Mode=TwoWay}">
-                                    <ComboBox.ItemTemplate>
-                                        <DataTemplate x:DataType="pages:DisciplineTypeOption">
-                                            <TextBlock Text="{Binding Label}" />
-                                        </DataTemplate>
-                                    </ComboBox.ItemTemplate>
-                                </ComboBox>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-
-                    <!-- Actions: Save / Delete -->
-                    <DataGridTemplateColumn Width="Auto" CanUserSort="False">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate x:DataType="pages:DayRowViewModel">
-                                <StackPanel Orientation="Horizontal" Spacing="6"
-                                            VerticalAlignment="Center" Margin="10,0">
-                                    <Button Content="{Binding Localization[CompetitionDays.Save]}"
-                                            Classes="ghost small"
-                                            Command="{Binding $parent[DataGrid].((pages:CompetitionDaysViewModel)DataContext).SaveDayCommand}"
-                                            CommandParameter="{Binding}"
-                                            IsEnabled="{Binding IsDirty}" />
-                                    <Button Content="{Binding Localization[CompetitionDays.ChangeNumber]}"
-                                            Classes="ghost small"
-                                            ToolTip.Tip="{Binding Localization[CompetitionDays.ChangeNumber.Hint]}"
-                                            Command="{Binding $parent[DataGrid].((pages:CompetitionDaysViewModel)DataContext).ChangeDayNumberCommand}"
-                                            CommandParameter="{Binding}" />
-                                    <!-- Click confirms before deleting; Ctrl+Click deletes immediately.
-                                         Handled in code-behind so we can read the Ctrl modifier. -->
-                                    <Button Classes="danger small"
-                                            ToolTip.Tip="{Binding Localization[CompetitionDays.Delete]}"
-                                            Click="OnDeleteClick"
-                                            Tag="{Binding}"
-                                            IsEnabled="{Binding !IsActive}">
-                                        <PathIcon Data="M6,7 h12 M9,7 v-2 h6 v2 M8,7 l1,13 h6 l1,-13"
-                                                  Width="15" Height="15" />
-                                    </Button>
-                                </StackPanel>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-
-                </controls:SheetDataGrid.Columns>
-            </controls:SheetDataGrid>
+            <controls:SheetTable Name="Sheet"
+                                 ItemsSource="{Binding Days}"
+                                 Localization="{Binding Localization}"
+                                 SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
+                                 DeleteRequested="OnDeleteRequested" />
         </Border>
 
     </DockPanel>

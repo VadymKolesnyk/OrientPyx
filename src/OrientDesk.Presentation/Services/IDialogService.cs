@@ -47,4 +47,16 @@ public interface IDialogService : INotifyPropertyChanged
     /// on confirm, or null when cancelled/closed. Only one dialog is shown at a time.
     /// </summary>
     Task<int?> ShowChangeDayNumberAsync(ChangeDayNumberViewModel dialog);
+
+    /// <summary>
+    /// Shows the add-region modal and awaits the user's input. Returns the trimmed name on confirm,
+    /// or null when cancelled/closed. Only one dialog is shown at a time.
+    /// </summary>
+    Task<string?> ShowAddRegionAsync(AddRegionViewModel dialog);
+
+    /// <summary>
+    /// Shows the add-club modal and awaits the user's input. Returns the trimmed name on confirm,
+    /// or null when cancelled/closed. Only one dialog is shown at a time.
+    /// </summary>
+    Task<string?> ShowAddClubAsync(AddClubViewModel dialog);
 }

@@ -20,6 +20,8 @@ public class EventDbContext : DbContext
     public DbSet<Group> Groups => Set<Group>();
     public DbSet<GroupDaySettings> GroupDaySettings => Set<GroupDaySettings>();
     public DbSet<RentalChip> RentalChips => Set<RentalChip>();
+    public DbSet<Region> Regions => Set<Region>();
+    public DbSet<Club> Clubs => Set<Club>();
     public DbSet<Participant> Participants => Set<Participant>();
     public DbSet<ParticipantDay> ParticipantDays => Set<ParticipantDay>();
 
@@ -45,6 +47,17 @@ public class EventDbContext : DbContext
         // that and speeds the future join against participant entries by chip number.
         modelBuilder.Entity<RentalChip>()
             .HasIndex(c => c.Number)
+            .IsUnique();
+
+        // A region name identifies one region per competition; the unique index enforces that (the
+        // service layer additionally guards case-insensitive collisions).
+        modelBuilder.Entity<Region>()
+            .HasIndex(r => r.Name)
+            .IsUnique();
+
+        // A club name is likewise unique per competition.
+        modelBuilder.Entity<Club>()
+            .HasIndex(c => c.Name)
             .IsUnique();
 
         // Per-day links are queried by day (the day's grid) and by participant (the cascade-delete

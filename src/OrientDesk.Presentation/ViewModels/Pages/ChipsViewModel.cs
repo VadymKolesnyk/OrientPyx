@@ -129,13 +129,20 @@ public sealed partial class ChipsViewModel : PageViewModelBase
             AutoReadFilePath = Path.Combine(folder, DefaultReadoutSubPath.Replace('/', Path.DirectorySeparatorChar));
 
         var chips = await _busy.RunAsync(() => _editor.GetRentalChipsAsync());
+        // Who holds each chip (across all days) — populates the read-only "assigned to" column.
+        var holders = await _busy.RunAsync(() => _editor.GetRentalChipHoldersAsync());
 
         foreach (var existing in Chips)
             existing.PropertyChanged -= OnRowPropertyChanged;
         Chips.Clear();
 
         foreach (var chip in chips)
-            Chips.Add(CreateRow(chip));
+        {
+            var row = CreateRow(chip);
+            if (holders.TryGetValue(chip.Number.Trim(), out var names))
+                row.AssignedTo = names;
+            Chips.Add(row);
+        }
     }
 
     private RentalChipRowViewModel CreateRow(RentalChip chip)

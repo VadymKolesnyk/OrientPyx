@@ -2,12 +2,19 @@ using System.Text;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
+using OrientDesk.BusinessLogic.Interfaces;
 
 namespace OrientDesk.Presentation;
 
 internal static class Program
 {
     private static readonly string CrashLogPath = Path.Combine(AppContext.BaseDirectory, "crash.log");
+
+    /// <summary>
+    /// The per-launch activity log, set once DI is built (see <c>App</c>). Crashes are also routed
+    /// here so they land in the events-folder log alongside user actions. Null before startup.
+    /// </summary>
+    internal static IActivityLog? ActivityLog { get; set; }
 
     // Avalonia configuration; don't use any Avalonia, third-party APIs or any
     // SynchronizationContext-reliant code before AppMain is called.
@@ -83,6 +90,17 @@ internal static class Program
             sb.AppendLine();
 
             File.AppendAllText(CrashLogPath, sb.ToString());
+        }
+        catch
+        {
+            // swallow — logging must never throw
+        }
+
+        // Also record it in the events-folder activity log, if it's up yet.
+        try
+        {
+            if (ex is not null)
+                ActivityLog?.Error($"CRASH via {source}", ex);
         }
         catch
         {

@@ -24,6 +24,14 @@ public sealed partial class RentalChipRowViewModel : ObservableObject
     [ObservableProperty]
     private string _note;
 
+    /// <summary>
+    /// Read-only display of who currently holds this chip: the comma-separated full names of every
+    /// participant assigned this chip on any day. Empty when nobody holds it. Set by the page from the
+    /// chip-holder lookup; it is not persisted on the chip and never triggers a save.
+    /// </summary>
+    [ObservableProperty]
+    private string _assignedTo = string.Empty;
+
     public RentalChipRowViewModel(
         RentalChip chip,
         ILocalizationService localization,

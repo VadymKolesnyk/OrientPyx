@@ -39,6 +39,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly GroupsViewModel _groups;
     private readonly ChipsViewModel _chips;
     private readonly ParticipantsViewModel _participants;
+    private readonly RegionsViewModel _regions;
+    private readonly ClubsViewModel _clubs;
 
     public MainWindowViewModel(
         ISessionService session,
@@ -53,6 +55,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         GroupsViewModel groups,
         ChipsViewModel chips,
         ParticipantsViewModel participants,
+        RegionsViewModel regions,
+        ClubsViewModel clubs,
         ILocalizationService localization,
         IUiScaleService uiScale,
         IBusyService busy,
@@ -71,6 +75,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _groups = groups;
         _chips = chips;
         _participants = participants;
+        _regions = regions;
+        _clubs = clubs;
         Localization = localization;
         _uiScale = uiScale;
         _busy = busy;
@@ -182,6 +188,20 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _shell.SelectedPage = _participants;
     }
 
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenRegionsAsync()
+    {
+        await _regions.LoadAsync();
+        _shell.SelectedPage = _regions;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenClubsAsync()
+    {
+        await _clubs.LoadAsync();
+        _shell.SelectedPage = _clubs;
+    }
+
     /// <summary>Called once after construction to restore the last session or show the picker.</summary>
     public async Task InitializeAsync()
     {
@@ -243,6 +263,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenGroupsCommand.NotifyCanExecuteChanged();
         OpenChipsCommand.NotifyCanExecuteChanged();
         OpenParticipantsCommand.NotifyCanExecuteChanged();
+        OpenRegionsCommand.NotifyCanExecuteChanged();
+        OpenClubsCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsEventSelected));
         OnPropertyChanged(nameof(WindowTitle));
 

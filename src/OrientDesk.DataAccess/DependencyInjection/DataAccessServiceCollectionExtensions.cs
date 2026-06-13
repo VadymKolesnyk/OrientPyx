@@ -19,6 +19,9 @@ public static class DataAccessServiceCollectionExtensions
 
         services.AddSingleton<IAppStore, AppStore>();
 
+        // Per-launch diagnostic log under ./events/logs (actions + exceptions).
+        services.AddSingleton<IActivityLog, FileActivityLog>();
+
         // EventStore opens per-competition databases on demand; it holds no shared state.
         services.AddSingleton<IEventStore, EventStore>();
         services.AddSingleton<IEventFolderScanner, EventFolderScanner>();

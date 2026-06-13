@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.IO;
-using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using OrientDesk.Presentation.Controls;
 using OrientDesk.Presentation.ViewModels.Pages;
 
 namespace OrientDesk.Presentation.Views.Pages;
@@ -24,19 +24,13 @@ public partial class ControlPointsView : UserControl
         AddHandler(PointerPressedEvent, OnTunnelPointerPressed, RoutingStrategies.Tunnel);
     }
 
-    // Delete on the table deletes the selected control point. Ctrl+Delete skips the confirmation.
-    // Ignored while a cell editor (TextBox) has focus, so Delete still edits text inside a cell.
-    private void OnSheetKeyDown(object? sender, KeyEventArgs e)
+    // The table raises this on a keyboard Delete (Ctrl+Delete ⇒ skip the prompt). Ignored while a
+    // cell editor (TextBox) has focus — handled inside SheetTable, which won't raise it then.
+    private void OnDeleteRequested(object? sender, SheetDeleteEventArgs e)
     {
-        if (_vm is null || e.Key != Key.Delete)
+        if (_vm is null || e.Row is not ControlPointRowViewModel row)
             return;
-
-        if (TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is TextBox)
-            return;
-
-        var skipConfirm = e.KeyModifiers.HasFlag(KeyModifiers.Control);
-        e.Handled = true;
-        _ = _vm.DeleteSelectedPointAsync(skipConfirm);
+        DeleteRow(row, e.SkipConfirm);
     }
 
     // The per-row delete button. Button.Click doesn't carry key modifiers, and the button marks its
@@ -47,22 +41,23 @@ public partial class ControlPointsView : UserControl
     private void OnTunnelPointerPressed(object? sender, PointerPressedEventArgs e)
         => _deleteCtrlDown = e.KeyModifiers.HasFlag(KeyModifiers.Control);
 
-    private void OnDeleteClick(object? sender, RoutedEventArgs e)
+    private void OnDeleteButton(object row)
     {
-        if (_vm is null || sender is not Control { Tag: ControlPointRowViewModel row })
+        if (_vm is null || row is not ControlPointRowViewModel point)
             return;
-
         var skipConfirm = _deleteCtrlDown;
         _deleteCtrlDown = false;
-
-        if (skipConfirm)
-            _ = _vm.DeletePointNoConfirmAsync(row);
-        else
-            _ = _vm.DeletePointCommand.ExecuteAsync(row);
+        DeleteRow(point, skipConfirm);
     }
 
-    // DataGrid column headers live outside the visual tree, so they can't bind to
-    // Localization[...] like cells do. We resolve them here and re-apply on language change.
+    private void DeleteRow(ControlPointRowViewModel row, bool skipConfirm)
+    {
+        if (skipConfirm)
+            _ = _vm!.DeletePointNoConfirmAsync(row);
+        else
+            _ = _vm!.DeletePointCommand.ExecuteAsync(row);
+    }
+
     private void OnDataContextChanged(object? sender, System.EventArgs e)
     {
         Unsubscribe();
@@ -70,30 +65,55 @@ public partial class ControlPointsView : UserControl
         if (_vm is null)
             return;
 
+        // Column headers are baked into the band model at build time, so a language switch (or a
+        // change to which columns are shown) is handled by rebuilding the bands.
         _vm.Localization.PropertyChanged += OnLocalizationChanged;
         _vm.ColumnsChanged += OnColumnsChanged;
         _vm.FocusGridRequested += OnFocusGridRequested;
-        ApplyHeaders();
-        ApplyColumnVisibility();
+        BuildBands();
     }
 
-    private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => ApplyHeaders();
+    private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => BuildBands();
 
-    // After the delete-confirmation modal closes, keyboard focus is on the overlay and would
-    // otherwise land on the top menu. Return it to the grid (on its new selected row). Posted so it
-    // runs once the overlay has been torn down and the grid is interactive again.
+    private void OnColumnsChanged(object? sender, System.EventArgs e) => BuildBands();
+
+    // After the delete-confirmation modal closes, return keyboard focus to the table (on its new
+    // selected row). Posted so it runs once the overlay has been torn down and the table is live again.
     private void OnFocusGridRequested(object? sender, System.EventArgs e)
         => Avalonia.Threading.Dispatcher.UIThread.Post(() => Sheet.Focus());
 
-    private void OnColumnsChanged(object? sender, System.EventArgs e) => ApplyColumnVisibility();
-
-    // The points column appears only when the day's discipline (or a group on the day) scores points.
-    private void ApplyColumnVisibility()
+    // Builds the table's columns. The points column appears only when the day's discipline (or a
+    // group on the day) scores points — so it's omitted from the band list when hidden.
+    private void BuildBands()
     {
         if (_vm is null)
             return;
 
-        Sheet.Columns[4].IsVisible = _vm.ShowPointsColumn;
+        var loc = _vm.Localization;
+        var builder = new SheetColumnBuilder(loc)
+            .Text("ControlPoints.Col.Code", nameof(ControlPointRowViewModel.Code),
+                  editPath: nameof(ControlPointRowViewModel.Code), minWidth: 100)
+            .Combo("ControlPoints.Col.Type",
+                   nameof(ControlPointRowViewModel.TypeOptions),
+                   nameof(ControlPointRowViewModel.SelectedType),
+                   nameof(ControlPointTypeOption.Label),
+                   minWidth: 120,
+                   sortPath: $"{nameof(ControlPointRowViewModel.SelectedType)}.Value")
+            .Text("ControlPoints.Col.Lat", nameof(ControlPointRowViewModel.LatitudeText),
+                  editPath: nameof(ControlPointRowViewModel.LatitudeText), minWidth: 100,
+                  mask: SheetColumnBuilder.NumericMask.Decimal)
+            .Text("ControlPoints.Col.Lon", nameof(ControlPointRowViewModel.LongitudeText),
+                  editPath: nameof(ControlPointRowViewModel.LongitudeText), minWidth: 100,
+                  mask: SheetColumnBuilder.NumericMask.Decimal);
+
+        if (_vm.ShowPointsColumn)
+            builder.Text("ControlPoints.Col.Points", nameof(ControlPointRowViewModel.PointsText),
+                         editPath: nameof(ControlPointRowViewModel.PointsText), minWidth: 80,
+                         mask: SheetColumnBuilder.NumericMask.Integer);
+
+        builder.DeleteAction(OnDeleteButton, "ControlPoints.Delete");
+
+        Sheet.Bands = builder.Bands;
     }
 
     // File picking is a view concern (it needs the window's StorageProvider), so it lives here
@@ -148,21 +168,6 @@ public partial class ControlPointsView : UserControl
         }
 
         await _vm.ImportFromXmlAsync(xml, fileName, content);
-    }
-
-    private void ApplyHeaders()
-    {
-        if (_vm is null)
-            return;
-
-        var loc = _vm.Localization;
-        var columns = Sheet.Columns;
-        columns[0].Header = loc.Get("ControlPoints.Col.Code");
-        columns[1].Header = loc.Get("ControlPoints.Col.Type");
-        columns[2].Header = loc.Get("ControlPoints.Col.Lat");
-        columns[3].Header = loc.Get("ControlPoints.Col.Lon");
-        columns[4].Header = loc.Get("ControlPoints.Col.Points");
-        columns[5].Header = loc.Get("ControlPoints.Col.Actions");
     }
 
     private void Unsubscribe()

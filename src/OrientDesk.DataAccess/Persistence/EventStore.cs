@@ -332,6 +332,102 @@ public sealed class EventStore : IEventStore
         return await db.RentalChips.ExecuteDeleteAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Region>> GetRegionsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.Regions
+            .AsNoTracking()
+            .OrderBy(r => r.Name)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task AddRegionAsync(string eventFolderPath, Region region, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        db.Regions.Add(region);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateRegionAsync(string eventFolderPath, Region region, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.Regions.FirstOrDefaultAsync(r => r.Id == region.Id, cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.Name = region.Name;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteRegionAsync(string eventFolderPath, Guid regionId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.Regions.FirstOrDefaultAsync(r => r.Id == regionId, cancellationToken);
+        if (existing is null)
+            return;
+
+        db.Regions.Remove(existing);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ClearParticipantsRegionAsync(string eventFolderPath, Guid regionId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        await db.Participants
+            .Where(p => p.RegionId == regionId)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.RegionId, (Guid?)null), cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Club>> GetClubsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.Clubs
+            .AsNoTracking()
+            .OrderBy(c => c.Name)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task AddClubAsync(string eventFolderPath, Club club, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        db.Clubs.Add(club);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateClubAsync(string eventFolderPath, Club club, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.Clubs.FirstOrDefaultAsync(c => c.Id == club.Id, cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.Name = club.Name;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteClubAsync(string eventFolderPath, Guid clubId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.Clubs.FirstOrDefaultAsync(c => c.Id == clubId, cancellationToken);
+        if (existing is null)
+            return;
+
+        db.Clubs.Remove(existing);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ClearParticipantsClubAsync(string eventFolderPath, Guid clubId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        await db.Participants
+            .Where(p => p.ClubId == clubId)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.ClubId, (Guid?)null), cancellationToken);
+    }
+
     public async Task<IReadOnlyList<Participant>> GetParticipantsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
@@ -361,6 +457,12 @@ public sealed class EventStore : IEventStore
         existing.Rank = participant.Rank;
         existing.Coach = participant.Coach;
         existing.BirthDate = participant.BirthDate;
+        existing.RegionId = participant.RegionId;
+        existing.ClubId = participant.ClubId;
+        existing.Representative = participant.Representative;
+        existing.FsouCode = participant.FsouCode;
+        existing.IsFsouMember = participant.IsFsouMember;
+        existing.Payment = participant.Payment;
         await db.SaveChangesAsync(cancellationToken);
     }
 

@@ -126,6 +126,14 @@ public interface ICompetitionEditorService
     /// <summary>Removes a rental chip from the current competition.</summary>
     Task DeleteRentalChipAsync(Guid chipId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Maps each chip number that is assigned to one or more participants (on any day) to the
+    /// comma-separated full names of those participants, deduplicated and in display order. Chips
+    /// nobody holds are absent from the map. Keyed case-insensitively on the trimmed chip number, so a
+    /// rental chip can look its holders up directly. Lets the rental-chip grid show who holds each chip.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, string>> GetRentalChipHoldersAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Removes every rental chip from the current competition. Returns how many were deleted.</summary>
     Task<int> ClearRentalChipsAsync(CancellationToken cancellationToken = default);
 
@@ -150,6 +158,73 @@ public interface ICompetitionEditorService
         ChipReadData data,
         string note,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Loads the current competition's regions, ordered by name.</summary>
+    Task<IReadOnlyList<Region>> GetRegionsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Appends a new, blank region to the current competition (Regions page "+ add") and returns it.</summary>
+    Task<Region> AddRegionRowAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves a region by name for the current competition: reuses an existing region with the same
+    /// name (case-insensitive) or creates one. Returns the resulting region. Used by the "+ новий"
+    /// flow on the participants page. A blank name is rejected (returns null).
+    /// </summary>
+    Task<Region?> AddRegionAsync(string name, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Saves an edited region (name). A change to a name already used by another region is ignored
+    /// (the previous name is kept), keeping names unique per competition.
+    /// </summary>
+    Task UpdateRegionAsync(Region region, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes a region from the current competition, first clearing it from any participant that
+    /// referenced it (their region falls back to none).
+    /// </summary>
+    Task DeleteRegionAsync(Guid regionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Maps each region id to how many participants come from it (across the whole competition).
+    /// Regions with no participants map to 0. Lets the regions grid show a participant count.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, int>> GetRegionParticipantCountsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets a participant's region (competition-level, independent of any day). A null region clears it.
+    /// </summary>
+    Task SetParticipantRegionAsync(Guid participantId, Guid? regionId, CancellationToken cancellationToken = default);
+
+    /// <summary>Loads the current competition's clubs, ordered by name.</summary>
+    Task<IReadOnlyList<Club>> GetClubsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Appends a new, blank club to the current competition (Clubs page "+ add") and returns it.</summary>
+    Task<Club> AddClubRowAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves a club by name for the current competition: reuses an existing club with the same name
+    /// (case-insensitive) or creates one. Returns the resulting club. Used by the "+ новий" flow on the
+    /// participants page. A blank name is rejected (returns null).
+    /// </summary>
+    Task<Club?> AddClubAsync(string name, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Saves an edited club (name). A change to a name already used by another club is ignored (the
+    /// previous name is kept), keeping names unique per competition.
+    /// </summary>
+    Task UpdateClubAsync(Club club, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes a club from the current competition, first clearing it from any participant that
+    /// referenced it (their club falls back to none).
+    /// </summary>
+    Task DeleteClubAsync(Guid clubId, CancellationToken cancellationToken = default);
+
+    /// <summary>Maps each club id to how many participants belong to it (across the whole competition).</summary>
+    Task<IReadOnlyDictionary<Guid, int>> GetClubParticipantCountsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Sets a participant's club (competition-level, independent of any day). A null club clears it.</summary>
+    Task SetParticipantClubAsync(Guid participantId, Guid? clubId, CancellationToken cancellationToken = default);
 
     /// <summary>Loads the current day's participants (one row per competitor on the day), ordered for display.</summary>
     Task<IReadOnlyList<ParticipantDayRow>> GetParticipantDayRowsAsync(CancellationToken cancellationToken = default);
