@@ -11,6 +11,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using OrientDesk.BusinessLogic.Entities;
@@ -143,15 +144,47 @@ public sealed class SheetTable : TemplatedControl
     private ScrollViewer? _headerScroll;
     private ScrollViewer? _bodyScroll;
 
+    // The full band set as built (every column, hidden or not) — the input to filtering, the basis for
+    // reorder/width carry. _visibleBands is what the header and rows actually render: the same bands
+    // with hidden leaves dropped (and any band left with no visible leaf removed).
     private IReadOnlyList<SheetBand> _bands = [];
+    private IReadOnlyList<SheetBand> _visibleBands = [];
     private RosterCellFactory? _cellFactory;
     private bool _editing;
+
+    /// <summary>Raised after the column set (or any column's hidden state) changes, so a columns picker
+    /// bound to this table can refresh its checkbox list.</summary>
+    public event EventHandler? ColumnsChanged;
 
     public SheetTable()
     {
         AddHandler(KeyDownEvent, OnTunnelKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnBubbleKeyDown, RoutingStrategies.Bubble);
         AddHandler(PointerPressedEvent, OnTunnelPointerPressed, RoutingStrategies.Tunnel);
+        AddHandler(PointerWheelChangedEvent, OnTunnelPointerWheel, RoutingStrategies.Tunnel);
+    }
+
+    // A focused ComboBox eats the mouse wheel to cycle its SelectedItem, so scrolling the table while a
+    // combo cell is active would silently change that cell's value. Intercept the wheel in tunnel (the
+    // table sees it before the combo): when it targets a closed combo, scroll the body ourselves and
+    // swallow the event so the combo never spins. Open dropdowns keep their own wheel scrolling.
+    private void OnTunnelPointerWheel(object? sender, PointerWheelEventArgs e)
+    {
+        if (_bodyScroll is null || e.Source is not Visual source)
+            return;
+
+        var combo = source as ComboBox ?? source.FindAncestorOfType<ComboBox>();
+        if (combo is null || combo.IsDropDownOpen)
+            return;
+
+        // Mirror the ListBox's normal wheel step (vertical; Shift = horizontal) onto the body scroller.
+        const double step = 50;
+        var delta = e.Delta.Y != 0 ? e.Delta.Y : e.Delta.X;
+        var offset = _bodyScroll.Offset;
+        _bodyScroll.Offset = (e.KeyModifiers & KeyModifiers.Shift) != 0
+            ? offset.WithX(offset.X - delta * step)
+            : offset.WithY(offset.Y - delta * step);
+        e.Handled = true;
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -235,22 +268,96 @@ public sealed class SheetTable : TemplatedControl
         // Apply any user reorder (drag), keyed by a stable band signature so it survives rebuilds.
         _bands = ApplyBandOrder(_bands);
 
+        // Re-apply the persisted hidden-key set: every rebuild creates fresh SheetColumn instances
+        // (language change, collapse toggle, day-set change), so the hidden flag is restored by key.
+        foreach (var band in _bands)
+            foreach (var col in band.Columns)
+                col.IsHidden = _hiddenKeys.Contains(col.Key);
+
+        // What the header and rows render: the bands with hidden leaves dropped.
+        _visibleBands = ComputeVisibleBands(_bands);
+
         if (_header is not null)
         {
             _header.ToggleBlock = ToggleBlockCommand;
             _header.SortBy = ApplySort;
             _header.MoveBand = MoveBand;
+            _header.HideColumn = HideColumn;
             _header.SortColumn = _sortColumn;
             _header.SortDescending = _sortDescending;
-            _header.Rebuild(_bands);
+            _header.Rebuild(_visibleBands);
         }
 
-        // (Re)stamp rows so their cell hosts pick up the current column set. Recycling is off so a
-        // rebuild (collapse/expand, language change) regenerates the per-row grids cleanly.
+        // (Re)stamp rows so their cell hosts pick up the current column set. The row grid's structure
+        // depends only on the current _bands (identical for every row), so containers are safe to
+        // recycle as the body scrolls — cell content is binding-driven and re-points to the new row's
+        // DataContext on reuse. A new FuncDataTemplate instance on each Rebuild() forces ListBox to
+        // discard the old containers, so collapse/expand/language/day-set changes still regenerate the
+        // per-row grids cleanly. Recycling is the main win against scroll allocation / GC churn at 600 rows.
         if (_body is not null)
-            _body.ItemTemplate = new FuncDataTemplate<object>((_, _) => BuildRow(), supportsRecycling: false);
+            _body.ItemTemplate = new FuncDataTemplate<object>((_, _) => BuildRow(), supportsRecycling: true);
 
         ApplySortedView();
+        ColumnsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // ── Column visibility ─────────────────────────────────────────────────────────────────────────
+    // Keys of the columns the user has hidden. Persisted at the table level (not on a column instance)
+    // because every Rebuild() makes fresh SheetColumn instances — the set is re-applied by key there.
+    private readonly HashSet<string> _hiddenKeys = new();
+
+    /// <summary>
+    /// The leaf columns the user can show/hide, in display order, with a readable label each. The
+    /// trailing action column and any column without a picker label are excluded — only real data
+    /// columns are listable. Used by the columns picker to render its checkbox list.
+    /// </summary>
+    public IReadOnlyList<SheetColumn> ToggleableColumns()
+    {
+        var list = new List<SheetColumn>();
+        foreach (var band in _bands)
+            foreach (var col in band.Columns)
+                if (col.Kind != SheetCellKind.Actions && !string.IsNullOrEmpty(col.PickerLabel))
+                    list.Add(col);
+        return list;
+    }
+
+    /// <summary>Shows or hides the column with the given key, then rebuilds. No-op if already in that state.</summary>
+    public void SetColumnHidden(string key, bool hidden)
+    {
+        var changed = hidden ? _hiddenKeys.Add(key) : _hiddenKeys.Remove(key);
+        if (changed)
+            Rebuild();
+    }
+
+    // Hide a column from the header context menu.
+    private void HideColumn(SheetColumn column) => SetColumnHidden(column.Key, true);
+
+    // Drops hidden leaves from each band; a band with no visible leaf is removed entirely. Returns the
+    // input list unchanged (same references) when nothing is hidden, so the common case allocates nothing.
+    private static IReadOnlyList<SheetBand> ComputeVisibleBands(IReadOnlyList<SheetBand> bands)
+    {
+        var anyHidden = false;
+        foreach (var b in bands)
+            foreach (var c in b.Columns)
+                if (c.IsHidden) { anyHidden = true; break; }
+
+        if (!anyHidden)
+            return bands;
+
+        var result = new List<SheetBand>(bands.Count);
+        foreach (var band in bands)
+        {
+            var visible = new List<SheetColumn>(band.Columns.Count);
+            foreach (var c in band.Columns)
+                if (!c.IsHidden)
+                    visible.Add(c);
+            if (visible.Count == 0)
+                continue;
+            result.Add(visible.Count == band.Columns.Count
+                ? band
+                : new SheetBand(band.Kind, visible) { Header = band.Header, Block = band.Block });
+        }
+        return result;
     }
 
     // ── Band reorder (drag) ─────────────────────────────────────────────────────────────────────
@@ -287,18 +394,27 @@ public sealed class SheetTable : TemplatedControl
         return ordered.Count == bands.Count ? ordered : bands;
     }
 
+    // The header reorders over the VISIBLE bands, so its from/to are indices into _visibleBands. Map
+    // them onto the full _bands (which may contain hidden bands between them) by signature, then move.
     private void MoveBand(int from, int to)
     {
-        if (from < 0 || from >= _bands.Count || to < 0 || to >= _bands.Count || from == to)
+        if (from < 0 || from >= _visibleBands.Count || to < 0 || to >= _visibleBands.Count || from == to)
             return;
+
+        var fromSig = Signature(_visibleBands[from]);
+        var toSig = Signature(_visibleBands[to]);
 
         var order = new List<string>(_bands.Count);
         foreach (var b in _bands)
             order.Add(Signature(b));
 
-        var moved = order[from];
-        order.RemoveAt(from);
-        order.Insert(to, moved);
+        var fromIndex = order.IndexOf(fromSig);
+        var toIndex = order.IndexOf(toSig);
+        if (fromIndex < 0 || toIndex < 0)
+            return;
+
+        order.RemoveAt(fromIndex);
+        order.Insert(toIndex, fromSig);
         _bandOrder = order;
         Rebuild();
     }
@@ -339,10 +455,14 @@ public sealed class SheetTable : TemplatedControl
         {
             _header.SortColumn = _sortColumn;
             _header.SortDescending = _sortDescending;
-            _header.Rebuild(_bands); // refresh arrow indicators
+            _header.Rebuild(_visibleBands); // refresh arrow indicators
         }
         ApplySortedView();
     }
+
+    // The body's current item order (sorted view, or the source order when unsorted). Cached so row
+    // navigation (MoveRow) doesn't re-materialise and re-scan the whole collection on every keystroke.
+    private IReadOnlyList<object?> _sortedItems = Array.Empty<object?>();
 
     private void ApplySortedView()
     {
@@ -351,34 +471,106 @@ public sealed class SheetTable : TemplatedControl
 
         if (_sortColumn is null || string.IsNullOrEmpty(_sortColumn.SortPath) || ItemsSource is null)
         {
+            var unsorted = new List<object?>();
+            foreach (var item in ItemsSource ?? Array.Empty<object?>())
+                unsorted.Add(item);
+            _sortedItems = unsorted;
             _body.ItemsSource = ItemsSource;
             return;
         }
 
-        var items = new List<object>();
+        var path = _sortColumn.SortPath;
+
+        // Schwartzian transform: read each item's sort key once (reflection is the costly part), then
+        // sort the (key, item) pairs. Avoids re-reading both operands on every comparison.
+        var keyed = new List<(object? Key, object Item)>();
         foreach (var item in ItemsSource)
             if (item is not null)
-                items.Add(item);
+                keyed.Add((ReadPath(item, path), item));
 
-        var path = _sortColumn.SortPath;
-        items.Sort((a, b) => CompareByPath(a, b, path));
+        keyed.Sort((a, b) => CompareKeys(a.Key, b.Key));
         if (_sortDescending)
-            items.Reverse();
+            keyed.Reverse();
 
+        var items = new List<object?>(keyed.Count);
+        foreach (var (_, item) in keyed)
+            items.Add(item);
+
+        _sortedItems = items;
         _body.ItemsSource = items;
     }
 
-    private static int CompareByPath(object a, object b, string path)
+    private static int CompareKeys(object? va, object? vb)
     {
-        var va = ReadPath(a, path);
-        var vb = ReadPath(b, path);
         if (va is null && vb is null) return 0;
         if (va is null) return -1;
         if (vb is null) return 1;
+        // Genuine numbers / dates / etc. keep their native ordering; text uses the natural comparison
+        // so digit runs sort by value ("Група 2" before "Група 10"), not by character ("1" before "2").
+        if (va is string || vb is string)
+            return NaturalCompare(va.ToString(), vb.ToString());
         if (va is IComparable ca && va.GetType() == vb.GetType())
             return ca.CompareTo(vb);
-        return string.Compare(va.ToString(), vb.ToString(), StringComparison.CurrentCultureIgnoreCase);
+        return NaturalCompare(va.ToString(), vb.ToString());
     }
+
+    // Natural (human) string order: digit runs are compared by numeric value, the rest case-insensitively.
+    // So "Група 2" < "Група 10" and "КП-9" < "КП-10", instead of the plain lexicographic "10" < "2".
+    private static int NaturalCompare(string? sa, string? sb)
+    {
+        sa ??= string.Empty;
+        sb ??= string.Empty;
+
+        int ia = 0, ib = 0;
+        while (ia < sa.Length && ib < sb.Length)
+        {
+            char ca = sa[ia], cb = sb[ib];
+            bool da = char.IsDigit(ca), db = char.IsDigit(cb);
+
+            if (da && db)
+            {
+                // Skip leading zeros so "007" and "7" compare equal in magnitude.
+                int sa0 = ia, sb0 = ib;
+                while (ia < sa.Length && sa[ia] == '0') ia++;
+                while (ib < sb.Length && sb[ib] == '0') ib++;
+
+                int na = ia; while (na < sa.Length && char.IsDigit(sa[na])) na++;
+                int nb = ib; while (nb < sb.Length && char.IsDigit(sb[nb])) nb++;
+
+                int lenA = na - ia, lenB = nb - ib;
+                if (lenA != lenB)
+                    return lenA < lenB ? -1 : 1; // more (non-zero) digits = larger number
+                for (int k = 0; k < lenA; k++)
+                {
+                    char xa = sa[ia + k], xb = sb[ib + k];
+                    if (xa != xb)
+                        return xa < xb ? -1 : 1;
+                }
+                ia = na; ib = nb;
+                // Equal magnitude: the one with fewer leading zeros sorts first for a stable order.
+                if (ia - sa0 != ib - sb0)
+                    return (ia - sa0) < (ib - sb0) ? -1 : 1;
+            }
+            else if (da != db)
+            {
+                // A digit run sorts before a non-digit at the same position ("1" before "a").
+                return da ? -1 : 1;
+            }
+            else
+            {
+                char la = char.ToUpperInvariant(ca), lb = char.ToUpperInvariant(cb);
+                if (la != lb)
+                    return string.Compare(la.ToString(), lb.ToString(), StringComparison.CurrentCulture);
+                ia++; ib++;
+            }
+        }
+
+        return (sa.Length - ia).CompareTo(sb.Length - ib);
+    }
+
+    // Caches reflected PropertyInfo per (declaring type, property name) so a sort over 600 rows does not
+    // re-resolve the same property hundreds of times. Misses (no such property) are cached as null.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(Type, string), System.Reflection.PropertyInfo?> PropertyCache = new();
 
     // Reads a dotted property path (e.g. "SelectedGroup.Label" or "Days[0].Chip") off an object via
     // reflection, tolerating nulls and indexers along the way.
@@ -400,7 +592,8 @@ public sealed class SheetTable : TemplatedControl
                 segment = segment.Substring(0, bracket);
             }
 
-            var prop = current.GetType().GetProperty(segment);
+            var type = current.GetType();
+            var prop = PropertyCache.GetOrAdd((type, segment), static key => key.Item1.GetProperty(key.Item2));
             if (prop is null)
                 return null;
             current = prop.GetValue(current);
@@ -426,7 +619,7 @@ public sealed class SheetTable : TemplatedControl
     {
         var grid = new Grid { HorizontalAlignment = HorizontalAlignment.Left };
         var col = 0;
-        foreach (var band in _bands)
+        foreach (var band in _visibleBands)
         {
             foreach (var column in band.Columns)
             {
@@ -483,10 +676,11 @@ public sealed class SheetTable : TemplatedControl
     {
         _ctrlDown = e.KeyModifiers.HasFlag(KeyModifiers.Control);
 
-        // A click anywhere in a cell selects that cell (Excel-style focused-cell outline). We focus the
-        // SheetCell host itself, not the inner editor, so a single click selects and a second
-        // click / Enter / typing begins editing. A click that lands directly on an interactive editor
-        // (TextBox/ComboBox/date picker) is left alone so the user can place the caret in one click.
+        // A click anywhere in a cell selects that cell (Excel-style focused-cell outline) and — since
+        // every editable cell now rests as plain text — immediately enters edit mode: a LazyEditCell
+        // materialises its editor and opens it (caret in a TextBox, dropdown for a combo/date). A click
+        // that already landed directly on a live editor (TextBox/ComboBox/date picker) is left alone so
+        // the caret lands where clicked.
         var cell = CellFromSource(e.Source as Visual);
         if (cell is null)
             return;
@@ -500,7 +694,17 @@ public sealed class SheetTable : TemplatedControl
             SelectedItem = row;
 
         if (e.Source is Visual src && IsInsideEditor(src, cell))
-            return; // let the editor take the click (caret placement)
+            return; // let the live editor take the click (caret placement)
+
+        // A resting lazy cell: focus the SheetCell for the outline, then ask the cell to begin editing.
+        if (FindLazyCell(cell.Content as Control) is { } lazy)
+        {
+            cell.Focus();
+            _editingLazy = lazy;
+            lazy.BeginEdit(open: true);
+            return;
+        }
+
         cell.Focus();
     }
 
@@ -527,6 +731,20 @@ public sealed class SheetTable : TemplatedControl
                 return cell;
             v = v.GetVisualParent();
         }
+        return null;
+    }
+
+    // The lazy cell a SheetCell hosts, if any: either its direct content or the first visible one nested
+    // in a wrapper (the roster's per-day backdrop Panel, or a collapsed block's combo/"різні" Panel).
+    private static LazyEditCell? FindLazyCell(Control? content)
+    {
+        if (content is null)
+            return null;
+        if (content is LazyEditCell direct)
+            return direct;
+        foreach (var d in content.GetVisualDescendants())
+            if (d is LazyEditCell lazy && lazy.IsVisible && lazy.IsEnabled)
+                return lazy;
         return null;
     }
 
@@ -676,13 +894,21 @@ public sealed class SheetTable : TemplatedControl
         DeleteRequested?.Invoke(this, new SheetDeleteEventArgs(SelectedItem, e.KeyModifiers.HasFlag(KeyModifiers.Control)));
     }
 
-    // Find the focused cell and put its editor into edit by focusing it. A text cell focuses its
-    // TextBox; a combo cell opens its dropdown and focuses it so the user can pick with the keyboard
-    // straight away (Enter on the open list commits the highlighted item).
+    // Find the focused cell and put its editor into edit. Every editable cell is now a LazyEditCell, so
+    // we ask it to begin editing: a text cell focuses its TextBox for the caret; a combo/date cell opens
+    // its list/calendar so the user can pick with the keyboard straight away. A few non-lazy cells
+    // remain (a bare ComboBox or TextBox in a custom column), handled as before.
     private bool BeginEditFocusedCell()
     {
         if (FindFocusedCell()?.Content is not Control content)
             return false;
+
+        if (FindLazyCell(content) is { } lazy)
+        {
+            _editingLazy = lazy;
+            lazy.BeginEdit(open: lazy.OpensOnEnter);
+            return true;
+        }
 
         if (FindVisibleCombo(content) is { } combo)
             return OpenCombo(combo);
@@ -698,6 +924,11 @@ public sealed class SheetTable : TemplatedControl
     // The combo whose dropdown the table opened (via Enter/F2), so the key handler can recognise its
     // popup focus and step away. Cleared when it closes.
     private ComboBox? _openCombo;
+
+    // The lazy cell currently being edited (set whenever we ask one to BeginEdit). Lets the key handler
+    // resolve the live editor — whose dropdown popup is a separate visual tree from the focused element
+    // — without the table tracking each combo's open/close lifecycle itself.
+    private LazyEditCell? _editingLazy;
 
     // Open a combo's dropdown and move focus into it so arrow keys move the highlight and Enter
     // commits — no mouse needed. Focusing the ComboBox before opening lets its own key handling drive
@@ -725,6 +956,10 @@ public sealed class SheetTable : TemplatedControl
     {
         if (focused is null)
             return null;
+        // A lazy combo cell we put into edit: its dropdown popup is a separate visual tree, so resolve
+        // it from the cell's live editor rather than by walking up from the focused popup item.
+        if (_editingLazy?.Editor is ComboBox { IsDropDownOpen: true } lazyCombo)
+            return lazyCombo;
         if (_openCombo is { IsDropDownOpen: true })
             return _openCombo;
         var v = focused;
@@ -797,13 +1032,19 @@ public sealed class SheetTable : TemplatedControl
         if (_body?.ItemsSource is null)
             return false;
 
-        var items = new List<object?>();
-        foreach (var item in _body.ItemsSource)
-            items.Add(item);
+        // Use the cached current order (built in ApplySortedView) rather than re-materialising and
+        // re-scanning the whole collection on every arrow keystroke.
+        var items = _sortedItems;
+        var index = -1;
+        for (var i = 0; i < items.Count; i++)
+            if (Equals(items[i], _body.SelectedItem))
+            {
+                index = i;
+                break;
+            }
 
-        var index = items.IndexOf(_body.SelectedItem);
         var target = index + delta;
-        if (target < 0 || target >= items.Count)
+        if (index < 0 || target < 0 || target >= items.Count)
             return false;
 
         _body.SelectedItem = items[target];
@@ -926,6 +1167,10 @@ internal sealed class SheetCell : ContentControl
         Focusable = true;
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         VerticalContentAlignment = VerticalAlignment.Stretch;
+        // A transparent (not null) background makes the cell's whole area — including padding around a
+        // short label — hit-testable, so a click anywhere in the cell, not just on its content, reaches
+        // OnTunnelPointerPressed and begins editing.
+        Background = Brushes.Transparent;
     }
 
     public SheetColumn Column { get; }

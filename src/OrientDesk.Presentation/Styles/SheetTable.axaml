@@ -155,11 +155,17 @@
         <Setter Property="VerticalAlignment" Value="Stretch" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
+    <!-- A date cell edits 1:1 like a text cell (flat, borderless input, no height jump). The picker's
+         templated parts (inner PART_TextBox, its PART_BorderElement, and the PART_Button glyph) each
+         carry the app-wide MinHeight=38, which grows the row. Those parts live two template levels deep
+         and a "SheetCell CalendarDatePicker /template/ …" selector does NOT reach them, so the flattening
+         is done in code in LazyDateCell.OnPickerTemplateApplied. This picker-level style only handles the
+         outer chrome (borders/background) that the selector can reach. -->
     <Style Selector="controls|SheetTable controls|SheetCell CalendarDatePicker">
         <Setter Property="MinHeight" Value="0" />
         <Setter Property="CornerRadius" Value="0" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="Padding" Value="0" />
         <Setter Property="VerticalAlignment" Value="Stretch" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />

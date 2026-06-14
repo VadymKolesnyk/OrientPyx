@@ -30,6 +30,14 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </controls:SearchableComboBox>
+                <!-- Show/hide table columns. One button per table (only the visible one shows); each is
+                     bound to its table so its flyout lists that table's columns. -->
+                <controls:SheetColumnsButton Localization="{Binding Localization}"
+                                             Table="{Binding #DayTable}"
+                                             IsVisible="{Binding IsDayMode}" />
+                <controls:SheetColumnsButton Localization="{Binding Localization}"
+                                             Table="{Binding #RosterTable}"
+                                             IsVisible="{Binding IsRosterMode}" />
                 <!-- Import participants from a UOF XML file. File picking lives in code-behind (it needs
                      the window's StorageProvider); the decoded text is handed to the VM's import flow. -->
                 <Button Click="OnImportClick" Classes="ghost">

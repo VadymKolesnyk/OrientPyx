@@ -75,6 +75,9 @@ internal sealed class SheetHeaderPanel : Grid
     /// <summary>Invoked to move a band from one top-level index to another (reorder).</summary>
     public Action<int, int>? MoveBand { get; set; }
 
+    /// <summary>Invoked from a header's context menu to hide that leaf column.</summary>
+    public Action<SheetColumn>? HideColumn { get; set; }
+
     /// <summary>Width of the resize-grip hit zone at each column's right edge (px).</summary>
     private const double GripWidth = 8;
 
@@ -194,6 +197,7 @@ internal sealed class SheetHeaderPanel : Grid
         // whole cell (incl. empty space) is hit-testable for the drag.
         var border = new Border { Background = Brushes.Transparent, Padding = new Thickness(10, 0, 0, 0), Child = inner };
         WireHeaderInteractions(border, bandIndex);
+        AttachHideMenu(border, column);
         return border;
     }
 
@@ -206,6 +210,7 @@ internal sealed class SheetHeaderPanel : Grid
         // BuildHeaderText). Transparent so the whole sub-cell is hit-testable for the band drag.
         var border = new Border { Background = Brushes.Transparent, Padding = new Thickness(10, 0, 0, 0), Child = inner };
         WireBandDrag(border, bandIndex);
+        AttachHideMenu(border, column);
         return border;
     }
 
@@ -280,29 +285,32 @@ internal sealed class SheetHeaderPanel : Grid
         };
         // The band label reads as plain clickable text (not a button): click toggles collapse, and
         // a press-and-drag anywhere on the banner reorders the band. The whole label area is a
-        // transparent, hit-testable click target.
-        var label = new StackPanel
+        // transparent, hit-testable click target. Laid out as a Grid ("*,Auto") so the text trims with
+        // an ellipsis when the band is narrower than its label rather than bleeding into the next band.
+        var label = new Grid
         {
-            Orientation = Orientation.Horizontal,
-            Spacing = 6,
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
             VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Left,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
             Background = Brushes.Transparent,
             Margin = new Thickness(10, 0),
             Cursor = new Cursor(StandardCursorType.Hand),
-            Children =
-            {
-                new TextBlock
-                {
-                    Text = band.Header,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Foreground = (IBrush?)this.FindResource("TextSecondary"),
-                    FontWeight = FontWeight.Medium
-                },
-                chevron
-            },
             [ToolTip.TipProperty] = _loc.Get(band.IsCollapsed ? "Participants.Roster.Expand" : "Participants.Roster.Collapse")
         };
+        var bannerText = new TextBlock
+        {
+            Text = band.Header,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(0, 0, 6, 0),
+            Foreground = (IBrush?)this.FindResource("TextSecondary"),
+            FontWeight = FontWeight.Medium
+        };
+        SetColumn(bannerText, 0);
+        SetColumn(chevron, 1);
+        label.Children.Add(bannerText);
+        label.Children.Add(chevron);
         // Toggle on a click that didn't turn into a drag (tracked via _dragging at release).
         label.PointerReleased += (_, e) =>
         {
@@ -341,7 +349,52 @@ internal sealed class SheetHeaderPanel : Grid
         // A press anywhere on the banner can start a band drag (the label click/sort clicks still
         // work — a press without movement does not become a drag).
         WireBandDrag(border, bandIndex);
+        // A collapsed block is one merged column, so the banner itself can be hidden via its menu.
+        if (band.IsCollapsed && band.Columns.Count > 0)
+            AttachHideMenu(border, band.Columns[0]);
         return border;
+    }
+
+    // A right-click "Hide column" menu on a header cell. Bound to the leaf column the header sits over;
+    // selecting it calls back into the table, which hides the column and rebuilds. Uses a Flyout (not a
+    // ContextMenu) so its content can be wrapped in a UiScale LayoutTransformControl — a ContextMenu's
+    // own popup lives outside the window's root transform and would render unscaled (see PopupScaling).
+    private void AttachHideMenu(Control header, SheetColumn column)
+    {
+        header.PointerReleased += (_, e) =>
+        {
+            if (e.InitialPressMouseButton != MouseButton.Right)
+                return;
+            e.Handled = true;
+            ShowHideMenu(header, column);
+        };
+    }
+
+    private void ShowHideMenu(Control header, SheetColumn column)
+    {
+        var item = new Button
+        {
+            Classes = { "ghost" },
+            Content = _loc.Get("Sheet.Columns.Hide"),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(10, 6)
+        };
+        var flyout = new Flyout
+        {
+            Placement = PlacementMode.BottomEdgeAlignedLeft,
+            Content = new LayoutTransformControl
+            {
+                LayoutTransform = SheetColumnsButton.BuildUiScaleTransform(),
+                Child = item
+            }
+        };
+        item.Click += (_, _) =>
+        {
+            flyout.Hide();
+            HideColumn?.Invoke(column);
+        };
+        flyout.ShowAt(header);
     }
 
     // ── Sort + drag wiring on an identity header cell ───────────────────────────────────────────

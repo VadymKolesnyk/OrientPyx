@@ -334,7 +334,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     /// </summary>
     public GroupOption? CollapsedGroupValue
     {
-        get => GroupValuesDiffer || Days.Count == 0 ? null : Days[0].SelectedGroup;
+        get => GroupShowsInput && Days.Count > 0 ? Days[0].SelectedGroup : null;
         set
         {
             if (value is not null)
@@ -342,12 +342,76 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         }
     }
 
-    /// <summary>True when the days do not all share one group (by id).</summary>
-    public bool GroupValuesDiffer =>
-        Days.Select(d => d.SelectedGroup.Id).Distinct().Count() > 1;
+    // The collapsed Groups cell has three states, decided by the distinct ACTUAL (non-null) groups
+    // across all days — a day with no group / where the participant doesn't run is the null sentinel
+    // and is ignored when counting "real" groups:
+    //   • input  — every day shares one value (all the same real group, or all "(none)"): editable combo.
+    //   • single — exactly one real group, but not on every day (the rest are "(none)"): read-only
+    //              "<group> (<n> днів)" summary, where n is how many days use that group. No input.
+    //   • differ — two or more distinct real groups across days: read-only "різні" label.
+    private IReadOnlyList<RosterDayCellViewModel> RealGroupDays =>
+        Days.Where(d => d.SelectedGroup.Id is not null).ToList();
 
-    /// <summary>True when the collapsed Groups cell should show the editable combo (all days share one).</summary>
-    public bool GroupShowsInput => !GroupValuesDiffer;
+    private int DistinctRealGroupCount =>
+        Days.Select(d => d.SelectedGroup.Id).Where(id => id is not null).Distinct().Count();
+
+    /// <summary>True when every day shares one value (one real group on all, or "(none)" on all).</summary>
+    public bool GroupShowsInput =>
+        Days.Select(d => d.SelectedGroup.Id).Distinct().Count() <= 1;
+
+    /// <summary>True when one real group is used on some (not all) days, the rest having none.</summary>
+    public bool GroupShowsSingle => !GroupShowsInput && DistinctRealGroupCount == 1;
+
+    /// <summary>True when the collapsed Groups cell should show the read-only "різні" label.</summary>
+    public bool GroupShowsDifferent => DistinctRealGroupCount > 1;
+
+    /// <summary>"&lt;group&gt; (&lt;n&gt; днів)" for the single-group summary state (empty otherwise).</summary>
+    public string GroupSingleSummary
+    {
+        get
+        {
+            if (!GroupShowsSingle)
+                return string.Empty;
+            var days = RealGroupDays;
+            return Localization.Get("Participants.Roster.GroupSomeDays")
+                .Replace("{0}", days[0].SelectedGroup.Label)
+                .Replace("{1}", days.Count.ToString());
+        }
+    }
+
+    /// <summary>
+    /// Sort key for the collapsed Groups column. Rows are grouped by their FIRST real group — the group
+    /// on the earliest day the participant runs — so a person who runs one group sorts under it whether
+    /// they run it every day, one day, or alongside others. Within one such group the order is, in turn:
+    ///   1. rows where every day is that one group,
+    ///   2. rows where it is a single day's group (earlier day first),
+    ///   3. genuinely "різні" rows, at the end of that group's block.
+    /// The key is "&lt;firstGroupLabel&gt;&lt;tier&gt;&lt;dayIndex&gt;": the label drives the outer
+    /// (natural) order; the tier digit then the day index break ties. A control-char separator keeps a
+    /// label that ends in digits (e.g. "Група 10") from merging with the tier digit under natural
+    /// comparison. Empty for a participant with no group on any day, so those clump together as before.
+    /// </summary>
+    public string CollapsedGroupSortKey
+    {
+        get
+        {
+            // Earliest participating day index that carries a real group (Days is in day-number order).
+            int firstIndex = -1;
+            for (int i = 0; i < Days.Count; i++)
+                if (Days[i].SelectedGroup.Id is not null)
+                {
+                    firstIndex = i;
+                    break;
+                }
+            if (firstIndex < 0)
+                return string.Empty;
+
+            var label = Days[firstIndex].SelectedGroup.Label;
+            // tier: 0 = same on every day, 1 = single day, 2 = genuinely different.
+            int tier = GroupShowsDifferent ? 2 : GroupShowsInput ? 0 : 1;
+            return $"{label}{tier}{firstIndex:D4}";
+        }
+    }
 
     /// <summary>Sets every day's group to <paramref name="value"/> (each cell persists itself).</summary>
     public void SetGroupForAllDays(GroupOption value)
@@ -511,8 +575,10 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     private void RaiseGroupAggregates()
     {
         OnPropertyChanged(nameof(CollapsedGroupValue));
-        OnPropertyChanged(nameof(GroupValuesDiffer));
         OnPropertyChanged(nameof(GroupShowsInput));
+        OnPropertyChanged(nameof(GroupShowsSingle));
+        OnPropertyChanged(nameof(GroupShowsDifferent));
+        OnPropertyChanged(nameof(GroupSingleSummary));
     }
 
     private void RaiseChipAggregates()

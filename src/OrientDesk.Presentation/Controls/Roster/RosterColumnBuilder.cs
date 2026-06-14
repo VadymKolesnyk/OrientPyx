@@ -65,6 +65,10 @@ public sealed class RosterColumnBuilder
                 Header = _loc.Get(headerKey),
                 IdentityPath = path,
                 SortPath = path,
+                // A stable key (the header KEY, not its localized text) so a hidden column survives a
+                // language change; the picker shows the localized header.
+                Key = $"id:{headerKey}",
+                PickerLabel = _loc.Get(headerKey),
             };
             if (fixedWidth is { } w)
             {
@@ -79,6 +83,7 @@ public sealed class RosterColumnBuilder
         {
             var cols = new List<SheetColumn>();
             const double fieldWidth = 110.0;
+            var blockLabel = _loc.Get(block.LabelKey);
             if (block.IsCollapsed)
             {
                 cols.Add(new SheetColumn(MergedKind(block.Field))
@@ -88,6 +93,10 @@ public sealed class RosterColumnBuilder
                     WidthCapped = true,
                     // A collapsed block is one sortable column: sort by the row's merged aggregate.
                     SortPath = CollapsedSortPath(block.Field),
+                    // Key by the field only (not collapse state / day) so hiding the block survives a
+                    // collapse/expand toggle. The merged column hidden ⇒ all its day columns hidden.
+                    Key = $"block:{block.Field}",
+                    PickerLabel = blockLabel,
                 });
             }
             else
@@ -101,6 +110,8 @@ public sealed class RosterColumnBuilder
                         Width = fieldWidth,
                         WidthCapped = true,
                         SortPath = LeafSortPath(block.Field, i),
+                        Key = $"block:{block.Field}:day{days[i].Number}",
+                        PickerLabel = $"{blockLabel} — {_loc.Get("Header.Day")} {days[i].Number}",
                     });
                 }
             }
@@ -139,7 +150,7 @@ public sealed class RosterColumnBuilder
 
     private static string CollapsedSortPath(RosterField field) => field switch
     {
-        RosterField.Groups => $"{nameof(ParticipantRosterRowViewModel.CollapsedGroupValue)}.{nameof(GroupOption.Label)}",
+        RosterField.Groups => nameof(ParticipantRosterRowViewModel.CollapsedGroupSortKey),
         RosterField.Chips => nameof(ParticipantRosterRowViewModel.CollapsedChipValue),
         RosterField.StartTimes => nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText),
         _ => nameof(ParticipantRosterRowViewModel.CollapsedOutOfCompetition),

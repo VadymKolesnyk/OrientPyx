@@ -10,7 +10,6 @@ using Avalonia.Layout;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media;
 using OrientDesk.Localization;
-using OrientDesk.Presentation.Behaviors;
 using OrientDesk.Presentation.Converters;
 using OrientDesk.Presentation.ViewModels.Pages;
 
@@ -50,7 +49,7 @@ internal sealed class RosterCellFactory
     public Control Build(SheetColumn column) => column.Kind switch
     {
         SheetCellKind.IdentityText => BuildIdentityText(column.IdentityPath),
-        SheetCellKind.ChipText => BuildChipEditor(pathPrefix: string.Empty, chipPath: column.IdentityPath, numericOnly: true, highlight: true),
+        SheetCellKind.ChipText => BuildChipEditor(pathPrefix: string.Empty, chipPath: column.IdentityPath, highlight: true),
         SheetCellKind.StartTimeText => BuildIdentityText(column.IdentityPath),
         SheetCellKind.BirthDate => BuildBirthDate(),
         SheetCellKind.Group => BuildDayCell(column, isGroup: true),
@@ -73,39 +72,11 @@ internal sealed class RosterCellFactory
     };
 
     // ── Identity ────────────────────────────────────────────────────────────────────────────────
-    private static TextBox BuildIdentityText(string path, bool digitsOnly = false)
-    {
-        var box = new TextBox
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Stretch
-        };
-        box[!TextBox.TextProperty] = new Binding(path) { Mode = BindingMode.TwoWay };
-        if (digitsOnly)
-            NumericInput.SetDigits(box, true);
-        return box;
-    }
+    private static Control BuildIdentityText(string path, SheetColumnBuilder.NumericMask mask = SheetColumnBuilder.NumericMask.None)
+        => new LazyTextCell(path, path, new SheetTextOptions { Mask = mask });
 
-    private BirthDateCell BuildBirthDate()
-    {
-        // CalendarDatePicker bound to the row's BirthDate via the global DateTimeOffset↔DateTime converter.
-        var picker = new CalendarDatePicker
-        {
-            SelectedDateFormat = CalendarDatePickerFormat.Custom,
-            CustomDateFormatString = "dd.MM.yyyy",
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        picker[!CalendarDatePicker.SelectedDateProperty] =
-            new Binding(nameof(ParticipantRosterRowViewModel.BirthDate))
-            {
-                Mode = BindingMode.TwoWay,
-                Converter = (Avalonia.Application.Current!.Resources["DateTimeOffsetToDateTime"] as IValueConverter)
-            };
-        picker[!CalendarDatePicker.PlaceholderTextProperty] = new Binding("Localization[Common.DatePlaceholder]");
-        NumericInput.SetDate(picker, true);
-        return new BirthDateCell(picker);
-    }
+    private Control BuildBirthDate()
+        => new LazyDateCell(nameof(ParticipantRosterRowViewModel.BirthDate), _loc.Get("Common.DatePlaceholder"));
 
     // ── Expanded per-day cell ─────────────────────────────────────────────────────────────────────
     private Control BuildDayCell(SheetColumn column, bool isGroup)
@@ -115,16 +86,16 @@ internal sealed class RosterCellFactory
         {
             // The group combo stays interactive on every day — picking a group is how a non-member
             // joins that day — and only dims to signal a non-member row.
-            var combo = BuildGroupCombo($"Days[{i}].");
-            combo[!Visual.OpacityProperty] =
+            var cell = BuildGroupCombo($"Days[{i}].");
+            cell[!Visual.OpacityProperty] =
                 new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.IsMember)}") { Converter = DimWhenNotMember };
-            return combo;
+            return cell;
         }
 
         // Chip cell: numbers only, and non-editable (disabled, greyed) on days the participant does
         // not run. A grey backdrop fills the whole cell so the "disabled" state reads as a flat tint
         // rather than a faint floating textbox.
-        var editor = BuildChipEditor($"Days[{i}].", numericOnly: true, highlight: true);
+        var editor = BuildChipEditor($"Days[{i}].", highlight: true);
         editor[!InputElement.IsEnabledProperty] =
             new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.IsMember)}");
 
@@ -145,14 +116,9 @@ internal sealed class RosterCellFactory
     private Control BuildDayStartTimeCell(SheetColumn column)
     {
         var i = column.DayIndex;
-        var box = new TextBox
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Stretch,
-            [!TextBox.TextProperty] = new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.StartTimeText)}")
-                { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.LostFocus },
-            [!InputElement.IsEnabledProperty] = new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.IsMember)}"),
-        };
+        var path = $"Days[{i}].{nameof(RosterDayCellViewModel.StartTimeText)}";
+        var box = new LazyTextCell(path, path, new SheetTextOptions { CommitOnLostFocus = true });
+        box[!InputElement.IsEnabledProperty] = new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.IsMember)}");
         return WrapWithNonMemberBackdrop(box, i);
     }
 
@@ -198,8 +164,14 @@ internal sealed class RosterCellFactory
         combo[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.GroupShowsInput));
         panel.Children.Add(combo);
 
+        // One real group used on some (not all) days: read-only "<group> (<n> днів)" summary.
+        var single = BuildMutedLabel();
+        single[!TextBlock.TextProperty] = new Binding(nameof(ParticipantRosterRowViewModel.GroupSingleSummary));
+        single[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.GroupShowsSingle));
+        panel.Children.Add(single);
+
         var different = BuildDifferentLabel();
-        different[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.GroupValuesDiffer));
+        different[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.GroupShowsDifferent));
         panel.Children.Add(different);
         return panel;
     }
@@ -210,7 +182,6 @@ internal sealed class RosterCellFactory
         var editor = BuildChipEditor(
             pathPrefix: string.Empty,
             chipPath: nameof(ParticipantRosterRowViewModel.CollapsedChipValue),
-            numericOnly: true,
             highlight: true);
         editor[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.ChipShowsInput));
         panel.Children.Add(editor);
@@ -225,14 +196,11 @@ internal sealed class RosterCellFactory
     private Control BuildCollapsedStartTime()
     {
         var panel = new Panel();
-        var editor = new TextBox
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Stretch,
-            [!TextBox.TextProperty] = new Binding(nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText))
-                { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.LostFocus },
-            [!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.StartTimeShowsInput)),
-        };
+        var editor = new LazyTextCell(
+            nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText),
+            nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText),
+            new SheetTextOptions { CommitOnLostFocus = true });
+        editor[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.StartTimeShowsInput));
         panel.Children.Add(editor);
 
         var different = BuildDifferentLabel();
@@ -261,98 +229,71 @@ internal sealed class RosterCellFactory
     }
 
     // ── Shared editors ────────────────────────────────────────────────────────────────────────────
-    private ComboBox BuildGroupCombo(
+    // Each combo cell is a LazyComboCell: it shows the selected option's label and only builds the real
+    // SearchableComboBox when the cell is entered (focus / click / keyboard). At 600 rows × N combo
+    // columns this keeps the realised visual tree tiny — the combos were the dominant scroll/GC cost.
+
+    private LazyComboCell BuildGroupCombo(
         string pathPrefix,
         string? groupOptionsPath = null,
         string? selectedPath = null)
     {
-        var combo = new SearchableComboBox
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Stretch,
-            SearchWatermark = _loc.Get("Common.Search"),
-            ItemTemplate = new FuncDataTemplate<GroupOption>((_, _) =>
-                new TextBlock { [!TextBlock.TextProperty] = new Binding(nameof(GroupOption.Label)) })
-        };
-        combo[!ItemsControl.ItemsSourceProperty] =
-            new Binding(groupOptionsPath ?? $"{pathPrefix}{nameof(RosterDayCellViewModel.GroupOptions)}");
-        combo[!SelectingItemsControl.SelectedItemProperty] =
-            new Binding(selectedPath ?? $"{pathPrefix}{nameof(RosterDayCellViewModel.SelectedGroup)}")
-            { Mode = BindingMode.TwoWay };
-        return combo;
+        var itemsPath = groupOptionsPath ?? $"{pathPrefix}{nameof(RosterDayCellViewModel.GroupOptions)}";
+        var selected = selectedPath ?? $"{pathPrefix}{nameof(RosterDayCellViewModel.SelectedGroup)}";
+        return new LazyComboCell(
+            () => BuildComboCore<GroupOption>(itemsPath, selected, nameof(GroupOption.Label)),
+            $"{selected}.{nameof(GroupOption.Label)}");
     }
 
-    // A region ComboBox bound on the row. Both ParticipantDayRowViewModel and
+    // A region combo cell bound on the row. Both ParticipantDayRowViewModel and
     // ParticipantRosterRowViewModel expose RegionOptions/SelectedRegion with these names.
-    private ComboBox BuildRegionCombo()
-    {
-        var combo = new SearchableComboBox
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Stretch,
-            SearchWatermark = _loc.Get("Common.Search"),
-            ItemTemplate = new FuncDataTemplate<RegionOption>((_, _) =>
-                new TextBlock { [!TextBlock.TextProperty] = new Binding(nameof(RegionOption.Label)) })
-        };
-        combo[!ItemsControl.ItemsSourceProperty] =
-            new Binding(nameof(ParticipantRosterRowViewModel.RegionOptions));
-        combo[!SelectingItemsControl.SelectedItemProperty] =
-            new Binding(nameof(ParticipantRosterRowViewModel.SelectedRegion)) { Mode = BindingMode.TwoWay };
-        return combo;
-    }
+    private LazyComboCell BuildRegionCombo() => new(
+        () => BuildComboCore<RegionOption>(
+            nameof(ParticipantRosterRowViewModel.RegionOptions),
+            nameof(ParticipantRosterRowViewModel.SelectedRegion),
+            nameof(RegionOption.Label)),
+        $"{nameof(ParticipantRosterRowViewModel.SelectedRegion)}.{nameof(RegionOption.Label)}");
 
-    // A club ComboBox bound on the row. Both row VMs expose ClubOptions/SelectedClub with these names.
-    private ComboBox BuildClubCombo()
-    {
-        var combo = new SearchableComboBox
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Stretch,
-            SearchWatermark = _loc.Get("Common.Search"),
-            ItemTemplate = new FuncDataTemplate<ClubOption>((_, _) =>
-                new TextBlock { [!TextBlock.TextProperty] = new Binding(nameof(ClubOption.Label)) })
-        };
-        combo[!ItemsControl.ItemsSourceProperty] =
-            new Binding(nameof(ParticipantRosterRowViewModel.ClubOptions));
-        combo[!SelectingItemsControl.SelectedItemProperty] =
-            new Binding(nameof(ParticipantRosterRowViewModel.SelectedClub)) { Mode = BindingMode.TwoWay };
-        return combo;
-    }
+    // A club combo cell bound on the row. Both row VMs expose ClubOptions/SelectedClub with these names.
+    private LazyComboCell BuildClubCombo() => new(
+        () => BuildComboCore<ClubOption>(
+            nameof(ParticipantRosterRowViewModel.ClubOptions),
+            nameof(ParticipantRosterRowViewModel.SelectedClub),
+            nameof(ClubOption.Label)),
+        $"{nameof(ParticipantRosterRowViewModel.SelectedClub)}.{nameof(ClubOption.Label)}");
 
-    // A ДЮСШ ComboBox bound on the row. Both row VMs expose DusshOptions/SelectedDussh with these names.
-    private ComboBox BuildDusshCombo()
-    {
-        var combo = new SearchableComboBox
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Stretch,
-            SearchWatermark = _loc.Get("Common.Search"),
-            ItemTemplate = new FuncDataTemplate<DusshOption>((_, _) =>
-                new TextBlock { [!TextBlock.TextProperty] = new Binding(nameof(DusshOption.Label)) })
-        };
-        combo[!ItemsControl.ItemsSourceProperty] =
-            new Binding(nameof(ParticipantRosterRowViewModel.DusshOptions));
-        combo[!SelectingItemsControl.SelectedItemProperty] =
-            new Binding(nameof(ParticipantRosterRowViewModel.SelectedDussh)) { Mode = BindingMode.TwoWay };
-        return combo;
-    }
+    // A ДЮСШ combo cell bound on the row. Both row VMs expose DusshOptions/SelectedDussh with these names.
+    private LazyComboCell BuildDusshCombo() => new(
+        () => BuildComboCore<DusshOption>(
+            nameof(ParticipantRosterRowViewModel.DusshOptions),
+            nameof(ParticipantRosterRowViewModel.SelectedDussh),
+            nameof(DusshOption.Label)),
+        $"{nameof(ParticipantRosterRowViewModel.SelectedDussh)}.{nameof(DusshOption.Label)}");
 
-    // A rank ComboBox bound on the row. Both row VMs expose RankOptions/SelectedRank with these names.
+    // A rank combo cell bound on the row. Both row VMs expose RankOptions/SelectedRank with these names.
     // Rank stores text, so the dropdown has no "+ new" option (ranks are managed on the Ranks page).
-    private ComboBox BuildRankCombo()
+    private LazyComboCell BuildRankCombo() => new(
+        () => BuildComboCore<RankOption>(
+            nameof(ParticipantRosterRowViewModel.RankOptions),
+            nameof(ParticipantRosterRowViewModel.SelectedRank),
+            nameof(RankOption.Label)),
+        $"{nameof(ParticipantRosterRowViewModel.SelectedRank)}.{nameof(RankOption.Label)}");
+
+    // Builds the real SearchableComboBox for a combo cell, bound to the given items/selected paths and
+    // rendering each option's <paramref name="labelPath"/>. Created on demand by LazyComboCell.
+    private SearchableComboBox BuildComboCore<TOption>(string itemsPath, string selectedPath, string labelPath)
     {
         var combo = new SearchableComboBox
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch,
             SearchWatermark = _loc.Get("Common.Search"),
-            ItemTemplate = new FuncDataTemplate<RankOption>((_, _) =>
-                new TextBlock { [!TextBlock.TextProperty] = new Binding(nameof(RankOption.Label)) })
+            ItemTemplate = new FuncDataTemplate<TOption>((_, _) =>
+                new TextBlock { [!TextBlock.TextProperty] = new Binding(labelPath) })
         };
-        combo[!ItemsControl.ItemsSourceProperty] =
-            new Binding(nameof(ParticipantRosterRowViewModel.RankOptions));
+        combo[!ItemsControl.ItemsSourceProperty] = new Binding(itemsPath);
         combo[!SelectingItemsControl.SelectedItemProperty] =
-            new Binding(nameof(ParticipantRosterRowViewModel.SelectedRank)) { Mode = BindingMode.TwoWay };
+            new Binding(selectedPath) { Mode = BindingMode.TwoWay };
         return combo;
     }
 
@@ -369,39 +310,37 @@ internal sealed class RosterCellFactory
         return box;
     }
 
-    private TextBox BuildChipEditor(string pathPrefix, string? chipPath = null, bool numericOnly = false, bool highlight = false)
+    // A chip cell as a LazyTextCell: digits only, commits on lost focus, and (when a rental registry is
+    // supplied) bold-reds a non-rental number on both the resting label and the editor, with the
+    // Ctrl+double-click / context-menu toggle. Callers may still bind IsEnabled/IsVisible/Opacity on
+    // the returned cell (the resting label inherits those from the cell).
+    private LazyTextCell BuildChipEditor(string pathPrefix, string? chipPath = null, bool highlight = false)
     {
-        var box = new TextBox
+        var path = chipPath ?? $"{pathPrefix}{nameof(RosterDayCellViewModel.Chip)}";
+        return new LazyTextCell(path, path, new SheetTextOptions
         {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Stretch
-        };
-        box[!TextBox.TextProperty] =
-            new Binding(chipPath ?? $"{pathPrefix}{nameof(RosterDayCellViewModel.Chip)}")
-            { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.LostFocus };
-        if (numericOnly)
-            // A chip is a SportIdent card number kept as a string — restrict input to digits only
-            // (no sign or separator) so the field can never hold a non-digit character.
-            NumericInput.SetDigits(box, true);
-        if (highlight && _rentalChips is not null)
-        {
-            // Bold-red a number that isn't in the rental database, and let Ctrl+double-click or the
-            // cell's context menu toggle it.
-            ChipHighlight.SetRegistry(box, _rentalChips);
-            if (_onToggleRental is not null)
-            {
-                ChipHighlight.SetToggle(box, _onToggleRental);
-                ChipHighlight.SetLocalization(box, _loc);
-            }
-        }
-        return box;
+            // A chip is a SportIdent card number kept as a string — restrict input to digits only.
+            Mask = SheetColumnBuilder.NumericMask.Digits,
+            CommitOnLostFocus = true,
+            RentalChips = highlight ? _rentalChips : null,
+            ToggleRental = highlight ? _onToggleRental : null,
+            Localization = highlight ? _loc : null,
+        });
     }
 
-    private TextBlock BuildDifferentLabel() => new()
+    private TextBlock BuildDifferentLabel()
+    {
+        var label = BuildMutedLabel();
+        label.Text = _loc.Get("Participants.Roster.Different");
+        return label;
+    }
+
+    // A muted, read-only cell label (the "різні" / single-group-summary states). Caller sets Text or
+    // binds TextBlock.TextProperty.
+    private static TextBlock BuildMutedLabel() => new()
     {
         VerticalAlignment = VerticalAlignment.Center,
         Padding = new Thickness(10, 0),
-        Text = _loc.Get("Participants.Roster.Different"),
         [!TextBlock.ForegroundProperty] = new DynamicResourceExtension("TextMuted")
     };
 
@@ -428,13 +367,4 @@ internal sealed class RosterCellFactory
         };
         return button;
     }
-}
-
-/// <summary>
-/// Wraps a birth-date <see cref="CalendarDatePicker"/> so the cell host can tell date cells apart
-/// (they are always interactive, never seeded by a keystroke).
-/// </summary>
-internal sealed class BirthDateCell : Decorator
-{
-    public BirthDateCell(CalendarDatePicker picker) => Child = picker;
 }

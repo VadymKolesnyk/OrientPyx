@@ -140,6 +140,33 @@ public sealed partial class SheetColumn : ObservableObject
     [ObservableProperty]
     private double _width = DefaultWidth;
 
+    /// <summary>
+    /// True when the user has hidden this column. The header/row builders skip hidden leaves (a band
+    /// with no visible leaf is dropped entirely). Observable so a toggle from the columns picker /
+    /// header context menu rebuilds the table live. State is in-memory only.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isHidden;
+
+    /// <summary>
+    /// A stable identity for this column across rebuilds (collapse/expand, language change), so a
+    /// hidden-column set survives them. Built from the kind plus the discriminating path/day index —
+    /// NOT the header text, which is localized and changes with the language. The builder may override
+    /// it (e.g. day-mode custom columns share one kind and need their header to disambiguate).
+    /// </summary>
+    public string Key
+    {
+        get => _key ??= $"{Kind}:{IdentityPath}:{SortPath}:{DayIndex}";
+        set => _key = value;
+    }
+    private string? _key;
+
+    /// <summary>
+    /// A human-readable label for this column in the columns picker / context menu. Falls back to the
+    /// header text; day sub-columns combine their band label so "День 1" reads unambiguously.
+    /// </summary>
+    public string PickerLabel { get; set; } = string.Empty;
+
     /// <summary>Default starting width for content columns the builder doesn't fix explicitly.</summary>
     public const double DefaultWidth = 130;
 

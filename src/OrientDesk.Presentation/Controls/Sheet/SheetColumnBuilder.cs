@@ -5,13 +5,9 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
-using Avalonia.Data.Converters;
-using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Markup.Xaml.MarkupExtensions;
 using OrientDesk.Localization;
-using OrientDesk.Presentation.Behaviors;
 using OrientDesk.Presentation.Converters;
 using OrientDesk.Presentation.ViewModels.Pages;
 
@@ -68,37 +64,21 @@ public sealed class SheetColumnBuilder
         var column = NewColumn(headerKey, width, minWidth, sortPath ?? displayPath);
         column.CellBuilder = () =>
         {
-            // Editable: the table swaps display↔edit by focusing the inner editor, so a single
-            // control that's read-only-looking until focused fits the model best — but to match the
-            // old grid's "TextBlock then TextBox" feel we use one TextBox skinned flat (the roster
-            // table already styles in-cell TextBoxes borderless). A read-only column gets a TextBlock.
+            // A read-only column is a plain label; an editable one is a LazyTextCell — it shows the
+            // value as text and turns into a flat in-cell TextBox on click/keystroke, the same "display
+            // as text, edit on click" behaviour every sheet cell now shares.
             if (editPath is null)
                 return ReadOnlyText(displayPath, opacityPath);
 
-            var box = new TextBox
+            return new LazyTextCell(displayPath, editPath, new SheetTextOptions
             {
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                VerticalAlignment = VerticalAlignment.Stretch,
-                [!TextBox.TextProperty] = new Binding(editPath)
-                {
-                    Mode = BindingMode.TwoWay,
-                    UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
-                }
-            };
-            if (placeholder is not null)
-                box.PlaceholderText = placeholder;
-            ApplyMask(box, mask);
-            if (enabledPath is not null)
-                box[!InputElement.IsEnabledProperty] = new Binding(enabledPath);
-            if (opacityPath is not null)
-                box[!Visual.OpacityProperty] = new Binding(opacityPath) { Converter = DimConverter };
-            if (rentalChips is not null)
-            {
-                ChipHighlight.SetRegistry(box, rentalChips);
-                if (toggleRental is not null)
-                    ChipHighlight.SetToggle(box, toggleRental);
-            }
-            return box;
+                Mask = mask,
+                Placeholder = placeholder,
+                EnabledPath = enabledPath,
+                OpacityPath = opacityPath,
+                RentalChips = rentalChips,
+                ToggleRental = toggleRental,
+            });
         };
         return Add(column);
     }
@@ -118,9 +98,10 @@ public sealed class SheetColumnBuilder
         string? sortPath = null)
     {
         var column = NewColumn(headerKey, width, minWidth, sortPath ?? string.Empty);
-        column.CellBuilder = () =>
-        {
-            var combo = new SearchableComboBox
+        // A LazyComboCell: shows the selected option's label and builds the real SearchableComboBox only
+        // when the cell is entered. Keeps virtualized rows light on pages with a combo per row.
+        column.CellBuilder = () => new LazyComboCell(
+            () => new SearchableComboBox
             {
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 VerticalAlignment = VerticalAlignment.Stretch,
@@ -132,9 +113,8 @@ public sealed class SheetColumnBuilder
                 [!ItemsControl.ItemsSourceProperty] = new Binding(itemsPath),
                 [!SelectingItemsControl.SelectedItemProperty] =
                     new Binding(selectedPath) { Mode = BindingMode.TwoWay }
-            };
-            return combo;
-        };
+            },
+            $"{selectedPath}.{labelPath}");
         return Add(column);
     }
 
@@ -151,25 +131,8 @@ public sealed class SheetColumnBuilder
         string? placeholderKey = "Common.DatePlaceholder")
     {
         var column = NewColumn(headerKey, width, minWidth, path);
-        column.CellBuilder = () =>
-        {
-            var picker = new CalendarDatePicker
-            {
-                SelectedDateFormat = CalendarDatePickerFormat.Custom,
-                CustomDateFormatString = "dd.MM.yyyy",
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                VerticalAlignment = VerticalAlignment.Center,
-                [!CalendarDatePicker.SelectedDateProperty] = new Binding(path)
-                {
-                    Mode = BindingMode.TwoWay,
-                    Converter = Application.Current!.Resources["DateTimeOffsetToDateTime"] as IValueConverter
-                }
-            };
-            if (placeholderKey is not null)
-                picker.PlaceholderText = _loc.Get(placeholderKey);
-            NumericInput.SetDate(picker, true);
-            return picker;
-        };
+        var placeholder = placeholderKey is not null ? _loc.Get(placeholderKey) : null;
+        column.CellBuilder = () => new LazyDateCell(path, placeholder);
         return Add(column);
     }
 
@@ -241,17 +204,6 @@ public sealed class SheetColumnBuilder
         if (opacityPath is not null)
             block[!Visual.OpacityProperty] = new Binding(opacityPath) { Converter = DimConverter };
         return block;
-    }
-
-    private static void ApplyMask(TextBox box, NumericMask mask)
-    {
-        switch (mask)
-        {
-            case NumericMask.Digits: NumericInput.SetDigits(box, true); break;
-            case NumericMask.Integer: NumericInput.SetInteger(box, true); break;
-            case NumericMask.Decimal: NumericInput.SetDecimal(box, true); break;
-            case NumericMask.Time: NumericInput.SetTime(box, true); break;
-        }
     }
 
     private Button DeleteButton(Action<object> onDelete, string tooltipKey)

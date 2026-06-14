@@ -72,11 +72,16 @@ public sealed class DayColumnBuilder
 
     private SheetBand Identity(SheetCellKind kind, string headerKey, string path, double? fixedWidth = null, string? sortPath = null)
     {
+        var header = _loc.Get(headerKey);
         var col = new SheetColumn(kind)
         {
-            Header = _loc.Get(headerKey),
+            Header = header,
             IdentityPath = path,
             SortPath = sortPath ?? path,
+            // Key off the header KEY (stable across languages) so a hidden column survives a language
+            // change; the picker shows the localized header.
+            Key = $"id:{headerKey}",
+            PickerLabel = header,
         };
         if (fixedWidth is { } w)
         {

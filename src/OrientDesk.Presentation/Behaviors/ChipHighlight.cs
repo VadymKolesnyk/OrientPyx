@@ -39,13 +39,68 @@ public static class ChipHighlight
     public static void SetLocalization(TextBox box, ILocalizationService? value) => box.SetValue(LocalizationProperty, value);
     public static ILocalizationService? GetLocalization(TextBox box) => box.GetValue(LocalizationProperty);
 
+    /// <summary>
+    /// The same rental-chip set, but for a read-only <see cref="TextBlock"/> — the resting face of a
+    /// lazy chip cell. Bold-reds the label when its text is not a rental chip, with no toggle/context
+    /// menu (those live on the editing <see cref="TextBox"/>). Setting it wires the behaviour.
+    /// </summary>
+    public static readonly AttachedProperty<RentalChipRegistry?> LabelRegistryProperty =
+        AvaloniaProperty.RegisterAttached<TextBlock, RentalChipRegistry?>("LabelRegistry", typeof(ChipHighlight));
+
+    public static void SetLabelRegistry(TextBlock block, RentalChipRegistry? value) => block.SetValue(LabelRegistryProperty, value);
+    public static RentalChipRegistry? GetLabelRegistry(TextBlock block) => block.GetValue(LabelRegistryProperty);
+
     // The brush used for a non-rental chip; bold weight is applied alongside it.
     private static readonly IBrush NonRentalBrush = new SolidColorBrush(Color.FromRgb(0xD3, 0x2F, 0x2F));
 
     static ChipHighlight()
     {
         RegistryProperty.Changed.AddClassHandler<TextBox>((box, e) => Attach(box, e.NewValue as RentalChipRegistry));
+        LabelRegistryProperty.Changed.AddClassHandler<TextBlock>((block, e) => AttachLabel(block, e.NewValue as RentalChipRegistry));
     }
+
+    // The read-only label variant: re-highlight on text or registry change, no toggle/context menu.
+    private static void AttachLabel(TextBlock block, RentalChipRegistry? registry)
+    {
+        block.PropertyChanged -= OnLabelTextChanged;
+        if (block.GetValue(LabelSubscriptionProperty) is { } prev)
+            prev.Dispose();
+        block.SetValue(LabelSubscriptionProperty, null);
+
+        if (registry is null)
+            return;
+
+        block.PropertyChanged += OnLabelTextChanged;
+        void OnRegistryChanged(object? _, EventArgs __) => ApplyLabel(block, registry);
+        registry.Changed += OnRegistryChanged;
+        block.SetValue(LabelSubscriptionProperty, new Subscription(() => registry.Changed -= OnRegistryChanged));
+
+        ApplyLabel(block, registry);
+    }
+
+    private static void OnLabelTextChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == TextBlock.TextProperty && sender is TextBlock block)
+            ApplyLabel(block, GetLabelRegistry(block));
+    }
+
+    private static void ApplyLabel(TextBlock block, RentalChipRegistry? registry)
+    {
+        var nonRental = registry is not null && registry.IsNonRental(block.Text);
+        if (nonRental)
+        {
+            block.Foreground = NonRentalBrush;
+            block.FontWeight = FontWeight.Bold;
+        }
+        else
+        {
+            block.ClearValue(TextBlock.ForegroundProperty);
+            block.ClearValue(TextBlock.FontWeightProperty);
+        }
+    }
+
+    private static readonly AttachedProperty<Subscription?> LabelSubscriptionProperty =
+        AvaloniaProperty.RegisterAttached<TextBlock, Subscription?>("LabelSubscription", typeof(ChipHighlight));
 
     private static void Attach(TextBox box, RentalChipRegistry? registry)
     {
