@@ -18,6 +18,19 @@
                      scroll left/right in lockstep while the header stays frozen vertically. -->
                 <DockPanel LastChildFill="True" MinWidth="200"
                            Background="{DynamicResource SurfaceCard}">
+                    <!-- Built-in toolbar: active-filter chips on the left, the column show/hide gear on
+                         the right. Lives inside the table so every page gets it with no per-view markup.
+                         The chips bar collapses to nothing when no filter is active, leaving just the gear. -->
+                    <DockPanel DockPanel.Dock="Top" LastChildFill="True" Margin="8,6"
+                               Background="Transparent">
+                        <controls:SheetColumnsButton DockPanel.Dock="Right"
+                            Table="{Binding $parent[controls:SheetTable]}"
+                            Localization="{Binding Localization, RelativeSource={RelativeSource TemplatedParent}}" />
+                        <controls:SheetFilterBar
+                            Table="{Binding $parent[controls:SheetTable]}"
+                            Localization="{Binding Localization, RelativeSource={RelativeSource TemplatedParent}}" />
+                    </DockPanel>
+
                     <!-- Frozen, code-built banded header. Its own ScrollViewer clips horizontally;
                          scrollbars are hidden — the body drives the offset. -->
                     <Border DockPanel.Dock="Top"

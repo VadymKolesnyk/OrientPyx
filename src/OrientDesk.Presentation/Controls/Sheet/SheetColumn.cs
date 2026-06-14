@@ -167,6 +167,22 @@ public sealed partial class SheetColumn : ObservableObject
     /// </summary>
     public string PickerLabel { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Property path on the bound row whose value the column is filtered by. Defaults to
+    /// <see cref="SortPath"/> (the value sorting already uses); combo columns set it explicitly to the
+    /// selected option's label path so filtering matches the visible text even though the column may
+    /// not be sortable. Empty ⇒ the column cannot be filtered (e.g. the actions column).
+    /// </summary>
+    public string FilterPath
+    {
+        get => string.IsNullOrEmpty(_filterPath) ? SortPath : _filterPath;
+        set => _filterPath = value;
+    }
+    private string _filterPath = string.Empty;
+
+    /// <summary>True when this column can carry a filter (it exposes a value path and isn't the actions column).</summary>
+    public bool Filterable => Kind != SheetCellKind.Actions && !string.IsNullOrEmpty(FilterPath);
+
     /// <summary>Default starting width for content columns the builder doesn't fix explicitly.</summary>
     public const double DefaultWidth = 130;
 

@@ -42,24 +42,15 @@ public sealed class SheetColumnsButton : Button
     {
         Classes.Add("ghost");
 
-        // Icon + caption, matching the other toolbar buttons (import/add) on the participants page.
+        // Icon-only button: a "hamburger" (three horizontal lines) that opens the column picker.
+        // PathIcon fills its geometry, so open line segments wouldn't render — use three filled bars.
         var icon = new PathIcon
         {
-            Data = Geometry.Parse("M4,4 h16 v16 h-16 z M10,4 v16 M16,4 v16"),
-            Width = 14,
-            Height = 14
+            Data = Geometry.Parse("M3,4 h18 v2.5 h-18 z M3,10.75 h18 v2.5 h-18 z M3,17.5 h18 v2.5 h-18 z"),
+            Width = 16,
+            Height = 16
         };
-        var caption = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
-        var content = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 6,
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-        content.Children.Add(icon);
-        content.Children.Add(caption);
-        Content = content;
-        _caption = caption;
+        Content = icon;
 
         _list = new StackPanel { Spacing = 2, Margin = new Thickness(4) };
 
@@ -82,8 +73,6 @@ public sealed class SheetColumnsButton : Button
         _flyout.Opened += (_, _) => RebuildList();
         ApplyCaption();
     }
-
-    private readonly TextBlock _caption;
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -115,7 +104,7 @@ public sealed class SheetColumnsButton : Button
     private bool _togglingFromList;
 
     private void ApplyCaption()
-        => _caption.Text = Localization?.Get("Sheet.Columns.Button") ?? "Columns";
+        => ToolTip.SetTip(this, Localization?.Get("Sheet.Columns.Button") ?? "Columns");
 
     // A ScaleTransform whose X/Y track the app-wide UiScale service (exposed as a StaticResource in
     // App.axaml). Live: the service raises PropertyChanged on Scale, so the flyout follows a scale change.

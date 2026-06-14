@@ -63,6 +63,9 @@ public interface IEventStore
     /// <summary>Removes a group by id. Does nothing if it is missing.</summary>
     Task DeleteGroupAsync(string eventFolderPath, Guid groupId, CancellationToken cancellationToken = default);
 
+    /// <summary>Sets a group's base entry fee (shared across days). Does nothing if the group is missing.</summary>
+    Task UpdateGroupEntryFeeAsync(string eventFolderPath, Guid groupId, decimal? entryFee, CancellationToken cancellationToken = default);
+
     /// <summary>Returns a day's group settings rows, ordered by their sort order.</summary>
     Task<IReadOnlyList<GroupDaySettings>> GetGroupDaySettingsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
 
@@ -206,4 +209,28 @@ public interface IEventStore
 
     /// <summary>Removes every finish read-out from a day. Returns how many were deleted.</summary>
     Task<int> DeleteFinishReadoutsForDayAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the competition's chip-price overrides (note → price/day), ordered by note.</summary>
+    Task<IReadOnlyList<ChipPriceOverride>> GetChipPriceOverridesAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds a chip-price override to the competition.</summary>
+    Task AddChipPriceOverrideAsync(string eventFolderPath, ChipPriceOverride priceOverride, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates a chip-price override's editable fields (note, price). Does nothing if it is missing.</summary>
+    Task UpdateChipPriceOverrideAsync(string eventFolderPath, ChipPriceOverride priceOverride, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a chip-price override by id. Does nothing if it is missing.</summary>
+    Task DeleteChipPriceOverrideAsync(string eventFolderPath, Guid overrideId, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the competition's entry-fee discounts, ordered by name.</summary>
+    Task<IReadOnlyList<EntryFeeDiscount>> GetEntryFeeDiscountsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds an entry-fee discount to the competition.</summary>
+    Task AddEntryFeeDiscountAsync(string eventFolderPath, EntryFeeDiscount discount, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates an entry-fee discount's editable fields (name, percent, applies-to-chip). Does nothing if it is missing.</summary>
+    Task UpdateEntryFeeDiscountAsync(string eventFolderPath, EntryFeeDiscount discount, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes an entry-fee discount by id. Does nothing if it is missing.</summary>
+    Task DeleteEntryFeeDiscountAsync(string eventFolderPath, Guid discountId, CancellationToken cancellationToken = default);
 }

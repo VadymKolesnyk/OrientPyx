@@ -98,6 +98,9 @@ public sealed class SheetColumnBuilder
         string? sortPath = null)
     {
         var column = NewColumn(headerKey, width, minWidth, sortPath ?? string.Empty);
+        // The combo is filtered by the selected option's visible label, so the user filters on the text
+        // they see — even though the column is left unsortable (empty SortPath) by default.
+        column.FilterPath = $"{selectedPath}.{labelPath}";
         // A LazyComboCell: shows the selected option's label and builds the real SearchableComboBox only
         // when the cell is entered. Keeps virtualized rows light on pages with a combo per row.
         column.CellBuilder = () => new LazyComboCell(
@@ -172,9 +175,13 @@ public sealed class SheetColumnBuilder
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
     private SheetColumn NewColumn(string headerKey, double? width, double minWidth, string sortPath)
     {
+        var header = _loc.Get(headerKey);
         var column = new SheetColumn(SheetCellKind.Custom)
         {
-            Header = _loc.Get(headerKey),
+            Header = header,
+            // The columns picker and the filter menu both key off PickerLabel; flat pages get it from
+            // the header so every data column is hideable and filterable (the roster builder sets its own).
+            PickerLabel = header,
             SortPath = sortPath,
             MinWidth = minWidth,
         };

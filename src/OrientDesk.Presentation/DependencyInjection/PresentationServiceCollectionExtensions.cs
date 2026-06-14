@@ -52,6 +52,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<ClubsViewModel>();
         services.AddSingleton<DusshViewModel>();
         services.AddSingleton<RanksViewModel>();
+        services.AddSingleton<EntryFeesViewModel>();
 
         return services.BuildServiceProvider();
     }

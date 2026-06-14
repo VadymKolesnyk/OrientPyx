@@ -1,0 +1,127 @@
+using System;
+using System.Collections.Generic;
+using OrientDesk.Localization;
+
+namespace OrientDesk.Presentation.Controls;
+
+/// <summary>The two Google-Sheets-style filter modes a column can use.</summary>
+public enum SheetFilterMode
+{
+    /// <summary>Keep rows whose cell value is one of an explicitly selected set of values.</summary>
+    Values,
+
+    /// <summary>Keep rows whose cell value satisfies a text condition (contains, equals, …).</summary>
+    Condition
+}
+
+/// <summary>The text conditions offered in <see cref="SheetFilterMode.Condition"/> mode.</summary>
+public enum SheetFilterCondition
+{
+    Contains,
+    DoesNotContain,
+    Equals,
+    StartsWith,
+    EndsWith,
+    IsEmpty,
+    IsNotEmpty
+}
+
+/// <summary>
+/// One active per-column filter on a <see cref="SheetTable"/>. Keyed by <see cref="SheetColumn.Key"/>
+/// so it survives a header rebuild (language change, collapse/expand, day-set change). Pure
+/// presentation state: filtering is display-only and never mutates the bound row collection.
+/// </summary>
+public sealed class SheetFilter
+{
+    /// <summary>The <see cref="SheetColumn.Key"/> this filter applies to.</summary>
+    public required string ColumnKey { get; init; }
+
+    /// <summary>Localized column header, re-set on each rebuild so the chip label re-localizes.</summary>
+    public string Header { get; set; } = string.Empty;
+
+    public SheetFilterMode Mode { get; set; } = SheetFilterMode.Condition;
+
+    // ── Condition mode ──
+    public SheetFilterCondition Condition { get; set; } = SheetFilterCondition.Contains;
+    public string Text { get; set; } = string.Empty;
+
+    // ── Values mode ──
+    /// <summary>The set of cell values (as displayed text) to keep. Null ⇒ every value passes.</summary>
+    public HashSet<string>? AllowedValues { get; set; }
+
+    /// <summary>True when this filter would actually exclude rows (so it is worth keeping/showing).</summary>
+    public bool IsActive => Mode switch
+    {
+        SheetFilterMode.Values => AllowedValues is not null,
+        SheetFilterMode.Condition => Condition is SheetFilterCondition.IsEmpty or SheetFilterCondition.IsNotEmpty
+            || !string.IsNullOrEmpty(Text),
+        _ => false
+    };
+
+    /// <summary>Whether a row whose this-column cell renders as <paramref name="cellText"/> passes.</summary>
+    public bool Matches(string? cellText)
+    {
+        var value = cellText ?? string.Empty;
+        return Mode == SheetFilterMode.Values ? MatchesValues(value) : MatchesCondition(value);
+    }
+
+    private bool MatchesValues(string value)
+        => AllowedValues is null || AllowedValues.Contains(value);
+
+    private bool MatchesCondition(string value)
+    {
+        const StringComparison ci = StringComparison.CurrentCultureIgnoreCase;
+        return Condition switch
+        {
+            SheetFilterCondition.IsEmpty => string.IsNullOrWhiteSpace(value),
+            SheetFilterCondition.IsNotEmpty => !string.IsNullOrWhiteSpace(value),
+            SheetFilterCondition.Contains => value.Contains(Text, ci),
+            SheetFilterCondition.DoesNotContain => !value.Contains(Text, ci),
+            SheetFilterCondition.Equals => value.Equals(Text, ci),
+            SheetFilterCondition.StartsWith => value.StartsWith(Text, ci),
+            SheetFilterCondition.EndsWith => value.EndsWith(Text, ci),
+            _ => true
+        };
+    }
+
+    /// <summary>The chip text shown above the table, e.g. «Прізвище: містить «іван»».</summary>
+    public string Describe(ILocalizationService loc)
+    {
+        var head = string.IsNullOrEmpty(Header) ? loc.Get("Sheet.Filter.Column") : Header;
+        if (Mode == SheetFilterMode.Values)
+        {
+            var count = AllowedValues?.Count ?? 0;
+            return $"{head}: {loc.Get("Sheet.Filter.ValuesSummary")} ({count})";
+        }
+
+        var cond = loc.Get(ConditionKey(Condition));
+        return Condition is SheetFilterCondition.IsEmpty or SheetFilterCondition.IsNotEmpty
+            ? $"{head}: {cond}"
+            : $"{head}: {cond} «{Text}»";
+    }
+
+    /// <summary>Localization key for a condition's display name.</summary>
+    public static string ConditionKey(SheetFilterCondition condition) => condition switch
+    {
+        SheetFilterCondition.Contains => "Sheet.Filter.Cond.Contains",
+        SheetFilterCondition.DoesNotContain => "Sheet.Filter.Cond.DoesNotContain",
+        SheetFilterCondition.Equals => "Sheet.Filter.Cond.Equals",
+        SheetFilterCondition.StartsWith => "Sheet.Filter.Cond.StartsWith",
+        SheetFilterCondition.EndsWith => "Sheet.Filter.Cond.EndsWith",
+        SheetFilterCondition.IsEmpty => "Sheet.Filter.Cond.IsEmpty",
+        SheetFilterCondition.IsNotEmpty => "Sheet.Filter.Cond.IsNotEmpty",
+        _ => "Sheet.Filter.Cond.Contains"
+    };
+
+    /// <summary>All conditions in display order, for the popup's condition dropdown.</summary>
+    public static IReadOnlyList<SheetFilterCondition> AllConditions { get; } =
+    [
+        SheetFilterCondition.Contains,
+        SheetFilterCondition.DoesNotContain,
+        SheetFilterCondition.Equals,
+        SheetFilterCondition.StartsWith,
+        SheetFilterCondition.EndsWith,
+        SheetFilterCondition.IsEmpty,
+        SheetFilterCondition.IsNotEmpty
+    ];
+}

@@ -40,6 +40,10 @@ public sealed class EventStore : IEventStore
             existing.Organisation = info.Organisation;
             existing.StartDate = info.StartDate;
             existing.EndDate = info.EndDate;
+            existing.RaisedFeeEnabled = info.RaisedFeeEnabled;
+            existing.RaisedFeeAmount = info.RaisedFeeAmount;
+            existing.RaisedFeeDeadline = info.RaisedFeeDeadline;
+            existing.ChipRentalPricePerDay = info.ChipRentalPricePerDay;
         }
 
         await db.SaveChangesAsync(cancellationToken);
@@ -209,6 +213,18 @@ public sealed class EventStore : IEventStore
             return;
 
         db.Groups.Remove(existing);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateGroupEntryFeeAsync(string eventFolderPath, Guid groupId, decimal? entryFee, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.Groups.FirstOrDefaultAsync(g => g.Id == groupId, cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.EntryFee = entryFee;
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -625,6 +641,89 @@ public sealed class EventStore : IEventStore
         return await db.FinishReadouts
             .Where(r => r.EventDayId == dayId)
             .ExecuteDeleteAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ChipPriceOverride>> GetChipPriceOverridesAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.ChipPriceOverrides
+            .AsNoTracking()
+            .OrderBy(o => o.Note)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task AddChipPriceOverrideAsync(string eventFolderPath, ChipPriceOverride priceOverride, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        db.ChipPriceOverrides.Add(priceOverride);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateChipPriceOverrideAsync(string eventFolderPath, ChipPriceOverride priceOverride, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.ChipPriceOverrides.FirstOrDefaultAsync(o => o.Id == priceOverride.Id, cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.Note = priceOverride.Note;
+        existing.PricePerDay = priceOverride.PricePerDay;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteChipPriceOverrideAsync(string eventFolderPath, Guid overrideId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.ChipPriceOverrides.FirstOrDefaultAsync(o => o.Id == overrideId, cancellationToken);
+        if (existing is null)
+            return;
+
+        db.ChipPriceOverrides.Remove(existing);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<EntryFeeDiscount>> GetEntryFeeDiscountsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.EntryFeeDiscounts
+            .AsNoTracking()
+            .OrderBy(d => d.Name)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task AddEntryFeeDiscountAsync(string eventFolderPath, EntryFeeDiscount discount, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        db.EntryFeeDiscounts.Add(discount);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateEntryFeeDiscountAsync(string eventFolderPath, EntryFeeDiscount discount, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.EntryFeeDiscounts.FirstOrDefaultAsync(d => d.Id == discount.Id, cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.Name = discount.Name;
+        existing.Percent = discount.Percent;
+        existing.AppliesToChipRental = discount.AppliesToChipRental;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteEntryFeeDiscountAsync(string eventFolderPath, Guid discountId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.EntryFeeDiscounts.FirstOrDefaultAsync(d => d.Id == discountId, cancellationToken);
+        if (existing is null)
+            return;
+
+        db.EntryFeeDiscounts.Remove(existing);
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<ParticipantImportResult> ImportParticipantsBatchAsync(

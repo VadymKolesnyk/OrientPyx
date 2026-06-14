@@ -26,6 +26,8 @@ public class EventDbContext : DbContext
     public DbSet<Participant> Participants => Set<Participant>();
     public DbSet<ParticipantDay> ParticipantDays => Set<ParticipantDay>();
     public DbSet<FinishReadout> FinishReadouts => Set<FinishReadout>();
+    public DbSet<ChipPriceOverride> ChipPriceOverrides => Set<ChipPriceOverride>();
+    public DbSet<EntryFeeDiscount> EntryFeeDiscounts => Set<EntryFeeDiscount>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

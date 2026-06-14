@@ -161,6 +161,7 @@ public sealed class SheetTable : TemplatedControl
         AddHandler(KeyDownEvent, OnTunnelKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnBubbleKeyDown, RoutingStrategies.Bubble);
         AddHandler(PointerPressedEvent, OnTunnelPointerPressed, RoutingStrategies.Tunnel);
+        AddHandler(PointerPressedEvent, OnCellRightClick, RoutingStrategies.Tunnel);
         AddHandler(PointerWheelChangedEvent, OnTunnelPointerWheel, RoutingStrategies.Tunnel);
     }
 
@@ -270,9 +271,15 @@ public sealed class SheetTable : TemplatedControl
 
         // Re-apply the persisted hidden-key set: every rebuild creates fresh SheetColumn instances
         // (language change, collapse toggle, day-set change), so the hidden flag is restored by key.
+        // Refresh each active filter's header from the matching fresh column too, so a chip's label
+        // re-localizes on a language change (the filter itself survives by key).
         foreach (var band in _bands)
             foreach (var col in band.Columns)
+            {
                 col.IsHidden = _hiddenKeys.Contains(col.Key);
+                if (_filters.TryGetValue(col.Key, out var filter))
+                    filter.Header = string.IsNullOrEmpty(col.PickerLabel) ? col.Header : col.PickerLabel;
+            }
 
         // What the header and rows render: the bands with hidden leaves dropped.
         _visibleBands = ComputeVisibleBands(_bands);
@@ -283,6 +290,9 @@ public sealed class SheetTable : TemplatedControl
             _header.SortBy = ApplySort;
             _header.MoveBand = MoveBand;
             _header.HideColumn = HideColumn;
+            _header.FilterColumn = ShowColumnFilter;
+            _header.RemoveFilter = column => ClearColumnFilter(column.Key);
+            _header.HasFilter = column => _filters.ContainsKey(column.Key);
             _header.SortColumn = _sortColumn;
             _header.SortDescending = _sortDescending;
             _header.Rebuild(_visibleBands);
@@ -305,6 +315,124 @@ public sealed class SheetTable : TemplatedControl
     // Keys of the columns the user has hidden. Persisted at the table level (not on a column instance)
     // because every Rebuild() makes fresh SheetColumn instances — the set is re-applied by key there.
     private readonly HashSet<string> _hiddenKeys = new();
+
+    // ── Column filters ────────────────────────────────────────────────────────────────────────────
+    // Active filters keyed by SheetColumn.Key (parallel to _hiddenKeys, and for the same reason: fresh
+    // column instances on every Rebuild are matched back by key). Filtering is display-only — it shapes
+    // the body's item list in ApplySortedView and never touches the bound source collection.
+    private readonly Dictionary<string, SheetFilter> _filters = new();
+
+    /// <summary>Raised after the active-filter set changes, so a filter-chips bar can refresh.</summary>
+    public event EventHandler? FiltersChanged;
+
+    /// <summary>The filters currently applied, in no particular order (for the chips bar).</summary>
+    public IReadOnlyCollection<SheetFilter> ActiveFilters => _filters.Values;
+
+    /// <summary>The filter on the given column key, or null if none.</summary>
+    public SheetFilter? GetColumnFilter(string key)
+        => _filters.TryGetValue(key, out var f) ? f : null;
+
+    /// <summary>Applies (or replaces) a column's filter; an inactive filter clears it instead.</summary>
+    public void SetColumnFilter(string key, SheetFilter filter)
+    {
+        if (!filter.IsActive)
+        {
+            ClearColumnFilter(key);
+            return;
+        }
+        _filters[key] = filter;
+        ApplySortedView();
+        FiltersChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Removes a column's filter (no-op if none). Rebuilds the body view.</summary>
+    public void ClearColumnFilter(string key)
+    {
+        if (_filters.Remove(key))
+        {
+            ApplySortedView();
+            FiltersChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>Removes every active filter.</summary>
+    public void ClearAllFilters()
+    {
+        if (_filters.Count == 0)
+            return;
+        _filters.Clear();
+        ApplySortedView();
+        FiltersChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>The distinct displayed values currently in a column, naturally sorted, for the values picker.</summary>
+    public IReadOnlyList<string> DistinctValues(SheetColumn column)
+    {
+        var set = new HashSet<string>();
+        foreach (var item in ItemsSource ?? Array.Empty<object?>())
+            if (item is not null)
+                set.Add(CellText(column, item));
+        var list = new List<string>(set);
+        list.Sort(NaturalCompare);
+        return list;
+    }
+
+    /// <summary>The leaf column with the given key in the current band set, or null if absent.</summary>
+    public SheetColumn? FindColumnByKey(string key)
+    {
+        foreach (var band in _bands)
+            foreach (var col in band.Columns)
+                if (col.Key == key)
+                    return col;
+        return null;
+    }
+
+    // The text a column renders for a row — the single source of truth shared by filtering, the values
+    // picker and the cell "filter by this value" menu, so all three agree on "the value of this cell".
+    // Combo/option columns read their label path; dates format to match the dd.MM.yyyy display.
+    private static string CellText(SheetColumn column, object row)
+    {
+        var value = ReadPath(row, column.FilterPath);
+        return value switch
+        {
+            null => string.Empty,
+            DateTimeOffset dto => dto.ToString("dd.MM.yyyy"),
+            DateTime dt => dt.ToString("dd.MM.yyyy"),
+            _ => value.ToString() ?? string.Empty
+        };
+    }
+
+    // True when a row passes every active filter (an absent/now-hidden column's filter is ignored).
+    private bool PassesFilters(object? row)
+    {
+        if (row is null || _filters.Count == 0)
+            return true;
+        foreach (var filter in _filters.Values)
+        {
+            var col = FindColumnByKey(filter.ColumnKey);
+            if (col is null)
+                continue;
+            if (!filter.Matches(CellText(col, row)))
+                return false;
+        }
+        return true;
+    }
+
+    // Opens the per-column filter editor anchored at the given control (header cell or cell).
+    private void ShowColumnFilter(SheetColumn column, Control anchor)
+    {
+        if (Localization is null || !column.Filterable)
+            return;
+        var popup = new ColumnFilterPopup(this, column, Localization);
+        popup.Show(anchor);
+    }
+
+    // Header-menu entry point: anchor the popup at the header cell that was right-clicked.
+    private void ShowColumnFilter(SheetColumn column)
+    {
+        var anchor = _header is not null && _header.HeaderCellFor(column) is { } cell ? cell : (Control)this;
+        ShowColumnFilter(column, anchor);
+    }
 
     /// <summary>
     /// The leaf columns the user can show/hide, in display order, with a readable label each. The
@@ -469,23 +597,39 @@ public sealed class SheetTable : TemplatedControl
         if (_body is null)
             return;
 
+        var hasFilters = _filters.Count > 0;
+
         if (_sortColumn is null || string.IsNullOrEmpty(_sortColumn.SortPath) || ItemsSource is null)
         {
-            var unsorted = new List<object?>();
-            foreach (var item in ItemsSource ?? Array.Empty<object?>())
-                unsorted.Add(item);
-            _sortedItems = unsorted;
-            _body.ItemsSource = ItemsSource;
+            // Unsorted: when nothing is filtered, bind the live source directly (cheapest path — keeps
+            // optimistic row add/delete reflecting instantly). Otherwise bind a filtered display copy.
+            if (!hasFilters)
+            {
+                var unsorted = new List<object?>();
+                foreach (var item in ItemsSource ?? Array.Empty<object?>())
+                    unsorted.Add(item);
+                _sortedItems = unsorted;
+                _body.ItemsSource = ItemsSource;
+                return;
+            }
+
+            var filtered = new List<object?>();
+            foreach (var item in ItemsSource!)
+                if (PassesFilters(item))
+                    filtered.Add(item);
+            _sortedItems = filtered;
+            _body.ItemsSource = filtered;
             return;
         }
 
         var path = _sortColumn.SortPath;
 
         // Schwartzian transform: read each item's sort key once (reflection is the costly part), then
-        // sort the (key, item) pairs. Avoids re-reading both operands on every comparison.
+        // sort the (key, item) pairs. Avoids re-reading both operands on every comparison. Filtered rows
+        // are dropped before keying so we don't sort what we won't show.
         var keyed = new List<(object? Key, object Item)>();
         foreach (var item in ItemsSource)
-            if (item is not null)
+            if (item is not null && PassesFilters(item))
                 keyed.Add((ReadPath(item, path), item));
 
         keyed.Sort((a, b) => CompareKeys(a.Key, b.Key));
@@ -706,6 +850,74 @@ public sealed class SheetTable : TemplatedControl
         }
 
         cell.Focus();
+    }
+
+    // Right-click on a body cell offers "filter by this value" (a Values filter pinned to that cell's
+    // text) and, when the column already has a filter, "clear filter". Left untouched: left click and
+    // the focus-to-edit flow. Skips non-filterable columns (actions / no value path).
+    private void OnCellRightClick(object? sender, PointerPressedEventArgs e)
+    {
+        if (Localization is null || e.GetCurrentPoint(this).Properties.PointerUpdateKind != PointerUpdateKind.RightButtonPressed)
+            return;
+        var cell = CellFromSource(e.Source as Visual);
+        if (cell is null || !cell.Column.Filterable)
+            return;
+        if (RowItemFromCell(cell) is not { } row)
+            return;
+
+        e.Handled = true; // don't let the right-press begin editing / move selection
+        var column = cell.Column;
+        var value = CellText(column, row);
+
+        var menu = new StackPanel { Spacing = 2, Margin = new Thickness(4) };
+        var byValue = new Button
+        {
+            Classes = { "ghost" },
+            Content = Localization.Get("Sheet.Filter.ByValue"),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(10, 6)
+        };
+        menu.Children.Add(byValue);
+
+        var hasFilter = _filters.ContainsKey(column.Key);
+        Button? clear = null;
+        if (hasFilter)
+        {
+            clear = new Button
+            {
+                Classes = { "ghost" },
+                Content = Localization.Get("Sheet.Filter.Remove"),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Padding = new Thickness(10, 6)
+            };
+            menu.Children.Add(clear);
+        }
+
+        var flyout = new Flyout
+        {
+            Placement = PlacementMode.Pointer,
+            Content = new LayoutTransformControl
+            {
+                LayoutTransform = SheetColumnsButton.BuildUiScaleTransform(),
+                Child = menu
+            }
+        };
+        byValue.Click += (_, _) =>
+        {
+            flyout.Hide();
+            SetColumnFilter(column.Key, new SheetFilter
+            {
+                ColumnKey = column.Key,
+                Header = string.IsNullOrEmpty(column.PickerLabel) ? column.Header : column.PickerLabel,
+                Mode = SheetFilterMode.Values,
+                AllowedValues = new HashSet<string> { value }
+            });
+        };
+        if (clear is not null)
+            clear.Click += (_, _) => { flyout.Hide(); ClearColumnFilter(column.Key); };
+        flyout.ShowAt(cell);
     }
 
     // The row item a cell belongs to: the cell inherits the row container's DataContext (the item).

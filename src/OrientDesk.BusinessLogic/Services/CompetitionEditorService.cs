@@ -307,6 +307,17 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return rows;
     }
 
+    public Task<IReadOnlyList<Group>> GetGroupsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return Task.FromResult<IReadOnlyList<Group>>([]);
+
+        return _eventStore.GetGroupsAsync(FolderPath, cancellationToken);
+    }
+
+    public Task UpdateGroupEntryFeeAsync(Guid groupId, decimal? entryFee, CancellationToken cancellationToken = default) =>
+        _eventStore.UpdateGroupEntryFeeAsync(FolderPath, groupId, entryFee, cancellationToken);
+
     public async Task<GroupDayRow> AddGroupToDayAsync(string name, CancellationToken cancellationToken = default)
     {
         var dayId = CurrentDayId;
@@ -1579,6 +1590,54 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return await _eventStore.ImportParticipantsBatchAsync(
             FolderPath, data, clearFirst, daysCreated, progress, cancellationToken);
     }
+
+    public Task<IReadOnlyList<ChipPriceOverride>> GetChipPriceOverridesAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return Task.FromResult<IReadOnlyList<ChipPriceOverride>>([]);
+
+        return _eventStore.GetChipPriceOverridesAsync(FolderPath, cancellationToken);
+    }
+
+    public async Task<ChipPriceOverride> AddChipPriceOverrideRowAsync(CancellationToken cancellationToken = default)
+    {
+        var priceOverride = new ChipPriceOverride();
+        await _eventStore.AddChipPriceOverrideAsync(FolderPath, priceOverride, cancellationToken);
+        return priceOverride;
+    }
+
+    public Task UpdateChipPriceOverrideAsync(ChipPriceOverride priceOverride, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(priceOverride);
+        return _eventStore.UpdateChipPriceOverrideAsync(FolderPath, priceOverride, cancellationToken);
+    }
+
+    public Task DeleteChipPriceOverrideAsync(Guid overrideId, CancellationToken cancellationToken = default) =>
+        _eventStore.DeleteChipPriceOverrideAsync(FolderPath, overrideId, cancellationToken);
+
+    public Task<IReadOnlyList<EntryFeeDiscount>> GetEntryFeeDiscountsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return Task.FromResult<IReadOnlyList<EntryFeeDiscount>>([]);
+
+        return _eventStore.GetEntryFeeDiscountsAsync(FolderPath, cancellationToken);
+    }
+
+    public async Task<EntryFeeDiscount> AddEntryFeeDiscountRowAsync(CancellationToken cancellationToken = default)
+    {
+        var discount = new EntryFeeDiscount();
+        await _eventStore.AddEntryFeeDiscountAsync(FolderPath, discount, cancellationToken);
+        return discount;
+    }
+
+    public Task UpdateEntryFeeDiscountAsync(EntryFeeDiscount discount, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(discount);
+        return _eventStore.UpdateEntryFeeDiscountAsync(FolderPath, discount, cancellationToken);
+    }
+
+    public Task DeleteEntryFeeDiscountAsync(Guid discountId, CancellationToken cancellationToken = default) =>
+        _eventStore.DeleteEntryFeeDiscountAsync(FolderPath, discountId, cancellationToken);
 
     private ParticipantDayRow ToRow(
         ParticipantDay link,

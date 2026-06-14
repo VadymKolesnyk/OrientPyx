@@ -62,6 +62,15 @@ public interface ICompetitionEditorService
     Task<IReadOnlyList<GroupDayRow>> GetGroupDayRowsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Loads every competition group (ordered by name), regardless of day. Used by the «Стартові внески»
+    /// page, which sets a per-group entry fee shared across all days.
+    /// </summary>
+    Task<IReadOnlyList<Group>> GetGroupsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Sets a group's base entry fee (shared across all days).</summary>
+    Task UpdateGroupEntryFeeAsync(Guid groupId, decimal? entryFee, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Attaches a group to the current day. Reuses an existing group with the same name
     /// (case-insensitive) or creates one, then ensures a settings row exists for the day.
     /// Returns the resulting row (existing one when already attached).
@@ -397,6 +406,30 @@ public interface ICompetitionEditorService
         bool clearFirst,
         IProgress<ImportProgress>? progress = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Loads the current competition's chip-price overrides (note → price/day), ordered by note.</summary>
+    Task<IReadOnlyList<ChipPriceOverride>> GetChipPriceOverridesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Appends a new, blank chip-price override to the current competition and returns it.</summary>
+    Task<ChipPriceOverride> AddChipPriceOverrideRowAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Saves an edited chip-price override (note, price).</summary>
+    Task UpdateChipPriceOverrideAsync(ChipPriceOverride priceOverride, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a chip-price override from the current competition.</summary>
+    Task DeleteChipPriceOverrideAsync(Guid overrideId, CancellationToken cancellationToken = default);
+
+    /// <summary>Loads the current competition's entry-fee discounts, ordered by name.</summary>
+    Task<IReadOnlyList<EntryFeeDiscount>> GetEntryFeeDiscountsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Appends a new, blank entry-fee discount to the current competition and returns it.</summary>
+    Task<EntryFeeDiscount> AddEntryFeeDiscountRowAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Saves an edited entry-fee discount (name, percent, applies-to-chip-rental).</summary>
+    Task UpdateEntryFeeDiscountAsync(EntryFeeDiscount discount, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes an entry-fee discount from the current competition.</summary>
+    Task DeleteEntryFeeDiscountAsync(Guid discountId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Outcome of a participant import, for reporting back to the user.</summary>

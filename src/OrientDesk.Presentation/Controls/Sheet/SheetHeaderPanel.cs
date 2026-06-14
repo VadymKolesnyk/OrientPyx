@@ -78,6 +78,23 @@ internal sealed class SheetHeaderPanel : Grid
     /// <summary>Invoked from a header's context menu to hide that leaf column.</summary>
     public Action<SheetColumn>? HideColumn { get; set; }
 
+    /// <summary>Invoked from a header's context menu to open the column's filter editor.</summary>
+    public Action<SheetColumn>? FilterColumn { get; set; }
+
+    /// <summary>Invoked from a header's context menu to remove the column's filter.</summary>
+    public Action<SheetColumn>? RemoveFilter { get; set; }
+
+    /// <summary>Tells the menu whether a column currently has an active filter (to show "remove").</summary>
+    public Func<SheetColumn, bool>? HasFilter { get; set; }
+
+    // The header cell control built for each leaf column, so the table can anchor a filter popup at the
+    // right header when it is opened from the column's menu. Rebuilt on every Rebuild().
+    private readonly Dictionary<string, Control> _headerCells = new();
+
+    /// <summary>The header cell control for a leaf column (by key), or null if not currently shown.</summary>
+    public Control? HeaderCellFor(SheetColumn column)
+        => _headerCells.TryGetValue(column.Key, out var c) ? c : null;
+
     /// <summary>Width of the resize-grip hit zone at each column's right edge (px).</summary>
     private const double GripWidth = 8;
 
@@ -93,6 +110,7 @@ internal sealed class SheetHeaderPanel : Grid
     {
         _bands = bands;
         _bandHeaders.Clear();
+        _headerCells.Clear();
         Children.Clear();
         ColumnDefinitions.Clear();
 
@@ -355,45 +373,60 @@ internal sealed class SheetHeaderPanel : Grid
         return border;
     }
 
-    // A right-click "Hide column" menu on a header cell. Bound to the leaf column the header sits over;
-    // selecting it calls back into the table, which hides the column and rebuilds. Uses a Flyout (not a
-    // ContextMenu) so its content can be wrapped in a UiScale LayoutTransformControl — a ContextMenu's
-    // own popup lives outside the window's root transform and would render unscaled (see PopupScaling).
+    // A right-click context menu on a header cell: Filter… / Remove filter (when set) / Hide column.
+    // Bound to the leaf column the header sits over; the items call back into the table. Uses a Flyout
+    // (not a ContextMenu) so its content can be wrapped in a UiScale LayoutTransformControl — a
+    // ContextMenu's own popup lives outside the window's root transform and would render unscaled (see
+    // PopupScaling). Also records the header cell so the table can anchor the filter popup here.
     private void AttachHideMenu(Control header, SheetColumn column)
     {
+        _headerCells[column.Key] = header;
         header.PointerReleased += (_, e) =>
         {
             if (e.InitialPressMouseButton != MouseButton.Right)
                 return;
             e.Handled = true;
-            ShowHideMenu(header, column);
+            ShowHeaderMenu(header, column);
         };
     }
 
-    private void ShowHideMenu(Control header, SheetColumn column)
+    private void ShowHeaderMenu(Control header, SheetColumn column)
     {
-        var item = new Button
-        {
-            Classes = { "ghost" },
-            Content = _loc.Get("Sheet.Columns.Hide"),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Left,
-            Padding = new Thickness(10, 6)
-        };
+        var menu = new StackPanel { Spacing = 2, Margin = new Thickness(4) };
         var flyout = new Flyout
         {
             Placement = PlacementMode.BottomEdgeAlignedLeft,
             Content = new LayoutTransformControl
             {
                 LayoutTransform = SheetColumnsButton.BuildUiScaleTransform(),
-                Child = item
+                Child = menu
             }
         };
-        item.Click += (_, _) =>
+
+        Button MenuItem(string textKey, Action onClick)
         {
-            flyout.Hide();
-            HideColumn?.Invoke(column);
-        };
+            var b = new Button
+            {
+                Classes = { "ghost" },
+                Content = _loc.Get(textKey),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Padding = new Thickness(10, 6)
+            };
+            b.Click += (_, _) => { flyout.Hide(); onClick(); };
+            return b;
+        }
+
+        if (column.Filterable && FilterColumn is not null)
+        {
+            var hasFilter = HasFilter?.Invoke(column) == true;
+            menu.Children.Add(MenuItem(hasFilter ? "Sheet.Filter.Edit" : "Sheet.Filter.Add",
+                () => FilterColumn.Invoke(column)));
+            if (hasFilter)
+                menu.Children.Add(MenuItem("Sheet.Filter.Remove", () => RemoveFilter?.Invoke(column)));
+        }
+
+        menu.Children.Add(MenuItem("Sheet.Columns.Hide", () => HideColumn?.Invoke(column)));
         flyout.ShowAt(header);
     }
 
