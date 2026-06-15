@@ -219,6 +219,14 @@ public sealed partial class SheetColumn : ObservableObject
     /// text value (combo/date/custom cell) and paste stays single-cell.
     /// </summary>
     public string? PastePath { get; set; }
+
+    /// <summary>
+    /// True when this column holds a SportIdent chip number whose rental status can be toggled. The
+    /// table's right-click menu (which already owns the rental registry and toggle command) appends a
+    /// "mark (non-)rental" item to the default filter menu for such columns — so the rental toggle is a
+    /// table-level menu extra, not a competing context menu on the cell. See the day/roster chip columns.
+    /// </summary>
+    public bool RentalChipColumn { get; set; }
 }
 
 /// <summary>

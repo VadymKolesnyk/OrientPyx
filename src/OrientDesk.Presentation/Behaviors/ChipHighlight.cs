@@ -1,48 +1,36 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Input;
 using Avalonia.Media;
-using OrientDesk.Localization;
 using OrientDesk.Presentation.ViewModels.Pages;
 
 namespace OrientDesk.Presentation.Behaviors;
 
 /// <summary>
-/// Attached behaviour for a chip-number <see cref="TextBox"/>: renders the number bold + red when it
-/// is NOT in the competition's rental-chip database (so an organiser instantly sees a non-rental
-/// chip), and lets the organiser toggle that number in the rental database (add when absent, remove
-/// when present) either by <b>Ctrl</b>+double-clicking the cell or via its right-click context menu.
-/// The highlight re-evaluates whenever the text changes or the shared <see cref="RentalChipRegistry"/>
-/// changes (e.g. after a toggle), so it always reflects the current database without a page reload.
+/// Attached behaviour that renders a chip-number cell bold + red when the number is NOT in the
+/// competition's rental-chip database, so an organiser instantly spots a non-rental chip. It wires onto
+/// both the editing <see cref="TextBox"/> and the resting <see cref="TextBlock"/> of a lazy chip cell,
+/// re-evaluating whenever the text changes or the shared <see cref="RentalChipRegistry"/> changes (e.g.
+/// after a rental toggle) so it always reflects the current database without a page reload.
+///
+/// This behaviour is highlight-only. Toggling a chip's rental status is a <b>table</b> concern: the
+/// chip column is flagged <see cref="Controls.SheetColumn.RentalChipColumn"/> and the table's right-click
+/// menu (which owns the rental registry and toggle command) appends the "mark (non-)rental" item to its
+/// default filter menu — so there is one cell context menu, not a competing chip-specific one.
 /// </summary>
 public static class ChipHighlight
 {
-    /// <summary>The shared rental-chip set the cell checks against. Setting it wires the behaviour.</summary>
+    /// <summary>The shared rental-chip set the editor checks against. Setting it wires the behaviour.</summary>
     public static readonly AttachedProperty<RentalChipRegistry?> RegistryProperty =
         AvaloniaProperty.RegisterAttached<TextBox, RentalChipRegistry?>("Registry", typeof(ChipHighlight));
-
-    /// <summary>Invoked with the current chip text to toggle it in the database (Ctrl+double-click or context menu).</summary>
-    public static readonly AttachedProperty<Action<string>?> ToggleProperty =
-        AvaloniaProperty.RegisterAttached<TextBox, Action<string>?>("Toggle", typeof(ChipHighlight));
-
-    /// <summary>Localization used to label the rental toggle in the cell's context menu.</summary>
-    public static readonly AttachedProperty<ILocalizationService?> LocalizationProperty =
-        AvaloniaProperty.RegisterAttached<TextBox, ILocalizationService?>("Localization", typeof(ChipHighlight));
 
     public static void SetRegistry(TextBox box, RentalChipRegistry? value) => box.SetValue(RegistryProperty, value);
     public static RentalChipRegistry? GetRegistry(TextBox box) => box.GetValue(RegistryProperty);
 
-    public static void SetToggle(TextBox box, Action<string>? value) => box.SetValue(ToggleProperty, value);
-    public static Action<string>? GetToggle(TextBox box) => box.GetValue(ToggleProperty);
-
-    public static void SetLocalization(TextBox box, ILocalizationService? value) => box.SetValue(LocalizationProperty, value);
-    public static ILocalizationService? GetLocalization(TextBox box) => box.GetValue(LocalizationProperty);
-
     /// <summary>
     /// The same rental-chip set, but for a read-only <see cref="TextBlock"/> — the resting face of a
-    /// lazy chip cell. Bold-reds the label when its text is not a rental chip, with no toggle/context
-    /// menu (those live on the editing <see cref="TextBox"/>). Setting it wires the behaviour.
+    /// lazy chip cell. Bold-reds the label when its text is not a rental chip. Setting it wires the
+    /// behaviour.
     /// </summary>
     public static readonly AttachedProperty<RentalChipRegistry?> LabelRegistryProperty =
         AvaloniaProperty.RegisterAttached<TextBlock, RentalChipRegistry?>("LabelRegistry", typeof(ChipHighlight));
@@ -59,7 +47,7 @@ public static class ChipHighlight
         LabelRegistryProperty.Changed.AddClassHandler<TextBlock>((block, e) => AttachLabel(block, e.NewValue as RentalChipRegistry));
     }
 
-    // The read-only label variant: re-highlight on text or registry change, no toggle/context menu.
+    // ── Resting label ───────────────────────────────────────────────────────────────────────────────
     private static void AttachLabel(TextBlock block, RentalChipRegistry? registry)
     {
         block.PropertyChanged -= OnLabelTextChanged;
@@ -102,12 +90,11 @@ public static class ChipHighlight
     private static readonly AttachedProperty<Subscription?> LabelSubscriptionProperty =
         AvaloniaProperty.RegisterAttached<TextBlock, Subscription?>("LabelSubscription", typeof(ChipHighlight));
 
+    // ── Editing TextBox ─────────────────────────────────────────────────────────────────────────────
     private static void Attach(TextBox box, RentalChipRegistry? registry)
     {
         // Detach first so a re-template / re-bind stays idempotent (cells are recycled on rebuild).
         box.PropertyChanged -= OnBoxTextChanged;
-        box.DoubleTapped -= OnDoubleTapped;
-        box.ContextRequested -= OnContextRequested;
 
         // Drop any previous registry subscription stored on the box.
         if (box.GetValue(SubscriptionProperty) is { } prev)
@@ -118,9 +105,6 @@ public static class ChipHighlight
             return;
 
         box.PropertyChanged += OnBoxTextChanged;
-        box.DoubleTapped += OnDoubleTapped;
-        box.ContextRequested += OnContextRequested;
-
         void OnRegistryChanged(object? _, EventArgs __) => Apply(box, registry);
         registry.Changed += OnRegistryChanged;
         box.SetValue(SubscriptionProperty, new Subscription(() => registry.Changed -= OnRegistryChanged));
@@ -132,48 +116,6 @@ public static class ChipHighlight
     {
         if (e.Property == TextBox.TextProperty && sender is TextBox box)
             Apply(box, GetRegistry(box));
-    }
-
-    private static void OnDoubleTapped(object? sender, TappedEventArgs e)
-    {
-        // Only a Ctrl+double-click toggles rental — a plain double-click is left to the TextBox for
-        // word selection, so the organiser doesn't flip the database while editing the number.
-        if (sender is not TextBox box || (e.KeyModifiers & KeyModifiers.Control) == 0)
-            return;
-        Toggle(box);
-    }
-
-    // Right-click → a single context-menu item that toggles the chip's rental status, labelled for the
-    // current state (mark as rental when it isn't one, mark as non-rental when it is).
-    private static void OnContextRequested(object? sender, ContextRequestedEventArgs e)
-    {
-        if (sender is not TextBox box)
-            return;
-        var chip = (box.Text ?? string.Empty).Trim();
-        if (chip.Length == 0 || GetToggle(box) is null)
-            return;
-
-        var loc = GetLocalization(box);
-        var isRental = GetRegistry(box) is { } registry && registry.Contains(chip);
-        var label = loc?.Get(isRental ? "Participants.Chip.UnmarkRental" : "Participants.Chip.MarkRental")
-            ?? (isRental ? "Mark chip as non-rental" : "Mark chip as rental");
-
-        var item = new MenuItem { Header = label };
-        item.Click += (_, _) => Toggle(box);
-
-        var menu = new ContextMenu();
-        menu.Items.Add(item);
-        menu.Open(box);
-        e.Handled = true;
-    }
-
-    private static void Toggle(TextBox box)
-    {
-        var chip = (box.Text ?? string.Empty).Trim();
-        if (chip.Length == 0)
-            return;
-        GetToggle(box)?.Invoke(chip);
-        // The toggle mutates the registry, which raises Changed → Apply; no manual refresh needed.
     }
 
     private static void Apply(TextBox box, RentalChipRegistry? registry)

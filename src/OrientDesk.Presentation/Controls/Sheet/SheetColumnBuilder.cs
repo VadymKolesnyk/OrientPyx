@@ -58,8 +58,7 @@ public sealed class SheetColumnBuilder
         string? enabledPath = null,
         string? opacityPath = null,
         string? placeholder = "—",
-        RentalChipRegistry? rentalChips = null,
-        Action<string>? toggleRental = null)
+        RentalChipRegistry? rentalChips = null)
     {
         var column = NewColumn(headerKey, width, minWidth, sortPath ?? displayPath);
         // An editable text column supports fill-down paste straight to its bound property.
@@ -79,7 +78,6 @@ public sealed class SheetColumnBuilder
                 EnabledPath = enabledPath,
                 OpacityPath = opacityPath,
                 RentalChips = rentalChips,
-                ToggleRental = toggleRental,
             });
         };
         return Add(column);

@@ -58,7 +58,9 @@ public sealed class DayColumnBuilder
         // This day's group (combo bound directly on the row) and chip (free text, unique per day).
         bands.Add(Identity(SheetCellKind.RowGroup, "Participants.Col.Group", path: string.Empty,
             sortPath: $"{nameof(ParticipantDayRowViewModel.SelectedGroup)}.{nameof(GroupOption.Label)}"));
-        bands.Add(Identity(SheetCellKind.ChipText, "Participants.Col.Chip", nameof(ParticipantDayRowViewModel.Chip)));
+        var chipBand = Identity(SheetCellKind.ChipText, "Participants.Col.Chip", nameof(ParticipantDayRowViewModel.Chip));
+        chipBand.Columns[0].RentalChipColumn = true; // right-click offers the rental toggle
+        bands.Add(chipBand);
         // This day's start time (HH:mm text) and out-of-competition flag.
         bands.Add(Identity(SheetCellKind.StartTimeText, "Participants.Col.StartTime", nameof(ParticipantDayRowViewModel.StartTimeText),
             sortPath: nameof(ParticipantDayRowViewModel.StartTime)));

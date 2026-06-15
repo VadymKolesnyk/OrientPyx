@@ -47,6 +47,7 @@ internal sealed class LazyTextCell : LazyEditCell
         if (options.RentalChips is { } registry)
         {
             // Same registry the editor uses; bold-red the label when the number isn't a rental chip.
+            // (Toggling rental status is the table's right-click menu, not the cell — see ChipHighlight.)
             ChipHighlight.SetLabelRegistry(Label, registry);
         }
     }
@@ -77,13 +78,7 @@ internal sealed class LazyTextCell : LazyEditCell
         if (_options.OpacityPath is { } opacity)
             box[!OpacityProperty] = new Binding(opacity) { Converter = DimConverter };
         if (_options.RentalChips is { } registry)
-        {
             ChipHighlight.SetRegistry(box, registry);
-            if (_options.ToggleRental is { } toggle)
-                ChipHighlight.SetToggle(box, toggle);
-            if (_options.Localization is { } loc)
-                ChipHighlight.SetLocalization(box, loc);
-        }
         return box;
     }
 
@@ -110,7 +105,10 @@ internal sealed class SheetTextOptions
     public string? EnabledPath { get; init; }
     public string? OpacityPath { get; init; }
     public bool CommitOnLostFocus { get; init; }
+
+    /// <summary>
+    /// The rental-chip set used to bold-red a non-rental number on both the editor and the resting
+    /// label. Highlight only — toggling rental status is the table's right-click menu (see ChipHighlight).
+    /// </summary>
     public RentalChipRegistry? RentalChips { get; init; }
-    public Action<string>? ToggleRental { get; init; }
-    public ILocalizationService? Localization { get; init; }
 }

@@ -89,6 +89,7 @@ public sealed class RosterColumnBuilder
             var cols = new List<SheetColumn>();
             const double fieldWidth = 110.0;
             var blockLabel = _loc.Get(block.LabelKey);
+            var isChips = block.Field == RosterField.Chips;
             if (block.IsCollapsed)
             {
                 cols.Add(new SheetColumn(MergedKind(block.Field))
@@ -102,6 +103,9 @@ public sealed class RosterColumnBuilder
                     // collapse/expand toggle. The merged column hidden ⇒ all its day columns hidden.
                     Key = $"block:{block.Field}",
                     PickerLabel = blockLabel,
+                    // The chip block's right-click menu offers the rental toggle (a collapsed all-days
+                    // edit, like an expanded one, is still a chip value).
+                    RentalChipColumn = isChips,
                 });
             }
             else
@@ -120,6 +124,8 @@ public sealed class RosterColumnBuilder
                         // Per-day text leaves (chip / start time) support fill-down paste straight to
                         // the day cell's bound property; group/out-of-competition leaves do not.
                         PastePath = LeafPastePath(block.Field, i),
+                        // Per-day chip cells get the rental toggle in their right-click menu.
+                        RentalChipColumn = isChips,
                     });
                 }
             }

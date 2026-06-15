@@ -304,7 +304,7 @@ public sealed class SheetTable : TemplatedControl
         // (table + competition). Done before building bands so ApplyBandOrder/hidden re-apply pick it up.
         LoadLayoutIfNeeded();
 
-        _cellFactory = new RosterCellFactory(Localization, RequestDelete, RentalChips, ToggleRental);
+        _cellFactory = new RosterCellFactory(Localization, RequestDelete, RentalChips);
 
         // Caller-supplied bands (flat day-mode table) take precedence over roster auto-building.
         if (Bands is not null)
@@ -1037,6 +1037,24 @@ public sealed class SheetTable : TemplatedControl
             menu.Children.Add(clear);
         }
 
+        // Column-specific extra: a chip column adds a "mark (non-)rental" item, labelled for the chip's
+        // current state. Filter-by-value stays the default for every cell; this is the per-column add-on.
+        Button? rental = null;
+        var chip = column.RentalChipColumn ? value.Trim() : string.Empty;
+        if (chip.Length > 0 && ToggleRentalChipCommand?.CanExecute(chip) == true)
+        {
+            var isRental = RentalChips?.Contains(chip) == true;
+            rental = new Button
+            {
+                Classes = { "ghost" },
+                Content = Localization.Get(isRental ? "Participants.Chip.UnmarkRental" : "Participants.Chip.MarkRental"),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Padding = new Thickness(10, 6)
+            };
+            menu.Children.Add(rental);
+        }
+
         var flyout = new Flyout
         {
             Placement = PlacementMode.Pointer,
@@ -1059,6 +1077,8 @@ public sealed class SheetTable : TemplatedControl
         };
         if (clear is not null)
             clear.Click += (_, _) => { flyout.Hide(); ClearColumnFilter(column.Key); };
+        if (rental is not null)
+            rental.Click += (_, _) => { flyout.Hide(); ToggleRental(chip); };
         flyout.ShowAt(cell);
     }
 

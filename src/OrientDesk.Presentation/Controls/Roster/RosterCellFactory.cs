@@ -32,18 +32,15 @@ internal sealed class RosterCellFactory
     private readonly ILocalizationService _loc;
     private readonly Action<object>? _onDelete;
     private readonly RentalChipRegistry? _rentalChips;
-    private readonly Action<string>? _onToggleRental;
 
     public RosterCellFactory(
         ILocalizationService localization,
         Action<object>? onDelete,
-        RentalChipRegistry? rentalChips = null,
-        Action<string>? onToggleRental = null)
+        RentalChipRegistry? rentalChips = null)
     {
         _loc = localization;
         _onDelete = onDelete;
         _rentalChips = rentalChips;
-        _onToggleRental = onToggleRental;
     }
 
     public Control Build(SheetColumn column) => column.Kind switch
@@ -334,9 +331,9 @@ internal sealed class RosterCellFactory
     }
 
     // A chip cell as a LazyTextCell: digits only, commits on lost focus, and (when a rental registry is
-    // supplied) bold-reds a non-rental number on both the resting label and the editor, with the
-    // Ctrl+double-click / context-menu toggle. Callers may still bind IsEnabled/IsVisible/Opacity on
-    // the returned cell (the resting label inherits those from the cell).
+    // supplied) bold-reds a non-rental number on both the resting label and the editor. Toggling rental
+    // status is the table's right-click menu (the chip column is RentalChipColumn), not the cell.
+    // Callers may still bind IsEnabled/IsVisible/Opacity on the returned cell.
     private LazyTextCell BuildChipEditor(string pathPrefix, string? chipPath = null, bool highlight = false)
     {
         var path = chipPath ?? $"{pathPrefix}{nameof(RosterDayCellViewModel.Chip)}";
@@ -346,8 +343,6 @@ internal sealed class RosterCellFactory
             Mask = SheetColumnBuilder.NumericMask.Digits,
             CommitOnLostFocus = true,
             RentalChips = highlight ? _rentalChips : null,
-            ToggleRental = highlight ? _onToggleRental : null,
-            Localization = highlight ? _loc : null,
         });
     }
 
