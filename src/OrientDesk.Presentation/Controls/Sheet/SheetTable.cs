@@ -918,6 +918,17 @@ public sealed class SheetTable : TemplatedControl
                 grid.ColumnDefinitions.Add(def);
 
                 var cell = new SheetCell(column, col) { Content = _cellFactory!.Build(column) };
+                if (column.Kind == SheetCellKind.PaymentText)
+                {
+                    // Tint the whole cell by the row's payment status (so empty cells colour too), not the
+                    // inner label's text footprint. The cell inherits the row DataContext; the converter
+                    // returns a transparent brush for the no-tint case so the cell stays hit-testable.
+                    cell[!TemplatedControl.BackgroundProperty] =
+                        new Avalonia.Data.Binding(nameof(ParticipantRosterRowViewModel.PaymentStatus))
+                        {
+                            Converter = Behaviors.PaymentHighlight.Instance
+                        };
+                }
                 Grid.SetColumn(cell, col);
                 grid.Children.Add(cell);
                 col++;
@@ -983,11 +994,12 @@ public sealed class SheetTable : TemplatedControl
             return; // let the live editor take the click (caret placement)
 
         // A resting lazy cell: focus the SheetCell for the outline, then ask the cell to begin editing.
+        // Pass the click point (in the cell's own space) so a text cell lands its caret where clicked.
         if (FindLazyCell(cell.Content as Control) is { } lazy)
         {
             cell.Focus();
             _editingLazy = lazy;
-            lazy.BeginEdit(open: true);
+            lazy.BeginEdit(open: true, caretAt: e.GetPosition(lazy));
             return;
         }
 

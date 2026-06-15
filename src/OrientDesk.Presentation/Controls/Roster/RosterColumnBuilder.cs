@@ -42,7 +42,7 @@ public sealed class RosterColumnBuilder
         (SheetCellKind.IdentityText, "Participants.Col.Representative", nameof(ParticipantRosterRowViewModel.Representative), 140),
         (SheetCellKind.IdentityText, "Participants.Col.FsouCode",      nameof(ParticipantRosterRowViewModel.FsouCode),      120),
         (SheetCellKind.IdentityBool, "Participants.Col.IsFsouMember",  nameof(ParticipantRosterRowViewModel.IsFsouMember),  110),
-        (SheetCellKind.IdentityText, "Participants.Col.Payment",       nameof(ParticipantRosterRowViewModel.Payment),       120),
+        (SheetCellKind.PaymentText,  "Participants.Col.Payment",       nameof(ParticipantRosterRowViewModel.Payment),       120),
     ];
 
     /// <summary>
@@ -71,15 +71,18 @@ public sealed class RosterColumnBuilder
                 // language change; the picker shows the localized header.
                 Key = $"id:{headerKey}",
                 PickerLabel = _loc.Get(headerKey),
-                // Plain identity text columns (number, name, coach, …) support fill-down paste straight
-                // to their bound property. Combos/dates/bools keep single-cell paste.
-                PastePath = kind == SheetCellKind.IdentityText ? path : null,
+                // Plain editable text columns (number, name, coach, payment, …) support fill-down paste
+                // straight to their bound property. Combos/dates/bools keep single-cell paste.
+                PastePath = kind is SheetCellKind.IdentityText or SheetCellKind.PaymentText ? path : null,
             };
             if (fixedWidth is { } w)
             {
                 col.Width = w;
                 col.WidthCapped = true; // explicit width is never auto-capped
             }
+            // The payment column tints by status and offers the "by status" filter mode.
+            if (kind == SheetCellKind.PaymentText)
+                DayColumnBuilder.ConfigurePaymentColumn(col, nameof(ParticipantRosterRowViewModel.PaymentStatusKey));
             bands.Add(new SheetBand(SheetBand.BandKind.Identity, [col]) { Header = col.Header });
         }
 

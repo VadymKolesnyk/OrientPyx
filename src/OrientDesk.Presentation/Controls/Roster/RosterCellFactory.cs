@@ -46,6 +46,9 @@ internal sealed class RosterCellFactory
     public Control Build(SheetColumn column) => column.Kind switch
     {
         SheetCellKind.IdentityText => BuildIdentityText(column.IdentityPath),
+        // Payment is a plain editable text cell; the status tint is painted on the whole SheetCell
+        // container by the table (see SheetTable.BuildRow / PaymentHighlight), not on this content.
+        SheetCellKind.PaymentText => BuildIdentityText(column.IdentityPath),
         SheetCellKind.ChipText => BuildChipEditor(pathPrefix: string.Empty, chipPath: column.IdentityPath, highlight: true),
         SheetCellKind.StartTimeText => BuildIdentityText(column.IdentityPath),
         SheetCellKind.BirthDate => BuildBirthDate(),

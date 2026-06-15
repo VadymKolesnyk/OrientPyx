@@ -4,14 +4,21 @@ using OrientDesk.Localization;
 
 namespace OrientDesk.Presentation.Controls;
 
-/// <summary>The two Google-Sheets-style filter modes a column can use.</summary>
+/// <summary>The Google-Sheets-style filter modes a column can use.</summary>
 public enum SheetFilterMode
 {
     /// <summary>Keep rows whose cell value is one of an explicitly selected set of values.</summary>
     Values,
 
     /// <summary>Keep rows whose cell value satisfies a text condition (contains, equals, …).</summary>
-    Condition
+    Condition,
+
+    /// <summary>
+    /// Keep rows whose cell value (a status token) is one of an explicitly selected set of categories.
+    /// Opt-in per column (<see cref="SheetColumn.StatusFilter"/>); used by the participant payment
+    /// column (empty / over / under / equal / not-a-number).
+    /// </summary>
+    Status
 }
 
 /// <summary>The text conditions offered in <see cref="SheetFilterMode.Condition"/> mode.</summary>
@@ -49,10 +56,15 @@ public sealed class SheetFilter
     /// <summary>The set of cell values (as displayed text) to keep. Null ⇒ every value passes.</summary>
     public HashSet<string>? AllowedValues { get; set; }
 
+    // ── Status mode ──
+    /// <summary>The set of status tokens (category names) to keep. Null ⇒ every status passes.</summary>
+    public HashSet<string>? AllowedStatuses { get; set; }
+
     /// <summary>True when this filter would actually exclude rows (so it is worth keeping/showing).</summary>
     public bool IsActive => Mode switch
     {
         SheetFilterMode.Values => AllowedValues is not null,
+        SheetFilterMode.Status => AllowedStatuses is not null,
         SheetFilterMode.Condition => Condition is SheetFilterCondition.IsEmpty or SheetFilterCondition.IsNotEmpty
             || !string.IsNullOrEmpty(Text),
         _ => false
@@ -62,7 +74,12 @@ public sealed class SheetFilter
     public bool Matches(string? cellText)
     {
         var value = cellText ?? string.Empty;
-        return Mode == SheetFilterMode.Values ? MatchesValues(value) : MatchesCondition(value);
+        return Mode switch
+        {
+            SheetFilterMode.Values => MatchesValues(value),
+            SheetFilterMode.Status => AllowedStatuses is null || AllowedStatuses.Contains(value),
+            _ => MatchesCondition(value)
+        };
     }
 
     private bool MatchesValues(string value)
@@ -92,6 +109,11 @@ public sealed class SheetFilter
         {
             var count = AllowedValues?.Count ?? 0;
             return $"{head}: {loc.Get("Sheet.Filter.ValuesSummary")} ({count})";
+        }
+        if (Mode == SheetFilterMode.Status)
+        {
+            var count = AllowedStatuses?.Count ?? 0;
+            return $"{head}: {loc.Get("Sheet.Filter.StatusSummary")} ({count})";
         }
 
         var cond = loc.Get(ConditionKey(Condition));

@@ -66,7 +66,12 @@ internal abstract class LazyEditCell : Decorator
     /// list/calendar. The table calls this for Enter/F2/typing on a resting cell, so the lazy cell
     /// behaves like the always-live editors the table used to host.
     /// </summary>
-    public void BeginEdit(bool open) => Activate(open);
+    /// <param name="caretAt">
+    /// When the cell was entered by a mouse click, the click point in this cell's coordinate space. A
+    /// text editor places its caret near it (Excel/Word behaviour); other editors ignore it. Null for
+    /// keyboard entry.
+    /// </param>
+    public void BeginEdit(bool open, Point? caretAt = null) => Activate(open, caretAt);
 
     /// <summary>True when this cell type opens a list/calendar on Enter (combo, date) vs. just edits text.</summary>
     public bool OpensOnEnter => ShouldOpenOnActivate(Key.Enter);
@@ -96,6 +101,12 @@ internal abstract class LazyEditCell : Decorator
     /// <summary>Hook to detach event handlers a subclass wired on the editor in <see cref="CreateEditor"/>.</summary>
     protected virtual void DetachEditor(Control editor) { }
 
+    /// <summary>
+    /// Called after a click-activated editor has been focused, with the click point in this cell's
+    /// coordinate space. A text editor moves its caret to the nearest character; other editors no-op.
+    /// </summary>
+    protected virtual void PlaceCaret(Control editor, Point pointInCell) { }
+
     // ── Activation lifecycle ────────────────────────────────────────────────────────────────────
     protected override void OnDataContextChanged(EventArgs e)
     {
@@ -116,8 +127,9 @@ internal abstract class LazyEditCell : Decorator
     {
         base.OnPointerPressed(e);
         // A click on the cell should open the editor — even if GotFocus already materialised it (focus
-        // fires before the press), so always assert the open intent here.
-        Activate(open: true);
+        // fires before the press), so always assert the open intent here. Carry the click point so a
+        // text editor lands its caret where the user clicked rather than at the start.
+        Activate(open: true, caretAt: e.GetPosition(this));
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -129,8 +141,9 @@ internal abstract class LazyEditCell : Decorator
     }
 
     // Swap the label for a live editor, give it focus, and (optionally) open it. Safe to call when the
-    // editor already exists — it just (re)applies focus and the open intent.
-    private void Activate(bool open)
+    // editor already exists — it just (re)applies focus and the open intent. When the cell was clicked,
+    // caretAt is the click point (cell space) so a text editor can land its caret there.
+    private void Activate(bool open, Point? caretAt = null)
     {
         var editor = _editor;
         if (editor is null)
@@ -161,6 +174,8 @@ internal abstract class LazyEditCell : Decorator
                 _editor.Focus();
             if (open)
                 OpenEditor(_editor);
+            if (caretAt is { } point)
+                PlaceCaret(_editor, point);
         }, DispatcherPriority.Input);
     }
 

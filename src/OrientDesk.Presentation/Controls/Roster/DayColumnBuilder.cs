@@ -53,7 +53,9 @@ public sealed class DayColumnBuilder
         bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Representative", nameof(ParticipantDayRowViewModel.Representative)));
         bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.FsouCode", nameof(ParticipantDayRowViewModel.FsouCode)));
         bands.Add(Identity(SheetCellKind.IdentityBool, "Participants.Col.IsFsouMember", nameof(ParticipantDayRowViewModel.IsFsouMember), fixedWidth: 110));
-        bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Payment", nameof(ParticipantDayRowViewModel.Payment)));
+        var paymentBand = Identity(SheetCellKind.PaymentText, "Participants.Col.Payment", nameof(ParticipantDayRowViewModel.Payment));
+        ConfigurePaymentColumn(paymentBand.Columns[0], nameof(ParticipantDayRowViewModel.PaymentStatusKey));
+        bands.Add(paymentBand);
 
         // This day's group (combo bound directly on the row) and chip (free text, unique per day).
         bands.Add(Identity(SheetCellKind.RowGroup, "Participants.Col.Group", path: string.Empty,
@@ -78,6 +80,17 @@ public sealed class DayColumnBuilder
 
         CarryWidths(previous, bands);
         return bands;
+    }
+
+    /// <summary>
+    /// Points the payment column's filter at the row's payment-status token and enables the "by status"
+    /// filter mode (empty / over / under / equal / not-a-number). Sort stays on the raw payment text.
+    /// Shared by the day grid and the roster.
+    /// </summary>
+    internal static void ConfigurePaymentColumn(SheetColumn col, string statusKeyPath)
+    {
+        col.FilterPath = statusKeyPath;
+        col.StatusFilter = true;
     }
 
     private SheetBand Identity(SheetCellKind kind, string headerKey, string path, double? fixedWidth = null, string? sortPath = null)

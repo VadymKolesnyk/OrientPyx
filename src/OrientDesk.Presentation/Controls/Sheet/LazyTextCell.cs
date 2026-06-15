@@ -1,10 +1,12 @@
 using System;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 using OrientDesk.Localization;
 using OrientDesk.Presentation.Behaviors;
 using OrientDesk.Presentation.Converters;
@@ -84,6 +86,30 @@ internal sealed class LazyTextCell : LazyEditCell
 
     // A text editor takes focus and the caret on entry; it never "opens" anything.
     protected override bool ShouldOpenOnActivate(Key key) => false;
+
+    // Land the caret where the user clicked rather than at the start. Hit-test the click point against
+    // the editor's text layout: translate it into the TextPresenter, then ask the laid-out line which
+    // character sits under that horizontal distance. Best-effort — any miss leaves the default caret.
+    protected override void PlaceCaret(Control editor, Point pointInCell)
+    {
+        if (editor is not TextBox box)
+            return;
+
+        var presenter = box.FindDescendantOfType<TextPresenter>();
+        if (presenter is null)
+            return;
+
+        var inPresenter = this.TranslatePoint(pointInCell, presenter);
+        if (inPresenter is not { } p)
+            return;
+
+        var line = presenter.TextLayout.TextLines.Count > 0 ? presenter.TextLayout.TextLines[0] : null;
+        if (line is null)
+            return;
+
+        var hit = line.GetCharacterHitFromDistance(p.X);
+        box.CaretIndex = hit.FirstCharacterIndex + hit.TrailingLength;
+    }
 
     private static void ApplyMask(TextBox box, SheetColumnBuilder.NumericMask mask)
     {

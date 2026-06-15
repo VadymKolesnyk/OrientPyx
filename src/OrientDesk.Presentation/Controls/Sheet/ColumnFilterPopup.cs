@@ -7,6 +7,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Data;
 using Avalonia.Layout;
 using OrientDesk.Localization;
+using OrientDesk.Presentation.ViewModels.Pages;
 
 namespace OrientDesk.Presentation.Controls;
 
@@ -30,8 +31,10 @@ internal sealed class ColumnFilterPopup
     // Mode panels (only one visible at a time).
     private readonly StackPanel _valuesPanel = new() { Spacing = 6 };
     private readonly StackPanel _conditionPanel = new() { Spacing = 6 };
+    private readonly StackPanel _statusPanel = new() { Spacing = 6 };
     private readonly StackPanel _valuesList = new() { Spacing = 2 };
     private readonly List<CheckBox> _valueChecks = new();
+    private readonly List<CheckBox> _statusChecks = new();
     private TextBox? _valuesSearch;
     private ComboBox? _conditionCombo;
     private TextBox? _conditionText;
@@ -47,10 +50,13 @@ internal sealed class ColumnFilterPopup
         {
             ColumnKey = column.Key,
             Header = string.IsNullOrEmpty(column.PickerLabel) ? column.Header : column.PickerLabel,
-            Mode = existing?.Mode ?? SheetFilterMode.Values,
+            // A status column (payment) defaults to "by status" — its cell value is a status token, so
+            // the generic "by values" list would show raw tokens. Other columns default to "by values".
+            Mode = existing?.Mode ?? (column.StatusFilter ? SheetFilterMode.Status : SheetFilterMode.Values),
             Condition = existing?.Condition ?? SheetFilterCondition.Contains,
             Text = existing?.Text ?? string.Empty,
-            AllowedValues = existing?.AllowedValues is { } a ? new HashSet<string>(a) : null
+            AllowedValues = existing?.AllowedValues is { } a ? new HashSet<string>(a) : null,
+            AllowedStatuses = existing?.AllowedStatuses is { } s ? new HashSet<string>(s) : null
         };
 
         var root = BuildContent();
@@ -78,22 +84,38 @@ internal sealed class ColumnFilterPopup
             FontWeight = Avalonia.Media.FontWeight.SemiBold
         });
 
-        // Mode radio toggles.
-        var byValues = new RadioButton { Content = _loc.Get("Sheet.Filter.Mode.Values"), GroupName = "mode" };
+        // Mode radio toggles. A status column (payment) offers "by status" + "by condition"; the generic
+        // "by values" list is hidden there because its cell value is a status token, not the visible text.
         var byCondition = new RadioButton { Content = _loc.Get("Sheet.Filter.Mode.Condition"), GroupName = "mode" };
-        byValues.IsChecked = _draft.Mode == SheetFilterMode.Values;
         byCondition.IsChecked = _draft.Mode == SheetFilterMode.Condition;
-        byValues.IsCheckedChanged += (_, _) => { if (byValues.IsChecked == true) SetMode(SheetFilterMode.Values); };
         byCondition.IsCheckedChanged += (_, _) => { if (byCondition.IsChecked == true) SetMode(SheetFilterMode.Condition); };
         var modeRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
-        modeRow.Children.Add(byValues);
-        modeRow.Children.Add(byCondition);
+
+        if (_column.StatusFilter)
+        {
+            var byStatus = new RadioButton { Content = _loc.Get("Sheet.Filter.Mode.Status"), GroupName = "mode" };
+            byStatus.IsChecked = _draft.Mode == SheetFilterMode.Status;
+            byStatus.IsCheckedChanged += (_, _) => { if (byStatus.IsChecked == true) SetMode(SheetFilterMode.Status); };
+            modeRow.Children.Add(byStatus);
+            modeRow.Children.Add(byCondition);
+        }
+        else
+        {
+            var byValues = new RadioButton { Content = _loc.Get("Sheet.Filter.Mode.Values"), GroupName = "mode" };
+            byValues.IsChecked = _draft.Mode == SheetFilterMode.Values;
+            byValues.IsCheckedChanged += (_, _) => { if (byValues.IsChecked == true) SetMode(SheetFilterMode.Values); };
+            modeRow.Children.Add(byValues);
+            modeRow.Children.Add(byCondition);
+        }
         stack.Children.Add(modeRow);
 
         BuildValuesPanel();
         BuildConditionPanel();
+        if (_column.StatusFilter)
+            BuildStatusPanel();
         stack.Children.Add(_valuesPanel);
         stack.Children.Add(_conditionPanel);
+        stack.Children.Add(_statusPanel);
 
         // Action buttons.
         var clear = new Button { Classes = { "ghost" }, Content = _loc.Get("Sheet.Filter.Clear") };
@@ -119,6 +141,7 @@ internal sealed class ColumnFilterPopup
         _draft.Mode = mode;
         _valuesPanel.IsVisible = mode == SheetFilterMode.Values;
         _conditionPanel.IsVisible = mode == SheetFilterMode.Condition;
+        _statusPanel.IsVisible = mode == SheetFilterMode.Status;
     }
 
     // ── Values mode ──
@@ -206,6 +229,28 @@ internal sealed class ColumnFilterPopup
         SyncTextVisibility();
     }
 
+    // ── Status mode (payment column) ──
+    private void BuildStatusPanel()
+    {
+        // One checkbox per payment-status category; checked = kept. A null AllowedStatuses (no filter
+        // yet) means every status is currently shown, so start all checked.
+        var allowed = _draft.AllowedStatuses;
+        foreach (var status in PaymentStatusExtensions.All)
+        {
+            var token = status.ToString();
+            var check = new CheckBox
+            {
+                Content = _loc.Get(PaymentStatusExtensions.LabelKey(status)),
+                Tag = token,
+                IsChecked = allowed is null || allowed.Contains(token),
+                Padding = new Thickness(6, 2),
+                MinHeight = 0
+            };
+            _statusChecks.Add(check);
+            _statusPanel.Children.Add(check);
+        }
+    }
+
     private void Apply()
     {
         if (_draft.Mode == SheetFilterMode.Values)
@@ -214,6 +259,13 @@ internal sealed class ColumnFilterPopup
             var keep = new HashSet<string>(
                 _valueChecks.Where(c => c.IsChecked == true).Select(c => c.Tag as string ?? string.Empty));
             _draft.AllowedValues = keep.Count == _valueChecks.Count ? null : keep;
+        }
+        else if (_draft.Mode == SheetFilterMode.Status)
+        {
+            // Keep only the checked statuses. All checked ⇒ "no filter" (null).
+            var keep = new HashSet<string>(
+                _statusChecks.Where(c => c.IsChecked == true).Select(c => c.Tag as string ?? string.Empty));
+            _draft.AllowedStatuses = keep.Count == _statusChecks.Count ? null : keep;
         }
         else
         {

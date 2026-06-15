@@ -19,6 +19,13 @@ public enum SheetCellKind
     /// </summary>
     ChipText,
 
+    /// <summary>
+    /// An identity text field (like <see cref="IdentityText"/>) that background-tints by the row's
+    /// <c>PaymentStatus</c> — how «Оплата» compares to the computed total fee. Used by the participant
+    /// payment column; see <see cref="OrientDesk.Presentation.Behaviors.PaymentHighlight"/>.
+    /// </summary>
+    PaymentText,
+
     /// <summary>A start-time text field (HH:mm) edited directly on the row by its
     /// <see cref="SheetColumn.IdentityPath"/>. Used by the day-mode start-time column.</summary>
     StartTimeText,
@@ -194,6 +201,13 @@ public sealed partial class SheetColumn : ObservableObject
 
     /// <summary>True when this column can carry a filter (it exposes a value path and isn't the actions column).</summary>
     public bool Filterable => Kind != SheetCellKind.Actions && !string.IsNullOrEmpty(FilterPath);
+
+    /// <summary>
+    /// True when the filter popup should offer the "by status" mode (payment-status categories: empty /
+    /// over / under / equal / not-a-number). Opt-in; set by the participant payment column. Its
+    /// <see cref="FilterPath"/> must read a <c>PaymentStatus</c> token (the row's <c>PaymentStatusKey</c>).
+    /// </summary>
+    public bool StatusFilter { get; set; }
 
     /// <summary>Default starting width for content columns the builder doesn't fix explicitly.</summary>
     public const double DefaultWidth = 130;

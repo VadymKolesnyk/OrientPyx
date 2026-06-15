@@ -179,12 +179,24 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         private set
         {
             if (SetProperty(ref _totalEntryFee, value))
+            {
                 OnPropertyChanged(nameof(FormattedTotalFee));
+                // The total is the baseline the payment cell compares against — re-tint when it moves
+                // (discount / raised-fee / group / chip edits recompute it).
+                OnPropertyChanged(nameof(PaymentStatus));
+                OnPropertyChanged(nameof(PaymentStatusKey));
+            }
         }
     }
 
     /// <summary>The total fee formatted for display (no currency symbol, trims trailing zeros).</summary>
     public string FormattedTotalFee => TotalEntryFee.ToString("0.##", CultureInfo.InvariantCulture);
+
+    /// <summary>How «Оплата» compares to the computed total fee — drives the payment cell tint + filter.</summary>
+    public PaymentStatus PaymentStatus => PaymentStatusExtensions.Classify(Payment, TotalEntryFee);
+
+    /// <summary>The payment status as a stable token, used as the payment column's filter value.</summary>
+    public string PaymentStatusKey => PaymentStatus.ToString();
 
     private string _feeBreakdown = string.Empty;
 
@@ -433,7 +445,13 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         if (_initialized)
             RecomputeTotal();
     }
-    partial void OnPaymentChanged(string value) => QueueSave();
+    partial void OnPaymentChanged(string value)
+    {
+        // Re-tint the payment cell (and re-evaluate the status filter) as the user types.
+        OnPropertyChanged(nameof(PaymentStatus));
+        OnPropertyChanged(nameof(PaymentStatusKey));
+        QueueSave();
+    }
 
     private void QueueSave()
     {
