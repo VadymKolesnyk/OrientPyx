@@ -292,6 +292,16 @@
   "Participants.Col.TotalFee": "Entry fee",
   "Participants.Col.Actions": "Actions",
 
+  "Fee.Breakdown.Empty": "Participant runs no days — start-entry fee is 0.",
+  "Fee.Breakdown.DayEntry": "Day {0}: entry {1}",
+  "Fee.Breakdown.DayEntryRaised": "Day {0}: raised entry {1}",
+  "Fee.Breakdown.ChipNoChip": " + chip rental {0} (no chip specified)",
+  "Fee.Breakdown.ChipRental": " + chip rental {0} (rental chip)",
+  "Fee.Breakdown.ChipOwn": " (own chip — no rental)",
+  "Fee.Breakdown.EntryDiscount": "Entry discount: −{0}%",
+  "Fee.Breakdown.ChipDiscount": "Chip-rental discount: −{0}%",
+  "Fee.Breakdown.Total": "Total: {0}",
+
   "Regions.Add": "Add region",
   "Regions.Delete": "Delete",
   "Regions.Delete.ConfirmTitle": "Delete region",

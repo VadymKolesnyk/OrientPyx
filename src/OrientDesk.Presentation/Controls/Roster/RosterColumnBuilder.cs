@@ -71,6 +71,9 @@ public sealed class RosterColumnBuilder
                 // language change; the picker shows the localized header.
                 Key = $"id:{headerKey}",
                 PickerLabel = _loc.Get(headerKey),
+                // Plain identity text columns (number, name, coach, …) support fill-down paste straight
+                // to their bound property. Combos/dates/bools keep single-cell paste.
+                PastePath = kind == SheetCellKind.IdentityText ? path : null,
             };
             if (fixedWidth is { } w)
             {
@@ -114,6 +117,9 @@ public sealed class RosterColumnBuilder
                         SortPath = LeafSortPath(block.Field, i),
                         Key = $"block:{block.Field}:day{days[i].Number}",
                         PickerLabel = $"{blockLabel} — {_loc.Get("Header.Day")} {days[i].Number}",
+                        // Per-day text leaves (chip / start time) support fill-down paste straight to
+                        // the day cell's bound property; group/out-of-competition leaves do not.
+                        PastePath = LeafPastePath(block.Field, i),
                     });
                 }
             }
@@ -159,6 +165,15 @@ public sealed class RosterColumnBuilder
         RosterField.Chips => nameof(ParticipantRosterRowViewModel.CollapsedChipValue),
         RosterField.StartTimes => nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText),
         _ => nameof(ParticipantRosterRowViewModel.CollapsedOutOfCompetition),
+    };
+
+    // The two-way text property a per-day leaf cell edits, for fill-down paste. Only the plain text
+    // fields (chip, start time) qualify; group is a combo and out-of-competition is a checkbox.
+    private static string? LeafPastePath(RosterField field, int i) => field switch
+    {
+        RosterField.Chips => $"Days[{i}].{nameof(RosterDayCellViewModel.Chip)}",
+        RosterField.StartTimes => $"Days[{i}].{nameof(RosterDayCellViewModel.StartTime)}",
+        _ => null,
     };
 
     private static string LeafSortPath(RosterField field, int i) => field switch

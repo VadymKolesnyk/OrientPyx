@@ -351,15 +351,19 @@ internal sealed class RosterCellFactory
         });
     }
 
-    // A read-only, right-aligned money label bound to the row's computed total entry fee. Both row VMs
-    // expose FormattedTotalFee with this name. Uses the standard foreground (not muted) so the total
-    // reads as real data rather than a placeholder.
+    // A read-only money label bound to the row's computed total entry fee. Both row VMs expose
+    // FormattedTotalFee with this name. Uses the standard foreground (not muted) so the total reads as
+    // real data rather than a placeholder. Stretches to fill the cell with right-aligned text so the
+    // hover tooltip — a localized breakdown of where the sum came from (FeeBreakdown) — fires anywhere
+    // in the cell, not only over the glyphs.
     private static TextBlock BuildTotalFee() => new()
     {
         VerticalAlignment = VerticalAlignment.Center,
-        HorizontalAlignment = HorizontalAlignment.Right,
+        HorizontalAlignment = HorizontalAlignment.Stretch,
+        TextAlignment = TextAlignment.Right,
         Padding = new Thickness(10, 0),
         [!TextBlock.TextProperty] = new Binding(nameof(ParticipantRosterRowViewModel.FormattedTotalFee)),
+        [!ToolTip.TipProperty] = new Binding(nameof(ParticipantRosterRowViewModel.FeeBreakdown)),
     };
 
     private TextBlock BuildDifferentLabel()

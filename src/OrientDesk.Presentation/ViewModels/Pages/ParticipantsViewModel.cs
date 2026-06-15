@@ -1193,7 +1193,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
     // Double-clicking a chip cell toggles its number in the rental database: a non-rental chip is
     // added, a rental one removed. The registry is updated optimistically so the cell's bold-red
-    // highlight flips immediately; the DB write runs in the background.
+    // highlight flips immediately; the DB write runs in the background, after which the fee snapshot
+    // is rebuilt so every row's total reflects whether that chip is now charged rental.
     [RelayCommand]
     private void ToggleRentalChip(string? chip)
     {
@@ -1207,7 +1208,20 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         else
             RentalChips.Add(number);
 
-        _ = Task.Run(() => _editor.ToggleRentalChipAsync(number));
+        _ = ToggleRentalChipAndRecomputeAsync(number);
+    }
+
+    // Persists the rental toggle, then rebuilds the shared fee snapshot from the updated rental set and
+    // pushes it onto every live row so the «Стартовий внесок» column recomputes (a chip in the rental
+    // pool is charged rental; one removed from it is the participant's own, so no rental fee).
+    private async Task ToggleRentalChipAndRecomputeAsync(string number)
+    {
+        await Task.Run(() => _editor.ToggleRentalChipAsync(number));
+        await RefreshFeeDataAsync(hasEvent: true);
+        foreach (var row in Participants)
+            row.RefreshFees(_feeContext);
+        foreach (var row in Roster)
+            row.RefreshFees(_feeContext);
     }
 
     private void ClearParticipantRows()

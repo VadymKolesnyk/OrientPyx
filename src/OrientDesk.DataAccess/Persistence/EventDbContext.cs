@@ -90,5 +90,13 @@ public class EventDbContext : DbContext
 
         modelBuilder.Entity<ParticipantDiscount>()
             .HasIndex(p => p.DiscountId);
+
+        // Exactly one discount carries the FSOU-member flag (it is seeded once per competition). A
+        // filtered unique index makes a second flagged row impossible at the DB level, guarding against
+        // a race where two concurrent loads both seed it (see EventStore.GetEntryFeeDiscountsAsync).
+        modelBuilder.Entity<EntryFeeDiscount>()
+            .HasIndex(d => d.IsFsouMemberDiscount)
+            .IsUnique()
+            .HasFilter("\"IsFsouMemberDiscount\" = 1");
     }
 }

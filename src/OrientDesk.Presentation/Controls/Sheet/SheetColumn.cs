@@ -210,6 +210,15 @@ public sealed partial class SheetColumn : ObservableObject
     /// resolve against the bound row view model. Ignored for every other kind.
     /// </summary>
     public System.Func<Avalonia.Controls.Control>? CellBuilder { get; set; }
+
+    /// <summary>
+    /// The two-way bindable string property on the bound row this column edits, when the column is a
+    /// plain editable text cell. Set, it enables multi-row "fill down" paste: a clipboard with several
+    /// newline-separated lines pasted onto a cell writes one line per successive row straight to this
+    /// property (reusing the property's normal change/save handling). Null ⇒ the column has no flat
+    /// text value (combo/date/custom cell) and paste stays single-cell.
+    /// </summary>
+    public string? PastePath { get; set; }
 }
 
 /// <summary>

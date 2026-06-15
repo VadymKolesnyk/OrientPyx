@@ -28,7 +28,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     private readonly Action<ParticipantRosterRowViewModel> _requestAddDussh;
     private readonly Action<ParticipantRosterRowViewModel> _requestRaisedFeeChange;
     private readonly Action<ParticipantRosterRowViewModel, Guid, bool> _requestDiscountChange;
-    private readonly EntryFeeContext _fees;
+    private EntryFeeContext _fees;
     private bool _initialized;
 
     /// <summary>Whether this participant is charged the raised (late) fee. Competition-level.</summary>
@@ -152,6 +152,10 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         _committedDussh = _selectedDussh;
 
         _initialized = true;
+
+        // Seed the breakdown tooltip (and reconcile the total with live UI state) from the same
+        // computation the live edits use, so the hover text is present on first render.
+        RecomputeTotal();
     }
 
     // The last region/club/ДЮСШ the page accepted, so a cancelled "+ new" can revert the selection.
@@ -182,17 +186,45 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     /// <summary>The total fee formatted for display (no currency symbol, trims trailing zeros).</summary>
     public string FormattedTotalFee => TotalEntryFee.ToString("0.##", CultureInfo.InvariantCulture);
 
+    private string _feeBreakdown = string.Empty;
+
+    /// <summary>
+    /// A multi-line, localized explanation of how <see cref="TotalEntryFee"/> was reached (per-day
+    /// entry + chip rental, discounts applied). Shown as the total-fee cell's hover tooltip.
+    /// </summary>
+    public string FeeBreakdown
+    {
+        get => _feeBreakdown;
+        private set => SetProperty(ref _feeBreakdown, value);
+    }
+
     // Recomputes the total from the row's current UI state (raised-fee flag, FSOU membership, selected
-    // discounts, per-day group/chip), using the shared fee context — no DB round-trip.
+    // discounts, per-day group/chip), using the shared fee context — no DB round-trip. Also refreshes
+    // the breakdown tooltip from the same computation.
     private void RecomputeTotal()
     {
         var selected = DiscountFlags
             .Where(f => !f.IsFsouMemberDiscount && f.IsSelected)
-            .Select(f => f.DiscountId);
+            .Select(f => f.DiscountId)
+            .ToList();
         var memberDays = Days
             .Where(d => d.IsMember)
-            .Select(d => ((Guid?)d.SelectedGroup.Id, d.Chip ?? string.Empty));
-        TotalEntryFee = _fees.Total(PaysRaisedFee, IsFsouMember, selected, memberDays);
+            .Select(d => ((Guid?)d.SelectedGroup.Id, d.Chip ?? string.Empty))
+            .ToList();
+        var breakdown = _fees.Describe(PaysRaisedFee, IsFsouMember, selected, memberDays);
+        TotalEntryFee = breakdown.Total;
+        FeeBreakdown = EntryFeeBreakdownFormatter.Format(breakdown, Localization);
+    }
+
+    /// <summary>
+    /// Swaps in a rebuilt fee snapshot (e.g. after a rental chip was toggled, which changes which chips
+    /// are charged rental) and recomputes the total from it. The new context replaces the one captured
+    /// at construction; no DB round-trip.
+    /// </summary>
+    public void RefreshFees(EntryFeeContext fees)
+    {
+        _fees = fees;
+        RecomputeTotal();
     }
 
     partial void OnPaysRaisedFeeChanged(bool value)

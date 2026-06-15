@@ -62,6 +62,8 @@ public sealed class SheetColumnBuilder
         Action<string>? toggleRental = null)
     {
         var column = NewColumn(headerKey, width, minWidth, sortPath ?? displayPath);
+        // An editable text column supports fill-down paste straight to its bound property.
+        column.PastePath = editPath;
         column.CellBuilder = () =>
         {
             // A read-only column is a plain label; an editable one is a LazyTextCell — it shows the

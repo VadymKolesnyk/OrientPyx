@@ -41,6 +41,13 @@ internal static class EntryFeeColumns
         for (var i = 0; i < discounts.Count; i++)
         {
             var discount = discounts[i];
+            // The FSOU-member discount is applied automatically off «Член ФСОУ»; its own column would
+            // just be a permanently-disabled duplicate of that checkbox, so we don't show it.
+            if (discount.IsFsouMemberDiscount)
+            {
+                continue;
+            }
+
             var index = i;
             var label = string.IsNullOrWhiteSpace(discount.Name)
                 ? loc.Get("EntryFees.Discount.Unnamed")

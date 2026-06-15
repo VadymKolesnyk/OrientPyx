@@ -743,7 +743,17 @@ public sealed class EventStore : IEventStore
                 Percent = 0,
                 IsFsouMemberDiscount = true
             });
-            await db.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                // A concurrent load (e.g. two pages opening at once) won the race and inserted the
+                // FSOU-member row first; the filtered unique index rejected ours. That is fine — the
+                // row exists, so re-load the list below without it.
+                db.ChangeTracker.Clear();
+            }
         }
 
         // The FSOU-member discount sorts first; the rest by name. Done client-side after the query so

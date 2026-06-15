@@ -38,7 +38,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private readonly Action<ParticipantDayRowViewModel> _requestAddDussh;
     private readonly Action<ParticipantDayRowViewModel> _requestRaisedFeeChange;
     private readonly Action<ParticipantDayRowViewModel, Guid, bool> _requestDiscountChange;
-    private readonly EntryFeeContext _fees;
+    private EntryFeeContext _fees;
     private readonly IReadOnlyList<ParticipantFeeDay> _otherDays;
 
     // Suppresses save requests while the constructor seeds initial values, and while a rejected
@@ -192,6 +192,10 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         _totalEntryFee = row.TotalEntryFee;
 
         _initialized = true;
+
+        // Seed the breakdown tooltip (and reconcile the total with live UI state) so the hover text is
+        // present on first render.
+        RecomputeTotal();
     }
 
     // The last region/club/ДЮСШ the page accepted, so a cancelled "+ new" can revert the selection.
@@ -289,21 +293,47 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     /// <summary>The total fee formatted for display (no currency symbol, trims trailing zeros).</summary>
     public string FormattedTotalFee => TotalEntryFee.ToString("0.##", CultureInfo.InvariantCulture);
 
+    private string _feeBreakdown = string.Empty;
+
+    /// <summary>
+    /// A multi-line, localized explanation of how <see cref="TotalEntryFee"/> was reached (per-day
+    /// entry + chip rental, discounts applied). Shown as the total-fee cell's hover tooltip.
+    /// </summary>
+    public string FeeBreakdown
+    {
+        get => _feeBreakdown;
+        private set => SetProperty(ref _feeBreakdown, value);
+    }
+
     // Recomputes the total from this day's live group/chip plus the other days' fixed contributions,
     // using the shared fee context — no DB round-trip. A participant shown in the day grid is always a
-    // member of the current day, so this day always contributes.
+    // member of the current day, so this day always contributes. Also refreshes the breakdown tooltip.
     private void RecomputeTotal()
     {
         var selected = DiscountFlags
             .Where(f => !f.IsFsouMemberDiscount && f.IsSelected)
-            .Select(f => f.DiscountId);
+            .Select(f => f.DiscountId)
+            .ToList();
         var memberDays = new List<(Guid?, string)>(_otherDays.Count + 1)
         {
             (SelectedGroup.Id, Chip ?? string.Empty)
         };
         foreach (var d in _otherDays)
             memberDays.Add((d.GroupId, d.Chip));
-        TotalEntryFee = _fees.Total(PaysRaisedFee, IsFsouMember, selected, memberDays);
+        var breakdown = _fees.Describe(PaysRaisedFee, IsFsouMember, selected, memberDays);
+        TotalEntryFee = breakdown.Total;
+        FeeBreakdown = EntryFeeBreakdownFormatter.Format(breakdown, Localization);
+    }
+
+    /// <summary>
+    /// Swaps in a rebuilt fee snapshot (e.g. after a rental chip was toggled, which changes which chips
+    /// are charged rental) and recomputes the total from it. The new context replaces the one captured
+    /// at construction; no DB round-trip.
+    /// </summary>
+    public void RefreshFees(EntryFeeContext fees)
+    {
+        _fees = fees;
+        RecomputeTotal();
     }
 
     partial void OnPaysRaisedFeeChanged(bool value)

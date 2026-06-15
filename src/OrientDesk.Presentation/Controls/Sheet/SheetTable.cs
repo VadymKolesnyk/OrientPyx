@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.Reflection;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
@@ -608,10 +609,18 @@ public sealed class SheetTable : TemplatedControl
             Order = new List<string>(_bandOrder ?? CurrentBandSignatures()),
             Hidden = new List<string>(_hiddenKeys),
         };
+        // Refresh the in-memory width cache as we serialize, so the next Rebuild re-applies the CURRENT
+        // widths by key (line ~335) rather than the stale values loaded once at session start. Without
+        // this, resizing a column then hiding/reordering any column reverts the resize on rebuild.
+        _savedWidths = new Dictionary<string, double>();
         foreach (var band in _bands)
             foreach (var col in band.Columns)
                 if (!string.IsNullOrEmpty(col.Key))
+                {
                     layout.Columns[col.Key] = new ColumnLayout { Width = col.Width };
+                    if (col.Width is { } w)
+                        _savedWidths[col.Key] = w;
+                }
 
         store.Save(key, layout);
     }
@@ -1128,6 +1137,18 @@ public sealed class SheetTable : TemplatedControl
         {
             var box = focused as TextBox;
 
+            // Ctrl+V while editing a fill-down column: a *multi-line* clipboard should fill down the
+            // rows, but a single value should still paste into the caret as usual. We can't read the
+            // clipboard synchronously to decide, so swallow the key (stops the TextBox's default paste)
+            // and decide asynchronously in PasteWhileEditing.
+            if (e.Key == Key.V && e.KeyModifiers.HasFlag(KeyModifiers.Control)
+                && box is not null && FindFocusedCell()?.Column?.PastePath is not null)
+            {
+                e.Handled = true;
+                PasteWhileEditing(box);
+                return;
+            }
+
             // Enter/Escape leave edit mode by returning focus to the cell host (the TextBox commits on
             // LostFocus); Enter then advances down a row like a spreadsheet.
             if (e.Key is Key.Enter or Key.Escape && FindFocusedCell() is { } editingCell)
@@ -1200,11 +1221,10 @@ public sealed class SheetTable : TemplatedControl
 
         if (e.Key == Key.V && e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
-            if (BeginEditFocusedCell())
-            {
-                e.Handled = true;
-                Dispatcher.UIThread.Post(PasteIntoEditor, DispatcherPriority.Background);
-            }
+            // A multi-line clipboard pasted onto a fill-down-capable column writes one line per
+            // successive row (Excel-style). Otherwise fall back to single-cell paste into the editor.
+            e.Handled = true;
+            Dispatcher.UIThread.Post(PasteFromClipboard, DispatcherPriority.Background);
             return;
         }
 
@@ -1486,16 +1506,139 @@ public sealed class SheetTable : TemplatedControl
         return null;
     }
 
-    private async void PasteIntoEditor()
+    // Ctrl+V intercepted while a fill-down column's editor is focused. A multi-line clipboard commits
+    // the edit and fills down the rows (Excel-style); a single value is inserted at the caret, the same
+    // as the TextBox's own paste would have done (we suppressed it to make this decision).
+    private async void PasteWhileEditing(TextBox box)
     {
-        if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard || FocusedEditor() is not { } box)
+        if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
             return;
         var text = await clipboard.TryGetTextAsync();
-        if (!string.IsNullOrEmpty(text))
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        var lines = SplitClipboardLines(text);
+        var path = FindFocusedCell()?.Column?.PastePath;
+        if (lines.Length > 1 && path is not null)
         {
-            box.Text = text;
-            box.CaretIndex = text.Length;
+            // Leave edit mode (commit the current cell) before filling down so the first line overwrites
+            // it cleanly, then write the column straight to the row view models.
+            if (CommitEdit())
+                Dispatcher.UIThread.Post(() => FillDown(path, lines), DispatcherPriority.Background);
+            return;
         }
+
+        // Single value: splice it into the caret, replacing any selection, like a normal paste.
+        var current = box.Text ?? string.Empty;
+        var start = Math.Min(box.SelectionStart, box.SelectionEnd);
+        var end = Math.Max(box.SelectionStart, box.SelectionEnd);
+        start = Math.Clamp(start, 0, current.Length);
+        end = Math.Clamp(end, 0, current.Length);
+        box.Text = current[..start] + text + current[end..];
+        box.CaretIndex = start + text.Length;
+    }
+
+    // Handle Ctrl+V on a focused (non-editing) cell. A clipboard with several newline-separated lines
+    // pasted onto a fill-down-capable column (its SheetColumn carries a PastePath) is written one line
+    // per successive row — the spreadsheet "paste a column" gesture. Anything else (single value, or a
+    // column with no flat text path) falls back to opening the editor and pasting into it as before.
+    private async void PasteFromClipboard()
+    {
+        if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
+            return;
+        var text = await clipboard.TryGetTextAsync();
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        var lines = SplitClipboardLines(text);
+        var column = FindFocusedCell()?.Column;
+        if (lines.Length > 1 && column?.PastePath is { } path && FillDown(path, lines))
+            return;
+
+        // Single value (or a column we can't fill down): open the cell's editor and paste into it. The
+        // lazy cell focuses its editor on a posted Input-priority pass, so write the text afterwards on
+        // a Background pass — the original single-cell paste flow.
+        if (BeginEditFocusedCell())
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (FocusedEditor() is { } box)
+                {
+                    box.Text = text;
+                    box.CaretIndex = text.Length;
+                }
+            }, DispatcherPriority.Background);
+        }
+    }
+
+    // Write one clipboard line per row to the column's PastePath property, starting at the focused row
+    // and walking down the current (sorted/filtered) view. Stops at the end of the table — extra lines
+    // are dropped. Returns false if we can't locate the starting row. The two-way-bound property's own
+    // setter raises change notification (and any debounced save), so no extra commit is needed.
+    private bool FillDown(string path, string[] lines)
+    {
+        var items = _sortedItems;
+        if (items.Count == 0 || _body?.SelectedItem is not { } start)
+            return false;
+
+        var startIndex = -1;
+        for (var i = 0; i < items.Count; i++)
+            if (Equals(items[i], start)) { startIndex = i; break; }
+        if (startIndex < 0)
+            return false;
+
+        for (var i = 0; i < lines.Length && startIndex + i < items.Count; i++)
+            SetStringPath(items[startIndex + i], path, lines[i]);
+        return true;
+    }
+
+    // Split clipboard text into rows. Excel/Sheets copy a single column as CR/LF-separated lines (and a
+    // trailing newline); a manually typed list is plain LF. We split on either and drop a single empty
+    // trailing line, but keep interior blanks so a deliberately blank cell still clears its row.
+    private static string[] SplitClipboardLines(string text)
+    {
+        var normalized = text.Replace("\r\n", "\n").Replace('\r', '\n');
+        if (normalized.EndsWith('\n'))
+            normalized = normalized[..^1];
+        return normalized.Split('\n');
+    }
+
+    // Resolve a value path like "FeeText" or "Days[2].Chip" against a row view model and assign a
+    // string value to the final property. Walks intermediate property/indexer segments; a missing
+    // segment or non-string target is a no-op (paste tolerates rows that don't carry the field).
+    private static void SetStringPath(object? row, string path, string value)
+    {
+        if (row is null)
+            return;
+
+        var segments = path.Split('.');
+        object? current = row;
+        for (var i = 0; i < segments.Length - 1 && current is not null; i++)
+            current = ResolveSegment(current, segments[i]);
+
+        if (current is null)
+            return;
+
+        var last = segments[^1];
+        var prop = current.GetType().GetProperty(last, BindingFlags.Public | BindingFlags.Instance);
+        if (prop is { CanWrite: true } && prop.PropertyType == typeof(string))
+            prop.SetValue(current, value);
+    }
+
+    // Resolve one path segment: a plain property name, or "Name[index]" for an indexed list access.
+    private static object? ResolveSegment(object target, string segment)
+    {
+        var bracket = segment.IndexOf('[');
+        if (bracket < 0)
+            return target.GetType().GetProperty(segment, BindingFlags.Public | BindingFlags.Instance)?.GetValue(target);
+
+        var name = segment[..bracket];
+        if (!int.TryParse(segment[(bracket + 1)..].TrimEnd(']'), out var index))
+            return null;
+        var list = target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance)?.GetValue(target);
+        if (list is IList items && index >= 0 && index < items.Count)
+            return items[index];
+        return null;
     }
 
     private TextBox? FocusedEditor() =>

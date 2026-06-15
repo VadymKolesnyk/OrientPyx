@@ -69,16 +69,31 @@ public sealed class EntryFeeContext
         bool isFsouMember,
         IEnumerable<Guid> selectedDiscountIds,
         IEnumerable<(Guid? GroupId, string Chip)> memberDays)
+        => Describe(paysRaisedFee, isFsouMember, selectedDiscountIds, memberDays).Total;
+
+    /// <summary>
+    /// Same calculation as <see cref="Total"/>, but returns a structured <see cref="EntryFeeBreakdown"/>
+    /// — the per-day entry/chip contributions, the discounts applied, and the final total — so callers
+    /// can show the user where the sum came from. The total it carries equals <see cref="Total"/>.
+    /// </summary>
+    public EntryFeeBreakdown Describe(
+        bool paysRaisedFee,
+        bool isFsouMember,
+        IEnumerable<Guid> selectedDiscountIds,
+        IEnumerable<(Guid? GroupId, string Chip)> memberDays)
     {
         var useRaised = _raisedFeeEnabled && paysRaisedFee;
 
         var days = new List<EntryFeeDayInput>();
+        var dayBreakdowns = new List<EntryFeeDayBreakdown>();
         foreach (var (groupId, chip) in memberDays)
         {
             var baseFee = useRaised
                 ? _raisedFee
                 : groupId is { } gid && _groupFee.TryGetValue(gid, out var f) ? f : 0m;
-            days.Add(new EntryFeeDayInput(baseFee, ChipPriceFor(chip)));
+            var (chipPrice, reason) = ChipPriceFor(chip);
+            days.Add(new EntryFeeDayInput(baseFee, chipPrice));
+            dayBreakdowns.Add(new EntryFeeDayBreakdown(baseFee, chipPrice, reason));
         }
 
         var entryPercents = new List<decimal>();
@@ -96,27 +111,51 @@ public sealed class EntryFeeContext
         if (isFsouMember && _fsouPercent > 0m)
             entryPercents.Add(_fsouPercent);
 
-        return _calc.Compute(new EntryFeeComputation
+        var total = _calc.Compute(new EntryFeeComputation
         {
             Days = days,
             SelectedEntryPercents = entryPercents,
             SelectedChipPercents = chipPercents
         });
+
+        return new EntryFeeBreakdown
+        {
+            Days = dayBreakdowns,
+            // Mirror the calculator's max-percent semantics for the explanation: the single largest
+            // applied percent, since only that one actually reduces the fee.
+            EntryDiscountPercent = LargestPercent(entryPercents),
+            ChipDiscountPercent = LargestPercent(chipPercents),
+            UsesRaisedFee = useRaised,
+            Total = total,
+        };
     }
 
-    // Chip price for a day: the override for the chip's note, else the competition base price. A blank
-    // chip means no rental that day (0). A chip with no rental record uses the base price.
-    private decimal ChipPriceFor(string? chip)
+    private static decimal LargestPercent(IReadOnlyCollection<decimal> percents)
+    {
+        var best = 0m;
+        foreach (var p in percents)
+            if (p > best)
+                best = p;
+        return best;
+    }
+
+    // Chip-rental price for a day, with the reason. Rental is charged when no chip is specified at all
+    // (a rental chip is assumed) OR when the chip is one of the organiser's rental chips; a chip the
+    // participant owns (not in the rental pool) is never charged. A charged rental uses the override
+    // for the chip's note, else the competition base price.
+    private (decimal Price, ChipRentalReason Reason) ChipPriceFor(string? chip)
     {
         var num = (chip ?? string.Empty).Trim();
         if (num.Length == 0)
-            return 0m;
-        if (_noteByChip.TryGetValue(num, out var note))
-        {
-            var key = note.Trim();
-            if (key.Length > 0 && _chipPriceByNote.TryGetValue(key, out var price))
-                return price;
-        }
-        return _chipBasePrice;
+            return (_chipBasePrice, ChipRentalReason.NoChipCharged);
+
+        if (!_noteByChip.TryGetValue(num, out var note))
+            // A specified chip that isn't in the rental pool is the participant's own — no rental fee.
+            return (0m, ChipRentalReason.OwnChipNotCharged);
+
+        var key = note.Trim();
+        if (key.Length > 0 && _chipPriceByNote.TryGetValue(key, out var price))
+            return (price, ChipRentalReason.RentalChipCharged);
+        return (_chipBasePrice, ChipRentalReason.RentalChipCharged);
     }
 }

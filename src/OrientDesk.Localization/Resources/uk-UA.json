@@ -292,6 +292,16 @@
   "Participants.Col.TotalFee": "Стартовий внесок",
   "Participants.Col.Actions": "Дії",
 
+  "Fee.Breakdown.Empty": "Учасник не бере участі в жодному дні — стартовий внесок 0.",
+  "Fee.Breakdown.DayEntry": "День {0}: внесок {1}",
+  "Fee.Breakdown.DayEntryRaised": "День {0}: підвищений внесок {1}",
+  "Fee.Breakdown.ChipNoChip": " + оренда чипа {0} (чіп не вказано)",
+  "Fee.Breakdown.ChipRental": " + оренда чипа {0} (орендний чіп)",
+  "Fee.Breakdown.ChipOwn": " (власний чіп — без оренди)",
+  "Fee.Breakdown.EntryDiscount": "Знижка на внесок: −{0}%",
+  "Fee.Breakdown.ChipDiscount": "Знижка на оренду чипа: −{0}%",
+  "Fee.Breakdown.Total": "Разом: {0}",
+
   "Regions.Add": "Додати регіон",
   "Regions.Delete": "Видалити",
   "Regions.Delete.ConfirmTitle": "Видалити регіон",
