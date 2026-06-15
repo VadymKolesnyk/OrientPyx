@@ -16,17 +16,20 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     private readonly IEventStore _eventStore;
     private readonly ICourseDistanceCalculator _distance;
     private readonly Disciplines.IDisciplineStrategyProvider _strategies;
+    private readonly IEntryFeeCalculator _entryFees;
 
     public CompetitionEditorService(
         ISessionService session,
         IEventStore eventStore,
         ICourseDistanceCalculator distance,
-        Disciplines.IDisciplineStrategyProvider strategies)
+        Disciplines.IDisciplineStrategyProvider strategies,
+        IEntryFeeCalculator entryFees)
     {
         _session = session;
         _eventStore = eventStore;
         _distance = distance;
         _strategies = strategies;
+        _entryFees = entryFees;
     }
 
     private string FolderPath =>
@@ -961,12 +964,31 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var clubName = clubs.ToDictionary(c => c.Id, c => c.Name);
         var dusshName = dusshes.ToDictionary(d => d.Id, d => d.Name);
 
+        // The fee total spans every day the participant runs, so gather their links across all days
+        // (grouped by participant) — the day grid still shows the same competition-wide total.
+        var fees = await LoadFeeContextAsync(folder, cancellationToken);
+        var allLinks = await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
+        var linksByParticipant = allLinks
+            .GroupBy(l => l.ParticipantId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         var rows = new List<ParticipantDayRow>(links.Count);
         foreach (var link in links)
         {
             // Defensive: skip a link whose participant was removed out from under it.
-            if (byParticipant.TryGetValue(link.ParticipantId, out var participant))
-                rows.Add(ToRow(link, participant, groupName, regionName, clubName, dusshName));
+            if (!byParticipant.TryGetValue(link.ParticipantId, out var participant))
+                continue;
+
+            var all = linksByParticipant.TryGetValue(participant.Id, out var ls) ? ls : [link];
+            var memberDays = all.Select(l => ((Guid?)l.GroupId, l.Chip)).ToList();
+            // The day grid lets a row recompute live; it needs the OTHER days' fixed contributions.
+            var otherDays = all
+                .Where(l => l.Id != link.Id)
+                .Select(l => new ParticipantFeeDay(l.GroupId, l.Chip))
+                .ToList();
+            rows.Add(ToRow(link, participant, groupName, regionName, clubName, dusshName,
+                participant.PaysRaisedFee, fees.SelectedDiscountIds(participant.Id),
+                fees.Total(participant, memberDays), otherDays));
         }
         return rows;
     }
@@ -989,6 +1011,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var clubName = clubs.ToDictionary(c => c.Id, c => c.Name);
         var dusshName = dusshes.ToDictionary(d => d.Id, d => d.Name);
 
+        var fees = await LoadFeeContextAsync(folder, cancellationToken);
+
         // Index links by (participant, day) so each roster cell is a quick lookup.
         var linkByKey = links.ToDictionary(l => (l.ParticipantId, l.EventDayId));
 
@@ -996,12 +1020,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         foreach (var participant in participants)
         {
             var cells = new List<RosterDayCell>(days.Count);
+            var memberDays = new List<(Guid?, string)>();
             foreach (var day in days)
             {
                 if (linkByKey.TryGetValue((participant.Id, day.Id), out var link))
                 {
                     var name = link.GroupId is { } gid && groupName.TryGetValue(gid, out var n) ? n : string.Empty;
                     cells.Add(new RosterDayCell(day.Id, day.Number, link.Id, IsMember: true, link.GroupId, name, link.Chip, link.StartTime, link.OutOfCompetition));
+                    memberDays.Add((link.GroupId, link.Chip));
                 }
                 else
                 {
@@ -1028,6 +1054,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 participant.FsouCode,
                 participant.IsFsouMember,
                 participant.Payment,
+                participant.PaysRaisedFee,
+                fees.SelectedDiscountIds(participant.Id),
+                fees.Total(participant, memberDays),
                 cells));
         }
         return rows;
@@ -1639,13 +1668,56 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     public Task DeleteEntryFeeDiscountAsync(Guid discountId, CancellationToken cancellationToken = default) =>
         _eventStore.DeleteEntryFeeDiscountAsync(FolderPath, discountId, cancellationToken);
 
+    public Task SetParticipantPaysRaisedFeeAsync(Guid participantId, bool paysRaisedFee, CancellationToken cancellationToken = default) =>
+        _eventStore.SetParticipantPaysRaisedFeeAsync(FolderPath, participantId, paysRaisedFee, cancellationToken);
+
+    public Task SetParticipantDiscountAsync(Guid participantId, Guid discountId, bool on, CancellationToken cancellationToken = default) =>
+        _eventStore.SetParticipantDiscountAsync(FolderPath, participantId, discountId, on, cancellationToken);
+
+    // ── Fee computation ─────────────────────────────────────────────────────────────────────────
+    // Loads the competition-level fee inputs once (info, group fees, chip-price overrides, discounts,
+    // per-participant discount links) so the roster/day-row builders can compute each participant's
+    // total in a single pass without re-querying. Returns a reusable resolver bound to that snapshot.
+    private async Task<FeeSnapshot> LoadFeeContextAsync(string folder, CancellationToken cancellationToken)
+    {
+        var info = await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken);
+        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var chipPrices = await _eventStore.GetChipPriceOverridesAsync(folder, cancellationToken);
+        var discounts = await _eventStore.GetEntryFeeDiscountsAsync(folder, cancellationToken);
+        var participantDiscounts = await _eventStore.GetParticipantDiscountsAsync(folder, cancellationToken);
+        var rentalChips = await _eventStore.GetRentalChipsAsync(folder, cancellationToken);
+
+        var context = new EntryFeeContext(_entryFees, info, groups, chipPrices, discounts, rentalChips);
+        var validDiscountIds = discounts.Where(d => !d.IsFsouMemberDiscount).Select(d => d.Id).ToHashSet();
+        var discountsByParticipant = participantDiscounts
+            .GroupBy(p => p.ParticipantId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<Guid>)g.Select(x => x.DiscountId).Where(validDiscountIds.Contains).ToList());
+
+        return new FeeSnapshot(context, discountsByParticipant);
+    }
+
+    // Pairs the shared fee context with the per-participant selected-discount lookup, so the row
+    // builders get both the precomputed total and the ids needed to seed each row's checkboxes.
+    private sealed class FeeSnapshot(EntryFeeContext context, IReadOnlyDictionary<Guid, IReadOnlyList<Guid>> discountsByParticipant)
+    {
+        public IReadOnlyList<Guid> SelectedDiscountIds(Guid participantId) =>
+            discountsByParticipant.TryGetValue(participantId, out var ids) ? ids : [];
+
+        public decimal Total(Participant participant, IEnumerable<(Guid? GroupId, string Chip)> memberDays) =>
+            context.Total(participant.PaysRaisedFee, participant.IsFsouMember, SelectedDiscountIds(participant.Id), memberDays);
+    }
+
     private ParticipantDayRow ToRow(
         ParticipantDay link,
         Participant p,
         IReadOnlyDictionary<Guid, string> groupName,
         IReadOnlyDictionary<Guid, string> regionName,
         IReadOnlyDictionary<Guid, string> clubName,
-        IReadOnlyDictionary<Guid, string> dusshName)
+        IReadOnlyDictionary<Guid, string> dusshName,
+        bool paysRaisedFee = false,
+        IReadOnlyList<Guid>? selectedDiscountIds = null,
+        decimal totalEntryFee = 0m,
+        IReadOnlyList<ParticipantFeeDay>? otherDays = null)
     {
         var name = link.GroupId is { } gid && groupName.TryGetValue(gid, out var n) ? n : string.Empty;
         var region = p.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
@@ -1670,6 +1742,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             FsouCode: p.FsouCode,
             IsFsouMember: p.IsFsouMember,
             Payment: p.Payment,
+            PaysRaisedFee: paysRaisedFee,
+            SelectedDiscountIds: selectedDiscountIds ?? [],
+            TotalEntryFee: totalEntryFee,
+            OtherDays: otherDays ?? [],
             GroupId: link.GroupId,
             GroupName: name,
             Chip: link.Chip,

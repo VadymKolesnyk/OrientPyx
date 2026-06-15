@@ -76,7 +76,6 @@
   "EntryFees.Raised.Title": "Підвищений стартовий внесок",
   "EntryFees.Raised.Enable": "Застосовувати підвищений стартовий внесок",
   "EntryFees.Raised.Amount": "Сума",
-  "EntryFees.Raised.Deadline": "Діє з дати",
   "EntryFees.Chips.Title": "Оренда чіпів",
   "EntryFees.Chips.BasePrice": "Базова ціна за день",
   "EntryFees.Chips.OverridesTitle": "Ціни за приміткою",
@@ -96,6 +95,7 @@
   "EntryFees.Discount.Delete": "Видалити знижку",
   "EntryFees.Discount.Delete.ConfirmTitle": "Видалити знижку",
   "EntryFees.Discount.Delete.ConfirmMessage": "Видалити цю знижку?",
+  "EntryFees.Discount.Unnamed": "Знижка",
 
   "CompetitionInfo.Name": "Назва",
   "CompetitionInfo.Venue": "Місце проведення",
@@ -288,6 +288,8 @@
   "Participants.Col.StartTime": "Час старту",
   "Participants.Col.OutOfCompetition": "Поза конкурсом",
   "Participants.Col.Team": "Команда",
+  "Participants.Col.RaisedFee": "Підвищений внесок",
+  "Participants.Col.TotalFee": "Стартовий внесок",
   "Participants.Col.Actions": "Дії",
 
   "Regions.Add": "Додати регіон",

@@ -15,6 +15,7 @@ public sealed partial class EntryFeeDiscountRowViewModel : ObservableObject
 {
     private readonly Guid _id;
     private readonly DateTimeOffset _createdAt;
+    private readonly bool _isFsouMemberDiscount;
     private readonly Action<EntryFeeDiscountRowViewModel> _requestSave;
     private readonly bool _initialized;
 
@@ -37,6 +38,7 @@ public sealed partial class EntryFeeDiscountRowViewModel : ObservableObject
     {
         _id = discount.Id;
         _createdAt = discount.CreatedAt;
+        _isFsouMemberDiscount = discount.IsFsouMemberDiscount;
         _requestSave = requestSave;
         Localization = localization;
 
@@ -51,12 +53,20 @@ public sealed partial class EntryFeeDiscountRowViewModel : ObservableObject
 
     public Guid Id => _id;
 
+    /// <summary>True for the seeded, auto-applied FSOU-member discount.</summary>
+    public bool IsFsouMemberDiscount => _isFsouMemberDiscount;
+
+    /// <summary>The FSOU-member discount is permanent; every other discount can be deleted. Bound by
+    /// the delete button's visibility.</summary>
+    public bool CanDelete => !_isFsouMemberDiscount;
+
     public EntryFeeDiscount ToEntity() => new()
     {
         Id = _id,
         Name = (Name ?? string.Empty).Trim(),
         Percent = ParseDecimal(PercentText),
         AppliesToChipRental = AppliesToChipRental,
+        IsFsouMemberDiscount = _isFsouMemberDiscount,
         CreatedAt = _createdAt
     };
 

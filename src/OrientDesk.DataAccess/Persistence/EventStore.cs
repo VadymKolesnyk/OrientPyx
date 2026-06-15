@@ -42,7 +42,6 @@ public sealed class EventStore : IEventStore
             existing.EndDate = info.EndDate;
             existing.RaisedFeeEnabled = info.RaisedFeeEnabled;
             existing.RaisedFeeAmount = info.RaisedFeeAmount;
-            existing.RaisedFeeDeadline = info.RaisedFeeDeadline;
             existing.ChipRentalPricePerDay = info.ChipRentalPricePerDay;
         }
 
@@ -547,9 +546,49 @@ public sealed class EventStore : IEventStore
     public async Task<int> DeleteAllParticipantsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
-        // Drop the per-day links first (membership), then the participants themselves.
+        // Drop the per-day links and discount links first, then the participants themselves.
         await db.ParticipantDays.ExecuteDeleteAsync(cancellationToken);
+        await db.ParticipantDiscounts.ExecuteDeleteAsync(cancellationToken);
         return await db.Participants.ExecuteDeleteAsync(cancellationToken);
+    }
+
+    public async Task SetParticipantPaysRaisedFeeAsync(string eventFolderPath, Guid participantId, bool paysRaisedFee, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.Participants.FirstOrDefaultAsync(p => p.Id == participantId, cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.PaysRaisedFee = paysRaisedFee;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ParticipantDiscount>> GetParticipantDiscountsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.ParticipantDiscounts
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task SetParticipantDiscountAsync(string eventFolderPath, Guid participantId, Guid discountId, bool on, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.ParticipantDiscounts
+            .FirstOrDefaultAsync(p => p.ParticipantId == participantId && p.DiscountId == discountId, cancellationToken);
+
+        if (on)
+        {
+            if (existing is null)
+                db.ParticipantDiscounts.Add(new ParticipantDiscount { ParticipantId = participantId, DiscountId = discountId });
+        }
+        else if (existing is not null)
+        {
+            db.ParticipantDiscounts.Remove(existing);
+        }
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<ParticipantDay>> GetParticipantDaysAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
@@ -684,13 +723,36 @@ public sealed class EventStore : IEventStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>The default name of the seeded, non-deletable FSOU-member discount (uk-UA, the app
+    /// default language). It is user-editable afterwards; the <see cref="EntryFeeDiscount.IsFsouMemberDiscount"/>
+    /// flag — not the name — is what marks it.</summary>
+    private const string FsouMemberDiscountName = "Знижка членам ФСОУ";
+
     public async Task<IReadOnlyList<EntryFeeDiscount>> GetEntryFeeDiscountsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
-        return await db.EntryFeeDiscounts
-            .AsNoTracking()
-            .OrderBy(d => d.Name)
-            .ToListAsync(cancellationToken);
+
+        // Ensure the always-present FSOU-member discount exists exactly once before returning the list,
+        // so every competition has it (0 % by default) without a separate seeding step.
+        var hasFsou = await db.EntryFeeDiscounts.AnyAsync(d => d.IsFsouMemberDiscount, cancellationToken);
+        if (!hasFsou)
+        {
+            db.EntryFeeDiscounts.Add(new EntryFeeDiscount
+            {
+                Name = FsouMemberDiscountName,
+                Percent = 0,
+                IsFsouMemberDiscount = true
+            });
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        // The FSOU-member discount sorts first; the rest by name. Done client-side after the query so
+        // the ordering rule (flag first) stays simple.
+        var all = await db.EntryFeeDiscounts.AsNoTracking().ToListAsync(cancellationToken);
+        return all
+            .OrderByDescending(d => d.IsFsouMemberDiscount)
+            .ThenBy(d => d.Name)
+            .ToList();
     }
 
     public async Task AddEntryFeeDiscountAsync(string eventFolderPath, EntryFeeDiscount discount, CancellationToken cancellationToken = default)
@@ -711,6 +773,8 @@ public sealed class EventStore : IEventStore
         existing.Name = discount.Name;
         existing.Percent = discount.Percent;
         existing.AppliesToChipRental = discount.AppliesToChipRental;
+        // IsFsouMemberDiscount is intrinsic to the seeded row and never toggled by an edit, so it
+        // is deliberately not copied here.
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -722,6 +786,12 @@ public sealed class EventStore : IEventStore
         if (existing is null)
             return;
 
+        // The FSOU-member discount is permanent — never delete it (the UI also hides its delete button).
+        if (existing.IsFsouMemberDiscount)
+            return;
+
+        // Drop the participant↔discount links for this discount, then the discount itself.
+        await db.ParticipantDiscounts.Where(p => p.DiscountId == discountId).ExecuteDeleteAsync(cancellationToken);
         db.EntryFeeDiscounts.Remove(existing);
         await db.SaveChangesAsync(cancellationToken);
     }

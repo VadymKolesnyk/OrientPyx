@@ -14,8 +14,8 @@ public class Group
 
     /// <summary>
     /// Base start-entry fee for this group, shared across every day the group runs (entry fees are a
-    /// group-level, not per-day, concern). Null = unset. Edited on the «Стартові внески» page; no fee
-    /// calculation is wired yet.
+    /// group-level, not per-day, concern). Null = unset. Edited on the «Стартові внески» page and summed
+    /// into each member's total entry fee on the participants table.
     /// </summary>
     public decimal? EntryFee { get; set; }
 

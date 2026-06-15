@@ -16,6 +16,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using OrientDesk.BusinessLogic.Entities;
 using OrientDesk.Localization;
+using OrientDesk.Presentation.Services;
 using OrientDesk.Presentation.ViewModels.Pages;
 
 namespace OrientDesk.Presentation.Controls;
@@ -73,6 +74,28 @@ public sealed class SheetTable : TemplatedControl
     public static readonly StyledProperty<IReadOnlyList<SheetBand>?> BandsProperty =
         AvaloniaProperty.Register<SheetTable, IReadOnlyList<SheetBand>?>(nameof(Bands));
 
+    /// <summary>The competition's entry-fee discounts; drives the per-discount checkbox columns the
+    /// roster auto-builds. Ignored when <see cref="Bands"/> is supplied (the day-mode table bakes the
+    /// fee columns into its bands itself).</summary>
+    public static readonly StyledProperty<IReadOnlyList<EntryFeeDiscount>?> DiscountsProperty =
+        AvaloniaProperty.Register<SheetTable, IReadOnlyList<EntryFeeDiscount>?>(nameof(Discounts));
+
+    /// <summary>Whether the raised-fee flag column is shown (roster auto-build only).</summary>
+    public static readonly StyledProperty<bool> RaisedFeeEnabledProperty =
+        AvaloniaProperty.Register<SheetTable, bool>(nameof(RaisedFeeEnabled));
+
+    /// <summary>
+    /// A stable id identifying this table's saved view in <c>views.json</c> (e.g. "participants.day").
+    /// Persistence is active only when both this and <see cref="LayoutStore"/> are set; otherwise the
+    /// table's column order/width/visibility stay in-memory only (the historical behaviour).
+    /// </summary>
+    public static readonly StyledProperty<string?> LayoutKeyProperty =
+        AvaloniaProperty.Register<SheetTable, string?>(nameof(LayoutKey));
+
+    /// <summary>The store that loads/saves this table's view (per-competition <c>views.json</c>).</summary>
+    public static readonly StyledProperty<ITableLayoutStore?> LayoutStoreProperty =
+        AvaloniaProperty.Register<SheetTable, ITableLayoutStore?>(nameof(LayoutStore));
+
     /// <summary>Raised when the user asks to delete a row via the keyboard; arg = skip-confirm.</summary>
     public event EventHandler<SheetDeleteEventArgs>? DeleteRequested;
 
@@ -124,6 +147,30 @@ public sealed class SheetTable : TemplatedControl
     {
         get => GetValue(BandsProperty);
         set => SetValue(BandsProperty, value);
+    }
+
+    public IReadOnlyList<EntryFeeDiscount>? Discounts
+    {
+        get => GetValue(DiscountsProperty);
+        set => SetValue(DiscountsProperty, value);
+    }
+
+    public bool RaisedFeeEnabled
+    {
+        get => GetValue(RaisedFeeEnabledProperty);
+        set => SetValue(RaisedFeeEnabledProperty, value);
+    }
+
+    public string? LayoutKey
+    {
+        get => GetValue(LayoutKeyProperty);
+        set => SetValue(LayoutKeyProperty, value);
+    }
+
+    public ITableLayoutStore? LayoutStore
+    {
+        get => GetValue(LayoutStoreProperty);
+        set => SetValue(LayoutStoreProperty, value);
     }
 
     public RentalChipRegistry? RentalChips
@@ -196,7 +243,8 @@ public sealed class SheetTable : TemplatedControl
         if (change.Property == DaysProperty || change.Property == BlocksProperty ||
             change.Property == LocalizationProperty || change.Property == ToggleBlockCommandProperty ||
             change.Property == BandsProperty || change.Property == RentalChipsProperty ||
-            change.Property == ToggleRentalChipCommandProperty)
+            change.Property == ToggleRentalChipCommandProperty ||
+            change.Property == DiscountsProperty || change.Property == RaisedFeeEnabledProperty)
         {
             Rebuild();
         }
@@ -251,6 +299,10 @@ public sealed class SheetTable : TemplatedControl
         if (Localization is null)
             return;
 
+        // Seed order/hidden/widths from the saved per-competition view the first time we build for this
+        // (table + competition). Done before building bands so ApplyBandOrder/hidden re-apply pick it up.
+        LoadLayoutIfNeeded();
+
         _cellFactory = new RosterCellFactory(Localization, RequestDelete, RentalChips, ToggleRental);
 
         // Caller-supplied bands (flat day-mode table) take precedence over roster auto-building.
@@ -263,7 +315,7 @@ public sealed class SheetTable : TemplatedControl
             if (Days is null || Blocks is null)
                 return;
             var builder = new RosterColumnBuilder(Localization);
-            _bands = builder.Build(Days, AsList(Blocks), _bands);
+            _bands = builder.Build(Days, AsList(Blocks), Discounts ?? [], RaisedFeeEnabled, _bands);
         }
 
         // Apply any user reorder (drag), keyed by a stable band signature so it survives rebuilds.
@@ -277,6 +329,10 @@ public sealed class SheetTable : TemplatedControl
             foreach (var col in band.Columns)
             {
                 col.IsHidden = _hiddenKeys.Contains(col.Key);
+                // Restore a saved width by key — the first build has no previous bands for CarryWidths
+                // to copy from, so saved widths would otherwise be lost until the next rebuild.
+                if (_savedWidths is not null && _savedWidths.TryGetValue(col.Key, out var w))
+                    col.Width = w;
                 if (_filters.TryGetValue(col.Key, out var filter))
                     filter.Header = string.IsNullOrEmpty(col.PickerLabel) ? col.Header : col.PickerLabel;
             }
@@ -290,6 +346,7 @@ public sealed class SheetTable : TemplatedControl
             _header.SortBy = ApplySort;
             _header.MoveBand = MoveBand;
             _header.HideColumn = HideColumn;
+            _header.ColumnResized = PersistLayout;
             _header.FilterColumn = ShowColumnFilter;
             _header.RemoveFilter = column => ClearColumnFilter(column.Key);
             _header.HasFilter = column => _filters.ContainsKey(column.Key);
@@ -454,7 +511,10 @@ public sealed class SheetTable : TemplatedControl
     {
         var changed = hidden ? _hiddenKeys.Add(key) : _hiddenKeys.Remove(key);
         if (changed)
+        {
             Rebuild();
+            PersistLayout();
+        }
     }
 
     // Hide a column from the header context menu.
@@ -493,6 +553,78 @@ public sealed class SheetTable : TemplatedControl
     private List<string>? _bandOrder;
     private SheetColumn? _sortColumn;
     private bool _sortDescending;
+
+    // ── Persisted view (per-competition views.json) ─────────────────────────────────────────────
+    // Saved widths by column key, applied onto freshly built columns (the first build has no previous
+    // bands for CarryWidths to copy from). Loaded once per (LayoutKey + competition).
+    private Dictionary<string, double>? _savedWidths;
+    // "<LayoutKey>|<scopeId>" the cached layout was loaded for; cleared on a competition/key change so
+    // Rebuild reloads (and never carries one competition's view into another).
+    private string? _loadedFor;
+
+    // Loads the saved view for (LayoutKey + current competition) the first time it is needed, seeding
+    // _bandOrder / _hiddenKeys / _savedWidths. Reloads when the competition (or key) changes, so one
+    // competition's view never carries into another. No-op when persistence isn't configured.
+    private void LoadLayoutIfNeeded()
+    {
+        if (LayoutStore is not { } store || LayoutKey is not { } key)
+            return;
+
+        var scope = $"{key}|{store.CurrentScopeId ?? string.Empty}";
+        if (_loadedFor == scope)
+            return;
+        _loadedFor = scope;
+
+        // Reset any in-memory view from the previous competition before applying the new one.
+        _bandOrder = null;
+        _hiddenKeys.Clear();
+        _savedWidths = null;
+
+        var layout = store.Load(key);
+        if (layout is null)
+            return;
+
+        if (layout.Order.Count > 0)
+            _bandOrder = new List<string>(layout.Order);
+        foreach (var hidden in layout.Hidden)
+            _hiddenKeys.Add(hidden);
+        _savedWidths = new Dictionary<string, double>();
+        foreach (var (colKey, col) in layout.Columns)
+            if (col.Width is { } w)
+                _savedWidths[colKey] = w;
+    }
+
+    // Serializes the current order / hidden set / widths and saves them for this table. Called after a
+    // hide/show, a band reorder, or a finished column resize. Loading seeds the cache fields directly
+    // (not through these mutation paths), so there's no save-back loop to guard against. No-op when
+    // persistence isn't configured.
+    private void PersistLayout()
+    {
+        if (LayoutStore is not { } store || LayoutKey is not { } key)
+            return;
+
+        var layout = new TableLayout
+        {
+            Order = new List<string>(_bandOrder ?? CurrentBandSignatures()),
+            Hidden = new List<string>(_hiddenKeys),
+        };
+        foreach (var band in _bands)
+            foreach (var col in band.Columns)
+                if (!string.IsNullOrEmpty(col.Key))
+                    layout.Columns[col.Key] = new ColumnLayout { Width = col.Width };
+
+        store.Save(key, layout);
+    }
+
+    // The signatures of the current bands in their built order (used when the user hasn't reordered but
+    // we still want to persist a stable order alongside widths/hidden).
+    private List<string> CurrentBandSignatures()
+    {
+        var sigs = new List<string>(_bands.Count);
+        foreach (var band in _bands)
+            sigs.Add(Signature(band));
+        return sigs;
+    }
 
     private static string Signature(SheetBand band)
     {
@@ -545,6 +677,7 @@ public sealed class SheetTable : TemplatedControl
         order.Insert(toIndex, fromSig);
         _bandOrder = order;
         Rebuild();
+        PersistLayout();
     }
 
     // Keep the sorted view fresh when rows are added/removed in the source collection.

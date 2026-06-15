@@ -1,7 +1,10 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using OrientDesk.BusinessLogic.Entities;
 using OrientDesk.BusinessLogic.Models;
+using OrientDesk.BusinessLogic.Services;
 using OrientDesk.Localization;
 
 namespace OrientDesk.Presentation.ViewModels.Pages;
@@ -23,7 +26,14 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     private readonly Action<ParticipantRosterRowViewModel> _requestAddClub;
     private readonly Action<ParticipantRosterRowViewModel> _requestDusshChange;
     private readonly Action<ParticipantRosterRowViewModel> _requestAddDussh;
+    private readonly Action<ParticipantRosterRowViewModel> _requestRaisedFeeChange;
+    private readonly Action<ParticipantRosterRowViewModel, Guid, bool> _requestDiscountChange;
+    private readonly EntryFeeContext _fees;
     private bool _initialized;
+
+    /// <summary>Whether this participant is charged the raised (late) fee. Competition-level.</summary>
+    [ObservableProperty]
+    private bool _paysRaisedFee;
 
     [ObservableProperty]
     private string _fullName;
@@ -71,6 +81,8 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         IReadOnlyList<ClubOption> clubOptions,
         IReadOnlyList<DusshOption> dusshOptions,
         IReadOnlyList<RankOption> rankOptions,
+        IReadOnlyList<EntryFeeDiscount> discounts,
+        EntryFeeContext fees,
         ILocalizationService localization,
         Action<ParticipantRosterRowViewModel> requestSave,
         Action<ParticipantRosterRowViewModel> requestRegionChange,
@@ -78,7 +90,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         Action<ParticipantRosterRowViewModel> requestClubChange,
         Action<ParticipantRosterRowViewModel> requestAddClub,
         Action<ParticipantRosterRowViewModel> requestDusshChange,
-        Action<ParticipantRosterRowViewModel> requestAddDussh)
+        Action<ParticipantRosterRowViewModel> requestAddDussh,
+        Action<ParticipantRosterRowViewModel> requestRaisedFeeChange,
+        Action<ParticipantRosterRowViewModel, Guid, bool> requestDiscountChange)
     {
         _participantId = row.ParticipantId;
         _requestSave = requestSave;
@@ -88,6 +102,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         _requestAddClub = requestAddClub;
         _requestDusshChange = requestDusshChange;
         _requestAddDussh = requestAddDussh;
+        _requestRaisedFeeChange = requestRaisedFeeChange;
+        _requestDiscountChange = requestDiscountChange;
+        _fees = fees;
         Localization = localization;
 
         Days = new ObservableCollection<RosterDayCellViewModel>(dayCells);
@@ -95,6 +112,19 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         // group/chip/membership changes (e.g. an expanded edit, or a join/leave).
         foreach (var cell in Days)
             cell.PropertyChanged += OnDayCellChanged;
+
+        // One DiscountFlags entry per discount column, in the same order the column builder uses, so
+        // the per-discount checkbox binds DiscountFlags[i]. The FSOU-member discount's flag mirrors
+        // «Член ФСОУ» and is read-only; manual discounts seed from the participant's saved selection.
+        _paysRaisedFee = row.PaysRaisedFee;
+        var selected = row.SelectedDiscountIds.ToHashSet();
+        DiscountFlags = new ObservableCollection<DiscountFlagViewModel>();
+        foreach (var d in discounts)
+        {
+            var on = d.IsFsouMemberDiscount ? row.IsFsouMember : selected.Contains(d.Id);
+            DiscountFlags.Add(new DiscountFlagViewModel(d.Id, d.IsFsouMemberDiscount, on, OnDiscountFlagChanged));
+        }
+        _totalEntryFee = row.TotalEntryFee;
 
         RegionOptions = regionOptions;
         ClubOptions = clubOptions;
@@ -132,6 +162,55 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     public ILocalizationService Localization { get; }
 
     public Guid ParticipantId => _participantId;
+
+    /// <summary>Per-discount checkboxes, one per discount column in build order (FSOU-member first).</summary>
+    public ObservableCollection<DiscountFlagViewModel> DiscountFlags { get; }
+
+    private decimal _totalEntryFee;
+
+    /// <summary>The computed total start-entry fee across all days. Sortable/filterable numeric value.</summary>
+    public decimal TotalEntryFee
+    {
+        get => _totalEntryFee;
+        private set
+        {
+            if (SetProperty(ref _totalEntryFee, value))
+                OnPropertyChanged(nameof(FormattedTotalFee));
+        }
+    }
+
+    /// <summary>The total fee formatted for display (no currency symbol, trims trailing zeros).</summary>
+    public string FormattedTotalFee => TotalEntryFee.ToString("0.##", CultureInfo.InvariantCulture);
+
+    // Recomputes the total from the row's current UI state (raised-fee flag, FSOU membership, selected
+    // discounts, per-day group/chip), using the shared fee context — no DB round-trip.
+    private void RecomputeTotal()
+    {
+        var selected = DiscountFlags
+            .Where(f => !f.IsFsouMemberDiscount && f.IsSelected)
+            .Select(f => f.DiscountId);
+        var memberDays = Days
+            .Where(d => d.IsMember)
+            .Select(d => ((Guid?)d.SelectedGroup.Id, d.Chip ?? string.Empty));
+        TotalEntryFee = _fees.Total(PaysRaisedFee, IsFsouMember, selected, memberDays);
+    }
+
+    partial void OnPaysRaisedFeeChanged(bool value)
+    {
+        if (!_initialized)
+            return;
+        _requestRaisedFeeChange(this);
+        RecomputeTotal();
+    }
+
+    // A manual discount checkbox toggled (the FSOU-member flag is read-only, so it never fires here).
+    private void OnDiscountFlagChanged(DiscountFlagViewModel flag)
+    {
+        if (!_initialized)
+            return;
+        _requestDiscountChange(this, flag.DiscountId, flag.IsSelected);
+        RecomputeTotal();
+    }
 
     /// <summary>Region choices for the competition (shared list): "(none)", regions A→Z, "+ new".</summary>
     [ObservableProperty]
@@ -311,7 +390,17 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     // The competition-level text/bool fields persist through the debounced identity save.
     partial void OnRepresentativeChanged(string value) => QueueSave();
     partial void OnFsouCodeChanged(string value) => QueueSave();
-    partial void OnIsFsouMemberChanged(bool value) => QueueSave();
+    partial void OnIsFsouMemberChanged(bool value)
+    {
+        QueueSave();
+        // The FSOU-member discount auto-applies, so mirror the flag onto its (read-only) checkbox and
+        // recompute the total. Its own change callback is suppressed (it is never persisted per-row).
+        foreach (var flag in DiscountFlags)
+            if (flag.IsFsouMemberDiscount)
+                flag.SetSilently(value);
+        if (_initialized)
+            RecomputeTotal();
+    }
     partial void OnPaymentChanged(string value) => QueueSave();
 
     private void QueueSave()
@@ -533,9 +622,11 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         {
             case nameof(RosterDayCellViewModel.SelectedGroup):
                 RaiseGroupAggregates();
+                RecomputeTotal();
                 break;
             case nameof(RosterDayCellViewModel.Chip):
                 RaiseChipAggregates();
+                RecomputeTotal();
                 break;
             case nameof(RosterDayCellViewModel.StartTime):
                 RaiseStartTimeAggregates();
@@ -553,6 +644,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
                 RaiseChipAggregates();
                 RaiseStartTimeAggregates();
                 RaiseOutOfCompetitionAggregates();
+                RecomputeTotal();
                 break;
         }
     }

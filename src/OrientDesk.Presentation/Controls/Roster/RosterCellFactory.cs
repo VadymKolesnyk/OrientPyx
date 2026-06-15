@@ -62,6 +62,8 @@ internal sealed class RosterCellFactory
         SheetCellKind.RowDussh => BuildDusshCombo(),
         SheetCellKind.RowRank => BuildRankCombo(),
         SheetCellKind.IdentityBool => BuildBoolCheckBox(column.IdentityPath),
+        SheetCellKind.RaisedFeeFlag => BuildBoolCheckBox(nameof(ParticipantRosterRowViewModel.PaysRaisedFee)),
+        SheetCellKind.TotalFee => BuildTotalFee(),
         SheetCellKind.CollapsedGroup => BuildCollapsedGroup(),
         SheetCellKind.CollapsedChip => BuildCollapsedChip(),
         SheetCellKind.CollapsedStartTime => BuildCollapsedStartTime(),
@@ -310,6 +312,27 @@ internal sealed class RosterCellFactory
         return box;
     }
 
+    /// <summary>
+    /// Builds a per-discount CheckBox for a participant row. The discount set is dynamic, so the column
+    /// builders create one of these via a <see cref="SheetCellKind.Custom"/> <c>CellBuilder</c>,
+    /// capturing the discount's index. Each row exposes a parallel <c>DiscountFlags</c> collection, so
+    /// the box binds <c>DiscountFlags[index].IsSelected</c> — mirroring how per-day <c>Days[i]</c> cells
+    /// are bound. The FSOU-member discount column passes <paramref name="enabled"/> = false so its box
+    /// reads as auto-applied (it follows «Член ФСОУ» rather than being clicked).
+    /// </summary>
+    public static CheckBox BuildDiscountFlag(int index, bool enabled)
+    {
+        var box = new CheckBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            IsEnabled = enabled,
+            [!ToggleButton.IsCheckedProperty] =
+                new Binding($"DiscountFlags[{index}].{nameof(DiscountFlagViewModel.IsSelected)}") { Mode = BindingMode.TwoWay },
+        };
+        return box;
+    }
+
     // A chip cell as a LazyTextCell: digits only, commits on lost focus, and (when a rental registry is
     // supplied) bold-reds a non-rental number on both the resting label and the editor, with the
     // Ctrl+double-click / context-menu toggle. Callers may still bind IsEnabled/IsVisible/Opacity on
@@ -327,6 +350,17 @@ internal sealed class RosterCellFactory
             Localization = highlight ? _loc : null,
         });
     }
+
+    // A read-only, right-aligned money label bound to the row's computed total entry fee. Both row VMs
+    // expose FormattedTotalFee with this name. Uses the standard foreground (not muted) so the total
+    // reads as real data rather than a placeholder.
+    private static TextBlock BuildTotalFee() => new()
+    {
+        VerticalAlignment = VerticalAlignment.Center,
+        HorizontalAlignment = HorizontalAlignment.Right,
+        Padding = new Thickness(10, 0),
+        [!TextBlock.TextProperty] = new Binding(nameof(ParticipantRosterRowViewModel.FormattedTotalFee)),
+    };
 
     private TextBlock BuildDifferentLabel()
     {

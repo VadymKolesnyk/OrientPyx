@@ -419,7 +419,20 @@ public interface ICompetitionEditorService
     /// <summary>Removes a chip-price override from the current competition.</summary>
     Task DeleteChipPriceOverrideAsync(Guid overrideId, CancellationToken cancellationToken = default);
 
-    /// <summary>Loads the current competition's entry-fee discounts, ordered by name.</summary>
+    /// <summary>
+    /// Sets a participant's "pays the raised (late) fee" flag (competition-level, independent of any
+    /// day). Affects the participant's computed total entry fee.
+    /// </summary>
+    Task SetParticipantPaysRaisedFeeAsync(Guid participantId, bool paysRaisedFee, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Marks (or unmarks) that a participant gets a particular entry-fee discount. Idempotent. The
+    /// FSOU-member discount is auto-applied from <see cref="Participant.IsFsouMember"/> and must not be
+    /// toggled through here.
+    /// </summary>
+    Task SetParticipantDiscountAsync(Guid participantId, Guid discountId, bool on, CancellationToken cancellationToken = default);
+
+    /// <summary>Loads the current competition's entry-fee discounts; the FSOU-member discount sorts first, the rest by name.</summary>
     Task<IReadOnlyList<EntryFeeDiscount>> GetEntryFeeDiscountsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Appends a new, blank entry-fee discount to the current competition and returns it.</summary>

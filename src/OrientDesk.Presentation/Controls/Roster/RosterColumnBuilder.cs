@@ -53,6 +53,8 @@ public sealed class RosterColumnBuilder
     public IReadOnlyList<SheetBand> Build(
         IReadOnlyList<EventDay> days,
         IReadOnlyList<RosterFieldBlockViewModel> blocks,
+        IReadOnlyList<EntryFeeDiscount> discounts,
+        bool raisedFeeEnabled,
         IReadOnlyList<SheetBand>? previous)
     {
         var bands = new List<SheetBand>(Identity.Length + blocks.Count + 1);
@@ -122,6 +124,9 @@ public sealed class RosterColumnBuilder
                 Block = block,
             });
         }
+
+        // Entry-fee tail: raised-fee flag (when enabled), one column per discount, then the total.
+        EntryFeeColumns.Append(bands, _loc, discounts, raisedFeeEnabled);
 
         // Trailing actions column (delete), its own single-column band.
         var actions = new SheetColumn(SheetCellKind.Actions) { Width = 48, WidthCapped = true, MinWidth = 48 };

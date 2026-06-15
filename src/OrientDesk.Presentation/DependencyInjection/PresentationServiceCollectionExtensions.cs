@@ -29,6 +29,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<IParticipantImportFlow, ParticipantImportFlow>();
         services.AddSingleton<IFileReadoutPoller, FileReadoutPoller>();
         services.AddSingleton<IBackgroundActivityService, BackgroundActivityService>();
+        services.AddSingleton<ITableLayoutStore, TableLayoutStore>();
 
         // Root + gating view models
         services.AddSingleton<MainWindowViewModel>();

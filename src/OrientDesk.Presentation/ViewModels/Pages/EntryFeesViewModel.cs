@@ -15,8 +15,8 @@ namespace OrientDesk.Presentation.ViewModels.Pages;
 /// «Стартові внески» — the money side of a competition (competition-level, so there is no day picker).
 /// It holds four sections: a per-group entry fee shared across days, a standalone raised (late) fee, a
 /// chip-rental base price plus note-keyed price overrides, and a list of percentage discounts. Cells
-/// auto-save in the background (debounced) like the other grid pages. NOTE: this is data entry only —
-/// no fee calculation/application is wired yet (intentionally deferred).
+/// auto-save in the background (debounced) like the other grid pages. These values feed the computed
+/// «Стартовий внесок» column and the per-discount / raised-fee columns on the participants table.
 /// </summary>
 public sealed partial class EntryFeesViewModel : PageViewModelBase
 {
@@ -80,10 +80,6 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
     [ObservableProperty]
     private string _raisedFeeAmountText = string.Empty;
 
-    /// <summary>Date after which the raised fee applies.</summary>
-    [ObservableProperty]
-    private DateTimeOffset? _raisedFeeDeadline;
-
     /// <summary>Base rental-chip price per day, as editable text (blank = unset).</summary>
     [ObservableProperty]
     private string _chipBasePriceText = string.Empty;
@@ -111,7 +107,6 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
         {
             RaisedFeeEnabled = _info?.RaisedFeeEnabled ?? false;
             RaisedFeeAmountText = FormatDecimal(_info?.RaisedFeeAmount);
-            RaisedFeeDeadline = _info?.RaisedFeeDeadline;
             ChipBasePriceText = FormatDecimal(_info?.ChipRentalPricePerDay);
         }
         finally
@@ -218,6 +213,11 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
         if (row is null)
             return;
 
+        // The FSOU-member discount is permanent (its delete button is hidden; the store also rejects
+        // it). Ignore a keyboard Delete targeting it so it never disappears from the grid.
+        if (row.IsFsouMemberDiscount)
+            return;
+
         var confirmed = false;
         if (!skipConfirm)
         {
@@ -250,7 +250,6 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
 
     partial void OnRaisedFeeEnabledChanged(bool value) => QueueSettingsSave();
     partial void OnRaisedFeeAmountTextChanged(string value) => QueueSettingsSave();
-    partial void OnRaisedFeeDeadlineChanged(DateTimeOffset? value) => QueueSettingsSave();
     partial void OnChipBasePriceTextChanged(string value) => QueueSettingsSave();
 
     private void QueueSettingsSave()
@@ -274,7 +273,6 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
             var info = _info ?? new CompetitionInfo();
             info.RaisedFeeEnabled = RaisedFeeEnabled;
             info.RaisedFeeAmount = ParseDecimalOrNull(RaisedFeeAmountText);
-            info.RaisedFeeDeadline = RaisedFeeDeadline;
             info.ChipRentalPricePerDay = ParseDecimalOrNull(ChipBasePriceText);
 
             await Task.Run(() => _editor.SaveInfoAsync(info, token), token);

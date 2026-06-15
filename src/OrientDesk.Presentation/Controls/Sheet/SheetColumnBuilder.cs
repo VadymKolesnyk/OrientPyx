@@ -229,6 +229,10 @@ public sealed class SheetColumnBuilder
             },
             [ToolTip.TipProperty] = _loc.Get(tooltipKey)
         };
+        // Rows may opt out of deletion by exposing a CanDelete = false property (e.g. the seeded
+        // FSOU-member discount). Rows without the property leave the button visible (binding to a
+        // missing property keeps the default), so every other table is unaffected.
+        button[!Visual.IsVisibleProperty] = new Binding("CanDelete") { FallbackValue = true };
         button.Click += (_, _) =>
         {
             if (button.DataContext is { } row)

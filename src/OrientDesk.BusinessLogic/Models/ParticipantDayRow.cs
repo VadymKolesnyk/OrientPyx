@@ -28,6 +28,13 @@ public sealed record ParticipantDayRow(
     string FsouCode,
     bool IsFsouMember,
     string Payment,
+    bool PaysRaisedFee,
+    IReadOnlyList<Guid> SelectedDiscountIds,
+    decimal TotalEntryFee,
+    // The participant's (group, chip) on every OTHER day they run (not this one). The fee total spans
+    // all days, so a live recompute in the day grid combines these fixed contributions with this day's
+    // live group/chip — see ParticipantDayRowViewModel.RecomputeTotal.
+    IReadOnlyList<ParticipantFeeDay> OtherDays,
     Guid? GroupId,
     string GroupName,
     string Chip,
@@ -35,3 +42,6 @@ public sealed record ParticipantDayRow(
     TimeSpan? StartTime,
     bool OutOfCompetition,
     DisciplineType DayDefaultDiscipline);
+
+/// <summary>One participating day's fee inputs: the group assigned (null = none) and the chip held.</summary>
+public readonly record struct ParticipantFeeDay(Guid? GroupId, string Chip);

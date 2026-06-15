@@ -124,7 +124,7 @@ internal sealed class ColumnFilterPopup
     // ── Values mode ──
     private void BuildValuesPanel()
     {
-        _valuesSearch = new TextBox { Watermark = _loc.Get("Sheet.Filter.Search") };
+        _valuesSearch = new TextBox { PlaceholderText = _loc.Get("Sheet.Filter.Search") };
         _valuesSearch.GetObservable(TextBox.TextProperty).Subscribe(new AnonymousObserver(FilterValueList));
 
         var selectAll = new Button { Classes = { "ghost", "small" }, Content = _loc.Get("Sheet.Filter.SelectAll") };
@@ -189,7 +189,7 @@ internal sealed class ColumnFilterPopup
         };
         _conditionText = new TextBox
         {
-            Watermark = _loc.Get("Sheet.Filter.Value"),
+            PlaceholderText = _loc.Get("Sheet.Filter.Value"),
             Text = _draft.Text
         };
 

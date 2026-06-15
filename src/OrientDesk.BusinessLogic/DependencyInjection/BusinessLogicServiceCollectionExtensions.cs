@@ -40,6 +40,9 @@ public static class BusinessLogicServiceCollectionExtensions
         // Course-length calculation (shared: group import today, distance display later)
         services.AddSingleton<ICourseDistanceCalculator, CourseDistanceCalculator>();
 
+        // Start-entry fee calculation (the «Стартові внески» columns on the participants table)
+        services.AddSingleton<IEntryFeeCalculator, EntryFeeCalculator>();
+
         // Placeholder competition data service (dashboard)
         services.AddSingleton<ICompetitionService, CompetitionService>();
         return services;

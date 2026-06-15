@@ -78,6 +78,9 @@ internal sealed class SheetHeaderPanel : Grid
     /// <summary>Invoked from a header's context menu to hide that leaf column.</summary>
     public Action<SheetColumn>? HideColumn { get; set; }
 
+    /// <summary>Invoked when a column resize (grip drag) completes, so the new width can be persisted.</summary>
+    public Action? ColumnResized { get; set; }
+
     /// <summary>Invoked from a header's context menu to open the column's filter editor.</summary>
     public Action<SheetColumn>? FilterColumn { get; set; }
 
@@ -614,6 +617,8 @@ internal sealed class SheetHeaderPanel : Grid
             var next = column.Width + e.Vector.X;
             column.Width = Math.Max(column.MinWidth, next);
         };
+        // Persist once the drag finishes (not on every delta) so the file isn't hammered mid-resize.
+        grip.DragCompleted += (_, _) => ColumnResized?.Invoke();
         SetColumn(grip, col);
         SetRow(grip, row);
         SetRowSpan(grip, rowSpan);

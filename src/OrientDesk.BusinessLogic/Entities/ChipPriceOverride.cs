@@ -3,7 +3,8 @@ namespace OrientDesk.BusinessLogic.Entities;
 /// <summary>
 /// A competition-level rule that overrides the rental-chip price per day for chips carrying a given
 /// note (примітка), e.g. note "air" → 50 ₴/day while the default is 20 ₴/day. Belongs to the whole
-/// competition, not a single day. Edited on the «Стартові внески» page; no fee calculation is wired yet.
+/// competition, not a single day. Edited on the «Стартові внески» page and applied per member day in
+/// the participant fee total when the participant's chip carries the matching note.
 /// </summary>
 public class ChipPriceOverride
 {

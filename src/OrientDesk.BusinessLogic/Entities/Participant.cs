@@ -47,5 +47,12 @@ public class Participant
     /// <summary>Payment note (Оплата). Free text.</summary>
     public string Payment { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Whether this participant is charged the raised (late) start-entry fee instead of their group's
+    /// base fee. Only meaningful when the competition has <see cref="CompetitionInfo.RaisedFeeEnabled"/>
+    /// turned on. Defaults false.
+    /// </summary>
+    public bool PaysRaisedFee { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

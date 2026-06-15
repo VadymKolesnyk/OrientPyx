@@ -85,6 +85,18 @@ public enum SheetCellKind
     /// <summary>A collapsed block's merged out-of-competition cell (CheckBox when shared, "різні" when days differ).</summary>
     CollapsedOutOfCompetition,
 
+    /// <summary>
+    /// A CheckBox bound to the row's <c>PaysRaisedFee</c> — marks a participant as paying the raised
+    /// (late) start-entry fee. Only present when the competition has the raised fee enabled.
+    /// </summary>
+    RaisedFeeFlag,
+
+    /// <summary>
+    /// A read-only, right-aligned money label bound to the row's computed total entry fee
+    /// (<c>FormattedTotalFee</c>). Placed at the end of the participants table.
+    /// </summary>
+    TotalFee,
+
     /// <summary>The trailing delete-action button column.</summary>
     Actions,
 

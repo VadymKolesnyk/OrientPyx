@@ -9,8 +9,8 @@
              x:DataType="pages:EntryFeesViewModel">
 
     <!-- The page stacks several tables and forms, so it owns its own ScrollViewer (the ShellView
-         does not wrap pages in one). Each SheetTable is given a bounded MaxHeight so it virtualizes
-         and scrolls internally instead of expanding to fit every row. -->
+         does not wrap pages in one). Each SheetTable is left unbounded in height so it grows to fit
+         all its rows — these tables are short, so the whole page scrolls instead of each table. -->
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Spacing="20">
 
@@ -25,7 +25,7 @@
             <StackPanel Spacing="8">
                 <TextBlock Text="{Binding Localization[EntryFees.Groups.Title]}" Classes="h2" />
                 <Border Classes="card" ClipToBounds="True">
-                    <controls:SheetTable Name="GroupFeesSheet" MaxHeight="320"
+                    <controls:SheetTable Name="GroupFeesSheet"
                                          ItemsSource="{Binding GroupFees}"
                                          Localization="{Binding Localization}" />
                 </Border>
@@ -38,22 +38,12 @@
                     <StackPanel Spacing="16">
                         <CheckBox IsChecked="{Binding RaisedFeeEnabled, Mode=TwoWay}"
                                   Content="{Binding Localization[EntryFees.Raised.Enable]}" />
-                        <Grid ColumnDefinitions="*,20,*" IsEnabled="{Binding RaisedFeeEnabled}">
-                            <StackPanel Grid.Column="0" Spacing="6">
-                                <TextBlock Text="{Binding Localization[EntryFees.Raised.Amount]}" Classes="label" />
-                                <TextBox Text="{Binding RaisedFeeAmountText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                         PlaceholderText="0" HorizontalAlignment="Stretch" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="2" Spacing="6">
-                                <TextBlock Text="{Binding Localization[EntryFees.Raised.Deadline]}" Classes="label" />
-                                <CalendarDatePicker SelectedDate="{Binding RaisedFeeDeadline, Mode=TwoWay,
-                                                        Converter={StaticResource DateTimeOffsetToDateTime}}"
-                                                    SelectedDateFormat="Custom"
-                                                    CustomDateFormatString="dd.MM.yyyy"
-                                                    PlaceholderText="{Binding Localization[Common.DatePlaceholder]}"
-                                                    HorizontalAlignment="Stretch" />
-                            </StackPanel>
-                        </Grid>
+                        <StackPanel Spacing="6" MaxWidth="280" HorizontalAlignment="Left"
+                                    IsEnabled="{Binding RaisedFeeEnabled}">
+                            <TextBlock Text="{Binding Localization[EntryFees.Raised.Amount]}" Classes="label" />
+                            <TextBox Text="{Binding RaisedFeeAmountText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     PlaceholderText="0" HorizontalAlignment="Stretch" />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
             </StackPanel>
@@ -81,7 +71,7 @@
                     </Button>
                 </Grid>
                 <Border Classes="card" ClipToBounds="True">
-                    <controls:SheetTable Name="ChipPricesSheet" MaxHeight="280"
+                    <controls:SheetTable Name="ChipPricesSheet"
                                          ItemsSource="{Binding ChipPriceOverrides}"
                                          Localization="{Binding Localization}"
                                          SelectedItem="{Binding SelectedChipPrice, Mode=TwoWay}"
@@ -103,7 +93,7 @@
                     </Button>
                 </Grid>
                 <Border Classes="card" ClipToBounds="True">
-                    <controls:SheetTable Name="DiscountsSheet" MaxHeight="320"
+                    <controls:SheetTable Name="DiscountsSheet"
                                          ItemsSource="{Binding Discounts}"
                                          Localization="{Binding Localization}"
                                          SelectedItem="{Binding SelectedDiscount, Mode=TwoWay}"

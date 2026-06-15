@@ -166,6 +166,18 @@ public interface IEventStore
     /// <summary>Removes a participant by id. Does nothing if it is missing.</summary>
     Task DeleteParticipantAsync(string eventFolderPath, Guid participantId, CancellationToken cancellationToken = default);
 
+    /// <summary>Sets a participant's "pays the raised fee" flag. Does nothing if it is missing.</summary>
+    Task SetParticipantPaysRaisedFeeAsync(string eventFolderPath, Guid participantId, bool paysRaisedFee, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns every participant↔discount link in the competition (used to resolve selected discounts).</summary>
+    Task<IReadOnlyList<ParticipantDiscount>> GetParticipantDiscountsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Adds or removes the link marking that a participant gets a discount. Idempotent: turning a link
+    /// on when it already exists (or off when it doesn't) is a no-op.
+    /// </summary>
+    Task SetParticipantDiscountAsync(string eventFolderPath, Guid participantId, Guid discountId, bool on, CancellationToken cancellationToken = default);
+
     /// <summary>Returns a day's participant links, ordered by their sort order.</summary>
     Task<IReadOnlyList<ParticipantDay>> GetParticipantDaysAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
 

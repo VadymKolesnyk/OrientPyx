@@ -76,7 +76,6 @@
   "EntryFees.Raised.Title": "Raised entry fee",
   "EntryFees.Raised.Enable": "Apply a raised (late) entry fee",
   "EntryFees.Raised.Amount": "Amount",
-  "EntryFees.Raised.Deadline": "Applies from",
   "EntryFees.Chips.Title": "Chip rental",
   "EntryFees.Chips.BasePrice": "Base price per day",
   "EntryFees.Chips.OverridesTitle": "Prices by note",
@@ -96,6 +95,7 @@
   "EntryFees.Discount.Delete": "Delete discount",
   "EntryFees.Discount.Delete.ConfirmTitle": "Delete discount",
   "EntryFees.Discount.Delete.ConfirmMessage": "Delete this discount?",
+  "EntryFees.Discount.Unnamed": "Discount",
 
   "CompetitionInfo.Name": "Name",
   "CompetitionInfo.Venue": "Venue",
@@ -288,6 +288,8 @@
   "Participants.Col.StartTime": "Start time",
   "Participants.Col.OutOfCompetition": "Out of competition",
   "Participants.Col.Team": "Team",
+  "Participants.Col.RaisedFee": "Raised fee",
+  "Participants.Col.TotalFee": "Entry fee",
   "Participants.Col.Actions": "Actions",
 
   "Regions.Add": "Add region",

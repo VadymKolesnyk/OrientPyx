@@ -6,6 +6,7 @@ using OrientDesk.BusinessLogic.Disciplines;
 using OrientDesk.BusinessLogic.Entities;
 using OrientDesk.BusinessLogic.Interfaces;
 using OrientDesk.BusinessLogic.Models;
+using OrientDesk.BusinessLogic.Services;
 using OrientDesk.Localization;
 using OrientDesk.Presentation.Services;
 using OrientDesk.Presentation.ViewModels.Dialogs;
@@ -34,6 +35,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private readonly IDisciplineStrategyProvider _strategies;
     private readonly IDialogService _dialogs;
     private readonly IParticipantImportFlow _importFlow;
+    private readonly IEntryFeeCalculator _entryFeeCalculator;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
     // Serialises chip-reassignment prompts so a collapsed-block edit that fans a chip out to several
     // days never stacks overlapping confirm dialogs (the overlay shows one dialog at a time).
@@ -47,9 +49,12 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         IBusyService busy,
         IDisciplineStrategyProvider strategies,
         IDialogService dialogs,
-        IParticipantImportFlow importFlow)
+        IParticipantImportFlow importFlow,
+        IEntryFeeCalculator entryFeeCalculator,
+        ITableLayoutStore layoutStore)
         : base(localization)
     {
+        LayoutStore = layoutStore;
         _editor = editor;
         _appStore = appStore;
         _session = session;
@@ -57,6 +62,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _strategies = strategies;
         _dialogs = dialogs;
         _importFlow = importFlow;
+        _entryFeeCalculator = entryFeeCalculator;
         // Singleton VM: reload when the competition/day changes. SessionChanged may be raised on a
         // pool thread (session writes run inside RunAsync), so marshal onto the UI thread.
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
@@ -68,6 +74,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     public override string NavKey => "Nav.Participants";
     public override string TitleKey => "Page.Participants.Title";
     public override string TextKey => "Page.Participants.Text";
+
+    /// <summary>The per-competition table-view store, bound by both participant tables so their column
+    /// order/width/visibility persist to <c>events/&lt;id&gt;/views.json</c>.</summary>
+    public ITableLayoutStore LayoutStore { get; }
 
     /// <summary>Day-mode rows (the selected real day's participants).</summary>
     public ObservableCollection<ParticipantDayRowViewModel> Participants { get; } = [];
@@ -95,6 +105,22 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     /// that is not in the rental database. Reloaded with the page and mutated live on a toggle.
     /// </summary>
     public RentalChipRegistry RentalChips { get; } = new();
+
+    /// <summary>
+    /// The competition's entry-fee discounts (FSOU-member first, then by name), shared with the table
+    /// so it builds one checkbox column per discount. Bound to the roster SheetTable's Discounts; the
+    /// day-mode table bakes them into DayBands. Reloaded with the page.
+    /// </summary>
+    [ObservableProperty]
+    private IReadOnlyList<EntryFeeDiscount> _discounts = [];
+
+    /// <summary>Whether the raised-fee column is shown (mirrors CompetitionInfo.RaisedFeeEnabled).</summary>
+    [ObservableProperty]
+    private bool _raisedFeeEnabled;
+
+    // The shared fee snapshot used to recompute each row's total live; rebuilt on every load from the
+    // current info / group fees / chip prices / discounts / rental chips.
+    private EntryFeeContext _feeContext = null!;
 
     /// <summary>
     /// The competition's region options, shared by every row's region dropdown: a leading "(none)"
@@ -144,7 +170,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     }
 
     private void RebuildDayBands()
-        => DayBands = new Controls.DayColumnBuilder(Localization).Build(ShowTeamColumn, _dayBands);
+        => DayBands = new Controls.DayColumnBuilder(Localization).Build(ShowTeamColumn, Discounts, RaisedFeeEnabled, _dayBands);
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsRosterMode))]
@@ -197,6 +223,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         // Rank options come from the app database (shared across competitions), so they load regardless
         // of whether a competition is selected.
         await RefreshRankOptionsAsync();
+
+        // Entry-fee inputs: the discount set + the fee snapshot used to compute each row's total.
+        await RefreshFeeDataAsync(hasEvent);
 
         _syncingDay = true;
         try
@@ -321,11 +350,12 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     }
 
     private ParticipantDayRowViewModel CreateDayRow(ParticipantDayRow row, IReadOnlyList<GroupOption> groupOptions)
-        => new(row, groupOptions, _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Localization, _strategies,
+        => new(row, groupOptions, _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Discounts, _feeContext, Localization, _strategies,
             RequestRowSave, LeaveDay, RequestDayRowChipChange,
             RequestDayRowRegionChange, RequestDayRowAddRegion,
             RequestDayRowClubChange, RequestDayRowAddClub,
-            RequestDayRowDusshChange, RequestDayRowAddDussh);
+            RequestDayRowDusshChange, RequestDayRowAddDussh,
+            RequestRowRaisedFeeChange, RequestRowDiscountChange);
 
     private ParticipantRosterRowViewModel CreateRosterRow(
         ParticipantRosterRow row,
@@ -339,11 +369,12 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 : [new GroupOption(null, string.Empty, Localization)];
             cells.Add(new RosterDayCellViewModel(row.ParticipantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange, RequestCellStartTimeChange, RequestCellOutOfCompetitionChange));
         }
-        return new ParticipantRosterRowViewModel(row, cells, _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Localization,
+        return new ParticipantRosterRowViewModel(row, cells, _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Discounts, _feeContext, Localization,
             RequestRosterRowSave,
             RequestRosterRowRegionChange, RequestRosterRowAddRegion,
             RequestRosterRowClubChange, RequestRosterRowAddClub,
-            RequestRosterRowDusshChange, RequestRosterRowAddDussh);
+            RequestRosterRowDusshChange, RequestRosterRowAddDussh,
+            RequestRosterRaisedFeeChange, RequestRosterDiscountChange);
     }
 
     // Driven by the day ComboBox. A real day switches the session (so other pages follow); the roster
@@ -661,6 +692,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 (row.FsouCode ?? string.Empty).Trim(),
                 row.IsFsouMember,
                 (row.Payment ?? string.Empty).Trim(),
+                // Fee fields are persisted through their own callbacks, not the identity save; pass
+                // through the row's current values so the DTO is well-formed (the editor ignores them).
+                row.PaysRaisedFee,
+                [],
+                0m,
                 []);
             await Task.Run(() => _editor.UpdateParticipantIdentityAsync(dto, token), token);
         }
@@ -1106,6 +1142,45 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 options.Add(new RankOption(r.Name, Localization));
         _rankOptions = options;
     }
+
+    // ── Entry-fee data (discounts + the recompute snapshot) ─────────────────────────────────────────
+    // Loads the discount set and rebuilds the shared fee context from the current competition inputs.
+    // The context lets each row recompute its total live (on a discount/raised-fee/group/chip change)
+    // without a DB round-trip; the rows are still seeded with the server-precomputed total on load.
+    private async Task RefreshFeeDataAsync(bool hasEvent)
+    {
+        if (!hasEvent)
+        {
+            Discounts = [];
+            RaisedFeeEnabled = false;
+            _feeContext = new EntryFeeContext(_entryFeeCalculator, null, [], [], [], []);
+            return;
+        }
+
+        var info = await _busy.RunAsync(() => _editor.GetInfoAsync());
+        var groups = await _busy.RunAsync(() => _editor.GetGroupsAsync());
+        var chipPrices = await _busy.RunAsync(() => _editor.GetChipPriceOverridesAsync());
+        var discounts = await _busy.RunAsync(() => _editor.GetEntryFeeDiscountsAsync());
+        var rentalChips = await _busy.RunAsync(() => _editor.GetRentalChipsAsync());
+
+        Discounts = discounts;
+        RaisedFeeEnabled = info?.RaisedFeeEnabled ?? false;
+        _feeContext = new EntryFeeContext(_entryFeeCalculator, info, groups, chipPrices, discounts, rentalChips);
+    }
+
+    // A row's raised-fee flag toggled: persist in the background (competition-level, all days).
+    private void RequestRowRaisedFeeChange(ParticipantDayRowViewModel row)
+        => _ = Task.Run(() => _editor.SetParticipantPaysRaisedFeeAsync(row.ParticipantId, row.PaysRaisedFee));
+
+    private void RequestRosterRaisedFeeChange(ParticipantRosterRowViewModel row)
+        => _ = Task.Run(() => _editor.SetParticipantPaysRaisedFeeAsync(row.ParticipantId, row.PaysRaisedFee));
+
+    // A row's discount checkbox toggled: persist the link add/remove in the background.
+    private void RequestRowDiscountChange(ParticipantDayRowViewModel row, Guid discountId, bool on)
+        => _ = Task.Run(() => _editor.SetParticipantDiscountAsync(row.ParticipantId, discountId, on));
+
+    private void RequestRosterDiscountChange(ParticipantRosterRowViewModel row, Guid discountId, bool on)
+        => _ = Task.Run(() => _editor.SetParticipantDiscountAsync(row.ParticipantId, discountId, on));
 
     // ── Rental-chip highlight + toggle ────────────────────────────────────────────────────────────
     private async Task RefreshRentalChipsAsync(bool hasEvent)

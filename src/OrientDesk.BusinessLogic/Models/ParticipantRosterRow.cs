@@ -23,6 +23,9 @@ public sealed record ParticipantRosterRow(
     string FsouCode,
     bool IsFsouMember,
     string Payment,
+    bool PaysRaisedFee,
+    IReadOnlyList<Guid> SelectedDiscountIds,
+    decimal TotalEntryFee,
     IReadOnlyList<RosterDayCell> Days);
 
 /// <summary>

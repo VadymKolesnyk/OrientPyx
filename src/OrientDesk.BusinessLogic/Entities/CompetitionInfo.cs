@@ -26,16 +26,13 @@ public class CompetitionInfo
     /// <summary>Optional last day of the competition.</summary>
     public DateTimeOffset? EndDate { get; set; }
 
-    // --- Entry-fee settings (edited on the «Стартові внески» page; no fee calculation is wired yet) ---
+    // --- Entry-fee settings (edited on the «Стартові внески» page; used by the participant fee total) ---
 
-    /// <summary>Whether a raised (late) start-entry fee applies after <see cref="RaisedFeeDeadline"/>.</summary>
+    /// <summary>Whether a raised (late) start-entry fee applies.</summary>
     public bool RaisedFeeEnabled { get; set; }
 
     /// <summary>The raised start-entry fee amount, applied when <see cref="RaisedFeeEnabled"/> is on. Null = unset.</summary>
     public decimal? RaisedFeeAmount { get; set; }
-
-    /// <summary>Date after which the raised fee applies (registrations past this pay the raised amount). Null = unset.</summary>
-    public DateTimeOffset? RaisedFeeDeadline { get; set; }
 
     /// <summary>Base rental-chip price per day, the default unless a note-keyed override matches. Null = unset.</summary>
     public decimal? ChipRentalPricePerDay { get; set; }

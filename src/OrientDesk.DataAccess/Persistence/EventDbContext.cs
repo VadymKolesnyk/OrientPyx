@@ -25,6 +25,7 @@ public class EventDbContext : DbContext
     public DbSet<Dussh> Dusshes => Set<Dussh>();
     public DbSet<Participant> Participants => Set<Participant>();
     public DbSet<ParticipantDay> ParticipantDays => Set<ParticipantDay>();
+    public DbSet<ParticipantDiscount> ParticipantDiscounts => Set<ParticipantDiscount>();
     public DbSet<FinishReadout> FinishReadouts => Set<FinishReadout>();
     public DbSet<ChipPriceOverride> ChipPriceOverrides => Set<ChipPriceOverride>();
     public DbSet<EntryFeeDiscount> EntryFeeDiscounts => Set<EntryFeeDiscount>();
@@ -81,5 +82,13 @@ public class EventDbContext : DbContext
         // Finish read-outs are queried by day (the day's log) and de-duplicated by content within a day.
         modelBuilder.Entity<FinishReadout>()
             .HasIndex(r => r.EventDayId);
+
+        // Participant↔discount links are queried by participant (a row's selected discounts) and by
+        // discount (clearing a discount from everyone when it is deleted).
+        modelBuilder.Entity<ParticipantDiscount>()
+            .HasIndex(p => p.ParticipantId);
+
+        modelBuilder.Entity<ParticipantDiscount>()
+            .HasIndex(p => p.DiscountId);
     }
 }

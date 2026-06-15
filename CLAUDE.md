@@ -112,6 +112,12 @@ Column widths are content-sized then user-resizable; explicit fixed widths are s
 `width:` argument. There is no star/`*` sizing — the table left-aligns content-width columns and
 scrolls horizontally.
 
+A table can **persist its view** (column order, width, hidden set) per competition: set `LayoutKey`
+(a stable id, e.g. `"participants.day"`) and `LayoutStore` (`ITableLayoutStore`, a singleton) on the
+`SheetTable`. It saves to `events/<id>/views.json` (one JSON object keyed by table id) on every
+hide/reorder/resize and reloads on build. Persistence is opt-in — only set where wanted (currently the
+two Participants tables); tables without it stay in-memory only. No-op when no competition is selected.
+
 ## How to build
 
 ```bash

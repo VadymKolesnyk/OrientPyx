@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using OrientDesk.BusinessLogic.Entities;
 using OrientDesk.Localization;
 using OrientDesk.Presentation.ViewModels.Pages;
 
@@ -24,7 +25,11 @@ public sealed class DayColumnBuilder
     /// (rogaine) — the caller passes <paramref name="showTeam"/>; rebuild when discipline changes.
     /// Existing <paramref name="previous"/> bands carry user-set widths forward.
     /// </summary>
-    public IReadOnlyList<SheetBand> Build(bool showTeam, IReadOnlyList<SheetBand>? previous)
+    public IReadOnlyList<SheetBand> Build(
+        bool showTeam,
+        IReadOnlyList<EntryFeeDiscount> discounts,
+        bool raisedFeeEnabled,
+        IReadOnlyList<SheetBand>? previous)
     {
         var bands = new List<SheetBand>();
 
@@ -61,6 +66,9 @@ public sealed class DayColumnBuilder
 
         if (showTeam)
             bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Team", nameof(ParticipantDayRowViewModel.Team)));
+
+        // Entry-fee tail: raised-fee flag (when enabled), one column per discount, then the total.
+        EntryFeeColumns.Append(bands, _loc, discounts, raisedFeeEnabled);
 
         // Trailing delete action.
         var actions = new SheetColumn(SheetCellKind.Actions) { Width = 48, WidthCapped = true, MinWidth = 48 };

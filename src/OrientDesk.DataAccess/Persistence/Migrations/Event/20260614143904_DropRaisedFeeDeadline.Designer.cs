@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using OrientDesk.DataAccess.Persistence;
 
@@ -10,9 +11,11 @@ using OrientDesk.DataAccess.Persistence;
 namespace OrientDesk.DataAccess.Persistence.Migrations.Event
 {
     [DbContext(typeof(EventDbContext))]
-    partial class EventDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260614143904_DropRaisedFeeDeadline")]
+    partial class DropRaisedFeeDeadline
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.8");
@@ -173,9 +176,6 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsFsouMemberDiscount")
-                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -361,9 +361,6 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<bool>("PaysRaisedFee")
-                        .HasColumnType("INTEGER");
-
                     b.Property<string>("Rank")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -422,30 +419,6 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                     b.HasIndex("ParticipantId");
 
                     b.ToTable("ParticipantDays");
-                });
-
-            modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.ParticipantDiscount", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("DiscountId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("ParticipantId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DiscountId");
-
-                    b.HasIndex("ParticipantId");
-
-                    b.ToTable("ParticipantDiscounts");
                 });
 
             modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.Region", b =>
