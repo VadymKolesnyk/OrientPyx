@@ -77,4 +77,17 @@ public interface IDialogService : INotifyPropertyChanged
     /// or null when cancelled/closed. Only one dialog is shown at a time.
     /// </summary>
     Task<string?> ShowAddDusshAsync(AddDusshViewModel dialog);
+
+    /// <summary>
+    /// Shows the CSV column-mapping modal and awaits the user's choice. Returns the field→column
+    /// mapping and clear-first flag on confirm, or null when cancelled/closed. Only one dialog is
+    /// shown at a time.
+    /// </summary>
+    Task<CsvMappingResult?> ShowCsvMappingAsync(CsvMappingViewModel dialog);
+
+    /// <summary>
+    /// Shows the bulk-edit modal and awaits the user's choice. Returns the chosen field + value on
+    /// confirm, or null when cancelled/closed. Only one dialog is shown at a time.
+    /// </summary>
+    Task<BulkEditResult?> ShowBulkEditAsync(BulkEditViewModel dialog);
 }

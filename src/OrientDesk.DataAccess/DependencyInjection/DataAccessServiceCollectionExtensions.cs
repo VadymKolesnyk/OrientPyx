@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OrientDesk.BusinessLogic.Entities;
 using OrientDesk.BusinessLogic.Interfaces;
+using OrientDesk.DataAccess.Documents;
 using OrientDesk.DataAccess.FileSystem;
 using OrientDesk.DataAccess.Persistence;
 
@@ -26,6 +27,9 @@ public static class DataAccessServiceCollectionExtensions
         // EventStore opens per-competition databases on demand; it holds no shared state.
         services.AddSingleton<IEventStore, EventStore>();
         services.AddSingleton<IEventFolderScanner, EventFolderScanner>();
+
+        // Reads .xlsx workbooks for the participant import (column mapping reuses the CSV path).
+        services.AddSingleton<ISpreadsheetParser, XlsxParser>();
 
         return services;
     }

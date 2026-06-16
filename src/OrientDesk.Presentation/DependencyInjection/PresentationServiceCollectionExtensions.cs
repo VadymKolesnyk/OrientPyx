@@ -27,6 +27,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<IDialogService, DialogService>();
         services.AddSingleton<IXmlImportFlow, XmlImportFlow>();
         services.AddSingleton<IParticipantImportFlow, ParticipantImportFlow>();
+        services.AddSingleton<ICsvImportFlow, CsvImportFlow>();
         services.AddSingleton<IFileReadoutPoller, FileReadoutPoller>();
         services.AddSingleton<IBackgroundActivityService, BackgroundActivityService>();
         services.AddSingleton<ITableLayoutStore, TableLayoutStore>();

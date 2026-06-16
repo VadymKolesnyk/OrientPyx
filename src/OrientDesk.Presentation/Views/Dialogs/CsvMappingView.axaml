@@ -1,0 +1,81 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:dialogs="using:OrientDesk.Presentation.ViewModels.Dialogs"
+             mc:Ignorable="d" d:DesignWidth="480" d:DesignHeight="520"
+             x:Class="OrientDesk.Presentation.Views.Dialogs.CsvMappingView"
+             x:DataType="dialogs:CsvMappingViewModel">
+
+    <!-- Centered card; the backdrop is supplied by the host overlay. -->
+    <Border Background="{DynamicResource SurfaceCard}"
+            CornerRadius="12"
+            MinWidth="440" MaxWidth="540" MaxHeight="600"
+            BoxShadow="0 10 40 0 #40000000"
+            HorizontalAlignment="Center" VerticalAlignment="Center"
+            ClipToBounds="True">
+        <DockPanel LastChildFill="True">
+
+            <!-- Header -->
+            <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
+                    Padding="22,16">
+                <TextBlock Text="{Binding Title}" Classes="h2" VerticalAlignment="Center" />
+            </Border>
+
+            <!-- Footer actions -->
+            <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
+                    Padding="22,14">
+                <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+                    <Button Content="{Binding Localization[Common.Cancel]}"
+                            Classes="ghost"
+                            Command="{Binding CancelCommand}" />
+                    <Button Content="{Binding Localization[Common.Ok]}"
+                            Classes="accent"
+                            Command="{Binding ConfirmCommand}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Body: message, the field→column mapping rows, then the clear-first toggle. -->
+            <DockPanel Margin="22,18" LastChildFill="True">
+
+                <TextBlock DockPanel.Dock="Top" Text="{Binding Message}"
+                           TextWrapping="Wrap" Classes="muted" Margin="0,0,0,12" />
+
+                <CheckBox DockPanel.Dock="Bottom" Margin="0,12,0,0"
+                          Content="{Binding ClearFirstLabel}"
+                          IsChecked="{Binding ClearFirst, Mode=TwoWay}" />
+
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding Fields}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="dialogs:CsvFieldMapping">
+                                <Grid ColumnDefinitions="160,*" Margin="0,3">
+                                    <TextBlock Grid.Column="0" Text="{Binding Label}"
+                                               Classes="label"
+                                               VerticalAlignment="Center"
+                                               TextWrapping="Wrap" Margin="0,0,12,0" />
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding Columns}"
+                                              SelectedItem="{Binding SelectedColumn, Mode=TwoWay}"
+                                              HorizontalAlignment="Stretch">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="dialogs:CsvColumnOption">
+                                                <TextBlock Text="{Binding Label}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+            </DockPanel>
+
+        </DockPanel>
+    </Border>
+
+</UserControl>

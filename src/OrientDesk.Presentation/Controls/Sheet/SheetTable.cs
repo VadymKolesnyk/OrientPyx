@@ -579,9 +579,12 @@ public sealed class SheetTable : TemplatedControl
     public IReadOnlyList<SheetColumn> ToggleableColumns()
     {
         var list = new List<SheetColumn>();
+        // Any column carrying a PickerLabel is toggleable — including the participants tables' Actions
+        // (delete) column, which now sets one. Tables whose delete column has no label (the generic
+        // SheetColumnBuilder.DeleteAction) stay excluded.
         foreach (var band in _bands)
             foreach (var col in band.Columns)
-                if (col.Kind != SheetCellKind.Actions && !string.IsNullOrEmpty(col.PickerLabel))
+                if (!string.IsNullOrEmpty(col.PickerLabel))
                     list.Add(col);
         return list;
     }

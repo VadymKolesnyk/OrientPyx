@@ -177,4 +177,36 @@ public sealed partial class DialogService : ObservableObject, IDialogService
                 Current = null;
         }
     }
+
+    public async Task<CsvMappingResult?> ShowCsvMappingAsync(CsvMappingViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
+
+    public async Task<BulkEditResult?> ShowBulkEditAsync(BulkEditViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
 }

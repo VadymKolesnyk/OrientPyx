@@ -103,6 +103,11 @@ public sealed class RosterColumnBuilder
             bands.Add(new SheetBand(SheetBand.BandKind.Identity, [col]) { Header = col.Header });
         }
 
+        // With a single day there is nothing to group: a "block" would be one "День 1" column under a
+        // band label with a pointless collapse toggle. Render each field as a plain identity column
+        // instead — single-tier header (the block label), per-day leaf cell on day 0, fully editable.
+        var singleDay = days.Count == 1;
+
         // Field blocks: collapsed ⇒ one merged column; expanded ⇒ one column per day.
         foreach (var block in blocks)
         {
@@ -110,6 +115,26 @@ public sealed class RosterColumnBuilder
             const double fieldWidth = 110.0;
             var blockLabel = _loc.Get(block.LabelKey);
             var isChips = block.Field == RosterField.Chips;
+            if (singleDay)
+            {
+                // One plain column for this field, bound to the only day (index 0). No band, no toggle.
+                var col = new SheetColumn(LeafKind(block.Field))
+                {
+                    Header = blockLabel,
+                    DayIndex = 0,
+                    Width = fieldWidth,
+                    WidthCapped = true,
+                    SortPath = LeafSortPath(block.Field, 0),
+                    // Key by the field only (no day suffix) so a hidden field survives a rebuild and lines
+                    // up with the multi-day "block:<field>" merged key for the hidden-set carry-over.
+                    Key = $"block:{block.Field}",
+                    PickerLabel = blockLabel,
+                    PastePath = LeafPastePath(block.Field, 0),
+                    RentalChipColumn = isChips,
+                };
+                bands.Add(new SheetBand(SheetBand.BandKind.Identity, [col]) { Header = blockLabel });
+                continue;
+            }
             if (block.IsCollapsed)
             {
                 cols.Add(new SheetColumn(MergedKind(block.Field))
@@ -164,8 +189,16 @@ public sealed class RosterColumnBuilder
         // Entry-fee tail: raised-fee flag (when enabled), one column per discount, then the total.
         EntryFeeColumns.Append(bands, _loc, discounts, raisedFeeEnabled);
 
-        // Trailing actions column (delete), its own single-column band.
-        var actions = new SheetColumn(SheetCellKind.Actions) { Width = 48, WidthCapped = true, MinWidth = 48 };
+        // Trailing actions column (delete), its own single-column band. A PickerLabel + stable Key make
+        // it hideable from the columns picker like any other column.
+        var actions = new SheetColumn(SheetCellKind.Actions)
+        {
+            Width = 48,
+            WidthCapped = true,
+            MinWidth = 48,
+            Key = "actions",
+            PickerLabel = _loc.Get("Participants.Col.Actions"),
+        };
         bands.Add(new SheetBand(SheetBand.BandKind.Identity, [actions]) { Header = string.Empty });
 
         // Carry user-set widths forward where a column at the same position/kind still exists.

@@ -960,6 +960,8 @@ public sealed class EventStore : IEventStore
                 participant = new Participant
                 {
                     FullName = src.FullName,
+                    Number = src.Number,
+                    Team = src.Team,
                     Rank = src.Rank,
                     Coach = src.Coach,
                     BirthDate = src.BirthDate,
@@ -977,6 +979,12 @@ public sealed class EventStore : IEventStore
             else
             {
                 participant.FullName = src.FullName;
+                // Number and Team are absent in UOF files; only overwrite when the source supplies one,
+                // so re-importing UOF data over a CSV-set number/team doesn't wipe it.
+                if (src.Number.Length > 0)
+                    participant.Number = src.Number;
+                if (src.Team.Length > 0)
+                    participant.Team = src.Team;
                 participant.Rank = src.Rank;
                 participant.Coach = src.Coach;
                 participant.BirthDate = src.BirthDate;

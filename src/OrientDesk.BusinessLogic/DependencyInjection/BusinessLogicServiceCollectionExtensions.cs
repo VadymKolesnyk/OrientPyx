@@ -30,6 +30,9 @@ public static class BusinessLogicServiceCollectionExtensions
         // UOF participant import (the Ukrainian registration export)
         services.AddSingleton<IUofXmlParser, UofXmlParser>();
 
+        // CSV participant import (arbitrary delimited file, columns mapped to our fields in the UI)
+        services.AddSingleton<ICsvParser, CsvParser>();
+
         // Combined course-name splitting (e.g. "ЧЖ55" → "Ч55", "Ж55") for the import splitter dialog.
         services.AddSingleton<ICourseNameSplitter, CourseNameSplitter>();
 

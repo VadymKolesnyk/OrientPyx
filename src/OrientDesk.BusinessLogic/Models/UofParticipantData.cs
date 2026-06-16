@@ -23,6 +23,13 @@ public sealed class UofParticipantData
 public sealed class UofParticipant
 {
     public string FullName { get; init; } = string.Empty;
+
+    /// <summary>Bib / start number; blank when none. UOF files carry none, but CSV/Excel may.</summary>
+    public string Number { get; init; } = string.Empty;
+
+    /// <summary>Team name (team disciplines); blank when none. UOF files carry none, but CSV/Excel may.</summary>
+    public string Team { get; init; } = string.Empty;
+
     public string Representative { get; init; } = string.Empty;
     public string FsouCode { get; init; } = string.Empty;
     public bool IsFsouMember { get; init; }

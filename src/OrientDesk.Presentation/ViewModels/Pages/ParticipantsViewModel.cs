@@ -36,6 +36,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private readonly IDisciplineStrategyProvider _strategies;
     private readonly IDialogService _dialogs;
     private readonly IParticipantImportFlow _importFlow;
+    private readonly ICsvImportFlow _csvImportFlow;
     private readonly IEntryFeeCalculator _entryFeeCalculator;
     private readonly IActivityLog _log;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
@@ -52,6 +53,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         IDisciplineStrategyProvider strategies,
         IDialogService dialogs,
         IParticipantImportFlow importFlow,
+        ICsvImportFlow csvImportFlow,
         IEntryFeeCalculator entryFeeCalculator,
         IActivityLog log,
         ITableLayoutStore layoutStore)
@@ -65,6 +67,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _strategies = strategies;
         _dialogs = dialogs;
         _importFlow = importFlow;
+        _csvImportFlow = csvImportFlow;
         _entryFeeCalculator = entryFeeCalculator;
         _log = log;
         // Singleton VM: reload when the competition/day changes. SessionChanged may be raised on a
@@ -196,8 +199,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     /// <summary>True while a real day's participants are shown (the inverse of roster mode).</summary>
     public bool IsDayMode => !IsRosterMode;
 
-    /// <summary>Day picker is always shown — the roster option alone makes more than one entry.</summary>
-    public bool ShowDaySelector => DayOptions.Count > 1;
+    /// <summary>The day picker is shown only when the competition has more than one real day. With a
+    /// single day there is nothing to switch between, so we hide it and always show the roster
+    /// ("Мандатка"). (DayOptions carries a leading roster sentinel, so >2 means two or more real days.)</summary>
+    public bool ShowDaySelector => DayOptions.Count > 2;
 
     // Cached per-day flag: true when the day's default discipline OR any group on the day (via its
     // DisciplineOverride) uses teams. Recomputed when the day's rows load (see ReloadContentAsync).
@@ -257,7 +262,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
             // Resolve the selected option: honour a remembered roster choice, else follow the
             // session day, else the first real day (or the roster option when no day exists).
-            if (_rosterChosen)
+            // When the picker is hidden (a single real day), force the roster — there is no UI to
+            // switch back to it, so a stale day choice must not leave the page stuck in day mode.
+            if (_rosterChosen || DayOptions.Count <= 2)
             {
                 SelectedDay = DayOptions.FirstOrDefault(o => o.IsRoster);
             }
@@ -286,6 +293,26 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     public async Task ImportFromXmlAsync(string xml)
     {
         if (await _importFlow.RunAsync(xml))
+            await LoadAsync();
+    }
+
+    /// <summary>
+    /// Imports participants from a CSV file (the view reads/decodes the file and hands over the text).
+    /// Runs the CSV flow (parse header → column-mapping modal → import on all days) and reloads on success.
+    /// </summary>
+    public async Task ImportFromCsvAsync(string csv)
+    {
+        if (await _csvImportFlow.RunAsync(csv))
+            await LoadAsync();
+    }
+
+    /// <summary>
+    /// Imports participants from an .xlsx workbook (the view reads the file's bytes and hands them over).
+    /// Same flow as <see cref="ImportFromCsvAsync"/> with the workbook parsed instead of CSV text.
+    /// </summary>
+    public async Task ImportFromXlsxAsync(byte[] bytes)
+    {
+        if (await _csvImportFlow.RunXlsxAsync(bytes))
             await LoadAsync();
     }
 
@@ -1076,6 +1103,258 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 Localization.Get("Participants.AssignChips.Log.AssignedRow"),
                 chip,
                 string.IsNullOrWhiteSpace(name) ? Localization.Get("Participants.Chip.UnnamedHolder") : name));
+    }
+
+    // ── Bulk edit one field across the shown rows ──────────────────────────────────────────────
+    // Changes a single field on every row currently shown (the filtered + sorted set the view hands in
+    // as VisibleItems), e.g. set the same group / representative / "Член ФСОУ" for everyone visible. We
+    // never touch the unique fields (number, chip). The modal picks a field + value; we then set the
+    // matching property on each row, which goes through that field's existing per-row persistence
+    // (debounced save for text/bool/rank, the dedicated region/club/ДЮСШ/group callbacks) — so there is
+    // no new DB code. Group is offered in day mode only: across the roster a single group can't span
+    // days that don't all have it. Region/club/ДЮСШ dropdowns reuse the shared "+ new" sentinel; picking
+    // it routes back here to the existing create flow and re-seeds the dialog.
+    [RelayCommand]
+    private async Task BulkEditAsync(IReadOnlyList<object?>? visibleRows)
+    {
+        if (visibleRows is null || visibleRows.Count == 0 || _session.CurrentEvent is null)
+            return;
+
+        // The group dropdown needs a real-group list; in day mode it is the current day's groups.
+        var groupOptions = IsDayMode && _session.CurrentDay is { } day
+            ? (await _busy.RunAsync(() => BuildGroupOptionsAsync(day.Id)))
+                .Where(o => o.Id is not null).ToList()
+            : new List<GroupOption>();
+
+        var fields = BuildBulkEditFields(groupOptions.Count > 0);
+        // Remember each field's localized label so the activity log can name the field, not its key.
+        var fieldLabels = fields.ToDictionary(f => f.Key, f => f.Label);
+        var dialog = new Dialogs.BulkEditViewModel(
+            Localization, fields, groupOptions,
+            _regionOptions, _clubOptions, _dusshOptions, _rankOptions, visibleRows.Count);
+
+        // The list "+ new" sentinels create the value inline, reusing the existing add flows.
+        dialog.AddRequested += OnBulkEditAddRequested;
+        BulkEditResult? result;
+        try
+        {
+            result = await _dialogs.ShowBulkEditAsync(dialog);
+        }
+        finally
+        {
+            dialog.AddRequested -= OnBulkEditAddRequested;
+        }
+        if (result is null)
+            return;
+
+        ApplyBulkEdit(visibleRows, result);
+
+        // Group/region etc. don't shift fees, but group changes the discount/rental picture for the
+        // total; refresh fees + the status bar so the change is reflected immediately (cheap, in-memory).
+        foreach (var row in Participants)
+            row.RefreshFees(_feeContext);
+        foreach (var row in Roster)
+            row.RefreshFees(_feeContext);
+        RecomputeStatusInfo();
+
+        _log.Action(string.Format(
+            CultureInfo.CurrentCulture,
+            Localization.Get("Participants.BulkEdit.Log.Applied"),
+            visibleRows.Count,
+            fieldLabels.TryGetValue(result.Key, out var label) ? label : result.Key));
+    }
+
+    // The fields the user can bulk-edit, in display order. Unique fields (number, chip) are excluded.
+    // Context-sensitive fields are dropped when they don't apply: group (day mode only), team (only when
+    // shown for the current mode), raised fee (only when enabled), out-of-competition (day mode only).
+    private IReadOnlyList<Dialogs.BulkEditFieldOption> BuildBulkEditFields(bool includeGroup)
+    {
+        var fields = new List<Dialogs.BulkEditFieldOption>();
+        Dialogs.BulkEditFieldOption F(string key, Dialogs.BulkEditFieldKind kind, string labelKey)
+            => new(key, kind, Localization.Get(labelKey));
+
+        if (includeGroup)
+            fields.Add(F("Group", Dialogs.BulkEditFieldKind.Group, "Participants.Col.Group"));
+        fields.Add(F("Region", Dialogs.BulkEditFieldKind.Region, "Participants.Col.Region"));
+        fields.Add(F("Club", Dialogs.BulkEditFieldKind.Club, "Participants.Col.Club"));
+        fields.Add(F("Dussh", Dialogs.BulkEditFieldKind.Dussh, "Participants.Col.Dussh"));
+        fields.Add(F("Rank", Dialogs.BulkEditFieldKind.Rank, "Participants.Col.Rank"));
+        fields.Add(F("Coach", Dialogs.BulkEditFieldKind.Text, "Participants.Col.Coach"));
+        fields.Add(F("Representative", Dialogs.BulkEditFieldKind.Text, "Participants.Col.Representative"));
+        fields.Add(F("FsouCode", Dialogs.BulkEditFieldKind.Text, "Participants.Col.FsouCode"));
+        fields.Add(F("Payment", Dialogs.BulkEditFieldKind.Text, "Participants.Col.Payment"));
+        if ((IsDayMode && ShowTeamColumn) || (IsRosterMode && RosterShowsTeam))
+            fields.Add(F("Team", Dialogs.BulkEditFieldKind.Text, "Participants.Col.Team"));
+        fields.Add(F("IsFsouMember", Dialogs.BulkEditFieldKind.Bool, "Participants.Col.IsFsouMember"));
+        if (RaisedFeeEnabled)
+            fields.Add(F("PaysRaisedFee", Dialogs.BulkEditFieldKind.Bool, "Participants.Col.RaisedFee"));
+        if (IsDayMode)
+            fields.Add(F("OutOfCompetition", Dialogs.BulkEditFieldKind.Bool, "Participants.Col.OutOfCompetition"));
+        return fields;
+    }
+
+    // A list field's "+ new" sentinel was picked in the dialog: run the existing create flow for that
+    // kind, then push the rebuilt shared options onto the dialog (selecting the new value) or revert.
+    private void OnBulkEditAddRequested(object? sender, Dialogs.BulkEditFieldKind kind)
+    {
+        if (sender is not Dialogs.BulkEditViewModel dialog)
+            return;
+        _ = kind switch
+        {
+            Dialogs.BulkEditFieldKind.Region => AddRegionForDialogAsync(dialog),
+            Dialogs.BulkEditFieldKind.Club => AddClubForDialogAsync(dialog),
+            Dialogs.BulkEditFieldKind.Dussh => AddDusshForDialogAsync(dialog),
+            _ => Task.CompletedTask
+        };
+    }
+
+    private async Task AddRegionForDialogAsync(Dialogs.BulkEditViewModel dialog)
+    {
+        await _regionGate.WaitAsync();
+        try
+        {
+            var name = await _dialogs.ShowAddRegionAsync(new Dialogs.AddRegionViewModel(Localization));
+            var region = string.IsNullOrWhiteSpace(name)
+                ? null
+                : await _busy.RunAsync(() => _editor.AddRegionAsync(name));
+            if (region is null)
+            {
+                dialog.RevertList(Dialogs.BulkEditFieldKind.Region);
+                return;
+            }
+            await RefreshRegionOptionsAsync(hasEvent: true);
+            ApplyRegionOptionsToRows();
+            dialog.ApplyNewRegion(_regionOptions, region.Id);
+        }
+        finally
+        {
+            _regionGate.Release();
+        }
+    }
+
+    private async Task AddClubForDialogAsync(Dialogs.BulkEditViewModel dialog)
+    {
+        await _clubGate.WaitAsync();
+        try
+        {
+            var name = await _dialogs.ShowAddClubAsync(new Dialogs.AddClubViewModel(Localization));
+            var club = string.IsNullOrWhiteSpace(name)
+                ? null
+                : await _busy.RunAsync(() => _editor.AddClubAsync(name));
+            if (club is null)
+            {
+                dialog.RevertList(Dialogs.BulkEditFieldKind.Club);
+                return;
+            }
+            await RefreshClubOptionsAsync(hasEvent: true);
+            ApplyClubOptionsToRows();
+            dialog.ApplyNewClub(_clubOptions, club.Id);
+        }
+        finally
+        {
+            _clubGate.Release();
+        }
+    }
+
+    private async Task AddDusshForDialogAsync(Dialogs.BulkEditViewModel dialog)
+    {
+        await _dusshGate.WaitAsync();
+        try
+        {
+            var name = await _dialogs.ShowAddDusshAsync(new Dialogs.AddDusshViewModel(Localization));
+            var dussh = string.IsNullOrWhiteSpace(name)
+                ? null
+                : await _busy.RunAsync(() => _editor.AddDusshAsync(name));
+            if (dussh is null)
+            {
+                dialog.RevertList(Dialogs.BulkEditFieldKind.Dussh);
+                return;
+            }
+            await RefreshDusshOptionsAsync(hasEvent: true);
+            ApplyDusshOptionsToRows();
+            dialog.ApplyNewDussh(_dusshOptions, dussh.Id);
+        }
+        finally
+        {
+            _dusshGate.Release();
+        }
+    }
+
+    // Sets the chosen field to the chosen value on every visible row. Setting each property fires that
+    // field's existing per-row change handler, which persists it — list fields are resolved to each
+    // row's own option instance by id (groups in particular have a per-day list and must match by id).
+    private void ApplyBulkEdit(IReadOnlyList<object?> visibleRows, BulkEditResult result)
+    {
+        foreach (var item in visibleRows)
+        {
+            switch (item)
+            {
+                case ParticipantDayRowViewModel d:
+                    ApplyBulkEditToDayRow(d, result);
+                    break;
+                case ParticipantRosterRowViewModel r:
+                    ApplyBulkEditToRosterRow(r, result);
+                    break;
+            }
+        }
+    }
+
+    private void ApplyBulkEditToDayRow(ParticipantDayRowViewModel row, BulkEditResult r)
+    {
+        switch (r.Key)
+        {
+            case "Group":
+                var g = row.GroupOptions.FirstOrDefault(o => o.Id == r.Id);
+                if (g is not null)
+                    row.SelectedGroup = g;
+                break;
+            case "Region":
+                row.SelectedRegion = row.RegionOptions.FirstOrDefault(o => !o.IsAdd && o.Id == r.Id) ?? row.RegionOptions[0];
+                break;
+            case "Club":
+                row.SelectedClub = row.ClubOptions.FirstOrDefault(o => !o.IsAdd && o.Id == r.Id) ?? row.ClubOptions[0];
+                break;
+            case "Dussh":
+                row.SelectedDussh = row.DusshOptions.FirstOrDefault(o => !o.IsAdd && o.Id == r.Id) ?? row.DusshOptions[0];
+                break;
+            case "Rank":
+                row.SelectedRank = row.RankOptions.FirstOrDefault(o => string.Equals(o.Value, r.Text, StringComparison.OrdinalIgnoreCase)) ?? row.RankOptions[0];
+                break;
+            case "Coach": row.Coach = r.Text ?? string.Empty; break;
+            case "Representative": row.Representative = r.Text ?? string.Empty; break;
+            case "FsouCode": row.FsouCode = r.Text ?? string.Empty; break;
+            case "Payment": row.Payment = r.Text ?? string.Empty; break;
+            case "Team": row.Team = r.Text ?? string.Empty; break;
+            case "IsFsouMember": row.IsFsouMember = r.Bool ?? false; break;
+            case "PaysRaisedFee": row.PaysRaisedFee = r.Bool ?? false; break;
+            case "OutOfCompetition": row.OutOfCompetition = r.Bool ?? false; break;
+        }
+    }
+
+    private void ApplyBulkEditToRosterRow(ParticipantRosterRowViewModel row, BulkEditResult r)
+    {
+        switch (r.Key)
+        {
+            case "Region":
+                row.SelectedRegion = row.RegionOptions.FirstOrDefault(o => !o.IsAdd && o.Id == r.Id) ?? row.RegionOptions[0];
+                break;
+            case "Club":
+                row.SelectedClub = row.ClubOptions.FirstOrDefault(o => !o.IsAdd && o.Id == r.Id) ?? row.ClubOptions[0];
+                break;
+            case "Dussh":
+                row.SelectedDussh = row.DusshOptions.FirstOrDefault(o => !o.IsAdd && o.Id == r.Id) ?? row.DusshOptions[0];
+                break;
+            case "Rank":
+                row.SelectedRank = row.RankOptions.FirstOrDefault(o => string.Equals(o.Value, r.Text, StringComparison.OrdinalIgnoreCase)) ?? row.RankOptions[0];
+                break;
+            case "Coach": row.Coach = r.Text ?? string.Empty; break;
+            case "Representative": row.Representative = r.Text ?? string.Empty; break;
+            case "FsouCode": row.FsouCode = r.Text ?? string.Empty; break;
+            case "Payment": row.Payment = r.Text ?? string.Empty; break;
+            case "Team": row.Team = r.Text ?? string.Empty; break;
+            case "IsFsouMember": row.IsFsouMember = r.Bool ?? false; break;
+            case "PaysRaisedFee": row.PaysRaisedFee = r.Bool ?? false; break;
+        }
     }
 
     // ── Roster block collapse/expand ──────────────────────────────────────────────────────────

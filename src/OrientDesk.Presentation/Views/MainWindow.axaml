@@ -57,6 +57,12 @@
         <DataTemplate DataType="dialogs:AddDusshViewModel">
             <dialogViews:AddDusshView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:CsvMappingViewModel">
+            <dialogViews:CsvMappingView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:BulkEditViewModel">
+            <dialogViews:BulkEditView />
+        </DataTemplate>
     </Window.DataTemplates>
 
     <!-- One transform scales the WHOLE interface — fonts, inputs, paddings, spacing,

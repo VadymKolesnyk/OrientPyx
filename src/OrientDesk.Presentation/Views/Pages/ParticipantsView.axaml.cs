@@ -80,6 +80,62 @@ public partial class ParticipantsView : UserControl
         await _vm.ImportFromXmlAsync(xml);
     }
 
+    // CSV / Excel import: pick the file (needs the window's StorageProvider), read its bytes, then route
+    // by extension — an .xlsx workbook goes through the VM's xlsx entry point, anything else is decoded
+    // as CSV text. Both share the same column-mapping modal + import. Mirrors OnImportClick.
+    private async void OnImportCsvClick(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null)
+            return;
+
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null)
+            return;
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = _vm.Localization.Get("ParticipantsImport.PickerCsvTitle"),
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("CSV / Excel")
+                {
+                    Patterns = ["*.csv", "*.txt", "*.xlsx"],
+                    MimeTypes =
+                    [
+                        "text/csv", "text/plain",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    ]
+                }
+            ]
+        });
+
+        if (files.Count == 0)
+            return;
+
+        // An .xlsx is a binary workbook; everything else is treated as CSV text.
+        var isXlsx = files[0].Name.EndsWith(".xlsx", System.StringComparison.OrdinalIgnoreCase);
+
+        byte[] bytes;
+        try
+        {
+            await using var stream = await files[0].OpenReadAsync();
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            bytes = memory.ToArray();
+        }
+        catch
+        {
+            // Couldn't read the file (permissions, removed, etc.) — let the VM report via the modal.
+            bytes = [];
+        }
+
+        if (isXlsx)
+            await _vm.ImportFromXlsxAsync(bytes);
+        else
+            await _vm.ImportFromCsvAsync(CsvEncodingReader.Decode(bytes));
+    }
+
     // Bulk-assign start numbers. The on-screen (filtered + sorted) row order lives in the SheetTable,
     // so we read the active table's VisibleItems here — the VM never references the table directly —
     // and hand that ordered list to the command, which prompts for the start number and applies them.
@@ -101,6 +157,18 @@ public partial class ParticipantsView : UserControl
 
         var table = _vm.IsRosterMode ? RosterTable : DayTable;
         await _vm.AssignChipsCommand.ExecuteAsync(table.VisibleItems);
+    }
+
+    // Bulk-edit one field across the shown rows. Same shape as OnAssignNumbersClick: read the active
+    // table's on-screen (filtered + sorted) rows and hand them to the command, which prompts for the
+    // field + value and applies it to each.
+    private async void OnBulkEditClick(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null)
+            return;
+
+        var table = _vm.IsRosterMode ? RosterTable : DayTable;
+        await _vm.BulkEditCommand.ExecuteAsync(table.VisibleItems);
     }
 
     // A collapse/expand toggle (or day-set change) asks the roster table to rebuild its columns.

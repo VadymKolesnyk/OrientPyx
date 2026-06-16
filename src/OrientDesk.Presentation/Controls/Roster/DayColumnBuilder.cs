@@ -77,8 +77,15 @@ public sealed class DayColumnBuilder
         // Entry-fee tail: raised-fee flag (when enabled), one column per discount, then the total.
         EntryFeeColumns.Append(bands, _loc, discounts, raisedFeeEnabled);
 
-        // Trailing delete action.
-        var actions = new SheetColumn(SheetCellKind.Actions) { Width = 48, WidthCapped = true, MinWidth = 48 };
+        // Trailing delete action. A PickerLabel + stable Key make it hideable from the columns picker.
+        var actions = new SheetColumn(SheetCellKind.Actions)
+        {
+            Width = 48,
+            WidthCapped = true,
+            MinWidth = 48,
+            Key = "actions",
+            PickerLabel = _loc.Get("Participants.Col.Actions"),
+        };
         bands.Add(new SheetBand(SheetBand.BandKind.Identity, [actions]) { Header = string.Empty });
 
         CarryWidths(previous, bands);
