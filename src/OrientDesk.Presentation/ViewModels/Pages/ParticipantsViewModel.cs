@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -36,6 +37,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private readonly IDialogService _dialogs;
     private readonly IParticipantImportFlow _importFlow;
     private readonly IEntryFeeCalculator _entryFeeCalculator;
+    private readonly IActivityLog _log;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
     // Serialises chip-reassignment prompts so a collapsed-block edit that fans a chip out to several
     // days never stacks overlapping confirm dialogs (the overlay shows one dialog at a time).
@@ -51,6 +53,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         IDialogService dialogs,
         IParticipantImportFlow importFlow,
         IEntryFeeCalculator entryFeeCalculator,
+        IActivityLog log,
         ITableLayoutStore layoutStore)
         : base(localization)
     {
@@ -63,6 +66,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _dialogs = dialogs;
         _importFlow = importFlow;
         _entryFeeCalculator = entryFeeCalculator;
+        _log = log;
         // Singleton VM: reload when the competition/day changes. SessionChanged may be raised on a
         // pool thread (session writes run inside RunAsync), so marshal onto the UI thread.
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
@@ -117,6 +121,15 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     /// <summary>Whether the raised-fee column is shown (mirrors CompetitionInfo.RaisedFeeEnabled).</summary>
     [ObservableProperty]
     private bool _raisedFeeEnabled;
+
+    /// <summary>
+    /// The system-info line shown on the right of each participants table's status bar: rental-chip
+    /// totals (in rental / free) plus, in day mode, the day's member count. Recomputed whenever the
+    /// rows or the rental set change. The status bar's row counts and per-column sums are owned by the
+    /// table itself; this is the extra context the page supplies.
+    /// </summary>
+    [ObservableProperty]
+    private string _statusInfo = string.Empty;
 
     // The shared fee snapshot used to recompute each row's total live; rebuilt on every load from the
     // current info / group fees / chip prices / discounts / rental chips.
@@ -186,10 +199,20 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     /// <summary>Day picker is always shown — the roster option alone makes more than one entry.</summary>
     public bool ShowDaySelector => DayOptions.Count > 1;
 
-    /// <summary>The team column is shown only when the current real day's discipline uses it (rogaine).</summary>
-    public bool ShowTeamColumn =>
-        _session.CurrentDay is { } day && _strategies.For(day.DefaultDiscipline)
-            .UsesParticipantColumn(BusinessLogic.Enums.ParticipantColumn.Team);
+    // Cached per-day flag: true when the day's default discipline OR any group on the day (via its
+    // DisciplineOverride) uses teams. Recomputed when the day's rows load (see ReloadContentAsync).
+    private bool _dayUsesTeam;
+
+    /// <summary>The team column is shown when the current real day's discipline uses it (rogaine) or
+    /// any group on that day overrides to a team discipline.</summary>
+    public bool ShowTeamColumn => _dayUsesTeam;
+
+    // Cached roster-wide flag: true when ANY day (its default discipline or any group's override) uses
+    // teams. The roster spans all days, so its team column appears whenever teams apply anywhere.
+    private bool _rosterShowsTeam;
+
+    /// <summary>True when the roster's team column should be shown (any day uses a team discipline).</summary>
+    public bool RosterShowsTeam => _rosterShowsTeam;
 
     /// <summary>Raised when the roster's day set changed, so the view rebuilds its per-day columns.</summary>
     public event EventHandler? RosterColumnsChanged;
@@ -304,24 +327,42 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             var roster = await _busy.RunAsync(() => _editor.GetParticipantRosterAsync());
             // The roster's group dropdowns need each day's groups; gather them once.
             var groupsByDay = await _busy.RunAsync(() => LoadGroupsByDayAsync());
+            // The roster spans all days, so its team column shows when ANY day uses teams (its default
+            // discipline or any group's override).
+            _rosterShowsTeam = await _busy.RunAsync(() => AnyDayUsesTeamAsync());
             foreach (var row in roster)
                 Roster.Add(CreateRosterRow(row, groupsByDay));
+            OnPropertyChanged(nameof(RosterShowsTeam));
             RosterColumnsChanged?.Invoke(this, EventArgs.Empty);
         }
         else if (_session.CurrentDay is not null)
         {
-            var (rows, groupOptions) = await _busy.RunAsync(async () =>
+            var (rows, groupOptions, dayGroups) = await _busy.RunAsync(async () =>
             {
                 var r = await _editor.GetParticipantDayRowsAsync();
                 var g = await BuildGroupOptionsAsync(_session.CurrentDay!.Id);
-                return (r, g);
+                var dg = await _editor.GetGroupsForDayAsync(_session.CurrentDay!.Id);
+                return (r, g, dg);
             });
             foreach (var row in rows)
                 Participants.Add(CreateDayRow(row, groupOptions));
+
+            // Teams apply when the day's default discipline uses them, or any group on the day
+            // overrides to a team discipline (e.g. a rogaine group on a set-course day).
+            var day = _session.CurrentDay;
+            _dayUsesTeam =
+                _strategies.For(day.DefaultDiscipline).UsesParticipantColumn(BusinessLogic.Enums.ParticipantColumn.Team)
+                || dayGroups.Any(g => _strategies.For(g.DisciplineOverride ?? day.DefaultDiscipline)
+                    .UsesParticipantColumn(BusinessLogic.Enums.ParticipantColumn.Team));
+        }
+        else
+        {
+            _dayUsesTeam = false;
         }
 
         OnPropertyChanged(nameof(ShowTeamColumn));
         RebuildDayBands();
+        RecomputeStatusInfo();
     }
 
     // Builds the day-group options list for a given day. The roster prepends the "(none)" / "не
@@ -347,6 +388,23 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         foreach (var day in days)
             map[day.Id] = await BuildGroupOptionsAsync(day.Id, includeNone: true);
         return map;
+    }
+
+    // True when any day uses a team discipline — either the day's default discipline, or any group on
+    // it overriding to one (effective = override ?? day default). Drives the roster's team column.
+    private async Task<bool> AnyDayUsesTeamAsync()
+    {
+        var days = await _editor.GetDaysAsync();
+        foreach (var day in days)
+        {
+            if (_strategies.For(day.DefaultDiscipline).UsesParticipantColumn(BusinessLogic.Enums.ParticipantColumn.Team))
+                return true;
+            var groups = await _editor.GetGroupsForDayAsync(day.Id);
+            if (groups.Any(g => _strategies.For(g.DisciplineOverride ?? day.DefaultDiscipline)
+                    .UsesParticipantColumn(BusinessLogic.Enums.ParticipantColumn.Team)))
+                return true;
+        }
+        return false;
     }
 
     private ParticipantDayRowViewModel CreateDayRow(ParticipantDayRow row, IReadOnlyList<GroupOption> groupOptions)
@@ -692,6 +750,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 (row.FsouCode ?? string.Empty).Trim(),
                 row.IsFsouMember,
                 (row.Payment ?? string.Empty).Trim(),
+                (row.Team ?? string.Empty).Trim(),
                 // Fee fields are persisted through their own callbacks, not the identity save; pass
                 // through the row's current values so the DTO is well-formed (the editor ignores them).
                 row.PaysRaisedFee,
@@ -702,6 +761,321 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         }
         catch (OperationCanceledException) { }
         catch { }
+    }
+
+    // ── Bulk assign start numbers ─────────────────────────────────────────────────────────────
+    // Assigns sequential start numbers to the rows the user currently sees, in on-screen order. The
+    // visible (filtered + sorted) order lives in the SheetTable, so the view passes its VisibleItems in.
+    // When "reassign existing" is off: already-numbered rows are skipped and numbers already taken by
+    // anyone are stepped over (the counter stays contiguous, never collides). When on: every visible row
+    // is renumbered and a number held by a different participant is cleared from that participant first.
+    // Setting a row's Number goes through its existing debounced autosave, so each touched participant
+    // persists on its own timer; we only orchestrate the assignment here and write the activity log.
+    [RelayCommand]
+    private async Task AssignNumbersAsync(IReadOnlyList<object?>? visibleRows)
+    {
+        if (visibleRows is null || visibleRows.Count == 0)
+            return;
+
+        // All numbers currently taken across the whole competition (not just the visible set), mapped to
+        // their holder, so we can skip/step over taken numbers and clear a number from its previous holder.
+        var holders = BuildNumberHolders();
+
+        // Pre-fill the dialog with the next free number after the largest one already assigned.
+        var suggestedStart = holders.Count == 0 ? 1 : holders.Keys.Max() + 1;
+
+        var result = await _dialogs.ShowAssignNumbersAsync(new AssignNumbersViewModel(Localization, suggestedStart));
+        if (result is null)
+            return;
+
+        // Project the heterogeneous row view-models (roster vs day) to a common shape so the assignment
+        // logic is written once. Both expose ParticipantId, FullName and a settable Number.
+        var visible = ProjectNumberRows(visibleRows);
+        if (visible.Count == 0)
+            return;
+
+        var assignments = new List<(string Name, int Number)>();
+        var cleared = new List<(string Name, int Number)>();
+        var n = result.StartNumber;
+
+        foreach (var row in visible)
+        {
+            if (!result.ReassignExisting)
+            {
+                // Leave a participant who already has a number untouched.
+                if (!string.IsNullOrWhiteSpace(row.GetNumber()))
+                    continue;
+                // Step past numbers already held by anyone (keeps the counter contiguous, no collisions).
+                while (holders.ContainsKey(n))
+                    n++;
+            }
+            else if (holders.TryGetValue(n, out var prev) && !ReferenceEquals(prev.Source, row.Source))
+            {
+                // The number is held by a *different* participant: free it from them before reusing it.
+                prev.SetNumber(string.Empty);
+                cleared.Add((prev.GetName(), n));
+                holders.Remove(n);
+            }
+
+            // Drop this participant's previous number from the map so a later identical counter value
+            // doesn't see them as still holding it (and wrongly clear an already-moved participant).
+            if (int.TryParse((row.GetNumber() ?? string.Empty).Trim(),
+                    NumberStyles.Integer, CultureInfo.InvariantCulture, out var old)
+                && holders.TryGetValue(old, out var oldHolder)
+                && ReferenceEquals(oldHolder.Source, row.Source))
+                holders.Remove(old);
+
+            row.SetNumber(n.ToString(CultureInfo.InvariantCulture));
+            holders[n] = row;
+            assignments.Add((row.GetName(), n));
+            n++;
+        }
+
+        LogNumberAssignment(assignments, cleared);
+    }
+
+    // A common view over the two participant-row view-model types for bulk numbering. Neither shares a
+    // base class, so the getters/setters are bound per concrete type here.
+    private sealed class NumberRow
+    {
+        public required object Source { get; init; }
+        public required Func<string> GetNumber { get; init; }
+        public required Action<string> SetNumber { get; init; }
+        public required Func<string> GetName { get; init; }
+    }
+
+    private static List<NumberRow> ProjectNumberRows(IReadOnlyList<object?> rows)
+    {
+        var list = new List<NumberRow>(rows.Count);
+        foreach (var item in rows)
+        {
+            switch (item)
+            {
+                case ParticipantRosterRowViewModel r:
+                    list.Add(new NumberRow
+                    {
+                        Source = r,
+                        GetNumber = () => r.Number ?? string.Empty,
+                        SetNumber = v => r.Number = v,
+                        GetName = () => r.FullName ?? string.Empty
+                    });
+                    break;
+                case ParticipantDayRowViewModel d:
+                    list.Add(new NumberRow
+                    {
+                        Source = d,
+                        GetNumber = () => d.Number ?? string.Empty,
+                        SetNumber = v => d.Number = v,
+                        GetName = () => d.FullName ?? string.Empty
+                    });
+                    break;
+            }
+        }
+        return list;
+    }
+
+    // Maps every number currently in use (across the full backing collection of the active mode) to the
+    // NumberRow that holds it, so the assignment can skip taken numbers and clear a previous holder.
+    private Dictionary<int, NumberRow> BuildNumberHolders()
+    {
+        var all = IsRosterMode
+            ? ProjectNumberRows(Roster)
+            : ProjectNumberRows(Participants);
+        var map = new Dictionary<int, NumberRow>();
+        foreach (var row in all)
+        {
+            if (int.TryParse((row.GetNumber() ?? string.Empty).Trim(),
+                    NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+                map[value] = row; // last writer wins; numbers are unique per competition so this is safe
+        }
+        return map;
+    }
+
+    private void LogNumberAssignment(
+        IReadOnlyList<(string Name, int Number)> assignments,
+        IReadOnlyList<(string Name, int Number)> cleared)
+    {
+        if (assignments.Count == 0 && cleared.Count == 0)
+        {
+            _log.Action(Localization.Get("Participants.AssignNumbers.Log.None"));
+            return;
+        }
+
+        _log.Action(string.Format(
+            CultureInfo.CurrentCulture,
+            Localization.Get("Participants.AssignNumbers.Log.Assigned"),
+            assignments.Count));
+        foreach (var (name, number) in assignments)
+            _log.Action(string.Format(
+                CultureInfo.CurrentCulture,
+                Localization.Get("Participants.AssignNumbers.Log.AssignedRow"),
+                number,
+                string.IsNullOrWhiteSpace(name) ? Localization.Get("Participants.Chip.UnnamedHolder") : name));
+
+        if (cleared.Count > 0)
+        {
+            _log.Action(string.Format(
+                CultureInfo.CurrentCulture,
+                Localization.Get("Participants.AssignNumbers.Log.ClearedCount"),
+                cleared.Count));
+            foreach (var (name, number) in cleared)
+                _log.Action(string.Format(
+                    CultureInfo.CurrentCulture,
+                    Localization.Get("Participants.AssignNumbers.Log.ClearedRow"),
+                    number,
+                    string.IsNullOrWhiteSpace(name) ? Localization.Get("Participants.Chip.UnnamedHolder") : name));
+        }
+    }
+
+    // ── Bulk assign rental chips ──────────────────────────────────────────────────────────────
+    // Hands out unused rental chips, in ascending number order, to every shown participant (or member
+    // day) that has no chip yet — in the table's on-screen order (passed in as VisibleItems). A dropdown
+    // narrows the pool to chips carrying a given note ("type"), or all of them. Chips are per-day, so in
+    // day mode each shown row gets a chip on the current day, and in the roster a participant's one chip is
+    // applied to all their chip-less member days. We assign only chips nobody holds on any day, so there is
+    // no conflict and the per-row reassign flow is bypassed. The cells update instantly in memory; the
+    // whole set is then persisted in ONE background batch (a single transaction), not one write per cell —
+    // which is what made it slow and drip in one-by-one.
+    [RelayCommand]
+    private async Task AssignChipsAsync(IReadOnlyList<object?>? visibleRows)
+    {
+        if (visibleRows is null || visibleRows.Count == 0)
+            return;
+
+        // The rental pool (ordered by number) and the set of chip numbers already held on any day.
+        var pool = await _busy.RunAsync(() => _editor.GetRentalChipsAsync());
+        if (pool.Count == 0)
+        {
+            _log.Action(Localization.Get("Participants.AssignChips.Log.NoChips"));
+            return;
+        }
+        var used = await _busy.RunAsync(() => _editor.GetRentalChipHoldersAsync());
+
+        // The note dropdown: a leading "all" option, then each distinct note present in the pool.
+        var notes = pool
+            .Select(c => (c.Note ?? string.Empty).Trim())
+            .Where(n => n.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(n => n, StringComparer.CurrentCulture)
+            .ToList();
+        var options = new List<ChipNoteOption> { ChipNoteOption.All(Localization.Get("Participants.AssignChips.AllChips")) };
+        options.AddRange(notes.Select(n => ChipNoteOption.ForNote(n, n)));
+
+        var result = await _dialogs.ShowAssignChipsAsync(new AssignChipsViewModel(Localization, options));
+        if (result is null)
+            return;
+
+        // The free chips for this run: unused (held by nobody on any day), matching the note filter,
+        // by ascending number — drawn from the front as we assign.
+        var free = new Queue<string>(pool
+            .Where(c => result.Note is null
+                || string.Equals((c.Note ?? string.Empty).Trim(), result.Note, StringComparison.OrdinalIgnoreCase))
+            .Select(c => (c.Number ?? string.Empty).Trim())
+            .Where(number => number.Length > 0 && !used.ContainsKey(number)));
+
+        // Build the assignment in memory (updating the cells live), collecting the (participant, day, chip)
+        // writes; then commit them all at once.
+        var assignments = new List<(string Name, string Chip)>();
+        var writes = new List<(Guid ParticipantId, Guid DayId, string Chip)>();
+        if (IsRosterMode)
+            AssignChipsToRoster(visibleRows, free, assignments, writes);
+        else
+            AssignChipsToDay(visibleRows, free, assignments, writes);
+
+        if (writes.Count > 0)
+        {
+            await _busy.RunAsync(() => _editor.SetParticipantDayChipsBatchAsync(writes));
+
+            // The assigned cells were set "silently" (no per-cell fee recompute), so refresh each row's
+            // «Стартовий внесок» from the current fee snapshot — a chip drawn from a note-tagged pool may
+            // carry a different rental price. Also refresh the status bar (rental in-use / without-chip
+            // counts changed); the batch path never went through the per-cell change handlers that do this.
+            foreach (var row in Participants)
+                row.RefreshFees(_feeContext);
+            foreach (var row in Roster)
+                row.RefreshFees(_feeContext);
+            RecomputeStatusInfo();
+        }
+
+        LogChipAssignment(assignments, free.Count);
+    }
+
+    // Day mode: every shown row is a member of the current day, so give each one without a chip the next
+    // free chip on that day. Updates the cell in memory and records the write for the batch commit.
+    private void AssignChipsToDay(
+        IReadOnlyList<object?> visibleRows,
+        Queue<string> free,
+        List<(string Name, string Chip)> assignments,
+        List<(Guid ParticipantId, Guid DayId, string Chip)> writes)
+    {
+        if (_session.CurrentDay is not { } day)
+            return;
+
+        foreach (var item in visibleRows)
+        {
+            if (free.Count == 0)
+                break;
+            if (item is not ParticipantDayRowViewModel row || !string.IsNullOrWhiteSpace(row.Chip))
+                continue;
+
+            var chip = free.Dequeue();
+            row.SetChipSilently(chip);
+            row.MarkChipCommitted(chip);
+            writes.Add((row.ParticipantId, day.Id, chip));
+            assignments.Add((row.FullName ?? string.Empty, chip));
+        }
+    }
+
+    // Roster mode: a chip belongs to a person and is reused across their days, so each shown participant
+    // gets ONE free chip applied to every member day-cell that has no chip yet. A participant who already
+    // has a chip on every member day consumes nothing.
+    private void AssignChipsToRoster(
+        IReadOnlyList<object?> visibleRows,
+        Queue<string> free,
+        List<(string Name, string Chip)> assignments,
+        List<(Guid ParticipantId, Guid DayId, string Chip)> writes)
+    {
+        foreach (var item in visibleRows)
+        {
+            if (free.Count == 0)
+                break;
+            if (item is not ParticipantRosterRowViewModel row)
+                continue;
+
+            var emptyDays = row.Days.Where(d => d.IsMember && string.IsNullOrWhiteSpace(d.Chip)).ToList();
+            if (emptyDays.Count == 0)
+                continue;
+
+            var chip = free.Dequeue();
+            foreach (var cell in emptyDays)
+            {
+                cell.SetChipSilently(chip);
+                cell.MarkChipCommitted(chip);
+                writes.Add((cell.ParticipantId, cell.DayId, chip));
+            }
+            assignments.Add((row.FullName ?? string.Empty, chip));
+        }
+    }
+
+    private void LogChipAssignment(IReadOnlyList<(string Name, string Chip)> assignments, int remainingFree)
+    {
+        if (assignments.Count == 0)
+        {
+            _log.Action(Localization.Get("Participants.AssignChips.Log.None"));
+            return;
+        }
+
+        _log.Action(string.Format(
+            CultureInfo.CurrentCulture,
+            Localization.Get("Participants.AssignChips.Log.Assigned"),
+            assignments.Count,
+            remainingFree));
+        foreach (var (name, chip) in assignments)
+            _log.Action(string.Format(
+                CultureInfo.CurrentCulture,
+                Localization.Get("Participants.AssignChips.Log.AssignedRow"),
+                chip,
+                string.IsNullOrWhiteSpace(name) ? Localization.Get("Participants.Chip.UnnamedHolder") : name));
     }
 
     // ── Roster block collapse/expand ──────────────────────────────────────────────────────────
@@ -1222,6 +1596,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             row.RefreshFees(_feeContext);
         foreach (var row in Roster)
             row.RefreshFees(_feeContext);
+        // A rental toggle changes the in-rental / free counts shown in the status bar.
+        RecomputeStatusInfo();
     }
 
     private void ClearParticipantRows()
@@ -1231,6 +1607,51 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     }
 
     private void ClearRosterRows() => Roster.Clear();
+
+    // Builds the status bar's system-info line: how many chips are in the rental pool, how many
+    // participants in the current view still lack a chip, and — in day mode — the day's member count.
+    // Recomputed after the rows load and whenever the rental set changes (a toggle).
+    private void RecomputeStatusInfo()
+    {
+        if (_session.CurrentEvent is null)
+        {
+            StatusInfo = string.Empty;
+            return;
+        }
+
+        var rented = RentalChips.Count;
+
+        // Participants without a chip. In the day grid each row is one participant on the day, so it's
+        // the rows with a blank chip. In the roster a participant runs several days (chips are per-day),
+        // so count those who are a member of at least one day yet have a member day without a chip.
+        var withoutChip = 0;
+        if (IsRosterMode)
+        {
+            foreach (var row in Roster)
+            {
+                var memberDays = row.Days.Where(d => d.IsMember).ToList();
+                if (memberDays.Count > 0 && memberDays.Any(d => string.IsNullOrWhiteSpace(d.Chip)))
+                    withoutChip++;
+            }
+        }
+        else
+        {
+            foreach (var row in Participants)
+                if (string.IsNullOrWhiteSpace(row.Chip))
+                    withoutChip++;
+        }
+
+        var parts = new List<string>(3)
+        {
+            Localization.Get("Participants.Status.ChipsRented").Replace("{0}", rented.ToString()),
+            Localization.Get("Participants.Status.WithoutChip").Replace("{0}", withoutChip.ToString()),
+        };
+        // The roster aggregates every day, so a single "members on day" figure isn't meaningful there.
+        if (IsDayMode)
+            parts.Add(Localization.Get("Participants.Status.Members").Replace("{0}", Participants.Count.ToString()));
+
+        StatusInfo = string.Join("    •    ", parts);
+    }
 
     private void CancelAllTimers()
     {

@@ -1054,6 +1054,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 participant.FsouCode,
                 participant.IsFsouMember,
                 participant.Payment,
+                participant.Team,
                 participant.PaysRaisedFee,
                 fees.SelectedDiscountIds(participant.Id),
                 fees.Total(participant, memberDays),
@@ -1142,7 +1143,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Representative = (row.Representative ?? string.Empty).Trim(),
             FsouCode = (row.FsouCode ?? string.Empty).Trim(),
             IsFsouMember = row.IsFsouMember,
-            Payment = (row.Payment ?? string.Empty).Trim()
+            Payment = (row.Payment ?? string.Empty).Trim(),
+            // Team is competition-level (shared across days), persisted with the participant identity.
+            Team = (row.Team ?? string.Empty).Trim()
         }, cancellationToken);
 
         // Save the day link. A chip colliding with another participant on the same day is dropped,
@@ -1162,7 +1165,6 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Order = row.Order,
             GroupId = row.GroupId,
             Chip = chip,
-            Team = (row.Team ?? string.Empty).Trim(),
             StartTime = row.StartTime,
             OutOfCompetition = row.OutOfCompetition
         }, cancellationToken);
@@ -1203,7 +1205,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             return link.Id;
         }
 
-        // Already a member: update only the group, preserving the day's chip/team/order.
+        // Already a member: update only the group, preserving the day's chip/order.
         await _eventStore.UpdateParticipantDayAsync(folder, new ParticipantDay
         {
             Id = existing.Id,
@@ -1212,7 +1214,6 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Order = existing.Order,
             GroupId = groupId,
             Chip = existing.Chip,
-            Team = existing.Team,
             StartTime = existing.StartTime,
             OutOfCompetition = existing.OutOfCompetition
         }, cancellationToken);
@@ -1245,11 +1246,15 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Order = existing.Order,
             GroupId = existing.GroupId,
             Chip = trimmed,
-            Team = existing.Team,
             StartTime = existing.StartTime,
             OutOfCompetition = existing.OutOfCompetition
         }, cancellationToken);
     }
+
+    public Task<int> SetParticipantDayChipsBatchAsync(
+        IReadOnlyList<(Guid ParticipantId, Guid DayId, string Chip)> assignments,
+        CancellationToken cancellationToken = default)
+        => _eventStore.SetParticipantDayChipsBatchAsync(FolderPath, assignments, cancellationToken);
 
     public async Task SetParticipantDayStartTimeAsync(Guid participantId, Guid dayId, TimeSpan? startTime, CancellationToken cancellationToken = default)
     {
@@ -1491,7 +1496,6 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     Order = other.Order,
                     GroupId = other.GroupId,
                     Chip = string.Empty,
-                    Team = other.Team,
                     StartTime = other.StartTime,
                     OutOfCompetition = other.OutOfCompetition
                 }, cancellationToken);
@@ -1507,7 +1511,6 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Order = target.Order,
             GroupId = target.GroupId,
             Chip = trimmed,
-            Team = target.Team,
             StartTime = target.StartTime,
             OutOfCompetition = target.OutOfCompetition
         }, cancellationToken);
@@ -1586,7 +1589,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Representative = (row.Representative ?? string.Empty).Trim(),
             FsouCode = (row.FsouCode ?? string.Empty).Trim(),
             IsFsouMember = row.IsFsouMember,
-            Payment = (row.Payment ?? string.Empty).Trim()
+            Payment = (row.Payment ?? string.Empty).Trim(),
+            Team = (row.Team ?? string.Empty).Trim()
         }, cancellationToken);
     }
 
@@ -1749,7 +1753,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             GroupId: link.GroupId,
             GroupName: name,
             Chip: link.Chip,
-            Team: link.Team,
+            Team: p.Team,
             StartTime: link.StartTime,
             OutOfCompetition: link.OutOfCompetition,
             DayDefaultDiscipline: CurrentDayDefaultDiscipline);

@@ -193,6 +193,17 @@ public interface IEventStore
     /// <summary>Updates a participant-day link (group, chip, team, order). Does nothing if it is missing.</summary>
     Task UpdateParticipantDayAsync(string eventFolderPath, ParticipantDay link, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Sets the chip on many participant-day links at once, in a single transaction (used by bulk chip
+    /// assignment). Each tuple is (participantId, dayId, chip); a missing link is skipped. One
+    /// <see cref="DbContext.SaveChangesAsync"/> keeps it fast for a whole roster instead of one write
+    /// per cell. Returns how many links were updated.
+    /// </summary>
+    Task<int> SetParticipantDayChipsBatchAsync(
+        string eventFolderPath,
+        IReadOnlyList<(Guid ParticipantId, Guid DayId, string Chip)> assignments,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Removes a participant-day link by id (detaches a participant from a day). Does nothing if it is missing.</summary>
     Task DeleteParticipantDayAsync(string eventFolderPath, Guid linkId, CancellationToken cancellationToken = default);
 

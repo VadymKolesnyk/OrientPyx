@@ -36,6 +36,18 @@ public interface IDialogService : INotifyPropertyChanged
     Task<BulkAddChipsResult?> ShowBulkAddChipsAsync(BulkAddChipsViewModel dialog);
 
     /// <summary>
+    /// Shows the assign-start-numbers modal and awaits the user's input. Returns the start number and
+    /// reassign flag on OK, or null when cancelled/closed. Only one dialog is shown at a time.
+    /// </summary>
+    Task<AssignNumbersResult?> ShowAssignNumbersAsync(AssignNumbersViewModel dialog);
+
+    /// <summary>
+    /// Shows the assign-chips modal and awaits the user's input. Returns the chosen note filter on OK,
+    /// or null when cancelled/closed. Only one dialog is shown at a time.
+    /// </summary>
+    Task<AssignChipsResult?> ShowAssignChipsAsync(AssignChipsViewModel dialog);
+
+    /// <summary>
     /// Shows the group-splitting preprocessing modal and awaits the user's choice. Returns the
     /// rewritten course data (one course per split group) on confirm, or null when cancelled/closed.
     /// Only one dialog is shown at a time.

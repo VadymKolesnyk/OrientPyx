@@ -199,6 +199,20 @@ public sealed partial class SheetColumn : ObservableObject
     }
     private string _filterPath = string.Empty;
 
+    /// <summary>
+    /// Property path on the bound row whose value <b>copy</b> (Ctrl+C / range copy) reads, when the row
+    /// is scrolled off-screen and its cell isn't realized. Defaults to <see cref="FilterPath"/>. Set it
+    /// where the filter value differs from what the cell shows — e.g. the payment column filters by a
+    /// status token but must copy the actual payment amount, and collapsed roster cells copy their
+    /// merged display value. A <see cref="bool"/> value copies as a compact flag mark.
+    /// </summary>
+    public string CopyPath
+    {
+        get => string.IsNullOrEmpty(_copyPath) ? FilterPath : _copyPath;
+        set => _copyPath = value;
+    }
+    private string _copyPath = string.Empty;
+
     /// <summary>True when this column can carry a filter (it exposes a value path and isn't the actions column).</summary>
     public bool Filterable => Kind != SheetCellKind.Actions && !string.IsNullOrEmpty(FilterPath);
 
@@ -241,6 +255,36 @@ public sealed partial class SheetColumn : ObservableObject
     /// table-level menu extra, not a competing context menu on the cell. See the day/roster chip columns.
     /// </summary>
     public bool RentalChipColumn { get; set; }
+
+    /// <summary>
+    /// Property path on the bound row to a numeric value this column sums in the table's status bar.
+    /// When set, the status bar shows the total of this value across the currently displayed (filtered)
+    /// rows, right-aligned under this column. The value may be a number (decimal/int/double) or a
+    /// numeric string (e.g. the free-text «Оплата» field) — the table parses it leniently. Empty ⇒ the
+    /// column has no footer sum. See the participant fee/payment columns.
+    /// </summary>
+    public string SummaryPath { get; set; } = string.Empty;
+
+    /// <summary>True when this column contributes a sum to the status bar.</summary>
+    public bool HasSummary => !string.IsNullOrEmpty(SummaryPath);
+
+    /// <summary>
+    /// For a payment-summary column: the property path to the per-row owed amount (the computed total
+    /// entry fee). When set, the status bar shows a hover tooltip on this column's sum breaking the
+    /// numbers down into already-paid (the sum) and still-owed (this total minus the payment, never
+    /// below zero, summed over the displayed rows). Empty ⇒ the sum has no tooltip. See the payment column.
+    /// </summary>
+    public string SummaryOwedPath { get; set; } = string.Empty;
+
+    /// <summary>True when this column's status-bar sum carries a paid/owed breakdown tooltip.</summary>
+    public bool HasSummaryOwed => !string.IsNullOrEmpty(SummaryOwedPath);
+
+    /// <summary>
+    /// True when the status bar renders the row-count ("shown / total") under this column rather than in
+    /// a separate fixed area. Set on the leading «Номер» column so the count sits under it, compact
+    /// ("4 з 344") with the full text ("Показано 4 з 344") on hover. Opt-in; the participants tables only.
+    /// </summary>
+    public bool ShowCount { get; set; }
 }
 
 /// <summary>

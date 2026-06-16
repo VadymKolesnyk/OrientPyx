@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using OrientDesk.BusinessLogic.Entities;
 using OrientDesk.Localization;
+using OrientDesk.Presentation.ViewModels.Pages;
 
 namespace OrientDesk.Presentation.Controls;
 
@@ -60,6 +61,9 @@ internal static class EntryFeeColumns
                 // Stable key by discount id, so hiding a discount column survives a rebuild / rename.
                 Key = $"fee:discount:{discount.Id}",
                 PickerLabel = label,
+                // Copy reads the flag's bool (rendered as a "+"/"" mark) for off-screen rows; the cell
+                // is a checkbox with no value path otherwise.
+                CopyPath = $"DiscountFlags[{index}].{nameof(DiscountFlagViewModel.IsSelected)}",
                 CellBuilder = () => RosterCellFactory.BuildDiscountFlag(index, enabled: !discount.IsFsouMemberDiscount),
             };
             bands.Add(new SheetBand(SheetBand.BandKind.Identity, [col]) { Header = label });
@@ -74,6 +78,8 @@ internal static class EntryFeeColumns
             PickerLabel = loc.Get("Participants.Col.TotalFee"),
             // Both row VMs expose a numeric TotalEntryFee used for sorting/filtering.
             SortPath = "TotalEntryFee",
+            // The status bar sums this over the displayed (filtered) rows.
+            SummaryPath = "TotalEntryFee",
         };
         bands.Add(new SheetBand(SheetBand.BandKind.Identity, [total]) { Header = total.Header });
     }

@@ -74,6 +74,10 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     [ObservableProperty]
     private string _payment;
 
+    /// <summary>Team name (Команда). Competition-level (shared across days); shown only for team disciplines.</summary>
+    [ObservableProperty]
+    private string _team;
+
     public ParticipantRosterRowViewModel(
         ParticipantRosterRow row,
         IReadOnlyList<RosterDayCellViewModel> dayCells,
@@ -143,6 +147,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         _fsouCode = row.FsouCode;
         _isFsouMember = row.IsFsouMember;
         _payment = row.Payment;
+        _team = row.Team;
         // Region/Club match by id across their shared lists; fall back to "(none)" (the first option).
         _selectedRegion = regionOptions.FirstOrDefault(o => !o.IsAdd && o.Id == row.RegionId) ?? regionOptions[0];
         _committedRegion = _selectedRegion;
@@ -434,6 +439,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     // The competition-level text/bool fields persist through the debounced identity save.
     partial void OnRepresentativeChanged(string value) => QueueSave();
     partial void OnFsouCodeChanged(string value) => QueueSave();
+    partial void OnTeamChanged(string value) => QueueSave();
     partial void OnIsFsouMemberChanged(bool value)
     {
         QueueSave();
@@ -600,8 +606,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
 
     // ── Start time (member-only, like Chips) ─────────────────────────────────────────────────────
     /// <summary>
-    /// The shared start time across member days as "HH:mm" text (empty when they differ/none). Setting
-    /// it fans out to every member day. Bound TwoWay by the collapsed Start-times cell.
+    /// The shared start time across member days as "hh:mm:ss" text (empty when they differ/none). The
+    /// collapsed Start-times cell is read-only — start time is edited per day, never on the merged cell
+    /// — so this is a get-only label value (also used as the collapsed sort key).
     /// </summary>
     public string CollapsedStartTimeText
     {
@@ -610,25 +617,17 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             var members = Days.Where(d => d.IsMember).ToList();
             return members.Count == 0 || StartTimeValuesDiffer ? string.Empty : members[0].StartTimeText;
         }
-        set => SetStartTimeForMemberDays(value ?? string.Empty);
     }
 
     /// <summary>True when the member days do not all share one start time.</summary>
     public bool StartTimeValuesDiffer =>
         Days.Where(d => d.IsMember).Select(d => d.StartTime).Distinct().Count() > 1;
 
-    /// <summary>True when the collapsed Start-times cell should show the editable input.</summary>
+    /// <summary>True when the collapsed Start-times cell should show the shared read-only value.</summary>
     public bool StartTimeShowsInput => HasAnyChipMember && !StartTimeValuesDiffer;
 
     /// <summary>True when the collapsed Start-times cell should show the read-only "різні" label.</summary>
     public bool StartTimeShowsDifferent => HasAnyChipMember && StartTimeValuesDiffer;
-
-    /// <summary>Sets the start-time text on every member day (each cell persists itself).</summary>
-    public void SetStartTimeForMemberDays(string value)
-    {
-        foreach (var cell in Days.Where(d => d.IsMember))
-            cell.StartTimeText = value;
-    }
 
     // ── Out of competition (member-only, like Chips) ─────────────────────────────────────────────
     /// <summary>

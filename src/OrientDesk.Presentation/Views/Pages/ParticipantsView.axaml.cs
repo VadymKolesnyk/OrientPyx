@@ -80,6 +80,29 @@ public partial class ParticipantsView : UserControl
         await _vm.ImportFromXmlAsync(xml);
     }
 
+    // Bulk-assign start numbers. The on-screen (filtered + sorted) row order lives in the SheetTable,
+    // so we read the active table's VisibleItems here — the VM never references the table directly —
+    // and hand that ordered list to the command, which prompts for the start number and applies them.
+    private async void OnAssignNumbersClick(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null)
+            return;
+
+        var table = _vm.IsRosterMode ? RosterTable : DayTable;
+        await _vm.AssignNumbersCommand.ExecuteAsync(table.VisibleItems);
+    }
+
+    // Bulk-assign rental chips. Same shape as OnAssignNumbersClick: read the active table's on-screen
+    // (filtered + sorted) rows and hand them to the command, which prompts for the note filter.
+    private async void OnAssignChipsClick(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null)
+            return;
+
+        var table = _vm.IsRosterMode ? RosterTable : DayTable;
+        await _vm.AssignChipsCommand.ExecuteAsync(table.VisibleItems);
+    }
+
     // A collapse/expand toggle (or day-set change) asks the roster table to rebuild its columns.
     private void OnRosterColumnsChanged(object? sender, System.EventArgs e) => RosterTable.Rebuild();
 

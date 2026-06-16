@@ -40,6 +40,23 @@
                         <TextBlock Text="{Binding Localization[Participants.Import]}" />
                     </StackPanel>
                 </Button>
+                <!-- Bulk-assign sequential start numbers to the rows currently shown (filtered/sorted),
+                     in on-screen order. The visible order lives in the SheetTable, so the click handler
+                     in code-behind reads the active table's VisibleItems and hands them to the VM. -->
+                <Button Click="OnAssignNumbersClick" Classes="ghost">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <PathIcon Data="M4,7 h16 v2 h-16 z M4,15 h16 v2 h-16 z M7,3 v18 M13,3 v18" Width="14" Height="14" />
+                        <TextBlock Text="{Binding Localization[Participants.AssignNumbers]}" />
+                    </StackPanel>
+                </Button>
+                <!-- Bulk-assign unused rental chips to the shown participants without a chip, in on-screen
+                     order. Like the numbers action, the click handler reads the active table's VisibleItems. -->
+                <Button Click="OnAssignChipsClick" Classes="ghost">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <PathIcon Data="M5,8 h14 a2,2 0 0 1 2,2 v4 a2,2 0 0 1 -2,2 h-14 a2,2 0 0 1 -2,-2 v-4 a2,2 0 0 1 2,-2 z M8,11 v2 M12,11 v2 M16,11 v2" Width="14" Height="14" />
+                        <TextBlock Text="{Binding Localization[Participants.AssignChips]}" />
+                    </StackPanel>
+                </Button>
                 <!-- Add works in both modes: on a day it attaches to that day; on Мандатка it attaches
                      the new participant to every day that has a group. -->
                 <Button Command="{Binding AddParticipantCommand}" Classes="accent">
@@ -63,6 +80,7 @@
                                       LayoutStore="{Binding LayoutStore}"
                                       LayoutKey="participants.day"
                                       Bands="{Binding DayBands}"
+                                      StatusInfo="{Binding StatusInfo}"
                                       RentalChips="{Binding RentalChips}"
                                       ToggleRentalChipCommand="{Binding ToggleRentalChipCommand}"
                                       DeleteCommand="{Binding DeleteParticipantCommand}"
@@ -83,6 +101,8 @@
                                       Blocks="{Binding Blocks}"
                                       Discounts="{Binding Discounts}"
                                       RaisedFeeEnabled="{Binding RaisedFeeEnabled}"
+                                      ShowTeam="{Binding RosterShowsTeam}"
+                                      StatusInfo="{Binding StatusInfo}"
                                       ToggleBlockCommand="{Binding ToggleBlockCommand}"
                                       RentalChips="{Binding RentalChips}"
                                       ToggleRentalChipCommand="{Binding ToggleRentalChipCommand}"

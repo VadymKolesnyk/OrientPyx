@@ -45,6 +45,42 @@
                         </ScrollViewer>
                     </Border>
 
+                    <!-- Status bar (opt-in): per-column sums aligned under their columns (scrolls with
+                         the body) above a fixed line with row counts + page-supplied system info. The
+                         whole bar collapses when there is nothing to show. Docked to the bottom, below
+                         the rows, so it stays pinned while the body scrolls internally. -->
+                    <Border Name="PART_StatusBar"
+                            DockPanel.Dock="Bottom"
+                            IsVisible="False"
+                            Background="{DynamicResource SurfaceHeader}"
+                            BorderBrush="{DynamicResource BorderSubtle}"
+                            BorderThickness="0,1,0,0">
+                        <StackPanel Orientation="Vertical">
+                            <!-- Aligned per-column sums; clipped + horizontally slaved to the body. -->
+                            <Border Name="PART_StatusSumsRow"
+                                    ClipToBounds="True"
+                                    IsVisible="False"
+                                    MinHeight="26">
+                                <ScrollViewer Name="PART_StatusScroll"
+                                              HorizontalScrollBarVisibility="Hidden"
+                                              VerticalScrollBarVisibility="Disabled">
+                                    <Decorator Name="PART_StatusSlot" />
+                                </ScrollViewer>
+                            </Border>
+                            <!-- Fixed info line: counts (large) on the left, system info on the right. -->
+                            <Grid ColumnDefinitions="Auto,*,Auto" Margin="10,5">
+                                <TextBlock Name="PART_StatusCounts" Grid.Column="0"
+                                           VerticalAlignment="Center"
+                                           FontSize="15" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimary}" />
+                                <TextBlock Name="PART_StatusInfo" Grid.Column="2"
+                                           VerticalAlignment="Center"
+                                           TextAlignment="Right"
+                                           Foreground="{DynamicResource TextSecondary}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
                     <!-- Virtualized rows. Fills the remaining height; rows align to the top so they
                          sit directly under the header (no centered gap). Owns both scrollbars; the
                          horizontal one drives the header.
@@ -136,6 +172,13 @@
         <Setter Property="BorderThickness" Value="0,0,1,0" />
         <Setter Property="MinHeight" Value="28" />
         <Setter Property="FontSize" Value="13" />
+        <!-- Transparent (not null) so the whole cell area is hit-testable; :range overrides it. -->
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- Cells inside an Excel-style multi-cell selection: a translucent accent wash. The anchor cell
+         keeps the :focus outline below (border vs. background, so they stack rather than conflict). -->
+    <Style Selector="controls|SheetTable controls|SheetCell:range">
+        <Setter Property="Background" Value="{DynamicResource AccentSurface}" />
     </Style>
     <Style Selector="controls|SheetTable controls|SheetCell:focus">
         <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />

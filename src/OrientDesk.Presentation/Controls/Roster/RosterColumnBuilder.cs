@@ -45,6 +45,10 @@ public sealed class RosterColumnBuilder
         (SheetCellKind.PaymentText,  "Participants.Col.Payment",       nameof(ParticipantRosterRowViewModel.Payment),       120),
     ];
 
+    /// <summary>The team column, appended to the identity set only for team disciplines (rogaine).</summary>
+    private static readonly (SheetCellKind Kind, string HeaderKey, string Path, double? FixedWidth) TeamColumn =
+        (SheetCellKind.IdentityText, "Participants.Col.Team", nameof(ParticipantRosterRowViewModel.Team), 150);
+
     /// <summary>
     /// Builds the bands (and, via them, the flat column list) for the given days and blocks. Existing
     /// <paramref name="previous"/> columns are reused by identity to preserve user-set widths across
@@ -55,12 +59,20 @@ public sealed class RosterColumnBuilder
         IReadOnlyList<RosterFieldBlockViewModel> blocks,
         IReadOnlyList<EntryFeeDiscount> discounts,
         bool raisedFeeEnabled,
+        bool showTeam,
         IReadOnlyList<SheetBand>? previous)
     {
-        var bands = new List<SheetBand>(Identity.Length + blocks.Count + 1);
+        var bands = new List<SheetBand>(Identity.Length + blocks.Count + 2);
+
+        // Identity columns, plus the team column when a team discipline is in play (rogaine). Team is
+        // competition-level (one value per participant, shared across days), so it is a plain identity
+        // column like Representative — not a per-day block.
+        var identity = showTeam
+            ? [.. Identity, TeamColumn]
+            : Identity;
 
         // Identity: one single-column band each, spanning both header tiers.
-        foreach (var (kind, headerKey, path, fixedWidth) in Identity)
+        foreach (var (kind, headerKey, path, fixedWidth) in identity)
         {
             var col = new SheetColumn(kind)
             {
@@ -80,9 +92,14 @@ public sealed class RosterColumnBuilder
                 col.Width = w;
                 col.WidthCapped = true; // explicit width is never auto-capped
             }
-            // The payment column tints by status and offers the "by status" filter mode.
+            // The status bar shows the row count under «Номер» (the leading column).
+            if (headerKey == "Participants.Col.Number")
+                col.ShowCount = true;
+            // The payment column tints by status, offers the "by status" filter mode, and is summed in
+            // the status bar.
             if (kind == SheetCellKind.PaymentText)
-                DayColumnBuilder.ConfigurePaymentColumn(col, nameof(ParticipantRosterRowViewModel.PaymentStatusKey));
+                DayColumnBuilder.ConfigurePaymentColumn(col, nameof(ParticipantRosterRowViewModel.PaymentStatusKey),
+                    nameof(ParticipantRosterRowViewModel.Payment));
             bands.Add(new SheetBand(SheetBand.BandKind.Identity, [col]) { Header = col.Header });
         }
 
@@ -102,6 +119,10 @@ public sealed class RosterColumnBuilder
                     WidthCapped = true,
                     // A collapsed block is one sortable column: sort by the row's merged aggregate.
                     SortPath = CollapsedSortPath(block.Field),
+                    // Copy reads the merged display value for off-screen rows (the group sort key isn't
+                    // the displayed label). On-screen rows copy their rendered cell, so the "різні" /
+                    // "<group> (n днів)" states are exact there; off-screen falls back to this value.
+                    CopyPath = CollapsedCopyPath(block.Field),
                     // Key by the field only (not collapse state / day) so hiding the block survives a
                     // collapse/expand toggle. The merged column hidden ⇒ all its day columns hidden.
                     Key = $"block:{block.Field}",
@@ -171,6 +192,18 @@ public sealed class RosterColumnBuilder
     private static string CollapsedSortPath(RosterField field) => field switch
     {
         RosterField.Groups => nameof(ParticipantRosterRowViewModel.CollapsedGroupSortKey),
+        RosterField.Chips => nameof(ParticipantRosterRowViewModel.CollapsedChipValue),
+        RosterField.StartTimes => nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText),
+        _ => nameof(ParticipantRosterRowViewModel.CollapsedOutOfCompetition),
+    };
+
+    // The merged display value COPY reads for an off-screen collapsed cell. For groups this is the
+    // selected option's label (the all-days-same case); chips/start-times already display their value;
+    // out-of-competition is the bool (copied as a flag mark).
+    private static string CollapsedCopyPath(RosterField field) => field switch
+    {
+        RosterField.Groups =>
+            $"{nameof(ParticipantRosterRowViewModel.CollapsedGroupValue)}.{nameof(GroupOption.Label)}",
         RosterField.Chips => nameof(ParticipantRosterRowViewModel.CollapsedChipValue),
         RosterField.StartTimes => nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText),
         _ => nameof(ParticipantRosterRowViewModel.CollapsedOutOfCompetition),

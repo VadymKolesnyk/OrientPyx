@@ -48,6 +48,12 @@ public class Participant
     public string Payment { get; set; } = string.Empty;
 
     /// <summary>
+    /// Team name (used by team disciplines such as rogaine); empty otherwise. Competition-level: a
+    /// competitor's team is the same across every day they run, like the other identity fields.
+    /// </summary>
+    public string Team { get; set; } = string.Empty;
+
+    /// <summary>
     /// Whether this participant is charged the raised (late) start-entry fee instead of their group's
     /// base fee. Only meaningful when the competition has <see cref="CompetitionInfo.RaisedFeeEnabled"/>
     /// turned on. Defaults false.

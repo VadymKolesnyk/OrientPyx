@@ -33,7 +33,9 @@ public sealed class DayColumnBuilder
     {
         var bands = new List<SheetBand>();
 
-        bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Number", nameof(ParticipantDayRowViewModel.Number)));
+        var numberBand = Identity(SheetCellKind.IdentityText, "Participants.Col.Number", nameof(ParticipantDayRowViewModel.Number));
+        numberBand.Columns[0].ShowCount = true; // the status bar renders the row count under «Номер»
+        bands.Add(numberBand);
         bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.FullName", nameof(ParticipantDayRowViewModel.FullName), fixedWidth: 220));
         // Rank: a combo bound on the row (RankOptions/SelectedRank); sorted by the selected label.
         bands.Add(Identity(SheetCellKind.RowRank, "Participants.Col.Rank", path: string.Empty,
@@ -54,7 +56,8 @@ public sealed class DayColumnBuilder
         bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.FsouCode", nameof(ParticipantDayRowViewModel.FsouCode)));
         bands.Add(Identity(SheetCellKind.IdentityBool, "Participants.Col.IsFsouMember", nameof(ParticipantDayRowViewModel.IsFsouMember), fixedWidth: 110));
         var paymentBand = Identity(SheetCellKind.PaymentText, "Participants.Col.Payment", nameof(ParticipantDayRowViewModel.Payment));
-        ConfigurePaymentColumn(paymentBand.Columns[0], nameof(ParticipantDayRowViewModel.PaymentStatusKey));
+        ConfigurePaymentColumn(paymentBand.Columns[0], nameof(ParticipantDayRowViewModel.PaymentStatusKey),
+            nameof(ParticipantDayRowViewModel.Payment));
         bands.Add(paymentBand);
 
         // This day's group (combo bound directly on the row) and chip (free text, unique per day).
@@ -85,12 +88,19 @@ public sealed class DayColumnBuilder
     /// <summary>
     /// Points the payment column's filter at the row's payment-status token and enables the "by status"
     /// filter mode (empty / over / under / equal / not-a-number). Sort stays on the raw payment text.
+    /// The status bar sums the (numeric) payment text via <paramref name="paymentPath"/> and shows a
+    /// paid/owed breakdown tooltip against the per-row total fee (<see cref="ParticipantRosterRowViewModel.TotalEntryFee"/>).
     /// Shared by the day grid and the roster.
     /// </summary>
-    internal static void ConfigurePaymentColumn(SheetColumn col, string statusKeyPath)
+    internal static void ConfigurePaymentColumn(SheetColumn col, string statusKeyPath, string paymentPath)
     {
         col.FilterPath = statusKeyPath;
         col.StatusFilter = true;
+        col.SummaryPath = paymentPath;
+        // Filter is by status token, but copy must yield the actual payment amount, not "Equal"/"Empty".
+        col.CopyPath = paymentPath;
+        // Both row VMs expose the numeric computed total fee used for the still-owed tooltip line.
+        col.SummaryOwedPath = nameof(ParticipantRosterRowViewModel.TotalEntryFee);
     }
 
     private SheetBand Identity(SheetCellKind kind, string headerKey, string path, double? fixedWidth = null, string? sortPath = null)

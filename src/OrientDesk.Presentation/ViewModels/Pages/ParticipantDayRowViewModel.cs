@@ -413,19 +413,16 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         DayDefaultDiscipline: _dayDefaultDiscipline);
 
     /// <summary>
-    /// The start time as editable "HH:mm" text (mirrors <see cref="RosterDayCellViewModel.StartTimeText"/>).
-    /// Empty clears it; an unparseable value is ignored and the box reverts on the next notification.
+    /// The start time as editable "hh:mm:ss" text (mirrors <see cref="RosterDayCellViewModel.StartTimeText"/>).
+    /// Empty clears it; a partial entry is padded and out-of-range minute/second is clamped to 59 (see
+    /// <see cref="StartTimeFormat"/>); a truly unparseable value reverts on the next notification.
     /// </summary>
     public string StartTimeText
     {
-        get => StartTime is { } t ? t.ToString(@"hh\:mm") : string.Empty;
+        get => StartTimeFormat.Format(StartTime);
         set
         {
-            var trimmed = (value ?? string.Empty).Trim();
-            if (trimmed.Length == 0)
-                StartTime = null;
-            else if (TimeSpan.TryParseExact(trimmed, [@"hh\:mm", @"h\:mm"], System.Globalization.CultureInfo.InvariantCulture, out var parsed)
-                     || TimeSpan.TryParse(trimmed, System.Globalization.CultureInfo.InvariantCulture, out parsed))
+            if (StartTimeFormat.TryParse(value, out var parsed))
                 StartTime = parsed;
             else
                 OnPropertyChanged();

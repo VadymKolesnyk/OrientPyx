@@ -528,6 +528,7 @@ public sealed class EventStore : IEventStore
         existing.FsouCode = participant.FsouCode;
         existing.IsFsouMember = participant.IsFsouMember;
         existing.Payment = participant.Payment;
+        existing.Team = participant.Team;
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -635,10 +636,41 @@ public sealed class EventStore : IEventStore
         existing.Order = link.Order;
         existing.GroupId = link.GroupId;
         existing.Chip = link.Chip;
-        existing.Team = link.Team;
         existing.StartTime = link.StartTime;
         existing.OutOfCompetition = link.OutOfCompetition;
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<int> SetParticipantDayChipsBatchAsync(
+        string eventFolderPath,
+        IReadOnlyList<(Guid ParticipantId, Guid DayId, string Chip)> assignments,
+        CancellationToken cancellationToken = default)
+    {
+        if (assignments.Count == 0)
+            return 0;
+
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        // Load only the links on the touched days (tracked), then map each assignment to its link and set
+        // the chip in memory. A single SaveChanges at the end commits the whole batch in one transaction.
+        var dayIds = assignments.Select(a => a.DayId).Distinct().ToList();
+        var links = await db.ParticipantDays
+            .Where(p => dayIds.Contains(p.EventDayId))
+            .ToListAsync(cancellationToken);
+        var byKey = links.ToDictionary(l => (l.ParticipantId, l.EventDayId));
+
+        var updated = 0;
+        foreach (var (participantId, dayId, chip) in assignments)
+        {
+            if (!byKey.TryGetValue((participantId, dayId), out var link))
+                continue;
+            link.Chip = (chip ?? string.Empty).Trim();
+            updated++;
+        }
+
+        if (updated > 0)
+            await db.SaveChangesAsync(cancellationToken);
+        return updated;
     }
 
     public async Task DeleteParticipantDayAsync(string eventFolderPath, Guid linkId, CancellationToken cancellationToken = default)

@@ -25,9 +25,6 @@ public class ParticipantDay
     /// <summary>Chip number for this day; optional, free text. Unique per day when non-blank.</summary>
     public string Chip { get; set; } = string.Empty;
 
-    /// <summary>Team name (used by the rogaine discipline); empty otherwise.</summary>
-    public string Team { get; set; } = string.Empty;
-
     /// <summary>Start time (time of day) for this day; null when not set. Per-day, member-only.</summary>
     public TimeSpan? StartTime { get; set; }
 

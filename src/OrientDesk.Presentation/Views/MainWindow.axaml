@@ -36,6 +36,12 @@
         <DataTemplate DataType="dialogs:BulkAddChipsViewModel">
             <dialogViews:BulkAddChipsView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:AssignNumbersViewModel">
+            <dialogViews:AssignNumbersView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:AssignChipsViewModel">
+            <dialogViews:AssignChipsView />
+        </DataTemplate>
         <DataTemplate DataType="dialogs:SplitGroupsViewModel">
             <dialogViews:SplitGroupsView />
         </DataTemplate>
@@ -274,14 +280,10 @@
                 </Border>
             </Border>
 
-            <!-- Application-modal dialog overlay (e.g. import options). The backdrop blocks input
-                 to whatever is behind it; the dialog view supplies its own centered card. -->
-            <Border IsVisible="{Binding Dialogs.IsOpen}"
-                    Background="#80000000">
-                <ContentControl Content="{Binding Dialogs.Current}" Margin="40" />
-            </Border>
-
-            <!-- Global loading overlay: shown during any async operation, blocks input -->
+            <!-- Global loading overlay: shown during any async operation, blocks input. Declared BEFORE
+                 the dialog overlay so a background operation that starts while a dialog is open (e.g. a
+                 debounced autosave or fee refresh) renders BEHIND the dialog rather than covering its
+                 buttons and trapping the user on "Завантаження". -->
             <Border IsVisible="{Binding Busy.IsBusy}"
                     Background="#66000000">
                 <Border Background="{DynamicResource SurfaceCard}"
@@ -338,6 +340,15 @@
                         </Border>
                     </StackPanel>
                 </Border>
+            </Border>
+
+            <!-- Application-modal dialog overlay (e.g. import options). The backdrop blocks input to
+                 whatever is behind it; the dialog view supplies its own centered card. Declared LAST so
+                 it stays on top of the loading overlay — a dialog must remain clickable even while a
+                 background operation runs behind it. -->
+            <Border IsVisible="{Binding Dialogs.IsOpen}"
+                    Background="#80000000">
+                <ContentControl Content="{Binding Dialogs.Current}" Margin="40" />
             </Border>
         </Panel>
 

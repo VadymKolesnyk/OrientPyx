@@ -50,7 +50,9 @@ internal sealed class RosterCellFactory
         // container by the table (see SheetTable.BuildRow / PaymentHighlight), not on this content.
         SheetCellKind.PaymentText => BuildIdentityText(column.IdentityPath),
         SheetCellKind.ChipText => BuildChipEditor(pathPrefix: string.Empty, chipPath: column.IdentityPath, highlight: true),
-        SheetCellKind.StartTimeText => BuildIdentityText(column.IdentityPath),
+        // The day-grid start-time column: an hh:mm:ss text box (digits only, auto-':') like the roster's
+        // per-day cell.
+        SheetCellKind.StartTimeText => BuildStartTimeEditor(column.IdentityPath),
         SheetCellKind.BirthDate => BuildBirthDate(),
         SheetCellKind.Group => BuildDayCell(column, isGroup: true),
         SheetCellKind.Chip => BuildDayCell(column, isGroup: false),
@@ -79,6 +81,15 @@ internal sealed class RosterCellFactory
 
     private Control BuildBirthDate()
         => new LazyDateCell(nameof(ParticipantRosterRowViewModel.BirthDate), _loc.Get("Common.DatePlaceholder"));
+
+    // The day-grid start-time editor: an hh:mm:ss text box (digits only, auto-':') with a placeholder,
+    // bound directly on the row by its identity path. Mirrors the roster's per-day start-time cell.
+    private Control BuildStartTimeEditor(string path)
+        => new LazyTextCell(path, path, new SheetTextOptions
+        {
+            Mask = SheetColumnBuilder.NumericMask.Time,
+            Placeholder = _loc.Get("Common.TimePlaceholder"),
+        });
 
     // ── Expanded per-day cell ─────────────────────────────────────────────────────────────────────
     private Control BuildDayCell(SheetColumn column, bool isGroup)
@@ -114,12 +125,18 @@ internal sealed class RosterCellFactory
         return panel;
     }
 
-    // A per-day start-time cell: a HH:mm text box, disabled + greyed on days the participant doesn't run.
+    // A per-day start-time cell: an hh:mm:ss text box (digits only, auto-':'), disabled + greyed on days
+    // the participant doesn't run.
     private Control BuildDayStartTimeCell(SheetColumn column)
     {
         var i = column.DayIndex;
         var path = $"Days[{i}].{nameof(RosterDayCellViewModel.StartTimeText)}";
-        var box = new LazyTextCell(path, path, new SheetTextOptions { CommitOnLostFocus = true });
+        var box = new LazyTextCell(path, path, new SheetTextOptions
+        {
+            Mask = SheetColumnBuilder.NumericMask.Time,
+            Placeholder = _loc.Get("Common.TimePlaceholder"),
+            CommitOnLostFocus = true,
+        });
         box[!InputElement.IsEnabledProperty] = new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.IsMember)}");
         return WrapWithNonMemberBackdrop(box, i);
     }
@@ -195,15 +212,16 @@ internal sealed class RosterCellFactory
         return panel;
     }
 
+    // The collapsed start-time cell is always read-only — even when every member day shares one value
+    // (start time is edited per day, never on the merged roster cell). It shows the shared "hh:mm:ss"
+    // value as a muted label, or the "різні" label when the days disagree.
     private Control BuildCollapsedStartTime()
     {
         var panel = new Panel();
-        var editor = new LazyTextCell(
-            nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText),
-            nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText),
-            new SheetTextOptions { CommitOnLostFocus = true });
-        editor[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.StartTimeShowsInput));
-        panel.Children.Add(editor);
+        var shared = BuildMutedLabel();
+        shared[!TextBlock.TextProperty] = new Binding(nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText));
+        shared[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.StartTimeShowsInput));
+        panel.Children.Add(shared);
 
         var different = BuildDifferentLabel();
         different[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.StartTimeShowsDifferent));

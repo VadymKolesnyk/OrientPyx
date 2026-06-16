@@ -326,6 +326,15 @@ public interface ICompetitionEditorService
     Task SetParticipantDayChipAsync(Guid participantId, Guid dayId, string chip, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Sets the chip on many participant-day links at once, in a single transaction (used by bulk chip
+    /// assignment, which only hands out unused chips, so there is no collision check). Each tuple is
+    /// (participantId, dayId, chip); a missing link is skipped. Returns how many links were updated.
+    /// </summary>
+    Task<int> SetParticipantDayChipsBatchAsync(
+        IReadOnlyList<(Guid ParticipantId, Guid DayId, string Chip)> assignments,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Sets a participant's start time on a specific day (roster edit). A no-op when the participant is
     /// not a member that day. No uniqueness rule, so it is stored directly. A null time clears it.
     /// </summary>

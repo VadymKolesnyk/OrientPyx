@@ -66,6 +66,38 @@ public sealed partial class DialogService : ObservableObject, IDialogService
         }
     }
 
+    public async Task<AssignNumbersResult?> ShowAssignNumbersAsync(AssignNumbersViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
+
+    public async Task<AssignChipsResult?> ShowAssignChipsAsync(AssignChipsViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
+
     public async Task<IofCourseData?> ShowSplitGroupsAsync(SplitGroupsViewModel dialog)
     {
         ArgumentNullException.ThrowIfNull(dialog);

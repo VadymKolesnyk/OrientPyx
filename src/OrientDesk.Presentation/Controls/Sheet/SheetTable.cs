@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Reflection;
 using System.Windows.Input;
 using Avalonia;
@@ -85,6 +86,10 @@ public sealed class SheetTable : TemplatedControl
     public static readonly StyledProperty<bool> RaisedFeeEnabledProperty =
         AvaloniaProperty.Register<SheetTable, bool>(nameof(RaisedFeeEnabled));
 
+    /// <summary>Whether the team column is shown (roster auto-build only; team disciplines).</summary>
+    public static readonly StyledProperty<bool> ShowTeamProperty =
+        AvaloniaProperty.Register<SheetTable, bool>(nameof(ShowTeam));
+
     /// <summary>
     /// A stable id identifying this table's saved view in <c>views.json</c> (e.g. "participants.day").
     /// Persistence is active only when both this and <see cref="LayoutStore"/> are set; otherwise the
@@ -96,6 +101,21 @@ public sealed class SheetTable : TemplatedControl
     /// <summary>The store that loads/saves this table's view (per-competition <c>views.json</c>).</summary>
     public static readonly StyledProperty<ITableLayoutStore?> LayoutStoreProperty =
         AvaloniaProperty.Register<SheetTable, ITableLayoutStore?>(nameof(LayoutStore));
+
+    /// <summary>
+    /// Page-supplied free text shown on the right of the status bar (e.g. "chips in rental: 12,
+    /// unassigned: 3"). The status bar always shows the row counts and any per-column sums; this is an
+    /// extra system-info line the page fills. Setting it (or any summary column existing) makes the bar
+    /// visible.
+    /// </summary>
+    public static readonly StyledProperty<string?> StatusInfoProperty =
+        AvaloniaProperty.Register<SheetTable, string?>(nameof(StatusInfo));
+
+    public string? StatusInfo
+    {
+        get => GetValue(StatusInfoProperty);
+        set => SetValue(StatusInfoProperty, value);
+    }
 
     /// <summary>Raised when the user asks to delete a row via the keyboard; arg = skip-confirm.</summary>
     public event EventHandler<SheetDeleteEventArgs>? DeleteRequested;
@@ -162,6 +182,12 @@ public sealed class SheetTable : TemplatedControl
         set => SetValue(RaisedFeeEnabledProperty, value);
     }
 
+    public bool ShowTeam
+    {
+        get => GetValue(ShowTeamProperty);
+        set => SetValue(ShowTeamProperty, value);
+    }
+
     public string? LayoutKey
     {
         get => GetValue(LayoutKeyProperty);
@@ -191,6 +217,12 @@ public sealed class SheetTable : TemplatedControl
     private ListBox? _body;
     private ScrollViewer? _headerScroll;
     private ScrollViewer? _bodyScroll;
+    private ScrollViewer? _statusScroll;
+    private SheetStatusPanel? _statusPanel;
+    private Border? _statusBar;
+    private Border? _statusSumsRow;
+    private TextBlock? _statusCounts;
+    private TextBlock? _statusInfo;
 
     // The full band set as built (every column, hidden or not) — the input to filtering, the basis for
     // reorder/width carry. _visibleBands is what the header and rows actually render: the same bands
@@ -210,6 +242,8 @@ public sealed class SheetTable : TemplatedControl
         AddHandler(KeyDownEvent, OnBubbleKeyDown, RoutingStrategies.Bubble);
         AddHandler(PointerPressedEvent, OnTunnelPointerPressed, RoutingStrategies.Tunnel);
         AddHandler(PointerPressedEvent, OnCellRightClick, RoutingStrategies.Tunnel);
+        AddHandler(PointerMovedEvent, OnTunnelPointerMoved, RoutingStrategies.Tunnel);
+        AddHandler(PointerReleasedEvent, OnTunnelPointerReleased, RoutingStrategies.Tunnel);
         AddHandler(PointerWheelChangedEvent, OnTunnelPointerWheel, RoutingStrategies.Tunnel);
     }
 
@@ -245,7 +279,8 @@ public sealed class SheetTable : TemplatedControl
             change.Property == LocalizationProperty || change.Property == ToggleBlockCommandProperty ||
             change.Property == BandsProperty || change.Property == RentalChipsProperty ||
             change.Property == ToggleRentalChipCommandProperty ||
-            change.Property == DiscountsProperty || change.Property == RaisedFeeEnabledProperty)
+            change.Property == DiscountsProperty || change.Property == RaisedFeeEnabledProperty ||
+            change.Property == ShowTeamProperty)
         {
             Rebuild();
         }
@@ -257,6 +292,10 @@ public sealed class SheetTable : TemplatedControl
         else if (change.Property == SelectedItemProperty && _body is not null)
         {
             _body.SelectedItem = SelectedItem;
+        }
+        else if (change.Property == StatusInfoProperty)
+        {
+            UpdateStatusBar();
         }
     }
 
@@ -273,6 +312,19 @@ public sealed class SheetTable : TemplatedControl
 
         _headerScroll = e.NameScope.Find<ScrollViewer>("PART_HeaderScroll");
 
+        // Status bar parts. The per-column sums live in their own slot (a grid mirroring the leaf
+        // columns), hosted in a scroller slaved to the body's horizontal offset like the header.
+        _statusScroll = e.NameScope.Find<ScrollViewer>("PART_StatusScroll");
+        _statusBar = e.NameScope.Find<Border>("PART_StatusBar");
+        _statusSumsRow = e.NameScope.Find<Border>("PART_StatusSumsRow");
+        _statusCounts = e.NameScope.Find<TextBlock>("PART_StatusCounts");
+        _statusInfo = e.NameScope.Find<TextBlock>("PART_StatusInfo");
+        if (e.NameScope.Find<Decorator>("PART_StatusSlot") is { } statusSlot)
+        {
+            _statusPanel = new SheetStatusPanel();
+            statusSlot.Child = _statusPanel;
+        }
+
         _body = e.NameScope.Find<ListBox>("PART_Body");
         if (_body is not null)
         {
@@ -280,6 +332,9 @@ public sealed class SheetTable : TemplatedControl
             _body.ItemsSource = ItemsSource;
             _body.SelectedItem = SelectedItem;
             _body.SelectionChanged += (_, _) => SelectedItem = _body.SelectedItem;
+            // A row container realized/recycled during scroll may carry a stale range highlight; refresh
+            // its cells against the current selection rectangle as soon as it's prepared.
+            _body.ContainerPrepared += (_, args) => UpdateContainerRange(args.Container);
             // The body's own ScrollViewer is created with its template; grab it once realized and
             // slave the header's horizontal offset to it so the two scroll left/right together.
             _body.TemplateApplied += (_, args) =>
@@ -316,7 +371,7 @@ public sealed class SheetTable : TemplatedControl
             if (Days is null || Blocks is null)
                 return;
             var builder = new RosterColumnBuilder(Localization);
-            _bands = builder.Build(Days, AsList(Blocks), Discounts ?? [], RaisedFeeEnabled, _bands);
+            _bands = builder.Build(Days, AsList(Blocks), Discounts ?? [], RaisedFeeEnabled, ShowTeam, _bands);
         }
 
         // Apply any user reorder (drag), keyed by a stable band signature so it survives rebuilds.
@@ -355,6 +410,9 @@ public sealed class SheetTable : TemplatedControl
             _header.SortDescending = _sortDescending;
             _header.Rebuild(_visibleBands);
         }
+
+        // The status bar's per-column sums grid mirrors the same visible leaf columns as the header.
+        _statusPanel?.Rebuild(_visibleBands);
 
         // (Re)stamp rows so their cell hosts pick up the current column set. The row grid's structure
         // depends only on the current _bands (identical for every row), so containers are safe to
@@ -423,6 +481,13 @@ public sealed class SheetTable : TemplatedControl
         FiltersChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// The rows currently displayed, in on-screen order — the active column sort and filters applied.
+    /// Equals the bound source order when nothing is sorted or filtered. Kept in sync on every
+    /// filter/sort/source/rebuild by <see cref="ApplySortedView"/>.
+    /// </summary>
+    public IReadOnlyList<object?> VisibleItems => _sortedItems;
+
     /// <summary>The distinct displayed values currently in a column, naturally sorted, for the values picker.</summary>
     public IReadOnlyList<string> DistinctValues(SheetColumn column)
     {
@@ -449,16 +514,30 @@ public sealed class SheetTable : TemplatedControl
     // picker and the cell "filter by this value" menu, so all three agree on "the value of this cell".
     // Combo/option columns read their label path; dates format to match the dd.MM.yyyy display.
     private static string CellText(SheetColumn column, object row)
-    {
-        var value = ReadPath(row, column.FilterPath);
-        return value switch
+        => FormatValue(ReadPath(row, column.FilterPath));
+
+    // The text COPY reads for a cell of an off-screen (unrealized) row — uses CopyPath, which defaults
+    // to FilterPath but is overridden where the filter value differs from the display (payment amount
+    // vs. its status token, collapsed merged values). A realized cell is read directly instead (its
+    // rendered text wins); this is the fallback only.
+    private static string CopyText(SheetColumn column, object row)
+        => FormatValue(ReadPath(row, column.CopyPath));
+
+    // Shared value→display formatter for the readers above.
+    private static string FormatValue(object? value)
+        => value switch
         {
             null => string.Empty,
             DateTimeOffset dto => dto.ToString("dd.MM.yyyy"),
             DateTime dt => dt.ToString("dd.MM.yyyy"),
+            // Fees/sums are whole numbers — format like the fee cells (FormatSum: trim trailing zeros,
+            // invariant) so copy/filter agree with what's on screen, no stray ",0".
+            decimal dec => FormatSum(dec),
+            double dbl => FormatSum((decimal)dbl),
+            // A bool flag copies as the same compact mark a realized checkbox does.
+            bool b => b ? CheckedMark : string.Empty,
             _ => value.ToString() ?? string.Empty
         };
-    }
 
     // True when a row passes every active filter (an absent/now-hidden column's filter is ignored).
     private bool PassesFilters(object? row)
@@ -739,6 +818,10 @@ public sealed class SheetTable : TemplatedControl
         if (_body is null)
             return;
 
+        // The view is about to change order/membership, which invalidates the range's row indices.
+        // Drop any multi-cell selection so it can't highlight (or copy) the wrong rows.
+        ClearRange();
+
         var hasFilters = _filters.Count > 0;
 
         if (_sortColumn is null || string.IsNullOrEmpty(_sortColumn.SortPath) || ItemsSource is null)
@@ -752,6 +835,7 @@ public sealed class SheetTable : TemplatedControl
                     unsorted.Add(item);
                 _sortedItems = unsorted;
                 _body.ItemsSource = ItemsSource;
+                UpdateStatusBar();
                 return;
             }
 
@@ -761,6 +845,7 @@ public sealed class SheetTable : TemplatedControl
                     filtered.Add(item);
             _sortedItems = filtered;
             _body.ItemsSource = filtered;
+            UpdateStatusBar();
             return;
         }
 
@@ -784,6 +869,286 @@ public sealed class SheetTable : TemplatedControl
 
         _sortedItems = items;
         _body.ItemsSource = items;
+        UpdateStatusBar();
+    }
+
+    // ── Status bar ────────────────────────────────────────────────────────────────────────────────
+    // Recomputes the bar from the current displayed (filtered/sorted) view: total + shown row counts,
+    // each summary column's sum, and the page-supplied system-info text. The whole bar collapses when
+    // there is nothing to show (no summary columns, no info text). Called on every view change
+    // (filter/sort/source/rebuild) and when StatusInfo changes.
+    private void UpdateStatusBar()
+    {
+        if (_statusBar is null)
+            return;
+
+        var summaryColumns = SummaryColumns();
+        var hasInfo = !string.IsNullOrWhiteSpace(StatusInfo);
+        var hasCountColumn = HasCountColumn();
+
+        // The bar is opt-in: it appears only for tables that declare a summary/count column (the
+        // participants tables) or whose page supplies system-info text. Other tables (control points,
+        // groups, …) get no status bar, keeping their appearance unchanged.
+        if (summaryColumns.Count == 0 && !hasInfo && !hasCountColumn)
+        {
+            _statusBar.IsVisible = false;
+            return;
+        }
+        _statusBar.IsVisible = true;
+
+        // Total = the full bound source; shown = the displayed view (after filtering). _sortedItems is
+        // the displayed set (it equals the source when nothing is filtered).
+        var total = Count(ItemsSource);
+        var shown = _sortedItems.Count;
+        var (countText, countTip) = CountText(shown, total);
+
+        // The count sits under the «Номер» column when a ShowCount column declared a cell; otherwise it
+        // falls back to the fixed left area. Only one of the two is shown at a time.
+        if (_statusPanel?.HasCountCell == true)
+        {
+            _statusPanel.SetCount(countText, countTip);
+            if (_statusCounts is not null)
+                _statusCounts.IsVisible = false;
+        }
+        else if (_statusCounts is not null)
+        {
+            _statusCounts.IsVisible = true;
+            _statusCounts.Text = countTip;
+        }
+
+        if (_statusInfo is not null)
+            _statusInfo.Text = StatusInfo ?? string.Empty;
+
+        // Per-column sums over the displayed rows.
+        // The sums row hosts both the count cell (under «Номер») and the per-column sums, so it shows
+        // whenever either is present.
+        if (_statusSumsRow is not null)
+            _statusSumsRow.IsVisible = summaryColumns.Count > 0 || _statusPanel?.HasCountCell == true;
+        _summaryColumns = summaryColumns;
+        if (summaryColumns.Count > 0)
+        {
+            HookRowsForSums();
+            WriteSums(summaryColumns);
+        }
+        else
+        {
+            UnhookRows();
+        }
+    }
+
+    private List<SheetColumn> _summaryColumns = new();
+
+    private void WriteSums(List<SheetColumn> summaryColumns)
+    {
+        if (_statusPanel is null)
+            return;
+        foreach (var col in summaryColumns)
+        {
+            var paid = SumColumn(col);
+            _statusPanel.SetSum(col.Key, FormatSum(paid), col.HasSummaryOwed ? PaymentTooltip(col, paid) : null);
+        }
+    }
+
+    // The payment column's hover tooltip: a "вже заплачено / ще мають заплатити" breakdown over the
+    // displayed rows. Already-paid is the column sum (passed in); still-owed sums each row's shortfall
+    // (computed total fee minus its payment, never below zero) so an overpaid row doesn't cancel an
+    // unpaid one. Falls back to plain labels when no localization is set.
+    private string PaymentTooltip(SheetColumn column, decimal paid)
+    {
+        decimal owed = 0m;
+        foreach (var row in _sortedItems)
+        {
+            if (row is null)
+                continue;
+            TryReadDecimal(ReadPath(row, column.SummaryPath), out var rowPaid);
+            if (TryReadDecimal(ReadPath(row, column.SummaryOwedPath), out var fee))
+            {
+                var shortfall = fee - rowPaid;
+                if (shortfall > 0m)
+                    owed += shortfall;
+            }
+        }
+
+        var paidText = FormatSum(paid);
+        var owedText = FormatSum(owed);
+        if (Localization is not { } loc)
+            return $"Вже заплачено: {paidText}\nЩе мають заплатити: {owedText}";
+        return loc.Get("Sheet.Status.PaidLine").Replace("{0}", paidText)
+            + "\n"
+            + loc.Get("Sheet.Status.OwedLine").Replace("{0}", owedText);
+    }
+
+    // ── Live sums on inline edits ───────────────────────────────────────────────────────────────────
+    // A summed value (the fee total, the typed payment) changes as the user edits; to keep the footer
+    // sums live we subscribe to the displayed rows' PropertyChanged. A change to a property that feeds a
+    // sum schedules one coalesced recompute (Background priority) so a burst of edits costs one pass.
+    private readonly HashSet<INotifyPropertyChanged> _summedRows = new();
+    private bool _sumRecomputeQueued;
+    // The leading property-name segment of each summary path (e.g. "TotalEntryFee", "Payment"), so a
+    // row change to an unrelated property doesn't trigger a recompute.
+    private HashSet<string> _summedProps = new();
+
+    private void HookRowsForSums()
+    {
+        // Rebuild the watched-property set from the current summary columns.
+        _summedProps = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var col in _summaryColumns)
+        {
+            var first = col.SummaryPath.Split('.', '[')[0];
+            if (first.Length > 0)
+                _summedProps.Add(first);
+            // The payment column's tooltip also reacts to the owed (total-fee) value, so watch it too.
+            if (col.HasSummaryOwed)
+            {
+                var owedFirst = col.SummaryOwedPath.Split('.', '[')[0];
+                if (owedFirst.Length > 0)
+                    _summedProps.Add(owedFirst);
+            }
+        }
+
+        // Reconcile subscriptions to the current displayed rows: drop rows no longer shown, add new ones.
+        var current = new HashSet<INotifyPropertyChanged>();
+        foreach (var row in _sortedItems)
+            if (row is INotifyPropertyChanged inpc)
+                current.Add(inpc);
+
+        foreach (var old in _summedRows)
+            if (!current.Contains(old))
+                old.PropertyChanged -= OnSummedRowChanged;
+        foreach (var row in current)
+            if (_summedRows.Add(row))
+                row.PropertyChanged += OnSummedRowChanged;
+        _summedRows.RemoveWhere(r => !current.Contains(r));
+    }
+
+    private void UnhookRows()
+    {
+        foreach (var row in _summedRows)
+            row.PropertyChanged -= OnSummedRowChanged;
+        _summedRows.Clear();
+    }
+
+    private void OnSummedRowChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is null || !_summedProps.Contains(e.PropertyName) || _sumRecomputeQueued)
+            return;
+        _sumRecomputeQueued = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _sumRecomputeQueued = false;
+            if (_summaryColumns.Count > 0)
+                WriteSums(_summaryColumns);
+        }, DispatcherPriority.Background);
+    }
+
+    // True when a visible leaf column asks for the row count to be shown under it.
+    private bool HasCountColumn()
+    {
+        foreach (var band in _visibleBands)
+            foreach (var col in band.Columns)
+                if (col.ShowCount)
+                    return true;
+        return false;
+    }
+
+    // The compact count text ("4 з 344", or just "344" when nothing is filtered) and the full-text hover
+    // tooltip ("Показано 4 з 344"). Falls back to a plain "shown / total" when no localization is set.
+    private (string Text, string Tooltip) CountText(int shown, int total)
+    {
+        var filtered = _filters.Count > 0;
+        if (Localization is not { } loc)
+            return filtered ? ($"{shown} / {total}", $"{shown} / {total}") : (total.ToString(), total.ToString());
+
+        var text = filtered
+            ? loc.Get("Sheet.Status.CountFilteredShort").Replace("{0}", shown.ToString()).Replace("{1}", total.ToString())
+            : loc.Get("Sheet.Status.CountShort").Replace("{0}", total.ToString());
+        var tip = filtered
+            ? loc.Get("Sheet.Status.CountFiltered").Replace("{0}", shown.ToString()).Replace("{1}", total.ToString())
+            : loc.Get("Sheet.Status.Count").Replace("{0}", total.ToString());
+        return (text, tip);
+    }
+
+    // The visible leaf columns that contribute a status-bar sum, in display order.
+    private List<SheetColumn> SummaryColumns()
+    {
+        var list = new List<SheetColumn>();
+        foreach (var band in _visibleBands)
+            foreach (var col in band.Columns)
+                if (col.HasSummary)
+                    list.Add(col);
+        return list;
+    }
+
+    // Sums a column's numeric value over the currently displayed rows. The value may be a real number
+    // or a numeric string (the free-text «Оплата» field); non-numeric / blank cells contribute 0.
+    private decimal SumColumn(SheetColumn column)
+    {
+        decimal sum = 0m;
+        foreach (var row in _sortedItems)
+        {
+            if (row is null)
+                continue;
+            if (TryReadDecimal(ReadPath(row, column.SummaryPath), out var value))
+                sum += value;
+        }
+        return sum;
+    }
+
+    // Leniently coerces a cell value to a decimal: a real number is used directly; a string is parsed
+    // (invariant first, then the current culture) after trimming spaces and common thousands gaps so a
+    // typed "1 200,50" still counts. Anything unparseable ⇒ false (contributes nothing to the sum).
+    private static bool TryReadDecimal(object? value, out decimal result)
+    {
+        switch (value)
+        {
+            case null:
+                result = 0m;
+                return false;
+            case decimal d:
+                result = d;
+                return true;
+            case int i:
+                result = i;
+                return true;
+            case long l:
+                result = l;
+                return true;
+            case double db:
+                result = (decimal)db;
+                return true;
+            case float f:
+                result = (decimal)f;
+                return true;
+        }
+
+        var text = value.ToString();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            result = 0m;
+            return false;
+        }
+        text = text.Replace(" ", string.Empty);
+        const System.Globalization.NumberStyles styles = System.Globalization.NumberStyles.Number;
+        if (decimal.TryParse(text, styles, System.Globalization.CultureInfo.InvariantCulture, out result))
+            return true;
+        // A comma decimal separator ("120,50") fails invariant parsing; retry against the UI culture.
+        return decimal.TryParse(text, styles, System.Globalization.CultureInfo.CurrentCulture, out result);
+    }
+
+    // Formats a column sum like the fee cells: no currency symbol, trim trailing zeros.
+    private static string FormatSum(decimal value)
+        => value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static int Count(IEnumerable? source)
+    {
+        if (source is null)
+            return 0;
+        if (source is System.Collections.ICollection collection)
+            return collection.Count;
+        var n = 0;
+        foreach (var _ in source)
+            n++;
+        return n;
     }
 
     private static int CompareKeys(object? va, object? vb)
@@ -937,11 +1302,13 @@ public sealed class SheetTable : TemplatedControl
         return grid;
     }
 
-    // Keep the frozen header lined up with the body's horizontal scroll position.
+    // Keep the frozen header (and the status-bar sums row) lined up with the body's horizontal scroll.
     private void SyncHeaderOffset(Vector bodyOffset)
     {
         if (_headerScroll is not null)
             _headerScroll.Offset = new Vector(bodyOffset.X, 0);
+        if (_statusScroll is not null)
+            _statusScroll.Offset = new Vector(bodyOffset.X, 0);
     }
 
     /// <summary>Forwards the body scroller's offset to <see cref="SyncHeaderOffset"/>.</summary>
@@ -967,7 +1334,61 @@ public sealed class SheetTable : TemplatedControl
     // ── Excel-style edit + delete keyboard handling ───────────────────────────────────────────────
     private bool _ctrlDown;
     // The leaf-column index of the currently selected cell, carried across rows during up/down nav.
+    // This is also the anchor column of any multi-cell selection (anchor = the first cell selected).
     private int _focusedColumn;
+
+    // ── Multi-cell range selection (Excel-style) ──────────────────────────────────────────────────
+    // The rectangle is the inclusive min/max of the anchor and active corners, in (_sortedItems row
+    // index, leaf-column index) coordinates. The anchor is also the focus/edit cell and never moves
+    // while extending; a plain (non-Shift) click/arrow collapses the range back to a single cell.
+    private int _anchorRow = -1;
+    private int _activeRow = -1;
+    private int _activeCol = -1;
+    // Pointer in a press-drag selection: the cell pressed, until the pointer enters a different cell.
+    private bool _dragging;
+    // True once a press-drag actually extended the selection past the anchor cell — used on release to
+    // suppress the deferred "open the editor" (a drag-select must not drop into edit mode).
+    private bool _dragExtended;
+    // A resting cell's edit is deferred from press to release so a press-and-drag selects without editing.
+    private LazyEditCell? _pendingEditCell;
+    private Point _pendingEditPoint;
+
+    private bool HasRange => _anchorRow >= 0 && (_anchorRow != _activeRow || _focusedColumn != _activeCol);
+
+    // The index of a row object in the current sorted/filtered view, or -1 if not present.
+    private int RowIndexOf(object? row)
+    {
+        for (var i = 0; i < _sortedItems.Count; i++)
+            if (Equals(_sortedItems[i], row))
+                return i;
+        return -1;
+    }
+
+    // The number of visible leaf columns (across all visible bands), matching BuildRow's layout.
+    private int LeafColumnCount()
+    {
+        var count = 0;
+        foreach (var band in _visibleBands)
+            count += band.Columns.Count;
+        return count;
+    }
+
+    // Collapse any active range to the single cell at (row, col): anchor = active = that cell, and
+    // clear the highlight. Called on every plain selection so the range follows the focused cell.
+    private void CollapseRange(int row, int col)
+    {
+        _anchorRow = _activeRow = row;
+        _focusedColumn = _activeCol = col;
+        RepaintRange();
+    }
+
+    // Drop the selection entirely (no anchor) and clear any highlight. Used when the view re-sorts or
+    // re-filters and the cached row indices no longer mean anything.
+    private void ClearRange()
+    {
+        _anchorRow = _activeRow = _activeCol = -1;
+        RepaintRange();
+    }
 
     private void OnTunnelPointerPressed(object? sender, PointerPressedEventArgs e)
     {
@@ -982,28 +1403,108 @@ public sealed class SheetTable : TemplatedControl
         if (cell is null)
             return;
 
+        // Shift+Click extends the selection rectangle to the clicked cell, keeping the anchor (and the
+        // focus/edit cell) where it was. No row re-select, no begin-edit — it's a pure range gesture.
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift) && _anchorRow >= 0
+            && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            if (RowItemFromCell(cell) is { } shiftRow)
+            {
+                e.Handled = true;
+                ExtendRangeTo(RowIndexOf(shiftRow), cell.ColumnIndex);
+                return;
+            }
+        }
+
         _focusedColumn = cell.ColumnIndex;
 
         // Select the clicked cell's row. The ListBox would normally do this itself on bubble, but a
         // click that lands in an editor (and focuses it / begins editing) never reaches that path, so
         // the row would stay unselected. Set it explicitly from the row's data context.
         if (RowItemFromCell(cell) is { } row)
+        {
             SelectedItem = row;
+            // A plain click is a new anchor: collapse any prior range onto this cell.
+            CollapseRange(RowIndexOf(row), cell.ColumnIndex);
+        }
 
         if (e.Source is Visual src && IsInsideEditor(src, cell))
-            return; // let the live editor take the click (caret placement)
+            return; // let the live editor take the click (caret placement / text drag-select)
 
-        // A resting lazy cell: focus the SheetCell for the outline, then ask the cell to begin editing.
-        // Pass the click point (in the cell's own space) so a text cell lands its caret where clicked.
+        // Arm a press-drag range selection: the user can now sweep out a rectangle without releasing.
+        // Only for a press on a resting cell (not a live editor, handled above) so in-cell text
+        // drag-select keeps working. We capture lazily on first move (see OnTunnelPointerMoved) so a
+        // plain click that opens an editor isn't robbed of the pointer.
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            _dragging = true;
+            _dragExtended = false;
+        }
+
+        // A resting lazy cell: focus the SheetCell for the outline now, but DEFER opening the editor to
+        // pointer release. That way a press-and-drag selects a range without ever entering edit mode;
+        // a plain click (press with no drag) opens the editor on release (see OnTunnelPointerReleased).
         if (FindLazyCell(cell.Content as Control) is { } lazy)
         {
             cell.Focus();
-            _editingLazy = lazy;
-            lazy.BeginEdit(open: true, caretAt: e.GetPosition(lazy));
+            _pendingEditCell = lazy;
+            _pendingEditPoint = e.GetPosition(lazy);
             return;
         }
 
         cell.Focus();
+    }
+
+    // While the button is held after a press (the pointer is captured), sweeping over cells extends the
+    // selection rectangle to the cell under the pointer — without stealing focus or beginning an edit.
+    // We only treat it as a drag once the pointer reaches a *different* cell, so a plain click that
+    // lands and opens an editor in place is unaffected.
+    private void OnTunnelPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (!_dragging || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            return;
+
+        // Hit-test by position rather than e.Source: once we capture the pointer (below) the source is
+        // the capture target, not the cell under the cursor.
+        SheetCell? cell = null;
+        foreach (var hit in this.GetVisualsAt(e.GetPosition(this)))
+            if (CellFromSource(hit) is { } c) { cell = c; break; }
+        if (cell is null || RowItemFromCell(cell) is not { } row)
+            return;
+
+        var rowIndex = RowIndexOf(row);
+        if (rowIndex == _activeRow && cell.ColumnIndex == _activeCol)
+            return; // still in the same cell — nothing to extend
+
+        // First real move out of the anchor cell: grab the pointer so moves keep coming to us even when
+        // the cursor leaves the table, and so the cell's editor doesn't also react to the drag.
+        if (e.Pointer.Captured != this)
+            e.Pointer.Capture(this);
+
+        // A real drag-select: cancel the deferred edit so releasing won't drop into edit mode.
+        _dragExtended = true;
+        _pendingEditCell = null;
+
+        e.Handled = true;
+        ExtendRangeTo(rowIndex, cell.ColumnIndex);
+    }
+
+    private void OnTunnelPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_dragging)
+            return;
+        _dragging = false;
+        if (e.Pointer.Captured == this)
+            e.Pointer.Capture(null);
+
+        // A plain click (press with no drag) opens the editor we deferred at press time. A drag-select
+        // (the pointer left the anchor cell) leaves _pendingEditCell cleared, so no edit begins.
+        if (!_dragExtended && _pendingEditCell is { } lazy)
+        {
+            _editingLazy = lazy;
+            lazy.BeginEdit(open: true, caretAt: _pendingEditPoint);
+        }
+        _pendingEditCell = null;
     }
 
     // Right-click on a body cell offers "filter by this value" (a Values filter pinned to that cell's
@@ -1222,6 +1723,18 @@ public sealed class SheetTable : TemplatedControl
             return;
         }
 
+        // Shift+Arrow extends the selection rectangle from the anchor (which keeps focus), Excel-style.
+        // Shift+Tab is left as plain column navigation, not range-extend.
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift) && _anchorRow >= 0
+            && e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
+        {
+            var dCol = e.Key == Key.Left ? -1 : e.Key == Key.Right ? +1 : 0;
+            var dRow = e.Key == Key.Up ? -1 : e.Key == Key.Down ? +1 : 0;
+            if (ExtendRange(dRow, dCol))
+                e.Handled = true;
+            return;
+        }
+
         // Arrow / Tab navigation between cells (only when a cell, not an editor, holds focus).
         switch (e.Key)
         {
@@ -1299,6 +1812,10 @@ public sealed class SheetTable : TemplatedControl
     {
         if (FindFocusedCell()?.Content is not Control content)
             return false;
+
+        // Editing happens on the anchor (focus) cell — collapse any active selection onto it first.
+        if (HasRange)
+            CollapseRange(_anchorRow, _focusedColumn);
 
         if (FindLazyCell(content) is { } lazy)
         {
@@ -1415,8 +1932,9 @@ public sealed class SheetTable : TemplatedControl
         foreach (var child in rowGrid.Children)
             if (child is SheetCell cell && cell.ColumnIndex == target)
             {
-                _focusedColumn = target;
                 cell.Focus();
+                // Plain column move: the new cell becomes the anchor, collapsing any selection.
+                CollapseRange(RowIndexOf(_body?.SelectedItem), target);
                 return true;
             }
         return false;
@@ -1446,6 +1964,8 @@ public sealed class SheetTable : TemplatedControl
 
         _body.SelectedItem = items[target];
         _body.ScrollIntoView(target);
+        // Plain row move: collapse any selection onto the new cell (same column, target row).
+        CollapseRange(target, _focusedColumn);
         // The target row may need a layout pass to realize; focus its cell once it exists.
         Dispatcher.UIThread.Post(FocusSelectedRowCell, DispatcherPriority.Loaded);
         return true;
@@ -1475,6 +1995,71 @@ public sealed class SheetTable : TemplatedControl
         return null;
     }
 
+    // ── Multi-cell range selection ──────────────────────────────────────────────────────────────────
+    // Grow/shrink the selection rectangle by (dRow, dCol) from its current active corner; the anchor
+    // (and focus/edit cell) stays put. Scrolls a newly-reached row into view. Returns false at edges.
+    private bool ExtendRange(int dRow, int dCol)
+    {
+        if (_anchorRow < 0)
+            return false;
+        var row = Math.Clamp(_activeRow + dRow, 0, Math.Max(0, _sortedItems.Count - 1));
+        var col = Math.Clamp(_activeCol + dCol, 0, Math.Max(0, LeafColumnCount() - 1));
+        if (row == _activeRow && col == _activeCol)
+            return false;
+        ExtendRangeTo(row, col);
+        if (dRow != 0)
+            _body?.ScrollIntoView(row);
+        return true;
+    }
+
+    // Set the rectangle's active corner to (row, col) and repaint the highlight. The anchor is left
+    // untouched so focus and editing stay on the first selected cell.
+    private void ExtendRangeTo(int row, int col)
+    {
+        if (_anchorRow < 0 || row < 0 || col < 0)
+            return;
+        _activeRow = row;
+        _activeCol = col;
+        RepaintRange();
+        // Newly realized rows (after a scroll) need the highlight re-applied once laid out.
+        Dispatcher.UIThread.Post(RepaintRange, DispatcherPriority.Loaded);
+    }
+
+    // Re-paint every realized body cell's InRange flag to match the current rectangle (or clear all,
+    // when there's no multi-cell selection). Off-screen rows are virtualized away and re-painted when
+    // they realize (see ExtendRangeTo's posted pass).
+    private void RepaintRange()
+    {
+        if (_body is null)
+            return;
+        foreach (var d in _body.GetVisualDescendants())
+            if (d is SheetCell cell)
+                cell.InRange = CellInRange(cell);
+    }
+
+    // Refresh the range highlight on a single (just-realized) row container's cells.
+    private void UpdateContainerRange(Control container)
+    {
+        foreach (var d in container.GetVisualDescendants())
+            if (d is SheetCell cell)
+                cell.InRange = CellInRange(cell);
+    }
+
+    // True when a cell falls inside the current selection rectangle (false when there's no range).
+    private bool CellInRange(SheetCell cell)
+    {
+        if (!HasRange || cell.DataContext is not { } item)
+            return false;
+        var index = RowIndexOf(item);
+        if (index < 0)
+            return false;
+        var minRow = Math.Min(_anchorRow, _activeRow);
+        var maxRow = Math.Max(_anchorRow, _activeRow);
+        var minCol = Math.Min(_focusedColumn, _activeCol);
+        var maxCol = Math.Max(_focusedColumn, _activeCol);
+        return index >= minRow && index <= maxRow && cell.ColumnIndex >= minCol && cell.ColumnIndex <= maxCol;
+    }
+
     private void SeedEditor(string text)
     {
         if (FocusedEditor() is { } box)
@@ -1489,11 +2074,19 @@ public sealed class SheetTable : TemplatedControl
     // it works uniformly across every cell kind (text editors, group combos, dates, "різні").
     private bool CopyFocusedCell()
     {
-        if (FindFocusedCell() is not { } cell)
-            return false;
         if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
             return false;
 
+        // A multi-cell selection copies as TSV (tab between columns, newline between rows) so it
+        // round-trips with Excel/Sheets and the table's own fill-down paste.
+        if (HasRange)
+        {
+            _ = clipboard.SetTextAsync(BuildRangeTsv());
+            return true;
+        }
+
+        if (FindFocusedCell() is not { } cell)
+            return false;
         var text = ExtractCellText(cell.Content as Control);
         if (string.IsNullOrEmpty(text))
             return false;
@@ -1501,6 +2094,62 @@ public sealed class SheetTable : TemplatedControl
         _ = clipboard.SetTextAsync(text);
         return true;
     }
+
+    // Render the current selection rectangle as TSV (tab between columns, newline between rows). For
+    // each cell we prefer the *realized* cell's rendered text (ExtractCellText) so copy matches exactly
+    // what's on screen — the collapsed "<group> (n днів)" / "різні" summaries, combo labels, the payment
+    // value (not its status), and discount check states. Rows scrolled out of view aren't realized, so
+    // those fall back to CellText (the value-path reader). Off-screen composite/checkbox columns are the
+    // only case where the two can differ — acceptable for a visible-selection copy.
+    private string BuildRangeTsv()
+    {
+        var minRow = Math.Min(_anchorRow, _activeRow);
+        var maxRow = Math.Max(_anchorRow, _activeRow);
+        var minCol = Math.Min(_focusedColumn, _activeCol);
+        var maxCol = Math.Max(_focusedColumn, _activeCol);
+
+        // Map leaf-column index -> SheetColumn, in the same order BuildRow lays cells out.
+        var columns = new List<SheetColumn>();
+        foreach (var band in _visibleBands)
+            foreach (var column in band.Columns)
+                columns.Add(column);
+
+        // Index the realized body cells by (row index in the sorted view, column index) for O(1) lookup.
+        var realized = new Dictionary<(int Row, int Col), SheetCell>();
+        if (_body is not null)
+            foreach (var d in _body.GetVisualDescendants())
+                if (d is SheetCell sc && sc.DataContext is { } item)
+                {
+                    var ri = RowIndexOf(item);
+                    if (ri >= 0)
+                        realized[(ri, sc.ColumnIndex)] = sc;
+                }
+
+        var sb = new System.Text.StringBuilder();
+        for (var r = minRow; r <= maxRow && r < _sortedItems.Count; r++)
+        {
+            if (_sortedItems[r] is not { } row)
+                continue;
+            for (var c = minCol; c <= maxCol && c < columns.Count; c++)
+            {
+                if (c > minCol)
+                    sb.Append('\t');
+                // A realized cell is authoritative (even when blank) so we don't fall back and pick up
+                // e.g. the payment column's status token for an empty payment.
+                var text = realized.TryGetValue((r, c), out var cell)
+                    ? ExtractCellText(cell.Content as Control) ?? string.Empty
+                    : CopyText(columns[c], row);
+                sb.Append(text);
+            }
+            if (r < maxRow)
+                sb.Append('\n');
+        }
+        return sb.ToString();
+    }
+
+    // A checkbox/flag cell copies as "TRUE" when checked, "" otherwise, so a bool column
+    // (discounts, out-of-competition, «Член ФСОУ») round-trips as a readable flag.
+    private const string CheckedMark = "TRUE";
 
     // Pulls the visible text out of a cell's content control, regardless of how it renders it.
     private static string? ExtractCellText(Control? content)
@@ -1517,23 +2166,30 @@ public sealed class SheetTable : TemplatedControl
                 return combo.SelectedItem is GroupOption option ? option.Label : combo.SelectionBoxItem?.ToString();
             case CalendarDatePicker picker:
                 return picker.SelectedDate?.ToString("dd.MM.yyyy");
+            case CheckBox check:
+                return check.IsChecked == true ? CheckedMark : string.Empty;
         }
 
-        // Composite cells (per-day chip Panel with backdrop+editor, collapsed merged cells): pick the
-        // first visible descendant that directly carries text.
+        // Composite cells (per-day chip Panel with backdrop+editor, collapsed merged cells, the
+        // out-of-competition checkbox): pick the first visible descendant that carries a value.
         foreach (var d in content.GetVisualDescendants())
         {
             if (d is not Control c || !c.IsVisible)
                 continue;
-            var text = c switch
+            switch (c)
             {
-                TextBox box => box.Text,
-                TextBlock block => block.Text,
-                ComboBox combo => combo.SelectedItem is GroupOption option ? option.Label : combo.SelectionBoxItem?.ToString(),
-                _ => null
-            };
-            if (!string.IsNullOrEmpty(text))
-                return text;
+                case TextBox box when !string.IsNullOrEmpty(box.Text):
+                    return box.Text;
+                case TextBlock block when !string.IsNullOrEmpty(block.Text):
+                    return block.Text;
+                case ComboBox combo:
+                    var label = combo.SelectedItem is GroupOption option ? option.Label : combo.SelectionBoxItem?.ToString();
+                    if (!string.IsNullOrEmpty(label))
+                        return label;
+                    break;
+                case CheckBox check:
+                    return check.IsChecked == true ? CheckedMark : string.Empty;
+            }
         }
         return null;
     }
@@ -1687,16 +2343,32 @@ internal sealed class SheetCell : ContentControl
         Focusable = true;
         HorizontalContentAlignment = HorizontalAlignment.Stretch;
         VerticalContentAlignment = VerticalAlignment.Stretch;
-        // A transparent (not null) background makes the cell's whole area — including padding around a
-        // short label — hit-testable, so a click anywhere in the cell, not just on its content, reaches
-        // OnTunnelPointerPressed and begins editing.
-        Background = Brushes.Transparent;
+        // The transparent (not null) background that makes the whole cell area hit-testable is set via
+        // the base SheetCell style, not here, so the :range selection style can override it. (A local
+        // value set in the constructor would win over any style.)
     }
 
     public SheetColumn Column { get; }
 
     /// <summary>This cell's leaf-column index across the whole row, for up/down navigation.</summary>
     public int ColumnIndex { get; }
+
+    /// <summary>True while this cell lies inside the current multi-cell selection rectangle. Drives a
+    /// translucent highlight via the <c>:range</c> pseudo-class; the anchor still shows the focus outline.</summary>
+    public static readonly StyledProperty<bool> InRangeProperty =
+        AvaloniaProperty.Register<SheetCell, bool>(nameof(InRange));
+
+    public bool InRange
+    {
+        get => GetValue(InRangeProperty);
+        set => SetValue(InRangeProperty, value);
+    }
+
+    static SheetCell()
+    {
+        InRangeProperty.Changed.AddClassHandler<SheetCell>((cell, e) =>
+            cell.PseudoClasses.Set(":range", e.NewValue is true));
+    }
 }
 
 /// <summary>Delete-key request payload.</summary>

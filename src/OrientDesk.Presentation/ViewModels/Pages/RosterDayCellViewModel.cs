@@ -66,30 +66,21 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     }
 
     /// <summary>
-    /// The start time as editable "HH:mm" text. Empty clears it; an unparseable value is ignored
-    /// (the cell reverts on the next notification). Kept as a string so the cell reuses a plain text
-    /// editor like the chip cell, without a converter or masked-time control.
+    /// The start time as editable "hh:mm:ss" text. Empty clears it; a partial entry is padded and any
+    /// out-of-range minute/second is clamped to 59 (see <see cref="StartTimeFormat"/>); a truly
+    /// unparseable value is ignored (the cell reverts on the next notification). Kept as a string so the
+    /// cell reuses a plain text editor like the chip cell, without a converter or masked-time control.
     /// </summary>
     public string StartTimeText
     {
-        get => StartTime is { } t ? t.ToString(@"hh\:mm") : string.Empty;
+        get => StartTimeFormat.Format(StartTime);
         set
         {
-            var trimmed = (value ?? string.Empty).Trim();
-            if (trimmed.Length == 0)
-            {
-                StartTime = null;
-            }
-            else if (TimeSpan.TryParseExact(trimmed, [@"hh\:mm", @"h\:mm"], System.Globalization.CultureInfo.InvariantCulture, out var parsed)
-                     || TimeSpan.TryParse(trimmed, System.Globalization.CultureInfo.InvariantCulture, out parsed))
-            {
+            if (StartTimeFormat.TryParse(value, out var parsed))
                 StartTime = parsed;
-            }
             else
-            {
                 // Unparseable — keep the stored value and re-raise so the box reverts to it.
                 OnPropertyChanged();
-            }
         }
     }
 

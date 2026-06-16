@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace OrientDesk.Presentation.ViewModels.Pages;
 
@@ -15,6 +16,12 @@ public sealed class RentalChipRegistry
 
     /// <summary>Raised whenever the set of numbers changes (reset, add, or remove).</summary>
     public event EventHandler? Changed;
+
+    /// <summary>How many rental-chip numbers are in the set (for the status bar).</summary>
+    public int Count => _numbers.Count;
+
+    /// <summary>The rental-chip numbers in the set (a snapshot; for the status bar's free-chip count).</summary>
+    public IReadOnlyCollection<string> Numbers => _numbers.ToArray();
 
     /// <summary>Replaces the whole set (e.g. after a reload) and notifies observers.</summary>
     public void Reset(IEnumerable<string> numbers)

@@ -78,7 +78,22 @@ public static class NumericInput
 
         var resulting = Project(box, e.Text);
         if (!IsAllowed(box, resulting))
+        {
             e.Handled = true;
+            return;
+        }
+
+        // Time mask auto-inserts ':' after a completed hour or minute group, mirroring the date mask's
+        // auto-'.', so the user types digits only and the colons appear at hh:mm:ss boundaries.
+        if (GetTime(box) && e.Text.Length == 1 && char.IsAsciiDigit(e.Text[0]) &&
+            box.SelectionStart == box.SelectionEnd &&
+            box.SelectionStart == (box.Text?.Length ?? 0) &&
+            resulting.Length is 2 or 5 && !resulting.EndsWith(':'))
+        {
+            e.Handled = true;
+            box.Text = resulting + ":";
+            box.CaretIndex = box.Text.Length;
+        }
     }
 
     // Builds the text the box would hold if this input were accepted, honouring the current
