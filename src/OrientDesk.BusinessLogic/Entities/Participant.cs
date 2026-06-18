@@ -47,6 +47,9 @@ public class Participant
     /// <summary>Payment note (Оплата). Free text.</summary>
     public string Payment { get; set; } = string.Empty;
 
+    /// <summary>Free-text note about the participant (Примітка). Competition-level.</summary>
+    public string Note { get; set; } = string.Empty;
+
     /// <summary>
     /// Team name (used by team disciplines such as rogaine); empty otherwise. Competition-level: a
     /// competitor's team is the same across every day they run, like the other identity fields.

@@ -6,7 +6,8 @@
              xmlns:controls="using:OrientDesk.Presentation.Controls"
              mc:Ignorable="d" d:DesignWidth="940" d:DesignHeight="560"
              x:Class="OrientDesk.Presentation.Views.Pages.FinishReadView"
-             x:DataType="pages:FinishReadViewModel">
+             x:DataType="pages:FinishReadViewModel"
+             Name="Root">
 
     <DockPanel LastChildFill="True">
 
@@ -124,17 +125,15 @@
                 <DockPanel LastChildFill="True">
 
                     <!-- Header: title, selected participant, summary, and the dock-toggle button -->
-                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,10">
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding Localization[FinishRead.Splits.Title]}" Classes="h2"
-                                       VerticalAlignment="Center" />
-                            <TextBlock Text="{Binding Splits.Heading}" Classes="subtitle"
-                                       VerticalAlignment="Center" />
-                        </StackPanel>
-                        <TextBlock Grid.Column="1" Text="{Binding Splits.Summary}"
+                    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,0,0,10">
+                        <TextBlock Grid.Column="0" Text="{Binding Localization[FinishRead.Splits.Title]}" Classes="h2"
+                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <TextBlock Grid.Column="1" Text="{Binding Splits.Heading}" Classes="subtitle"
+                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,10,0" />
+                        <TextBlock Grid.Column="2" Text="{Binding Splits.Summary}"
                                    FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,10,0" />
                         <!-- Move the panel right (when below) or down (when to the right) -->
-                        <Button Grid.Column="2" Classes="ghost" Padding="6"
+                        <Button Grid.Column="3" Classes="ghost" Padding="6"
                                 Command="{Binding Splits.ToggleDockCommand}"
                                 VerticalAlignment="Center"
                                 ToolTip.Tip="{Binding Localization[FinishRead.Splits.ToggleDock]}">
@@ -174,24 +173,31 @@
                                        Text="{Binding Localization[FinishRead.Splits.Passage]}" />
                             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                               <StackPanel>
-                                <!-- Column headers (same widths as the rows below) -->
-                                <Grid ColumnDefinitions="30,60,24,70,80,80,70"
+                                <!-- Column headers (same widths as the rows below). The Бали/Сума columns
+                                     show only for a scored (rogaine) passage; set course leaves them blank. -->
+                                <Grid ColumnDefinitions="30,60,24,50,70,80,80,70,60"
                                       Margin="0,0,0,4" ColumnSpacing="8">
                                     <TextBlock Grid.Column="1" Classes="label"
                                                Text="{Binding Localization[FinishRead.Splits.Col.Code]}" />
                                     <TextBlock Grid.Column="3" Classes="label" HorizontalAlignment="Right"
-                                               Text="{Binding Localization[FinishRead.Splits.Col.Leg]}" />
+                                               IsVisible="{Binding #Root.DataContext.Splits.ShowPoints}"
+                                               Text="{Binding Localization[FinishRead.Splits.Col.Points]}" />
                                     <TextBlock Grid.Column="4" Classes="label" HorizontalAlignment="Right"
-                                               Text="{Binding Localization[FinishRead.Splits.Col.Distance]}" />
+                                               Text="{Binding Localization[FinishRead.Splits.Col.Leg]}" />
                                     <TextBlock Grid.Column="5" Classes="label" HorizontalAlignment="Right"
-                                               Text="{Binding Localization[FinishRead.Splits.Col.Pace]}" />
+                                               Text="{Binding Localization[FinishRead.Splits.Col.Distance]}" />
                                     <TextBlock Grid.Column="6" Classes="label" HorizontalAlignment="Right"
+                                               Text="{Binding Localization[FinishRead.Splits.Col.Pace]}" />
+                                    <TextBlock Grid.Column="7" Classes="label" HorizontalAlignment="Right"
                                                Text="{Binding Localization[FinishRead.Splits.Col.Elapsed]}" />
+                                    <TextBlock Grid.Column="8" Classes="label" HorizontalAlignment="Right"
+                                               IsVisible="{Binding #Root.DataContext.Splits.ShowPoints}"
+                                               Text="{Binding Localization[FinishRead.Splits.Col.Total]}" />
                                 </Grid>
                                 <ItemsControl ItemsSource="{Binding Splits.Passage}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="pages:PassagePunchViewModel">
-                                            <Grid ColumnDefinitions="30,60,24,70,80,80,70" Margin="0,2" ColumnSpacing="8">
+                                            <Grid ColumnDefinitions="30,60,24,50,70,80,80,70,60" Margin="0,2" ColumnSpacing="8">
                                                 <TextBlock Grid.Column="0" Text="{Binding IndexText}"
                                                            Foreground="{DynamicResource TextMuted}"
                                                            HorizontalAlignment="Right" />
@@ -199,17 +205,23 @@
                                                 <TextBlock Grid.Column="2" Text="{Binding Glyph}" FontWeight="Bold"
                                                            HorizontalAlignment="Center"
                                                            Foreground="{Binding Glyph, Converter={StaticResource SplitGlyphBrush}}" />
-                                                <TextBlock Grid.Column="3" Text="{Binding LegText}"
+                                                <TextBlock Grid.Column="3" Text="{Binding PointsText}"
+                                                           IsVisible="{Binding #Root.DataContext.Splits.ShowPoints}"
                                                            HorizontalAlignment="Right" />
-                                                <TextBlock Grid.Column="4" Text="{Binding DistanceText}"
+                                                <TextBlock Grid.Column="4" Text="{Binding LegText}"
+                                                           HorizontalAlignment="Right" />
+                                                <TextBlock Grid.Column="5" Text="{Binding DistanceText}"
                                                            Foreground="{DynamicResource TextSecondary}"
                                                            HorizontalAlignment="Right" />
-                                                <TextBlock Grid.Column="5" Text="{Binding PaceText}"
+                                                <TextBlock Grid.Column="6" Text="{Binding PaceText}"
                                                            Foreground="{DynamicResource TextSecondary}"
                                                            HorizontalAlignment="Right" />
-                                                <TextBlock Grid.Column="6" Text="{Binding ElapsedText}"
+                                                <TextBlock Grid.Column="7" Text="{Binding ElapsedText}"
                                                            Foreground="{DynamicResource TextSecondary}"
                                                            HorizontalAlignment="Right" />
+                                                <TextBlock Grid.Column="8" Text="{Binding RunningTotalText}"
+                                                           IsVisible="{Binding #Root.DataContext.Splits.ShowPoints}"
+                                                           FontWeight="Medium" HorizontalAlignment="Right" />
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
@@ -232,12 +244,12 @@
                              sized (pixel) column; its width is seeded/persisted via Splits.PrescribedWidth. -->
                         <DockPanel Name="PrescribedPane" Grid.Column="2" LastChildFill="True" Margin="7,0,0,0">
                             <TextBlock DockPanel.Dock="Top" Classes="label" Margin="0,0,0,6"
-                                       Text="{Binding Localization[FinishRead.Splits.Prescribed]}" />
+                                       Text="{Binding Splits.PrescribedTitle}" />
                             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                                 <ItemsControl ItemsSource="{Binding Splits.Expected}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="pages:ExpectedControlViewModel">
-                                            <Grid ColumnDefinitions="30,60,24,Auto" Margin="0,2" ColumnSpacing="8"
+                                            <Grid ColumnDefinitions="30,60,24,50,Auto" Margin="0,2" ColumnSpacing="8"
                                                   Opacity="{Binding Taken, Converter={StaticResource BoolToOpacity}}">
                                                 <TextBlock Grid.Column="0" Text="{Binding SequenceText}"
                                                            Foreground="{DynamicResource TextMuted}"
@@ -246,7 +258,10 @@
                                                 <TextBlock Grid.Column="2" Text="{Binding Glyph}" FontWeight="Bold"
                                                            HorizontalAlignment="Center"
                                                            Foreground="{Binding Glyph, Converter={StaticResource SplitGlyphBrush}}" />
-                                                <TextBlock Grid.Column="3" Text="{Binding Note}"
+                                                <TextBlock Grid.Column="3" Text="{Binding PointsText}"
+                                                           IsVisible="{Binding #Root.DataContext.Splits.ShowPoints}"
+                                                           HorizontalAlignment="Right" />
+                                                <TextBlock Grid.Column="4" Text="{Binding Note}"
                                                            Foreground="{DynamicResource DangerBrush}" />
                                             </Grid>
                                         </DataTemplate>
@@ -256,10 +271,27 @@
                         </DockPanel>
                     </Grid>
 
-                    <!-- Scored (score/choice/rogaine) layout: code, ✓/—, points, time, running total -->
-                    <ScrollViewer IsVisible="{Binding Splits.IsScored}"
-                                  HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding Splits.Entries}">
+                    <!-- Scored (score/choice/rogaine) layout: the course controls that may be punched (free
+                         choice, no prescribed order), each with ✓/—, points, time and a running total. -->
+                    <DockPanel IsVisible="{Binding Splits.IsScored}" LastChildFill="True">
+                        <TextBlock DockPanel.Dock="Top" Classes="label" Margin="0,0,0,6"
+                                   Text="{Binding Localization[FinishRead.Splits.Controls]}" />
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                          <StackPanel>
+                            <!-- Column headers (same widths as the rows below) -->
+                            <Grid ColumnDefinitions="70,28,60,90,80,70" Margin="0,0,0,4" ColumnSpacing="8">
+                                <TextBlock Grid.Column="0" Classes="label"
+                                           Text="{Binding Localization[FinishRead.Splits.Col.Code]}" />
+                                <TextBlock Grid.Column="2" Classes="label" HorizontalAlignment="Right"
+                                           Text="{Binding Localization[FinishRead.Splits.Col.Points]}" />
+                                <TextBlock Grid.Column="3" Classes="label" HorizontalAlignment="Right"
+                                           Text="{Binding Localization[FinishRead.Splits.Col.Time]}" />
+                                <TextBlock Grid.Column="4" Classes="label" HorizontalAlignment="Right"
+                                           Text="{Binding Localization[FinishRead.Splits.Col.Elapsed]}" />
+                                <TextBlock Grid.Column="5" Classes="label" HorizontalAlignment="Right"
+                                           Text="{Binding Localization[FinishRead.Splits.Col.Total]}" />
+                            </Grid>
+                            <ItemsControl ItemsSource="{Binding Splits.Entries}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="pages:ScoreEntryViewModel">
                                     <Grid ColumnDefinitions="70,28,60,90,80,70" Margin="0,2" ColumnSpacing="8"
@@ -281,8 +313,10 @@
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
+                            </ItemsControl>
+                          </StackPanel>
+                        </ScrollViewer>
+                    </DockPanel>
 
                     </Panel>
 

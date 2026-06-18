@@ -11,7 +11,8 @@ namespace OrientDesk.BusinessLogic.Models;
 /// explanation (e.g. the first missing control) for the tooltip. <see cref="ResolvedStartTime"/> is the
 /// effective start used for evaluation (the chip's own read-out start, else the participant's assigned
 /// start paired with the finish's date); <see cref="Elapsed"/> is the resulting finish − start duration,
-/// both null when no participant/finish/start is known.
+/// both null when no participant/finish/start is known. <see cref="Score"/> is the collected «Бали»
+/// (rogaine and other point-scoring formats); null when the discipline does not score points.
 /// </summary>
 public sealed record FinishReadoutRow(
     Guid Id,
@@ -26,4 +27,5 @@ public sealed record FinishReadoutRow(
     FinishStatus Status,
     string StatusDetail,
     DateTimeOffset? ResolvedStartTime,
-    TimeSpan? Elapsed);
+    TimeSpan? Elapsed,
+    int? Score = null);

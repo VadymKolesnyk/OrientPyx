@@ -74,6 +74,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     [ObservableProperty]
     private string _payment;
 
+    [ObservableProperty]
+    private string _note;
+
     /// <summary>Team name (Команда). Competition-level (shared across days); shown only for team disciplines.</summary>
     [ObservableProperty]
     private string _team;
@@ -147,6 +150,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         _fsouCode = row.FsouCode;
         _isFsouMember = row.IsFsouMember;
         _payment = row.Payment;
+        _note = row.Note;
         _team = row.Team;
         // Region/Club match by id across their shared lists; fall back to "(none)" (the first option).
         _selectedRegion = regionOptions.FirstOrDefault(o => !o.IsAdd && o.Id == row.RegionId) ?? regionOptions[0];
@@ -439,6 +443,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     // The competition-level text/bool fields persist through the debounced identity save.
     partial void OnRepresentativeChanged(string value) => QueueSave();
     partial void OnFsouCodeChanged(string value) => QueueSave();
+    partial void OnNoteChanged(string value) => QueueSave();
     partial void OnTeamChanged(string value) => QueueSave();
     partial void OnIsFsouMemberChanged(bool value)
     {

@@ -1,4 +1,5 @@
 using OrientDesk.BusinessLogic.Enums;
+using OrientDesk.BusinessLogic.Interfaces;
 using OrientDesk.BusinessLogic.Models;
 
 namespace OrientDesk.BusinessLogic.Disciplines;
@@ -116,5 +117,46 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
             VisitedCount = counted.Count,
             ExpectedCount = allowed.Count
         };
+    }
+
+    // --- Shared leg geometry (used by the ordered set-course and rogaine layouts) ------------------
+
+    /// <summary>The geographic coordinate of a control code, or a coordinate-less point when unknown.</summary>
+    protected static GeoPoint ResolveCoord(SplitsContext context, string code) =>
+        context.CoordsByCode.TryGetValue(code, out var p) ? p : default;
+
+    /// <summary>The paper-map position of a control code, or a position-less point when unknown.</summary>
+    protected static MapPoint ResolveMap(SplitsContext context, string code) =>
+        context.MapByCode.TryGetValue(code, out var p) ? p : default;
+
+    /// <summary>
+    /// Straight-line distance (km) of the leg between two positions, via the shared course distance
+    /// calculator. Prefers the paper-map source (map mm × scale, undistorted) when both endpoints are
+    /// mapped and a scale is known; otherwise falls back to the geographic coordinates. Null when neither
+    /// source covers both endpoints.
+    /// </summary>
+    protected static decimal? LegDistanceKm(
+        ICourseDistanceCalculator distance, SplitsContext context,
+        GeoPoint from, GeoPoint to, MapPoint fromMap, MapPoint toMap)
+    {
+        if (context.MapScale is > 0 && fromMap.HasCoordinates && toMap.HasCoordinates)
+        {
+            var mapKm = distance.TotalKilometresFromMap([fromMap, toMap], context.MapScale.Value);
+            return mapKm > 0m ? mapKm : null;
+        }
+
+        if (!from.HasCoordinates || !to.HasCoordinates)
+            return null;
+
+        var km = distance.TotalKilometres([from, to]);
+        return km > 0m ? km : null;
+    }
+
+    /// <summary>Pace in seconds per kilometre for one leg; null when the leg time or distance is missing/zero.</summary>
+    protected static double? PaceSecondsPerKm(TimeSpan? leg, decimal? legKm)
+    {
+        if (leg is not { } t || t <= TimeSpan.Zero || legKm is not { } km || km <= 0m)
+            return null;
+        return t.TotalSeconds / (double)km;
     }
 }

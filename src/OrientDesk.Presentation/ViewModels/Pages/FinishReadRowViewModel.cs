@@ -60,6 +60,9 @@ public sealed class FinishReadRowViewModel
     /// <summary>Group when known; otherwise blank.</summary>
     public string GroupName => _row.GroupName;
 
+    /// <summary>Collected «Бали» for a point-scoring day; blank when the discipline doesn't score points.</summary>
+    public string ScoreText => _row.Score is { } s ? s.ToString() : string.Empty;
+
     /// <summary>
     /// Short status code shown in the status column (OK / MP / OVT / DNF / DNS / DSQ). Blank when there
     /// is no status (unknown chip, or a discipline that doesn't evaluate finishes yet).

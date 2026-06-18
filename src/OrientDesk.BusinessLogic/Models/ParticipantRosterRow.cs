@@ -23,6 +23,7 @@ public sealed record ParticipantRosterRow(
     string FsouCode,
     bool IsFsouMember,
     string Payment,
+    string Note,
     string Team,
     bool PaysRaisedFee,
     IReadOnlyList<Guid> SelectedDiscountIds,

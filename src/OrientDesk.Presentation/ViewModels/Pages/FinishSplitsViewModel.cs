@@ -28,6 +28,8 @@ public sealed partial class FinishSplitsViewModel : ObservableObject
         _isDockedRight = preferences.SplitsDock == SplitsDock.Right;
         _panelSize = preferences.SplitsSize;
         _prescribedWidth = preferences.SplitsPrescribedWidth;
+        // The right-list title is resolved text (not an indexer binding), so re-raise it on a language change.
+        _localization.PropertyChanged += (_, _) => OnPropertyChanged(nameof(PrescribedTitle));
     }
 
     public ILocalizationService Localization => _localization;
@@ -53,6 +55,20 @@ public sealed partial class FinishSplitsViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isScored;
+
+    /// <summary>
+    /// True when the ordered layout scores points (rogaine) — shows the Бали / Сума columns in the passage
+    /// and course lists, and titles the right list «КП дистанції» instead of «Правильний порядок».
+    /// </summary>
+    [ObservableProperty]
+    private bool _showPoints;
+
+    /// <summary>Right-hand course list's title — «КП дистанції» when scored (rogaine), the set-course
+    /// «Правильний порядок» otherwise. Re-resolved on a points-flag or language change.</summary>
+    public string PrescribedTitle => _localization.Get(
+        ShowPoints ? "FinishRead.Splits.Controls" : "FinishRead.Splits.Prescribed");
+
+    partial void OnShowPointsChanged(bool value) => OnPropertyChanged(nameof(PrescribedTitle));
 
     /// <summary>Summary line: "visited / expected" and, for scored, the total points.</summary>
     [ObservableProperty]
@@ -98,6 +114,7 @@ public sealed partial class FinishSplitsViewModel : ObservableObject
         Summary = string.Empty;
         IsOrdered = false;
         IsScored = false;
+        ShowPoints = false;
         HasData = false;
     }
 
@@ -111,6 +128,7 @@ public sealed partial class FinishSplitsViewModel : ObservableObject
 
         IsOrdered = view.Layout == SplitsLayout.Ordered;
         IsScored = view.Layout == SplitsLayout.Scored;
+        ShowPoints = view.HasPoints;
 
         if (IsOrdered)
         {
@@ -118,8 +136,12 @@ public sealed partial class FinishSplitsViewModel : ObservableObject
                 Passage.Add(new PassagePunchViewModel(punch, _localization));
             foreach (var control in view.Expected)
                 Expected.Add(new ExpectedControlViewModel(control, _localization));
-            Summary = string.Format(_localization.Get("FinishRead.Splits.Visited"),
-                view.VisitedCount, view.ExpectedCount);
+            // Rogaine adds the points total to the "visited / expected" line; set-course shows it plain.
+            Summary = view.HasPoints
+                ? string.Format(_localization.Get("FinishRead.Splits.Scored"),
+                    view.VisitedCount, view.ExpectedCount, view.TotalPoints)
+                : string.Format(_localization.Get("FinishRead.Splits.Visited"),
+                    view.VisitedCount, view.ExpectedCount);
         }
         else
         {
@@ -175,6 +197,12 @@ public sealed class PassagePunchViewModel
 
     /// <summary>Leg pace as "m:ss"; blank when distance or leg time is unknown. (Unit /км in header.)</summary>
     public string PaceText => SplitFormat.Pace(_punch.PaceSecondsPerKm);
+
+    /// <summary>Point value of this control (rogaine), e.g. "+5"; blank when it scored nothing.</summary>
+    public string PointsText => _punch.Points is { } p && p != 0 ? $"+{p}" : string.Empty;
+
+    /// <summary>Running point total after this control (rogaine); blank for a non-scoring punch.</summary>
+    public string RunningTotalText => _punch.RunningTotal is { } r ? r.ToString() : string.Empty;
 }
 
 /// <summary>One prescribed control (ordered layout): order, code, taken-or-missing.</summary>
@@ -195,6 +223,9 @@ public sealed class ExpectedControlViewModel
 
     /// <summary>Status glyph: ✓ taken / — missing.</summary>
     public string Glyph => _control.Taken ? "✓" : "—";
+
+    /// <summary>Point value of this control (rogaine), e.g. "+5"; blank when it carries no points.</summary>
+    public string PointsText => _control.Points is { } p && p != 0 ? $"+{p}" : string.Empty;
 
     /// <summary>"missing" label for an un-taken control; blank otherwise.</summary>
     public string Note => _control.Taken ? string.Empty : _localization.Get("FinishRead.Splits.Missing");

@@ -40,6 +40,10 @@ public sealed class SplitPrintDocument
     /// The renderer appends the localized explanation after the status code.</summary>
     public string StatusDetail { get; init; } = string.Empty;
 
+    /// <summary>Total points scored (rogaine), as plain digits; blank for a non-scoring discipline. Printed
+    /// on its own header line ("Сума балів: 12"), mirroring the status line.</summary>
+    public string TotalPointsText { get; init; } = string.Empty;
+
     /// <summary>Start punch wall-clock time ("HH:mm:ss"), blank when unknown — printed on the СТАРТ/ФІНІШ line.</summary>
     public string StartClock { get; init; } = string.Empty;
 
@@ -86,6 +90,7 @@ public sealed record SplitPrintLabels(
     string AvgPaceLabel,
     string StatusLabel,
     string MpDetailLabel,
+    string TotalPointsLabel,
     string ColSeq,
     string ColCode,
     string ColElapsed,

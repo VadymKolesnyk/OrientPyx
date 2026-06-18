@@ -117,13 +117,25 @@ internal sealed class ReceiptRenderer
         // On the 80 mm roll add ~5 mm of slack on each side so edge-clipping printers don't cut the slip.
         var sideInset = _widthMm > 56 ? WideSideInset : 0f;
         float left = hardX + sideInset;
-        float right = e.PageBounds.Width - hardX - sideInset;
+
+        // The right edge is the physical roll width (302/215 hundredths-inch), NOT PageBounds.Width: a
+        // "Print to PDF" printer (or a driver that ignores the custom PaperSize) reports a far wider page,
+        // which let the table draw past the roll's real edge — the overflow seen on the 80 mm slip. Clamp to
+        // the smaller of the two so we never lay out wider than the paper actually is.
+        var rollWidthHundredths = _widthMm > 56 ? 302f : 215f;
+        float rollRight = rollWidthHundredths - hardX - sideInset;
+        float right = Math.Min(e.PageBounds.Width - hardX - sideInset, rollRight);
         float centreX = (left + right) / 2f;
         float y = hardY + 4f;
 
-        using var headFont = new System.Drawing.Font("Consolas", 8.5f, System.Drawing.FontStyle.Bold);
-        using var monoFont = new System.Drawing.Font("Consolas", 8.5f);
-        using var monoBold = new System.Drawing.Font("Consolas", 8.5f, System.Drawing.FontStyle.Bold);
+        // Pick the largest font that still lets the widest table row fit the printable band, so the slip
+        // never spills off the right edge (it did on 80 mm at the old fixed 8.5 pt). Capped at 8.5 pt so a
+        // narrow table on a wide roll doesn't blow up; the search floor (6 pt) keeps it legible.
+        var fontSize = FitFontSize(g, right - left);
+
+        using var headFont = new System.Drawing.Font("Consolas", fontSize, System.Drawing.FontStyle.Bold);
+        using var monoFont = new System.Drawing.Font("Consolas", fontSize);
+        using var monoBold = new System.Drawing.Font("Consolas", fontSize, System.Drawing.FontStyle.Bold);
 
         // The first page draws the whole header; a continuation page (overflow) jumps straight to the rows.
         if (_nextRow == 0)
@@ -237,14 +249,29 @@ internal sealed class ReceiptRenderer
             y = DrawCentred(g, status, font, centreX, y);
         }
 
+        // Total points (rogaine) on its own line, mirroring the status line: "Сума балів: 12".
+        if (_doc.TotalPointsText.Length > 0)
+            y = DrawCentred(g, $"{_labels.TotalPointsLabel}: {_doc.TotalPointsText}", font, centreX, y);
+
         return y;
     }
 
     // The monospace column header, centred on the same width as the rows so the table sits in the middle.
-    // The leg-time column header ("ЧАС") is nudged one position left vs its right-aligned data slot (per
-    // request) so it doesn't crowd the distance header; every other header keeps the data's right alignment.
+    // Scored disciplines (rogaine) get their own compact header — №ПП КП БАЛ ЧАС — with the points column
+    // pulled in right after the code (no off-course flag, no leg/distance/pace columns). The set-course
+    // header keeps the full layout; its leg-time header ("ЧАС") is nudged one position left vs its
+    // right-aligned data slot (per request) so it doesn't crowd the distance header.
     private float DrawColumnHeader(System.Drawing.Graphics g, float centreX, float y, System.Drawing.Font mono)
     {
+        if (_doc.HasPoints)
+        {
+            var sSeq = Pad(_labels.ColSeq, 3);
+            var sCode = PadRight(_labels.ColCode, 4);
+            var sPts = PadRight(_labels.ColPoints, 5);
+            var sElapsed = Pad(_labels.ColElapsed, 7);
+            return DrawMono(g, $"{sSeq} {sCode} {sPts} {sElapsed}", mono, centreX, y);
+        }
+
         // Right-align each header into its column width, but for the leg slot shift one char left: pad it to
         // width-1 (so it sits one space earlier) then add the missing space back, keeping the row width.
         var seq = Pad(_labels.ColSeq, 3);
@@ -254,29 +281,63 @@ internal sealed class ReceiptRenderer
         var dist = Pad(_labels.ColDistance, 6);
         var pace = Pad(_labels.ColPace, 6);
         var header = $"{seq} {code} {elapsed} {leg} {dist} {pace}";
-        if (_doc.HasPoints)
-            header += $" {Pad(_labels.ColPoints, 5)}";
         // The header line has no off-course flag, so it gets the same one-space lead as on-course rows.
         return DrawMono(g, " " + header, mono, centreX, y);
     }
 
+    // Largest Consolas size (≤ 8.5 pt, ≥ 6 pt) at which the widest fixed-width table line still fits the
+    // printable band. Consolas is monospace, so the table's width is driven by its longest row; we measure
+    // that one string at decreasing sizes and stop at the first that fits. Prevents the 80 mm overflow.
+    private float FitFontSize(System.Drawing.Graphics g, float available)
+    {
+        var widest = WidestTableLine();
+        for (var size = 8.5f; size > 6f; size -= 0.25f)
+        {
+            using var f = new System.Drawing.Font("Consolas", size);
+            if (g.MeasureString(widest, f).Width <= available)
+                return size;
+        }
+        return 6f;
+    }
+
+    // The longest fixed-width line the table will draw, so FitFontSize can size to it. Headers and rows all
+    // share the same column layout (same total character count), so any full row works — we build one from
+    // the column header (it always uses every column) plus the leading off-course flag column. Scored
+    // (rogaine) docs use the compact №ПП КП БАЛ ЧАС layout with no flag/leg/distance/pace columns.
+    private string WidestTableLine()
+    {
+        if (_doc.HasPoints)
+            return $"{Pad(_labels.ColSeq, 3)} {PadRight(_labels.ColCode, 4)} {PadRight(_labels.ColPoints, 5)} {Pad(_labels.ColElapsed, 7)}";
+
+        var seq = Pad(_labels.ColSeq, 3);
+        var code = PadRight(_labels.ColCode, 4);
+        var elapsed = Pad(_labels.ColElapsed, 7);
+        var leg = Pad(_labels.ColLeg, 6);
+        var dist = Pad(_labels.ColDistance, 6);
+        var pace = Pad(_labels.ColPace, 6);
+        return $"*{seq} {code} {elapsed} {leg} {dist} {pace}";
+    }
+
     private void DrawRow(System.Drawing.Graphics g, SplitPrintRow row, float centreX, float y, System.Drawing.Font mono)
     {
-        var line = Compose(row.Index, row.Code, row.ElapsedText, row.LegText, row.DistanceText,
-            row.PaceText, row.PointsText ?? string.Empty);
+        // Scored (rogaine) rows are compact — №ПП КП БАЛ ЧАС — and carry the points the runner earned at the
+        // control ("+3") in the БАЛ slot instead of an off-course "*" flag, the number/code shifted left.
+        if (_doc.HasPoints)
+        {
+            var scored = $"{Pad(row.Index, 3)} {PadRight(row.Code, 4)} {PadRight(row.PointsText ?? string.Empty, 5)} {Pad(row.ElapsedText, 7)}";
+            DrawMono(g, scored, mono, centreX, y);
+            return;
+        }
+
+        var line = Compose(row.Index, row.Code, row.ElapsedText, row.LegText, row.DistanceText, row.PaceText);
         // Off-course punches are marked with a leading "*" on the left so they stand out on a mono receipt.
         var prefix = row.OnCourse ? " " : "*";
         DrawMono(g, prefix + line, mono, centreX, y);
     }
 
-    // Builds a fixed-width row string: seq(3) code(4) elapsed(7) leg(6) dist(6) pace(6) [pts(5)].
-    private string Compose(string seq, string code, string elapsed, string leg, string dist, string pace, string pts)
-    {
-        var s = $"{Pad(seq, 3)} {PadRight(code, 4)} {Pad(elapsed, 7)} {Pad(leg, 6)} {Pad(dist, 6)} {Pad(pace, 6)}";
-        if (_doc.HasPoints)
-            s += $" {Pad(pts, 5)}";
-        return s;
-    }
+    // Builds a fixed-width set-course row string: seq(3) code(4) elapsed(7) leg(6) dist(6) pace(6).
+    private static string Compose(string seq, string code, string elapsed, string leg, string dist, string pace) =>
+        $"{Pad(seq, 3)} {PadRight(code, 4)} {Pad(elapsed, 7)} {Pad(leg, 6)} {Pad(dist, 6)} {Pad(pace, 6)}";
 
     // Draws a monospace line centred on its own measured width (so header and rows share an axis).
     private static float DrawMono(System.Drawing.Graphics g, string text, System.Drawing.Font font, float centreX, float y)

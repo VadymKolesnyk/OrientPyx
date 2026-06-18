@@ -105,6 +105,13 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     /// <summary>Day picker is shown only when the competition has more than one day.</summary>
     public bool ShowDaySelector => DayOptions.Count > 1;
 
+    /// <summary>
+    /// True when the current day scores points (rogaine, or any group overriding to a scored format) —
+    /// drives the table's optional «Бали» column. Raised so the View rebuilds its bands when it flips.
+    /// </summary>
+    [ObservableProperty]
+    private bool _showScoreColumn;
+
     // --- Auto-read panel (in-memory only; never persisted, per the session rule) -----------------
 
     [ObservableProperty]
@@ -152,14 +159,16 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     public async Task LoadAsync()
     {
         var hasDay = _session.CurrentDay is not null;
-        var (days, rows, chips) = await _busy.RunAsync(async () =>
+        var (days, rows, chips, usesScore) = await _busy.RunAsync(async () =>
         {
             var d = await _editor.GetDaysAsync();
             var r = hasDay ? await _editor.GetFinishReadoutRowsAsync() : (IReadOnlyList<FinishReadoutRow>)[];
             var c = await _editor.GetRentalChipsAsync();
-            return (d, r, c);
+            var s = hasDay && await _editor.CurrentDayUsesScoreAsync();
+            return (d, r, c, s);
         });
         RentalChips.Reset(chips.Select(c => c.Number));
+        ShowScoreColumn = usesScore;
 
         _syncingDay = true;
         try
@@ -376,6 +385,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         AvgPaceLabel: Localization.Get("FinishRead.Print.AvgPace"),
         StatusLabel: Localization.Get("FinishRead.Col.Status"),
         MpDetailLabel: Localization.Get("FinishRead.Print.MpDetail"),
+        TotalPointsLabel: Localization.Get("FinishRead.Print.TotalPoints"),
         ColSeq: Localization.Get("FinishRead.Print.ColSeq"),
         ColCode: Localization.Get("FinishRead.Print.ColCode"),
         ColElapsed: Localization.Get("FinishRead.Print.ColElapsed"),

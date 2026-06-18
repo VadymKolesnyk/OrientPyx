@@ -369,6 +369,13 @@ public interface ICompetitionEditorService
     Task<IReadOnlyList<FinishReadoutRow>> GetFinishReadoutRowsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// True when the current day scores points — its default discipline is point-scoring (rogaine), or
+    /// any group on the day overrides to one. Drives the finish-read log's optional «Бали» column. False
+    /// when no day is selected.
+    /// </summary>
+    Task<bool> CurrentDayUsesScoreAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Builds the passage/splits view for one logged read-out (by its id) on the current day, comparing
     /// what the chip punched against the holder's prescribed course. The shape is discipline-specific
     /// (ordered for a set course, scored for the free-choice formats — see <see cref="SplitsView"/>).

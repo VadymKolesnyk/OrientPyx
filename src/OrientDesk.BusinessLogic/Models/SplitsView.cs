@@ -95,8 +95,14 @@ public sealed class SplitsView
     /// <summary>Scored-layout rows: allowed controls in passage order, then unvisited ones.</summary>
     public IReadOnlyList<ScoreEntry> Entries { get; init; } = [];
 
-    /// <summary>Total points collected (scored layout only); 0 otherwise.</summary>
+    /// <summary>Total points collected; 0 for a non-scoring layout.</summary>
     public int TotalPoints { get; init; }
+
+    /// <summary>
+    /// True when this view scores points (rogaine), so the passage/course lists show the point columns and
+    /// the summary includes the points total. A plain set-course ordered view is false.
+    /// </summary>
+    public bool HasPoints { get; init; }
 
     /// <summary>Count of controls visited that count toward the result (both layouts).</summary>
     public int VisitedCount { get; init; }
@@ -136,13 +142,16 @@ public sealed record PassagePunch(
     TimeSpan? Elapsed,
     PassageKind Kind = PassageKind.Control,
     decimal? LegKm = null,
-    double? PaceSecondsPerKm = null);
+    double? PaceSecondsPerKm = null,
+    int? Points = null,
+    int? RunningTotal = null);
 
 /// <summary>
 /// One control of the prescribed course (ordered layout): its 1-based order, its code, and whether the
-/// chip took it (<see cref="Taken"/> false = a missing control).
+/// chip took it (<see cref="Taken"/> false = a missing control). For a scored (rogaine) layout the
+/// "course" is the allowed-control set sorted by code and <see cref="Points"/> carries the control's value.
 /// </summary>
-public sealed record ExpectedControl(int Sequence, string Code, bool Taken);
+public sealed record ExpectedControl(int Sequence, string Code, bool Taken, int? Points = null);
 
 /// <summary>
 /// One row of the scored (score/choice/rogaine) splits panel: an allowed control, whether it was

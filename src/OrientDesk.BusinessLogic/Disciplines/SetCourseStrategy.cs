@@ -110,7 +110,7 @@ public sealed class SetCourseStrategy : DisciplineStrategyBase
             // is missing. The "to" position comes from the control's code; the "from" is carried along.
             var toPoint = ResolveCoord(context, code);
             var toMap = ResolveMap(context, code);
-            var legKm = LegDistanceKm(context, prevPoint, toPoint, prevMap, toMap);
+            var legKm = LegDistanceKm(_distance, context, prevPoint, toPoint, prevMap, toMap);
             var pace = PaceSecondsPerKm(leg, legKm);
 
             var onCourse = ei < expected.Count
@@ -137,7 +137,7 @@ public sealed class SetCourseStrategy : DisciplineStrategyBase
         // distance/pace run from the last position to the finish point.
         var finishLeg = prev is { } fp && context.FinishTime is { } ft ? ft - fp : (TimeSpan?)null;
         var finishElapsed = context.StartTime is { } fs && context.FinishTime is { } ft2 ? ft2 - fs : (TimeSpan?)null;
-        var finishKm = LegDistanceKm(context, prevPoint, context.FinishCoord, prevMap, context.FinishMap);
+        var finishKm = LegDistanceKm(_distance, context, prevPoint, context.FinishCoord, prevMap, context.FinishMap);
         var finishPace = PaceSecondsPerKm(finishLeg, finishKm);
         passage.Add(new PassagePunch(0, string.Empty, OnCourse: false,
             context.FinishTime, finishLeg, finishElapsed, PassageKind.Finish, finishKm, finishPace));
@@ -156,38 +156,4 @@ public sealed class SetCourseStrategy : DisciplineStrategyBase
         };
     }
 
-    // The coordinate of a punched control code, or a coordinate-less point when the code is unknown.
-    private static GeoPoint ResolveCoord(SplitsContext context, string code) =>
-        context.CoordsByCode.TryGetValue(code, out var p) ? p : default;
-
-    // The paper-map position of a punched control code, or a position-less point when unknown.
-    private static MapPoint ResolveMap(SplitsContext context, string code) =>
-        context.MapByCode.TryGetValue(code, out var p) ? p : default;
-
-    // Straight-line distance (km) of the leg between two positions, via the shared course distance
-    // calculator. Prefers the paper-map source (map mm × scale, undistorted) when this leg's endpoints
-    // are both mapped and a scale is known; otherwise falls back to the geographic coordinates. Null
-    // when neither source covers both endpoints (so the leg distance is unknown).
-    private decimal? LegDistanceKm(SplitsContext context, GeoPoint from, GeoPoint to, MapPoint fromMap, MapPoint toMap)
-    {
-        if (context.MapScale is > 0 && fromMap.HasCoordinates && toMap.HasCoordinates)
-        {
-            var mapKm = _distance.TotalKilometresFromMap([fromMap, toMap], context.MapScale.Value);
-            return mapKm > 0m ? mapKm : null;
-        }
-
-        if (!from.HasCoordinates || !to.HasCoordinates)
-            return null;
-
-        var km = _distance.TotalKilometres([from, to]);
-        return km > 0m ? km : null;
-    }
-
-    // Pace in seconds per kilometre for one leg; null when the leg time or distance is missing/zero.
-    private static double? PaceSecondsPerKm(TimeSpan? leg, decimal? legKm)
-    {
-        if (leg is not { } t || t <= TimeSpan.Zero || legKm is not { } km || km <= 0m)
-            return null;
-        return t.TotalSeconds / (double)km;
-    }
 }

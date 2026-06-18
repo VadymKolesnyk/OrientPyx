@@ -1098,6 +1098,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 participant.FsouCode,
                 participant.IsFsouMember,
                 participant.Payment,
+                participant.Note,
                 participant.Team,
                 participant.PaysRaisedFee,
                 fees.SelectedDiscountIds(participant.Id),
@@ -1188,6 +1189,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             FsouCode = (row.FsouCode ?? string.Empty).Trim(),
             IsFsouMember = row.IsFsouMember,
             Payment = (row.Payment ?? string.Empty).Trim(),
+            Note = (row.Note ?? string.Empty).Trim(),
             // Team is competition-level (shared across days), persisted with the participant identity.
             Team = (row.Team ?? string.Empty).Trim()
         }, cancellationToken);
@@ -1547,6 +1549,12 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             StringComparer.OrdinalIgnoreCase);
         var dayDefault = CurrentDayDefaultDiscipline;
 
+        // Per-control point values — needed only to tally the «Бали» column on point-scoring days.
+        var pointsByCode = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var cp in controlPoints)
+            if (cp.Points is { } pts)
+                pointsByCode[cp.Code.Trim()] = pts;
+
         // A chip on a day is unique (enforced when assigning), so first match by trimmed chip wins.
         var holderByChip = new Dictionary<string, ParticipantDay>(StringComparer.OrdinalIgnoreCase);
         foreach (var link in links)
@@ -1570,8 +1578,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     detail = string.Empty;
                 }
                 var elapsed = resolvedStart is { } s && r.FinishTime is { } f ? f - s : (TimeSpan?)null;
+                // «Бали»: tally the scored splits when this row's discipline scores points (rogaine); null otherwise.
+                GroupDaySettings? gs = link.GroupId is { } sgid && settingsByGroup.TryGetValue(sgid, out var sset) ? sset : null;
+                var discipline = gs?.DisciplineOverride ?? dayDefault;
+                int? score = _strategies.For(discipline).UsesControlPointPoints
+                    ? ScoreFor(r, gs, startFinishCodes, pointsByCode, discipline)
+                    : null;
                 rows.Add(new FinishReadoutRow(r.Id, r.Order, r.ChipNumber, r.StartTime, r.FinishTime,
-                    IsKnown: true, p.Number, p.FullName, group, status, detail, resolvedStart, elapsed));
+                    IsKnown: true, p.Number, p.FullName, group, status, detail, resolvedStart, elapsed, score));
             }
             else
             {
@@ -1583,6 +1597,19 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             }
         }
         return rows;
+    }
+
+    public async Task<bool> CurrentDayUsesScoreAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+            return false;
+
+        var dayDefault = CurrentDayDefaultDiscipline;
+        if (_strategies.For(dayDefault).UsesControlPointPoints)
+            return true;
+
+        var settings = await _eventStore.GetGroupDaySettingsAsync(FolderPath, CurrentDayId, cancellationToken);
+        return settings.Any(s => _strategies.For(s.DisciplineOverride ?? dayDefault).UsesControlPointPoints);
     }
 
     public async Task<SplitsView?> GetFinishSplitsAsync(Guid readoutId, CancellationToken cancellationToken = default)
@@ -1747,6 +1774,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             ResultText = resultElapsed is { } re ? re.ToString("h\\:mm\\:ss") : string.Empty,
             StatusText = status,
             StatusDetail = row.StatusDetail,
+            TotalPointsText = view.Layout == SplitsLayout.Scored
+                ? view.TotalPoints.ToString(CultureInfo.InvariantCulture)
+                : string.Empty,
             StartClock = startClock,
             FinishClock = finishClock,
             TotalDistanceText = FormatDistanceMetres(totalKm),
@@ -1807,7 +1837,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 LegText: string.Empty,
                 ElapsedText: FormatDuration(entry.Elapsed),
                 PaceText: string.Empty,
-                PointsText: entry.Points != 0 ? $"+{entry.Points}" : "0",
+                // Points earned at this control print in the БАЛ column ("+3"); only a visited control earns
+                // them, so an unvisited allowed control shows blank (it didn't add to the total).
+                PointsText: entry.Visited && entry.Points != 0 ? $"+{entry.Points}" : string.Empty,
                 OnCourse: entry.Visited));
         }
         return list;
@@ -2205,6 +2237,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             FsouCode = (row.FsouCode ?? string.Empty).Trim(),
             IsFsouMember = row.IsFsouMember,
             Payment = (row.Payment ?? string.Empty).Trim(),
+            Note = (row.Note ?? string.Empty).Trim(),
             Team = (row.Team ?? string.Empty).Trim()
         }, cancellationToken);
     }
@@ -2362,6 +2395,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             FsouCode: p.FsouCode,
             IsFsouMember: p.IsFsouMember,
             Payment: p.Payment,
+            Note: p.Note,
             PaysRaisedFee: paysRaisedFee,
             SelectedDiscountIds: selectedDiscountIds ?? [],
             TotalEntryFee: totalEntryFee,

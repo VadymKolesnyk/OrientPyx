@@ -70,12 +70,21 @@ public partial class FinishReadView : UserControl
 
         _vm.Localization.PropertyChanged += OnLocalizationChanged;
         _vm.Splits.PropertyChanged += OnSplitsChanged;
+        _vm.PropertyChanged += OnViewModelChanged;
         BuildBands();
         ArrangeSplit();
         SeedPassageColumns();
     }
 
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => BuildBands();
+
+    // Rebuild the columns when the «Бали» column's visibility flips (the day changed to/from a scoring
+    // discipline). Bands bake the visible column set at build time, so they must be rebuilt on a change.
+    private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(FinishReadViewModel.ShowScoreColumn))
+            BuildBands();
+    }
 
     // Re-arrange the table/panel split when the dock side flips or the panel shows/hides (a hidden panel
     // must give its track back to the table; the size is read from the VM each time). When the ordered
@@ -189,13 +198,19 @@ public partial class FinishReadView : UserControl
         if (_vm is null)
             return;
 
-        Sheet.Bands = new SheetColumnBuilder(_vm.Localization)
+        var builder = new SheetColumnBuilder(_vm.Localization)
             .Text("FinishRead.Col.Id", nameof(FinishReadRowViewModel.Order), minWidth: 60)
             .Custom("FinishRead.Col.Chip", BuildChipCell, minWidth: 120,
                     sortPath: nameof(FinishReadRowViewModel.ChipNumber))
             .Text("FinishRead.Col.StartTime", nameof(FinishReadRowViewModel.StartTimeText), minWidth: 110)
             .Text("FinishRead.Col.FinishTime", nameof(FinishReadRowViewModel.FinishTimeText), minWidth: 110)
-            .Text("FinishRead.Col.ResultTime", nameof(FinishReadRowViewModel.ElapsedText), minWidth: 110)
+            .Text("FinishRead.Col.ResultTime", nameof(FinishReadRowViewModel.ElapsedText), minWidth: 110);
+
+        // «Бали»: only on point-scoring days (rogaine, or a group overriding to one).
+        if (_vm.ShowScoreColumn)
+            builder.Text("FinishRead.Col.Score", nameof(FinishReadRowViewModel.ScoreText), minWidth: 70);
+
+        Sheet.Bands = builder
             .Text("FinishRead.Col.Number", nameof(FinishReadRowViewModel.ParticipantNumber), minWidth: 80)
             .Text("FinishRead.Col.FullName", nameof(FinishReadRowViewModel.FullName), minWidth: 220)
             .Text("FinishRead.Col.Group", nameof(FinishReadRowViewModel.GroupName), minWidth: 140)
@@ -303,6 +318,7 @@ public partial class FinishReadView : UserControl
         {
             _vm.Localization.PropertyChanged -= OnLocalizationChanged;
             _vm.Splits.PropertyChanged -= OnSplitsChanged;
+            _vm.PropertyChanged -= OnViewModelChanged;
         }
         _vm = null;
     }

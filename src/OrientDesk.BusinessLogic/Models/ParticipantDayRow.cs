@@ -28,6 +28,7 @@ public sealed record ParticipantDayRow(
     string FsouCode,
     bool IsFsouMember,
     string Payment,
+    string Note,
     bool PaysRaisedFee,
     IReadOnlyList<Guid> SelectedDiscountIds,
     decimal TotalEntryFee,

@@ -529,6 +529,7 @@ public sealed class EventStore : IEventStore
         existing.FsouCode = participant.FsouCode;
         existing.IsFsouMember = participant.IsFsouMember;
         existing.Payment = participant.Payment;
+        existing.Note = participant.Note;
         existing.Team = participant.Team;
         await db.SaveChangesAsync(cancellationToken);
     }

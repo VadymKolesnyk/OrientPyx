@@ -93,6 +93,9 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private string _payment;
 
     [ObservableProperty]
+    private string _note;
+
+    [ObservableProperty]
     private string _chip;
 
     [ObservableProperty]
@@ -174,6 +177,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         _birthDate = row.BirthDate;
         _representative = row.Representative;
         _fsouCode = row.FsouCode;
+        _note = row.Note;
         _isFsouMember = row.IsFsouMember;
         _payment = row.Payment;
         _chip = row.Chip;
@@ -453,6 +457,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         FsouCode: (FsouCode ?? string.Empty).Trim(),
         IsFsouMember: IsFsouMember,
         Payment: (Payment ?? string.Empty).Trim(),
+        Note: (Note ?? string.Empty).Trim(),
         // Fee fields are persisted through their own callbacks, not the row save; carry them so the
         // record round-trips unchanged (the editor's row-save ignores them).
         PaysRaisedFee: PaysRaisedFee,
@@ -647,6 +652,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     // The competition-level text/bool fields persist through the debounced row save like the identity.
     partial void OnRepresentativeChanged(string value) => QueueSave();
     partial void OnFsouCodeChanged(string value) => QueueSave();
+    partial void OnNoteChanged(string value) => QueueSave();
     partial void OnIsFsouMemberChanged(bool value)
     {
         QueueSave();

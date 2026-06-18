@@ -236,6 +236,7 @@ public partial class ParticipantsView : UserControl
                     nameof(ParticipantDayRowViewModel.Coach) => "Coach",
                     nameof(ParticipantDayRowViewModel.Representative) => "Representative",
                     nameof(ParticipantDayRowViewModel.FsouCode) => "FsouCode",
+                    nameof(ParticipantDayRowViewModel.Note) => "Note",
                     nameof(ParticipantDayRowViewModel.Team) => "Team",
                     _ => null,
                 };

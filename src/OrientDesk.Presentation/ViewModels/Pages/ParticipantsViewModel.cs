@@ -822,6 +822,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 (row.FsouCode ?? string.Empty).Trim(),
                 row.IsFsouMember,
                 (row.Payment ?? string.Empty).Trim(),
+                (row.Note ?? string.Empty).Trim(),
                 (row.Team ?? string.Empty).Trim(),
                 // Fee fields are persisted through their own callbacks, not the identity save; pass
                 // through the row's current values so the DTO is well-formed (the editor ignores them).
@@ -1240,6 +1241,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         fields.Add(F("Representative", Dialogs.BulkEditFieldKind.Text, "Participants.Col.Representative"));
         fields.Add(F("FsouCode", Dialogs.BulkEditFieldKind.Text, "Participants.Col.FsouCode"));
         fields.Add(F("Payment", Dialogs.BulkEditFieldKind.Text, "Participants.Col.Payment"));
+        fields.Add(F("Note", Dialogs.BulkEditFieldKind.Text, "Participants.Col.Note"));
         if ((IsDayMode && ShowTeamColumn) || (IsRosterMode && RosterShowsTeam))
             fields.Add(F("Team", Dialogs.BulkEditFieldKind.Text, "Participants.Col.Team"));
         fields.Add(F("IsFsouMember", Dialogs.BulkEditFieldKind.Bool, "Participants.Col.IsFsouMember"));
@@ -1384,6 +1386,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             case "Representative": row.Representative = r.Text ?? string.Empty; break;
             case "FsouCode": row.FsouCode = r.Text ?? string.Empty; break;
             case "Payment": row.Payment = r.Text ?? string.Empty; break;
+            case "Note": row.Note = r.Text ?? string.Empty; break;
             case "Team": row.Team = r.Text ?? string.Empty; break;
             case "StartTime": row.StartTimeText = r.Text ?? string.Empty; break;
             case "IsFsouMember": row.IsFsouMember = r.Bool ?? false; break;
@@ -1415,6 +1418,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             case "Representative": row.Representative = r.Text ?? string.Empty; break;
             case "FsouCode": row.FsouCode = r.Text ?? string.Empty; break;
             case "Payment": row.Payment = r.Text ?? string.Empty; break;
+            case "Note": row.Note = r.Text ?? string.Empty; break;
             case "Team": row.Team = r.Text ?? string.Empty; break;
             case "IsFsouMember": row.IsFsouMember = r.Bool ?? false; break;
             case "PaysRaisedFee": row.PaysRaisedFee = r.Bool ?? false; break;

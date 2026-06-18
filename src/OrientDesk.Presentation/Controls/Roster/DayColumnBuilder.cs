@@ -60,6 +60,7 @@ public sealed class DayColumnBuilder
         ConfigurePaymentColumn(paymentBand.Columns[0], nameof(ParticipantDayRowViewModel.PaymentStatusKey),
             nameof(ParticipantDayRowViewModel.Payment));
         bands.Add(paymentBand);
+        bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Note", nameof(ParticipantDayRowViewModel.Note), fixedWidth: 180));
 
         // This day's group (combo bound directly on the row) and chip (free text, unique per day).
         bands.Add(Identity(SheetCellKind.RowGroup, "Participants.Col.Group", path: string.Empty,

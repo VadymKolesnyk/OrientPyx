@@ -43,6 +43,7 @@ public sealed class RosterColumnBuilder
         (SheetCellKind.IdentityText, "Participants.Col.FsouCode",      nameof(ParticipantRosterRowViewModel.FsouCode),      120),
         (SheetCellKind.IdentityBool, "Participants.Col.IsFsouMember",  nameof(ParticipantRosterRowViewModel.IsFsouMember),  110),
         (SheetCellKind.PaymentText,  "Participants.Col.Payment",       nameof(ParticipantRosterRowViewModel.Payment),       120),
+        (SheetCellKind.IdentityText, "Participants.Col.Note",          nameof(ParticipantRosterRowViewModel.Note),          180),
     ];
 
     /// <summary>The team column, appended to the identity set only for team disciplines (rogaine).</summary>
