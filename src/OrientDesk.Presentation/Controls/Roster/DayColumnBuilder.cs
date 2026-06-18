@@ -87,6 +87,13 @@ public sealed class DayColumnBuilder
             sortPath: nameof(ParticipantDayRowViewModel.PlaceSort), fixedWidth: 70));
         if (showScore)
         {
+            // Editable points correction («Бонус») sits before the computed «Бали», so the cause reads left
+            // of the effect. A signed-integer cell with fill-down paste straight to the row's BonusText.
+            var bonusBand = Identity(SheetCellKind.RowBonus, "Participants.Col.Bonus", nameof(ParticipantDayRowViewModel.BonusText),
+                sortPath: nameof(ParticipantDayRowViewModel.BonusSort), fixedWidth: 80);
+            bonusBand.Columns[0].PastePath = nameof(ParticipantDayRowViewModel.BonusText);
+            bands.Add(bonusBand);
+
             var scoreBand = Identity(SheetCellKind.RowResultText, "Participants.Col.Score", nameof(ParticipantDayRowViewModel.ScoreText),
                 sortPath: nameof(ParticipantDayRowViewModel.ScoreSort), fixedWidth: 70);
             scoreBand.Columns[0].ToolTipPath = nameof(ParticipantDayRowViewModel.ScoreTooltip);

@@ -45,6 +45,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly DusshViewModel _dussh;
     private readonly RanksViewModel _ranks;
     private readonly EntryFeesViewModel _entryFees;
+    private readonly ProtocolsViewModel _protocols;
 
     public MainWindowViewModel(
         ISessionService session,
@@ -65,6 +66,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         DusshViewModel dussh,
         RanksViewModel ranks,
         EntryFeesViewModel entryFees,
+        ProtocolsViewModel protocols,
         ILocalizationService localization,
         IUiScaleService uiScale,
         IBusyService busy,
@@ -89,6 +91,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _dussh = dussh;
         _ranks = ranks;
         _entryFees = entryFees;
+        _protocols = protocols;
         Localization = localization;
         _uiScale = uiScale;
         _busy = busy;
@@ -244,6 +247,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _shell.SelectedPage = _entryFees;
     }
 
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenProtocolsAsync()
+    {
+        await _protocols.LoadAsync();
+        _shell.SelectedPage = _protocols;
+    }
+
     /// <summary>Called once after construction to restore the last session or show the picker.</summary>
     public async Task InitializeAsync()
     {
@@ -311,6 +321,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenDusshCommand.NotifyCanExecuteChanged();
         OpenRanksCommand.NotifyCanExecuteChanged();
         OpenEntryFeesCommand.NotifyCanExecuteChanged();
+        OpenProtocolsCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsEventSelected));
         OnPropertyChanged(nameof(WindowTitle));
 

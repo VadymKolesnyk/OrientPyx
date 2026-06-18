@@ -1,0 +1,140 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientDesk.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientDesk.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="820" d:DesignHeight="640"
+             x:Class="OrientDesk.Presentation.Views.Pages.ProtocolsView"
+             x:DataType="pages:ProtocolsViewModel">
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Heading + day picker + generate button -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="{Binding Title}" Classes="h1"
+                           FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+                <TextBlock Text="{Binding Text}" Classes="subtitle" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <controls:SearchableComboBox IsVisible="{Binding ShowDaySelector}"
+                          MinWidth="140" VerticalAlignment="Center"
+                          SearchWatermark="{Binding Localization[Common.Search]}"
+                          ItemsSource="{Binding DayOptions}"
+                          SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="pages:DayOption">
+                            <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </controls:SearchableComboBox>
+                <Button Classes="accent" VerticalAlignment="Center"
+                        Click="OnGenerateClick"
+                        Content="{Binding Localization[Protocols.Generate]}" />
+            </StackPanel>
+        </Grid>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="16" MaxWidth="720">
+
+                <!-- Header text -->
+                <Border Classes="card" Padding="22">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="{Binding Localization[Protocols.Header.Title]}" Classes="h2"
+                                   FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+                        <TextBlock Text="{Binding Localization[Protocols.Header.Hint]}" Classes="subtitle"
+                                   TextWrapping="Wrap" />
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[Protocols.Header.MainTitle]}" Classes="label" />
+                            <TextBox Text="{Binding Title, Mode=TwoWay}"
+                                     PlaceholderText="{Binding Localization[Protocols.DefaultTitle]}" />
+                        </StackPanel>
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[Protocols.Header.Subtitle]}" Classes="label" />
+                            <TextBox Text="{Binding Subtitle, Mode=TwoWay}" />
+                        </StackPanel>
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[Protocols.Header.CompetitionType]}" Classes="label" />
+                            <TextBox Text="{Binding CompetitionType, Mode=TwoWay}" />
+                        </StackPanel>
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                            <StackPanel Grid.Column="0" Spacing="6">
+                                <TextBlock Text="{Binding Localization[Protocols.Header.Date]}" Classes="label" />
+                                <TextBox Text="{Binding DateText, Mode=TwoWay}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="6">
+                                <TextBlock Text="{Binding Localization[Protocols.Header.Venue]}" Classes="label" />
+                                <TextBox Text="{Binding Venue, Mode=TwoWay}" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Layout: orientation -->
+                <Border Classes="card" Padding="22">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="{Binding Localization[Protocols.Layout.Title]}" Classes="h2"
+                                   FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+                        <CheckBox IsChecked="{Binding IsLandscape, Mode=TwoWay}"
+                                  Content="{Binding Localization[Protocols.Layout.Landscape]}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Columns: order + visibility -->
+                <Border Classes="card" Padding="22">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="{Binding Localization[Protocols.Columns.Title]}" Classes="h2"
+                                   FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+                        <TextBlock Text="{Binding Localization[Protocols.Columns.Hint]}" Classes="subtitle"
+                                   TextWrapping="Wrap" />
+
+                        <ItemsControl ItemsSource="{Binding Columns}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="pages:ProtocolColumnItemViewModel">
+                                    <Border Classes="card" Padding="10,6" Margin="0,0,0,6">
+                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                            <CheckBox Grid.Column="0" VerticalAlignment="Center"
+                                                      IsChecked="{Binding Visible, Mode=TwoWay}"
+                                                      Content="{Binding Caption}" />
+                                            <Button Grid.Column="1" Classes="ghost" Padding="8,4"
+                                                    Command="{Binding $parent[ItemsControl].((pages:ProtocolsViewModel)DataContext).MoveColumnUpCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip.Tip="{Binding $parent[ItemsControl].((pages:ProtocolsViewModel)DataContext).Localization[Protocols.Columns.Up]}">
+                                                <PathIcon Data="M12,6 l7,8 H5 Z" Width="12" Height="12" />
+                                            </Button>
+                                            <Button Grid.Column="2" Classes="ghost" Padding="8,4"
+                                                    Command="{Binding $parent[ItemsControl].((pages:ProtocolsViewModel)DataContext).MoveColumnDownCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip.Tip="{Binding $parent[ItemsControl].((pages:ProtocolsViewModel)DataContext).Localization[Protocols.Columns.Down]}">
+                                                <PathIcon Data="M5,10 h14 l-7,8 Z" Width="12" Height="12" />
+                                            </Button>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- Save settings -->
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button Content="{Binding Localization[Protocols.SaveSettings]}"
+                            Classes="ghost"
+                            Command="{Binding SaveSettingsCommand}" />
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                                IsVisible="{Binding SettingsSaved}">
+                        <PathIcon Data="M5,12 l4,4 l10,-10" Width="16" Height="16"
+                                  Foreground="{DynamicResource SuccessBrush}" />
+                        <TextBlock Text="{Binding Localization[Protocols.SettingsSavedHint]}"
+                                   Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </StackPanel>
+
+            </StackPanel>
+        </ScrollViewer>
+
+    </DockPanel>
+
+</UserControl>

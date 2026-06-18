@@ -693,6 +693,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     public string CollapsedResult => MergedResult(c => c.ResultText_);
     public string CollapsedPlace => MergedResult(c => c.PlaceText);
     public string CollapsedScore => MergedResult(c => c.ScoreText);
+    // The «бонус» merged cell is read-only like the start-time one (bonus is edited per day, not on the
+    // merged cell): the shared entered value across member days, or "різні" when they disagree.
+    public string CollapsedBonus => MergedResult(c => c.BonusText);
 
     // The shared value of a read-only per-day result text across member days, or the localized "різні"
     // when they disagree; blank when no member day. Mirrors the collapsed start-time behaviour.
@@ -714,6 +717,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         OnPropertyChanged(nameof(CollapsedResult));
         OnPropertyChanged(nameof(CollapsedPlace));
         OnPropertyChanged(nameof(CollapsedScore));
+        OnPropertyChanged(nameof(CollapsedBonus));
     }
 
     private void OnDayCellChanged(object? sender, PropertyChangedEventArgs e)
@@ -741,6 +745,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             case nameof(RosterDayCellViewModel.ResultText_):
             case nameof(RosterDayCellViewModel.PlaceText):
             case nameof(RosterDayCellViewModel.ScoreText):
+            case nameof(RosterDayCellViewModel.BonusText):
                 RaiseResultAggregates();
                 break;
             case nameof(RosterDayCellViewModel.IsMember):

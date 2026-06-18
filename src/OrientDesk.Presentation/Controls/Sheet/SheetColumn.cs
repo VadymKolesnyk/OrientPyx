@@ -30,6 +30,13 @@ public enum SheetCellKind
     /// <see cref="SheetColumn.IdentityPath"/>. Used by the day-mode start-time column.</summary>
     StartTimeText,
 
+    /// <summary>
+    /// A signed-integer text field (optional '-' then digits) edited directly on the row by its
+    /// <see cref="SheetColumn.IdentityPath"/>. Used by the day-mode «бонус» points-correction column;
+    /// only present on point-scoring days.
+    /// </summary>
+    RowBonus,
+
     /// <summary>The competition-level birth date (CalendarDatePicker).</summary>
     BirthDate,
 
@@ -44,6 +51,10 @@ public enum SheetCellKind
 
     /// <summary>A single day's "out of competition" flag (CheckBox), bound to Days[i].</summary>
     OutOfCompetition,
+
+    /// <summary>A single day's «бонус» points correction (signed-integer TextBox), bound to Days[i].
+    /// Disabled/greyed for non-members. The roster «Бонус» column.</summary>
+    Bonus,
 
     /// <summary>
     /// A group ComboBox bound directly on the row (GroupOptions/SelectedGroup), not via Days[i].

@@ -60,6 +60,14 @@ public sealed record ParticipantDayResult(
 
     /// <summary>Over-time penalty deducted from <see cref="ScoreGross"/> (the "Y"); null/0 when none. Rogaine only.</summary>
     public int? ScorePenalty { get; init; }
+
+    /// <summary>
+    /// The judge's points correction («бонус») applied to this result, or null when none was entered. For a
+    /// teamed rogaine runner this is the team correction actually folded into <see cref="Score"/> (the
+    /// smallest entered member bonus), so the «Бали» tooltip's "+бонус" line matches the team total; for
+    /// everyone else it is this participant's own entered bonus. Folded into <see cref="Score"/> already.
+    /// </summary>
+    public int? Bonus { get; init; }
 }
 
 /// <summary>One control's contribution to the «Бали» total: the control code and its point value.</summary>

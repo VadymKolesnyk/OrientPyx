@@ -32,8 +32,14 @@ public static class DataAccessServiceCollectionExtensions
         // Reads .xlsx workbooks for the participant import (column mapping reuses the CSV path).
         services.AddSingleton<ISpreadsheetParser, XlsxParser>();
 
+        // Writes .xlsx workbooks for the participants-table export (the CSV writer lives in BusinessLogic).
+        services.AddSingleton<ITabularWriter, XlsxTabularWriter>();
+
         // Split printouts to an installed system printer (GDI; Windows-only at runtime).
         services.AddSingleton<ISplitPrintService, SplitPrintService>();
+
+        // Renders a results protocol to a Word (.docx) document (Open XML; the builder is in BusinessLogic).
+        services.AddSingleton<IResultProtocolWriter, DocxResultProtocolWriter>();
 
         return services;
     }

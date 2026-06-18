@@ -202,6 +202,12 @@ public interface IEventStore
     /// from <see cref="UpdateParticipantDayAsync"/> so the row save never clobbers it. No-op if missing.</summary>
     Task SetParticipantDayResultStatusAsync(string eventFolderPath, Guid linkId, FinishStatus? status, CancellationToken cancellationToken = default);
 
+    /// <summary>Writes only the points-correction «бонус» on one participant-day link (added to the computed
+    /// «Бали»; may be positive or negative, null clears it). The sole writer of that column — kept separate
+    /// from <see cref="UpdateParticipantDayAsync"/> so the debounced row save never clobbers it. No-op if
+    /// the link is missing.</summary>
+    Task SetParticipantDayBonusAsync(string eventFolderPath, Guid linkId, int? bonus, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Sets the chip on many participant-day links at once, in a single transaction (used by bulk chip
     /// assignment). Each tuple is (participantId, dayId, chip); a missing link is skipped. One

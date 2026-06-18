@@ -34,6 +34,16 @@ public class ParticipantDay
     public bool OutOfCompetition { get; set; }
 
     /// <summary>
+    /// A judge's manual points correction for a point-scoring day (rogaine / score formats): added to the
+    /// computed «Бали» total. May be positive or negative; null means "not entered" (no correction).
+    /// Distinct from null vs 0 matters for rogaine, where the team correction is the smallest entered
+    /// bonus among the team's members (an un-entered member doesn't drag the team's bonus to 0). Held here
+    /// per participant-day; like <see cref="ResultStatusOverride"/> it has its own writer so the debounced
+    /// row save can't wipe it.
+    /// </summary>
+    public int? Bonus { get; set; }
+
+    /// <summary>
     /// A judge's manual finish-status override for this participant on this day. When set, it wins over
     /// the status derived from the chip's read-out (so the participant tables show the manually-set
     /// OK/DNS/DSQ/… instead of the computed one); null leaves the status to automatic evaluation. Held

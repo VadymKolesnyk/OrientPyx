@@ -69,6 +69,9 @@
         <DataTemplate DataType="dialogs:FinishReadoutEditViewModel">
             <dialogViews:FinishReadoutEditView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:ExportFormatViewModel">
+            <dialogViews:ExportFormatView />
+        </DataTemplate>
     </Window.DataTemplates>
 
     <!-- One transform scales the WHOLE interface — fonts, inputs, paddings, spacing,
@@ -224,6 +227,13 @@
                           Command="{Binding OpenRanksCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Competition.EntryFees]}"
                           Command="{Binding OpenEntryFeesCommand}" />
+            </MenuItem>
+
+            <!-- Protocols: result protocols + (later) other printed outputs, while a competition is open -->
+            <MenuItem Header="{Binding Localization[Menu.Protocols]}"
+                      IsVisible="{Binding IsEventSelected}">
+                <MenuItem Header="{Binding Localization[Menu.Protocols.Results]}"
+                          Command="{Binding OpenProtocolsCommand}" />
             </MenuItem>
 
             <!-- Navigation tabs, shown only while a competition is open -->

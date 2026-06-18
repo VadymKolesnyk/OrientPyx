@@ -355,11 +355,27 @@ public interface ICompetitionEditorService
     Task SetParticipantDayResultStatusAsync(Guid participantId, Guid dayId, FinishStatus? status, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Sets (or clears, when null) a judge's «бонус» points correction for a participant on a point-scoring
+    /// day, persisted on the participant-day link. Added to the computed «Бали»; may be positive or
+    /// negative. For a rogaine team the correction applied to the team total is the smallest entered bonus
+    /// among its members (see the scoring pass). A no-op when the participant is not a member that day.
+    /// </summary>
+    Task SetParticipantDayBonusAsync(Guid participantId, Guid dayId, int? bonus, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Computes the run results for one day from the finish read-outs, keyed by participant id. Used by
     /// the participant tables to refresh the result columns (and re-ranked places) in-memory after a
     /// status edit, without reloading the whole grid. Empty when no competition is selected.
     /// </summary>
     Task<IReadOnlyDictionary<Guid, ParticipantDayResult>> GetDayResultsByParticipantAsync(Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gathers the results-protocol data for one day: every group that runs on the day, with its course
+    /// metadata (length, control count, time limit) and its participant rows carrying the computed result.
+    /// Groups follow the day grid order; rows are unsorted (the protocol builder orders them). Empty when
+    /// no competition is selected.
+    /// </summary>
+    Task<ResultProtocolData> GetResultProtocolDataAsync(Guid dayId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Loads the current day's finish-read log (ordered by sequence), each row resolved against the
@@ -529,7 +545,11 @@ public readonly record struct RentalChipImportResult(int Added, int Skipped);
 /// <summary>Outcome of a finish read-out import, for reporting back to the user.</summary>
 /// <param name="Added">How many read-out rows were newly logged.</param>
 /// <param name="Skipped">How many records were already logged (identical content) and were skipped.</param>
-public readonly record struct FinishReadoutImportResult(int Added, int Skipped);
+/// <param name="AddedIds">Ids of the newly-logged rows, in log order — used to auto-print just the new reads.</param>
+public readonly record struct FinishReadoutImportResult(int Added, int Skipped, IReadOnlyList<Guid> AddedIds)
+{
+    public FinishReadoutImportResult(int Added, int Skipped) : this(Added, Skipped, []) { }
+}
 
 /// <summary>Outcome of a group import, for reporting back to the user.</summary>
 /// <param name="Added">How many groups were newly attached to the day.</param>

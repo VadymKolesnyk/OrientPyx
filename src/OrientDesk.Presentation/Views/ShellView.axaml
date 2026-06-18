@@ -49,6 +49,9 @@
         <DataTemplate DataType="pages:EntryFeesViewModel">
             <views:EntryFeesView />
         </DataTemplate>
+        <DataTemplate DataType="pages:ProtocolsViewModel">
+            <views:ProtocolsView />
+        </DataTemplate>
         <DataTemplate DataType="pages:PageViewModelBase">
             <views:PageView />
         </DataTemplate>

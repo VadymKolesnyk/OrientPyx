@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using OrientDesk.BusinessLogic.Enums;
@@ -56,6 +57,9 @@ public static class ResultText
             sb.Append('\n').Append(string.Format(loc.Get("Participants.Score.Tooltip.Gross"), gross));
             sb.Append('\n').Append(string.Format(loc.Get("Participants.Score.Tooltip.Penalty"), penalty));
         }
+        // Points correction («бонус»), when one applied — signed so a negative correction reads clearly.
+        if (r.Bonus is { } bonus && bonus != 0)
+            sb.Append('\n').Append(string.Format(loc.Get("Participants.Score.Tooltip.Bonus"), bonus.ToString("+0;-0", CultureInfo.InvariantCulture)));
         sb.Append('\n').Append(string.Format(loc.Get("Participants.Score.Tooltip.Total"), total));
         return sb.ToString();
     }

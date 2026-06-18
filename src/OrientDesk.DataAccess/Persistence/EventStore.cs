@@ -640,8 +640,9 @@ public sealed class EventStore : IEventStore
         existing.Chip = link.Chip;
         existing.StartTime = link.StartTime;
         existing.OutOfCompetition = link.OutOfCompetition;
-        // NOTE: ResultStatusOverride is deliberately NOT copied — it has its own writer
-        // (SetParticipantDayResultStatusAsync) so this debounced row save can't wipe the judge override.
+        // NOTE: ResultStatusOverride and Bonus are deliberately NOT copied — each has its own writer
+        // (SetParticipantDayResultStatusAsync / SetParticipantDayBonusAsync) so this debounced row save
+        // can't wipe the judge override or the points correction.
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -655,6 +656,20 @@ public sealed class EventStore : IEventStore
 
         // The sole writer of the override column (UpdateParticipantDayAsync leaves it untouched).
         existing.ResultStatusOverride = status;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SetParticipantDayBonusAsync(string eventFolderPath, Guid linkId, int? bonus, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.ParticipantDays.FirstOrDefaultAsync(p => p.Id == linkId, cancellationToken);
+        if (existing is null)
+            return;
+
+        // The sole writer of the bonus column (UpdateParticipantDayAsync leaves it untouched), so the
+        // debounced row save can't wipe a points correction set here.
+        existing.Bonus = bonus;
         await db.SaveChangesAsync(cancellationToken);
     }
 

@@ -46,5 +46,8 @@ public sealed record RosterDayCell(
     string Chip,
     TimeSpan? StartTime,
     bool OutOfCompetition,
+    // The judge's points correction («бонус») for this day; null = none (empty for a non-member). Editable
+    // on point-scoring days, already folded into Result.Score by ComputeDayResultsAsync.
+    int? Bonus,
     // This day's computed run result (read-only except Status). Empty for a non-member or an unread chip.
     ParticipantDayResult Result);

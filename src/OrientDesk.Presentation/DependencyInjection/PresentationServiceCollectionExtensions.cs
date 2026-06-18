@@ -28,6 +28,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<IXmlImportFlow, XmlImportFlow>();
         services.AddSingleton<IParticipantImportFlow, ParticipantImportFlow>();
         services.AddSingleton<ICsvImportFlow, CsvImportFlow>();
+        services.AddSingleton<IParticipantExportFlow, ParticipantExportFlow>();
         services.AddSingleton<IFileReadoutPoller, FileReadoutPoller>();
         services.AddSingleton<IBackgroundActivityService, BackgroundActivityService>();
         services.AddSingleton<ITableLayoutStore, TableLayoutStore>();
@@ -56,6 +57,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<DusshViewModel>();
         services.AddSingleton<RanksViewModel>();
         services.AddSingleton<EntryFeesViewModel>();
+        services.AddSingleton<ProtocolsViewModel>();
 
         return services.BuildServiceProvider();
     }

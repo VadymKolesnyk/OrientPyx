@@ -19,4 +19,11 @@ public class AppSettingsRow
 
     /// <summary>Thermal-roll width in millimetres for split printouts (56 or 80; default 80).</summary>
     public int ReceiptWidthMm { get; set; } = 80;
+
+    /// <summary>
+    /// The results-protocol settings (orientation, column set + order, header text) serialised as JSON.
+    /// Blank until the user saves a configuration; the caller then applies the defaults. Stored at the
+    /// application level so one protocol layout is shared across competitions.
+    /// </summary>
+    public string ResultProtocolJson { get; set; } = string.Empty;
 }

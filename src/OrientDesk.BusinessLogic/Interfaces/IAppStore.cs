@@ -27,6 +27,11 @@ public interface IAppStore
 
     Task SavePrintSettingsAsync(string printerName, int widthMm, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the stored results-protocol settings JSON, or null/blank when never saved.</summary>
+    Task<string?> GetResultProtocolJsonAsync(CancellationToken cancellationToken = default);
+
+    Task SaveResultProtocolJsonAsync(string json, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the last opened competition identifier + day number, if any.</summary>
     Task<(string? Identifier, int? DayNumber)> GetLastSessionAsync(CancellationToken cancellationToken = default);
 

@@ -98,6 +98,12 @@ public interface IDialogService : INotifyPropertyChanged
     Task<bool> ShowPrintSettingsAsync(PrintSettingsViewModel dialog);
 
     /// <summary>
+    /// Shows the export-format modal (CSV vs Excel) and awaits the user's choice. Returns the chosen
+    /// format on confirm, or null when cancelled/closed. Only one dialog is shown at a time.
+    /// </summary>
+    Task<BusinessLogic.Models.ExportFormat?> ShowExportFormatAsync(ExportFormatViewModel dialog);
+
+    /// <summary>
     /// Shows the finish-read edit modal (reassign chip, edit times/punches, set status) and awaits the
     /// user's choice. Returns the confirmed edit on save, or null when cancelled/closed. Only one dialog
     /// is shown at a time.

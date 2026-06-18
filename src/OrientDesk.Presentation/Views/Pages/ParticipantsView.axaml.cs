@@ -146,6 +146,56 @@ public partial class ParticipantsView : UserControl
             await _vm.ImportFromCsvAsync(CsvEncodingReader.Decode(bytes));
     }
 
+    // Export the active table's current view. The visible columns + displayed rows live in the
+    // SheetTable, so we capture them here (the VM never references the table directly) and hand the
+    // snapshot to the VM's export flow, which shows the format modal and serialises the bytes. When the
+    // user confirmed, we run the save dialog (it needs the window's StorageProvider) and write the file.
+    private async void OnExportClick(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null)
+            return;
+
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null)
+            return;
+
+        var table = _vm.IsRosterMode ? RosterTable : DayTable;
+        var view = table.ExportView();
+
+        var result = await _vm.ExportAsync(view);
+        if (result is null)
+            return; // nothing to export or cancelled
+
+        var file = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = _vm.Localization.Get("Participants.Export"),
+            SuggestedFileName = result.SuggestedFileName,
+            DefaultExtension = result.Extension,
+            FileTypeChoices =
+            [
+                new FilePickerFileType(result.Extension.ToUpperInvariant())
+                {
+                    Patterns = [$"*.{result.Extension}"],
+                    MimeTypes = [result.MimeType]
+                }
+            ]
+        });
+
+        if (file is null)
+            return; // save cancelled
+
+        try
+        {
+            await using var stream = await file.OpenWriteAsync();
+            await stream.WriteAsync(result.Bytes);
+        }
+        catch
+        {
+            // The file couldn't be written (permissions, removed drive, etc.). Nothing more we can do
+            // here; the user can retry. A future toast could surface it.
+        }
+    }
+
     // Bulk-assign start numbers. The on-screen (filtered + sorted) row order lives in the SheetTable,
     // so we read the active table's VisibleItems here — the VM never references the table directly —
     // and hand that ordered list to the command, which prompts for the start number and applies them.

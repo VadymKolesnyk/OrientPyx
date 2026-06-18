@@ -19,7 +19,10 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     private readonly Action<RosterDayCellViewModel> _requestStartTimeChange;
     private readonly Action<RosterDayCellViewModel> _requestOutOfCompetitionChange;
     private readonly Action<RosterDayCellViewModel> _requestResultStatusChange;
+    private readonly Action<RosterDayCellViewModel> _requestBonusChange;
     private ParticipantDayResult _result;
+    // The judge's points correction («бонус») for this day; null = none. Edited via BonusText.
+    private int? _bonus;
     private bool _initialized;
 
     [ObservableProperty]
@@ -50,7 +53,8 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         Action<RosterDayCellViewModel> requestChipChange,
         Action<RosterDayCellViewModel> requestStartTimeChange,
         Action<RosterDayCellViewModel> requestOutOfCompetitionChange,
-        Action<RosterDayCellViewModel> requestResultStatusChange)
+        Action<RosterDayCellViewModel> requestResultStatusChange,
+        Action<RosterDayCellViewModel> requestBonusChange)
     {
         _participantId = participantId;
         DayId = cell.DayId;
@@ -62,6 +66,7 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         _requestStartTimeChange = requestStartTimeChange;
         _requestOutOfCompetitionChange = requestOutOfCompetitionChange;
         _requestResultStatusChange = requestResultStatusChange;
+        _requestBonusChange = requestBonusChange;
         Localization = localization;
 
         GroupOptions = groupOptions;
@@ -70,6 +75,7 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         _committedChip = cell.Chip;
         _startTime = cell.StartTime;
         _outOfCompetition = cell.OutOfCompetition;
+        _bonus = cell.Bonus;
 
         _result = cell.Result;
         // The "(… — автоматично)" sentinel reflects what auto would compute (override cleared), NOT the
@@ -106,6 +112,33 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     public string ScoreText => ResultText.Score(_result);
     /// <summary>Per-control «Бали» breakdown for the score column's hover tooltip; null when no score.</summary>
     public string? ScoreTooltip => ResultText.ScoreTooltip(_result, Localization);
+
+    /// <summary>
+    /// The judge's points correction («бонус») as editable signed-integer text; empty clears it. Editable
+    /// only on days the participant runs; persists through the page callback (which recomputes «Бали» live).
+    /// An unparseable entry reverts on the next notification.
+    /// </summary>
+    public string BonusText
+    {
+        get => BonusFormat.Format(_bonus);
+        set
+        {
+            if (!BonusFormat.TryParse(value, out var parsed))
+            {
+                OnPropertyChanged(); // unparseable — revert the box to the stored value
+                return;
+            }
+            if (parsed == _bonus)
+                return;
+            _bonus = parsed;
+            OnPropertyChanged();
+            if (_initialized && IsMember)
+                _requestBonusChange(this);
+        }
+    }
+
+    /// <summary>The parsed bonus the user entered (null = none). Read by the page's bonus callback.</summary>
+    public int? Bonus => _bonus;
 
     // CanEditStatus folds in membership, so re-raise it when membership flips.
     partial void OnIsMemberChanged(bool value) => OnPropertyChanged(nameof(CanEditStatus));
@@ -241,6 +274,8 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
             Chip = string.Empty;
             StartTime = null;
             OutOfCompetition = false;
+            _bonus = null;
+            OnPropertyChanged(nameof(BonusText));
             ApplyResult(ParticipantDayResult.Empty);
         }
         _initialized = true;

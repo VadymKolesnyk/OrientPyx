@@ -36,6 +36,10 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.App
                     b.Property<int>("ReceiptWidthMm")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("ResultProtocolJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.ToTable("Settings");

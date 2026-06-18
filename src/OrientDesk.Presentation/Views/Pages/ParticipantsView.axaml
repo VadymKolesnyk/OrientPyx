@@ -48,6 +48,15 @@
                         <TextBlock Text="{Binding Localization[Participants.ImportCsv]}" />
                     </StackPanel>
                 </Button>
+                <!-- Export the current view (visible columns + displayed rows) to CSV or Excel. A modal
+                     picks the format; the file is then chosen via a save dialog in code-behind (it needs
+                     the window's StorageProvider). -->
+                <Button Click="OnExportClick" Classes="ghost">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <PathIcon Data="M12,21 v-10 m0,0 l-4,4 m4,-4 l4,4 M5,5 v-2 h14 v2" Width="14" Height="14" />
+                        <TextBlock Text="{Binding Localization[Participants.Export]}" />
+                    </StackPanel>
+                </Button>
                 <!-- Bulk-assign sequential start numbers to the rows currently shown (filtered/sorted),
                      in on-screen order. The visible order lives in the SheetTable, so the click handler
                      in code-behind reads the active table's VisibleItems and hands them to the VM. -->

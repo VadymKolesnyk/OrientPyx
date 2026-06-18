@@ -414,6 +414,9 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("Bonus")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Chip")
                         .IsRequired()
                         .HasColumnType("TEXT");

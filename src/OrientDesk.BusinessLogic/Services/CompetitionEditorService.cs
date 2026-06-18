@@ -1070,12 +1070,12 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     var name = link.GroupId is { } gid && groupName.TryGetValue(gid, out var n) ? n : string.Empty;
                     var result = resultsByDay.TryGetValue(day.Id, out var dr) && dr.TryGetValue(link.Id, out var r)
                         ? r : ParticipantDayResult.Empty;
-                    cells.Add(new RosterDayCell(day.Id, day.Number, link.Id, IsMember: true, link.GroupId, name, link.Chip, link.StartTime, link.OutOfCompetition, result));
+                    cells.Add(new RosterDayCell(day.Id, day.Number, link.Id, IsMember: true, link.GroupId, name, link.Chip, link.StartTime, link.OutOfCompetition, link.Bonus, result));
                     memberDays.Add((link.GroupId, link.Chip));
                 }
                 else
                 {
-                    cells.Add(new RosterDayCell(day.Id, day.Number, LinkId: null, IsMember: false, GroupId: null, GroupName: string.Empty, Chip: string.Empty, StartTime: null, OutOfCompetition: false, ParticipantDayResult.Empty));
+                    cells.Add(new RosterDayCell(day.Id, day.Number, LinkId: null, IsMember: false, GroupId: null, GroupName: string.Empty, Chip: string.Empty, StartTime: null, OutOfCompetition: false, Bonus: null, ParticipantDayResult.Empty));
                 }
             }
             var region = participant.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
@@ -1365,6 +1365,19 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         }
     }
 
+    public async Task SetParticipantDayBonusAsync(Guid participantId, Guid dayId, int? bonus, CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var existing = links.FirstOrDefault(l => l.ParticipantId == participantId);
+        if (existing is null)
+            return;
+
+        // Its own writer (UpdateParticipantDayAsync leaves the bonus column alone), so the debounced row
+        // save can't wipe the correction set here. The recompute folds it into «Бали» (see ComputeDayResultsAsync).
+        await _eventStore.SetParticipantDayBonusAsync(folder, existing.Id, bonus, cancellationToken);
+    }
+
     public async Task<IReadOnlyDictionary<Guid, ParticipantDayResult>> GetDayResultsByParticipantAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null)
@@ -1384,6 +1397,95 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             if (byLink.TryGetValue(link.Id, out var r))
                 byParticipant[link.ParticipantId] = r;
         return byParticipant;
+    }
+
+    public async Task<ResultProtocolData> GetResultProtocolDataAsync(Guid dayId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return new ResultProtocolData([]);
+
+        var folder = FolderPath;
+        var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        var day = days.FirstOrDefault(d => d.Id == dayId);
+        if (day is null)
+            return new ResultProtocolData([]);
+
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
+        var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
+        var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
+        var dusshes = await _eventStore.GetDusshesAsync(folder, cancellationToken);
+        var controlPoints = await _eventStore.GetControlPointsAsync(folder, dayId, cancellationToken);
+
+        var byParticipant = participants.ToDictionary(p => p.Id);
+        var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
+        var regionName = regions.ToDictionary(r => r.Id, r => r.Name);
+        var clubName = clubs.ToDictionary(c => c.Id, c => c.Name);
+        var dusshName = dusshes.ToDictionary(d => d.Id, d => d.Name);
+        var settingsByGroup = settings.ToDictionary(s => s.GroupId);
+
+        // Start/finish codes, so a group's control count counts only the running controls in its course.
+        var startFinishCodes = new HashSet<string>(
+            controlPoints
+                .Where(c => c.Type is ControlPointType.Start or ControlPointType.Finish)
+                .Select(c => c.Code.Trim()),
+            StringComparer.OrdinalIgnoreCase);
+
+        var results = await ComputeDayResultsAsync(folder, day, cancellationToken);
+
+        // Bucket each member's row under its group; a member with no group is skipped (a protocol is by group).
+        var rowsByGroup = new Dictionary<Guid, List<ResultProtocolRow>>();
+        foreach (var link in links)
+        {
+            if (link.GroupId is not { } gid || !byParticipant.TryGetValue(link.ParticipantId, out var p))
+                continue;
+
+            var region = p.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
+            var club = p.ClubId is { } cid && clubName.TryGetValue(cid, out var cn) ? cn : string.Empty;
+            var dussh = p.DusshId is { } did && dusshName.TryGetValue(did, out var dn) ? dn : string.Empty;
+            var result = results.TryGetValue(link.Id, out var r) ? r : ParticipantDayResult.Empty;
+
+            if (!rowsByGroup.TryGetValue(gid, out var bucket))
+            {
+                bucket = [];
+                rowsByGroup[gid] = bucket;
+            }
+            bucket.Add(new ResultProtocolRow(
+                p.Number, p.FullName, p.BirthDate, club, region, dussh, p.Coach, p.Rank, p.Team.Trim(), result));
+        }
+
+        // One section per group that runs on the day (a group with no members still appears, empty),
+        // in the day grid order. A group's discipline (its override, else the day default) decides whether
+        // the section is teamed (rogaine), so the builder groups members by team.
+        var sections = new List<ResultProtocolGroup>(settings.Count);
+        foreach (var s in settings.OrderBy(s => s.Order))
+        {
+            if (!groupName.TryGetValue(s.GroupId, out var name))
+                continue;
+
+            var discipline = s.DisciplineOverride ?? day.DefaultDiscipline;
+            var isTeam = _strategies.For(discipline).Type == DisciplineType.Rogaine;
+
+            var controlCount = CountCourseControls(s.CourseOrder, startFinishCodes);
+            var rows = rowsByGroup.TryGetValue(s.GroupId, out var b) ? b : [];
+            sections.Add(new ResultProtocolGroup(
+                name, s.Order, s.DistanceKm, controlCount, s.TimeLimitSeconds, isTeam, rows));
+        }
+
+        return new ResultProtocolData(sections);
+    }
+
+    // Counts the running controls in a free-form course order ("S1 31 32 33 F"), excluding the day's
+    // start/finish codes. Null when the course order is blank (unknown count), so the protocol omits it.
+    private static int? CountCourseControls(string courseOrder, HashSet<string> startFinishCodes)
+    {
+        var codes = (courseOrder ?? string.Empty)
+            .Split([' ', '\t', ',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (codes.Length == 0)
+            return null;
+        return codes.Count(c => !startFinishCodes.Contains(c));
     }
 
     /// <summary>
@@ -1459,7 +1561,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 // A rogaine member with no read-out makes their team incomplete — record it so the team
                 // earns no place until every member has finished.
                 if (isRogaine)
-                    teamMembers.Add(TeamMember.Incomplete(link.Id, link.GroupId, TeamKeyFor(link, teamByParticipant)));
+                    teamMembers.Add(TeamMember.Incomplete(link.Id, link.GroupId, TeamKeyFor(link, teamByParticipant), link.Bonus));
                 continue;
             }
 
@@ -1477,7 +1579,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             if (_strategies.For(discipline).UsesControlPointPoints)
             {
                 var detail = ScoreDetailFor(readout, gs, startFinishCodes, pointsByCode, discipline, resolvedStart);
-                score = detail.Net;
+                // Fold in the judge's points correction («бонус»): the personal score is the computed net
+                // plus this member's own bonus. For a teamed rogaine runner the team pass below replaces
+                // this Score with the team net (which folds in the team-min bonus instead).
+                score = detail.Net + (link.Bonus ?? 0);
                 punchedAllowed = detail.Punched;
             }
 
@@ -1486,17 +1591,19 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             {
                 // Personal breakdown (the controls this chip scored). For a teamed rogaine runner the team
                 // pass replaces this with the team's common controls so the tooltip matches the team Бали.
-                ScoreBreakdown = punchedAllowed is { } pa ? ScoreLines(pa, pointsByCode) : []
+                ScoreBreakdown = punchedAllowed is { } pa ? ScoreLines(pa, pointsByCode) : [],
+                Bonus = link.Bonus
             };
 
             if (isRogaine)
             {
                 // Rogaine: collect the member for the team tally. The elapsed time (finish − start) feeds
-                // both the team's over-time penalty (max member time) and the tie-break (last finisher).
+                // both the team's over-time penalty (max member time) and the tie-break (last finisher);
+                // the bonus feeds the team-min points correction.
                 var elapsed = resolvedStart is { } rs2 && readout.FinishTime is { } f2 ? f2 - rs2 : (TimeSpan?)null;
                 teamMembers.Add(new TeamMember(
                     link.Id, link.GroupId, TeamKeyFor(link, teamByParticipant), link.OutOfCompetition,
-                    status == FinishStatus.Ok, punchedAllowed ?? [], elapsed, gs, discipline));
+                    status == FinishStatus.Ok, punchedAllowed ?? [], elapsed, gs, discipline, link.Bonus));
             }
             // Only OK results are placed; a non-positive result time can't be ranked by time.
             else if (status == FinishStatus.Ok)
@@ -1548,12 +1655,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     /// </summary>
     private sealed record TeamMember(
         Guid LinkId, Guid? GroupId, string TeamKey, bool OutOfCompetition, bool Ok,
-        IReadOnlySet<string> Punched, TimeSpan? Elapsed, GroupDaySettings? Settings, DisciplineType Discipline)
+        IReadOnlySet<string> Punched, TimeSpan? Elapsed, GroupDaySettings? Settings, DisciplineType Discipline,
+        int? Bonus)
     {
         /// <summary>A member with no read-out: present in the team but not finished, so the team is incomplete.</summary>
-        public static TeamMember Incomplete(Guid linkId, Guid? groupId, string teamKey) =>
+        public static TeamMember Incomplete(Guid linkId, Guid? groupId, string teamKey, int? bonus) =>
             new(linkId, groupId, teamKey, OutOfCompetition: false, Ok: false,
-                Punched: new HashSet<string>(StringComparer.OrdinalIgnoreCase), Elapsed: null, Settings: null, Discipline: DisciplineType.Rogaine);
+                Punched: new HashSet<string>(StringComparer.OrdinalIgnoreCase), Elapsed: null, Settings: null,
+                Discipline: DisciplineType.Rogaine, Bonus: bonus);
     }
 
     // Ranks rogaine members by team and writes the team's net «Бали» and place onto every member.
@@ -1596,23 +1705,30 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             // strategy's penalty math by feeding it a synthetic read-out whose elapsed = the max time.
             var maxElapsed = roster.Select(m => m.Elapsed).Max();
             var settings = roster.Select(m => m.Settings).FirstOrDefault(s => s is not null);
-            var net = ApplyTeamPenalty(gross, maxElapsed, settings, roster[0].Discipline);
+            var afterPenalty = ApplyTeamPenalty(gross, maxElapsed, settings, roster[0].Discipline);
+
+            // Points correction («бонус»): the smallest bonus ENTERED by a team member (an un-entered member
+            // does not drag it to 0). Null when nobody entered one ⇒ no correction. Added after the penalty.
+            var teamBonus = roster.Select(m => m.Bonus).Where(b => b.HasValue).Select(b => b!.Value).DefaultIfEmpty().Min();
+            var teamBonusOrNull = roster.Any(m => m.Bonus.HasValue) ? teamBonus : (int?)null;
+            var net = afterPenalty + teamBonus;
 
             // Rule 5: tie-break by the last finisher's time (the largest member time).
             var time = maxElapsed is { } e && e > TimeSpan.Zero ? e : TimeSpan.MaxValue;
             ranked.Add((team.Key.GroupId, net, time, linkIds));
 
             // The team's net Бали shows on every member row, with the per-control breakdown (the common
-            // controls) + the over-time penalty for the «Бали» tooltip.
+            // controls), the over-time penalty and the points correction for the «Бали» tooltip.
             var breakdown = ScoreLines(common, pointsByCode);
-            var penalty = gross - net;
+            var penalty = gross - afterPenalty;
             foreach (var id in linkIds)
                 results[id] = results[id] with
                 {
                     Score = net,
                     ScoreBreakdown = breakdown,
                     ScoreGross = penalty > 0 ? gross : null,
-                    ScorePenalty = penalty > 0 ? penalty : null
+                    ScorePenalty = penalty > 0 ? penalty : null,
+                    Bonus = teamBonusOrNull
                 };
         }
 
@@ -2249,7 +2365,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         }
 
         await _eventStore.AddFinishReadoutsAsync(folder, toAdd, cancellationToken);
-        return new FinishReadoutImportResult(Added: toAdd.Count, Skipped: skipped);
+        return new FinishReadoutImportResult(
+            Added: toAdd.Count,
+            Skipped: skipped,
+            AddedIds: toAdd.Select(r => r.Id).ToList());
     }
 
     public Task<int> ClearFinishReadoutsAsync(CancellationToken cancellationToken = default)
@@ -2693,6 +2812,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Team: p.Team,
             StartTime: link.StartTime,
             OutOfCompetition: link.OutOfCompetition,
+            Bonus: link.Bonus,
             DayDefaultDiscipline: CurrentDayDefaultDiscipline,
             Result: result ?? ParticipantDayResult.Empty);
     }

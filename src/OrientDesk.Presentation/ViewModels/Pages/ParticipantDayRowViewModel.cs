@@ -39,6 +39,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private readonly Action<ParticipantDayRowViewModel> _requestRaisedFeeChange;
     private readonly Action<ParticipantDayRowViewModel, Guid, bool> _requestDiscountChange;
     private readonly Action<ParticipantDayRowViewModel> _requestResultStatusChange;
+    private readonly Action<ParticipantDayRowViewModel> _requestBonusChange;
     private EntryFeeContext _fees;
     private readonly IReadOnlyList<ParticipantFeeDay> _otherDays;
 
@@ -110,6 +111,10 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     // The computed run result for this day (read-only except the status override below).
     private ParticipantDayResult _result;
 
+    // The judge's points correction («бонус») for this day; null = none. Edited via BonusText, persisted
+    // through its own callback (like the status override) so the debounced row save can't wipe it.
+    private int? _bonus;
+
     /// <summary>The selected finish-status option: an "(автоматично)" sentinel (no override, the computed
     /// status shows through) or a settable status. Editing it persists the override on the participant-day.</summary>
     [ObservableProperty]
@@ -137,7 +142,8 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         Action<ParticipantDayRowViewModel> requestAddDussh,
         Action<ParticipantDayRowViewModel> requestRaisedFeeChange,
         Action<ParticipantDayRowViewModel, Guid, bool> requestDiscountChange,
-        Action<ParticipantDayRowViewModel> requestResultStatusChange)
+        Action<ParticipantDayRowViewModel> requestResultStatusChange,
+        Action<ParticipantDayRowViewModel> requestBonusChange)
     {
         _linkId = row.LinkId;
         _participantId = row.ParticipantId;
@@ -156,6 +162,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         _requestRaisedFeeChange = requestRaisedFeeChange;
         _requestDiscountChange = requestDiscountChange;
         _requestResultStatusChange = requestResultStatusChange;
+        _requestBonusChange = requestBonusChange;
         _fees = fees;
         _otherDays = row.OtherDays;
         Localization = localization;
@@ -185,6 +192,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         _team = row.Team;
         _startTime = row.StartTime;
         _outOfCompetition = row.OutOfCompetition;
+        _bonus = row.Bonus;
 
         // Computed result + the status-override dropdown. The resting cell shows the effective status
         // text (ResultStatusText); the dropdown's "auto" sentinel reads "(<computed> — автоматично)".
@@ -440,6 +448,35 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     /// <summary>Raw score for sorting.</summary>
     public int ScoreSort => _result.Score ?? -1;
 
+    /// <summary>
+    /// The judge's points correction («бонус») as editable signed-integer text; empty clears it. A valid
+    /// integer persists through the page's bonus callback (which recomputes «Бали» live); an unparseable
+    /// entry reverts on the next notification. Shown only on point-scoring days (<see cref="UsesScore"/>).
+    /// </summary>
+    public string BonusText
+    {
+        get => BonusFormat.Format(_bonus);
+        set
+        {
+            if (!BonusFormat.TryParse(value, out var parsed))
+            {
+                OnPropertyChanged(); // unparseable — revert the box to the stored value
+                return;
+            }
+            if (parsed == _bonus)
+                return;
+            _bonus = parsed;
+            OnPropertyChanged();
+            if (_initialized)
+                _requestBonusChange(this);
+        }
+    }
+
+    /// <summary>The parsed bonus the user entered (null = none). Read by the page's bonus callback.</summary>
+    public int? Bonus => _bonus;
+    /// <summary>Raw bonus for sorting (min when unset, so entered corrections sort together).</summary>
+    public int BonusSort => _bonus ?? int.MinValue;
+
     public ParticipantDayRow ToRow() => new(
         LinkId: _linkId,
         ParticipantId: _participantId,
@@ -472,6 +509,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         Team: (Team ?? string.Empty).Trim(),
         StartTime: StartTime,
         OutOfCompetition: OutOfCompetition,
+        Bonus: _bonus,
         DayDefaultDiscipline: _dayDefaultDiscipline,
         // Result is computed, not part of the row save; carry it so the record round-trips unchanged.
         Result: _result);

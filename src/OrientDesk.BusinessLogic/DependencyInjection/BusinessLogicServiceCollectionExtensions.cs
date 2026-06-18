@@ -33,6 +33,10 @@ public static class BusinessLogicServiceCollectionExtensions
         // CSV participant import (arbitrary delimited file, columns mapped to our fields in the UI)
         services.AddSingleton<ICsvParser, CsvParser>();
 
+        // Tabular export writers (one per format) — the participants table's view can be saved out.
+        // The CSV writer is pure text; the .xlsx writer needs a library and is registered in DataAccess.
+        services.AddSingleton<ITabularWriter, CsvTabularWriter>();
+
         // Combined course-name splitting (e.g. "ЧЖ55" → "Ч55", "Ж55") for the import splitter dialog.
         services.AddSingleton<ICourseNameSplitter, CourseNameSplitter>();
 
@@ -45,6 +49,10 @@ public static class BusinessLogicServiceCollectionExtensions
 
         // Start-entry fee calculation (the «Стартові внески» columns on the participants table)
         services.AddSingleton<IEntryFeeCalculator, EntryFeeCalculator>();
+
+        // Results-protocol builder (layer-neutral: raw day results → renderable document). The .docx
+        // writer that renders the document needs a library and is registered in DataAccess.
+        services.AddSingleton<IResultProtocolBuilder, ResultProtocolBuilder>();
 
         // Placeholder competition data service (dashboard)
         services.AddSingleton<ICompetitionService, CompetitionService>();

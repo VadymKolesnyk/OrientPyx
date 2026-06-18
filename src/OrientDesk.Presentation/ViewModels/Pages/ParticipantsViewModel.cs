@@ -38,6 +38,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private readonly IDialogService _dialogs;
     private readonly IParticipantImportFlow _importFlow;
     private readonly ICsvImportFlow _csvImportFlow;
+    private readonly IParticipantExportFlow _exportFlow;
     private readonly IEntryFeeCalculator _entryFeeCalculator;
     private readonly IActivityLog _log;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
@@ -55,6 +56,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         IDialogService dialogs,
         IParticipantImportFlow importFlow,
         ICsvImportFlow csvImportFlow,
+        IParticipantExportFlow exportFlow,
         IEntryFeeCalculator entryFeeCalculator,
         IActivityLog log,
         ITableLayoutStore layoutStore)
@@ -69,6 +71,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _dialogs = dialogs;
         _importFlow = importFlow;
         _csvImportFlow = csvImportFlow;
+        _exportFlow = exportFlow;
         _entryFeeCalculator = entryFeeCalculator;
         _log = log;
         // Singleton VM: reload when the competition/day changes. SessionChanged may be raised on a
@@ -110,6 +113,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         new(RosterField.ResultStatus, "Participants.Col.ResultStatus", c => c.IsMember),
         new(RosterField.Result, "Participants.Col.Result", c => c.IsMember),
         new(RosterField.Place, "Participants.Col.Place", c => c.IsMember),
+        // Editable «Бонус» (cause) before the computed «Бали» (effect); both dropped on non-scoring days.
+        new(RosterField.Bonus, "Participants.Col.Bonus", c => c.IsMember),
         new(RosterField.Score, "Participants.Col.Score", c => c.IsMember)
     ];
 
@@ -336,6 +341,14 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             await LoadAsync();
     }
 
+    /// <summary>
+    /// Exports the active table's current on-screen view (the visible columns and displayed rows the
+    /// view captures from the SheetTable). Shows the format modal (CSV / Excel) and serialises the
+    /// snapshot; returns the bytes for the view to save (file picking lives in the view). Null when there
+    /// is nothing to export or the user cancelled.
+    /// </summary>
+    public Task<ParticipantExportResult?> ExportAsync(CsvParticipantData view) => _exportFlow.RunAsync(view);
+
     // Rebuilds the day options only when the day set changed, so the ComboBox keeps a valid
     // SelectedItem reference across reloads. The roster sentinel is always first.
     private void RebuildDayOptions(IReadOnlyList<EventDay> days)
@@ -485,7 +498,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             RequestDayRowClubChange, RequestDayRowAddClub,
             RequestDayRowDusshChange, RequestDayRowAddDussh,
             RequestRowRaisedFeeChange, RequestRowDiscountChange,
-            RequestDayRowResultStatusChange);
+            RequestDayRowResultStatusChange, RequestDayRowBonusChange);
 
     private ParticipantRosterRowViewModel CreateRosterRow(
         ParticipantRosterRow row,
@@ -497,7 +510,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             var options = groupsByDay.TryGetValue(cell.DayId, out var o)
                 ? o
                 : [new GroupOption(null, string.Empty, Localization)];
-            cells.Add(new RosterDayCellViewModel(row.ParticipantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange, RequestCellStartTimeChange, RequestCellOutOfCompetitionChange, RequestCellResultStatusChange));
+            cells.Add(new RosterDayCellViewModel(row.ParticipantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange, RequestCellStartTimeChange, RequestCellOutOfCompetitionChange, RequestCellResultStatusChange, RequestCellBonusChange));
         }
         return new ParticipantRosterRowViewModel(row, cells, _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Discounts, _feeContext, Localization,
             RequestRosterRowSave,
@@ -1504,6 +1517,35 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             RefreshResults(dayId, results);
         }
         catch { /* never crash the UI over a status edit */ }
+    }
+
+    // ── Bonus (points correction) edit (day grid + roster) ─────────────────────────────────────
+    // The «бонус» cell persists a points correction on the participant-day, then recomputes the day so
+    // «Бали» and places re-number live (a correction can re-rank individuals and rogaine teams). Day grid
+    // uses the session's current day; the roster cell carries its own day.
+    private void RequestDayRowBonusChange(ParticipantDayRowViewModel row)
+    {
+        if (_session.CurrentDay is not { } day)
+            return;
+        _ = ApplyBonusAsync(row.ParticipantId, day.Id, row.Bonus);
+    }
+
+    private void RequestCellBonusChange(RosterDayCellViewModel cell)
+    {
+        if (!cell.IsMember)
+            return;
+        _ = ApplyBonusAsync(cell.ParticipantId, cell.DayId, cell.Bonus);
+    }
+
+    private async Task ApplyBonusAsync(Guid participantId, Guid dayId, int? bonus)
+    {
+        try
+        {
+            await Task.Run(() => _editor.SetParticipantDayBonusAsync(participantId, dayId, bonus));
+            var results = await _editor.GetDayResultsByParticipantAsync(dayId);
+            RefreshResults(dayId, results);
+        }
+        catch { /* never crash the UI over a bonus edit */ }
     }
 
     // Re-applies recomputed day results onto the visible rows/cells so places re-number after a status

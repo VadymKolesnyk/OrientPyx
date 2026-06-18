@@ -129,6 +129,14 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     [ObservableProperty]
     private bool _isAutoReadPaused;
 
+    /// <summary>
+    /// When on, each newly-read row is printed to the configured printer as it arrives (the same split
+    /// printout the «друк» action makes). In-memory only, like the rest of the auto-read panel. Silent:
+    /// it never opens the settings modal — a tick with no printer configured just skips printing.
+    /// </summary>
+    [ObservableProperty]
+    private bool _autoPrintEnabled;
+
     // True while LoadAsync syncs SelectedDay to the session, so the setter does NOT call
     // SetCurrentDayAsync (which would re-raise SessionChanged → LoadAsync in a loop).
     private bool _syncingDay;
@@ -327,20 +335,29 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
                 return;
         }
 
-        var doc = await _busy.RunAsync(() => _editor.GetSplitPrintDocumentAsync(row.Id));
-        if (doc is null)
-            return;
-
-        var labels = BuildPrintLabels();
         try
         {
-            await _printer.PrintAsync(doc, labels, settings);
-            _log.Action(string.Format(Localization.Get("FinishRead.Print.Log"), row.ChipNumber, settings.PrinterName));
+            if (!await PrintReadoutAsync(row.Id, settings))
+                return;
         }
         catch (PrintNotSupportedException)
         {
             await ShowInfoAsync("Print.Unsupported");
         }
+    }
+
+    // Builds and prints the split printout for one readout id to the given printer, logging on success.
+    // Returns false when there was nothing to print (the row resolved to no document). Shared by the
+    // manual «друк» action and the auto-print path; the caller owns any user-facing error handling.
+    private async Task<bool> PrintReadoutAsync(Guid readoutId, PrintSettings settings)
+    {
+        var doc = await _busy.RunAsync(() => _editor.GetSplitPrintDocumentAsync(readoutId));
+        if (doc is null)
+            return false;
+
+        await _printer.PrintAsync(doc, BuildPrintLabels(), settings);
+        _log.Action(string.Format(Localization.Get("FinishRead.Print.Log"), doc.ChipNumber, settings.PrinterName));
+        return true;
     }
 
     // Opens the edit modal for a log row (the pencil in the «Дії» column): reassign the chip to another
@@ -467,11 +484,39 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
             var data = _readoutParser.Parse(content);
             var result = await _editor.ImportFinishReadoutsAsync(data);
             if (result.Added > 0)
+            {
+                await AutoPrintNewReadsAsync(result.AddedIds);
                 await Dispatcher.UIThread.InvokeAsync(LoadAsync);
+            }
         }
         catch (ReadoutFormatException)
         {
             // Not a readable readout right now (e.g. half-written) — skip this tick.
+        }
+    }
+
+    // Silently prints each newly-read row when auto-print is on and a printer is configured. No-op when the
+    // toggle is off, no printer is set (or it's gone), or printing isn't supported on this build — auto-read
+    // must never block on a dialog or throw out of the poll loop. Runs on the poller's thread.
+    private async Task AutoPrintNewReadsAsync(IReadOnlyList<Guid> readoutIds)
+    {
+        if (!AutoPrintEnabled || readoutIds.Count == 0 || !_printer.IsSupported)
+            return;
+
+        var settings = await _appSettings.GetPrintSettingsAsync();
+        if (!settings.HasPrinter || !_printer.GetInstalledPrinters().Contains(settings.PrinterName))
+            return;
+
+        foreach (var id in readoutIds)
+        {
+            try
+            {
+                await PrintReadoutAsync(id, settings);
+            }
+            catch (PrintNotSupportedException)
+            {
+                return;
+            }
         }
     }
 

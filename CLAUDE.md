@@ -156,6 +156,10 @@ Do not reintroduce `EnsureCreated` — it is incompatible with migrations.
 
 ## What NOT to do yet
 
-Do not add: test projects, Clean Architecture / CQRS / MediatR, Docker, authentication,
-cloud sync, real SportIdent parsing, result calculation, report (DOCX) generation, or
-printing. Keep this a lightweight starter.
+Do not add: test projects, Clean Architecture / CQRS / MediatR, Docker, authentication, or
+cloud sync. Keep this a lightweight starter.
+
+(The result protocol — «Протоколи результатів» — now exports a per-group results protocol to a
+Word .docx via `IResultProtocolBuilder` (BusinessLogic) + `DocxResultProtocolWriter` (DataAccess,
+Open XML SDK). Settings — orientation, ordered/visible columns, header text — are app-level in
+`app.db` (`AppSettingsRow.ResultProtocolJson`). The «Протоколи» top menu hosts it.)

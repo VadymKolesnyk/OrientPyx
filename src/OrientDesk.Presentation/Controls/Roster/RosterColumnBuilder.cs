@@ -115,8 +115,8 @@ public sealed class RosterColumnBuilder
         // Field blocks: collapsed ⇒ one merged column; expanded ⇒ one column per day.
         foreach (var block in blocks)
         {
-            // The «Бали» (score) result block only appears on point-scoring days.
-            if (block.Field == RosterField.Score && !showScore)
+            // The «Бали» (score) and editable «Бонус» blocks only appear on point-scoring days.
+            if (block.Field is RosterField.Score or RosterField.Bonus && !showScore)
                 continue;
 
             var cols = new List<SheetColumn>();
@@ -234,9 +234,10 @@ public sealed class RosterColumnBuilder
         RosterField.Chips => SheetCellKind.Chip,
         RosterField.StartTimes => SheetCellKind.StartTime,
         RosterField.OutOfCompetition => SheetCellKind.OutOfCompetition,
-        // Result blocks: the status one is an editable combo, the rest read-only text. The leaf's
-        // IdentityPath carries the day-cell property the factory binds to (under Days[i].).
+        // Result blocks: the status one is an editable combo, «бонус» an editable signed-integer cell, the
+        // rest read-only text. The leaf's IdentityPath carries the day-cell property the factory binds to.
         RosterField.ResultStatus => SheetCellKind.Status,
+        RosterField.Bonus => SheetCellKind.Bonus,
         _ => SheetCellKind.ResultText,
     };
 
@@ -271,6 +272,7 @@ public sealed class RosterColumnBuilder
         RosterField.Result => nameof(RosterDayCellViewModel.ResultText_),
         RosterField.Place => nameof(RosterDayCellViewModel.PlaceText),
         RosterField.Score => nameof(RosterDayCellViewModel.ScoreText),
+        RosterField.Bonus => nameof(RosterDayCellViewModel.BonusText),
         _ => string.Empty,
     };
 
@@ -287,6 +289,7 @@ public sealed class RosterColumnBuilder
         RosterField.ActualStart or RosterField.Finish or RosterField.Result => 100.0,
         RosterField.ResultStatus => 90.0,
         RosterField.Place or RosterField.Score => 70.0,
+        RosterField.Bonus => 80.0,
         _ => 110.0, // groups / chips / start times / out-of-competition
     };
 
@@ -309,6 +312,7 @@ public sealed class RosterColumnBuilder
         RosterField.Result => nameof(ParticipantRosterRowViewModel.CollapsedResult),
         RosterField.Place => nameof(ParticipantRosterRowViewModel.CollapsedPlace),
         RosterField.Score => nameof(ParticipantRosterRowViewModel.CollapsedScore),
+        RosterField.Bonus => nameof(ParticipantRosterRowViewModel.CollapsedBonus),
         _ => string.Empty,
     };
 
@@ -341,6 +345,7 @@ public sealed class RosterColumnBuilder
     {
         RosterField.Chips => $"Days[{i}].{nameof(RosterDayCellViewModel.Chip)}",
         RosterField.StartTimes => $"Days[{i}].{nameof(RosterDayCellViewModel.StartTime)}",
+        RosterField.Bonus => $"Days[{i}].{nameof(RosterDayCellViewModel.BonusText)}",
         _ => null,
     };
 

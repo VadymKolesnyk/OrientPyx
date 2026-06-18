@@ -53,6 +53,8 @@ internal sealed class RosterCellFactory
         // The day-grid start-time column: an hh:mm:ss text box (digits only, auto-':') like the roster's
         // per-day cell.
         SheetCellKind.StartTimeText => BuildStartTimeEditor(column.IdentityPath),
+        SheetCellKind.RowBonus => BuildBonusEditor(column.IdentityPath),
+        SheetCellKind.Bonus => BuildDayBonusCell(column),
         SheetCellKind.BirthDate => BuildBirthDate(),
         SheetCellKind.Group => BuildDayCell(column, isGroup: true),
         SheetCellKind.Chip => BuildDayCell(column, isGroup: false),
@@ -146,6 +148,29 @@ internal sealed class RosterCellFactory
             Mask = SheetColumnBuilder.NumericMask.Time,
             Placeholder = _loc.Get("Common.TimePlaceholder"),
         });
+
+    // The day-grid «бонус» editor: a signed-integer text box (optional '-' then digits), bound directly on
+    // the row by its identity path (BonusText). Mirrors the roster's per-day bonus cell.
+    private Control BuildBonusEditor(string path)
+        => new LazyTextCell(path, path, new SheetTextOptions
+        {
+            Mask = SheetColumnBuilder.NumericMask.Integer,
+            CommitOnLostFocus = true,
+        });
+
+    // A per-day «бонус» cell: a signed-integer text box, disabled + greyed on days the participant doesn't run.
+    private Control BuildDayBonusCell(SheetColumn column)
+    {
+        var i = column.DayIndex;
+        var path = $"Days[{i}].{nameof(RosterDayCellViewModel.BonusText)}";
+        var box = new LazyTextCell(path, path, new SheetTextOptions
+        {
+            Mask = SheetColumnBuilder.NumericMask.Integer,
+            CommitOnLostFocus = true,
+        });
+        box[!InputElement.IsEnabledProperty] = new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.IsMember)}");
+        return WrapWithNonMemberBackdrop(box, i);
+    }
 
     // ── Expanded per-day cell ─────────────────────────────────────────────────────────────────────
     private Control BuildDayCell(SheetColumn column, bool isGroup)

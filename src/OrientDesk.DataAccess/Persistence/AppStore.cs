@@ -100,6 +100,29 @@ public sealed class AppStore : IAppStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<string?> GetResultProtocolJsonAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        return row?.ResultProtocolJson;
+    }
+
+    public async Task SaveResultProtocolJsonAsync(string json, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+        {
+            db.Settings.Add(new AppSettingsRow { Id = 1, ResultProtocolJson = json });
+        }
+        else
+        {
+            row.ResultProtocolJson = json;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<(string? Identifier, int? DayNumber)> GetLastSessionAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);

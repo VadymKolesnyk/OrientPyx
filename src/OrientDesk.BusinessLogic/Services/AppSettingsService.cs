@@ -62,4 +62,34 @@ public sealed class AppSettingsService : IAppSettingsService
 
     // Snaps any stored/incoming width to the nearest allowed roll width so a bad value can't leak through.
     private int ClampWidth(int width) => ReceiptWidths.Contains(width) ? width : DefaultReceiptWidth;
+
+    public async Task<ResultProtocolSettings> GetResultProtocolSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        var json = await _appStore.GetResultProtocolJsonAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+            return new ResultProtocolSettings();
+
+        try
+        {
+            var settings = System.Text.Json.JsonSerializer.Deserialize<ResultProtocolSettings>(json);
+            if (settings is null)
+                return new ResultProtocolSettings();
+            // A column list that lost its way (empty after a bad round-trip) falls back to the default set.
+            if (settings.Columns.Count == 0)
+                settings.Columns = ResultProtocolSettings.DefaultColumns();
+            return settings;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Corrupt JSON — start from defaults rather than crashing the protocol page.
+            return new ResultProtocolSettings();
+        }
+    }
+
+    public Task SaveResultProtocolSettingsAsync(ResultProtocolSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        return _appStore.SaveResultProtocolJsonAsync(json, cancellationToken);
+    }
 }

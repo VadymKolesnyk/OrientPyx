@@ -28,4 +28,9 @@ public interface IAppSettingsService
     Task<PrintSettings> GetPrintSettingsAsync(CancellationToken cancellationToken = default);
 
     Task SavePrintSettingsAsync(PrintSettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the stored results-protocol settings, applying defaults when never saved or unreadable.</summary>
+    Task<ResultProtocolSettings> GetResultProtocolSettingsAsync(CancellationToken cancellationToken = default);
+
+    Task SaveResultProtocolSettingsAsync(ResultProtocolSettings settings, CancellationToken cancellationToken = default);
 }

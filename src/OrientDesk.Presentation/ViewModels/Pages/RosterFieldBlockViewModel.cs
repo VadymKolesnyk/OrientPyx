@@ -17,6 +17,8 @@ public enum RosterField
     ResultStatus,
     Result,
     Place,
+    // Editable points correction («бонус»), only on point-scoring days; sits before Score (cause→effect).
+    Bonus,
     Score
 }
 

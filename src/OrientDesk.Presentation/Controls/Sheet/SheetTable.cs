@@ -17,6 +17,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using OrientDesk.BusinessLogic.Entities;
+using OrientDesk.BusinessLogic.Models;
 using OrientDesk.Localization;
 using OrientDesk.Presentation.Services;
 using OrientDesk.Presentation.ViewModels.Pages;
@@ -2282,6 +2283,78 @@ public sealed class SheetTable : TemplatedControl
                 sb.Append('\n');
         }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Snapshots the table's current on-screen view for export: the visible leaf columns (in display
+    /// order, hidden columns dropped) as the header, then one row per displayed item (the active sort +
+    /// filters applied — exactly what <see cref="VisibleItems"/> holds). Each cell uses the same text the
+    /// user sees: a realized cell's rendered text wins (so combo labels, collapsed "різні"/"(n днів)"
+    /// summaries, payment amounts and checkbox flags match the screen), falling back to the value-path
+    /// reader for rows scrolled out of view. The trailing action column carries no value and is excluded.
+    /// Returns an empty table (no columns/rows) when the table hasn't been built yet.
+    /// </summary>
+    public CsvParticipantData ExportView()
+    {
+        // The visible leaf columns, in the order BuildRow lays cells out; skip the action column (no value).
+        var columns = new List<SheetColumn>();
+        foreach (var band in _visibleBands)
+            foreach (var column in band.Columns)
+                if (column.Kind != SheetCellKind.Actions)
+                    columns.Add(column);
+
+        var header = new List<string>(columns.Count);
+        foreach (var column in columns)
+            header.Add(ColumnHeader(column));
+
+        // Index the realized body cells by (row index in the displayed view, leaf-column index) so a
+        // visible cell's rendered text is preferred — the same approach BuildRangeTsv uses.
+        var realized = new Dictionary<(int Row, int Col), SheetCell>();
+        if (_body is not null)
+            foreach (var d in _body.GetVisualDescendants())
+                if (d is SheetCell sc && sc.DataContext is { } item)
+                {
+                    var ri = RowIndexOf(item);
+                    if (ri >= 0)
+                        realized[(ri, sc.ColumnIndex)] = sc;
+                }
+
+        var rows = new List<IReadOnlyList<string>>(_sortedItems.Count);
+        for (var r = 0; r < _sortedItems.Count; r++)
+        {
+            if (_sortedItems[r] is not { } row)
+                continue;
+            var cells = new string[columns.Count];
+            for (var c = 0; c < columns.Count; c++)
+                // The action column was dropped from `columns` but not from the cell layout, so map our
+                // export column index back to the leaf index by header position is unnecessary: the
+                // realized cell's ColumnIndex is the leaf index, which equals c here only when no column
+                // before it was skipped. The action column is always last, so every kept column's leaf
+                // index equals its export index — the lookup stays aligned.
+                cells[c] = realized.TryGetValue((r, c), out var cell)
+                    ? ExtractCellText(cell.Content as Control) ?? string.Empty
+                    : CopyText(columns[c], row);
+            rows.Add(cells);
+        }
+
+        return new CsvParticipantData { Header = header, Rows = rows };
+    }
+
+    // The export header text for a column: the band label + sub-header when a column sits under a named
+    // band (e.g. "День 1 — Група"), otherwise the column's own header. Mirrors the picker-label idea so
+    // a per-day column reads unambiguously in the file.
+    private string ColumnHeader(SheetColumn column)
+    {
+        foreach (var band in _visibleBands)
+        {
+            if (!band.Columns.Contains(column))
+                continue;
+            if (band.Kind == SheetBand.BandKind.FieldBlock && !string.IsNullOrEmpty(band.Header)
+                && !string.IsNullOrEmpty(column.Header))
+                return $"{band.Header} — {column.Header}";
+            break;
+        }
+        return string.IsNullOrEmpty(column.Header) ? column.PickerLabel : column.Header;
     }
 
     // A checkbox/flag cell copies as "TRUE" when checked, "" otherwise, so a bool column

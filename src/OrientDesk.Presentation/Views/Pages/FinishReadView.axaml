@@ -88,11 +88,15 @@
                         </StackPanel>
                     </StackPanel>
 
-                    <!-- Enable toggle -->
-                    <ToggleSwitch Grid.Column="2" VerticalAlignment="Bottom" Margin="12,0,0,0"
-                                  IsChecked="{Binding AutoReadEnabled, Mode=TwoWay}"
-                                  OnContent="{Binding Localization[FinishRead.AutoRead.Enabled]}"
-                                  OffContent="{Binding Localization[FinishRead.AutoRead.Enabled]}" />
+                    <!-- Enable toggles: auto-read on/off, and auto-print of each new read -->
+                    <StackPanel Grid.Column="2" VerticalAlignment="Bottom" Margin="12,0,0,0" Spacing="2">
+                        <ToggleSwitch IsChecked="{Binding AutoReadEnabled, Mode=TwoWay}"
+                                      OnContent="{Binding Localization[FinishRead.AutoRead.Enabled]}"
+                                      OffContent="{Binding Localization[FinishRead.AutoRead.Enabled]}" />
+                        <ToggleSwitch IsChecked="{Binding AutoPrintEnabled, Mode=TwoWay}"
+                                      OnContent="{Binding Localization[FinishRead.AutoRead.AutoPrint]}"
+                                      OffContent="{Binding Localization[FinishRead.AutoRead.AutoPrint]}" />
+                    </StackPanel>
                 </Grid>
             </StackPanel>
         </Border>
