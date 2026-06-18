@@ -97,8 +97,12 @@ public sealed class RogaineStrategy : DisciplineStrategyBase
                 running = total;
             }
 
+            // Team annotation (no effect on the personal total): a scoring punch on a control the whole
+            // team also took counts toward the team result. Only meaningful in a team context.
+            var countsForTeam = scores && context.TeamCommonControls?.Contains(code) == true;
+
             passage.Add(new PassagePunch(++index, code, OnCourse: scores, punch.Time, leg, elapsed,
-                PassageKind.Control, legKm, pace, points, running));
+                PassageKind.Control, legKm, pace, points, running, countsForTeam));
 
             if (punch.Time is not null)
                 prev = punch.Time;
@@ -136,7 +140,8 @@ public sealed class RogaineStrategy : DisciplineStrategyBase
         foreach (var code in courseControls)
         {
             var points = context.PointsByCode.TryGetValue(code, out var p) ? p : 0;
-            expected.Add(new ExpectedControl(++seq, code, scored.Contains(code), points));
+            var countsForTeam = context.TeamCommonControls?.Contains(code) == true;
+            expected.Add(new ExpectedControl(++seq, code, scored.Contains(code), points, countsForTeam));
         }
 
         return new SplitsView

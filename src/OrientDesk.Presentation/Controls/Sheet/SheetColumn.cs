@@ -338,6 +338,13 @@ public sealed partial class SheetColumn : ObservableObject
     /// ("4 з 344") with the full text ("Показано 4 з 344") on hover. Opt-in; the participants tables only.
     /// </summary>
     public bool ShowCount { get; set; }
+
+    /// <summary>
+    /// Property path on the bound row (or <c>Days[i].…</c> for a per-day result cell) to a string the cell
+    /// shows as a hover tooltip. Set on the «Бали» result column to show the per-control score breakdown.
+    /// Empty ⇒ no per-cell tooltip. Only honoured by the read-only result-text cells.
+    /// </summary>
+    public string ToolTipPath { get; set; } = string.Empty;
 }
 
 /// <summary>

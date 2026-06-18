@@ -343,7 +343,9 @@ internal sealed class ReceiptRenderer
         var line = Compose(row.Index, row.Code, row.PointsText, row.ElapsedText, row.LegText, row.DistanceText, row.PaceText);
         // Off-course punches are marked with a leading "*" on the left so they stand out on a mono receipt.
         var prefix = row.OnCourse ? " " : "*";
-        DrawMono(g, prefix + line, mono, centreX, y);
+        // Rogaine: a trailing "*" flags a control that counts for the team (every team member punched it).
+        var teamMark = row.CountsForTeam ? " *" : string.Empty;
+        DrawMono(g, prefix + line + teamMark, mono, centreX, y);
     }
 
     // Builds a fixed-width set-course row string: seq(3) code(4) [бал(5) ]elapsed(7) leg(6) dist(6) pace(6).

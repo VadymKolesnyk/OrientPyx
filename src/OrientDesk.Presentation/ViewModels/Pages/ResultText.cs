@@ -1,5 +1,8 @@
+using System.Linq;
+using System.Text;
 using OrientDesk.BusinessLogic.Enums;
 using OrientDesk.BusinessLogic.Models;
+using OrientDesk.Localization;
 
 namespace OrientDesk.Presentation.ViewModels.Pages;
 
@@ -30,4 +33,30 @@ public static class ResultText
 
     /// <summary>Score / «Бали» (rogaine), blank for non-scoring disciplines.</summary>
     public static string Score(ParticipantDayResult r) => r.Score is { } s ? s.ToString() : string.Empty;
+
+    /// <summary>
+    /// A multi-line breakdown of how the «Бали» total was made up — one "КП {code}: +{points}" line per
+    /// scoring control, then (when an over-time penalty applied) the "X − Y = Z" gross/penalty/net lines.
+    /// Blank when there is no score or no breakdown (so the cell shows no tooltip). For a teamed rogaine
+    /// runner the controls are the team's common ones, matching the team «Бали».
+    /// </summary>
+    public static string? ScoreTooltip(ParticipantDayResult r, ILocalizationService loc)
+    {
+        if (r.Score is not { } total || r.ScoreBreakdown.Count == 0)
+            return null; // null ⇒ no tooltip popup (an empty string would still show an empty box)
+
+        var sb = new StringBuilder();
+        sb.Append(loc.Get("Participants.Score.Tooltip.Header"));
+        foreach (var line in r.ScoreBreakdown)
+            sb.Append('\n').Append(string.Format(loc.Get("Participants.Score.Tooltip.Control"), line.Code, line.Points));
+
+        // Over-time penalty breakdown, when one was deducted (gross/penalty carried alongside the net).
+        if (r.ScoreGross is { } gross && r.ScorePenalty is { } penalty && penalty > 0)
+        {
+            sb.Append('\n').Append(string.Format(loc.Get("Participants.Score.Tooltip.Gross"), gross));
+            sb.Append('\n').Append(string.Format(loc.Get("Participants.Score.Tooltip.Penalty"), penalty));
+        }
+        sb.Append('\n').Append(string.Format(loc.Get("Participants.Score.Tooltip.Total"), total));
+        return sb.ToString();
+    }
 }

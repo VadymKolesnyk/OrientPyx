@@ -175,7 +175,7 @@
                               <StackPanel>
                                 <!-- Column headers (same widths as the rows below). The Бали/Сума columns
                                      show only for a scored (rogaine) passage; set course leaves them blank. -->
-                                <Grid ColumnDefinitions="30,60,24,50,70,80,80,70,60"
+                                <Grid ColumnDefinitions="30,60,24,50,70,80,80,70,60,28"
                                       Margin="0,0,0,4" ColumnSpacing="8">
                                     <TextBlock Grid.Column="1" Classes="label"
                                                Text="{Binding Localization[FinishRead.Splits.Col.Code]}" />
@@ -193,11 +193,15 @@
                                     <TextBlock Grid.Column="8" Classes="label" HorizontalAlignment="Right"
                                                IsVisible="{Binding #Root.DataContext.Splits.ShowPoints}"
                                                Text="{Binding Localization[FinishRead.Splits.Col.Total]}" />
+                                    <TextBlock Grid.Column="9" Classes="label" HorizontalAlignment="Center"
+                                               IsVisible="{Binding #Root.DataContext.Splits.ShowPoints}"
+                                               ToolTip.Tip="{Binding Localization[FinishRead.Splits.TeamCounts]}"
+                                               Text="{Binding Localization[FinishRead.Splits.Col.Team]}" />
                                 </Grid>
                                 <ItemsControl ItemsSource="{Binding Splits.Passage}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="pages:PassagePunchViewModel">
-                                            <Grid ColumnDefinitions="30,60,24,50,70,80,80,70,60" Margin="0,2" ColumnSpacing="8">
+                                            <Grid ColumnDefinitions="30,60,24,50,70,80,80,70,60,28" Margin="0,2" ColumnSpacing="8">
                                                 <TextBlock Grid.Column="0" Text="{Binding IndexText}"
                                                            Foreground="{DynamicResource TextMuted}"
                                                            HorizontalAlignment="Right" />
@@ -222,6 +226,11 @@
                                                 <TextBlock Grid.Column="8" Text="{Binding RunningTotalText}"
                                                            IsVisible="{Binding #Root.DataContext.Splits.ShowPoints}"
                                                            FontWeight="Medium" HorizontalAlignment="Right" />
+                                                <TextBlock Grid.Column="9" Text="{Binding TeamGlyph}"
+                                                           IsVisible="{Binding #Root.DataContext.Splits.ShowPoints}"
+                                                           ToolTip.Tip="{Binding TeamTooltip}"
+                                                           Foreground="{DynamicResource AccentBrush}"
+                                                           HorizontalAlignment="Center" />
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
@@ -249,7 +258,7 @@
                                 <ItemsControl ItemsSource="{Binding Splits.Expected}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="pages:ExpectedControlViewModel">
-                                            <Grid ColumnDefinitions="30,60,24,50,Auto" Margin="0,2" ColumnSpacing="8"
+                                            <Grid ColumnDefinitions="30,60,24,50,28,Auto" Margin="0,2" ColumnSpacing="8"
                                                   Opacity="{Binding Taken, Converter={StaticResource BoolToOpacity}}">
                                                 <TextBlock Grid.Column="0" Text="{Binding SequenceText}"
                                                            Foreground="{DynamicResource TextMuted}"
@@ -261,7 +270,12 @@
                                                 <TextBlock Grid.Column="3" Text="{Binding PointsText}"
                                                            IsVisible="{Binding #Root.DataContext.Splits.ShowPoints}"
                                                            HorizontalAlignment="Right" />
-                                                <TextBlock Grid.Column="4" Text="{Binding Note}"
+                                                <TextBlock Grid.Column="4" Text="{Binding TeamGlyph}"
+                                                           IsVisible="{Binding #Root.DataContext.Splits.ShowPoints}"
+                                                           ToolTip.Tip="{Binding TeamTooltip}"
+                                                           Foreground="{DynamicResource AccentBrush}"
+                                                           HorizontalAlignment="Center" />
+                                                <TextBlock Grid.Column="5" Text="{Binding Note}"
                                                            Foreground="{DynamicResource DangerBrush}" />
                                             </Grid>
                                         </DataTemplate>

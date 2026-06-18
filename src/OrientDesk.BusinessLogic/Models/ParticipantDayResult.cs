@@ -44,4 +44,23 @@ public sealed record ParticipantDayResult(
     /// the blank <see cref="FinishStatus.None"/>. Drives the red status text in the participant tables.
     /// </summary>
     public bool StatusIsProblem => Status is not (FinishStatus.Ok or FinishStatus.None);
+
+    /// <summary>
+    /// The controls that make up <see cref="Score"/> (rogaine only), each with its point value, in
+    /// ascending control order — for a per-control breakdown tooltip on the «Бали» column. For a teamed
+    /// runner these are the team's common controls (the ones that scored for the team), so it matches the
+    /// team Бали shown; for a teamless (поза конкурсом) runner they are that runner's own scored controls.
+    /// Empty for a non-scoring discipline or when nothing scored.
+    /// </summary>
+    public IReadOnlyList<ScoreLine> ScoreBreakdown { get; init; } = [];
+
+    /// <summary>Gross points before the over-time penalty (the "X" in "X − Y = Z"); null when no penalty
+    /// applied (then <see cref="Score"/> alone is the total). Rogaine only.</summary>
+    public int? ScoreGross { get; init; }
+
+    /// <summary>Over-time penalty deducted from <see cref="ScoreGross"/> (the "Y"); null/0 when none. Rogaine only.</summary>
+    public int? ScorePenalty { get; init; }
 }
+
+/// <summary>One control's contribution to the «Бали» total: the control code and its point value.</summary>
+public sealed record ScoreLine(string Code, int Points);

@@ -121,6 +121,8 @@ public sealed record SplitPrintLabels(
 /// straight-line leg distance (metres), the leg/elapsed times and the leg pace — all pre-formatted as the
 /// panel shows them. <see cref="PointsText"/> is non-null only for scored disciplines (drives the бал
 /// column). <see cref="OnCourse"/> marks an on-course punch so the renderer can flag off-course ones.
+/// <see cref="CountsForTeam"/> is true for a rogaine scoring punch on a control the whole team also took
+/// (so the slip can mark which controls count toward the team); false outside a team context.
 /// </summary>
 public sealed record SplitPrintRow(
     string Index,
@@ -130,7 +132,8 @@ public sealed record SplitPrintRow(
     string ElapsedText,
     string PaceText,
     string? PointsText,
-    bool OnCourse);
+    bool OnCourse,
+    bool CountsForTeam = false);
 
 /// <summary>
 /// One control of the prescribed (correct) order, printed on the compact bottom line when a set-course

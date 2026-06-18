@@ -142,6 +142,7 @@ public sealed class RosterColumnBuilder
                     PickerLabel = blockLabel,
                     PastePath = LeafPastePath(block.Field, 0),
                     RentalChipColumn = isChips,
+                    ToolTipPath = ResultTooltipPath(block.Field),
                 };
                 // Single-day group/status cell binds under Days[0]. too — wire combo-paste the same way.
                 ConfigureDayComboPaste(col, block.Field, 0);
@@ -191,6 +192,7 @@ public sealed class RosterColumnBuilder
                         PastePath = LeafPastePath(block.Field, i),
                         // Per-day chip cells get the rental toggle in their right-click menu.
                         RentalChipColumn = isChips,
+                        ToolTipPath = ResultTooltipPath(block.Field),
                     };
                     // Per-day combo leaves (group / status) resolve a paste to an option on that day by
                     // exact label match — bound under Days[i]. like the cell factory binds them.
@@ -271,6 +273,12 @@ public sealed class RosterColumnBuilder
         RosterField.Score => nameof(RosterDayCellViewModel.ScoreText),
         _ => string.Empty,
     };
+
+    // The per-day-cell property carrying the hover tooltip for a result leaf (only «Бали» has one — the
+    // per-control score breakdown). Bound under Days[i]. by the cell factory. Empty ⇒ no tooltip.
+    private static string ResultTooltipPath(RosterField field) => field == RosterField.Score
+        ? nameof(RosterDayCellViewModel.ScoreTooltip)
+        : string.Empty;
 
     // Column width per field: the editable per-day fields keep the original 110; result fields are sized
     // to their content (times wider, place/score narrow).

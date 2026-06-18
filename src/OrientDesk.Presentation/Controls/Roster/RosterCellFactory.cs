@@ -70,7 +70,7 @@ internal sealed class RosterCellFactory
         SheetCellKind.CollapsedChip => BuildCollapsedChip(),
         SheetCellKind.CollapsedStartTime => BuildCollapsedStartTime(),
         SheetCellKind.CollapsedOutOfCompetition => BuildCollapsedOutOfCompetition(),
-        SheetCellKind.RowResultText => BuildResultLabel(column.IdentityPath),
+        SheetCellKind.RowResultText => BuildResultLabel(column.IdentityPath, column.ToolTipPath),
         SheetCellKind.RowStatus => BuildRowStatusCell(),
         SheetCellKind.ResultText => BuildDayResultLabel(column),
         SheetCellKind.Status => BuildDayStatusCell(column),
@@ -108,7 +108,8 @@ internal sealed class RosterCellFactory
     private Control BuildDayResultLabel(SheetColumn column)
     {
         var i = column.DayIndex;
-        var label = BuildResultLabel($"Days[{i}].{column.IdentityPath}");
+        var tooltip = string.IsNullOrEmpty(column.ToolTipPath) ? string.Empty : $"Days[{i}].{column.ToolTipPath}";
+        var label = BuildResultLabel($"Days[{i}].{column.IdentityPath}", tooltip);
         label[!Visual.OpacityProperty] =
             new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.IsMember)}") { Converter = DimWhenNotMember };
         return label;
@@ -458,15 +459,23 @@ internal sealed class RosterCellFactory
     // the roster binds on Days[i] (prefix "Days[i].") and dims/disables on non-member days.
 
     /// <summary>A read-only result label bound to <paramref name="path"/> (e.g. "FinishText" on the row,
-    /// or "Days[2].FinishText" on a roster cell). Centered, muted-free so it reads as real data.</summary>
-    public static TextBlock BuildResultLabel(string path) => new()
+    /// or "Days[2].FinishText" on a roster cell). Centered, muted-free so it reads as real data. When
+    /// <paramref name="tooltipPath"/> is non-empty the cell shows that bound string as a hover tooltip
+    /// (the «Бали» column uses it for the per-control score breakdown).</summary>
+    public static TextBlock BuildResultLabel(string path, string tooltipPath = "")
     {
-        VerticalAlignment = VerticalAlignment.Center,
-        HorizontalAlignment = HorizontalAlignment.Stretch,
-        TextAlignment = TextAlignment.Center,
-        Padding = new Thickness(8, 0),
-        [!TextBlock.TextProperty] = new Binding(path),
-    };
+        var label = new TextBlock
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            TextAlignment = TextAlignment.Center,
+            Padding = new Thickness(8, 0),
+            [!TextBlock.TextProperty] = new Binding(path),
+        };
+        if (!string.IsNullOrEmpty(tooltipPath))
+            label[!ToolTip.TipProperty] = new Binding(tooltipPath);
+        return label;
+    }
 
     /// <summary>
     /// A finish-status combo bound to the given options/selection paths. The resting cell shows the

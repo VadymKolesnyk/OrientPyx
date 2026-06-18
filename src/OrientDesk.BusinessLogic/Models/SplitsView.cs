@@ -64,6 +64,14 @@ public sealed class SplitsContext
     /// <summary>Points deducted per (started) minute of finishing late. For rogaine a null value means the
     /// default of 1 point/minute; for a discipline that doesn't penalise time it is ignored.</summary>
     public decimal? PenaltyPerMinute { get; init; }
+
+    /// <summary>
+    /// Codes (trimmed) that <b>every</b> member of the selected runner's rogaine team also punched, so the
+    /// splits panel/printout can mark which controls count toward the team result (a rogaine control scores
+    /// for the team only when the whole team visited it). Null when this isn't a team context — no team, a
+    /// non-team discipline, or an unknown chip — in which case no team annotation is shown.
+    /// </summary>
+    public IReadOnlySet<string>? TeamCommonControls { get; init; }
 }
 
 /// <summary>How the splits panel should render — chosen by the discipline.</summary>
@@ -151,6 +159,8 @@ public enum PassageKind
 /// rows that bracket the controls (they carry no on/off-course glyph). <see cref="LegKm"/> is the
 /// straight-line distance of this leg (from the previous punch) and <see cref="PaceSecondsPerKm"/> the
 /// resulting tempo (leg time ÷ leg distance); both null when coordinates or a leg time are missing.
+/// <see cref="CountsForTeam"/> is true for a rogaine scoring punch on a control the whole team also
+/// punched (so it counts toward the team result); always false outside a team context.
 /// </summary>
 public sealed record PassagePunch(
     int Index,
@@ -163,14 +173,17 @@ public sealed record PassagePunch(
     decimal? LegKm = null,
     double? PaceSecondsPerKm = null,
     int? Points = null,
-    int? RunningTotal = null);
+    int? RunningTotal = null,
+    bool CountsForTeam = false);
 
 /// <summary>
 /// One control of the prescribed course (ordered layout): its 1-based order, its code, and whether the
 /// chip took it (<see cref="Taken"/> false = a missing control). For a scored (rogaine) layout the
 /// "course" is the allowed-control set sorted by code and <see cref="Points"/> carries the control's value.
+/// <see cref="CountsForTeam"/> is true when the whole rogaine team punched this control (it scores for the
+/// team); always false outside a team context.
 /// </summary>
-public sealed record ExpectedControl(int Sequence, string Code, bool Taken, int? Points = null);
+public sealed record ExpectedControl(int Sequence, string Code, bool Taken, int? Points = null, bool CountsForTeam = false);
 
 /// <summary>
 /// One row of the scored (score/choice/rogaine) splits panel: an allowed control, whether it was

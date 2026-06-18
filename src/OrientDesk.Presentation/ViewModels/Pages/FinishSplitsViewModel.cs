@@ -219,6 +219,13 @@ public sealed class PassagePunchViewModel
 
     /// <summary>Running point total after this control (rogaine); blank for a non-scoring punch.</summary>
     public string RunningTotalText => _punch.RunningTotal is { } r ? r.ToString() : string.Empty;
+
+    /// <summary>Team marker: ★ when this control counts toward the rogaine team result (every member
+    /// punched it); blank otherwise. Only ever set in a team context.</summary>
+    public string TeamGlyph => _punch.CountsForTeam ? "★" : string.Empty;
+
+    /// <summary>Tooltip explaining the team marker; blank when the control doesn't count for the team.</summary>
+    public string TeamTooltip => _punch.CountsForTeam ? _localization.Get("FinishRead.Splits.TeamCounts") : string.Empty;
 }
 
 /// <summary>One prescribed control (ordered layout): order, code, taken-or-missing.</summary>
@@ -245,6 +252,13 @@ public sealed class ExpectedControlViewModel
 
     /// <summary>"missing" label for an un-taken control; blank otherwise.</summary>
     public string Note => _control.Taken ? string.Empty : _localization.Get("FinishRead.Splits.Missing");
+
+    /// <summary>Team marker: ★ when this control counts toward the rogaine team result (every member
+    /// punched it); blank otherwise. Only ever set in a team context.</summary>
+    public string TeamGlyph => _control.CountsForTeam ? "★" : string.Empty;
+
+    /// <summary>Tooltip explaining the team marker; blank when the control doesn't count for the team.</summary>
+    public string TeamTooltip => _control.CountsForTeam ? _localization.Get("FinishRead.Splits.TeamCounts") : string.Empty;
 }
 
 /// <summary>One row of the scored (score/choice/rogaine) splits panel: an allowed control + points.</summary>

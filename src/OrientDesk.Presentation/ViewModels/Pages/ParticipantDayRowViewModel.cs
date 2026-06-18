@@ -433,6 +433,8 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     public string PlaceText => ResultText.Place(_result);
     /// <summary>Score / «Бали» (rogaine); blank for non-scoring disciplines.</summary>
     public string ScoreText => ResultText.Score(_result);
+    /// <summary>Per-control «Бали» breakdown for the score column's hover tooltip; null when no score.</summary>
+    public string? ScoreTooltip => ResultText.ScoreTooltip(_result, Localization);
     /// <summary>Raw place for sorting (max when unplaced, so OK results sort to the top).</summary>
     public int PlaceSort => _result.Place ?? int.MaxValue;
     /// <summary>Raw score for sorting.</summary>
@@ -711,6 +713,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         OnPropertyChanged(nameof(ResultText_));
         OnPropertyChanged(nameof(PlaceText));
         OnPropertyChanged(nameof(ScoreText));
+        OnPropertyChanged(nameof(ScoreTooltip));
         OnPropertyChanged(nameof(PlaceSort));
         OnPropertyChanged(nameof(ScoreSort));
     }

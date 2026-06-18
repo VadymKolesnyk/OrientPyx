@@ -1417,6 +1417,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             if (cp.Points is { } pts)
                 pointsByCode[cp.Code.Trim()] = pts;
 
+        // Team name per participant — rogaine is a team format and the team lives on the participant
+        // (competition-level), not on the per-day link, so resolve it once for the team ranking below.
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var teamByParticipant = participants.ToDictionary(p => p.Id, p => p.Team.Trim());
+
         // Latest read-out per chip (the "last read-out" rule): highest Order wins on a repeated chip.
         var latestByChip = new Dictionary<string, FinishReadout>(StringComparer.OrdinalIgnoreCase);
         foreach (var r in readouts)
@@ -1429,11 +1434,17 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         }
 
         // First pass: evaluate every member with a chip that was read. Carry the group id and the sort
-        // keys (result time, score) so the second pass can rank within each group.
+        // keys (result time, score) so the second pass can rank within each group. Rogaine members are
+        // ranked as teams instead (see the team pass), so they go into `teamMembers`, not `ranking`.
         var results = new Dictionary<Guid, ParticipantDayResult>(links.Count);
         var ranking = new List<(Guid LinkId, Guid? GroupId, bool Scored, int Score, TimeSpan Time)>();
+        var teamMembers = new List<TeamMember>();
         foreach (var link in links)
         {
+            GroupDaySettings? gs0 = link.GroupId is { } gid0 && settingsByGroup.TryGetValue(gid0, out var s0) ? s0 : null;
+            var discipline0 = gs0?.DisciplineOverride ?? dayDefault;
+            var isRogaine = _strategies.For(discipline0).Type == DisciplineType.Rogaine;
+
             var chip = link.Chip.Trim();
             if (chip.Length == 0 || !latestByChip.TryGetValue(chip, out var readout))
             {
@@ -1445,6 +1456,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 results[link.Id] = new ParticipantDayResult(
                     null, null, noReadOverride ?? FinishStatus.None, noReadOverride, FinishStatus.None,
                     null, null, null, HasReadout: false);
+                // A rogaine member with no read-out makes their team incomplete — record it so the team
+                // earns no place until every member has finished.
+                if (isRogaine)
+                    teamMembers.Add(TeamMember.Incomplete(link.Id, link.GroupId, TeamKeyFor(link, teamByParticipant)));
                 continue;
             }
 
@@ -1455,17 +1470,36 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 ? f - rs
                 : (TimeSpan?)null;
 
-            GroupDaySettings? gs = link.GroupId is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
-            var discipline = gs?.DisciplineOverride ?? dayDefault;
-            int? score = _strategies.For(discipline).UsesControlPointPoints
-                ? ScoreFor(readout, gs, startFinishCodes, pointsByCode, discipline, resolvedStart)
-                : null;
+            GroupDaySettings? gs = gs0;
+            var discipline = discipline0;
+            HashSet<string>? punchedAllowed = null;
+            int? score = null;
+            if (_strategies.For(discipline).UsesControlPointPoints)
+            {
+                var detail = ScoreDetailFor(readout, gs, startFinishCodes, pointsByCode, discipline, resolvedStart);
+                score = detail.Net;
+                punchedAllowed = detail.Punched;
+            }
 
             results[link.Id] = new ParticipantDayResult(
-                readout.StartTime, readout.FinishTime, status, link.ResultStatusOverride, computed, resultTime, Place: null, score, HasReadout: true);
+                readout.StartTime, readout.FinishTime, status, link.ResultStatusOverride, computed, resultTime, Place: null, score, HasReadout: true)
+            {
+                // Personal breakdown (the controls this chip scored). For a teamed rogaine runner the team
+                // pass replaces this with the team's common controls so the tooltip matches the team Бали.
+                ScoreBreakdown = punchedAllowed is { } pa ? ScoreLines(pa, pointsByCode) : []
+            };
 
+            if (isRogaine)
+            {
+                // Rogaine: collect the member for the team tally. The elapsed time (finish − start) feeds
+                // both the team's over-time penalty (max member time) and the tie-break (last finisher).
+                var elapsed = resolvedStart is { } rs2 && readout.FinishTime is { } f2 ? f2 - rs2 : (TimeSpan?)null;
+                teamMembers.Add(new TeamMember(
+                    link.Id, link.GroupId, TeamKeyFor(link, teamByParticipant), link.OutOfCompetition,
+                    status == FinishStatus.Ok, punchedAllowed ?? [], elapsed, gs, discipline));
+            }
             // Only OK results are placed; a non-positive result time can't be ranked by time.
-            if (status == FinishStatus.Ok)
+            else if (status == FinishStatus.Ok)
                 ranking.Add((link.Id, link.GroupId, score is not null,
                     score ?? 0, resultTime is { } t && t > TimeSpan.Zero ? t : TimeSpan.MaxValue));
         }
@@ -1493,13 +1527,163 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             }
         }
 
+        // Rogaine team pass: score and place by team, then stamp the team's Бали/Місце onto every member.
+        RankRogaineTeams(teamMembers, pointsByCode, results);
+
         return results;
+    }
+
+    // The trimmed team name for a member's participant; empty when the participant has no team (поза
+    // конкурсом for rogaine).
+    private static string TeamKeyFor(ParticipantDay link, IReadOnlyDictionary<Guid, string> teamByParticipant)
+        => teamByParticipant.TryGetValue(link.ParticipantId, out var t) ? t : string.Empty;
+
+    /// <summary>
+    /// One rogaine member's contribution to the team tally. A team is the members sharing the same
+    /// (<see cref="GroupId"/>, <see cref="TeamKey"/>) on the day. <see cref="Ok"/> false (a problem status,
+    /// or — via <see cref="Incomplete"/> — no read-out at all) makes the whole team unplaced (rules 1/3);
+    /// <see cref="Punched"/> is this member's set of visited allowed controls (intersected across the team
+    /// for the team score, rule 2); <see cref="Elapsed"/> feeds the team penalty (max time, rule 2) and the
+    /// tie-break (last finisher, rule 5).
+    /// </summary>
+    private sealed record TeamMember(
+        Guid LinkId, Guid? GroupId, string TeamKey, bool OutOfCompetition, bool Ok,
+        IReadOnlySet<string> Punched, TimeSpan? Elapsed, GroupDaySettings? Settings, DisciplineType Discipline)
+    {
+        /// <summary>A member with no read-out: present in the team but not finished, so the team is incomplete.</summary>
+        public static TeamMember Incomplete(Guid linkId, Guid? groupId, string teamKey) =>
+            new(linkId, groupId, teamKey, OutOfCompetition: false, Ok: false,
+                Punched: new HashSet<string>(StringComparer.OrdinalIgnoreCase), Elapsed: null, Settings: null, Discipline: DisciplineType.Rogaine);
+    }
+
+    // Ranks rogaine members by team and writes the team's net «Бали» and place onto every member.
+    // A control scores for the team only when every member punched it (intersection); the over-time
+    // penalty is computed once from the team's largest member time; the team time (tie-break) is the
+    // last finisher. A member with no team — or whose team has any non-OK / unfinished member — is
+    // поза конкурсом / знята: their team earns no place (rules 1–5).
+    private void RankRogaineTeams(
+        List<TeamMember> members,
+        IReadOnlyDictionary<string, int> pointsByCode,
+        Dictionary<Guid, ParticipantDayResult> results)
+    {
+        if (members.Count == 0)
+            return;
+
+        // Members with no team run поза конкурсом — keep their personal score, no place. (Done by simply
+        // not ranking them; their result already has Place == null.)
+        var teams = members
+            .Where(m => m.TeamKey.Length > 0 && !m.OutOfCompetition)
+            .GroupBy(m => (m.GroupId, m.TeamKey));
+
+        // Each ranked team carries its net score and tie-break time, grouped back by GroupId for placing.
+        var ranked = new List<(Guid? GroupId, int Net, TimeSpan Time, List<Guid> LinkIds)>();
+        foreach (var team in teams)
+        {
+            var roster = team.ToList();
+            var linkIds = roster.Select(m => m.LinkId).ToList();
+
+            // Rule 1/3: a team with any unfinished or non-OK member is not placed (still keeps personal Бали).
+            if (roster.Any(m => !m.Ok))
+                continue;
+
+            // Rule 2: a control scores only when every member punched it — the intersection of their sets.
+            var common = new HashSet<string>(roster[0].Punched, StringComparer.OrdinalIgnoreCase);
+            for (var i = 1; i < roster.Count; i++)
+                common.IntersectWith(roster[i].Punched);
+            var gross = common.Sum(code => pointsByCode.TryGetValue(code, out var p) ? p : 0);
+
+            // Rule 2: one over-time penalty per team, measured from the largest member time. Reuse the
+            // strategy's penalty math by feeding it a synthetic read-out whose elapsed = the max time.
+            var maxElapsed = roster.Select(m => m.Elapsed).Max();
+            var settings = roster.Select(m => m.Settings).FirstOrDefault(s => s is not null);
+            var net = ApplyTeamPenalty(gross, maxElapsed, settings, roster[0].Discipline);
+
+            // Rule 5: tie-break by the last finisher's time (the largest member time).
+            var time = maxElapsed is { } e && e > TimeSpan.Zero ? e : TimeSpan.MaxValue;
+            ranked.Add((team.Key.GroupId, net, time, linkIds));
+
+            // The team's net Бали shows on every member row, with the per-control breakdown (the common
+            // controls) + the over-time penalty for the «Бали» tooltip.
+            var breakdown = ScoreLines(common, pointsByCode);
+            var penalty = gross - net;
+            foreach (var id in linkIds)
+                results[id] = results[id] with
+                {
+                    Score = net,
+                    ScoreBreakdown = breakdown,
+                    ScoreGross = penalty > 0 ? gross : null,
+                    ScorePenalty = penalty > 0 ? penalty : null
+                };
+        }
+
+        // Place teams within each group: net desc, then team time asc; ties share a place, next skips ties.
+        foreach (var group in ranked.GroupBy(r => r.GroupId))
+        {
+            var ordered = group.OrderByDescending(r => r.Net).ThenBy(r => r.Time).ToList();
+            var place = 0;
+            var seen = 0;
+            (int Net, TimeSpan Time)? prev = null;
+            foreach (var team in ordered)
+            {
+                seen++;
+                var key = (team.Net, team.Time);
+                if (prev is null || prev.Value.Net != key.Net || prev.Value.Time != key.Time)
+                    place = seen;
+                prev = key;
+                foreach (var id in team.LinkIds)
+                    results[id] = results[id] with { Place = place };
+            }
+        }
+    }
+
+    // Turns a set of scored control codes into ordered ScoreLines (ascending control number, then text)
+    // each carrying its point value — the per-control «Бали» breakdown shown in the column tooltip.
+    private static IReadOnlyList<ScoreLine> ScoreLines(
+        IReadOnlySet<string> codes, IReadOnlyDictionary<string, int> pointsByCode)
+        => codes
+            .OrderBy(c => long.TryParse(c, out var n) ? n : long.MaxValue)
+            .ThenBy(c => c, StringComparer.OrdinalIgnoreCase)
+            .Select(c => new ScoreLine(c, pointsByCode.TryGetValue(c, out var p) ? p : 0))
+            .ToList();
+
+    // The team's net «Бали» after the over-time penalty, computed by the discipline strategy so the
+    // rounding/floor rules stay in one place. Feeds it a synthetic context whose finish − start equals the
+    // team's largest member time and whose gross is the intersection total (modelled as one control worth
+    // `gross`), so BuildSplits applies the same penalty it does per chip.
+    private int ApplyTeamPenalty(int gross, TimeSpan? maxElapsed, GroupDaySettings? settings, DisciplineType discipline)
+    {
+        if (maxElapsed is not { } elapsed || settings?.TimeLimitSeconds is null)
+            return gross; // no resolvable time or no limit ⇒ no penalty
+
+        var start = DateTimeOffset.UnixEpoch;
+        var context = new SplitsContext
+        {
+            ExpectedControls = ["__team__"],
+            Punches = [new ChipPunch("__team__", start)],
+            PointsByCode = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { ["__team__"] = gross },
+            StartTime = start,
+            FinishTime = start + elapsed,
+            TimeLimit = TimeSpan.FromSeconds(settings.TimeLimitSeconds.Value),
+            PenaltyPerMinute = settings.PenaltyPerMinute
+        };
+        return _strategies.For(discipline).BuildSplits(context).TotalPoints;
     }
 
     // Total «Бали» (points) for a read-out on a point-scoring day: the scored splits tally over the
     // group's allowed controls. Mirrors the SplitsContext the finish-splits panel builds, minus the
     // geometry (distance/pace) it doesn't need.
     private int ScoreFor(
+        FinishReadout readout,
+        GroupDaySettings? gs,
+        HashSet<string> startFinishCodes,
+        IReadOnlyDictionary<string, int> pointsByCode,
+        DisciplineType discipline,
+        DateTimeOffset? resolvedStart)
+        => ScoreDetailFor(readout, gs, startFinishCodes, pointsByCode, discipline, resolvedStart).Net;
+
+    // The personal score plus the set of allowed controls the chip actually punched (first punch each),
+    // used by the rogaine team tally (a control scores for the team only when every member's set has it).
+    private (int Net, HashSet<string> Punched) ScoreDetailFor(
         FinishReadout readout,
         GroupDaySettings? gs,
         HashSet<string> startFinishCodes,
@@ -1523,7 +1707,18 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
             PenaltyPerMinute = gs?.PenaltyPerMinute
         };
-        return _strategies.For(discipline).BuildSplits(context).TotalPoints;
+        var net = _strategies.For(discipline).BuildSplits(context).TotalPoints;
+
+        // The allowed controls this chip visited (intersection of punched and allowed), for the team tally.
+        var allowed = new HashSet<string>(expected.Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);
+        var punched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in punches)
+        {
+            var code = p.ControlCode.Trim();
+            if (code.Length > 0 && allowed.Contains(code))
+                punched.Add(code);
+        }
+        return (net, punched);
     }
 
     public async Task<IReadOnlyList<FinishReadoutRow>> GetFinishReadoutRowsAsync(CancellationToken cancellationToken = default)
@@ -1617,6 +1812,63 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return settings.Any(s => _strategies.For(s.DisciplineOverride ?? dayDefault).UsesControlPointPoints);
     }
 
+    // The controls every member of the given link's rogaine team punched (the team's common set), so the
+    // splits panel/printout can mark which controls count toward the team. The team is the day members
+    // sharing the same group + the same non-empty participant team. Null when the runner has no team (then
+    // there is no team annotation), or when only that one member's set is available. Each teammate's set is
+    // built from their latest read-out, the same way ScoreDetailFor does for the day results.
+    private async Task<IReadOnlySet<string>?> TeamCommonControlsAsync(
+        string folder, Guid dayId, ParticipantDay link, IReadOnlyList<ParticipantDay> links,
+        IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup, HashSet<string> startFinishCodes,
+        CancellationToken cancellationToken)
+    {
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var teamByParticipant = participants.ToDictionary(p => p.Id, p => p.Team.Trim());
+        var teamKey = TeamKeyFor(link, teamByParticipant);
+        if (teamKey.Length == 0)
+            return null; // teamless runner — поза конкурсом, nothing to annotate
+
+        var mates = links.Where(l =>
+            l.GroupId == link.GroupId &&
+            string.Equals(TeamKeyFor(l, teamByParticipant), teamKey, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        var readouts = await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
+        var latestByChip = new Dictionary<string, FinishReadout>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in readouts)
+        {
+            var key = r.ChipNumber.Trim();
+            if (key.Length == 0)
+                continue;
+            if (!latestByChip.TryGetValue(key, out var cur) || r.Order > cur.Order)
+                latestByChip[key] = r;
+        }
+
+        HashSet<string>? common = null;
+        foreach (var mate in mates)
+        {
+            GroupDaySettings? gs = mate.GroupId is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
+            var allowed = new HashSet<string>(
+                SplitCodes(gs?.CourseOrder).Where(c => !startFinishCodes.Contains(c)),
+                StringComparer.OrdinalIgnoreCase);
+
+            var punched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (latestByChip.TryGetValue(mate.Chip.Trim(), out var readout))
+                foreach (var p in DecodePunchTimes(readout.PunchTimes))
+                {
+                    var code = p.ControlCode.Trim();
+                    if (code.Length > 0 && allowed.Contains(code))
+                        punched.Add(code);
+                }
+
+            if (common is null)
+                common = punched;
+            else
+                common.IntersectWith(punched);
+        }
+
+        return common;
+    }
+
     public async Task<SplitsView?> GetFinishSplitsAsync(Guid readoutId, CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null || _session.CurrentDay is null)
@@ -1676,6 +1928,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         GroupDaySettings? gs = link?.GroupId is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
         var discipline = gs?.DisciplineOverride ?? CurrentDayDefaultDiscipline;
 
+        // Rogaine team annotation: when this chip's holder runs a rogaine team, work out which controls
+        // the whole team punched so the passage/course can mark the ones that count for the team. Null for
+        // a non-rogaine row, an unknown chip or a teamless runner (no annotation shown).
+        IReadOnlySet<string>? teamCommon = null;
+        if (link is not null && _strategies.For(discipline).Type == DisciplineType.Rogaine)
+            teamCommon = await TeamCommonControlsAsync(
+                folder, dayId, link, links, settingsByGroup, startFinishCodes, cancellationToken);
+
         // Expected = course controls minus start/finish; punches = read punches (with times) minus the
         // same. An unknown chip (no link) has no prescribed course, so the expected list is empty and
         // every punch reads off-course. Start = chip start when present, else the assigned start (only
@@ -1703,7 +1963,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             // Over-time penalty inputs (rogaine): the group's time limit and penalty rate. A null rate lets
             // the strategy apply its default (rogaine = 1 бал/min); an unknown chip (no group) has neither.
             TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
-            PenaltyPerMinute = gs?.PenaltyPerMinute
+            PenaltyPerMinute = gs?.PenaltyPerMinute,
+            TeamCommonControls = teamCommon
         };
 
         // A known holder gets their group's discipline shape. An unknown chip has no group/course, so we
@@ -1841,7 +2102,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 ElapsedText: FormatDuration(p.Elapsed),
                 PaceText: FormatPace(p.PaceSecondsPerKm),
                 PointsText: pointsText,
-                OnCourse: p.Kind != PassageKind.Control || p.OnCourse));
+                OnCourse: p.Kind != PassageKind.Control || p.OnCourse,
+                CountsForTeam: p.CountsForTeam));
         }
         return list;
     }

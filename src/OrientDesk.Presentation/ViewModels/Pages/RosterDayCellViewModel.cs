@@ -104,6 +104,8 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     public string ResultText_ => ResultText.Result(_result);
     public string PlaceText => ResultText.Place(_result);
     public string ScoreText => ResultText.Score(_result);
+    /// <summary>Per-control «Бали» breakdown for the score column's hover tooltip; null when no score.</summary>
+    public string? ScoreTooltip => ResultText.ScoreTooltip(_result, Localization);
 
     // CanEditStatus folds in membership, so re-raise it when membership flips.
     partial void OnIsMemberChanged(bool value) => OnPropertyChanged(nameof(CanEditStatus));
@@ -132,6 +134,7 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         OnPropertyChanged(nameof(ResultText_));
         OnPropertyChanged(nameof(PlaceText));
         OnPropertyChanged(nameof(ScoreText));
+        OnPropertyChanged(nameof(ScoreTooltip));
     }
 
     /// <summary>

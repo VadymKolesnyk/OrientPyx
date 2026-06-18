@@ -86,8 +86,12 @@ public sealed class DayColumnBuilder
         bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.Place", nameof(ParticipantDayRowViewModel.PlaceText),
             sortPath: nameof(ParticipantDayRowViewModel.PlaceSort), fixedWidth: 70));
         if (showScore)
-            bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.Score", nameof(ParticipantDayRowViewModel.ScoreText),
-                sortPath: nameof(ParticipantDayRowViewModel.ScoreSort), fixedWidth: 70));
+        {
+            var scoreBand = Identity(SheetCellKind.RowResultText, "Participants.Col.Score", nameof(ParticipantDayRowViewModel.ScoreText),
+                sortPath: nameof(ParticipantDayRowViewModel.ScoreSort), fixedWidth: 70);
+            scoreBand.Columns[0].ToolTipPath = nameof(ParticipantDayRowViewModel.ScoreTooltip);
+            bands.Add(scoreBand);
+        }
 
         // Entry-fee tail: raised-fee flag (when enabled), one column per discount, then the total.
         EntryFeeColumns.Append(bands, _loc, discounts, raisedFeeEnabled);
