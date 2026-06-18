@@ -75,7 +75,8 @@ public sealed partial class BulkEditViewModel : ObservableObject
         IReadOnlyList<ClubOption> clubOptions,
         IReadOnlyList<DusshOption> dusshOptions,
         IReadOnlyList<RankOption> rankOptions,
-        int affectedCount)
+        int affectedCount,
+        BulkEditFieldOption? initialField = null)
     {
         Localization = localization;
         Fields = new ObservableCollection<BulkEditFieldOption>(fields);
@@ -86,7 +87,10 @@ public sealed partial class BulkEditViewModel : ObservableObject
         RankOptions = rankOptions;
         AffectedCount = affectedCount;
 
-        _selectedField = Fields.Count > 0 ? Fields[0] : null;
+        // Open on the requested field (the focused / right-clicked column) when it's offered, else first.
+        _selectedField = initialField is not null && Fields.Contains(initialField)
+            ? initialField
+            : Fields.Count > 0 ? Fields[0] : null;
         SeedDefaultValue();
 
         Localization.PropertyChanged += (_, _) =>

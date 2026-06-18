@@ -5,6 +5,7 @@ using OrientDesk.BusinessLogic.Interfaces;
 using OrientDesk.DataAccess.Documents;
 using OrientDesk.DataAccess.FileSystem;
 using OrientDesk.DataAccess.Persistence;
+using OrientDesk.DataAccess.Printing;
 
 namespace OrientDesk.DataAccess.DependencyInjection;
 
@@ -30,6 +31,9 @@ public static class DataAccessServiceCollectionExtensions
 
         // Reads .xlsx workbooks for the participant import (column mapping reuses the CSV path).
         services.AddSingleton<ISpreadsheetParser, XlsxParser>();
+
+        // Split printouts to an installed system printer (GDI; Windows-only at runtime).
+        services.AddSingleton<ISplitPrintService, SplitPrintService>();
 
         return services;
     }

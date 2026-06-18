@@ -1,4 +1,5 @@
 using OrientDesk.BusinessLogic.Entities;
+using OrientDesk.BusinessLogic.Enums;
 using OrientDesk.BusinessLogic.Models;
 
 namespace OrientDesk.BusinessLogic.Interfaces;
@@ -190,8 +191,16 @@ public interface IEventStore
     /// <summary>Adds a participant-day link (attaches a participant to a day).</summary>
     Task AddParticipantDayAsync(string eventFolderPath, ParticipantDay link, CancellationToken cancellationToken = default);
 
-    /// <summary>Updates a participant-day link (group, chip, team, order). Does nothing if it is missing.</summary>
+    /// <summary>Updates a participant-day link (group, chip, start, order, out-of-competition). Deliberately
+    /// does NOT touch <see cref="ParticipantDay.ResultStatusOverride"/> — that judge override has its own
+    /// writer (<see cref="SetParticipantDayResultStatusAsync"/>) so the debounced row save can't wipe it.
+    /// Does nothing if the link is missing.</summary>
     Task UpdateParticipantDayAsync(string eventFolderPath, ParticipantDay link, CancellationToken cancellationToken = default);
+
+    /// <summary>Writes only the result-status override on one participant-day link (the judge's manual
+    /// status; null clears it back to the computed status). The sole writer of that column — kept separate
+    /// from <see cref="UpdateParticipantDayAsync"/> so the row save never clobbers it. No-op if missing.</summary>
+    Task SetParticipantDayResultStatusAsync(string eventFolderPath, Guid linkId, FinishStatus? status, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Sets the chip on many participant-day links at once, in a single transaction (used by bulk chip
@@ -229,6 +238,13 @@ public interface IEventStore
 
     /// <summary>Adds several finish read-outs to a day in one transaction (an auto-read tick).</summary>
     Task AddFinishReadoutsAsync(string eventFolderPath, IReadOnlyList<FinishReadout> readouts, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates one finish read-out's editable fields (chip, start/finish times, punches + punch times, and
+    /// the manual status override). Used by the finish-read edit modal. Does nothing if the read-out is
+    /// missing. The <see cref="FinishReadout.Order"/>, day and content key are left untouched.
+    /// </summary>
+    Task UpdateFinishReadoutAsync(string eventFolderPath, FinishReadout readout, CancellationToken cancellationToken = default);
 
     /// <summary>Removes every finish read-out from a day. Returns how many were deleted.</summary>
     Task<int> DeleteFinishReadoutsForDayAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);

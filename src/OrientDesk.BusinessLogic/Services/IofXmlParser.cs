@@ -102,12 +102,15 @@ public sealed class IofXmlParser : IIofXmlParser
                 continue;
 
             var (lat, lon) = ReadProjectedPosition(element);
+            var (mapX, mapY) = ReadMapPosition(element);
             controls.Add(new IofControl
             {
                 Code = code,
                 Type = type.Value,
                 Latitude = lat,
-                Longitude = lon
+                Longitude = lon,
+                MapX = mapX,
+                MapY = mapY
             });
         }
 
@@ -162,6 +165,21 @@ public sealed class IofXmlParser : IIofXmlParser
         return WebMercatorToWgs84(x.Value, y.Value);
     }
 
+    /// <summary>
+    /// Reads a <c>&lt;MapPosition&gt;</c> (paper millimetres on the printed map), shared by both
+    /// standards. Returns (null, null) when absent. Combined with the map scale this gives the
+    /// course distance orienteering software prints, undistorted by any geographic projection — and
+    /// it is the only positional data some exports (e.g. Condes 3.0) carry at all.
+    /// </summary>
+    private static (double? x, double? y) ReadMapPosition(XElement element)
+    {
+        var position = Child(element, "MapPosition");
+        if (position is null)
+            return (null, null);
+
+        return (ParseDouble(position.Attribute("x")?.Value), ParseDouble(position.Attribute("y")?.Value));
+    }
+
     // --- 3.0 -----------------------------------------------------------------
 
     private static IReadOnlyList<IofControl> ReadControlsV3(XElement data)
@@ -177,13 +195,16 @@ public sealed class IofXmlParser : IIofXmlParser
             var position = Child(element, "Position");
             var lat = ParseDouble(position?.Attribute("lat")?.Value);
             var lon = ParseDouble(position?.Attribute("lng")?.Value);
+            var (mapX, mapY) = ReadMapPosition(element);
 
             controls.Add(new IofControl
             {
                 Code = code,
                 Type = MapV3Type(element.Attribute("type")?.Value),
                 Latitude = lat,
-                Longitude = lon
+                Longitude = lon,
+                MapX = mapX,
+                MapY = mapY
             });
         }
 

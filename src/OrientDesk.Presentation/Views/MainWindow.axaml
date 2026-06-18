@@ -63,6 +63,12 @@
         <DataTemplate DataType="dialogs:BulkEditViewModel">
             <dialogViews:BulkEditView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:PrintSettingsViewModel">
+            <dialogViews:PrintSettingsView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:FinishReadoutEditViewModel">
+            <dialogViews:FinishReadoutEditView />
+        </DataTemplate>
     </Window.DataTemplates>
 
     <!-- One transform scales the WHOLE interface — fonts, inputs, paddings, spacing,

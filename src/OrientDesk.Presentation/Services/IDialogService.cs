@@ -90,4 +90,17 @@ public interface IDialogService : INotifyPropertyChanged
     /// confirm, or null when cancelled/closed. Only one dialog is shown at a time.
     /// </summary>
     Task<BulkEditResult?> ShowBulkEditAsync(BulkEditViewModel dialog);
+
+    /// <summary>
+    /// Shows the print-settings modal (printer + roll width) and awaits the user's choice. Returns true
+    /// when the settings were saved, false when cancelled/closed. Only one dialog is shown at a time.
+    /// </summary>
+    Task<bool> ShowPrintSettingsAsync(PrintSettingsViewModel dialog);
+
+    /// <summary>
+    /// Shows the finish-read edit modal (reassign chip, edit times/punches, set status) and awaits the
+    /// user's choice. Returns the confirmed edit on save, or null when cancelled/closed. Only one dialog
+    /// is shown at a time.
+    /// </summary>
+    Task<FinishReadoutEdit?> ShowFinishReadoutEditAsync(FinishReadoutEditViewModel dialog);
 }

@@ -253,7 +253,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         {
             var points = new List<ControlPoint>(parsed.Count);
             for (var i = 0; i < parsed.Count; i++)
-                points.Add(ToEntity(parsed[i], dayId, order: i + 1));
+                points.Add(ToEntity(parsed[i], dayId, order: i + 1, data.MapScale));
 
             await _eventStore.ReplaceControlPointsAsync(folder, dayId, points, cancellationToken);
             return new ControlPointImportResult(Imported: points.Count, Added: points.Count, Replaced: true);
@@ -271,7 +271,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         {
             if (existingCodes.Contains(control.Code.Trim()))
                 continue;
-            toAdd.Add(ToEntity(control, dayId, order: nextOrder++));
+            toAdd.Add(ToEntity(control, dayId, order: nextOrder++, data.MapScale));
         }
 
         await _eventStore.AddControlPointsAsync(folder, toAdd, cancellationToken);
@@ -281,13 +281,16 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Replaced: false);
     }
 
-    private static ControlPoint ToEntity(IofControl control, Guid dayId, int order) => new()
+    private static ControlPoint ToEntity(IofControl control, Guid dayId, int order, int? mapScale) => new()
     {
         EventDayId = dayId,
         Order = order,
         Code = control.Code.Trim(),
         Latitude = control.Latitude,
         Longitude = control.Longitude,
+        MapX = control.MapX,
+        MapY = control.MapY,
+        MapScale = mapScale,
         Type = control.Type
     };
 
@@ -433,11 +436,18 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // import still computes a distance even before КП were imported. A code missing from both, or
         // with no coordinates, makes its legs count as 0 km.
         var coordsByCode = new Dictionary<string, GeoPoint>(StringComparer.OrdinalIgnoreCase);
+        // Paper-map positions (mm) from the same file: preferred distance source, since map mm × scale
+        // is the undistorted course distance orienteering software prints — unlike the Web Mercator
+        // geographic export, which is stretched by 1/cos(latitude). Some exports (Condes 3.0) carry
+        // ONLY a MapPosition, so this is also the only distance source available for them.
+        var mapByCode = new Dictionary<string, MapPoint>(StringComparer.OrdinalIgnoreCase);
         foreach (var control in data.Controls)
         {
             var code = control.Code.Trim();
-            if (code.Length > 0)
-                coordsByCode[code] = new GeoPoint(control.Latitude, control.Longitude);
+            if (code.Length == 0)
+                continue;
+            coordsByCode[code] = new GeoPoint(control.Latitude, control.Longitude);
+            mapByCode[code] = new MapPoint(control.MapX, control.MapY);
         }
         var controlPoints = await _eventStore.GetControlPointsAsync(folder, dayId, cancellationToken);
         foreach (var cp in controlPoints)
@@ -472,7 +482,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 continue;
 
             var courseOrder = string.Join(' ', course.ControlCodes.Select(c => c.Trim()).Where(c => c.Length > 0));
-            var distanceKm = ComputeDistance(course.ControlCodes, coordsByCode);
+            var distanceKm = ComputeDistance(course.ControlCodes, coordsByCode, mapByCode, data.MapScale);
 
             // Resolve (or create) the competition-level group for this course name.
             if (!groupsByName.TryGetValue(name, out var group))
@@ -514,23 +524,46 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return new GroupImportResult(Added: added, Updated: updated);
     }
 
-    // Maps a course's running control codes to their day coordinates and sums the straight-line
-    // distance. Unknown codes resolve to a coordinate-less point, so their legs count as 0 km.
+    // Maps a course's running control codes to their positions and sums the straight-line distance.
+    // Prefers paper-map positions (mm × scale) — the undistorted course distance orienteering software
+    // prints — and falls back to geographic coordinates only when the file carries no usable map data.
+    // Unknown codes resolve to a coordinate-less point, so their legs count as 0 km.
     private decimal? ComputeDistance(
         IReadOnlyList<string> controlCodes,
-        IReadOnlyDictionary<string, GeoPoint> coordsByCode)
+        IReadOnlyDictionary<string, GeoPoint> coordsByCode,
+        IReadOnlyDictionary<string, MapPoint> mapByCode,
+        int? mapScale)
     {
         if (controlCodes.Count < 2)
             return null;
 
-        var points = new List<GeoPoint>(controlCodes.Count);
-        foreach (var code in controlCodes)
+        // Use map mm × scale when the file states a scale and at least one leg has both endpoints
+        // mapped; otherwise the result would be a misleading 0 and we should fall back to geography.
+        if (mapScale is > 0)
         {
-            var key = code.Trim();
-            points.Add(coordsByCode.TryGetValue(key, out var p) ? p : new GeoPoint(null, null));
+            var mapPoints = new List<MapPoint>(controlCodes.Count);
+            foreach (var code in controlCodes)
+                mapPoints.Add(mapByCode.TryGetValue(code.Trim(), out var p) ? p : new MapPoint(null, null));
+
+            if (HasAnyLeg(mapPoints, static p => p.HasCoordinates))
+                return _distance.TotalKilometresFromMap(mapPoints, mapScale.Value);
         }
 
+        var points = new List<GeoPoint>(controlCodes.Count);
+        foreach (var code in controlCodes)
+            points.Add(coordsByCode.TryGetValue(code.Trim(), out var p) ? p : new GeoPoint(null, null));
+
         return _distance.TotalKilometres(points);
+    }
+
+    // True when at least one consecutive pair has coordinates on both ends, i.e. a leg contributes a
+    // non-zero distance. Guards against preferring a positional source that would sum to a flat 0.
+    private static bool HasAnyLeg<T>(IReadOnlyList<T> points, Func<T, bool> hasCoordinates)
+    {
+        for (var i = 1; i < points.Count; i++)
+            if (hasCoordinates(points[i - 1]) && hasCoordinates(points[i]))
+                return true;
+        return false;
     }
 
     public Task<IReadOnlyList<RentalChip>> GetRentalChipsAsync(CancellationToken cancellationToken = default)
@@ -972,6 +1005,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             .GroupBy(l => l.ParticipantId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        // Computed run results for this day, keyed by participant-day link id.
+        var results = await ComputeDayResultsAsync(folder, _session.CurrentDay, cancellationToken);
+
         var rows = new List<ParticipantDayRow>(links.Count);
         foreach (var link in links)
         {
@@ -986,9 +1022,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 .Where(l => l.Id != link.Id)
                 .Select(l => new ParticipantFeeDay(l.GroupId, l.Chip))
                 .ToList();
+            var result = results.TryGetValue(link.Id, out var r) ? r : ParticipantDayResult.Empty;
             rows.Add(ToRow(link, participant, groupName, regionName, clubName, dusshName,
                 participant.PaysRaisedFee, fees.SelectedDiscountIds(participant.Id),
-                fees.Total(participant, memberDays), otherDays));
+                fees.Total(participant, memberDays), otherDays, result));
         }
         return rows;
     }
@@ -1013,6 +1050,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         var fees = await LoadFeeContextAsync(folder, cancellationToken);
 
+        // Computed run results, per day, keyed by participant-day link id (the roster spans all days).
+        var resultsByDay = new Dictionary<Guid, IReadOnlyDictionary<Guid, ParticipantDayResult>>(days.Count);
+        foreach (var day in days)
+            resultsByDay[day.Id] = await ComputeDayResultsAsync(folder, day, cancellationToken);
+
         // Index links by (participant, day) so each roster cell is a quick lookup.
         var linkByKey = links.ToDictionary(l => (l.ParticipantId, l.EventDayId));
 
@@ -1026,12 +1068,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 if (linkByKey.TryGetValue((participant.Id, day.Id), out var link))
                 {
                     var name = link.GroupId is { } gid && groupName.TryGetValue(gid, out var n) ? n : string.Empty;
-                    cells.Add(new RosterDayCell(day.Id, day.Number, link.Id, IsMember: true, link.GroupId, name, link.Chip, link.StartTime, link.OutOfCompetition));
+                    var result = resultsByDay.TryGetValue(day.Id, out var dr) && dr.TryGetValue(link.Id, out var r)
+                        ? r : ParticipantDayResult.Empty;
+                    cells.Add(new RosterDayCell(day.Id, day.Number, link.Id, IsMember: true, link.GroupId, name, link.Chip, link.StartTime, link.OutOfCompetition, result));
                     memberDays.Add((link.GroupId, link.Chip));
                 }
                 else
                 {
-                    cells.Add(new RosterDayCell(day.Id, day.Number, LinkId: null, IsMember: false, GroupId: null, GroupName: string.Empty, Chip: string.Empty, StartTime: null, OutOfCompetition: false));
+                    cells.Add(new RosterDayCell(day.Id, day.Number, LinkId: null, IsMember: false, GroupId: null, GroupName: string.Empty, Chip: string.Empty, StartTime: null, OutOfCompetition: false, ParticipantDayResult.Empty));
                 }
             }
             var region = participant.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
@@ -1281,6 +1325,200 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         await _eventStore.UpdateParticipantDayAsync(folder, existing, cancellationToken);
     }
 
+    public async Task SetParticipantDayResultStatusAsync(Guid participantId, Guid dayId, FinishStatus? status, CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var existing = links.FirstOrDefault(l => l.ParticipantId == participantId);
+        if (existing is null)
+            return;
+
+        // Resolve the participant's latest read-out for the day (the one the result uses), if any.
+        var chip = existing.Chip.Trim();
+        var readouts = chip.Length == 0
+            ? Array.Empty<FinishReadout>() as IReadOnlyList<FinishReadout>
+            : await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
+        var latest = readouts
+            .Where(r => string.Equals(r.ChipNumber.Trim(), chip, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(r => r.Order)
+            .FirstOrDefault();
+
+        // For a participant who has no finish read-out (no result), "OK" carries no meaning — it is the
+        // all-clear for someone who actually ran — so picking it leaves the status blank: normalize it to
+        // the "auto" sentinel (null) so the cell stays empty. A real problem status (DNS/DNF/…) is kept.
+        if (latest is null && status == FinishStatus.Ok)
+            status = null;
+
+        // Persist only the override via its dedicated store writer. The debounced row save goes through
+        // UpdateParticipantDayAsync, which deliberately leaves this column alone, so the two never fight —
+        // and crucially the row save can't wipe a status set here.
+        await _eventStore.SetParticipantDayResultStatusAsync(folder, existing.Id, status, cancellationToken);
+
+        // Mirror the override onto that latest read-out so the finish-read log shows the same manual
+        // status. Null clears it back to the computed status.
+        if (latest is not null && latest.ManualStatus != status)
+        {
+            latest.ManualStatus = status;
+            await _eventStore.UpdateFinishReadoutAsync(folder, latest, cancellationToken);
+        }
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, ParticipantDayResult>> GetDayResultsByParticipantAsync(Guid dayId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return new Dictionary<Guid, ParticipantDayResult>();
+
+        var folder = FolderPath;
+        var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        var day = days.FirstOrDefault(d => d.Id == dayId);
+        if (day is null)
+            return new Dictionary<Guid, ParticipantDayResult>();
+
+        // ComputeDayResultsAsync keys by link id; re-key by participant id for the UI to re-apply by row.
+        var byLink = await ComputeDayResultsAsync(folder, day, cancellationToken);
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var byParticipant = new Dictionary<Guid, ParticipantDayResult>(links.Count);
+        foreach (var link in links)
+            if (byLink.TryGetValue(link.Id, out var r))
+                byParticipant[link.ParticipantId] = r;
+        return byParticipant;
+    }
+
+    /// <summary>
+    /// Computes each participant's result on one day from the finish read-outs, keyed by the
+    /// participant-day link id. Reuses the finish-evaluation pipeline (<see cref="EvaluateFinish"/>) and
+    /// the scored splits tally (for rogaine «Бали»), then ranks the OK results within each group. A chip
+    /// read more than once on the day resolves to its <b>latest</b> read-out (highest <c>Order</c>).
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, ParticipantDayResult>> ComputeDayResultsAsync(
+        string folder, EventDay day, CancellationToken cancellationToken)
+    {
+        var dayId = day.Id;
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var readouts = await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
+        if (links.Count == 0)
+            return new Dictionary<Guid, ParticipantDayResult>();
+
+        var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
+        var settingsByGroup = settings.ToDictionary(s => s.GroupId);
+        var controlPoints = await _eventStore.GetControlPointsAsync(folder, dayId, cancellationToken);
+        var startFinishCodes = new HashSet<string>(
+            controlPoints
+                .Where(c => c.Type is ControlPointType.Start or ControlPointType.Finish)
+                .Select(c => c.Code.Trim()),
+            StringComparer.OrdinalIgnoreCase);
+        var dayDefault = day.DefaultDiscipline;
+
+        // Per-control point values, positions and map scale — needed only to tally rogaine «Бали».
+        var pointsByCode = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var cp in controlPoints)
+            if (cp.Points is { } pts)
+                pointsByCode[cp.Code.Trim()] = pts;
+
+        // Latest read-out per chip (the "last read-out" rule): highest Order wins on a repeated chip.
+        var latestByChip = new Dictionary<string, FinishReadout>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in readouts)
+        {
+            var key = r.ChipNumber.Trim();
+            if (key.Length == 0)
+                continue;
+            if (!latestByChip.TryGetValue(key, out var cur) || r.Order > cur.Order)
+                latestByChip[key] = r;
+        }
+
+        // First pass: evaluate every member with a chip that was read. Carry the group id and the sort
+        // keys (result time, score) so the second pass can rank within each group.
+        var results = new Dictionary<Guid, ParticipantDayResult>(links.Count);
+        var ranking = new List<(Guid LinkId, Guid? GroupId, bool Scored, int Score, TimeSpan Time)>();
+        foreach (var link in links)
+        {
+            var chip = link.Chip.Trim();
+            if (chip.Length == 0 || !latestByChip.TryGetValue(chip, out var readout))
+            {
+                // No read-out for this member's chip — but a manual override still shows a status. An "OK"
+                // override is meaningless without a result (OK is the all-clear for someone who ran), so it
+                // resolves to blank — matching how SetParticipantDayResultStatusAsync normalizes it.
+                var noReadOverride = link.ResultStatusOverride == FinishStatus.Ok ? null : link.ResultStatusOverride;
+                // No read-out ⇒ nothing to compute, so "auto" resolves to blank (FinishStatus.None).
+                results[link.Id] = new ParticipantDayResult(
+                    null, null, noReadOverride ?? FinishStatus.None, noReadOverride, FinishStatus.None,
+                    null, null, null, HasReadout: false);
+                continue;
+            }
+
+            var (computed, _, resolvedStart) = EvaluateFinish(readout, link, settingsByGroup, startFinishCodes, dayDefault);
+            var status = link.ResultStatusOverride ?? computed;
+
+            var resultTime = status == FinishStatus.Ok && resolvedStart is { } rs && readout.FinishTime is { } f
+                ? f - rs
+                : (TimeSpan?)null;
+
+            GroupDaySettings? gs = link.GroupId is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
+            var discipline = gs?.DisciplineOverride ?? dayDefault;
+            int? score = _strategies.For(discipline).UsesControlPointPoints
+                ? ScoreFor(readout, gs, startFinishCodes, pointsByCode, discipline)
+                : null;
+
+            results[link.Id] = new ParticipantDayResult(
+                readout.StartTime, readout.FinishTime, status, link.ResultStatusOverride, computed, resultTime, Place: null, score, HasReadout: true);
+
+            // Only OK results are placed; a non-positive result time can't be ranked by time.
+            if (status == FinishStatus.Ok)
+                ranking.Add((link.Id, link.GroupId, score is not null,
+                    score ?? 0, resultTime is { } t && t > TimeSpan.Zero ? t : TimeSpan.MaxValue));
+        }
+
+        // Second pass: rank within each group. Rogaine (scored) orders by score desc then time asc;
+        // every other format by time asc. Equal keys share a place; the next place skips the ties.
+        foreach (var group in ranking.GroupBy(r => r.GroupId))
+        {
+            var ordered = group
+                .OrderByDescending(r => r.Scored ? r.Score : 0)
+                .ThenBy(r => r.Time)
+                .ToList();
+
+            var place = 0;
+            var seen = 0;
+            (int Score, TimeSpan Time)? prev = null;
+            foreach (var r in ordered)
+            {
+                seen++;
+                var key = (r.Scored ? r.Score : 0, r.Time);
+                if (prev is null || prev.Value.Score != key.Item1 || prev.Value.Time != key.Item2)
+                    place = seen; // a new (worse) key takes the running position; ties keep the prior place
+                prev = key;
+                results[r.LinkId] = results[r.LinkId] with { Place = place };
+            }
+        }
+
+        return results;
+    }
+
+    // Total «Бали» (points) for a read-out on a point-scoring day: the scored splits tally over the
+    // group's allowed controls. Mirrors the SplitsContext the finish-splits panel builds, minus the
+    // geometry (distance/pace) it doesn't need.
+    private int ScoreFor(
+        FinishReadout readout,
+        GroupDaySettings? gs,
+        HashSet<string> startFinishCodes,
+        IReadOnlyDictionary<string, int> pointsByCode,
+        DisciplineType discipline)
+    {
+        var expected = SplitCodes(gs?.CourseOrder).Where(c => !startFinishCodes.Contains(c)).ToList();
+        var punches = DecodePunchTimes(readout.PunchTimes)
+            .Where(p => !startFinishCodes.Contains(p.ControlCode.Trim()))
+            .ToList();
+        var context = new SplitsContext
+        {
+            ExpectedControls = expected,
+            Punches = punches,
+            PointsByCode = pointsByCode,
+            StartTime = readout.StartTime,
+            FinishTime = readout.FinishTime
+        };
+        return _strategies.For(discipline).BuildSplits(context).TotalPoints;
+    }
+
     public async Task<IReadOnlyList<FinishReadoutRow>> GetFinishReadoutRowsAsync(CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null || _session.CurrentDay is null)
@@ -1324,24 +1562,288 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             if (holderByChip.TryGetValue(r.ChipNumber.Trim(), out var link) && byId.TryGetValue(link.ParticipantId, out var p))
             {
                 var group = link.GroupId is { } gid && groupName.TryGetValue(gid, out var gn) ? gn : string.Empty;
-                var (status, detail) = EvaluateFinish(r, link, settingsByGroup, startFinishCodes, dayDefault);
+                var (status, detail, resolvedStart) = EvaluateFinish(r, link, settingsByGroup, startFinishCodes, dayDefault);
+                // A judge's manual status override wins over the computed one (and clears its detail).
+                if (r.ManualStatus is { } manual)
+                {
+                    status = manual;
+                    detail = string.Empty;
+                }
+                var elapsed = resolvedStart is { } s && r.FinishTime is { } f ? f - s : (TimeSpan?)null;
                 rows.Add(new FinishReadoutRow(r.Id, r.Order, r.ChipNumber, r.StartTime, r.FinishTime,
-                    IsKnown: true, p.Number, p.FullName, group, status, detail));
+                    IsKnown: true, p.Number, p.FullName, group, status, detail, resolvedStart, elapsed));
             }
             else
             {
-                // An unrecognised chip has no group/course to judge against — no status.
+                // An unrecognised chip has no group/course to judge against — no computed status — but a
+                // manual override still shows (a judge may rule on an unknown chip).
                 rows.Add(new FinishReadoutRow(r.Id, r.Order, r.ChipNumber, r.StartTime, r.FinishTime,
                     IsKnown: false, ParticipantNumber: string.Empty, FullName: string.Empty, GroupName: string.Empty,
-                    Status: FinishStatus.None, StatusDetail: string.Empty));
+                    Status: r.ManualStatus ?? FinishStatus.None, StatusDetail: string.Empty, ResolvedStartTime: null, Elapsed: null));
             }
         }
         return rows;
     }
 
+    public async Task<SplitsView?> GetFinishSplitsAsync(Guid readoutId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+            return null;
+
+        var folder = FolderPath;
+        var dayId = CurrentDayId;
+
+        var readouts = await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
+        var readout = readouts.FirstOrDefault(r => r.Id == readoutId);
+        if (readout is null)
+            return null;
+
+        // Resolve the chip's holder on the day. An unrecognised chip (held by nobody on the day) has no
+        // prescribed course to judge against, but we still show its raw passage — every punch in chip
+        // order, all flagged off-course — so the operator can read the route an unknown chip took.
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var link = links.FirstOrDefault(l =>
+            string.Equals(l.Chip.Trim(), readout.ChipNumber.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
+        var settingsByGroup = settings.ToDictionary(s => s.GroupId);
+        var controlPoints = await _eventStore.GetControlPointsAsync(folder, dayId, cancellationToken);
+        var startFinishCodes = new HashSet<string>(
+            controlPoints
+                .Where(c => c.Type is ControlPointType.Start or ControlPointType.Finish)
+                .Select(c => c.Code.Trim()),
+            StringComparer.OrdinalIgnoreCase);
+
+        // Per-control point values (score formats); last write wins on a duplicate code.
+        var pointsByCode = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var cp in controlPoints)
+            if (cp.Points is { } pts)
+                pointsByCode[cp.Code.Trim()] = pts;
+
+        // Per-control positions, so the ordered splits can show each leg's straight-line distance/pace.
+        // The paper-map position (mm) is preferred over the geographic one — see ComputeDistance: the
+        // Web Mercator coordinates are stretched by 1/cos(latitude), the map mm × scale are not.
+        var coordsByCode = new Dictionary<string, GeoPoint>(StringComparer.OrdinalIgnoreCase);
+        var mapByCode = new Dictionary<string, MapPoint>(StringComparer.OrdinalIgnoreCase);
+        foreach (var cp in controlPoints)
+        {
+            coordsByCode[cp.Code.Trim()] = new GeoPoint(cp.Latitude, cp.Longitude);
+            mapByCode[cp.Code.Trim()] = new MapPoint(cp.MapX, cp.MapY);
+        }
+        // Scale is uniform across a day's controls (captured per control at import); take the first stated.
+        var mapScale = controlPoints.Select(c => c.MapScale).FirstOrDefault(s => s is > 0);
+
+        // Start/finish positions for the first (start → first control) and last (last control → finish) legs.
+        var startCp = controlPoints.FirstOrDefault(c => c.Type is ControlPointType.Start);
+        var finishCp = controlPoints.FirstOrDefault(c => c.Type is ControlPointType.Finish);
+        var startCoord = startCp is null ? default : new GeoPoint(startCp.Latitude, startCp.Longitude);
+        var finishCoord = finishCp is null ? default : new GeoPoint(finishCp.Latitude, finishCp.Longitude);
+        var startMap = startCp is null ? default : new MapPoint(startCp.MapX, startCp.MapY);
+        var finishMap = finishCp is null ? default : new MapPoint(finishCp.MapX, finishCp.MapY);
+
+        GroupDaySettings? gs = link?.GroupId is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
+        var discipline = gs?.DisciplineOverride ?? CurrentDayDefaultDiscipline;
+
+        // Expected = course controls minus start/finish; punches = read punches (with times) minus the
+        // same. An unknown chip (no link) has no prescribed course, so the expected list is empty and
+        // every punch reads off-course. Start = chip start when present, else the assigned start (only
+        // when a holder is known) paired with the finish's date.
+        var expected = SplitCodes(gs?.CourseOrder).Where(c => !startFinishCodes.Contains(c)).ToList();
+        var punches = DecodePunchTimes(readout.PunchTimes)
+            .Where(p => !startFinishCodes.Contains(p.ControlCode.Trim()))
+            .ToList();
+        var start = readout.StartTime ?? CombineWithFinishDate(link?.StartTime, readout.FinishTime);
+
+        var context = new SplitsContext
+        {
+            ExpectedControls = expected,
+            Punches = punches,
+            PointsByCode = pointsByCode,
+            CoordsByCode = coordsByCode,
+            MapByCode = mapByCode,
+            MapScale = mapScale,
+            StartCoord = startCoord,
+            FinishCoord = finishCoord,
+            StartMap = startMap,
+            FinishMap = finishMap,
+            StartTime = start,
+            FinishTime = readout.FinishTime
+        };
+
+        // A known holder gets their group's discipline shape. An unknown chip has no group/course, so we
+        // always use the ordered (set-course) layout: with no prescribed controls it degrades to a flat
+        // list of every punch in chip order — the raw passage, which is what's wanted for an unknown chip
+        // (the scored layout would instead drop every punch as "not an allowed control" and show nothing).
+        var strategy = link is null ? _strategies.For(DisciplineType.SetCourse) : _strategies.For(discipline);
+        return strategy.BuildSplits(context);
+    }
+
+    public async Task<SplitPrintDocument?> GetSplitPrintDocumentAsync(Guid readoutId, CancellationToken cancellationToken = default)
+    {
+        // The splits view (passage in order) is the printout's body; the resolved row carries the header
+        // metadata (name/number/group/result/status). Both already resolve the chip's holder on the day,
+        // so we just zip them by id rather than duplicating the resolution.
+        var view = await GetFinishSplitsAsync(readoutId, cancellationToken);
+        if (view is null)
+            return null;
+
+        var row = (await GetFinishReadoutRowsAsync(cancellationToken)).FirstOrDefault(r => r.Id == readoutId);
+        if (row is null)
+            return null;
+
+        // Rental-chip flag: the printout says "орендований чіп" for a chip in the competition's rental set.
+        var rentalChips = await _eventStore.GetRentalChipsAsync(FolderPath, cancellationToken);
+        var isRental = rentalChips.Any(c =>
+            string.Equals(c.Number.Trim(), row.ChipNumber.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        var status = row.Status switch
+        {
+            FinishStatus.Ok => "OK",
+            FinishStatus.Mp => "MP",
+            FinishStatus.Ovt => "OVT",
+            FinishStatus.Dnf => "DNF",
+            FinishStatus.Dns => "DNS",
+            FinishStatus.Dsq => "DSQ",
+            _ => string.Empty
+        };
+
+        var rows = view.Layout == SplitsLayout.Ordered
+            ? BuildPassageRows(view.Passage)
+            : BuildScoredRows(view.Entries);
+
+        // Start/finish wall-clock and course length come from the ordered passage (start marker → finish
+        // marker). The average pace is the result time over the total straight-line distance.
+        var startClock = string.Empty;
+        var finishClock = string.Empty;
+        decimal totalKm = 0m;
+        if (view.Layout == SplitsLayout.Ordered)
+        {
+            foreach (var p in view.Passage)
+            {
+                if (p.Kind == PassageKind.Start && p.Time is { } st)
+                    startClock = st.ToString("HH\\:mm\\:ss", CultureInfo.InvariantCulture);
+                else if (p.Kind == PassageKind.Finish && p.Time is { } ft)
+                    finishClock = ft.ToString("HH\\:mm\\:ss\\.f", CultureInfo.InvariantCulture);
+                if (p.LegKm is { } km && km > 0m)
+                    totalKm += km;
+            }
+        }
+
+        var resultElapsed = row.Elapsed is { } e && e >= TimeSpan.Zero ? e : (TimeSpan?)null;
+
+        // When a set course broke the order (MP), append the prescribed (correct) order so the slip shows
+        // what should have been done, with the first untaken control flagged as where the route went wrong.
+        var correctOrder = view.Layout == SplitsLayout.Ordered && row.Status == FinishStatus.Mp
+            ? BuildCorrectOrderRows(view.Expected)
+            : [];
+
+        return new SplitPrintDocument
+        {
+            FullName = row.FullName,
+            Number = row.ParticipantNumber,
+            ChipNumber = row.ChipNumber,
+            IsRentalChip = isRental,
+            GroupName = row.GroupName,
+            ResultText = resultElapsed is { } re ? re.ToString("h\\:mm\\:ss") : string.Empty,
+            StatusText = status,
+            StatusDetail = row.StatusDetail,
+            StartClock = startClock,
+            FinishClock = finishClock,
+            TotalDistanceText = FormatDistanceMetres(totalKm),
+            AvgPaceText = FormatPace(AvgPaceSecondsPerKm(resultElapsed, totalKm)),
+            Rows = rows,
+            CorrectOrder = correctOrder
+        };
+    }
+
+    // Maps the prescribed course (set-course layout) to the compact correct-order line. Each control keeps
+    // its taken/missing flag so the renderer can bold the controls the runner did not visit in order.
+    private static IReadOnlyList<SplitPrintCorrectRow> BuildCorrectOrderRows(IReadOnlyList<ExpectedControl> expected)
+    {
+        var list = new List<SplitPrintCorrectRow>(expected.Count);
+        foreach (var c in expected)
+            list.Add(new SplitPrintCorrectRow(c.Code, c.Taken));
+        return list;
+    }
+
+    // Maps the ordered passage (set-course layout) to printable rows. The start marker is dropped (the
+    // table opens at control 1); the finish marker becomes an "F" row with a blank №. Each row carries the
+    // leg distance in km, the cumulative (elapsed) and leg times and the leg pace — as the panel shows them.
+    private static IReadOnlyList<SplitPrintRow> BuildPassageRows(IReadOnlyList<PassagePunch> passage)
+    {
+        var list = new List<SplitPrintRow>(passage.Count);
+        foreach (var p in passage)
+        {
+            if (p.Kind == PassageKind.Start)
+                continue;
+
+            var code = p.Kind == PassageKind.Finish ? "F" : p.Code;
+            list.Add(new SplitPrintRow(
+                Index: p.Kind == PassageKind.Control ? p.Index.ToString(CultureInfo.InvariantCulture) : string.Empty,
+                Code: code,
+                DistanceText: FormatDistanceMetres(p.LegKm),
+                LegText: FormatDuration(p.Leg),
+                ElapsedText: FormatDuration(p.Elapsed),
+                PaceText: FormatPace(p.PaceSecondsPerKm),
+                PointsText: null,
+                OnCourse: p.Kind != PassageKind.Control || p.OnCourse));
+        }
+        return list;
+    }
+
+    // Maps the scored layout (score/choice/rogaine) to printable rows. The passage order is preserved and a
+    // points value is carried (non-null), so the renderer adds the бал column.
+    private static IReadOnlyList<SplitPrintRow> BuildScoredRows(IReadOnlyList<ScoreEntry> entries)
+    {
+        var list = new List<SplitPrintRow>(entries.Count);
+        var index = 0;
+        foreach (var entry in entries)
+        {
+            index++;
+            list.Add(new SplitPrintRow(
+                Index: entry.Visited ? index.ToString(CultureInfo.InvariantCulture) : string.Empty,
+                Code: entry.Code,
+                DistanceText: string.Empty,
+                LegText: string.Empty,
+                ElapsedText: FormatDuration(entry.Elapsed),
+                PaceText: string.Empty,
+                PointsText: entry.Points != 0 ? $"+{entry.Points}" : "0",
+                OnCourse: entry.Visited));
+        }
+        return list;
+    }
+
+    // Layer-neutral duration formatting matching the splits panel: "m:ss" under an hour, "h:mm:ss" above,
+    // blank for null/negative.
+    private static string FormatDuration(TimeSpan? span) => span is { } s && s >= TimeSpan.Zero
+        ? (s.TotalHours >= 1 ? s.ToString("h\\:mm\\:ss") : s.ToString("m\\:ss"))
+        : string.Empty;
+
+    // Distance in whole metres (unit lives in the header); blank for null/zero. Used for both the per-leg
+    // column and the course total on the header line.
+    private static string FormatDistanceMetres(decimal? km) => km is { } d && d > 0m
+        ? Math.Round(d * 1000m).ToString("0", CultureInfo.InvariantCulture)
+        : string.Empty;
+
+    // Pace "m:ss" from seconds-per-km (unit /км lives in the header); blank for null/non-positive.
+    private static string FormatPace(double? secondsPerKm)
+    {
+        if (secondsPerKm is not { } s || s <= 0 || double.IsInfinity(s))
+            return string.Empty;
+        var span = TimeSpan.FromSeconds(Math.Round(s));
+        return $"{(int)span.TotalMinutes}:{span.Seconds:00}";
+    }
+
+    // Average pace (seconds per km) over the whole result: result time ÷ total course distance.
+    private static double? AvgPaceSecondsPerKm(TimeSpan? result, decimal totalKm) =>
+        result is { } r && r > TimeSpan.Zero && totalKm > 0m
+            ? r.TotalSeconds / (double)totalKm
+            : null;
+
     // Builds the FinishContext for one read-out + its holder and asks the group's discipline strategy
     // for the status. Start time is the chip's read-out start when present, else the assigned start.
-    private (FinishStatus Status, string Detail) EvaluateFinish(
+    // Also returns the resolved start so the caller can derive the finish − start elapsed duration.
+    private (FinishStatus Status, string Detail, DateTimeOffset? ResolvedStartTime) EvaluateFinish(
         FinishReadout readout,
         ParticipantDay link,
         IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup,
@@ -1370,7 +1872,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         };
 
         var result = _strategies.For(discipline).EvaluateFinish(context);
-        return (result.Status, result.Detail);
+        return (result.Status, result.Detail, start);
     }
 
     // Pairs an assigned start time-of-day with the read-out finish's date, so the time-limit check
@@ -1422,6 +1924,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 StartTime = record.StartTime,
                 FinishTime = record.FinishTime,
                 Punches = string.Join(' ', record.Punches.Select(p => p.ControlCode.Trim()).Where(c => c.Length > 0)),
+                PunchTimes = EncodePunchTimes(record.Punches),
                 ContentKey = key
             });
         }
@@ -1437,16 +1940,128 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return _eventStore.DeleteFinishReadoutsForDayAsync(FolderPath, CurrentDayId, cancellationToken);
     }
 
+    public async Task<FinishReadoutEditData?> GetFinishReadoutEditAsync(Guid readoutId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+            return null;
+
+        var folder = FolderPath;
+        var dayId = CurrentDayId;
+
+        var readouts = await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
+        var readout = readouts.FirstOrDefault(r => r.Id == readoutId);
+        if (readout is null)
+            return null;
+
+        // The effective status is the manual override when set, else the discipline's computed status —
+        // the modal opens on whatever is currently shown in the log.
+        var row = (await GetFinishReadoutRowsAsync(cancellationToken)).FirstOrDefault(r => r.Id == readoutId);
+        var effectiveStatus = row?.Status ?? FinishStatus.None;
+
+        // The day's members, each a reassign target (bib + ПІБ + group), and the chip's current holder so
+        // the dropdown opens on them. Built from the same participant/group lookups the log resolution uses.
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var byId = participants.ToDictionary(p => p.Id);
+        var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
+
+        var options = new List<FinishReadoutParticipantOption>(links.Count);
+        foreach (var link in links)
+        {
+            if (!byId.TryGetValue(link.ParticipantId, out var p))
+                continue;
+            var group = link.GroupId is { } gid && groupName.TryGetValue(gid, out var gn) ? gn : string.Empty;
+            options.Add(new FinishReadoutParticipantOption(p.Id, p.Number, p.FullName, group));
+        }
+        options = options
+            .OrderBy(o => o.FullName, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        var holder = links.FirstOrDefault(l =>
+            string.Equals(l.Chip.Trim(), readout.ChipNumber.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        return new FinishReadoutEditData
+        {
+            Id = readout.Id,
+            ChipNumber = readout.ChipNumber,
+            StartTime = readout.StartTime,
+            FinishTime = readout.FinishTime,
+            Punches = DecodePunchTimes(readout.PunchTimes),
+            Status = effectiveStatus,
+            HasManualStatus = readout.ManualStatus is not null,
+            Participants = options,
+            CurrentHolderId = holder?.ParticipantId
+        };
+    }
+
+    public async Task UpdateFinishReadoutAsync(FinishReadoutEdit edit, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(edit);
+        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+            return;
+
+        var folder = FolderPath;
+        var dayId = CurrentDayId;
+
+        var readouts = await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
+        var readout = readouts.FirstOrDefault(r => r.Id == edit.Id);
+        if (readout is null)
+            return;
+
+        readout.ChipNumber = (edit.ChipNumber ?? string.Empty).Trim();
+        readout.StartTime = edit.StartTime;
+        readout.FinishTime = edit.FinishTime;
+        readout.Punches = string.Join(' ', edit.Punches.Select(p => p.ControlCode.Trim()).Where(c => c.Length > 0));
+        readout.PunchTimes = EncodePunchTimes(edit.Punches);
+        readout.ManualStatus = edit.ManualStatus;
+        await _eventStore.UpdateFinishReadoutAsync(folder, readout, cancellationToken);
+
+        // (Re)assign this read-out's chip to the chosen participant on the day, taking it from any previous
+        // holder so the chip stays unique per day. The caller has already confirmed the reassignment.
+        if (edit.ReassignToParticipantId is { } targetId)
+            await ReassignParticipantDayChipAsync(targetId, dayId, readout.ChipNumber, cancellationToken);
+    }
+
     // Stable signature of a read-out record's content, so re-reading the same physical row is detected
     // as already-logged while genuinely different reads of the same chip remain distinct.
     private static string ContentKeyFor(ChipReadRecord record)
     {
-        var punches = string.Join(",", record.Punches.Select(p => $"{p.ControlCode}@{p.Time?.UtcTicks.ToString(CultureInfo.InvariantCulture) ?? "-"}"));
         return string.Join("|",
             record.ChipNumber.Trim(),
             record.StartTime?.UtcTicks.ToString(CultureInfo.InvariantCulture) ?? "-",
             record.FinishTime?.UtcTicks.ToString(CultureInfo.InvariantCulture) ?? "-",
-            punches);
+            EncodePunchTimes(record.Punches));
+    }
+
+    // Serializes punches as comma-separated "code@ticks" (UTC ticks, "-" for an unknown time), the
+    // form stored in FinishReadout.PunchTimes and reused inside the content key.
+    private static string EncodePunchTimes(IEnumerable<ChipPunch> punches) =>
+        string.Join(",", punches.Select(p =>
+            $"{p.ControlCode.Trim()}@{p.Time?.UtcTicks.ToString(CultureInfo.InvariantCulture) ?? "-"}"));
+
+    // Reverses EncodePunchTimes back into a punch list (codes + times) for the splits view. Tokens that
+    // can't be parsed are skipped; a "-" time becomes null.
+    private static IReadOnlyList<ChipPunch> DecodePunchTimes(string? encoded)
+    {
+        if (string.IsNullOrWhiteSpace(encoded))
+            return [];
+
+        var list = new List<ChipPunch>();
+        foreach (var token in encoded.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var at = token.LastIndexOf('@');
+            if (at <= 0)
+                continue;
+            var code = token[..at].Trim();
+            var timePart = token[(at + 1)..];
+            DateTimeOffset? time = timePart != "-" && long.TryParse(timePart, NumberStyles.Integer,
+                CultureInfo.InvariantCulture, out var ticks)
+                ? new DateTimeOffset(ticks, TimeSpan.Zero)
+                : null;
+            list.Add(new ChipPunch(code, time));
+        }
+        return list;
     }
 
     public async Task<string?> FindChipHolderAsync(Guid dayId, string chip, Guid excludeParticipantId, CancellationToken cancellationToken = default)
@@ -1721,7 +2336,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         bool paysRaisedFee = false,
         IReadOnlyList<Guid>? selectedDiscountIds = null,
         decimal totalEntryFee = 0m,
-        IReadOnlyList<ParticipantFeeDay>? otherDays = null)
+        IReadOnlyList<ParticipantFeeDay>? otherDays = null,
+        ParticipantDayResult? result = null)
     {
         var name = link.GroupId is { } gid && groupName.TryGetValue(gid, out var n) ? n : string.Empty;
         var region = p.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
@@ -1756,7 +2372,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Team: p.Team,
             StartTime: link.StartTime,
             OutOfCompetition: link.OutOfCompetition,
-            DayDefaultDiscipline: CurrentDayDefaultDiscipline);
+            DayDefaultDiscipline: CurrentDayDefaultDiscipline,
+            Result: result ?? ParticipantDayResult.Empty);
     }
 
     private GroupDayRow ToRow(GroupDaySettings s, string name) => new(

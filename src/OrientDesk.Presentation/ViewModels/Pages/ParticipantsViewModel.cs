@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientDesk.BusinessLogic.Disciplines;
 using OrientDesk.BusinessLogic.Entities;
+using OrientDesk.BusinessLogic.Enums;
 using OrientDesk.BusinessLogic.Interfaces;
 using OrientDesk.BusinessLogic.Models;
 using OrientDesk.BusinessLogic.Services;
@@ -101,7 +102,15 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         new(RosterField.Groups, "Participants.Roster.Block.Groups", _ => true),
         new(RosterField.Chips, "Participants.Roster.Block.Chips", c => c.IsMember),
         new(RosterField.StartTimes, "Participants.Roster.Block.StartTimes", c => c.IsMember),
-        new(RosterField.OutOfCompetition, "Participants.Roster.Block.OutOfCompetition", c => c.IsMember)
+        new(RosterField.OutOfCompetition, "Participants.Roster.Block.OutOfCompetition", c => c.IsMember),
+        // Result blocks — collapsible per day like Groups/Chips. Score is dropped by the column builder
+        // on days that don't score points.
+        new(RosterField.ActualStart, "Participants.Col.ActualStart", c => c.IsMember),
+        new(RosterField.Finish, "Participants.Col.Finish", c => c.IsMember),
+        new(RosterField.ResultStatus, "Participants.Col.ResultStatus", c => c.IsMember),
+        new(RosterField.Result, "Participants.Col.Result", c => c.IsMember),
+        new(RosterField.Place, "Participants.Col.Place", c => c.IsMember),
+        new(RosterField.Score, "Participants.Col.Score", c => c.IsMember)
     ];
 
     /// <summary>Selectable options: a leading roster sentinel, then each real day.</summary>
@@ -186,7 +195,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     }
 
     private void RebuildDayBands()
-        => DayBands = new Controls.DayColumnBuilder(Localization).Build(ShowTeamColumn, Discounts, RaisedFeeEnabled, _dayBands);
+        => DayBands = new Controls.DayColumnBuilder(Localization).Build(ShowTeamColumn, ShowScoreColumn, Discounts, RaisedFeeEnabled, _dayBands);
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsRosterMode))]
@@ -218,6 +227,17 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
     /// <summary>True when the roster's team column should be shown (any day uses a team discipline).</summary>
     public bool RosterShowsTeam => _rosterShowsTeam;
+
+    // Cached flags for the «Бали» (score) result column — true when the day (or any day, for the roster)
+    // uses a point-scoring discipline (rogaine). Mirrors the team flags above.
+    private bool _dayUsesScore;
+    private bool _rosterShowsScore;
+
+    /// <summary>True when the current day's discipline scores points — drives the day-grid «Бали» column.</summary>
+    public bool ShowScoreColumn => _dayUsesScore;
+
+    /// <summary>True when any day scores points — drives the roster's «Бали» column.</summary>
+    public bool RosterShowsScore => _rosterShowsScore;
 
     /// <summary>Raised when the roster's day set changed, so the view rebuilds its per-day columns.</summary>
     public event EventHandler? RosterColumnsChanged;
@@ -357,9 +377,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             // The roster spans all days, so its team column shows when ANY day uses teams (its default
             // discipline or any group's override).
             _rosterShowsTeam = await _busy.RunAsync(() => AnyDayUsesTeamAsync());
+            _rosterShowsScore = await _busy.RunAsync(() => AnyDayUsesScoreAsync());
             foreach (var row in roster)
                 Roster.Add(CreateRosterRow(row, groupsByDay));
             OnPropertyChanged(nameof(RosterShowsTeam));
+            OnPropertyChanged(nameof(RosterShowsScore));
             RosterColumnsChanged?.Invoke(this, EventArgs.Empty);
         }
         else if (_session.CurrentDay is not null)
@@ -381,13 +403,19 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 _strategies.For(day.DefaultDiscipline).UsesParticipantColumn(BusinessLogic.Enums.ParticipantColumn.Team)
                 || dayGroups.Any(g => _strategies.For(g.DisciplineOverride ?? day.DefaultDiscipline)
                     .UsesParticipantColumn(BusinessLogic.Enums.ParticipantColumn.Team));
+            // «Бали» applies when the day's discipline scores points, or any group overrides to one.
+            _dayUsesScore =
+                _strategies.For(day.DefaultDiscipline).UsesControlPointPoints
+                || dayGroups.Any(g => _strategies.For(g.DisciplineOverride ?? day.DefaultDiscipline).UsesControlPointPoints);
         }
         else
         {
             _dayUsesTeam = false;
+            _dayUsesScore = false;
         }
 
         OnPropertyChanged(nameof(ShowTeamColumn));
+        OnPropertyChanged(nameof(ShowScoreColumn));
         RebuildDayBands();
         RecomputeStatusInfo();
     }
@@ -434,13 +462,30 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         return false;
     }
 
+    // True when any day scores points — its default discipline or any group's override is point-scoring
+    // (rogaine). Drives the roster's «Бали» column.
+    private async Task<bool> AnyDayUsesScoreAsync()
+    {
+        var days = await _editor.GetDaysAsync();
+        foreach (var day in days)
+        {
+            if (_strategies.For(day.DefaultDiscipline).UsesControlPointPoints)
+                return true;
+            var groups = await _editor.GetGroupsForDayAsync(day.Id);
+            if (groups.Any(g => _strategies.For(g.DisciplineOverride ?? day.DefaultDiscipline).UsesControlPointPoints))
+                return true;
+        }
+        return false;
+    }
+
     private ParticipantDayRowViewModel CreateDayRow(ParticipantDayRow row, IReadOnlyList<GroupOption> groupOptions)
         => new(row, groupOptions, _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Discounts, _feeContext, Localization, _strategies,
             RequestRowSave, LeaveDay, RequestDayRowChipChange,
             RequestDayRowRegionChange, RequestDayRowAddRegion,
             RequestDayRowClubChange, RequestDayRowAddClub,
             RequestDayRowDusshChange, RequestDayRowAddDussh,
-            RequestRowRaisedFeeChange, RequestRowDiscountChange);
+            RequestRowRaisedFeeChange, RequestRowDiscountChange,
+            RequestDayRowResultStatusChange);
 
     private ParticipantRosterRowViewModel CreateRosterRow(
         ParticipantRosterRow row,
@@ -452,7 +497,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             var options = groupsByDay.TryGetValue(cell.DayId, out var o)
                 ? o
                 : [new GroupOption(null, string.Empty, Localization)];
-            cells.Add(new RosterDayCellViewModel(row.ParticipantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange, RequestCellStartTimeChange, RequestCellOutOfCompetitionChange));
+            cells.Add(new RosterDayCellViewModel(row.ParticipantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange, RequestCellStartTimeChange, RequestCellOutOfCompetitionChange, RequestCellResultStatusChange));
         }
         return new ParticipantRosterRowViewModel(row, cells, _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Discounts, _feeContext, Localization,
             RequestRosterRowSave,
@@ -1115,23 +1160,35 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // days that don't all have it. Region/club/ДЮСШ dropdowns reuse the shared "+ new" sentinel; picking
     // it routes back here to the existing create flow and re-seeds the dialog.
     [RelayCommand]
-    private async Task BulkEditAsync(IReadOnlyList<object?>? visibleRows)
+    private async Task BulkEditAsync(BulkEditRequest? request)
     {
+        var visibleRows = request?.Rows;
         if (visibleRows is null || visibleRows.Count == 0 || _session.CurrentEvent is null)
             return;
 
-        // The group dropdown needs a real-group list; in day mode it is the current day's groups.
+        // The group dropdown needs a real-group list. In day mode it's the current day's groups; in the
+        // roster it's every competition group (each participant's day cells resolve the matching group by
+        // id from their own day's list, so a day without that group is left untouched — same as the
+        // roster's collapsed Groups cell). Either way "(none)" is excluded — bulk edit sets a group.
         var groupOptions = IsDayMode && _session.CurrentDay is { } day
             ? (await _busy.RunAsync(() => BuildGroupOptionsAsync(day.Id)))
                 .Where(o => o.Id is not null).ToList()
-            : new List<GroupOption>();
+            : IsRosterMode
+                ? (await _busy.RunAsync(() => _editor.GetGroupsAsync()))
+                    .Select(g => new GroupOption(g.Id, g.Name, Localization)).ToList()
+                : new List<GroupOption>();
 
         var fields = BuildBulkEditFields(groupOptions.Count > 0);
         // Remember each field's localized label so the activity log can name the field, not its key.
         var fieldLabels = fields.ToDictionary(f => f.Key, f => f.Label);
+        // Preselect the field the request points at (the focused column / the right-clicked header),
+        // when that field is actually offered in the current mode; otherwise fall back to the first.
+        var preselect = request?.PreselectKey is { } key
+            ? fields.FirstOrDefault(f => f.Key == key)
+            : null;
         var dialog = new Dialogs.BulkEditViewModel(
             Localization, fields, groupOptions,
-            _regionOptions, _clubOptions, _dusshOptions, _rankOptions, visibleRows.Count);
+            _regionOptions, _clubOptions, _dusshOptions, _rankOptions, visibleRows.Count, preselect);
 
         // The list "+ new" sentinels create the value inline, reusing the existing add flows.
         dialog.AddRequested += OnBulkEditAddRequested;
@@ -1188,8 +1245,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         fields.Add(F("IsFsouMember", Dialogs.BulkEditFieldKind.Bool, "Participants.Col.IsFsouMember"));
         if (RaisedFeeEnabled)
             fields.Add(F("PaysRaisedFee", Dialogs.BulkEditFieldKind.Bool, "Participants.Col.RaisedFee"));
-        if (IsDayMode)
-            fields.Add(F("OutOfCompetition", Dialogs.BulkEditFieldKind.Bool, "Participants.Col.OutOfCompetition"));
+        // Start time and out-of-competition are per-day fields. Day mode edits the current day directly;
+        // the roster fans the value out to each participant's member days (mirrors its collapsed cells).
+        // Both modes therefore offer them. Start is a free-text HH:mm:ss field like the cell editor.
+        fields.Add(F("StartTime", Dialogs.BulkEditFieldKind.Text, "Participants.Col.StartTime"));
+        fields.Add(F("OutOfCompetition", Dialogs.BulkEditFieldKind.Bool, "Participants.Col.OutOfCompetition"));
         return fields;
     }
 
@@ -1325,6 +1385,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             case "FsouCode": row.FsouCode = r.Text ?? string.Empty; break;
             case "Payment": row.Payment = r.Text ?? string.Empty; break;
             case "Team": row.Team = r.Text ?? string.Empty; break;
+            case "StartTime": row.StartTimeText = r.Text ?? string.Empty; break;
             case "IsFsouMember": row.IsFsouMember = r.Bool ?? false; break;
             case "PaysRaisedFee": row.PaysRaisedFee = r.Bool ?? false; break;
             case "OutOfCompetition": row.OutOfCompetition = r.Bool ?? false; break;
@@ -1335,6 +1396,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     {
         switch (r.Key)
         {
+            // Group fans out to every day that has the chosen group (resolved per day by id), exactly
+            // like the roster's collapsed Groups cell. Days without that group are left as they were.
+            case "Group": row.SetGroupForAllDays(r.Id); break;
             case "Region":
                 row.SelectedRegion = row.RegionOptions.FirstOrDefault(o => !o.IsAdd && o.Id == r.Id) ?? row.RegionOptions[0];
                 break;
@@ -1354,6 +1418,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             case "Team": row.Team = r.Text ?? string.Empty; break;
             case "IsFsouMember": row.IsFsouMember = r.Bool ?? false; break;
             case "PaysRaisedFee": row.PaysRaisedFee = r.Bool ?? false; break;
+            // Per-day fields fan out to the participant's member days (like the collapsed roster cells).
+            case "StartTime": row.SetStartTimeForMemberDays(r.Text ?? string.Empty); break;
+            case "OutOfCompetition": row.SetOutOfCompetitionForMemberDays(r.Bool ?? false); break;
         }
     }
 
@@ -1404,6 +1471,55 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             return;
         var (participantId, dayId, value) = (cell.ParticipantId, cell.DayId, cell.OutOfCompetition);
         _ = Task.Run(() => _editor.SetParticipantDayOutOfCompetitionAsync(participantId, dayId, value));
+    }
+
+    // ── Result status override (day grid + roster) ────────────────────────────────────────────
+    // The status dropdown persists a manual override on the participant-day, then re-ranks the day so
+    // places re-number live across the visible rows. Day grid uses the session's current day; the roster
+    // cell carries its own day.
+    private void RequestDayRowResultStatusChange(ParticipantDayRowViewModel row)
+    {
+        if (_session.CurrentDay is not { } day)
+            return;
+        _ = ApplyResultStatusAsync(row.ParticipantId, day.Id, row.ResultStatusOverride);
+    }
+
+    private void RequestCellResultStatusChange(RosterDayCellViewModel cell)
+    {
+        if (!cell.IsMember)
+            return;
+        _ = ApplyResultStatusAsync(cell.ParticipantId, cell.DayId, cell.ResultStatusOverride);
+    }
+
+    private async Task ApplyResultStatusAsync(Guid participantId, Guid dayId, FinishStatus? status)
+    {
+        try
+        {
+            await Task.Run(() => _editor.SetParticipantDayResultStatusAsync(participantId, dayId, status));
+            var results = await _editor.GetDayResultsByParticipantAsync(dayId);
+            RefreshResults(dayId, results);
+        }
+        catch { /* never crash the UI over a status edit */ }
+    }
+
+    // Re-applies recomputed day results onto the visible rows/cells so places re-number after a status
+    // edit. Day grid: every row is the current day. Roster: the matching day's cell on each row.
+    private void RefreshResults(Guid dayId, IReadOnlyDictionary<Guid, ParticipantDayResult> results)
+    {
+        if (IsDayMode)
+        {
+            if (_session.CurrentDay?.Id != dayId)
+                return;
+            foreach (var row in Participants)
+                row.ApplyResult(results.TryGetValue(row.ParticipantId, out var r) ? r : ParticipantDayResult.Empty);
+        }
+        else
+        {
+            foreach (var row in Roster)
+                foreach (var cell in row.Days)
+                    if (cell.DayId == dayId && cell.IsMember)
+                        cell.ApplyResult(results.TryGetValue(row.ParticipantId, out var r) ? r : ParticipantDayResult.Empty);
+        }
     }
 
     private async Task ResolveCellChipAsync(RosterDayCellViewModel cell)
@@ -1939,3 +2055,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _saveTimers.Clear();
     }
 }
+
+/// <summary>
+/// The argument for the bulk-edit command: the shown (filtered + sorted) rows to change, plus an
+/// optional <see cref="PreselectKey"/> — the bulk-edit field key the dialog should open on. The view
+/// sets it from the focused column (toolbar button) or the right-clicked header column (column menu);
+/// null ⇒ the dialog opens on its first field. An unknown/unavailable key is ignored.
+/// </summary>
+public sealed record BulkEditRequest(IReadOnlyList<object?> Rows, string? PreselectKey = null);

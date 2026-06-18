@@ -29,6 +29,13 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.App
                     b.Property<double>("FontScale")
                         .HasColumnType("REAL");
 
+                    b.Property<string>("PrinterName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ReceiptWidthMm")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
 
                     b.ToTable("Settings");

@@ -1,0 +1,250 @@
+using System.Collections.ObjectModel;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using OrientDesk.BusinessLogic.Models;
+using OrientDesk.Localization;
+using OrientDesk.Presentation.Services;
+
+namespace OrientDesk.Presentation.ViewModels.Pages;
+
+/// <summary>
+/// Drives the passage/splits panel under (or beside) the finish-read log. When a log row is selected the
+/// page fills this from <c>ICompetitionEditorService.GetFinishSplitsAsync</c>; the panel is shown only
+/// while <see cref="HasData"/> is true. The discipline decides the shape: an <see cref="IsOrdered"/>
+/// layout (set course) shows two parallel lists — the actual passage (<see cref="Passage"/>, every punch
+/// in chip order) beside the prescribed course (<see cref="Expected"/>) — while an <see cref="IsScored"/>
+/// layout (score / choice / rogaine) lists the allowed controls with points and a running total. The
+/// dock side (<see cref="IsDockedRight"/>) and panel size are user preferences (persisted app-wide).
+/// </summary>
+public sealed partial class FinishSplitsViewModel : ObservableObject
+{
+    private readonly ILocalizationService _localization;
+    private readonly IUiPreferencesService _preferences;
+
+    public FinishSplitsViewModel(ILocalizationService localization, IUiPreferencesService preferences)
+    {
+        _localization = localization;
+        _preferences = preferences;
+        _isDockedRight = preferences.SplitsDock == SplitsDock.Right;
+        _panelSize = preferences.SplitsSize;
+        _prescribedWidth = preferences.SplitsPrescribedWidth;
+    }
+
+    public ILocalizationService Localization => _localization;
+
+    /// <summary>Subtitle line (selected participant + group), shown in the panel header.</summary>
+    [ObservableProperty]
+    private string _heading = string.Empty;
+
+    /// <summary>Ordered layout — the actual passage (every punch in chip order); empty for the scored layout.</summary>
+    public ObservableCollection<PassagePunchViewModel> Passage { get; } = [];
+
+    /// <summary>Ordered layout — the prescribed course in order; empty for the scored layout.</summary>
+    public ObservableCollection<ExpectedControlViewModel> Expected { get; } = [];
+
+    /// <summary>Scored (score/choice/rogaine) layout rows; empty for the ordered layout.</summary>
+    public ObservableCollection<ScoreEntryViewModel> Entries { get; } = [];
+
+    [ObservableProperty]
+    private bool _hasData;
+
+    [ObservableProperty]
+    private bool _isOrdered;
+
+    [ObservableProperty]
+    private bool _isScored;
+
+    /// <summary>Summary line: "visited / expected" and, for scored, the total points.</summary>
+    [ObservableProperty]
+    private string _summary = string.Empty;
+
+    // --- Dock side + size (persisted app-wide as preferences.json) ---------------------------------
+
+    /// <summary>True when the panel is docked to the right of the table; false = below it.</summary>
+    [ObservableProperty]
+    private bool _isDockedRight;
+
+    /// <summary>Panel size along its docked edge (height when bottom, width when right), in DIPs.</summary>
+    [ObservableProperty]
+    private double _panelSize;
+
+    /// <summary>
+    /// Width (DIPs) of the prescribed-course column in the ordered layout; the passage list takes the
+    /// remaining space. The prescribed side is the splitter-sized (pixel) column — it must be the one the
+    /// splitter resizes so the drag works in both directions (a pixel "next" column to a star "previous"
+    /// one). Seeded onto the column in code-behind and written back after a splitter drag.
+    /// </summary>
+    [ObservableProperty]
+    private double _prescribedWidth;
+
+    partial void OnIsDockedRightChanged(bool value) =>
+        _preferences.SplitsDock = value ? SplitsDock.Right : SplitsDock.Bottom;
+
+    partial void OnPanelSizeChanged(double value) => _preferences.SplitsSize = value;
+
+    partial void OnPrescribedWidthChanged(double value) => _preferences.SplitsPrescribedWidth = value;
+
+    /// <summary>Toggles the dock side (the View's "move right / move down" button).</summary>
+    [RelayCommand]
+    private void ToggleDock() => IsDockedRight = !IsDockedRight;
+
+    /// <summary>Clears the panel (called when the selection is lost or the chip is unrecognised).</summary>
+    public void Clear()
+    {
+        Passage.Clear();
+        Expected.Clear();
+        Entries.Clear();
+        Heading = string.Empty;
+        Summary = string.Empty;
+        IsOrdered = false;
+        IsScored = false;
+        HasData = false;
+    }
+
+    /// <summary>Fills the panel from a built splits view for the given selected row.</summary>
+    public void Show(SplitsView view, string heading)
+    {
+        Passage.Clear();
+        Expected.Clear();
+        Entries.Clear();
+        Heading = heading;
+
+        IsOrdered = view.Layout == SplitsLayout.Ordered;
+        IsScored = view.Layout == SplitsLayout.Scored;
+
+        if (IsOrdered)
+        {
+            foreach (var punch in view.Passage)
+                Passage.Add(new PassagePunchViewModel(punch, _localization));
+            foreach (var control in view.Expected)
+                Expected.Add(new ExpectedControlViewModel(control, _localization));
+            Summary = string.Format(_localization.Get("FinishRead.Splits.Visited"),
+                view.VisitedCount, view.ExpectedCount);
+        }
+        else
+        {
+            foreach (var entry in view.Entries)
+                Entries.Add(new ScoreEntryViewModel(entry, _localization));
+            Summary = string.Format(_localization.Get("FinishRead.Splits.Scored"),
+                view.VisitedCount, view.ExpectedCount, view.TotalPoints);
+        }
+
+        HasData = true;
+    }
+}
+
+/// <summary>One punch in the actual passage (ordered layout): code, on/off course, time and splits.</summary>
+public sealed class PassagePunchViewModel
+{
+    private readonly PassagePunch _punch;
+    private readonly ILocalizationService _localization;
+
+    public PassagePunchViewModel(PassagePunch punch, ILocalizationService localization)
+    {
+        _punch = punch;
+        _localization = localization;
+    }
+
+    /// <summary>1-based punch index in chip order. Blank for the start/finish marker rows.</summary>
+    public string IndexText => _punch.Kind == PassageKind.Control ? _punch.Index.ToString() : string.Empty;
+
+    /// <summary>Control code, or the localized "Start"/"Finish" label for the bracket rows.</summary>
+    public string Code => _punch.Kind switch
+    {
+        PassageKind.Start => _localization.Get("FinishRead.Splits.Start"),
+        PassageKind.Finish => _localization.Get("FinishRead.Splits.Finish"),
+        _ => _punch.Code
+    };
+
+    /// <summary>Status glyph: ✓ on course / ✗ off course; blank for the start/finish marker rows.</summary>
+    public string Glyph => _punch.Kind != PassageKind.Control
+        ? string.Empty
+        : _punch.OnCourse ? "✓" : "✗";
+
+    /// <summary>Punch time as "HH:mm:ss" (in local time), or blank.</summary>
+    public string TimeText => _punch.Time is { } t ? t.ToLocalTime().ToString("HH:mm:ss") : string.Empty;
+
+    /// <summary>Leg split (time since the previous punch) as "m:ss" / "h:mm:ss", or blank.</summary>
+    public string LegText => SplitFormat.Duration(_punch.Leg);
+
+    /// <summary>Elapsed since the start, or blank.</summary>
+    public string ElapsedText => SplitFormat.Duration(_punch.Elapsed);
+
+    /// <summary>Straight-line distance of this leg in metres, e.g. "420"; blank when unknown. (Unit in header.)</summary>
+    public string DistanceText => SplitFormat.DistanceMetres(_punch.LegKm);
+
+    /// <summary>Leg pace as "m:ss"; blank when distance or leg time is unknown. (Unit /км in header.)</summary>
+    public string PaceText => SplitFormat.Pace(_punch.PaceSecondsPerKm);
+}
+
+/// <summary>One prescribed control (ordered layout): order, code, taken-or-missing.</summary>
+public sealed class ExpectedControlViewModel
+{
+    private readonly ExpectedControl _control;
+    private readonly ILocalizationService _localization;
+
+    public ExpectedControlViewModel(ExpectedControl control, ILocalizationService localization)
+    {
+        _control = control;
+        _localization = localization;
+    }
+
+    public string SequenceText => _control.Sequence.ToString();
+    public string Code => _control.Code;
+    public bool Taken => _control.Taken;
+
+    /// <summary>Status glyph: ✓ taken / — missing.</summary>
+    public string Glyph => _control.Taken ? "✓" : "—";
+
+    /// <summary>"missing" label for an un-taken control; blank otherwise.</summary>
+    public string Note => _control.Taken ? string.Empty : _localization.Get("FinishRead.Splits.Missing");
+}
+
+/// <summary>One row of the scored (score/choice/rogaine) splits panel: an allowed control + points.</summary>
+public sealed class ScoreEntryViewModel
+{
+    private readonly ScoreEntry _entry;
+
+    public ScoreEntryViewModel(ScoreEntry entry, ILocalizationService localization) => _entry = entry;
+
+    public string Code => _entry.Code;
+    public bool Visited => _entry.Visited;
+
+    /// <summary>Status glyph: ✓ visited, — not visited.</summary>
+    public string Glyph => _entry.Visited ? "✓" : "—";
+
+    /// <summary>Point value, e.g. "+30"; blank when zero.</summary>
+    public string PointsText => _entry.Points != 0 ? $"+{_entry.Points}" : string.Empty;
+
+    /// <summary>Punch time as "HH:mm:ss" (in local time), or blank when not visited.</summary>
+    public string TimeText => _entry.PunchTime is { } t ? t.ToLocalTime().ToString("HH:mm:ss") : string.Empty;
+
+    /// <summary>Elapsed since the start, or blank.</summary>
+    public string ElapsedText => SplitFormat.Duration(_entry.Elapsed);
+
+    /// <summary>Running total after this control (visited rows only); blank for unvisited rows.</summary>
+    public string RunningTotalText => _entry.Visited ? _entry.RunningTotal.ToString() : string.Empty;
+}
+
+/// <summary>Shared duration formatting for the splits rows.</summary>
+internal static class SplitFormat
+{
+    /// <summary>"m:ss" under an hour, "h:mm:ss" at or above; blank for null/negative.</summary>
+    public static string Duration(TimeSpan? span) => span is { } s && s >= TimeSpan.Zero
+        ? (s.TotalHours >= 1 ? s.ToString("h\\:mm\\:ss") : s.ToString("m\\:ss"))
+        : string.Empty;
+
+    /// <summary>Leg distance in whole metres, e.g. "420" (unit lives in the header); blank for null/zero.</summary>
+    public static string DistanceMetres(decimal? km) => km is { } d && d > 0m
+        ? Math.Round(d * 1000m).ToString("0")
+        : string.Empty;
+
+    /// <summary>Pace as "m:ss" from seconds-per-km (unit /км lives in the header); blank for null/non-positive.</summary>
+    public static string Pace(double? secondsPerKm)
+    {
+        if (secondsPerKm is not { } s || s <= 0 || double.IsInfinity(s))
+            return string.Empty;
+        var span = TimeSpan.FromSeconds(Math.Round(s));
+        return $"{(int)span.TotalMinutes}:{span.Seconds:00}";
+    }
+}

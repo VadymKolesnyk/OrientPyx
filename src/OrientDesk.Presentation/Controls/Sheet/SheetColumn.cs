@@ -104,6 +104,40 @@ public enum SheetCellKind
     /// </summary>
     TotalFee,
 
+    /// <summary>
+    /// A read-only computed-result text label bound directly on the row by its
+    /// <see cref="SheetColumn.IdentityPath"/> (e.g. "FinishText"). Used by the day-grid result columns.
+    /// </summary>
+    RowResultText,
+
+    /// <summary>
+    /// A finish-status ComboBox bound directly on the row (StatusOptions/SelectedStatus). The day-grid
+    /// result status column; lets a judge override the computed status.
+    /// </summary>
+    RowStatus,
+
+    /// <summary>
+    /// A read-only computed-result text label for a single day, bound to <c>Days[i].{IdentityPath}</c>.
+    /// Greyed on days the participant doesn't run. The roster result columns.
+    /// </summary>
+    ResultText,
+
+    /// <summary>
+    /// A finish-status ComboBox for a single day, bound to <c>Days[i].StatusOptions/SelectedStatus</c>.
+    /// Disabled/greyed for non-members. The roster result status column.
+    /// </summary>
+    Status,
+
+    /// <summary>
+    /// A collapsed result block's merged read-only text cell: the shared per-day value, or "різні" when
+    /// the member days disagree. The column's <see cref="SheetColumn.IdentityPath"/> carries the roster
+    /// row's merged-text property; a parallel <c>*Differs</c> property drives the "різні" state.
+    /// </summary>
+    CollapsedResultText,
+
+    /// <summary>A collapsed result-status block's merged read-only cell (shared status code, or "різні").</summary>
+    CollapsedStatus,
+
     /// <summary>The trailing delete-action button column.</summary>
     Actions,
 
@@ -247,6 +281,25 @@ public sealed partial class SheetColumn : ObservableObject
     /// text value (combo/date/custom cell) and paste stays single-cell.
     /// </summary>
     public string? PastePath { get; set; }
+
+    /// <summary>
+    /// Combo-paste descriptor for an option-list column (region/club/group/rank/status). When set, a
+    /// paste (single value or a multi-line fill-down) onto this column does NOT write raw text: it
+    /// resolves the pasted text against the row's options (<see cref="ComboItemsPath"/>) by their visible
+    /// label (<see cref="ComboLabelPath"/>) and assigns the matching option to <see cref="ComboSelectedPath"/>
+    /// ONLY when exactly one option matches 1:1 (case-insensitive, trimmed). A non-matching value leaves
+    /// the cell unchanged — so pasting can never invent or half-match a selection. Null ⇒ not a combo column.
+    /// </summary>
+    public string? ComboItemsPath { get; set; }
+
+    /// <summary>The two-way selected-option path on the row, for combo paste. See <see cref="ComboItemsPath"/>.</summary>
+    public string? ComboSelectedPath { get; set; }
+
+    /// <summary>The label property on each option used to match a pasted value, for combo paste. See <see cref="ComboItemsPath"/>.</summary>
+    public string? ComboLabelPath { get; set; }
+
+    /// <summary>True when this column resolves pastes to an option by exact label match.</summary>
+    public bool IsComboPaste => ComboItemsPath is not null && ComboSelectedPath is not null && ComboLabelPath is not null;
 
     /// <summary>
     /// True when this column holds a SportIdent chip number whose rental status can be toggled. The

@@ -101,6 +101,11 @@ public sealed class SheetColumnBuilder
         // The combo is filtered by the selected option's visible label, so the user filters on the text
         // they see — even though the column is left unsortable (empty SortPath) by default.
         column.FilterPath = $"{selectedPath}.{labelPath}";
+        // Combo paste: a pasted value (single or fill-down) resolves to an option by exact label match
+        // and only then sets the selection — see SheetColumn.IsComboPaste / SheetTable's paste flow.
+        column.ComboItemsPath = itemsPath;
+        column.ComboSelectedPath = selectedPath;
+        column.ComboLabelPath = labelPath;
         // A LazyComboCell: shows the selected option's label and builds the real SearchableComboBox only
         // when the cell is entered. Keeps virtualized rows light on pages with a combo per row.
         column.CellBuilder = () => new LazyComboCell(

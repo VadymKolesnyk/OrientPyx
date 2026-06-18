@@ -1,3 +1,5 @@
+using OrientDesk.BusinessLogic.Enums;
+
 namespace OrientDesk.BusinessLogic.Entities;
 
 /// <summary>
@@ -36,10 +38,24 @@ public class FinishReadout
     public string Punches { get; set; } = string.Empty;
 
     /// <summary>
+    /// The same punch sequence as <see cref="Punches"/> but carrying each punch's time, so per-leg split
+    /// times can be shown. Encoded as comma-separated <c>code@ticks</c> tokens (UTC ticks, <c>-</c> when
+    /// the file had no time), e.g. <c>"31@638...,32@-"</c>. Empty when the file recorded no punches.
+    /// </summary>
+    public string PunchTimes { get; set; } = string.Empty;
+
+    /// <summary>
     /// Stable signature of the record's content (chip + start/finish + punch sequence) used to skip
     /// re-reading the same row. Two reads of the same physical read-out produce the same key.
     /// </summary>
     public string ContentKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// A judge's manual status override. When set, it wins over the discipline's computed status (so the
+    /// finish log shows the manually-set OK/MP/DSQ/… instead of the derived one); null leaves the status
+    /// to the automatic evaluation. Set through the finish-read edit modal.
+    /// </summary>
+    public FinishStatus? ManualStatus { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

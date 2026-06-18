@@ -32,8 +32,15 @@ public static class AppDatabasePaths
     public static string GetEventDatabaseFilePath(string eventFolderPath)
         => Path.Combine(eventFolderPath, EventDatabaseFileName);
 
+    // Each store call opens its own connection, so a background writer (the finish/chip auto-read
+    // poller) and a foreground reader (a page load) can hit the same file at once. Without a busy
+    // timeout SQLite returns BUSY immediately ("database is locked") and the operation fails; the
+    // page that was loading then sticks on its overlay. The timeout lets a brief collision wait for
+    // the lock instead of throwing.
+    private const int EventBusyTimeoutMs = 5000;
+
     public static string GetEventConnectionString(string eventFolderPath)
-        => $"Data Source={GetEventDatabaseFilePath(eventFolderPath)}";
+        => $"Data Source={GetEventDatabaseFilePath(eventFolderPath)};Default Timeout={EventBusyTimeoutMs / 1000}";
 
     /// <summary>Resolves a possibly-relative configured path against the application directory.</summary>
     public static string ResolvePath(string configuredPath)

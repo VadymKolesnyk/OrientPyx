@@ -60,6 +60,7 @@ public sealed class RosterColumnBuilder
         IReadOnlyList<EntryFeeDiscount> discounts,
         bool raisedFeeEnabled,
         bool showTeam,
+        bool showScore,
         IReadOnlyList<SheetBand>? previous)
     {
         var bands = new List<SheetBand>(Identity.Length + blocks.Count + 2);
@@ -100,6 +101,8 @@ public sealed class RosterColumnBuilder
             if (kind == SheetCellKind.PaymentText)
                 DayColumnBuilder.ConfigurePaymentColumn(col, nameof(ParticipantRosterRowViewModel.PaymentStatusKey),
                     nameof(ParticipantRosterRowViewModel.Payment));
+            // Row-level combos (rank/region/club/ДЮСШ) resolve a paste to an option by exact label match.
+            DayColumnBuilder.ConfigureComboPaste(col);
             bands.Add(new SheetBand(SheetBand.BandKind.Identity, [col]) { Header = col.Header });
         }
 
@@ -111,10 +114,15 @@ public sealed class RosterColumnBuilder
         // Field blocks: collapsed ⇒ one merged column; expanded ⇒ one column per day.
         foreach (var block in blocks)
         {
+            // The «Бали» (score) result block only appears on point-scoring days.
+            if (block.Field == RosterField.Score && !showScore)
+                continue;
+
             var cols = new List<SheetColumn>();
-            const double fieldWidth = 110.0;
+            var fieldWidth = ResultWidth(block.Field);
             var blockLabel = _loc.Get(block.LabelKey);
             var isChips = block.Field == RosterField.Chips;
+
             if (singleDay)
             {
                 // One plain column for this field, bound to the only day (index 0). No band, no toggle.
@@ -122,6 +130,8 @@ public sealed class RosterColumnBuilder
                 {
                     Header = blockLabel,
                     DayIndex = 0,
+                    // Result-text leaves carry the day-cell property to bind under Days[0].; other leaves ignore it.
+                    IdentityPath = ResultTextPath(block.Field),
                     Width = fieldWidth,
                     WidthCapped = true,
                     SortPath = LeafSortPath(block.Field, 0),
@@ -132,6 +142,8 @@ public sealed class RosterColumnBuilder
                     PastePath = LeafPastePath(block.Field, 0),
                     RentalChipColumn = isChips,
                 };
+                // Single-day group/status cell binds under Days[0]. too — wire combo-paste the same way.
+                ConfigureDayComboPaste(col, block.Field, 0);
                 bands.Add(new SheetBand(SheetBand.BandKind.Identity, [col]) { Header = blockLabel });
                 continue;
             }
@@ -140,6 +152,8 @@ public sealed class RosterColumnBuilder
                 cols.Add(new SheetColumn(MergedKind(block.Field))
                 {
                     Header = string.Empty,
+                    // Merged read-only result cells carry the row's merged-value property to bind.
+                    IdentityPath = CollapsedResultPath(block.Field),
                     Width = fieldWidth,
                     WidthCapped = true,
                     // A collapsed block is one sortable column: sort by the row's merged aggregate.
@@ -161,10 +175,11 @@ public sealed class RosterColumnBuilder
             {
                 for (var i = 0; i < days.Count; i++)
                 {
-                    cols.Add(new SheetColumn(LeafKind(block.Field))
+                    var leaf = new SheetColumn(LeafKind(block.Field))
                     {
                         Header = $"{_loc.Get("Header.Day")} {days[i].Number}",
                         DayIndex = i,
+                        IdentityPath = ResultTextPath(block.Field),
                         Width = fieldWidth,
                         WidthCapped = true,
                         SortPath = LeafSortPath(block.Field, i),
@@ -175,7 +190,11 @@ public sealed class RosterColumnBuilder
                         PastePath = LeafPastePath(block.Field, i),
                         // Per-day chip cells get the rental toggle in their right-click menu.
                         RentalChipColumn = isChips,
-                    });
+                    };
+                    // Per-day combo leaves (group / status) resolve a paste to an option on that day by
+                    // exact label match — bound under Days[i]. like the cell factory binds them.
+                    ConfigureDayComboPaste(leaf, block.Field, i);
+                    cols.Add(leaf);
                 }
             }
 
@@ -211,7 +230,55 @@ public sealed class RosterColumnBuilder
         RosterField.Groups => SheetCellKind.Group,
         RosterField.Chips => SheetCellKind.Chip,
         RosterField.StartTimes => SheetCellKind.StartTime,
-        _ => SheetCellKind.OutOfCompetition,
+        RosterField.OutOfCompetition => SheetCellKind.OutOfCompetition,
+        // Result blocks: the status one is an editable combo, the rest read-only text. The leaf's
+        // IdentityPath carries the day-cell property the factory binds to (under Days[i].).
+        RosterField.ResultStatus => SheetCellKind.Status,
+        _ => SheetCellKind.ResultText,
+    };
+
+    // Wire combo-paste for a per-day combo leaf (group / status), bound under Days[i]. like the cell
+    // factory binds it. A paste resolves to an option on that day by exact label match (both option
+    // types expose Label); other per-day leaves (chip/start-time/out-of-competition/read-only result)
+    // get no descriptor and keep their existing paste behaviour.
+    private static void ConfigureDayComboPaste(SheetColumn col, RosterField field, int dayIndex)
+    {
+        var prefix = $"Days[{dayIndex}].";
+        switch (field)
+        {
+            case RosterField.Groups:
+                col.ComboItemsPath = $"{prefix}{nameof(RosterDayCellViewModel.GroupOptions)}";
+                col.ComboSelectedPath = $"{prefix}{nameof(RosterDayCellViewModel.SelectedGroup)}";
+                col.ComboLabelPath = nameof(GroupOption.Label);
+                break;
+            case RosterField.ResultStatus:
+                col.ComboItemsPath = $"{prefix}{nameof(RosterDayCellViewModel.StatusOptions)}";
+                col.ComboSelectedPath = $"{prefix}{nameof(RosterDayCellViewModel.SelectedStatus)}";
+                col.ComboLabelPath = nameof(GroupOption.Label);
+                break;
+        }
+    }
+
+    // The read-only result-text property on RosterDayCellViewModel for a given result field. (The status
+    // block uses the Status leaf kind, which binds StatusOptions/SelectedStatus directly, not a path.)
+    private static string ResultTextPath(RosterField field) => field switch
+    {
+        RosterField.ActualStart => nameof(RosterDayCellViewModel.ActualStartText),
+        RosterField.Finish => nameof(RosterDayCellViewModel.FinishText),
+        RosterField.Result => nameof(RosterDayCellViewModel.ResultText_),
+        RosterField.Place => nameof(RosterDayCellViewModel.PlaceText),
+        RosterField.Score => nameof(RosterDayCellViewModel.ScoreText),
+        _ => string.Empty,
+    };
+
+    // Column width per field: the editable per-day fields keep the original 110; result fields are sized
+    // to their content (times wider, place/score narrow).
+    private static double ResultWidth(RosterField field) => field switch
+    {
+        RosterField.ActualStart or RosterField.Finish or RosterField.Result => 100.0,
+        RosterField.ResultStatus => 90.0,
+        RosterField.Place or RosterField.Score => 70.0,
+        _ => 110.0, // groups / chips / start times / out-of-competition
     };
 
     private static SheetCellKind MergedKind(RosterField field) => field switch
@@ -219,7 +286,21 @@ public sealed class RosterColumnBuilder
         RosterField.Groups => SheetCellKind.CollapsedGroup,
         RosterField.Chips => SheetCellKind.CollapsedChip,
         RosterField.StartTimes => SheetCellKind.CollapsedStartTime,
-        _ => SheetCellKind.CollapsedOutOfCompetition,
+        RosterField.OutOfCompetition => SheetCellKind.CollapsedOutOfCompetition,
+        RosterField.ResultStatus => SheetCellKind.CollapsedStatus,
+        _ => SheetCellKind.CollapsedResultText,
+    };
+
+    // The row property a collapsed (merged) read-only result cell binds its label to (shared value or "різні").
+    private static string CollapsedResultPath(RosterField field) => field switch
+    {
+        RosterField.ActualStart => nameof(ParticipantRosterRowViewModel.CollapsedActualStart),
+        RosterField.Finish => nameof(ParticipantRosterRowViewModel.CollapsedFinish),
+        RosterField.ResultStatus => nameof(ParticipantRosterRowViewModel.CollapsedResultStatus),
+        RosterField.Result => nameof(ParticipantRosterRowViewModel.CollapsedResult),
+        RosterField.Place => nameof(ParticipantRosterRowViewModel.CollapsedPlace),
+        RosterField.Score => nameof(ParticipantRosterRowViewModel.CollapsedScore),
+        _ => string.Empty,
     };
 
     private static string CollapsedSortPath(RosterField field) => field switch
@@ -227,19 +308,22 @@ public sealed class RosterColumnBuilder
         RosterField.Groups => nameof(ParticipantRosterRowViewModel.CollapsedGroupSortKey),
         RosterField.Chips => nameof(ParticipantRosterRowViewModel.CollapsedChipValue),
         RosterField.StartTimes => nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText),
-        _ => nameof(ParticipantRosterRowViewModel.CollapsedOutOfCompetition),
+        RosterField.OutOfCompetition => nameof(ParticipantRosterRowViewModel.CollapsedOutOfCompetition),
+        // Result blocks: sort the collapsed column by its merged display value.
+        _ => CollapsedResultPath(field),
     };
 
     // The merged display value COPY reads for an off-screen collapsed cell. For groups this is the
     // selected option's label (the all-days-same case); chips/start-times already display their value;
-    // out-of-competition is the bool (copied as a flag mark).
+    // out-of-competition is the bool (copied as a flag mark); result blocks copy their merged value.
     private static string CollapsedCopyPath(RosterField field) => field switch
     {
         RosterField.Groups =>
             $"{nameof(ParticipantRosterRowViewModel.CollapsedGroupValue)}.{nameof(GroupOption.Label)}",
         RosterField.Chips => nameof(ParticipantRosterRowViewModel.CollapsedChipValue),
         RosterField.StartTimes => nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText),
-        _ => nameof(ParticipantRosterRowViewModel.CollapsedOutOfCompetition),
+        RosterField.OutOfCompetition => nameof(ParticipantRosterRowViewModel.CollapsedOutOfCompetition),
+        _ => CollapsedResultPath(field),
     };
 
     // The two-way text property a per-day leaf cell edits, for fill-down paste. Only the plain text
@@ -256,7 +340,10 @@ public sealed class RosterColumnBuilder
         RosterField.Groups => $"Days[{i}].{nameof(RosterDayCellViewModel.SelectedGroup)}.{nameof(GroupOption.Label)}",
         RosterField.Chips => $"Days[{i}].{nameof(RosterDayCellViewModel.Chip)}",
         RosterField.StartTimes => $"Days[{i}].{nameof(RosterDayCellViewModel.StartTime)}",
-        _ => $"Days[{i}].{nameof(RosterDayCellViewModel.OutOfCompetition)}",
+        RosterField.OutOfCompetition => $"Days[{i}].{nameof(RosterDayCellViewModel.OutOfCompetition)}",
+        // Result blocks sort by the cell's display text (status sorts by the selected option's label).
+        RosterField.ResultStatus => $"Days[{i}].{nameof(RosterDayCellViewModel.SelectedStatus)}.{nameof(FinishStatusOption.Label)}",
+        _ => $"Days[{i}].{ResultTextPath(field)}",
     };
 
     // Preserve widths the user dragged: match old→new columns by their flat index where the kind

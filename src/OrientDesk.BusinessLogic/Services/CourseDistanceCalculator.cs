@@ -26,6 +26,32 @@ public sealed class CourseDistanceCalculator : ICourseDistanceCalculator
         return Math.Round((decimal)(metres / 1000.0), 3);
     }
 
+    public decimal TotalKilometresFromMap(IReadOnlyList<MapPoint> points, int scale)
+    {
+        ArgumentNullException.ThrowIfNull(points);
+        if (points.Count < 2 || scale <= 0)
+            return 0m;
+
+        var metres = 0.0;
+        for (var i = 1; i < points.Count; i++)
+            metres += MapLegMetres(points[i - 1], points[i], scale);
+
+        return Math.Round((decimal)(metres / 1000.0), 3);
+    }
+
+    // Ground distance of one leg from paper millimetres: planar mm distance × scale, in metres.
+    // 0 when either endpoint lacks a map position.
+    private static double MapLegMetres(MapPoint a, MapPoint b, int scale)
+    {
+        if (!a.HasCoordinates || !b.HasCoordinates)
+            return 0.0;
+
+        var dx = a.X!.Value - b.X!.Value;
+        var dy = a.Y!.Value - b.Y!.Value;
+        // mm on the map → mm on the ground (× scale) → metres (÷ 1000).
+        return Math.Sqrt(dx * dx + dy * dy) * scale / 1000.0;
+    }
+
     // Distance of one leg in metres; 0 when either endpoint lacks coordinates.
     private static double LegMetres(GeoPoint a, GeoPoint b)
     {

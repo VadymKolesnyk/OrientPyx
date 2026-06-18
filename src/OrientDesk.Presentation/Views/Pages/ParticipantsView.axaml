@@ -119,6 +119,7 @@
                                       Discounts="{Binding Discounts}"
                                       RaisedFeeEnabled="{Binding RaisedFeeEnabled}"
                                       ShowTeam="{Binding RosterShowsTeam}"
+                                      ShowScore="{Binding RosterShowsScore}"
                                       StatusInfo="{Binding StatusInfo}"
                                       ToggleBlockCommand="{Binding ToggleBlockCommand}"
                                       RentalChips="{Binding RentalChips}"

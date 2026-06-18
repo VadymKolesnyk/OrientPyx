@@ -73,6 +73,33 @@ public sealed class AppStore : IAppStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<(string PrinterName, int WidthMm)?> GetPrintSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+            return null;
+
+        return (row.PrinterName, row.ReceiptWidthMm);
+    }
+
+    public async Task SavePrintSettingsAsync(string printerName, int widthMm, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+        {
+            db.Settings.Add(new AppSettingsRow { Id = 1, PrinterName = printerName, ReceiptWidthMm = widthMm });
+        }
+        else
+        {
+            row.PrinterName = printerName;
+            row.ReceiptWidthMm = widthMm;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<(string? Identifier, int? DayNumber)> GetLastSessionAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);

@@ -1,4 +1,5 @@
 using OrientDesk.BusinessLogic.Entities;
+using OrientDesk.BusinessLogic.Enums;
 using OrientDesk.BusinessLogic.Models;
 
 namespace OrientDesk.BusinessLogic.Interfaces;
@@ -347,11 +348,43 @@ public interface ICompetitionEditorService
     Task SetParticipantDayOutOfCompetitionAsync(Guid participantId, Guid dayId, bool outOfCompetition, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Sets (or clears, when null) a judge's manual finish-status override for a participant on a day,
+    /// persisted on the participant-day link so it survives the chip being re-read. The override wins
+    /// over the status computed from the read-out. A no-op when the participant is not a member that day.
+    /// </summary>
+    Task SetParticipantDayResultStatusAsync(Guid participantId, Guid dayId, FinishStatus? status, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Computes the run results for one day from the finish read-outs, keyed by participant id. Used by
+    /// the participant tables to refresh the result columns (and re-ranked places) in-memory after a
+    /// status edit, without reloading the whole grid. Empty when no competition is selected.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, ParticipantDayResult>> GetDayResultsByParticipantAsync(Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Loads the current day's finish-read log (ordered by sequence), each row resolved against the
     /// day's participants so a known chip carries its holder's number, full name and group. Returns an
     /// empty list when no day is selected.
     /// </summary>
     Task<IReadOnlyList<FinishReadoutRow>> GetFinishReadoutRowsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Builds the passage/splits view for one logged read-out (by its id) on the current day, comparing
+    /// what the chip punched against the holder's prescribed course. The shape is discipline-specific
+    /// (ordered for a set course, scored for the free-choice formats — see <see cref="SplitsView"/>).
+    /// Returns null when no day is selected, the readout is unknown, or its chip is not held by anyone
+    /// on the day (an unrecognised read has no course to compare against).
+    /// </summary>
+    Task<SplitsView?> GetFinishSplitsAsync(Guid readoutId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Builds a ready-to-print split printout for one logged read-out (by its id) on the current day: the
+    /// runner's header (name, number, chip, group, result, status) plus the course passage in order,
+    /// wrapping the same <see cref="SplitsView"/> the panel shows. Used by the finish-read print action.
+    /// Returns null when no day is selected or the readout is unknown; an unrecognised chip still prints
+    /// its raw passage (no holder header).
+    /// </summary>
+    Task<SplitPrintDocument?> GetSplitPrintDocumentAsync(Guid readoutId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Imports parsed read-out records into the current day's finish log. Append-only: each record that
@@ -363,6 +396,22 @@ public interface ICompetitionEditorService
 
     /// <summary>Clears the current day's finish-read log. Returns how many rows were removed.</summary>
     Task<int> ClearFinishReadoutsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Loads everything the finish-read edit modal needs for one logged read-out (by its id) on the
+    /// current day: its current chip, start/finish times, punches and effective status, plus the day's
+    /// participants the chip can be reassigned to (with the current holder, when any, pre-selected).
+    /// Returns null when no day is selected or the read-out is unknown.
+    /// </summary>
+    Task<FinishReadoutEditData?> GetFinishReadoutEditAsync(Guid readoutId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Saves an edited read-out: its chip, start/finish times, punches and manual status override, and —
+    /// when <see cref="FinishReadoutEdit.ReassignToParticipantId"/> is set — (re)assigns the read-out's
+    /// chip to that participant on the current day, taking it from any previous holder. A no-op when no
+    /// day is selected or the read-out is unknown.
+    /// </summary>
+    Task UpdateFinishReadoutAsync(FinishReadoutEdit edit, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Finds the participant who already holds <paramref name="chip"/> on <paramref name="dayId"/>,

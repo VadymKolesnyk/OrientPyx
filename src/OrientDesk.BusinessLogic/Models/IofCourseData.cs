@@ -37,6 +37,17 @@ public sealed class IofControl
 
     /// <summary>WGS-84 longitude, when the file carried geographic coordinates; otherwise null.</summary>
     public double? Longitude { get; init; }
+
+    /// <summary>
+    /// Paper map X position in millimetres (<c>&lt;MapPosition&gt;</c>), when present; otherwise null.
+    /// Combined with <see cref="IofCourseData.MapScale"/> this gives true ground distance on the map
+    /// plane — the distance orienteering software prints — and is preferred over geographic
+    /// coordinates, which the Web Mercator export distorts by 1/cos(latitude).
+    /// </summary>
+    public double? MapX { get; init; }
+
+    /// <summary>Paper map Y position in millimetres (<c>&lt;MapPosition&gt;</c>), when present; otherwise null.</summary>
+    public double? MapY { get; init; }
 }
 
 /// <summary>A course (ordered sequence of control codes) parsed from an IOF file.</summary>

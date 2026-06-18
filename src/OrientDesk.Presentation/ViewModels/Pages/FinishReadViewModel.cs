@@ -9,6 +9,7 @@ using OrientDesk.BusinessLogic.Models;
 using OrientDesk.BusinessLogic.Services;
 using OrientDesk.Localization;
 using OrientDesk.Presentation.Services;
+using OrientDesk.Presentation.ViewModels.Dialogs;
 
 namespace OrientDesk.Presentation.ViewModels.Pages;
 
@@ -28,7 +29,11 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     private readonly IReadoutParser _readoutParser;
     private readonly IFileReadoutPoller _poller;
     private readonly IBusyService _busy;
+    private readonly IDialogService _dialogs;
     private readonly IBackgroundActivityService _activities;
+    private readonly IAppSettingsService _appSettings;
+    private readonly ISplitPrintService _printer;
+    private readonly IActivityLog _log;
 
     /// <summary>Top-bar activity handle while auto-read runs; null when off.</summary>
     private FinishReadActivity? _activity;
@@ -40,7 +45,12 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         IReadoutParser readoutParser,
         IFileReadoutPoller poller,
         IBusyService busy,
-        IBackgroundActivityService activities)
+        IDialogService dialogs,
+        IBackgroundActivityService activities,
+        IAppSettingsService appSettings,
+        ISplitPrintService printer,
+        IActivityLog log,
+        IUiPreferencesService preferences)
         : base(localization)
     {
         _editor = editor;
@@ -48,7 +58,11 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         _readoutParser = readoutParser;
         _poller = poller;
         _busy = busy;
+        _dialogs = dialogs;
         _activities = activities;
+        _appSettings = appSettings;
+        _printer = printer;
+        _log = log;
 
         // Singleton VM: on a competition/day change, stop the watch (the file belongs to the old day)
         // and reload. SessionChanged may be raised on a pool thread, so marshal onto the UI thread.
@@ -57,6 +71,8 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
             StopAutoRead();
             _ = LoadAsync();
         });
+
+        Splits = new FinishSplitsViewModel(localization, preferences);
     }
 
     public override string NavKey => "Nav.FinishRead";
@@ -68,6 +84,17 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
 
     /// <summary>The day's read log, newest at the bottom (ordered by sequence). Read-only rows.</summary>
     public ObservableCollection<FinishReadRowViewModel> Readouts { get; } = [];
+
+    /// <summary>The passage/splits panel under the table, filled for the selected row (see <see cref="SelectedReadout"/>).</summary>
+    public FinishSplitsViewModel Splits { get; }
+
+    /// <summary>The currently selected log row; selecting one loads its splits, deselecting clears them.</summary>
+    [ObservableProperty]
+    private FinishReadRowViewModel? _selectedReadout;
+
+    /// <summary>The competition's rental-chip numbers, so the chip column bold-reds a non-rental chip
+    /// the same way the participants table does.</summary>
+    public RentalChipRegistry RentalChips { get; } = new();
 
     /// <summary>Selectable days for the top-right day picker.</summary>
     public ObservableCollection<DayOption> DayOptions { get; } = [];
@@ -102,16 +129,37 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     [RelayCommand]
     private void ToggleAutoRead() => IsAutoReadExpanded = !IsAutoReadExpanded;
 
+    // Wipes the current day's finish-read log after a confirmation, then reloads (clearing the splits
+    // panel along with the empty selection). A no-op when no day is selected or the log is already empty.
+    [RelayCommand]
+    private async Task ClearReadoutsAsync()
+    {
+        if (_session.CurrentDay is null || Readouts.Count == 0)
+            return;
+
+        var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+            Localization,
+            titleKey: "FinishRead.Clear.ConfirmTitle",
+            messageKey: "FinishRead.Clear.ConfirmMessage"));
+        if (!confirmed)
+            return;
+
+        await _busy.RunAsync(() => _editor.ClearFinishReadoutsAsync());
+        await LoadAsync();
+    }
+
     /// <summary>Reloads the day picker and the current day's log. Called when the page is shown.</summary>
     public async Task LoadAsync()
     {
         var hasDay = _session.CurrentDay is not null;
-        var (days, rows) = await _busy.RunAsync(async () =>
+        var (days, rows, chips) = await _busy.RunAsync(async () =>
         {
             var d = await _editor.GetDaysAsync();
             var r = hasDay ? await _editor.GetFinishReadoutRowsAsync() : (IReadOnlyList<FinishReadoutRow>)[];
-            return (d, r);
+            var c = await _editor.GetRentalChipsAsync();
+            return (d, r, c);
         });
+        RentalChips.Reset(chips.Select(c => c.Number));
 
         _syncingDay = true;
         try
@@ -136,9 +184,15 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         // already typed a path. Done after the day is resolved so it follows the selected day.
         SyncDefaultFilePath();
 
+        // Preserve the selection across a reload (auto-read reloads on every new read) so the splits
+        // panel doesn't flicker shut; re-select the row with the same id when it's still present.
+        var selectedId = SelectedReadout?.Id;
         Readouts.Clear();
         foreach (var row in rows)
             Readouts.Add(new FinishReadRowViewModel(row, Localization));
+        SelectedReadout = selectedId is { } id
+            ? Readouts.FirstOrDefault(r => r.Id == id)
+            : null;
     }
 
     // True when the current options already represent exactly these days (same count and numbers).
@@ -185,6 +239,159 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
 
         _ = _busy.RunAsync(() => _session.SetCurrentDayAsync(value.Day));
     }
+
+    // Selecting a log row loads its discipline-specific splits into the bottom panel; no selection
+    // clears it. An unrecognised chip still shows its raw passage (every punch in chip order) — just
+    // without a prescribed course to judge it against. The build is SQLite work, so it runs off the UI thread.
+    partial void OnSelectedReadoutChanged(FinishReadRowViewModel? value)
+    {
+        if (value is null)
+        {
+            Splits.Clear();
+            return;
+        }
+
+        var id = value.Id;
+
+        // Header line: «#bib  ПІБ (group) · chip XXXXX» — bib and chip prefix the name/group so the
+        // panel identifies the runner at a glance (parts are dropped when blank).
+        var nameAndGroup = string.IsNullOrWhiteSpace(value.GroupName)
+            ? value.FullName
+            : $"{value.FullName} ({value.GroupName})";
+
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(value.ParticipantNumber))
+            parts.Add($"#{value.ParticipantNumber}");
+        if (!string.IsNullOrWhiteSpace(nameAndGroup))
+            parts.Add(nameAndGroup);
+        if (!string.IsNullOrWhiteSpace(value.ChipNumber))
+            parts.Add(string.Format(Localization.Get("FinishRead.Splits.ChipLabel"), value.ChipNumber));
+
+        var heading = string.Join("  ·  ", parts);
+
+        _ = LoadSplitsAsync(id, heading);
+    }
+
+    private async Task LoadSplitsAsync(Guid readoutId, string heading)
+    {
+        var view = await _busy.RunAsync(() => _editor.GetFinishSplitsAsync(readoutId));
+
+        // The selection may have changed while we awaited; only apply if still the chosen row.
+        if (SelectedReadout?.Id != readoutId)
+            return;
+
+        if (view is null)
+            Splits.Clear();
+        else
+            Splits.Show(view, heading);
+    }
+
+    // --- Split printout ----------------------------------------------------------------------------
+
+    // Prints the split printout for a log row (the print icon in the «Дії» column). Prints straight to the
+    // configured printer; when none is set yet (or the saved one is gone), opens the print-settings modal
+    // first and prints with the freshly chosen target. A no-op on a non-Windows build (the modal/print
+    // surface a localized "Windows only" message).
+    [RelayCommand]
+    private async Task PrintRowAsync(FinishReadRowViewModel? row)
+    {
+        if (row is null)
+            return;
+
+        if (!_printer.IsSupported)
+        {
+            await ShowInfoAsync("Print.Unsupported");
+            return;
+        }
+
+        var settings = await _appSettings.GetPrintSettingsAsync();
+        var installed = _printer.GetInstalledPrinters();
+        // Force the settings modal when nothing is chosen or the saved printer is no longer installed.
+        if (!settings.HasPrinter || !installed.Contains(settings.PrinterName))
+        {
+            var saved = await _dialogs.ShowPrintSettingsAsync(
+                new PrintSettingsViewModel(Localization, _appSettings, _printer, settings));
+            if (!saved)
+                return;
+            settings = await _appSettings.GetPrintSettingsAsync();
+            if (!settings.HasPrinter)
+                return;
+        }
+
+        var doc = await _busy.RunAsync(() => _editor.GetSplitPrintDocumentAsync(row.Id));
+        if (doc is null)
+            return;
+
+        var labels = BuildPrintLabels();
+        try
+        {
+            await _printer.PrintAsync(doc, labels, settings);
+            _log.Action(string.Format(Localization.Get("FinishRead.Print.Log"), row.ChipNumber, settings.PrinterName));
+        }
+        catch (PrintNotSupportedException)
+        {
+            await ShowInfoAsync("Print.Unsupported");
+        }
+    }
+
+    // Opens the edit modal for a log row (the pencil in the «Дії» column): reassign the chip to another
+    // participant, edit the start/finish/punch times and codes, and set a manual status. On save it
+    // persists the edit (and any reassignment) and reloads so the log + splits panel reflect the change.
+    [RelayCommand]
+    private async Task EditRowAsync(FinishReadRowViewModel? row)
+    {
+        if (row is null)
+            return;
+
+        var data = await _busy.RunAsync(() => _editor.GetFinishReadoutEditAsync(row.Id));
+        if (data is null)
+            return;
+
+        var edit = await _dialogs.ShowFinishReadoutEditAsync(new FinishReadoutEditViewModel(Localization, data));
+        if (edit is null)
+            return;
+
+        await _busy.RunAsync(() => _editor.UpdateFinishReadoutAsync(edit));
+        _log.Action(string.Format(Localization.Get("FinishRead.Edit.Log"), edit.ChipNumber));
+        await LoadAsync();
+    }
+
+    // Opens the print-settings modal from the page header (printer + roll width), independent of a print.
+    [RelayCommand]
+    private async Task OpenPrintSettingsAsync()
+    {
+        var settings = await _appSettings.GetPrintSettingsAsync();
+        await _dialogs.ShowPrintSettingsAsync(
+            new PrintSettingsViewModel(Localization, _appSettings, _printer, settings));
+    }
+
+    // Localized captions the printer draws around the values (the document itself is values-only).
+    private SplitPrintLabels BuildPrintLabels() => new(
+        ChipLabel: Localization.Get("FinishRead.Print.Chip"),
+        RentalChipLabel: Localization.Get("FinishRead.Print.RentalChip"),
+        StartLabel: Localization.Get("FinishRead.Print.Start"),
+        FinishLabel: Localization.Get("FinishRead.Print.Finish"),
+        ResultLabel: Localization.Get("FinishRead.Print.Result"),
+        DistanceLabel: Localization.Get("FinishRead.Print.Distance"),
+        AvgPaceLabel: Localization.Get("FinishRead.Print.AvgPace"),
+        StatusLabel: Localization.Get("FinishRead.Col.Status"),
+        MpDetailLabel: Localization.Get("FinishRead.Print.MpDetail"),
+        ColSeq: Localization.Get("FinishRead.Print.ColSeq"),
+        ColCode: Localization.Get("FinishRead.Print.ColCode"),
+        ColElapsed: Localization.Get("FinishRead.Print.ColElapsed"),
+        ColLeg: Localization.Get("FinishRead.Print.ColLeg"),
+        ColDistance: Localization.Get("FinishRead.Print.ColDistance"),
+        ColPace: Localization.Get("FinishRead.Print.ColPace"),
+        ColPoints: Localization.Get("FinishRead.Print.ColPoints"),
+        CorrectOrderTitle: Localization.Get("FinishRead.Print.CorrectOrder"));
+
+    // A single-button (OK) message modal, reusing the confirm dialog for an info-only notice.
+    private Task ShowInfoAsync(string messageKey) => _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+        Localization,
+        titleKey: "Print.Settings.Title",
+        messageKey: messageKey,
+        confirmKey: "Common.Ok",
+        cancelKey: "Common.Ok"));
 
     // --- Auto-read wiring --------------------------------------------------------------------------
 

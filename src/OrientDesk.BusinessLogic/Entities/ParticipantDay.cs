@@ -1,3 +1,5 @@
+using OrientDesk.BusinessLogic.Enums;
+
 namespace OrientDesk.BusinessLogic.Entities;
 
 /// <summary>
@@ -30,6 +32,15 @@ public class ParticipantDay
 
     /// <summary>Whether the participant runs out of competition (поза конкурсом) this day. Per-day, member-only.</summary>
     public bool OutOfCompetition { get; set; }
+
+    /// <summary>
+    /// A judge's manual finish-status override for this participant on this day. When set, it wins over
+    /// the status derived from the chip's read-out (so the participant tables show the manually-set
+    /// OK/DNS/DSQ/… instead of the computed one); null leaves the status to automatic evaluation. Held
+    /// here (per participant-day) rather than on a <c>FinishReadout</c> row so it stays stable when the
+    /// chip is re-read and a newer read-out row appears.
+    /// </summary>
+    public FinishStatus? ResultStatusOverride { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

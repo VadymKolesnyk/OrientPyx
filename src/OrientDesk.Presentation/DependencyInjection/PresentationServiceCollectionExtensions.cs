@@ -31,6 +31,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<IFileReadoutPoller, FileReadoutPoller>();
         services.AddSingleton<IBackgroundActivityService, BackgroundActivityService>();
         services.AddSingleton<ITableLayoutStore, TableLayoutStore>();
+        services.AddSingleton<IUiPreferencesService, UiPreferencesService>();
 
         // Root + gating view models
         services.AddSingleton<MainWindowViewModel>();

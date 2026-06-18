@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using OrientDesk.BusinessLogic.Enums;
 using OrientDesk.BusinessLogic.Models;
 using OrientDesk.Localization;
 
@@ -17,6 +18,8 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     private readonly Action<RosterDayCellViewModel> _requestChipChange;
     private readonly Action<RosterDayCellViewModel> _requestStartTimeChange;
     private readonly Action<RosterDayCellViewModel> _requestOutOfCompetitionChange;
+    private readonly Action<RosterDayCellViewModel> _requestResultStatusChange;
+    private ParticipantDayResult _result;
     private bool _initialized;
 
     [ObservableProperty]
@@ -34,6 +37,10 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     [ObservableProperty]
     private bool _outOfCompetition;
 
+    /// <summary>The selected finish-status option (auto sentinel = no override). Editing persists the override.</summary>
+    [ObservableProperty]
+    private FinishStatusOption _selectedStatus;
+
     public RosterDayCellViewModel(
         Guid participantId,
         RosterDayCell cell,
@@ -42,7 +49,8 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         Action<RosterDayCellViewModel> requestGroupChange,
         Action<RosterDayCellViewModel> requestChipChange,
         Action<RosterDayCellViewModel> requestStartTimeChange,
-        Action<RosterDayCellViewModel> requestOutOfCompetitionChange)
+        Action<RosterDayCellViewModel> requestOutOfCompetitionChange,
+        Action<RosterDayCellViewModel> requestResultStatusChange)
     {
         _participantId = participantId;
         DayId = cell.DayId;
@@ -53,6 +61,7 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         _requestChipChange = requestChipChange;
         _requestStartTimeChange = requestStartTimeChange;
         _requestOutOfCompetitionChange = requestOutOfCompetitionChange;
+        _requestResultStatusChange = requestResultStatusChange;
         Localization = localization;
 
         GroupOptions = groupOptions;
@@ -62,7 +71,67 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         _startTime = cell.StartTime;
         _outOfCompetition = cell.OutOfCompetition;
 
+        _result = cell.Result;
+        // The "(… — автоматично)" sentinel reflects what auto would compute (override cleared), NOT the
+        // effective status (which already folds the override in).
+        _statusOptions = FinishStatusOptions.Build(localization, cell.Result.Computed);
+        _selectedStatus = FinishStatusOptions.Select(StatusOptions, cell.Result.Override);
+
         _initialized = true;
+    }
+
+    /// <summary>The finish-status choices: a descriptive "(<computed> — автоматично)" sentinel, then the
+    /// settable statuses. Rebuilt when the result changes.</summary>
+    [ObservableProperty]
+    private IReadOnlyList<FinishStatusOption> _statusOptions;
+
+    /// <summary>The status override the user picked (null = "auto"). Read by the page callback.</summary>
+    public FinishStatus? ResultStatusOverride => SelectedStatus?.Status;
+
+    /// <summary>The effective status code shown on the resting status cell (OK/MP/…); blank when no result.</summary>
+    public string ResultStatusText => ResultText.Status(_result);
+
+    /// <summary>True when the status is a problem code (anything but OK / blank) — the cell shows it in red.</summary>
+    public bool StatusIsProblem => _result.StatusIsProblem;
+
+    /// <summary>True for any day the participant runs: a judge can override the computed status (with a
+    /// read-out) or mark DNS/DNF/… without one (picking OK then leaves it blank). Non-members can't.</summary>
+    public bool CanEditStatus => IsMember;
+
+    // ── Read-only computed result columns ─────────────────────────────────────────────────────
+    public string ActualStartText => ResultText.ActualStart(_result);
+    public string FinishText => ResultText.Finish(_result);
+    public string ResultText_ => ResultText.Result(_result);
+    public string PlaceText => ResultText.Place(_result);
+    public string ScoreText => ResultText.Score(_result);
+
+    // CanEditStatus folds in membership, so re-raise it when membership flips.
+    partial void OnIsMemberChanged(bool value) => OnPropertyChanged(nameof(CanEditStatus));
+
+    // The status dropdown is owned by the page (persists the override + re-ranks); member-only.
+    partial void OnSelectedStatusChanged(FinishStatusOption value)
+    {
+        if (_initialized && IsMember && value is not null)
+            _requestResultStatusChange(this);
+    }
+
+    /// <summary>Applies a recomputed result (after a status edit re-ranked the day) without re-firing the callback.</summary>
+    public void ApplyResult(ParticipantDayResult result)
+    {
+        _result = result;
+        var wasInitialized = _initialized;
+        _initialized = false;
+        StatusOptions = FinishStatusOptions.Build(Localization, result.Computed);
+        SelectedStatus = FinishStatusOptions.Select(StatusOptions, result.Override);
+        _initialized = wasInitialized;
+        OnPropertyChanged(nameof(ResultStatusText));
+        OnPropertyChanged(nameof(StatusIsProblem));
+        OnPropertyChanged(nameof(CanEditStatus));
+        OnPropertyChanged(nameof(ActualStartText));
+        OnPropertyChanged(nameof(FinishText));
+        OnPropertyChanged(nameof(ResultText_));
+        OnPropertyChanged(nameof(PlaceText));
+        OnPropertyChanged(nameof(ScoreText));
     }
 
     /// <summary>
@@ -169,6 +238,7 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
             Chip = string.Empty;
             StartTime = null;
             OutOfCompetition = false;
+            ApplyResult(ParticipantDayResult.Empty);
         }
         _initialized = true;
     }

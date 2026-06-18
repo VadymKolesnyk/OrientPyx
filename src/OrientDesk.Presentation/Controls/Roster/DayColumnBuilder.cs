@@ -27,6 +27,7 @@ public sealed class DayColumnBuilder
     /// </summary>
     public IReadOnlyList<SheetBand> Build(
         bool showTeam,
+        bool showScore,
         IReadOnlyList<EntryFeeDiscount> discounts,
         bool raisedFeeEnabled,
         IReadOnlyList<SheetBand>? previous)
@@ -73,6 +74,19 @@ public sealed class DayColumnBuilder
 
         if (showTeam)
             bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Team", nameof(ParticipantDayRowViewModel.Team)));
+
+        // Result columns (computed from the finish read-outs). Actual start / finish / result time / place
+        // are read-only; status is an editable override. «Бали» (score) only on a point-scoring day.
+        bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.ActualStart", nameof(ParticipantDayRowViewModel.ActualStartText), fixedWidth: 100));
+        bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.Finish", nameof(ParticipantDayRowViewModel.FinishText), fixedWidth: 100));
+        bands.Add(Identity(SheetCellKind.RowStatus, "Participants.Col.ResultStatus", path: string.Empty,
+            sortPath: $"{nameof(ParticipantDayRowViewModel.SelectedStatus)}.{nameof(FinishStatusOption.Label)}", fixedWidth: 90));
+        bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.Result", nameof(ParticipantDayRowViewModel.ResultText_), fixedWidth: 100));
+        bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.Place", nameof(ParticipantDayRowViewModel.PlaceText),
+            sortPath: nameof(ParticipantDayRowViewModel.PlaceSort), fixedWidth: 70));
+        if (showScore)
+            bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.Score", nameof(ParticipantDayRowViewModel.ScoreText),
+                sortPath: nameof(ParticipantDayRowViewModel.ScoreSort), fixedWidth: 70));
 
         // Entry-fee tail: raised-fee flag (when enabled), one column per discount, then the total.
         EntryFeeColumns.Append(bands, _loc, discounts, raisedFeeEnabled);
@@ -128,7 +142,33 @@ public sealed class DayColumnBuilder
             col.Width = w;
             col.WidthCapped = true;
         }
+        ConfigureComboPaste(col);
         return new SheetBand(SheetBand.BandKind.Identity, [col]) { Header = col.Header };
+    }
+
+    // For the row-bound combo columns (group/region/club/ДЮСШ/rank/status), set the combo-paste
+    // descriptor so a paste resolves to an option by exact label match and only then changes the
+    // selection — mirroring the items/selected paths RosterCellFactory binds these cells to. Every
+    // option type exposes a Label property. Other kinds get no descriptor (paste stays as before).
+    internal static void ConfigureComboPaste(SheetColumn col)
+    {
+        const string label = nameof(GroupOption.Label);
+        (string Items, string Selected)? paths = col.Kind switch
+        {
+            SheetCellKind.RowGroup => (nameof(ParticipantDayRowViewModel.GroupOptions), nameof(ParticipantDayRowViewModel.SelectedGroup)),
+            SheetCellKind.RowRegion => (nameof(ParticipantDayRowViewModel.RegionOptions), nameof(ParticipantDayRowViewModel.SelectedRegion)),
+            SheetCellKind.RowClub => (nameof(ParticipantDayRowViewModel.ClubOptions), nameof(ParticipantDayRowViewModel.SelectedClub)),
+            SheetCellKind.RowDussh => (nameof(ParticipantDayRowViewModel.DusshOptions), nameof(ParticipantDayRowViewModel.SelectedDussh)),
+            SheetCellKind.RowRank => (nameof(ParticipantDayRowViewModel.RankOptions), nameof(ParticipantDayRowViewModel.SelectedRank)),
+            SheetCellKind.RowStatus => (nameof(ParticipantDayRowViewModel.StatusOptions), nameof(ParticipantDayRowViewModel.SelectedStatus)),
+            _ => null
+        };
+        if (paths is { } p)
+        {
+            col.ComboItemsPath = p.Items;
+            col.ComboSelectedPath = p.Selected;
+            col.ComboLabelPath = label;
+        }
     }
 
     // Carry widths forward by flat index where the kind lines up (best effort across rebuilds).

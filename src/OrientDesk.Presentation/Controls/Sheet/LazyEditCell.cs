@@ -98,6 +98,14 @@ internal abstract class LazyEditCell : Decorator
     /// <summary>True while the editor is mid-interaction so it must not be retired (dropdown open, etc.).</summary>
     protected virtual bool IsEditorBusy(Control editor) => false;
 
+    /// <summary>
+    /// Whether a pointer click on an ALREADY-live editor should re-assert the "open" intent. True for
+    /// editors that don't toggle themselves on a click (text caret, date picker) so a click reliably
+    /// (re)opens them. False for a combo, whose own pointer handling toggles the dropdown — re-asserting
+    /// open on top of that toggle makes the dropdown impossible to open (or close) by clicking the cell.
+    /// </summary>
+    protected virtual bool ReassertsOpenOnClick => true;
+
     /// <summary>Hook to detach event handlers a subclass wired on the editor in <see cref="CreateEditor"/>.</summary>
     protected virtual void DetachEditor(Control editor) { }
 
@@ -129,6 +137,17 @@ internal abstract class LazyEditCell : Decorator
         // A click on the cell should open the editor — even if GotFocus already materialised it (focus
         // fires before the press), so always assert the open intent here. Carry the click point so a
         // text editor lands its caret where the user clicked rather than at the start.
+        //
+        // Exception: when the editor is ALREADY live and the subclass manages its own open/close on a
+        // click (a combo toggles its dropdown on pointer press), re-asserting "open" here would fight
+        // that toggle — the combo closes itself, we re-open it, leaving the user unable to close (or
+        // worse, a net double-toggle that drops the dropdown the instant it opens). Leave the click to
+        // the live editor in that case and only assert focus.
+        if (Editor is not null && !ReassertsOpenOnClick)
+        {
+            Activate(open: false);
+            return;
+        }
         Activate(open: true, caretAt: e.GetPosition(this));
     }
 

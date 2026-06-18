@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using OrientDesk.BusinessLogic.Entities;
+using OrientDesk.BusinessLogic.Enums;
 using OrientDesk.BusinessLogic.Interfaces;
 using OrientDesk.BusinessLogic.Models;
 
@@ -638,6 +639,21 @@ public sealed class EventStore : IEventStore
         existing.Chip = link.Chip;
         existing.StartTime = link.StartTime;
         existing.OutOfCompetition = link.OutOfCompetition;
+        // NOTE: ResultStatusOverride is deliberately NOT copied — it has its own writer
+        // (SetParticipantDayResultStatusAsync) so this debounced row save can't wipe the judge override.
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SetParticipantDayResultStatusAsync(string eventFolderPath, Guid linkId, FinishStatus? status, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.ParticipantDays.FirstOrDefaultAsync(p => p.Id == linkId, cancellationToken);
+        if (existing is null)
+            return;
+
+        // The sole writer of the override column (UpdateParticipantDayAsync leaves it untouched).
+        existing.ResultStatusOverride = status;
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -703,6 +719,22 @@ public sealed class EventStore : IEventStore
             return;
         await using var db = EventDbContextFactory.Create(eventFolderPath);
         db.FinishReadouts.AddRange(readouts);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateFinishReadoutAsync(string eventFolderPath, FinishReadout readout, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var existing = await db.FinishReadouts.FirstOrDefaultAsync(r => r.Id == readout.Id, cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.ChipNumber = readout.ChipNumber;
+        existing.StartTime = readout.StartTime;
+        existing.FinishTime = readout.FinishTime;
+        existing.Punches = readout.Punches;
+        existing.PunchTimes = readout.PunchTimes;
+        existing.ManualStatus = readout.ManualStatus;
         await db.SaveChangesAsync(cancellationToken);
     }
 

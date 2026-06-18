@@ -126,6 +126,15 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                     b.Property<double?>("Longitude")
                         .HasColumnType("REAL");
 
+                    b.Property<int?>("MapScale")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double?>("MapX")
+                        .HasColumnType("REAL");
+
+                    b.Property<double?>("MapY")
+                        .HasColumnType("REAL");
+
                     b.Property<int>("Order")
                         .HasColumnType("INTEGER");
 
@@ -244,8 +253,15 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                     b.Property<DateTimeOffset?>("FinishTime")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("ManualStatus")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Order")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("PunchTimes")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Punches")
                         .IsRequired()
@@ -415,6 +431,9 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
 
                     b.Property<Guid>("ParticipantId")
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("ResultStatusOverride")
+                        .HasColumnType("INTEGER");
 
                     b.Property<TimeSpan?>("StartTime")
                         .HasColumnType("TEXT");

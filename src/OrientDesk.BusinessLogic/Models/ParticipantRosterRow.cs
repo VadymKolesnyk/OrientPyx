@@ -44,4 +44,6 @@ public sealed record RosterDayCell(
     string GroupName,
     string Chip,
     TimeSpan? StartTime,
-    bool OutOfCompetition);
+    bool OutOfCompetition,
+    // This day's computed run result (read-only except Status). Empty for a non-member or an unread chip.
+    ParticipantDayResult Result);

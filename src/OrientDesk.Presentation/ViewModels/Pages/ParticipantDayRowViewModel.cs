@@ -38,6 +38,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private readonly Action<ParticipantDayRowViewModel> _requestAddDussh;
     private readonly Action<ParticipantDayRowViewModel> _requestRaisedFeeChange;
     private readonly Action<ParticipantDayRowViewModel, Guid, bool> _requestDiscountChange;
+    private readonly Action<ParticipantDayRowViewModel> _requestResultStatusChange;
     private EntryFeeContext _fees;
     private readonly IReadOnlyList<ParticipantFeeDay> _otherDays;
 
@@ -103,6 +104,14 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     [ObservableProperty]
     private bool _outOfCompetition;
 
+    // The computed run result for this day (read-only except the status override below).
+    private ParticipantDayResult _result;
+
+    /// <summary>The selected finish-status option: an "(автоматично)" sentinel (no override, the computed
+    /// status shows through) or a settable status. Editing it persists the override on the participant-day.</summary>
+    [ObservableProperty]
+    private FinishStatusOption _selectedStatus;
+
     public ParticipantDayRowViewModel(
         ParticipantDayRow row,
         IReadOnlyList<GroupOption> groupOptions,
@@ -124,7 +133,8 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         Action<ParticipantDayRowViewModel> requestDusshChange,
         Action<ParticipantDayRowViewModel> requestAddDussh,
         Action<ParticipantDayRowViewModel> requestRaisedFeeChange,
-        Action<ParticipantDayRowViewModel, Guid, bool> requestDiscountChange)
+        Action<ParticipantDayRowViewModel, Guid, bool> requestDiscountChange,
+        Action<ParticipantDayRowViewModel> requestResultStatusChange)
     {
         _linkId = row.LinkId;
         _participantId = row.ParticipantId;
@@ -142,6 +152,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         _requestAddDussh = requestAddDussh;
         _requestRaisedFeeChange = requestRaisedFeeChange;
         _requestDiscountChange = requestDiscountChange;
+        _requestResultStatusChange = requestResultStatusChange;
         _fees = fees;
         _otherDays = row.OtherDays;
         Localization = localization;
@@ -170,6 +181,15 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         _team = row.Team;
         _startTime = row.StartTime;
         _outOfCompetition = row.OutOfCompetition;
+
+        // Computed result + the status-override dropdown. The resting cell shows the effective status
+        // text (ResultStatusText); the dropdown's "auto" sentinel reads "(<computed> — автоматично)".
+        _result = row.Result;
+        // The "(… — автоматично)" sentinel reflects what auto would compute (override cleared), NOT the
+        // effective status (which already folds the override in).
+        _statusOptions = FinishStatusOptions.Build(localization, row.Result.Computed);
+        _selectedStatus = FinishStatusOptions.Select(StatusOptions, row.Result.Override);
+
         // Match by id; fall back to the "(none)" option (the first) when the group is unset/missing.
         _selectedGroup = groupOptions.FirstOrDefault(o => o.Id == row.GroupId) ?? groupOptions[0];
         // Region/Club match by id across their shared lists; fall back to "(none)" (the first option).
@@ -379,6 +399,41 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     /// <summary>True when this day's discipline uses the team column (rogaine).</summary>
     public bool UsesTeam => _strategies.For(_dayDefaultDiscipline).UsesParticipantColumn(ParticipantColumn.Team);
 
+    /// <summary>True when this day's discipline scores points (rogaine) — drives the «Бали» column.</summary>
+    public bool UsesScore => _strategies.For(_dayDefaultDiscipline).UsesControlPointPoints;
+
+    /// <summary>The finish-status choices: a descriptive "(<computed> — автоматично)" sentinel, then the
+    /// settable statuses. Rebuilt when the result changes so the sentinel tracks the computed status.</summary>
+    [ObservableProperty]
+    private IReadOnlyList<FinishStatusOption> _statusOptions;
+
+    /// <summary>The effective status code shown on the resting status cell (OK/MP/…); blank when no result.</summary>
+    public string ResultStatusText => ResultText.Status(_result);
+
+    /// <summary>True when the status is a problem code (anything but OK / blank) — the cell shows it in red.</summary>
+    public bool StatusIsProblem => _result.StatusIsProblem;
+
+    /// <summary>Always true on the day grid: a participant shown here is a day member, so a judge can set
+    /// the status — overriding the computed one when there's a read-out, or marking DNS/DNF/… when there
+    /// isn't (picking OK then leaves it blank).</summary>
+    public bool CanEditStatus => true;
+
+    // ── Read-only computed result columns ─────────────────────────────────────────────────────
+    /// <summary>Actual start (from the chip read-out only) as "HH:mm:ss"; blank when none.</summary>
+    public string ActualStartText => ResultText.ActualStart(_result);
+    /// <summary>Finish time as "HH:mm:ss"; blank when none.</summary>
+    public string FinishText => ResultText.Finish(_result);
+    /// <summary>Result time (finish − start) as "H:mm:ss"; blank unless a valid OK result.</summary>
+    public string ResultText_ => ResultText.Result(_result);
+    /// <summary>Place within the group on the day; blank when unplaced.</summary>
+    public string PlaceText => ResultText.Place(_result);
+    /// <summary>Score / «Бали» (rogaine); blank for non-scoring disciplines.</summary>
+    public string ScoreText => ResultText.Score(_result);
+    /// <summary>Raw place for sorting (max when unplaced, so OK results sort to the top).</summary>
+    public int PlaceSort => _result.Place ?? int.MaxValue;
+    /// <summary>Raw score for sorting.</summary>
+    public int ScoreSort => _result.Score ?? -1;
+
     public ParticipantDayRow ToRow() => new(
         LinkId: _linkId,
         ParticipantId: _participantId,
@@ -410,7 +465,9 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         Team: (Team ?? string.Empty).Trim(),
         StartTime: StartTime,
         OutOfCompetition: OutOfCompetition,
-        DayDefaultDiscipline: _dayDefaultDiscipline);
+        DayDefaultDiscipline: _dayDefaultDiscipline,
+        // Result is computed, not part of the row save; carry it so the record round-trips unchanged.
+        Result: _result);
 
     /// <summary>
     /// The start time as editable "hh:mm:ss" text (mirrors <see cref="RosterDayCellViewModel.StartTimeText"/>).
@@ -613,5 +670,42 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     {
         if (_initialized)
             _requestSave(this);
+    }
+
+    /// <summary>The status override the user picked (null = "auto", clears it). Read by the page callback.</summary>
+    public FinishStatus? ResultStatusOverride => SelectedStatus?.Status;
+
+    // The status dropdown is NOT part of the debounced row save (which would wipe the override); the page
+    // owns it via a dedicated callback that persists the override and re-ranks the affected group.
+    partial void OnSelectedStatusChanged(FinishStatusOption value)
+    {
+        if (_initialized && value is not null)
+            _requestResultStatusChange(this);
+    }
+
+    /// <summary>
+    /// Applies a freshly recomputed result (e.g. after a status edit re-ranked the group) without
+    /// re-triggering the status callback. Refreshes the read-only result texts and the status selection.
+    /// </summary>
+    public void ApplyResult(ParticipantDayResult result)
+    {
+        _result = result;
+        var wasInitialized = _initialized;
+        _initialized = false;
+        // Rebuild the options so the "auto" sentinel reflects the new computed status, then select by the
+        // raw override (auto when none).
+        StatusOptions = FinishStatusOptions.Build(Localization, result.Computed);
+        SelectedStatus = FinishStatusOptions.Select(StatusOptions, result.Override);
+        _initialized = wasInitialized;
+        OnPropertyChanged(nameof(ResultStatusText));
+        OnPropertyChanged(nameof(StatusIsProblem));
+        OnPropertyChanged(nameof(CanEditStatus));
+        OnPropertyChanged(nameof(ActualStartText));
+        OnPropertyChanged(nameof(FinishText));
+        OnPropertyChanged(nameof(ResultText_));
+        OnPropertyChanged(nameof(PlaceText));
+        OnPropertyChanged(nameof(ScoreText));
+        OnPropertyChanged(nameof(PlaceSort));
+        OnPropertyChanged(nameof(ScoreSort));
     }
 }

@@ -44,4 +44,22 @@ public sealed class AppSettingsService : IAppSettingsService
         => _appStore.SaveFontScaleAsync(Clamp(fontScale), cancellationToken);
 
     private double Clamp(double value) => Math.Clamp(value, MinFontScale, MaxFontScale);
+
+    public IReadOnlyList<int> ReceiptWidths { get; } = [56, 80];
+    public int DefaultReceiptWidth => 80;
+
+    public async Task<PrintSettings> GetPrintSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        var stored = await _appStore.GetPrintSettingsAsync(cancellationToken);
+        if (stored is not { } s)
+            return new PrintSettings(string.Empty, DefaultReceiptWidth);
+
+        return new PrintSettings(s.PrinterName ?? string.Empty, ClampWidth(s.WidthMm));
+    }
+
+    public Task SavePrintSettingsAsync(PrintSettings settings, CancellationToken cancellationToken = default)
+        => _appStore.SavePrintSettingsAsync(settings.PrinterName ?? string.Empty, ClampWidth(settings.WidthMm), cancellationToken);
+
+    // Snaps any stored/incoming width to the nearest allowed roll width so a bad value can't leak through.
+    private int ClampWidth(int width) => ReceiptWidths.Contains(width) ? width : DefaultReceiptWidth;
 }

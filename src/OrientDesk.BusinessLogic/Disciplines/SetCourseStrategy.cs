@@ -1,4 +1,5 @@
 using OrientDesk.BusinessLogic.Enums;
+using OrientDesk.BusinessLogic.Interfaces;
 using OrientDesk.BusinessLogic.Models;
 
 namespace OrientDesk.BusinessLogic.Disciplines;
@@ -10,6 +11,10 @@ namespace OrientDesk.BusinessLogic.Disciplines;
 /// </summary>
 public sealed class SetCourseStrategy : DisciplineStrategyBase
 {
+    private readonly ICourseDistanceCalculator _distance;
+
+    public SetCourseStrategy(ICourseDistanceCalculator distance) => _distance = distance;
+
     public override DisciplineType Type => DisciplineType.SetCourse;
 
     public override bool UsesColumn(GroupColumn column) => column switch
@@ -60,5 +65,129 @@ public sealed class SetCourseStrategy : DisciplineStrategyBase
             return FinishStatusResult.Of(FinishStatus.Ovt);
 
         return FinishStatusResult.Of(FinishStatus.Ok);
+    }
+
+    /// <summary>
+    /// Ordered (set-course) splits as two parallel lists. The <b>passage</b> keeps every punch read from
+    /// the chip in chip order — nothing dropped, including out-of-order, foreign and repeated punches —
+    /// each carrying its leg split (time since the previous punch; first from the start) and elapsed. A
+    /// punch is flagged <see cref="PassagePunch.OnCourse"/> when, at the moment it was read, it is the
+    /// next prescribed control still to be taken (greedy subsequence match, the same rule the status
+    /// check uses), which also marks that expected control taken. The <b>expected</b> list is the
+    /// prescribed course in order, each flagged taken or missing — the mapping to the actual route.
+    /// </summary>
+    public override SplitsView BuildSplits(SplitsContext context)
+    {
+        var expected = context.ExpectedControls;
+        var matched = new bool[expected.Count];
+        var ei = 0;                  // next prescribed control still to be taken
+        DateTimeOffset? prev = context.StartTime;
+        // Previous position (seeded at the start) for the leg distance — tracked in both representations,
+        // preferring the undistorted paper-map mm when available and falling back to the geographic one.
+        var prevPoint = context.StartCoord;
+        var prevMap = context.StartMap;
+        var taken = 0;
+
+        var passage = new List<PassagePunch>(context.Punches.Count + 2);
+        var index = 0;               // 1-based control number; the start/finish markers don't consume one
+
+        // Start marker first: its time is the resolved start, no leg/elapsed (it is the reference point).
+        // Code is left blank — the presentation layer supplies the localized "Start"/"Finish" label by Kind.
+        passage.Add(new PassagePunch(0, string.Empty, OnCourse: false,
+            context.StartTime, Leg: null, Elapsed: TimeSpan.Zero, PassageKind.Start));
+
+        foreach (var punch in context.Punches)
+        {
+            var code = punch.ControlCode.Trim();
+            if (code.Length == 0)
+                continue;
+
+            var leg = prev is { } pr && punch.Time is { } t ? t - pr : (TimeSpan?)null;
+            var elapsed = context.StartTime is { } s && punch.Time is { } t2 ? t2 - s : (TimeSpan?)null;
+
+            // Straight-line distance of this leg (from the previous position, the start for the first
+            // control) and the resulting pace (leg time ÷ distance). Null when a coordinate or leg time
+            // is missing. The "to" position comes from the control's code; the "from" is carried along.
+            var toPoint = ResolveCoord(context, code);
+            var toMap = ResolveMap(context, code);
+            var legKm = LegDistanceKm(context, prevPoint, toPoint, prevMap, toMap);
+            var pace = PaceSecondsPerKm(leg, legKm);
+
+            var onCourse = ei < expected.Count
+                && string.Equals(code, expected[ei].Trim(), StringComparison.OrdinalIgnoreCase);
+            if (onCourse)
+            {
+                matched[ei] = true;
+                ei++;
+                taken++;
+            }
+
+            passage.Add(new PassagePunch(++index, code, onCourse, punch.Time, leg, elapsed,
+                PassageKind.Control, legKm, pace));
+
+            if (punch.Time is not null)
+                prev = punch.Time;
+            if (toPoint.HasCoordinates)
+                prevPoint = toPoint;
+            if (toMap.HasCoordinates)
+                prevMap = toMap;
+        }
+
+        // Finish marker last: leg from the last punch (or start), elapsed = finish − start; the leg
+        // distance/pace run from the last position to the finish point.
+        var finishLeg = prev is { } fp && context.FinishTime is { } ft ? ft - fp : (TimeSpan?)null;
+        var finishElapsed = context.StartTime is { } fs && context.FinishTime is { } ft2 ? ft2 - fs : (TimeSpan?)null;
+        var finishKm = LegDistanceKm(context, prevPoint, context.FinishCoord, prevMap, context.FinishMap);
+        var finishPace = PaceSecondsPerKm(finishLeg, finishKm);
+        passage.Add(new PassagePunch(0, string.Empty, OnCourse: false,
+            context.FinishTime, finishLeg, finishElapsed, PassageKind.Finish, finishKm, finishPace));
+
+        var prescribed = new List<ExpectedControl>(expected.Count);
+        for (var i = 0; i < expected.Count; i++)
+            prescribed.Add(new ExpectedControl(i + 1, expected[i].Trim(), matched[i]));
+
+        return new SplitsView
+        {
+            Layout = SplitsLayout.Ordered,
+            Passage = passage,
+            Expected = prescribed,
+            VisitedCount = taken,
+            ExpectedCount = expected.Count
+        };
+    }
+
+    // The coordinate of a punched control code, or a coordinate-less point when the code is unknown.
+    private static GeoPoint ResolveCoord(SplitsContext context, string code) =>
+        context.CoordsByCode.TryGetValue(code, out var p) ? p : default;
+
+    // The paper-map position of a punched control code, or a position-less point when unknown.
+    private static MapPoint ResolveMap(SplitsContext context, string code) =>
+        context.MapByCode.TryGetValue(code, out var p) ? p : default;
+
+    // Straight-line distance (km) of the leg between two positions, via the shared course distance
+    // calculator. Prefers the paper-map source (map mm × scale, undistorted) when this leg's endpoints
+    // are both mapped and a scale is known; otherwise falls back to the geographic coordinates. Null
+    // when neither source covers both endpoints (so the leg distance is unknown).
+    private decimal? LegDistanceKm(SplitsContext context, GeoPoint from, GeoPoint to, MapPoint fromMap, MapPoint toMap)
+    {
+        if (context.MapScale is > 0 && fromMap.HasCoordinates && toMap.HasCoordinates)
+        {
+            var mapKm = _distance.TotalKilometresFromMap([fromMap, toMap], context.MapScale.Value);
+            return mapKm > 0m ? mapKm : null;
+        }
+
+        if (!from.HasCoordinates || !to.HasCoordinates)
+            return null;
+
+        var km = _distance.TotalKilometres([from, to]);
+        return km > 0m ? km : null;
+    }
+
+    // Pace in seconds per kilometre for one leg; null when the leg time or distance is missing/zero.
+    private static double? PaceSecondsPerKm(TimeSpan? leg, decimal? legKm)
+    {
+        if (leg is not { } t || t <= TimeSpan.Zero || legKm is not { } km || km <= 0m)
+            return null;
+        return t.TotalSeconds / (double)km;
     }
 }

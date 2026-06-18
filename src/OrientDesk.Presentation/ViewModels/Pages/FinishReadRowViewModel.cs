@@ -28,10 +28,28 @@ public sealed class FinishReadRowViewModel
 
     public string ChipNumber => _row.ChipNumber;
 
+    /// <summary>
+    /// Start time as "HH:mm:ss", or blank when none is known. For a recognised chip this is the resolved
+    /// start used for evaluation (chip read-out start, else the assigned start); for an unrecognised chip
+    /// — which has no resolved start — it falls back to the raw start the readout file carried, so an
+    /// unknown chip still shows the start it was read with.
+    /// </summary>
+    public string StartTimeText => (_row.ResolvedStartTime ?? _row.StartTime) is { } t
+        ? t.ToString("HH:mm:ss")
+        : string.Empty;
+
     /// <summary>Finish time as "HH:mm:ss", or blank when the readout carried none.</summary>
     public string FinishTimeText => _row.FinishTime is { } t ? t.ToString("HH:mm:ss") : string.Empty;
 
+    /// <summary>Result (finish − start) as "H:mm:ss", or blank when either time is unknown.</summary>
+    public string ElapsedText => _row.Elapsed is { } e && e >= TimeSpan.Zero
+        ? e.ToString("h\\:mm\\:ss")
+        : string.Empty;
+
     public bool IsKnown => _row.IsKnown;
+
+    /// <summary>True for an unrecognised chip — drives the row's red highlight.</summary>
+    public bool IsUnknown => !_row.IsKnown;
 
     /// <summary>Participant bib number when known; otherwise blank.</summary>
     public string ParticipantNumber => _row.ParticipantNumber;
@@ -63,4 +81,10 @@ public sealed class FinishReadRowViewModel
     public string StatusDetail => _row.Status == FinishStatus.Mp && _row.StatusDetail.Length > 0
         ? string.Format(_localization.Get("FinishRead.Status.MpDetail"), _row.StatusDetail)
         : string.Empty;
+
+    /// <summary>
+    /// True when the row carries a non-OK status (MP / OVT / DNF / DNS / DSQ) — drives the red tint on
+    /// the status cell. A missing status (<see cref="FinishStatus.None"/>) and OK both read false.
+    /// </summary>
+    public bool StatusIsBad => _row.Status is not (FinishStatus.None or FinishStatus.Ok);
 }

@@ -69,6 +69,13 @@ public sealed class SheetTable : TemplatedControl
         AvaloniaProperty.Register<SheetTable, ICommand?>(nameof(ToggleRentalChipCommand));
 
     /// <summary>
+    /// Property path to a <see cref="bool"/> on the bound row; when true, every cell's background in
+    /// that row is tinted red (e.g. an unrecognised chip on the finish-read log). Null ⇒ no row tint.
+    /// </summary>
+    public static readonly StyledProperty<string?> RowHighlightPathProperty =
+        AvaloniaProperty.Register<SheetTable, string?>(nameof(RowHighlightPath));
+
+    /// <summary>
     /// Pre-built bands supplied by the caller. When set, the table renders these verbatim and does
     /// NOT build columns from <see cref="Days"/>/<see cref="Blocks"/> — this is how the flat day-mode
     /// table reuses the control without the roster's per-day banding.
@@ -89,6 +96,10 @@ public sealed class SheetTable : TemplatedControl
     /// <summary>Whether the team column is shown (roster auto-build only; team disciplines).</summary>
     public static readonly StyledProperty<bool> ShowTeamProperty =
         AvaloniaProperty.Register<SheetTable, bool>(nameof(ShowTeam));
+
+    /// <summary>Whether the «Бали» (score) result column is shown (roster auto-build only; point-scoring days).</summary>
+    public static readonly StyledProperty<bool> ShowScoreProperty =
+        AvaloniaProperty.Register<SheetTable, bool>(nameof(ShowScore));
 
     /// <summary>
     /// A stable id identifying this table's saved view in <c>views.json</c> (e.g. "participants.day").
@@ -119,6 +130,25 @@ public sealed class SheetTable : TemplatedControl
 
     /// <summary>Raised when the user asks to delete a row via the keyboard; arg = skip-confirm.</summary>
     public event EventHandler<SheetDeleteEventArgs>? DeleteRequested;
+
+    /// <summary>
+    /// Raised when the user picks "bulk edit this column" from a header's context menu; arg = the leaf
+    /// column. The page opens its bulk-edit modal with that column preselected. Only fires for columns
+    /// <see cref="CanBulkEditColumn"/> accepts (the menu item is hidden otherwise).
+    /// </summary>
+    public event EventHandler<SheetColumn>? BulkEditColumnRequested;
+
+    /// <summary>
+    /// Predicate the header menu consults before offering its "bulk edit this column" item, set by the
+    /// page that owns which columns can be bulk-edited. Null ⇒ no column offers the item.
+    /// </summary>
+    public Func<SheetColumn, bool>? CanBulkEditColumn { get; set; }
+
+    /// <summary>
+    /// The leaf column the focused cell belongs to, or null when nothing in the table is focused. The
+    /// page reads it to preselect the bulk-edit field for the cell the user was last in.
+    /// </summary>
+    public SheetColumn? FocusedColumn => FindFocusedCell()?.Column;
 
     public IEnumerable? ItemsSource
     {
@@ -188,6 +218,12 @@ public sealed class SheetTable : TemplatedControl
         set => SetValue(ShowTeamProperty, value);
     }
 
+    public bool ShowScore
+    {
+        get => GetValue(ShowScoreProperty);
+        set => SetValue(ShowScoreProperty, value);
+    }
+
     public string? LayoutKey
     {
         get => GetValue(LayoutKeyProperty);
@@ -210,6 +246,12 @@ public sealed class SheetTable : TemplatedControl
     {
         get => GetValue(ToggleRentalChipCommandProperty);
         set => SetValue(ToggleRentalChipCommandProperty, value);
+    }
+
+    public string? RowHighlightPath
+    {
+        get => GetValue(RowHighlightPathProperty);
+        set => SetValue(RowHighlightPathProperty, value);
     }
 
     // ── Template parts ────────────────────────────────────────────────────────────────────────────
@@ -280,7 +322,7 @@ public sealed class SheetTable : TemplatedControl
             change.Property == BandsProperty || change.Property == RentalChipsProperty ||
             change.Property == ToggleRentalChipCommandProperty ||
             change.Property == DiscountsProperty || change.Property == RaisedFeeEnabledProperty ||
-            change.Property == ShowTeamProperty)
+            change.Property == ShowTeamProperty || change.Property == ShowScoreProperty)
         {
             Rebuild();
         }
@@ -371,7 +413,7 @@ public sealed class SheetTable : TemplatedControl
             if (Days is null || Blocks is null)
                 return;
             var builder = new RosterColumnBuilder(Localization);
-            _bands = builder.Build(Days, AsList(Blocks), Discounts ?? [], RaisedFeeEnabled, ShowTeam, _bands);
+            _bands = builder.Build(Days, AsList(Blocks), Discounts ?? [], RaisedFeeEnabled, ShowTeam, ShowScore, _bands);
         }
 
         // Apply any user reorder (drag), keyed by a stable band signature so it survives rebuilds.
@@ -402,6 +444,8 @@ public sealed class SheetTable : TemplatedControl
             _header.SortBy = ApplySort;
             _header.MoveBand = MoveBand;
             _header.HideColumn = HideColumn;
+            _header.BulkEditColumn = column => BulkEditColumnRequested?.Invoke(this, column);
+            _header.CanBulkEdit = column => CanBulkEditColumn?.Invoke(column) == true;
             _header.ColumnResized = PersistLayout;
             _header.FilterColumn = ShowColumnFilter;
             _header.RemoveFilter = column => ClearColumnFilter(column.Key);
@@ -1297,6 +1341,15 @@ public sealed class SheetTable : TemplatedControl
                             Converter = Behaviors.PaymentHighlight.Instance
                         };
                 }
+                else if (RowHighlightPath is { Length: > 0 } highlightPath)
+                {
+                    // Whole-row tint (e.g. an unrecognised chip on the finish-read log): every cell in the
+                    // row binds the same row-level bool path, so the tint covers the row, not one column.
+                    cell[!TemplatedControl.BackgroundProperty] = new Avalonia.Data.Binding(highlightPath)
+                    {
+                        Converter = Behaviors.RowHighlight.Instance
+                    };
+                }
                 Grid.SetColumn(cell, col);
                 grid.Children.Add(cell);
                 col++;
@@ -1406,6 +1459,21 @@ public sealed class SheetTable : TemplatedControl
         if (cell is null)
             return;
 
+        // An open combo dropdown is a light-dismiss popup: a press on a different cell dismisses it, but
+        // that dismissing press is swallowed by the overlay, so the cell the user actually clicked never
+        // gets selected/entered — the dropdown just closes and the click is lost. When we detect a press
+        // on a cell OTHER than the one whose combo is open, close that dropdown ourselves and re-dispatch
+        // the selection to the clicked cell, so a single click moves to it (and opens its editor) as if
+        // no dropdown had been open. The press itself is handled so it can't also re-toggle anything.
+        if (OpenComboCell() is { } openCell && !ReferenceEquals(openCell, cell))
+        {
+            CloseOpenCombo();
+            e.Handled = true;
+            var target = cell;
+            Dispatcher.UIThread.Post(() => EnterCellFromClick(target), DispatcherPriority.Input);
+            return;
+        }
+
         // Shift+Click extends the selection rectangle to the clicked cell, keeping the anchor (and the
         // focus/edit cell) where it was. No row re-select, no begin-edit — it's a pure range gesture.
         if (e.KeyModifiers.HasFlag(KeyModifiers.Shift) && _anchorRow >= 0
@@ -1510,6 +1578,54 @@ public sealed class SheetTable : TemplatedControl
         _pendingEditCell = null;
     }
 
+    // The cell whose combo dropdown is currently open (a lazy combo cell we put into edit, or a combo we
+    // opened directly), or null when nothing is open. Used to redirect a click that lands on a different
+    // cell while a dropdown is open: the popup's light dismiss swallows that click, so we close it
+    // ourselves and re-dispatch the entry to the clicked cell.
+    private SheetCell? OpenComboCell()
+    {
+        Visual? combo = _editingLazy?.Editor is ComboBox { IsDropDownOpen: true } lazyCombo ? lazyCombo
+            : _openCombo is { IsDropDownOpen: true } open ? open
+            : null;
+        if (combo is null)
+            return null;
+        var v = (Visual?)combo;
+        while (v is not null)
+        {
+            if (v is SheetCell cell)
+                return cell;
+            v = v.GetVisualParent();
+        }
+        return null;
+    }
+
+    private void CloseOpenCombo()
+    {
+        if (_editingLazy?.Editor is ComboBox { IsDropDownOpen: true } lazyCombo)
+            lazyCombo.IsDropDownOpen = false;
+        if (_openCombo is { IsDropDownOpen: true })
+            _openCombo.IsDropDownOpen = false;
+    }
+
+    // Select and enter a cell as if it had just been clicked: select its row, collapse the range onto it,
+    // focus it, and (for a lazy cell) open its editor. Used to complete a click that we had to intercept
+    // because an open combo dropdown would otherwise have swallowed it (see OnTunnelPointerPressed).
+    private void EnterCellFromClick(SheetCell cell)
+    {
+        _focusedColumn = cell.ColumnIndex;
+        if (RowItemFromCell(cell) is { } row)
+        {
+            SelectedItem = row;
+            CollapseRange(RowIndexOf(row), cell.ColumnIndex);
+        }
+        cell.Focus();
+        if (FindLazyCell(cell.Content as Control) is { } lazy)
+        {
+            _editingLazy = lazy;
+            lazy.BeginEdit(open: true);
+        }
+    }
+
     // Right-click on a body cell offers "filter by this value" (a Values filter pinned to that cell's
     // text) and, when the column already has a filter, "clear filter". Left untouched: left click and
     // the focus-to-edit flow. Skips non-filterable columns (actions / no value path).
@@ -1571,6 +1687,22 @@ public sealed class SheetTable : TemplatedControl
             menu.Children.Add(rental);
         }
 
+        // Column-specific extra: a "bulk edit this column" item when the page reports the column is
+        // bulk-editable. It opens the page's bulk-edit modal preselected to this column (request #1).
+        Button? bulkEdit = null;
+        if (CanBulkEditColumn?.Invoke(column) == true)
+        {
+            bulkEdit = new Button
+            {
+                Classes = { "ghost" },
+                Content = Localization.Get("Sheet.Columns.BulkEdit"),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Padding = new Thickness(10, 6)
+            };
+            menu.Children.Add(bulkEdit);
+        }
+
         var flyout = new Flyout
         {
             Placement = PlacementMode.Pointer,
@@ -1595,6 +1727,8 @@ public sealed class SheetTable : TemplatedControl
             clear.Click += (_, _) => { flyout.Hide(); ClearColumnFilter(column.Key); };
         if (rental is not null)
             rental.Click += (_, _) => { flyout.Hide(); ToggleRental(chip); };
+        if (bulkEdit is not null)
+            bulkEdit.Click += (_, _) => { flyout.Hide(); BulkEditColumnRequested?.Invoke(this, column); };
         flyout.ShowAt(cell);
     }
 
@@ -2243,6 +2377,17 @@ public sealed class SheetTable : TemplatedControl
 
         var lines = SplitClipboardLines(text);
         var column = FindFocusedCell()?.Column;
+
+        // A combo (option-list) column resolves the pasted value(s) to an option by exact label match and
+        // only then changes the selection — a single value writes the focused row, several lines fill down
+        // one row each. A line that matches no option leaves that row's selection untouched. Never opens
+        // the dropdown / inserts free text, so pasting can't half-set a combo.
+        if (column?.IsComboPaste == true)
+        {
+            FillDownCombo(column, lines.Length > 1 ? lines : new[] { text });
+            return;
+        }
+
         if (lines.Length > 1 && column?.PastePath is { } path && FillDown(path, lines))
             return;
 
@@ -2281,6 +2426,73 @@ public sealed class SheetTable : TemplatedControl
         for (var i = 0; i < lines.Length && startIndex + i < items.Count; i++)
             SetStringPath(items[startIndex + i], path, lines[i]);
         return true;
+    }
+
+    // Combo fill-down: write one clipboard line per row, starting at the focused row, by resolving each
+    // line to an option on THAT row and assigning it to the column's selected-option path. A line is only
+    // applied when exactly one of the row's options matches it 1:1 by label (case-insensitive, trimmed);
+    // a non-matching (or blank, or ambiguous) line leaves that row's selection unchanged. Each row reads
+    // its own options list, so per-row option sets (e.g. each roster day's own GroupOptions) are honoured.
+    private void FillDownCombo(SheetColumn column, string[] lines)
+    {
+        var items = _sortedItems;
+        if (items.Count == 0 || _body?.SelectedItem is not { } start)
+            return;
+
+        var startIndex = -1;
+        for (var i = 0; i < items.Count; i++)
+            if (Equals(items[i], start)) { startIndex = i; break; }
+        if (startIndex < 0)
+            return;
+
+        for (var i = 0; i < lines.Length && startIndex + i < items.Count; i++)
+        {
+            var row = items[startIndex + i];
+            var value = lines[i].Trim();
+            if (row is null || value.Length == 0)
+                continue;
+            if (ResolveComboOption(row, column, value) is { } option)
+                SetOptionPath(row, column.ComboSelectedPath!, option);
+        }
+    }
+
+    // Find the single option on a row whose label matches the pasted value 1:1 (case-insensitive,
+    // trimmed). Returns null when no option matches OR more than one does (ambiguous) — the caller leaves
+    // the cell unchanged in either case, so a paste can never guess between equally-named options.
+    private static object? ResolveComboOption(object row, SheetColumn column, string value)
+    {
+        if (ReadPath(row, column.ComboItemsPath!) is not IEnumerable options)
+            return null;
+
+        object? match = null;
+        foreach (var option in options)
+        {
+            if (option is null)
+                continue;
+            var label = ReadPath(option, column.ComboLabelPath!) as string;
+            if (label is null || !string.Equals(label.Trim(), value, StringComparison.CurrentCultureIgnoreCase))
+                continue;
+            if (match is not null)
+                return null; // ambiguous — two options share this label
+            match = option;
+        }
+        return match;
+    }
+
+    // Assign a resolved option to the row's two-way selected-option property, walking any intermediate
+    // path segments (e.g. "Days[2].SelectedGroup"). No-op if the path can't be resolved or written.
+    private static void SetOptionPath(object row, string path, object option)
+    {
+        var segments = path.Split('.');
+        object? current = row;
+        for (var i = 0; i < segments.Length - 1 && current is not null; i++)
+            current = ResolveSegment(current, segments[i]);
+        if (current is null)
+            return;
+
+        var prop = current.GetType().GetProperty(segments[^1], BindingFlags.Public | BindingFlags.Instance);
+        if (prop is { CanWrite: true } && prop.PropertyType.IsInstanceOfType(option))
+            prop.SetValue(current, option);
     }
 
     // Split clipboard text into rows. Excel/Sheets copy a single column as CR/LF-separated lines (and a

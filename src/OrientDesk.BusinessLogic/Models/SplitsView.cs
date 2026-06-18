@@ -1,0 +1,158 @@
+using OrientDesk.BusinessLogic.Enums;
+using OrientDesk.BusinessLogic.Interfaces;
+
+namespace OrientDesk.BusinessLogic.Models;
+
+/// <summary>
+/// Everything a discipline needs to build the passage/splits view for one selected read-out, all as
+/// layer-neutral data. Mirrors <see cref="FinishContext"/> but additionally carries the per-control
+/// point values (for the score formats) and the start time, so leg/elapsed splits can be computed.
+/// The expected controls are the group's prescribed course already reduced to the codes that must be
+/// visited (start/finish markers removed by the caller); <see cref="Punches"/> are the chip's actual
+/// punches with their times (start/finish markers already excluded), in read order.
+/// </summary>
+public sealed class SplitsContext
+{
+    /// <summary>Control codes prescribed by the course, in order (no start/finish markers).</summary>
+    public IReadOnlyList<string> ExpectedControls { get; init; } = [];
+
+    /// <summary>Controls the chip actually punched, in read order (start/finish already excluded).</summary>
+    public IReadOnlyList<ChipPunch> Punches { get; init; } = [];
+
+    /// <summary>Point value per control code (score formats); missing/zero when not a scored control.</summary>
+    public IReadOnlyDictionary<string, int> PointsByCode { get; init; } =
+        new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>WGS-84 position per control code, used to derive each leg's straight-line distance and
+    /// pace. A code missing here (or with no coordinates) yields no distance for the legs touching it.
+    /// Used only as a fallback when no paper-map position is available (see <see cref="MapByCode"/>).</summary>
+    public IReadOnlyDictionary<string, GeoPoint> CoordsByCode { get; init; } =
+        new Dictionary<string, GeoPoint>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Paper-map position (mm) per control code. Preferred over <see cref="CoordsByCode"/> for
+    /// leg distances, since map mm × <see cref="MapScale"/> is undistorted by the geographic projection
+    /// (the Web Mercator export stretches ground distance by 1/cos(latitude)).</summary>
+    public IReadOnlyDictionary<string, MapPoint> MapByCode { get; init; } =
+        new Dictionary<string, MapPoint>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Map scale denominator (e.g. 4000 for 1:4000) for the day's controls; null when unknown,
+    /// in which case the leg distances fall back to the geographic coordinates.</summary>
+    public int? MapScale { get; init; }
+
+    /// <summary>Resolved start time (chip start, else assigned), used to time the first leg. Null = unknown.</summary>
+    public DateTimeOffset? StartTime { get; init; }
+
+    /// <summary>Finish time from the read-out. Null = no finish punch.</summary>
+    public DateTimeOffset? FinishTime { get; init; }
+
+    /// <summary>Start point position, used for the first leg's distance (start → first control).</summary>
+    public GeoPoint StartCoord { get; init; }
+
+    /// <summary>Finish point position, used for the last leg's distance (last control → finish).</summary>
+    public GeoPoint FinishCoord { get; init; }
+
+    /// <summary>Start point map position (mm), preferred over <see cref="StartCoord"/> for the first leg.</summary>
+    public MapPoint StartMap { get; init; }
+
+    /// <summary>Finish point map position (mm), preferred over <see cref="FinishCoord"/> for the last leg.</summary>
+    public MapPoint FinishMap { get; init; }
+}
+
+/// <summary>How the splits panel should render — chosen by the discipline.</summary>
+public enum SplitsLayout
+{
+    /// <summary>Set course: prescribed order vs actual passage, each punch judged correct/wrong/extra.</summary>
+    Ordered,
+
+    /// <summary>Score / choice / rogaine: allowed controls visited-or-not with points and a running total.</summary>
+    Scored
+}
+
+/// <summary>
+/// The result a discipline produces for the selected read-out's splits panel. <see cref="Layout"/>
+/// decides which shape is populated. <see cref="Ordered"/> (set course) renders two parallel lists —
+/// <see cref="Passage"/> (every punch from the chip, in chip order) beside <see cref="Expected"/>
+/// (the prescribed course in order) — so the actual route and the correct route are read side by side.
+/// <see cref="Scored"/> renders <see cref="Entries"/> plus <see cref="TotalPoints"/>. Collections that
+/// don't apply to the active layout are empty.
+/// </summary>
+public sealed class SplitsView
+{
+    public required SplitsLayout Layout { get; init; }
+
+    /// <summary>
+    /// Ordered layout — the actual passage: <b>every</b> punch read from the chip, in chip order,
+    /// including out-of-order, foreign and repeated punches (nothing is dropped). Empty otherwise.
+    /// </summary>
+    public IReadOnlyList<PassagePunch> Passage { get; init; } = [];
+
+    /// <summary>
+    /// Ordered layout — the prescribed course in order, each control flagged taken or missing. The
+    /// mapping to the actual passage. Empty otherwise.
+    /// </summary>
+    public IReadOnlyList<ExpectedControl> Expected { get; init; } = [];
+
+    /// <summary>Scored-layout rows: allowed controls in passage order, then unvisited ones.</summary>
+    public IReadOnlyList<ScoreEntry> Entries { get; init; } = [];
+
+    /// <summary>Total points collected (scored layout only); 0 otherwise.</summary>
+    public int TotalPoints { get; init; }
+
+    /// <summary>Count of controls visited that count toward the result (both layouts).</summary>
+    public int VisitedCount { get; init; }
+
+    /// <summary>Total controls expected/allowed by the course (both layouts).</summary>
+    public int ExpectedCount { get; init; }
+}
+
+/// <summary>What a passage row represents — a real control punch, or the start/finish markers.</summary>
+public enum PassageKind
+{
+    /// <summary>A punched control (the default); judged on/off course.</summary>
+    Control,
+
+    /// <summary>The start marker — shown first, no on/off-course judgement.</summary>
+    Start,
+
+    /// <summary>The finish marker — shown last, no on/off-course judgement.</summary>
+    Finish
+}
+
+/// <summary>
+/// One punch in the actual passage (ordered layout): the control code as read, its time, the leg split
+/// (time since the previous punch) and elapsed since the start. <see cref="OnCourse"/> is true when this
+/// punch is the next prescribed control at the moment it was read (advancing the course pointer); false
+/// for an out-of-order, foreign or repeated punch. <see cref="Kind"/> marks the synthetic start/finish
+/// rows that bracket the controls (they carry no on/off-course glyph). <see cref="LegKm"/> is the
+/// straight-line distance of this leg (from the previous punch) and <see cref="PaceSecondsPerKm"/> the
+/// resulting tempo (leg time ÷ leg distance); both null when coordinates or a leg time are missing.
+/// </summary>
+public sealed record PassagePunch(
+    int Index,
+    string Code,
+    bool OnCourse,
+    DateTimeOffset? Time,
+    TimeSpan? Leg,
+    TimeSpan? Elapsed,
+    PassageKind Kind = PassageKind.Control,
+    decimal? LegKm = null,
+    double? PaceSecondsPerKm = null);
+
+/// <summary>
+/// One control of the prescribed course (ordered layout): its 1-based order, its code, and whether the
+/// chip took it (<see cref="Taken"/> false = a missing control).
+/// </summary>
+public sealed record ExpectedControl(int Sequence, string Code, bool Taken);
+
+/// <summary>
+/// One row of the scored (score/choice/rogaine) splits panel: an allowed control, whether it was
+/// visited, its point value, the punch time when visited, and the running total after this control.
+/// Unvisited allowed controls have <see cref="Visited"/> false and no time.
+/// </summary>
+public sealed record ScoreEntry(
+    string Code,
+    bool Visited,
+    int Points,
+    DateTimeOffset? PunchTime,
+    TimeSpan? Elapsed,
+    int RunningTotal);

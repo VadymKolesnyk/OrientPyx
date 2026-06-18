@@ -22,6 +22,11 @@ public interface IAppStore
 
     Task SaveFontScaleAsync(double fontScale, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the stored split-printout printer name + roll width, or null if never set.</summary>
+    Task<(string PrinterName, int WidthMm)?> GetPrintSettingsAsync(CancellationToken cancellationToken = default);
+
+    Task SavePrintSettingsAsync(string printerName, int widthMm, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the last opened competition identifier + day number, if any.</summary>
     Task<(string? Identifier, int? DayNumber)> GetLastSessionAsync(CancellationToken cancellationToken = default);
 

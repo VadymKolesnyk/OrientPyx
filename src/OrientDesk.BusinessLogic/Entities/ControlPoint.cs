@@ -25,6 +25,21 @@ public class ControlPoint
     /// <summary>WGS-84 longitude; optional.</summary>
     public double? Longitude { get; set; }
 
+    /// <summary>
+    /// Paper-map X position in millimetres (IOF <c>&lt;MapPosition&gt;</c>); optional. With
+    /// <see cref="MapY"/> and <see cref="MapScale"/> this gives undistorted on-the-ground leg distances
+    /// (map mm × scale) — the distance orienteering software prints. Preferred over the geographic
+    /// coordinates, which the Web Mercator export stretches by 1/cos(latitude).
+    /// </summary>
+    public double? MapX { get; set; }
+
+    /// <summary>Paper-map Y position in millimetres (IOF <c>&lt;MapPosition&gt;</c>); optional.</summary>
+    public double? MapY { get; set; }
+
+    /// <summary>Map scale denominator captured at import (e.g. 4000 for 1:4000); optional. Combined
+    /// with <see cref="MapX"/>/<see cref="MapY"/> to turn map millimetres into ground metres.</summary>
+    public int? MapScale { get; set; }
+
     /// <summary>Kind of point. Persisted as a string in the database.</summary>
     public ControlPointType Type { get; set; } = ControlPointType.Regular;
 

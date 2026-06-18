@@ -62,4 +62,59 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
     /// get their own rules later. Set-course overrides this.
     /// </summary>
     public virtual FinishStatusResult EvaluateFinish(FinishContext context) => FinishStatusResult.Of(FinishStatus.None);
+
+    /// <summary>
+    /// Default splits layout is the scored one (score / choice / rogaine): the controls the chip
+    /// punched, in passage order, each with its point value, the time and a running total — followed by
+    /// the allowed controls that were not visited (greyed, no time). Order is just the passage; there is
+    /// no "right/wrong order" for a free-choice format. Set course overrides this with the ordered layout.
+    /// </summary>
+    public virtual SplitsView BuildSplits(SplitsContext context) => BuildScoredSplits(context);
+
+    /// <summary>
+    /// Shared scored-layout builder used by every free-choice discipline. A control is counted once even
+    /// if punched twice (the first punch scores); only controls in the allowed set count toward points.
+    /// </summary>
+    protected static SplitsView BuildScoredSplits(SplitsContext context)
+    {
+        var allowed = new HashSet<string>(
+            context.ExpectedControls.Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);
+
+        var entries = new List<ScoreEntry>();
+        var counted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var total = 0;
+
+        // Visited controls in passage order. Skip foreign punches (not in the allowed set) and repeats.
+        foreach (var punch in context.Punches)
+        {
+            var code = punch.ControlCode.Trim();
+            if (code.Length == 0 || !allowed.Contains(code) || !counted.Add(code))
+                continue;
+
+            var points = context.PointsByCode.TryGetValue(code, out var p) ? p : 0;
+            total += points;
+            var elapsed = context.StartTime is { } s && punch.Time is { } t ? t - s : (TimeSpan?)null;
+            entries.Add(new ScoreEntry(code, Visited: true, points, punch.Time, elapsed, total));
+        }
+
+        // Allowed controls that were never punched, in course order, greyed (no time, total unchanged).
+        foreach (var expected in context.ExpectedControls)
+        {
+            var code = expected.Trim();
+            if (code.Length == 0 || counted.Contains(code))
+                continue;
+
+            var points = context.PointsByCode.TryGetValue(code, out var p) ? p : 0;
+            entries.Add(new ScoreEntry(code, Visited: false, points, PunchTime: null, Elapsed: null, total));
+        }
+
+        return new SplitsView
+        {
+            Layout = SplitsLayout.Scored,
+            Entries = entries,
+            TotalPoints = total,
+            VisitedCount = counted.Count,
+            ExpectedCount = allowed.Count
+        };
+    }
 }

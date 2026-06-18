@@ -78,6 +78,16 @@ internal sealed class SheetHeaderPanel : Grid
     /// <summary>Invoked from a header's context menu to hide that leaf column.</summary>
     public Action<SheetColumn>? HideColumn { get; set; }
 
+    /// <summary>
+    /// Invoked from a header's context menu to bulk-edit that leaf column across the shown rows. The
+    /// item only appears when <see cref="CanBulkEdit"/> reports the column is editable in bulk (so the
+    /// header panel stays page-agnostic — the participants page owns which columns qualify).
+    /// </summary>
+    public Action<SheetColumn>? BulkEditColumn { get; set; }
+
+    /// <summary>Predicate the header menu asks before offering the "bulk edit this column" item.</summary>
+    public Func<SheetColumn, bool>? CanBulkEdit { get; set; }
+
     /// <summary>Invoked when a column resize (grip drag) completes, so the new width can be persisted.</summary>
     public Action? ColumnResized { get; set; }
 
@@ -428,6 +438,9 @@ internal sealed class SheetHeaderPanel : Grid
             if (hasFilter)
                 menu.Children.Add(MenuItem("Sheet.Filter.Remove", () => RemoveFilter?.Invoke(column)));
         }
+
+        if (BulkEditColumn is not null && CanBulkEdit?.Invoke(column) == true)
+            menu.Children.Add(MenuItem("Sheet.Columns.BulkEdit", () => BulkEditColumn.Invoke(column)));
 
         menu.Children.Add(MenuItem("Sheet.Columns.Hide", () => HideColumn?.Invoke(column)));
         flyout.ShowAt(header);

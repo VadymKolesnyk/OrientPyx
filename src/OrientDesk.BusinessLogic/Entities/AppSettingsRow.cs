@@ -13,4 +13,10 @@ public class AppSettingsRow
 
     /// <summary>UI font scale multiplier (1.0 = default). Applied across the whole app.</summary>
     public double FontScale { get; set; } = 1.0;
+
+    /// <summary>Installed Windows printer used for split printouts; blank until the user picks one.</summary>
+    public string PrinterName { get; set; } = string.Empty;
+
+    /// <summary>Thermal-roll width in millimetres for split printouts (56 or 80; default 80).</summary>
+    public int ReceiptWidthMm { get; set; } = 80;
 }

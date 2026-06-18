@@ -70,10 +70,65 @@ internal sealed class RosterCellFactory
         SheetCellKind.CollapsedChip => BuildCollapsedChip(),
         SheetCellKind.CollapsedStartTime => BuildCollapsedStartTime(),
         SheetCellKind.CollapsedOutOfCompetition => BuildCollapsedOutOfCompetition(),
+        SheetCellKind.RowResultText => BuildResultLabel(column.IdentityPath),
+        SheetCellKind.RowStatus => BuildRowStatusCell(),
+        SheetCellKind.ResultText => BuildDayResultLabel(column),
+        SheetCellKind.Status => BuildDayStatusCell(column),
+        // Collapsed result blocks are read-only: a single muted label bound to the row's merged value,
+        // which already yields the shared value or the localized "різні" when member days disagree.
+        SheetCellKind.CollapsedResultText or SheetCellKind.CollapsedStatus => BuildCollapsedResultLabel(column.IdentityPath),
         SheetCellKind.Actions => BuildDeleteButton(),
         SheetCellKind.Custom => column.CellBuilder?.Invoke() ?? new Control(),
         _ => new Control()
     };
+
+    // The day-grid status cell: an always-editable combo (a participant shown in the day grid is a member),
+    // letting a judge override the computed status or mark one when there's no read-out. Non-OK shows red.
+    private Control BuildRowStatusCell()
+    {
+        var combo = BuildStatusCombo(
+            nameof(ParticipantDayRowViewModel.StatusOptions),
+            nameof(ParticipantDayRowViewModel.SelectedStatus),
+            nameof(ParticipantDayRowViewModel.ResultStatusText),
+            nameof(ParticipantDayRowViewModel.StatusIsProblem));
+        combo[!InputElement.IsEnabledProperty] = new Binding(nameof(ParticipantDayRowViewModel.CanEditStatus));
+        return combo;
+    }
+
+    // A collapsed (merged) read-only result label bound to a row property that yields the shared value or
+    // the localized "різні". Muted like the other collapsed read-only summaries.
+    private Control BuildCollapsedResultLabel(string mergedPath)
+    {
+        var label = BuildMutedLabel();
+        label[!TextBlock.TextProperty] = new Binding(mergedPath);
+        return label;
+    }
+
+    // A per-day read-only result label bound to Days[i].{path}, greyed on non-member days.
+    private Control BuildDayResultLabel(SheetColumn column)
+    {
+        var i = column.DayIndex;
+        var label = BuildResultLabel($"Days[{i}].{column.IdentityPath}");
+        label[!Visual.OpacityProperty] =
+            new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.IsMember)}") { Converter = DimWhenNotMember };
+        return label;
+    }
+
+    // A per-day finish-status combo bound to Days[i], editable on any day the participant runs (a judge can
+    // override the computed status or mark one with no read-out); disabled + greyed for non-members. Non-OK
+    // shows red.
+    private Control BuildDayStatusCell(SheetColumn column)
+    {
+        var i = column.DayIndex;
+        var combo = BuildStatusCombo(
+            $"Days[{i}].{nameof(RosterDayCellViewModel.StatusOptions)}",
+            $"Days[{i}].{nameof(RosterDayCellViewModel.SelectedStatus)}",
+            $"Days[{i}].{nameof(RosterDayCellViewModel.ResultStatusText)}",
+            $"Days[{i}].{nameof(RosterDayCellViewModel.StatusIsProblem)}");
+        combo[!InputElement.IsEnabledProperty] =
+            new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.CanEditStatus)}");
+        return WrapWithNonMemberBackdrop(combo, i);
+    }
 
     // ── Identity ────────────────────────────────────────────────────────────────────────────────
     private static Control BuildIdentityText(string path, SheetColumnBuilder.NumericMask mask = SheetColumnBuilder.NumericMask.None)
@@ -397,6 +452,33 @@ internal sealed class RosterCellFactory
         Padding = new Thickness(10, 0),
         [!TextBlock.ForegroundProperty] = new DynamicResourceExtension("TextMuted")
     };
+
+    // ── Result columns (read-only text + status combo) ──────────────────────────────────────────
+    // Built as Custom cells by the column builders. The day grid binds directly on the row (empty prefix);
+    // the roster binds on Days[i] (prefix "Days[i].") and dims/disables on non-member days.
+
+    /// <summary>A read-only result label bound to <paramref name="path"/> (e.g. "FinishText" on the row,
+    /// or "Days[2].FinishText" on a roster cell). Centered, muted-free so it reads as real data.</summary>
+    public static TextBlock BuildResultLabel(string path) => new()
+    {
+        VerticalAlignment = VerticalAlignment.Center,
+        HorizontalAlignment = HorizontalAlignment.Stretch,
+        TextAlignment = TextAlignment.Center,
+        Padding = new Thickness(8, 0),
+        [!TextBlock.TextProperty] = new Binding(path),
+    };
+
+    /// <summary>
+    /// A finish-status combo bound to the given options/selection paths. The resting cell shows the
+    /// effective status code via <paramref name="restingTextPath"/> (e.g. "OK"/"MP", blank when no
+    /// result) — NOT the selected option — so an override-less row reads as its computed status rather
+    /// than "(автоматично)". The dropdown (built on click) lists the descriptive auto sentinel + the
+    /// settable statuses. Editing routes through the VM's status-change handler. Used by both tables.
+    /// </summary>
+    public LazyComboCell BuildStatusCombo(string optionsPath, string selectedPath, string restingTextPath, string restingDangerPath) => new(
+        () => BuildComboCore<FinishStatusOption>(optionsPath, selectedPath, nameof(FinishStatusOption.Label)),
+        restingTextPath,
+        restingDangerPath);
 
     private Button BuildDeleteButton()
     {

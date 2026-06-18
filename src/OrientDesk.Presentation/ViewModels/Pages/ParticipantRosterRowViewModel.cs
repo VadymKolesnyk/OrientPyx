@@ -559,14 +559,21 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     }
 
     /// <summary>Sets every day's group to <paramref name="value"/> (each cell persists itself).</summary>
-    public void SetGroupForAllDays(GroupOption value)
+    public void SetGroupForAllDays(GroupOption value) => SetGroupForAllDays(value.Id);
+
+    /// <summary>
+    /// Sets every day's group to the group with <paramref name="groupId"/> (each cell persists itself).
+    /// A day whose own group list doesn't include that group is left untouched. Used by the collapsed
+    /// Groups cell and by bulk edit (which only has the group id from the dialog).
+    /// </summary>
+    public void SetGroupForAllDays(Guid? groupId)
     {
         // Each day owns a distinct GroupOptions list, and the combo matches its selection by reference.
         // Resolve the equivalent option (by group id) from each day's own list so its per-day combo can
         // find the selected item — assigning the shared instance directly leaves other days' combos blank.
         foreach (var cell in Days)
             cell.SelectedGroup =
-                cell.GroupOptions.FirstOrDefault(o => o.Id == value.Id) ?? cell.SelectedGroup;
+                cell.GroupOptions.FirstOrDefault(o => o.Id == groupId) ?? cell.SelectedGroup;
     }
 
     /// <summary>True when the participant runs at least one day (so a chip can be set).</summary>
@@ -629,6 +636,14 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     /// <summary>True when the collapsed Start-times cell should show the read-only "різні" label.</summary>
     public bool StartTimeShowsDifferent => HasAnyChipMember && StartTimeValuesDiffer;
 
+    /// <summary>Sets the start time (hh:mm:ss text) on every member day (each cell persists itself). Used
+    /// by bulk edit; the per-day cells parse/format the text the same way the inline editor does.</summary>
+    public void SetStartTimeForMemberDays(string value)
+    {
+        foreach (var cell in Days.Where(d => d.IsMember))
+            cell.StartTimeText = value;
+    }
+
     // ── Out of competition (member-only, like Chips) ─────────────────────────────────────────────
     /// <summary>
     /// The shared "out of competition" flag across member days (null when they differ/none). Setting
@@ -665,6 +680,37 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             cell.OutOfCompetition = value;
     }
 
+    // ── Collapsed (merged) result blocks — read-only ─────────────────────────────────────────────
+    // Each shows the shared per-day text when all member days agree, else the localized "різні".
+    public string CollapsedActualStart => MergedResult(c => c.ActualStartText);
+    public string CollapsedFinish => MergedResult(c => c.FinishText);
+    public string CollapsedResultStatus => MergedResult(c => c.ResultStatusText);
+    public string CollapsedResult => MergedResult(c => c.ResultText_);
+    public string CollapsedPlace => MergedResult(c => c.PlaceText);
+    public string CollapsedScore => MergedResult(c => c.ScoreText);
+
+    // The shared value of a read-only per-day result text across member days, or the localized "різні"
+    // when they disagree; blank when no member day. Mirrors the collapsed start-time behaviour.
+    private string MergedResult(Func<RosterDayCellViewModel, string> selector)
+    {
+        var values = Days.Where(d => d.IsMember).Select(selector).ToList();
+        if (values.Count == 0)
+            return string.Empty;
+        return values.Distinct().Count() > 1
+            ? Localization.Get("Participants.Roster.Different")
+            : values[0];
+    }
+
+    private void RaiseResultAggregates()
+    {
+        OnPropertyChanged(nameof(CollapsedActualStart));
+        OnPropertyChanged(nameof(CollapsedFinish));
+        OnPropertyChanged(nameof(CollapsedResultStatus));
+        OnPropertyChanged(nameof(CollapsedResult));
+        OnPropertyChanged(nameof(CollapsedPlace));
+        OnPropertyChanged(nameof(CollapsedScore));
+    }
+
     private void OnDayCellChanged(object? sender, PropertyChangedEventArgs e)
     {
         switch (e.PropertyName)
@@ -682,6 +728,15 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
                 break;
             case nameof(RosterDayCellViewModel.OutOfCompetition):
                 RaiseOutOfCompetitionAggregates();
+                break;
+            // Any result-text change (after a status edit re-ranks the day) refreshes the merged result cells.
+            case nameof(RosterDayCellViewModel.ResultStatusText):
+            case nameof(RosterDayCellViewModel.ActualStartText):
+            case nameof(RosterDayCellViewModel.FinishText):
+            case nameof(RosterDayCellViewModel.ResultText_):
+            case nameof(RosterDayCellViewModel.PlaceText):
+            case nameof(RosterDayCellViewModel.ScoreText):
+                RaiseResultAggregates();
                 break;
             case nameof(RosterDayCellViewModel.IsMember):
                 // A participant who just joined a day inherits the chip they already use on their

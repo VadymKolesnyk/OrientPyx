@@ -41,7 +41,10 @@ public sealed record ParticipantDayRow(
     string Team,
     TimeSpan? StartTime,
     bool OutOfCompetition,
-    DisciplineType DayDefaultDiscipline);
+    DisciplineType DayDefaultDiscipline,
+    // Computed run result for this day (read-only except Status, which a judge may override). See
+    // ParticipantDayResult; Empty when the chip was never read.
+    ParticipantDayResult Result);
 
 /// <summary>One participating day's fee inputs: the group assigned (null = none) and the chip held.</summary>
 public readonly record struct ParticipantFeeDay(Guid? GroupId, string Chip);

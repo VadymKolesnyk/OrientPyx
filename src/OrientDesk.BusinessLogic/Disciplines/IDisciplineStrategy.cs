@@ -49,4 +49,12 @@ public interface IDisciplineStrategy
     /// discipline does not yet evaluate finishes this way.
     /// </summary>
     FinishStatusResult EvaluateFinish(FinishContext context);
+
+    /// <summary>
+    /// Builds the passage/splits view shown under the finish-read log for a selected read-out. The shape
+    /// is discipline-specific: a set course renders the prescribed order against the actual passage
+    /// (<see cref="SplitsLayout.Ordered"/>); the score formats render the allowed controls with points
+    /// and a running total (<see cref="SplitsLayout.Scored"/>).
+    /// </summary>
+    SplitsView BuildSplits(SplitsContext context);
 }

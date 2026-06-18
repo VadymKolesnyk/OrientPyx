@@ -129,6 +129,16 @@
         <!-- Dims grid cells that aren't relevant for a row's discipline -->
         <conv:BoolToOpacityConverter x:Key="BoolToOpacity" />
 
+        <!-- Colours the finish-splits status glyph (✓ green / ✗ red / — muted) -->
+        <conv:SplitGlyphBrushConverter x:Key="SplitGlyphBrush" />
+
+        <!-- Dock-toggle button icon for the finish-splits panel (move down / move right) -->
+        <conv:SplitDockIconConverter x:Key="SplitDockIcon" />
+
+        <!-- Red-tints a finish-read status cell when the status is not OK -->
+        <conv:BoolToDangerBrushConverter x:Key="BoolToDangerBrush" />
+
+
         <!-- Palette -->
         <Color x:Key="AccentColor">#7C3AED</Color>
         <Color x:Key="AccentColorHover">#6D28D9</Color>

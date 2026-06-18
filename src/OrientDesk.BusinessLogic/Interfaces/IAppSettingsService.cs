@@ -19,4 +19,13 @@ public interface IAppSettingsService
     Task<double> GetFontScaleAsync(CancellationToken cancellationToken = default);
 
     Task SaveFontScaleAsync(double fontScale, CancellationToken cancellationToken = default);
+
+    /// <summary>Allowed thermal-roll widths (mm) for split printouts, and the default.</summary>
+    IReadOnlyList<int> ReceiptWidths { get; }
+    int DefaultReceiptWidth { get; }
+
+    /// <summary>Returns the stored split-printout printer name (blank if unset) and roll width (clamped to an allowed value).</summary>
+    Task<PrintSettings> GetPrintSettingsAsync(CancellationToken cancellationToken = default);
+
+    Task SavePrintSettingsAsync(PrintSettings settings, CancellationToken cancellationToken = default);
 }

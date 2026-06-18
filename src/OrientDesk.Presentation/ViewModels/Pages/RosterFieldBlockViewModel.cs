@@ -8,7 +8,16 @@ public enum RosterField
     Groups,
     Chips,
     StartTimes,
-    OutOfCompetition
+    OutOfCompetition,
+
+    // Computed run-result fields (read-only except ResultStatus). These blocks always render one column
+    // per day (the collapse toggle is hidden for them — a merged read-only summary isn't meaningful).
+    ActualStart,
+    Finish,
+    ResultStatus,
+    Result,
+    Place,
+    Score
 }
 
 /// <summary>

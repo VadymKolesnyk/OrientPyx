@@ -31,6 +31,12 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
     private const string StartTimeColumn = "Start time";
     private const string FinishTimeColumn = "Finish time";
 
+    // The course punches are NOT the named "* CN" columns (Clear / Check / Start / Finish and their
+    // "_r" siblings are the unit's housekeeping/station boxes, not controls). They are the headerless
+    // tail of "<code> ; <DOW> ; <time>" triplets that each data row appends after this column, whose
+    // value is the punch count.
+    private const string RecordCountColumn = "No. of records";
+
     public bool CanParse(string content)
     {
         if (string.IsNullOrWhiteSpace(content))
@@ -65,10 +71,11 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
         var startIndex = IndexOf(header, StartTimeColumn);
         var finishIndex = IndexOf(header, FinishTimeColumn);
 
-        // The punch tail is a repeating "<n> CN / <n> DOW / <n> time" group. Locate each "* CN"
-        // header and its sibling "* time" so we can read code/time pairs regardless of how many
-        // punch columns the export wrote.
-        var punchColumns = FindPunchColumns(header);
+        // The course punches are the headerless "<code> ; <DOW> ; <time>" triplets each row appends
+        // right after the "No. of records" column; that column's value is the punch count. The first
+        // punch field is therefore the column immediately after it.
+        var recordCountIndex = IndexOf(header, RecordCountColumn);
+        var firstPunchIndex = recordCountIndex >= 0 ? recordCountIndex + 1 : -1;
 
         var records = new List<ChipReadRecord>();
         for (var i = 1; i < lines.Length; i++)
@@ -88,50 +95,35 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
                 ChipNumber = chip,
                 StartTime = CombineDateAndTime(readOn, Field(fields, startIndex)),
                 FinishTime = CombineDateAndTime(readOn, Field(fields, finishIndex)),
-                Punches = ReadPunches(fields, punchColumns, readOn)
+                Punches = ReadPunches(fields, firstPunchIndex, readOn)
             });
         }
 
         return new ChipReadData { SourceFormat = SourceFormat, Records = records };
     }
 
-    // --- Punch columns -------------------------------------------------------
+    // --- Punches -------------------------------------------------------------
 
-    private readonly record struct PunchColumn(int CodeIndex, int TimeIndex);
-
-    // A punch group's code lives in a "<n> CN" column and its time in the matching "<n> time"
-    // column. Pair them by the numeric prefix so reordering or gaps don't misalign them.
-    private static IReadOnlyList<PunchColumn> FindPunchColumns(IReadOnlyList<string> header)
-    {
-        var pairs = new List<PunchColumn>();
-        for (var i = 0; i < header.Count; i++)
-        {
-            var name = header[i].Trim();
-            if (!TrySplitSuffix(name, "CN", out var prefix))
-                continue;
-
-            var timeIndex = IndexOf(header, prefix + " time");
-            if (timeIndex >= 0)
-                pairs.Add(new PunchColumn(i, timeIndex));
-        }
-        return pairs;
-    }
-
+    // Reads the trailing punch triplets — "<code> ; <DOW> ; <time>", repeated — that start at
+    // <paramref name="firstPunchIndex"/> and run to the end of the row. A triplet with a blank code
+    // ends the list (trailing empty fields from the row's final ';'). The middle DOW field is ignored;
+    // the time is combined with the row's "Read on" date into a real timestamp.
     private static IReadOnlyList<ChipPunch> ReadPunches(
         IReadOnlyList<string> fields,
-        IReadOnlyList<PunchColumn> punchColumns,
+        int firstPunchIndex,
         DateTimeOffset? date)
     {
-        if (punchColumns.Count == 0)
+        if (firstPunchIndex < 0)
             return [];
 
         var punches = new List<ChipPunch>();
-        foreach (var column in punchColumns)
+        for (var i = firstPunchIndex; i < fields.Count; i += 3)
         {
-            var code = Field(fields, column.CodeIndex).Trim();
+            var code = fields[i].Trim();
             if (code.Length == 0)
-                continue;
-            punches.Add(new ChipPunch(code, CombineDateAndTime(date, Field(fields, column.TimeIndex))));
+                break;
+            // The time is the third field of the triplet; tolerate a truncated final triplet.
+            punches.Add(new ChipPunch(code, CombineDateAndTime(date, Field(fields, i + 2))));
         }
         return punches;
     }
@@ -191,16 +183,5 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
             if (string.Equals(columns[i].Trim(), name, StringComparison.OrdinalIgnoreCase))
                 return i;
         return -1;
-    }
-
-    // Matches "<prefix> <suffix>" and returns the prefix (e.g. "32 CN" with suffix "CN" → "32").
-    private static bool TrySplitSuffix(string name, string suffix, out string prefix)
-    {
-        prefix = string.Empty;
-        var tail = " " + suffix;
-        if (!name.EndsWith(tail, StringComparison.OrdinalIgnoreCase))
-            return false;
-        prefix = name[..^tail.Length].Trim();
-        return prefix.Length > 0;
     }
 }

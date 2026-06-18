@@ -17,6 +17,16 @@ public partial class ParticipantsView : UserControl
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += (_, _) => Unsubscribe();
+
+        // The header context menu offers "bulk edit this column" for every column that maps to a field,
+        // and routes the pick here. Both tables share the same column model, so both are wired.
+        // Both tables offer the column menu for every column that maps to a bulk-editable field. The
+        // roster supports group/start/OOC too: they fan out to a participant's days (group resolved per
+        // day by id), mirroring the roster's collapsed cells.
+        DayTable.CanBulkEditColumn = c => BulkEditKeyFor(c) is not null;
+        RosterTable.CanBulkEditColumn = c => BulkEditKeyFor(c) is not null;
+        DayTable.BulkEditColumnRequested += OnBulkEditColumnRequested;
+        RosterTable.BulkEditColumnRequested += OnBulkEditColumnRequested;
     }
 
     private void OnDataContextChanged(object? sender, System.EventArgs e)
@@ -161,14 +171,85 @@ public partial class ParticipantsView : UserControl
 
     // Bulk-edit one field across the shown rows. Same shape as OnAssignNumbersClick: read the active
     // table's on-screen (filtered + sorted) rows and hand them to the command, which prompts for the
-    // field + value and applies it to each.
+    // field + value and applies it to each. The dialog opens preselected on the column the user was last
+    // focused in, when that column is bulk-editable (otherwise on the first field).
     private async void OnBulkEditClick(object? sender, RoutedEventArgs e)
     {
         if (_vm is null)
             return;
 
         var table = _vm.IsRosterMode ? RosterTable : DayTable;
-        await _vm.BulkEditCommand.ExecuteAsync(table.VisibleItems);
+        var preselect = BulkEditKeyFor(table.FocusedColumn);
+        await _vm.BulkEditCommand.ExecuteAsync(new BulkEditRequest(table.VisibleItems, preselect));
+    }
+
+    // A "bulk edit this column" header-menu pick: open the dialog preselected on that column. (The menu
+    // item only shows for columns BulkEditKeyFor accepts, so the key here is always non-null.)
+    private async void OnBulkEditColumnRequested(object? sender, SheetColumn column)
+    {
+        if (_vm is null)
+            return;
+
+        var table = _vm.IsRosterMode ? RosterTable : DayTable;
+        await _vm.BulkEditCommand.ExecuteAsync(new BulkEditRequest(table.VisibleItems, BulkEditKeyFor(column)));
+    }
+
+    // Maps a sheet column to the bulk-edit field key it edits, or null when the column can't be
+    // bulk-edited (the unique number/chip columns, name/birth date, the computed fee tail, actions).
+    // The mapping is by the column's kind + bound property so it works for both the day grid and the
+    // roster (they share kinds and identity paths); per-day group/chip/start cells in the roster map to
+    // their field, but only day-mode offers the per-day fields (group via the day combo, start, OOC).
+    private static string? BulkEditKeyFor(SheetColumn? column)
+    {
+        if (column is null)
+            return null;
+
+        switch (column.Kind)
+        {
+            case SheetCellKind.RowGroup:
+            case SheetCellKind.Group:
+            case SheetCellKind.CollapsedGroup:
+                return "Group";
+            case SheetCellKind.RowRegion:
+                return "Region";
+            case SheetCellKind.RowClub:
+                return "Club";
+            case SheetCellKind.RowDussh:
+                return "Dussh";
+            case SheetCellKind.RowRank:
+                return "Rank";
+            case SheetCellKind.PaymentText:
+                return "Payment";
+            case SheetCellKind.StartTimeText:
+            case SheetCellKind.StartTime:
+            case SheetCellKind.CollapsedStartTime:
+                return "StartTime";
+            case SheetCellKind.RaisedFeeFlag:
+                return "PaysRaisedFee";
+            case SheetCellKind.OutOfCompetition:
+            case SheetCellKind.CollapsedOutOfCompetition:
+                return "OutOfCompetition";
+            case SheetCellKind.IdentityText:
+                // Plain text identity columns map by their bound property; name is excluded (no field).
+                return column.IdentityPath switch
+                {
+                    nameof(ParticipantDayRowViewModel.Coach) => "Coach",
+                    nameof(ParticipantDayRowViewModel.Representative) => "Representative",
+                    nameof(ParticipantDayRowViewModel.FsouCode) => "FsouCode",
+                    nameof(ParticipantDayRowViewModel.Team) => "Team",
+                    _ => null,
+                };
+            case SheetCellKind.IdentityBool:
+                return column.IdentityPath switch
+                {
+                    nameof(ParticipantDayRowViewModel.IsFsouMember) => "IsFsouMember",
+                    nameof(ParticipantDayRowViewModel.OutOfCompetition) => "OutOfCompetition",
+                    _ => null,
+                };
+            // Number, ChipText/Chip/CollapsedChip, BirthDate, fee total, actions, custom: not bulk-editable.
+            default:
+                return null;
+        }
     }
 
     // A collapse/expand toggle (or day-set change) asks the roster table to rebuild its columns.
