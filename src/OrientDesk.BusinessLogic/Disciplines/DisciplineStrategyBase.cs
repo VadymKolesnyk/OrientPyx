@@ -17,6 +17,9 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
 
     public virtual bool UsesControlPointPoints => false;
 
+    /// <summary>No automatic over-time penalty by default; rogaine overrides this with 1 бал/min.</summary>
+    public virtual decimal? DefaultPenaltyPerMinute => null;
+
     /// <summary>
     /// Every discipline shows the (auto-computed) control count and a time limit; concrete strategies
     /// extend this for their own columns.
@@ -75,8 +78,18 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
     /// <summary>
     /// Shared scored-layout builder used by every free-choice discipline. A control is counted once even
     /// if punched twice (the first punch scores); only controls in the allowed set count toward points.
+    /// No over-time penalty by default; rogaine passes a non-null rate (see <see cref="BuildScoredSplits(SplitsContext, decimal?)"/>).
     /// </summary>
-    protected static SplitsView BuildScoredSplits(SplitsContext context)
+    protected static SplitsView BuildScoredSplits(SplitsContext context) => BuildScoredSplits(context, defaultPenaltyRate: null);
+
+    /// <summary>
+    /// Shared scored-layout builder, with an optional over-time penalty. <paramref name="defaultPenaltyRate"/>
+    /// is the points-per-late-minute used when the group sets none (rogaine defaults to 1; the score formats
+    /// pass null = no penalty unless the group set one). The gross points are tallied as before; the penalty
+    /// is then subtracted (see <see cref="PenaltyFor"/>) into <see cref="SplitsView.TotalPoints"/> (the net),
+    /// while <see cref="SplitsView.GrossPoints"/>/<see cref="SplitsView.Penalty"/> keep the "X − Y = Z" parts.
+    /// </summary>
+    protected static SplitsView BuildScoredSplits(SplitsContext context, decimal? defaultPenaltyRate)
     {
         var allowed = new HashSet<string>(
             context.ExpectedControls.Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);
@@ -109,14 +122,42 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
             entries.Add(new ScoreEntry(code, Visited: false, points, PunchTime: null, Elapsed: null, total));
         }
 
+        var penalty = PenaltyFor(context, total, defaultPenaltyRate);
         return new SplitsView
         {
             Layout = SplitsLayout.Scored,
             Entries = entries,
-            TotalPoints = total,
+            GrossPoints = total,
+            Penalty = penalty,
+            TotalPoints = total - penalty,
             VisitedCount = counted.Count,
             ExpectedCount = allowed.Count
         };
+    }
+
+    /// <summary>
+    /// Over-time points penalty for a scored result: minutes finished past the group's time limit
+    /// (<see cref="SplitsContext.TimeLimit"/>) rounded <b>up</b> — so 30 s late is 1 minute, 1 min 1 s is
+    /// 2 minutes — times the penalty rate (<see cref="SplitsContext.PenaltyPerMinute"/>, falling back to
+    /// <paramref name="defaultRate"/> when the group set none). Rounded up to a whole point and never larger
+    /// than <paramref name="gross"/> (the net result floors at 0). Zero when there is no limit, the finish
+    /// is within it, the start/finish is unknown, or the effective rate is not positive.
+    /// </summary>
+    protected static int PenaltyFor(SplitsContext context, int gross, decimal? defaultRate)
+    {
+        var rate = context.PenaltyPerMinute ?? defaultRate ?? 0m;
+        if (rate <= 0m
+            || context.TimeLimit is not { } limit || limit <= TimeSpan.Zero
+            || context.StartTime is not { } start || context.FinishTime is not { } finish)
+            return 0;
+
+        var over = finish - start - limit;
+        if (over <= TimeSpan.Zero)
+            return 0;
+
+        var lateMinutes = (long)Math.Ceiling(over.TotalSeconds / 60d);
+        var penalty = (int)Math.Min(gross, Math.Ceiling(lateMinutes * rate));
+        return Math.Max(0, penalty);
     }
 
     // --- Shared leg geometry (used by the ordered set-course and rogaine layouts) ------------------

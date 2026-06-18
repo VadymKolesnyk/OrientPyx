@@ -56,6 +56,14 @@ public sealed class SplitsContext
 
     /// <summary>Finish point map position (mm), preferred over <see cref="FinishCoord"/> for the last leg.</summary>
     public MapPoint FinishMap { get; init; }
+
+    /// <summary>The group's time limit (контрольний час) for the day, when set; null = no limit. Used by the
+    /// scored formats (rogaine) to deduct an over-time penalty from the points total.</summary>
+    public TimeSpan? TimeLimit { get; init; }
+
+    /// <summary>Points deducted per (started) minute of finishing late. For rogaine a null value means the
+    /// default of 1 point/minute; for a discipline that doesn't penalise time it is ignored.</summary>
+    public decimal? PenaltyPerMinute { get; init; }
 }
 
 /// <summary>How the splits panel should render — chosen by the discipline.</summary>
@@ -95,8 +103,19 @@ public sealed class SplitsView
     /// <summary>Scored-layout rows: allowed controls in passage order, then unvisited ones.</summary>
     public IReadOnlyList<ScoreEntry> Entries { get; init; } = [];
 
-    /// <summary>Total points collected; 0 for a non-scoring layout.</summary>
+    /// <summary>The result points — gross points collected <b>minus</b> the over-time penalty (never below 0);
+    /// 0 for a non-scoring layout. This is the value that ranks the runner and shows as «Бали». Use
+    /// <see cref="GrossPoints"/>/<see cref="Penalty"/> when the breakdown ("X − Y = Z") is needed.</summary>
     public int TotalPoints { get; init; }
+
+    /// <summary>Points collected before the over-time penalty (the "X" in "X − Y = Z"). Equals
+    /// <see cref="TotalPoints"/> when there is no penalty; 0 for a non-scoring layout.</summary>
+    public int GrossPoints { get; init; }
+
+    /// <summary>Over-time penalty deducted from <see cref="GrossPoints"/> (the "Y" in "X − Y = Z"): the
+    /// minutes the finish ran past the time limit (rounded up) × the penalty rate. 0 when finished within
+    /// the limit, no limit is set, or the discipline doesn't penalise time.</summary>
+    public int Penalty { get; init; }
 
     /// <summary>
     /// True when this view scores points (rogaine), so the passage/course lists show the point columns and

@@ -136,10 +136,9 @@ public sealed partial class FinishSplitsViewModel : ObservableObject
                 Passage.Add(new PassagePunchViewModel(punch, _localization));
             foreach (var control in view.Expected)
                 Expected.Add(new ExpectedControlViewModel(control, _localization));
-            // Rogaine adds the points total to the "visited / expected" line; set-course shows it plain.
+            // Rogaine adds the points to the "visited / expected" line; set-course shows it plain.
             Summary = view.HasPoints
-                ? string.Format(_localization.Get("FinishRead.Splits.Scored"),
-                    view.VisitedCount, view.ExpectedCount, view.TotalPoints)
+                ? ScoredSummary(view)
                 : string.Format(_localization.Get("FinishRead.Splits.Visited"),
                     view.VisitedCount, view.ExpectedCount);
         }
@@ -147,11 +146,22 @@ public sealed partial class FinishSplitsViewModel : ObservableObject
         {
             foreach (var entry in view.Entries)
                 Entries.Add(new ScoreEntryViewModel(entry, _localization));
-            Summary = string.Format(_localization.Get("FinishRead.Splits.Scored"),
-                view.VisitedCount, view.ExpectedCount, view.TotalPoints);
+            Summary = ScoredSummary(view);
         }
 
         HasData = true;
+    }
+
+    // The "visited / expected" + points line for a scoring view. With an over-time penalty it spells out the
+    // breakdown "… бали: X − Y = Z" (gross − penalty = net); otherwise just the net total.
+    private string ScoredSummary(SplitsView view)
+    {
+        if (view.Penalty > 0)
+            return string.Format(_localization.Get("FinishRead.Splits.ScoredPenalty"),
+                view.VisitedCount, view.ExpectedCount, view.GrossPoints, view.Penalty, view.TotalPoints);
+
+        return string.Format(_localization.Get("FinishRead.Splits.Scored"),
+            view.VisitedCount, view.ExpectedCount, view.TotalPoints);
     }
 }
 
@@ -198,8 +208,14 @@ public sealed class PassagePunchViewModel
     /// <summary>Leg pace as "m:ss"; blank when distance or leg time is unknown. (Unit /км in header.)</summary>
     public string PaceText => SplitFormat.Pace(_punch.PaceSecondsPerKm);
 
-    /// <summary>Point value of this control (rogaine), e.g. "+5"; blank when it scored nothing.</summary>
-    public string PointsText => _punch.Points is { } p && p != 0 ? $"+{p}" : string.Empty;
+    /// <summary>Point value of this control (rogaine), e.g. "+5"; the finish row carries the over-time penalty
+    /// as a negative ("−4"). Blank when it scored nothing.</summary>
+    public string PointsText => _punch.Points switch
+    {
+        > 0 and var p => $"+{p}",
+        < 0 and var p => $"−{-p}",
+        _ => string.Empty
+    };
 
     /// <summary>Running point total after this control (rogaine); blank for a non-scoring punch.</summary>
     public string RunningTotalText => _punch.RunningTotal is { } r ? r.ToString() : string.Empty;

@@ -249,9 +249,15 @@ internal sealed class ReceiptRenderer
             y = DrawCentred(g, status, font, centreX, y);
         }
 
-        // Total points (rogaine) on its own line, mirroring the status line: "Сума балів: 12".
+        // Total points (rogaine) on its own line, mirroring the status line: "Сума балів: 12". When an
+        // over-time penalty applies, spell out the breakdown "Сума балів: X - Y = Z" (gross − penalty = net).
         if (_doc.TotalPointsText.Length > 0)
-            y = DrawCentred(g, $"{_labels.TotalPointsLabel}: {_doc.TotalPointsText}", font, centreX, y);
+        {
+            var points = _doc.PenaltyText.Length > 0
+                ? $"{_doc.GrossPointsText} - {_doc.PenaltyText} = {_doc.TotalPointsText}"
+                : _doc.TotalPointsText;
+            y = DrawCentred(g, $"{_labels.TotalPointsLabel}: {points}", font, centreX, y);
+        }
 
         return y;
     }
@@ -263,7 +269,8 @@ internal sealed class ReceiptRenderer
     // right-aligned data slot (per request) so it doesn't crowd the distance header.
     private float DrawColumnHeader(System.Drawing.Graphics g, float centreX, float y, System.Drawing.Font mono)
     {
-        if (_doc.HasPoints)
+        // Compact scored layout (geometry-less choice/score formats): №ПП КП БАЛ ЧАС.
+        if (_doc.HasPoints && !_doc.HasGeometry)
         {
             var sSeq = Pad(_labels.ColSeq, 3);
             var sCode = PadRight(_labels.ColCode, 4);
@@ -276,11 +283,13 @@ internal sealed class ReceiptRenderer
         // width-1 (so it sits one space earlier) then add the missing space back, keeping the row width.
         var seq = Pad(_labels.ColSeq, 3);
         var code = PadRight(_labels.ColCode, 4);
+        // Rogaine (HasGeometry + points) keeps the full layout but adds a бал column right after the code.
+        var pts = _doc.HasGeometry ? PadRight(_labels.ColPoints, 5) + " " : string.Empty;
         var elapsed = Pad(_labels.ColElapsed, 7);
         var leg = Pad(_labels.ColLeg, 5) + " ";          // shifted left one position within the 6-wide slot
         var dist = Pad(_labels.ColDistance, 6);
         var pace = Pad(_labels.ColPace, 6);
-        var header = $"{seq} {code} {elapsed} {leg} {dist} {pace}";
+        var header = $"{seq} {code} {pts}{elapsed} {leg} {dist} {pace}";
         // The header line has no off-course flag, so it gets the same one-space lead as on-course rows.
         return DrawMono(g, " " + header, mono, centreX, y);
     }
@@ -306,38 +315,44 @@ internal sealed class ReceiptRenderer
     // (rogaine) docs use the compact №ПП КП БАЛ ЧАС layout with no flag/leg/distance/pace columns.
     private string WidestTableLine()
     {
-        if (_doc.HasPoints)
+        if (_doc.HasPoints && !_doc.HasGeometry)
             return $"{Pad(_labels.ColSeq, 3)} {PadRight(_labels.ColCode, 4)} {PadRight(_labels.ColPoints, 5)} {Pad(_labels.ColElapsed, 7)}";
 
         var seq = Pad(_labels.ColSeq, 3);
         var code = PadRight(_labels.ColCode, 4);
+        // Rogaine adds a бал column to the full layout (see DrawColumnHeader/DrawRow).
+        var pts = _doc.HasGeometry ? PadRight(_labels.ColPoints, 5) + " " : string.Empty;
         var elapsed = Pad(_labels.ColElapsed, 7);
         var leg = Pad(_labels.ColLeg, 6);
         var dist = Pad(_labels.ColDistance, 6);
         var pace = Pad(_labels.ColPace, 6);
-        return $"*{seq} {code} {elapsed} {leg} {dist} {pace}";
+        return $"*{seq} {code} {pts}{elapsed} {leg} {dist} {pace}";
     }
 
     private void DrawRow(System.Drawing.Graphics g, SplitPrintRow row, float centreX, float y, System.Drawing.Font mono)
     {
-        // Scored (rogaine) rows are compact — №ПП КП БАЛ ЧАС — and carry the points the runner earned at the
-        // control ("+3") in the БАЛ slot instead of an off-course "*" flag, the number/code shifted left.
-        if (_doc.HasPoints)
+        // Compact scored layout (geometry-less choice/score formats): №ПП КП БАЛ ЧАС — the points the runner
+        // earned ("+3") in the БАЛ slot instead of an off-course "*" flag, the number/code shifted left.
+        if (_doc.HasPoints && !_doc.HasGeometry)
         {
             var scored = $"{Pad(row.Index, 3)} {PadRight(row.Code, 4)} {PadRight(row.PointsText ?? string.Empty, 5)} {Pad(row.ElapsedText, 7)}";
             DrawMono(g, scored, mono, centreX, y);
             return;
         }
 
-        var line = Compose(row.Index, row.Code, row.ElapsedText, row.LegText, row.DistanceText, row.PaceText);
+        var line = Compose(row.Index, row.Code, row.PointsText, row.ElapsedText, row.LegText, row.DistanceText, row.PaceText);
         // Off-course punches are marked with a leading "*" on the left so they stand out on a mono receipt.
         var prefix = row.OnCourse ? " " : "*";
         DrawMono(g, prefix + line, mono, centreX, y);
     }
 
-    // Builds a fixed-width set-course row string: seq(3) code(4) elapsed(7) leg(6) dist(6) pace(6).
-    private static string Compose(string seq, string code, string elapsed, string leg, string dist, string pace) =>
-        $"{Pad(seq, 3)} {PadRight(code, 4)} {Pad(elapsed, 7)} {Pad(leg, 6)} {Pad(dist, 6)} {Pad(pace, 6)}";
+    // Builds a fixed-width set-course row string: seq(3) code(4) [бал(5) ]elapsed(7) leg(6) dist(6) pace(6).
+    // The бал column is present only for rogaine (HasGeometry + points); set course passes a null pointsText.
+    private string Compose(string seq, string code, string? pointsText, string elapsed, string leg, string dist, string pace)
+    {
+        var pts = _doc.HasGeometry ? PadRight(pointsText ?? string.Empty, 5) + " " : string.Empty;
+        return $"{Pad(seq, 3)} {PadRight(code, 4)} {pts}{Pad(elapsed, 7)} {Pad(leg, 6)} {Pad(dist, 6)} {Pad(pace, 6)}";
+    }
 
     // Draws a monospace line centred on its own measured width (so header and rows share an axis).
     private static float DrawMono(System.Drawing.Graphics g, string text, System.Drawing.Font font, float centreX, float y)

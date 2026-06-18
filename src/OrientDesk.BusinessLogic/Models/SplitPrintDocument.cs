@@ -40,9 +40,18 @@ public sealed class SplitPrintDocument
     /// The renderer appends the localized explanation after the status code.</summary>
     public string StatusDetail { get; init; } = string.Empty;
 
-    /// <summary>Total points scored (rogaine), as plain digits; blank for a non-scoring discipline. Printed
-    /// on its own header line ("Сума балів: 12"), mirroring the status line.</summary>
+    /// <summary>Total result points scored (rogaine), as plain digits — the net after any over-time penalty;
+    /// blank for a non-scoring discipline. Printed on its own header line ("Сума балів: 12"), mirroring the
+    /// status line. When <see cref="PenaltyText"/> is set the renderer prints the breakdown "X − Y = Z" instead.</summary>
     public string TotalPointsText { get; init; } = string.Empty;
+
+    /// <summary>Gross points before the over-time penalty (the "X" in "X − Y = Z"); blank when there is no
+    /// penalty. Printed only alongside <see cref="PenaltyText"/>.</summary>
+    public string GrossPointsText { get; init; } = string.Empty;
+
+    /// <summary>Over-time penalty deducted (the "Y" in "X − Y = Z"), as plain digits; blank when none. Drives
+    /// both the breakdown on the points line and the "−Y" shown beside the finish row.</summary>
+    public string PenaltyText { get; init; } = string.Empty;
 
     /// <summary>Start punch wall-clock time ("HH:mm:ss"), blank when unknown — printed on the СТАРТ/ФІНІШ line.</summary>
     public string StartClock { get; init; } = string.Empty;
@@ -65,6 +74,13 @@ public sealed class SplitPrintDocument
 
     /// <summary>True when any row carries points — the renderer then shows the бал column (scored disciplines).</summary>
     public bool HasPoints => Rows.Any(r => r.PointsText is not null);
+
+    /// <summary>
+    /// True for a point-scoring discipline that still has leg geometry (rogaine, an Ordered passage). The
+    /// renderer keeps the full set-course columns — leg/cumulative time, distance, pace — and inserts a бал
+    /// column, rather than the compact №ПП КП БАЛ ЧАС layout the geometry-less choice/score formats use.
+    /// </summary>
+    public bool HasGeometry { get; init; }
 
     /// <summary>
     /// The prescribed (correct) control order, populated <b>only</b> when a set-course passage broke the

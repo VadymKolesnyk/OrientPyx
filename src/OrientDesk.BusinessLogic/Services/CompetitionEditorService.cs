@@ -1458,7 +1458,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             GroupDaySettings? gs = link.GroupId is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
             var discipline = gs?.DisciplineOverride ?? dayDefault;
             int? score = _strategies.For(discipline).UsesControlPointPoints
-                ? ScoreFor(readout, gs, startFinishCodes, pointsByCode, discipline)
+                ? ScoreFor(readout, gs, startFinishCodes, pointsByCode, discipline, resolvedStart)
                 : null;
 
             results[link.Id] = new ParticipantDayResult(
@@ -1504,7 +1504,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         GroupDaySettings? gs,
         HashSet<string> startFinishCodes,
         IReadOnlyDictionary<string, int> pointsByCode,
-        DisciplineType discipline)
+        DisciplineType discipline,
+        DateTimeOffset? resolvedStart)
     {
         var expected = SplitCodes(gs?.CourseOrder).Where(c => !startFinishCodes.Contains(c)).ToList();
         var punches = DecodePunchTimes(readout.PunchTimes)
@@ -1515,8 +1516,12 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             ExpectedControls = expected,
             Punches = punches,
             PointsByCode = pointsByCode,
-            StartTime = readout.StartTime,
-            FinishTime = readout.FinishTime
+            // The resolved start (chip read-out start, else the assigned start paired with the finish date)
+            // — the same start the finish evaluation uses — so the over-time penalty measures real elapsed.
+            StartTime = resolvedStart,
+            FinishTime = readout.FinishTime,
+            TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
+            PenaltyPerMinute = gs?.PenaltyPerMinute
         };
         return _strategies.For(discipline).BuildSplits(context).TotalPoints;
     }
@@ -1582,7 +1587,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 GroupDaySettings? gs = link.GroupId is { } sgid && settingsByGroup.TryGetValue(sgid, out var sset) ? sset : null;
                 var discipline = gs?.DisciplineOverride ?? dayDefault;
                 int? score = _strategies.For(discipline).UsesControlPointPoints
-                    ? ScoreFor(r, gs, startFinishCodes, pointsByCode, discipline)
+                    ? ScoreFor(r, gs, startFinishCodes, pointsByCode, discipline, resolvedStart)
                     : null;
                 rows.Add(new FinishReadoutRow(r.Id, r.Order, r.ChipNumber, r.StartTime, r.FinishTime,
                     IsKnown: true, p.Number, p.FullName, group, status, detail, resolvedStart, elapsed, score));
@@ -1694,7 +1699,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             StartMap = startMap,
             FinishMap = finishMap,
             StartTime = start,
-            FinishTime = readout.FinishTime
+            FinishTime = readout.FinishTime,
+            // Over-time penalty inputs (rogaine): the group's time limit and penalty rate. A null rate lets
+            // the strategy apply its default (rogaine = 1 бал/min); an unknown chip (no group) has neither.
+            TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
+            PenaltyPerMinute = gs?.PenaltyPerMinute
         };
 
         // A known holder gets their group's discipline shape. An unknown chip has no group/course, so we
@@ -1735,7 +1744,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         };
 
         var rows = view.Layout == SplitsLayout.Ordered
-            ? BuildPassageRows(view.Passage)
+            ? BuildPassageRows(view.Passage, view.HasPoints)
             : BuildScoredRows(view.Entries);
 
         // Start/finish wall-clock and course length come from the ordered passage (start marker → finish
@@ -1774,14 +1783,22 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             ResultText = resultElapsed is { } re ? re.ToString("h\\:mm\\:ss") : string.Empty,
             StatusText = status,
             StatusDetail = row.StatusDetail,
-            TotalPointsText = view.Layout == SplitsLayout.Scored
+            // Points line for any point-scoring view (rogaine is Ordered+HasPoints, score is Scored). The net
+            // result prints as "Сума балів: Z"; when an over-time penalty applies the renderer instead spells
+            // out "X − Y = Z" from the gross/penalty values below.
+            TotalPointsText = view.HasPoints || view.Layout == SplitsLayout.Scored
                 ? view.TotalPoints.ToString(CultureInfo.InvariantCulture)
                 : string.Empty,
+            GrossPointsText = view.Penalty > 0 ? view.GrossPoints.ToString(CultureInfo.InvariantCulture) : string.Empty,
+            PenaltyText = view.Penalty > 0 ? view.Penalty.ToString(CultureInfo.InvariantCulture) : string.Empty,
             StartClock = startClock,
             FinishClock = finishClock,
             TotalDistanceText = FormatDistanceMetres(totalKm),
             AvgPaceText = FormatPace(AvgPaceSecondsPerKm(resultElapsed, totalKm)),
             Rows = rows,
+            // Rogaine (Ordered + points) keeps the full geometry columns plus a бал column; the geometry-less
+            // choice/score formats (Scored layout) use the compact layout instead.
+            HasGeometry = view.Layout == SplitsLayout.Ordered && view.HasPoints,
             CorrectOrder = correctOrder
         };
     }
@@ -1796,10 +1813,12 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return list;
     }
 
-    // Maps the ordered passage (set-course layout) to printable rows. The start marker is dropped (the
-    // table opens at control 1); the finish marker becomes an "F" row with a blank №. Each row carries the
-    // leg distance in km, the cumulative (elapsed) and leg times and the leg pace — as the panel shows them.
-    private static IReadOnlyList<SplitPrintRow> BuildPassageRows(IReadOnlyList<PassagePunch> passage)
+    // Maps the ordered passage (set-course / rogaine layout) to printable rows. The start marker is dropped
+    // (the table opens at control 1); the finish marker becomes an "F" row with a blank №. Each row carries
+    // the leg distance in km, the cumulative (elapsed) and leg times and the leg pace — as the panel shows
+    // them. When <paramref name="hasPoints"/> (rogaine) each scoring control prints its "+N" and the finish
+    // its "−Y" over-time penalty in the бал column, so the slip reads the points in passage order.
+    private static IReadOnlyList<SplitPrintRow> BuildPassageRows(IReadOnlyList<PassagePunch> passage, bool hasPoints)
     {
         var list = new List<SplitPrintRow>(passage.Count);
         foreach (var p in passage)
@@ -1808,6 +1827,12 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 continue;
 
             var code = p.Kind == PassageKind.Finish ? "F" : p.Code;
+            // Points text (rogaine only): "+N" for a scoring control, "−Y" for the finish penalty (its
+            // Points is already negative). Null for a non-scoring view (keeps the бал column off the slip).
+            string? pointsText = null;
+            if (hasPoints && p.Points is { } pts && pts != 0)
+                pointsText = pts > 0 ? $"+{pts}" : pts.ToString(CultureInfo.InvariantCulture);
+
             list.Add(new SplitPrintRow(
                 Index: p.Kind == PassageKind.Control ? p.Index.ToString(CultureInfo.InvariantCulture) : string.Empty,
                 Code: code,
@@ -1815,7 +1840,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 LegText: FormatDuration(p.Leg),
                 ElapsedText: FormatDuration(p.Elapsed),
                 PaceText: FormatPace(p.PaceSecondsPerKm),
-                PointsText: null,
+                PointsText: pointsText,
                 OnCourse: p.Kind != PassageKind.Control || p.OnCourse));
         }
         return list;

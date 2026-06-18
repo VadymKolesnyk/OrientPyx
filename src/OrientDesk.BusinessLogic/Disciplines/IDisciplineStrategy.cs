@@ -37,6 +37,13 @@ public interface IDisciplineStrategy
     bool UsesControlPointPoints { get; }
 
     /// <summary>
+    /// Default points deducted per (started) minute over the time limit when the group leaves the penalty
+    /// blank, or null when the discipline applies no automatic over-time penalty. Rogaine returns 1; the
+    /// other formats return null. Used both to fill the default in the groups grid and in the scoring math.
+    /// </summary>
+    decimal? DefaultPenaltyPerMinute { get; }
+
+    /// <summary>
     /// Number of control points implied by the course-order text, excluding start/finish markers.
     /// Used for the read-only "control count" column on set-course days.
     /// </summary>

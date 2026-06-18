@@ -271,6 +271,7 @@
   "FinishRead.Splits.Title": "Course passage",
   "FinishRead.Splits.Visited": "Controls taken: {0} of {1}",
   "FinishRead.Splits.Scored": "Controls taken: {0} of {1} · Points: {2}",
+  "FinishRead.Splits.ScoredPenalty": "Controls taken: {0} of {1} · Points: {2} − {3} = {4}",
   "FinishRead.Splits.Passage": "Passage order (from chip)",
   "FinishRead.Splits.Prescribed": "Correct order",
   "FinishRead.Splits.Controls": "Course controls",

@@ -271,6 +271,7 @@
   "FinishRead.Splits.Title": "Проходження дистанції",
   "FinishRead.Splits.Visited": "Взято КП: {0} з {1}",
   "FinishRead.Splits.Scored": "Взято КП: {0} з {1} · Балів: {2}",
+  "FinishRead.Splits.ScoredPenalty": "Взято КП: {0} з {1} · Балів: {2} − {3} = {4}",
   "FinishRead.Splits.Passage": "Порядок проходження (з чіпа)",
   "FinishRead.Splits.Prescribed": "Правильний порядок",
   "FinishRead.Splits.Controls": "КП дистанції",

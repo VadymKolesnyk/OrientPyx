@@ -78,6 +78,11 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         _timeLimitText = FormatTime(row.TimeLimitSeconds);
         _selectedDiscipline = DisciplineOptions.First(o => o.Value == row.DisciplineOverride);
 
+        // Rogaine penalises over-time by a default rate (1 бал/min), so show that default in the cell when the
+        // group set none — the user can still change or clear it (clearing falls back to the same default).
+        if (_penaltyText.Length == 0 && Strategy.DefaultPenaltyPerMinute is { } rate)
+            _penaltyText = FormatDecimal(rate);
+
         _initialized = true;
     }
 
@@ -145,6 +150,12 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         OnPropertyChanged(nameof(UsesRequiredCount));
         OnPropertyChanged(nameof(UsesPenalty));
         OnPropertyChanged(nameof(UsesTimeLimit));
+
+        // Switching to a discipline with a default penalty (rogaine) shows that default when the cell is
+        // empty, mirroring the constructor — so a freshly-switched rogaine group reads "1" rather than blank.
+        if (PenaltyText.Length == 0 && Strategy.DefaultPenaltyPerMinute is { } rate)
+            PenaltyText = FormatDecimal(rate);
+
         QueueSave();
     }
 
