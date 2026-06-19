@@ -69,7 +69,13 @@ public sealed class SplitPrintService : ISplitPrintService
         var widthHundredths = settings.WidthMm <= 56 ? 215 : 302;
         var paper = new System.Drawing.Printing.PaperSize("Receipt", widthHundredths, 3276); // ~33 in tall
         doc.DefaultPageSettings.PaperSize = paper;
-        doc.DefaultPageSettings.Margins = new System.Drawing.Printing.Margins(8, 8, 8, 8);
+        doc.DefaultPageSettings.Margins = new System.Drawing.Printing.Margins(0, 0, 0, 0);
+
+        // Draw in true paper coordinates: (0,0) is the physical paper corner, not the inside of the printer's
+        // (often large, asymmetric) non-printable margin. With OriginAtMargins=true the driver shifted the
+        // whole slip right by its hard left margin, leaving the big empty band on the left of the receipt.
+        // We compensate for the real unprintable edge ourselves with a small fixed inset in the renderer.
+        doc.OriginAtMargins = false;
 
         var renderer = new ReceiptRenderer(document, labels, settings.WidthMm);
         doc.PrintPage += renderer.OnPrintPage;
@@ -89,9 +95,15 @@ public sealed class SplitPrintService : ISplitPrintService
 [SupportedOSPlatform("windows")]
 internal sealed class ReceiptRenderer
 {
-    // Extra horizontal inset (hundredths of an inch) added on each side for the 80 mm roll: ~5 mm, since
-    // those printers can clip near the edges. 5 mm = 5 / 25.4 in ≈ 0.197 in ≈ 20 hundredths.
-    private const float WideSideInset = 20f;
+    // Minimal fixed left inset (hundredths of an inch) so content hugs the edge but the head still catches
+    // every character: ~2 mm = 2 / 25.4 in ≈ 8 hundredths. Drawing in true paper coordinates
+    // (OriginAtMargins=false), this is the ONLY left gap — no driver hard-margin adds to it.
+    private const float SideInset = 8f;
+
+    // A slightly wider right inset (~4 mm ≈ 16 hundredths) so the last column always keeps a small gap from
+    // the roll's right edge. GDI's MeasureString underestimates the drawn width of a monospace string, so a
+    // font sized to "just fit" used to clip the final column by half a character; the extra slack absorbs that.
+    private const float RightInset = 16f;
 
     private readonly SplitPrintDocument _doc;
     private readonly SplitPrintLabels _labels;
@@ -109,28 +121,19 @@ internal sealed class ReceiptRenderer
     {
         var g = e.Graphics!;
 
-        // Printable band: the page minus the printer's non-printable hardware margins (the edges a thermal
-        // head physically cannot reach). Centring on this — not on the nominal paper width — keeps the slip
-        // visually centred even when the left/right unprintable margins differ.
-        var hardX = e.PageSettings.HardMarginX;
-        var hardY = e.PageSettings.HardMarginY;
-        // On the 80 mm roll add ~5 mm of slack on each side so edge-clipping printers don't cut the slip.
-        var sideInset = _widthMm > 56 ? WideSideInset : 0f;
-        float left = hardX + sideInset;
-
-        // The right edge is the physical roll width (302/215 hundredths-inch), NOT PageBounds.Width: a
-        // "Print to PDF" printer (or a driver that ignores the custom PaperSize) reports a far wider page,
-        // which let the table draw past the roll's real edge — the overflow seen on the 80 mm slip. Clamp to
-        // the smaller of the two so we never lay out wider than the paper actually is.
+        // Lay the slip out in TRUE paper coordinates (OriginAtMargins=false): (0,0) is the physical paper
+        // corner. Left-align everything at a small fixed inset so the content hugs the left edge with only a
+        // minimal gap — the driver's large, asymmetric non-printable margin no longer adds to it. This kills
+        // the big empty band on the left of the receipt.
         var rollWidthHundredths = _widthMm > 56 ? 302f : 215f;
-        float rollRight = rollWidthHundredths - hardX - sideInset;
-        float right = Math.Min(e.PageBounds.Width - hardX - sideInset, rollRight);
-        float centreX = (left + right) / 2f;
-        float y = hardY + 4f;
+        float left = SideInset;
+        float right = rollWidthHundredths - RightInset;
+        float y = SideInset + 4f;
 
-        // Pick the largest font that still lets the widest table row fit the printable band, so the slip
-        // never spills off the right edge (it did on 80 mm at the old fixed 8.5 pt). Capped at 8.5 pt so a
-        // narrow table on a wide roll doesn't blow up; the search floor (6 pt) keeps it legible.
+        // Pick the largest font at which the widest table row still fits the roll width, so a narrow table
+        // STRETCHES to fill the paper instead of leaving a wide empty margin (the under-filled slip in the
+        // photo). The search floor (6 pt) keeps a wide table legible; the ceiling (12 pt) stops a very short
+        // table on an 80 mm roll from blowing up to an absurd size.
         var fontSize = FitFontSize(g, right - left);
 
         using var headFont = new System.Drawing.Font("Consolas", fontSize, System.Drawing.FontStyle.Bold);
@@ -140,13 +143,13 @@ internal sealed class ReceiptRenderer
         // The first page draws the whole header; a continuation page (overflow) jumps straight to the rows.
         if (_nextRow == 0)
         {
-            y = DrawHeader(g, centreX, y, headFont);
+            y = DrawHeader(g, left, right, y, headFont);
             y += 2;
-            y = DrawColumnHeader(g, centreX, y, monoBold);
+            y = DrawColumnHeader(g, left, y, monoBold);
         }
 
         var rowHeight = monoFont.GetHeight(g) + 1.5f;
-        float bottom = e.PageBounds.Height - hardY;
+        float bottom = e.PageBounds.Height - SideInset;
         for (; _nextRow < _doc.Rows.Count; _nextRow++)
         {
             if (y + rowHeight > bottom)
@@ -154,7 +157,7 @@ internal sealed class ReceiptRenderer
                 e.HasMorePages = true;
                 return;
             }
-            DrawRow(g, _doc.Rows[_nextRow], centreX, y, monoFont);
+            DrawRow(g, _doc.Rows[_nextRow], left, y, monoFont);
             y += rowHeight;
         }
 
@@ -195,8 +198,9 @@ internal sealed class ReceiptRenderer
     }
 
     // The centred header block, drawn line by line. Only non-empty lines consume vertical space.
-    private float DrawHeader(System.Drawing.Graphics g, float centreX, float y, System.Drawing.Font font)
+    private float DrawHeader(System.Drawing.Graphics g, float left, float right, float y, System.Drawing.Font font)
     {
+        var centreX = (left + right) / 2f;
         // 1) Printed-at date + time.
         y = DrawCentred(g, $"{_doc.PrintedAt:dd.MM.yyyy HH:mm:ss}", font, centreX, y);
 
@@ -267,7 +271,7 @@ internal sealed class ReceiptRenderer
     // pulled in right after the code (no off-course flag, no leg/distance/pace columns). The set-course
     // header keeps the full layout; its leg-time header ("ЧАС") is nudged one position left vs its
     // right-aligned data slot (per request) so it doesn't crowd the distance header.
-    private float DrawColumnHeader(System.Drawing.Graphics g, float centreX, float y, System.Drawing.Font mono)
+    private float DrawColumnHeader(System.Drawing.Graphics g, float left, float y, System.Drawing.Font mono)
     {
         // Compact scored layout (geometry-less choice/score formats): №ПП КП БАЛ ЧАС.
         if (_doc.HasPoints && !_doc.HasGeometry)
@@ -276,7 +280,7 @@ internal sealed class ReceiptRenderer
             var sCode = PadRight(_labels.ColCode, 4);
             var sPts = PadRight(_labels.ColPoints, 5);
             var sElapsed = Pad(_labels.ColElapsed, 7);
-            return DrawMono(g, $"{sSeq} {sCode} {sPts} {sElapsed}", mono, centreX, y);
+            return DrawMono(g, $"{sSeq} {sCode} {sPts} {sElapsed}", mono, left, y);
         }
 
         // Right-align each header into its column width, but for the leg slot shift one char left: pad it to
@@ -291,22 +295,26 @@ internal sealed class ReceiptRenderer
         var pace = Pad(_labels.ColPace, 6);
         var header = $"{seq} {code} {pts}{elapsed} {leg} {dist} {pace}";
         // The header line has no off-course flag, so it gets the same one-space lead as on-course rows.
-        return DrawMono(g, " " + header, mono, centreX, y);
+        return DrawMono(g, " " + header, mono, left, y);
     }
 
-    // Largest Consolas size (≤ 8.5 pt, ≥ 6 pt) at which the widest fixed-width table line still fits the
-    // printable band. Consolas is monospace, so the table's width is driven by its longest row; we measure
-    // that one string at decreasing sizes and stop at the first that fits. Prevents the 80 mm overflow.
+    // Largest Consolas size (≤ 12 pt, ≥ 6 pt) at which the widest fixed-width table line still fits the roll
+    // width. Consolas is monospace, so the table's width is driven by its longest row; we measure that one
+    // string at INCREASING sizes and keep the last that fits, so the table stretches to fill the paper
+    // (instead of leaving an empty right margin) while never spilling past the roll edge.
     private float FitFontSize(System.Drawing.Graphics g, float available)
     {
         var widest = WidestTableLine();
-        for (var size = 8.5f; size > 6f; size -= 0.25f)
+        var best = 6f;
+        for (var size = 6f; size <= 12f; size += 0.25f)
         {
             using var f = new System.Drawing.Font("Consolas", size);
             if (g.MeasureString(widest, f).Width <= available)
-                return size;
+                best = size;
+            else
+                break;
         }
-        return 6f;
+        return best;
     }
 
     // The longest fixed-width line the table will draw, so FitFontSize can size to it. Headers and rows all
@@ -329,14 +337,14 @@ internal sealed class ReceiptRenderer
         return $"*{seq} {code} {pts}{elapsed} {leg} {dist} {pace}";
     }
 
-    private void DrawRow(System.Drawing.Graphics g, SplitPrintRow row, float centreX, float y, System.Drawing.Font mono)
+    private void DrawRow(System.Drawing.Graphics g, SplitPrintRow row, float left, float y, System.Drawing.Font mono)
     {
         // Compact scored layout (geometry-less choice/score formats): №ПП КП БАЛ ЧАС — the points the runner
         // earned ("+3") in the БАЛ slot instead of an off-course "*" flag, the number/code shifted left.
         if (_doc.HasPoints && !_doc.HasGeometry)
         {
             var scored = $"{Pad(row.Index, 3)} {PadRight(row.Code, 4)} {PadRight(row.PointsText ?? string.Empty, 5)} {Pad(row.ElapsedText, 7)}";
-            DrawMono(g, scored, mono, centreX, y);
+            DrawMono(g, scored, mono, left, y);
             return;
         }
 
@@ -345,7 +353,7 @@ internal sealed class ReceiptRenderer
         var prefix = row.OnCourse ? " " : "*";
         // Rogaine: a trailing "*" flags a control that counts for the team (every team member punched it).
         var teamMark = row.CountsForTeam ? " *" : string.Empty;
-        DrawMono(g, prefix + line + teamMark, mono, centreX, y);
+        DrawMono(g, prefix + line + teamMark, mono, left, y);
     }
 
     // Builds a fixed-width set-course row string: seq(3) code(4) [бал(5) ]elapsed(7) leg(6) dist(6) pace(6).
@@ -356,11 +364,11 @@ internal sealed class ReceiptRenderer
         return $"{Pad(seq, 3)} {PadRight(code, 4)} {pts}{Pad(elapsed, 7)} {Pad(leg, 6)} {Pad(dist, 6)} {Pad(pace, 6)}";
     }
 
-    // Draws a monospace line centred on its own measured width (so header and rows share an axis).
-    private static float DrawMono(System.Drawing.Graphics g, string text, System.Drawing.Font font, float centreX, float y)
+    // Draws a monospace line left-aligned at x (header and rows share the same left edge, so the columns
+    // line up and the whole table hugs the left of the roll with only the minimal SideInset gap).
+    private static float DrawMono(System.Drawing.Graphics g, string text, System.Drawing.Font font, float x, float y)
     {
-        var w = g.MeasureString(text, font).Width;
-        g.DrawString(text, font, System.Drawing.Brushes.Black, centreX - w / 2f, y);
+        g.DrawString(text, font, System.Drawing.Brushes.Black, x, y);
         return y + font.GetHeight(g) + 1.5f;
     }
 

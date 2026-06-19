@@ -161,6 +161,15 @@ public enum PassageKind
 /// resulting tempo (leg time ÷ leg distance); both null when coordinates or a leg time are missing.
 /// <see cref="CountsForTeam"/> is true for a rogaine scoring punch on a control the whole team also
 /// punched (so it counts toward the team result); always false outside a team context.
+/// <para>
+/// <see cref="Leg"/>/<see cref="LegKm"/>/<see cref="PaceSecondsPerKm"/> are the <i>course</i> leg — the
+/// true single prescribed leg (measured from the previous on-course control, skipping extras), only set
+/// for a contiguous on-course punch — and feed the course total, the fastest-leg highlight and the HTML
+/// split-table columns. <see cref="DisplayLeg"/>/<see cref="DisplayLegKm"/>/<see cref="DisplayPace"/> are
+/// the <i>row-to-row</i> leg measured from the immediately preceding punch in chip order, so they are
+/// filled for <b>every</b> control (including extras/off-course) and the finish; the read-out panel and
+/// the printout slip show these so each row keeps its time/distance columns rather than blanking out.
+/// </para>
 /// </summary>
 public sealed record PassagePunch(
     int Index,
@@ -174,7 +183,10 @@ public sealed record PassagePunch(
     double? PaceSecondsPerKm = null,
     int? Points = null,
     int? RunningTotal = null,
-    bool CountsForTeam = false);
+    bool CountsForTeam = false,
+    TimeSpan? DisplayLeg = null,
+    decimal? DisplayLegKm = null,
+    double? DisplayPace = null);
 
 /// <summary>
 /// One control of the prescribed course (ordered layout): its 1-based order, its code, and whether the

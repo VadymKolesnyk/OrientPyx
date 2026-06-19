@@ -10,9 +10,13 @@ namespace OrientDesk.DataAccess.Documents;
 /// shapes, chosen per group by its <see cref="SplitsLayout"/>:
 /// <list type="bullet">
 ///   <item><b>Ordered</b> (set course): a split table with one column per prescribed control (КП-N(code)).
-///   Each runner is two rows — the cumulative time + per-control rank on top, the leg split below. The
-///   leader's cumulative and each control's fastest leg are highlighted; a cell's title shows the loss to
-///   the leader at that control.</item>
+///   Each runner is two rows — the cumulative time + per-control rank on top, the leg split below. Ranks,
+///   the leader baseline and the fastest legs are computed across the OK (placed) runners only, so a
+///   disqualified/MP/DNF run is never ranked or highlighted. The top 3 cumulatives and the top 3 legs at
+///   each control are highlighted gold/silver/bronze; a cell's title shows the loss to the leader both by
+///   overall (cumulative) time and on that single leg. A missed control in the middle of the run leaves only
+///   its own column blank — the later controls still map onto their columns (the splits strategy matches the
+///   prescribed course as a subsequence) — and a leg that would span a missed control carries no time.</item>
 ///   <item><b>Scored</b> (rogaine / free order): a table with one row per runner and КП-1…КП-N positional
 ///   columns (N = the longest passage in the group). Each runner writes their own visited control code into
 ///   the cell (own order/count), code over cumulative with the leg split + points below; a control that
@@ -117,14 +121,17 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
         // control simply has no entry for it. The finish column uses the splits' finish marker.
         var runners = g.Rows.Select(r => RunnerSplits.From(r)).ToList();
 
-        // Per-control fastest leg and leader cumulative (across runners who took it), for the highlights and
-        // the loss-to-leader tooltip. The finish column is treated as one more "control" keyed by a sentinel.
+        // Per-control fastest leg and leader cumulative, plus the cell ranks — computed across the OK
+        // (placed) runners only, so a disqualified/MP/DNF run is never the leader, never a fastest leg, and
+        // gets no rank or top-3 highlight. Non-OK runners still render their own times for reference.
+        // The finish column is treated as one more "control" keyed by a sentinel.
         var columns = g.Controls.ToList();
+        var ranked = runners.Where(r => r.Row.IsOk).ToList();
         var bestLeg = new Dictionary<string, TimeSpan>(StringComparer.OrdinalIgnoreCase);
         var leadCumulative = new Dictionary<string, TimeSpan>(StringComparer.OrdinalIgnoreCase);
         foreach (var col in columns.Append(FinishKey))
         {
-            foreach (var runner in runners)
+            foreach (var runner in ranked)
             {
                 if (runner.Leg.TryGetValue(col, out var leg) && (!bestLeg.TryGetValue(col, out var bl) || leg < bl))
                     bestLeg[col] = leg;
@@ -132,24 +139,11 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
                     leadCumulative[col] = cum;
             }
 
-            // Per-control rank by ascending cumulative time across the runners who reached it (ties share a
-            // rank), so each cell can show its small "/N" position like the classic split sheet.
-            var reached = runners
-                .Where(r => r.Cumulative.ContainsKey(col))
-                .OrderBy(r => r.Cumulative[col])
-                .ToList();
-            var place = 0;
-            var seen = 0;
-            TimeSpan? prev = null;
-            foreach (var runner in reached)
-            {
-                seen++;
-                var cum = runner.Cumulative[col];
-                if (prev is null || prev.Value != cum)
-                    place = seen;
-                prev = cum;
-                runner.Rank[col] = place;
-            }
+            // Per-control rank by ascending cumulative time across the OK runners who reached it (ties share a
+            // rank), so each cell can show its "/N" position and the top 3 can be highlighted.
+            RankInto(ranked, col, r => r.Cumulative, r => r.Rank);
+            // Same ranking on the leg split alone, so the fastest legs (top 3) are highlighted too.
+            RankInto(ranked, col, r => r.Leg, r => r.LegRank);
         }
 
         sb.Append("<div class=\"table-wrap\">\n<table class=\"splits ordered\">\n<thead>\n<tr>");
@@ -174,21 +168,48 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
             sb.Append("<td class=\"result\" rowspan=\"2\">").Append(ResultCell(runner.Row)).Append("</td>");
 
             foreach (var col in columns.Append(FinishKey))
-                WriteOrderedCumulativeCell(sb, runner, col, leadCumulative);
+                WriteOrderedCumulativeCell(sb, runner, col, leadCumulative, bestLeg, labels);
             sb.Append("</tr>\n");
 
-            // Second (bottom) row: the leg split under each control, fastest leg highlighted.
+            // Second (bottom) row: the leg split under each control, fastest legs (top 3) highlighted.
             sb.Append("<tr class=\"").Append(rowClass).Append(" leg-row\">");
             foreach (var col in columns.Append(FinishKey))
-                WriteOrderedLegCell(sb, runner, col, bestLeg);
+                WriteOrderedLegCell(sb, runner, col, bestLeg, labels);
             sb.Append("</tr>\n");
         }
 
         sb.Append("</tbody>\n</table>\n</div>\n");
     }
 
+    // Ranks the runners who have a time for this column (ascending, ties shared) into the chosen rank
+    // dictionary — used for both the cumulative rank and the leg-split rank.
+    private static void RankInto(
+        IReadOnlyList<RunnerSplits> runners, string col,
+        Func<RunnerSplits, Dictionary<string, TimeSpan>> times,
+        Func<RunnerSplits, Dictionary<string, int>> rank)
+    {
+        var reached = runners
+            .Where(r => times(r).ContainsKey(col))
+            .OrderBy(r => times(r)[col])
+            .ToList();
+        var place = 0;
+        var seen = 0;
+        TimeSpan? prev = null;
+        foreach (var runner in reached)
+        {
+            seen++;
+            var t = times(runner)[col];
+            if (prev is null || prev.Value != t)
+                place = seen;
+            prev = t;
+            rank(runner)[col] = place;
+        }
+    }
+
     private static void WriteOrderedCumulativeCell(
-        StringBuilder sb, RunnerSplits runner, string col, IReadOnlyDictionary<string, TimeSpan> leadCumulative)
+        StringBuilder sb, RunnerSplits runner, string col,
+        IReadOnlyDictionary<string, TimeSpan> leadCumulative, IReadOnlyDictionary<string, TimeSpan> bestLeg,
+        SplitExportLabels labels)
     {
         if (!runner.Cumulative.TryGetValue(col, out var cum))
         {
@@ -196,13 +217,19 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
             return;
         }
 
-        var isLeader = leadCumulative.TryGetValue(col, out var lead) && cum == lead;
-        var cls = isLeader ? "cp-cell lead" : "cp-cell";
+        // Highlight the top 3 by cumulative time at this control (gold / silver / bronze), not just the leader.
+        var rankClass = runner.Rank.TryGetValue(col, out var rk) ? PodiumClass(rk) : string.Empty;
+        var cls = rankClass.Length > 0 ? "cp-cell " + rankClass : "cp-cell";
 
-        // Loss to the leader at this control (cumulative − leader cumulative), shown as the cell tooltip.
-        var title = string.Empty;
+        // Tooltip with both losses: by overall (cumulative) time and by this leg — so the cell shows where
+        // the time was lost on the whole run vs on this single leg. Each line is omitted when the runner
+        // leads it (no loss).
+        var lines = new List<string>(2);
         if (leadCumulative.TryGetValue(col, out var lc) && cum > lc)
-            title = $" title=\"+ {FormatClock(cum - lc)}\"";
+            lines.Add(string.Format(labels.SplitLossTotal, FormatClock(cum - lc)));
+        if (runner.Leg.TryGetValue(col, out var leg) && bestLeg.TryGetValue(col, out var bl) && leg > bl)
+            lines.Add(string.Format(labels.SplitLossLeg, FormatClock(leg - bl)));
+        var title = lines.Count > 0 ? $" title=\"{Esc(string.Join("\n", lines))}\"" : string.Empty;
 
         sb.Append("<td class=\"").Append(cls).Append('"').Append(title).Append('>');
         sb.Append("<span class=\"cum\">").Append(FormatClock(cum)).Append("</span>");
@@ -212,17 +239,32 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
     }
 
     private static void WriteOrderedLegCell(
-        StringBuilder sb, RunnerSplits runner, string col, IReadOnlyDictionary<string, TimeSpan> bestLeg)
+        StringBuilder sb, RunnerSplits runner, string col, IReadOnlyDictionary<string, TimeSpan> bestLeg,
+        SplitExportLabels labels)
     {
         if (!runner.Leg.TryGetValue(col, out var leg))
         {
             sb.Append("<td class=\"leg-cell\"></td>");
             return;
         }
-        var isBest = bestLeg.TryGetValue(col, out var best) && leg == best;
-        sb.Append("<td class=\"leg-cell").Append(isBest ? " best" : "").Append("\">")
+        // Highlight the 3 fastest legs at this control (the leg ranking), not just the single best.
+        var rankClass = runner.LegRank.TryGetValue(col, out var lr) ? PodiumClass(lr) : string.Empty;
+        var title = bestLeg.TryGetValue(col, out var best) && leg > best
+            ? $" title=\"{Esc(string.Format(labels.SplitLossLeg, FormatClock(leg - best)))}\""
+            : string.Empty;
+        sb.Append("<td class=\"leg-cell").Append(rankClass.Length > 0 ? " " + rankClass : "")
+          .Append('"').Append(title).Append('>')
           .Append(FormatClock(leg)).Append("</td>");
     }
+
+    // The podium CSS class for a 1/2/3 rank (gold/silver/bronze), empty for 4th and below.
+    private static string PodiumClass(int rank) => rank switch
+    {
+        1 => "p1",
+        2 => "p2",
+        3 => "p3",
+        _ => string.Empty
+    };
 
     // ── Scored (rogaine / free order) split table ────────────────────────────────────────────────────
 
@@ -421,9 +463,10 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
   --muted: #6b7280;
   --line: #e2e5ea;
   --accent: #1f6feb;
-  --lead: #fff4d6;
-  --lead-border: #f2c14e;
-  --best: #d8f5dd;
+  /* Podium tints for the top-3 split times: gold / silver / bronze, each with a slightly darker border. */
+  --p1: #fff4d6; --p1-border: #f2c14e;
+  --p2: #eef0f3; --p2-border: #c2c8d2;
+  --p3: #fbe7d6; --p3-border: #e0a878;
   --dnf: #b42318;
 }
 * { box-sizing: border-box; }
@@ -477,14 +520,21 @@ table.splits td.result { font-weight: 600; }
 table.splits td.result .result-detail { display: block; font-weight: 400; color: var(--muted); font-size: 10px; }
 table.splits tr.dnf td.name { color: var(--dnf); }
 table.splits td.name .sub-team { display: block; font-weight: 400; color: var(--muted); font-size: 10px; }
-/* Ordered (set course): cumulative + per-control rank, leader/best highlights. */
+/* Ordered (set course): cumulative + per-control rank, top-3 (gold/silver/bronze) highlights. */
 table.ordered .cp-code { display: block; font-weight: 400; color: var(--muted); font-size: 10px; }
 table.ordered td.cp-cell .cum { font-weight: 600; }
 table.ordered td.cp-cell .rank { display: inline-block; margin-left: 3px; color: var(--muted); font-size: 10px; }
-table.ordered td.cp-cell.lead { background: var(--lead); box-shadow: inset 0 0 0 1px var(--lead-border); }
 table.ordered td.cp-cell.missing { color: var(--muted); }
 table.ordered td.leg-cell { color: var(--muted); font-size: 11px; padding-top: 0; }
-table.ordered td.leg-cell.best { background: var(--best); color: #11622a; font-weight: 600; }
+/* Top-3 podium tint on the cumulative cell (1st = gold, 2nd = silver, 3rd = bronze); the matching leg
+   cell tints a touch lighter so the two rows of a fast control read as one block. */
+table.ordered td.cp-cell.p1 { background: var(--p1); box-shadow: inset 0 0 0 1px var(--p1-border); }
+table.ordered td.cp-cell.p2 { background: var(--p2); box-shadow: inset 0 0 0 1px var(--p2-border); }
+table.ordered td.cp-cell.p3 { background: var(--p3); box-shadow: inset 0 0 0 1px var(--p3-border); }
+table.ordered td.cp-cell.p1 .rank { color: #7a5b00; }
+table.ordered td.leg-cell.p1 { background: var(--p1); color: #6b4f00; font-weight: 600; }
+table.ordered td.leg-cell.p2 { background: var(--p2); color: #4a4f57; font-weight: 600; }
+table.ordered td.leg-cell.p3 { background: var(--p3); color: #6b3f1a; font-weight: 600; }
 /* Scored (rogaine): the control code lives in the cell (own order per runner), code over cumulative, leg
    + points below. A control that scores nothing for this runner (a repeat / off-course punch) is greyed
    out, as if it isn't part of the course; scoring punches read in normal ink. */
@@ -526,6 +576,7 @@ table.scored td.cp-cell.unscored .code { font-weight: 400; }
         public Dictionary<string, TimeSpan> Cumulative { get; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, TimeSpan> Leg { get; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, int> Rank { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, int> LegRank { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         public static RunnerSplits From(SplitExportRow row)
         {

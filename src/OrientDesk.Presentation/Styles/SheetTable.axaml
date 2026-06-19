@@ -18,14 +18,48 @@
                      scroll left/right in lockstep while the header stays frozen vertically. -->
                 <DockPanel LastChildFill="True" MinWidth="200"
                            Background="{DynamicResource SurfaceCard}">
-                    <!-- Built-in toolbar: active-filter chips on the left, the column show/hide gear on
-                         the right. Lives inside the table so every page gets it with no per-view markup.
-                         The chips bar collapses to nothing when no filter is active, leaving just the gear. -->
+                    <!-- Built-in toolbar: active-filter chips on the left, then a global "search all
+                         columns" box and the column show/hide gear on the right. Lives inside the table
+                         so every page gets it with no per-view markup. The chips bar collapses to nothing
+                         when no filter is active. The search box filters rows by a "contains" match over
+                         every visible column; Ctrl+F anywhere in the table focuses it. -->
                     <DockPanel DockPanel.Dock="Top" LastChildFill="True" Margin="8,6"
                                Background="Transparent">
                         <controls:SheetColumnsButton DockPanel.Dock="Right"
                             Table="{Binding $parent[controls:SheetTable]}"
                             Localization="{Binding Localization, RelativeSource={RelativeSource TemplatedParent}}" />
+                        <Grid DockPanel.Dock="Right" Width="170" Margin="0,0,6,0"
+                              VerticalAlignment="Center">
+                            <TextBox Name="PART_Search" Height="26" MinHeight="0"
+                                     VerticalContentAlignment="Center"
+                                     PlaceholderText="{Binding Localization[Sheet.Search.Watermark], RelativeSource={RelativeSource TemplatedParent}}"
+                                     ToolTip.Tip="{Binding Localization[Sheet.Search.Tooltip], RelativeSource={RelativeSource TemplatedParent}}"
+                                     Padding="23,0,20,0" />
+                            <!-- Search (magnifier) glyph on the left. PathIcon FILLS its geometry, so the
+                                 ring is drawn as an even-odd donut (outer circle minus inner circle) and the
+                                 handle as a filled stroke — an outline path would render as a solid blob. -->
+                            <PathIcon Width="11" Height="11"
+                                      HorizontalAlignment="Left" Margin="7,0,0,0"
+                                      IsHitTestVisible="False"
+                                      Foreground="{DynamicResource TextSecondary}">
+                                <PathIcon.Data>
+                                    <PathGeometry FillRule="EvenOdd"
+                                        Figures="M7,1 A6,6 0 1 1 6.99,1 Z M7,3 A4,4 0 1 0 7.01,3 Z M11.2,11.9 L10,13.1 L13.8,16.9 L15,15.7 Z" />
+                                </PathIcon.Data>
+                            </PathIcon>
+                            <!-- Clear (✕) button, shown only when there is text. -->
+                            <Button Name="PART_SearchClear"
+                                    Classes="ghost"
+                                    IsVisible="False"
+                                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    Width="16" Height="16" MinWidth="0" MinHeight="0"
+                                    Padding="0" Margin="0,0,2,0" CornerRadius="4">
+                                <!-- Two crossed strokes (a Path with Stroke, not a filled PathIcon). -->
+                                <Path Data="M0,0 L7,7 M7,0 L0,7" Width="7" Height="7"
+                                      Stroke="{DynamicResource TextSecondary}" StrokeThickness="1.5"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Button>
+                        </Grid>
                         <controls:SheetFilterBar
                             Table="{Binding $parent[controls:SheetTable]}"
                             Localization="{Binding Localization, RelativeSource={RelativeSource TemplatedParent}}" />

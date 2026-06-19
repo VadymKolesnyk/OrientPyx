@@ -196,17 +196,19 @@ public sealed class PassagePunchViewModel
     /// <summary>Punch time as "HH:mm:ss" (in local time), or blank.</summary>
     public string TimeText => _punch.Time is { } t ? t.ToLocalTime().ToString("HH:mm:ss") : string.Empty;
 
-    /// <summary>Leg split (time since the previous punch) as "m:ss" / "h:mm:ss", or blank.</summary>
-    public string LegText => SplitFormat.Duration(_punch.Leg);
+    /// <summary>Leg split (time since the previous punch in chip order) as "m:ss" / "h:mm:ss", or blank.
+    /// Uses the always-filled row-to-row leg (set course) so extra/off-course rows keep their time.</summary>
+    public string LegText => SplitFormat.Duration(_punch.DisplayLeg ?? _punch.Leg);
 
     /// <summary>Elapsed since the start, or blank.</summary>
     public string ElapsedText => SplitFormat.Duration(_punch.Elapsed);
 
-    /// <summary>Straight-line distance of this leg in metres, e.g. "420"; blank when unknown. (Unit in header.)</summary>
-    public string DistanceText => SplitFormat.DistanceMetres(_punch.LegKm);
+    /// <summary>Straight-line distance of this leg in metres, e.g. "420"; blank when unknown. (Unit in header.)
+    /// Row-to-row distance (set course), so every row — extras included — shows a довжина.</summary>
+    public string DistanceText => SplitFormat.DistanceMetres(_punch.DisplayLegKm ?? _punch.LegKm);
 
     /// <summary>Leg pace as "m:ss"; blank when distance or leg time is unknown. (Unit /км in header.)</summary>
-    public string PaceText => SplitFormat.Pace(_punch.PaceSecondsPerKm);
+    public string PaceText => SplitFormat.Pace(_punch.DisplayPace ?? _punch.PaceSecondsPerKm);
 
     /// <summary>Point value of this control (rogaine), e.g. "+5"; the finish row carries the over-time penalty
     /// as a negative ("−4"). Blank when it scored nothing.</summary>

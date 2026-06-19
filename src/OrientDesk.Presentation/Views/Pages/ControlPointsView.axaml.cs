@@ -98,13 +98,24 @@ public partial class ControlPointsView : UserControl
                    nameof(ControlPointRowViewModel.SelectedType),
                    nameof(ControlPointTypeOption.Label),
                    minWidth: 120,
-                   sortPath: $"{nameof(ControlPointRowViewModel.SelectedType)}.Value")
-            .Text("ControlPoints.Col.Lat", nameof(ControlPointRowViewModel.LatitudeText),
-                  editPath: nameof(ControlPointRowViewModel.LatitudeText), minWidth: 100,
-                  mask: SheetColumnBuilder.NumericMask.Decimal)
-            .Text("ControlPoints.Col.Lon", nameof(ControlPointRowViewModel.LongitudeText),
-                  editPath: nameof(ControlPointRowViewModel.LongitudeText), minWidth: 100,
-                  mask: SheetColumnBuilder.NumericMask.Decimal);
+                   sortPath: $"{nameof(ControlPointRowViewModel.SelectedType)}.Value");
+
+        // Coordinate columns toggle between the relative "by map" ground metres (default, read-only —
+        // derived from the imported map position + scale) and the editable real WGS-84 lat/lon.
+        if (_vm.ShowMapCoordinates)
+            builder
+                .Text("ControlPoints.Col.MapX", nameof(ControlPointRowViewModel.MapXText), minWidth: 100,
+                      mask: SheetColumnBuilder.NumericMask.Decimal)
+                .Text("ControlPoints.Col.MapY", nameof(ControlPointRowViewModel.MapYText), minWidth: 100,
+                      mask: SheetColumnBuilder.NumericMask.Decimal);
+        else
+            builder
+                .Text("ControlPoints.Col.Lat", nameof(ControlPointRowViewModel.LatitudeText),
+                      editPath: nameof(ControlPointRowViewModel.LatitudeText), minWidth: 100,
+                      mask: SheetColumnBuilder.NumericMask.Decimal)
+                .Text("ControlPoints.Col.Lon", nameof(ControlPointRowViewModel.LongitudeText),
+                      editPath: nameof(ControlPointRowViewModel.LongitudeText), minWidth: 100,
+                      mask: SheetColumnBuilder.NumericMask.Decimal);
 
         if (_vm.ShowPointsColumn)
             builder.Text("ControlPoints.Col.Points", nameof(ControlPointRowViewModel.PointsText),

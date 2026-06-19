@@ -153,6 +153,17 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private EntryFeeContext _feeContext = null!;
 
     /// <summary>
+    /// Set by the View: reports whether the «Стартовий внесок» (fee:total) column is currently visible on
+    /// the active table. When it isn't, per-row fee recompute is pointless, so it's deferred — see
+    /// <see cref="RefreshFeesIfVisible"/> and <see cref="OnFeeColumnShown"/>. Null ⇒ assume visible.
+    /// </summary>
+    public Func<bool>? IsFeeColumnVisible { get; set; }
+
+    // True when a fee recompute was skipped because the total column was hidden; the rows' totals are
+    // stale until the column is shown again (OnFeeColumnShown flushes it).
+    private bool _feesDirty;
+
+    /// <summary>
     /// The competition's region options, shared by every row's region dropdown: a leading "(none)"
     /// sentinel, then regions A→Z, then a trailing "+ new" sentinel. Region is competition-level, so
     /// (unlike per-day groups) one shared list matched by id is correct. Rebuilt on reload and when a
@@ -378,6 +389,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     {
         ClearParticipantRows();
         ClearRosterRows();
+        // Fresh rows compute their totals at construction, so no deferred fee recompute is owed anymore.
+        _feesDirty = false;
 
         if (_session.CurrentEvent is null)
             return;
@@ -406,6 +419,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 var dg = await _editor.GetGroupsForDayAsync(_session.CurrentDay!.Id);
                 return (r, g, dg);
             });
+            // A day grid normally lists only real groups (no "(none)" sentinel), but a day can have
+            // participant rows while having zero groups defined. In that state the empty list would
+            // crash the row VM's group-fallback ([0]); seed the "(none)" sentinel so it never does.
+            if (groupOptions.Count == 0)
+                groupOptions = [new GroupOption(null, string.Empty, Localization)];
             foreach (var row in rows)
                 Participants.Add(CreateDayRow(row, groupOptions));
 
@@ -1076,10 +1094,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             // «Стартовий внесок» from the current fee snapshot — a chip drawn from a note-tagged pool may
             // carry a different rental price. Also refresh the status bar (rental in-use / without-chip
             // counts changed); the batch path never went through the per-cell change handlers that do this.
-            foreach (var row in Participants)
-                row.RefreshFees(_feeContext);
-            foreach (var row in Roster)
-                row.RefreshFees(_feeContext);
+            RefreshFeesIfVisible();
             RecomputeStatusInfo();
         }
 
@@ -1222,10 +1237,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
         // Group/region etc. don't shift fees, but group changes the discount/rental picture for the
         // total; refresh fees + the status bar so the change is reflected immediately (cheap, in-memory).
-        foreach (var row in Participants)
-            row.RefreshFees(_feeContext);
-        foreach (var row in Roster)
-            row.RefreshFees(_feeContext);
+        RefreshFeesIfVisible();
         RecomputeStatusInfo();
 
         _log.Action(string.Format(
@@ -1962,7 +1974,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // Loads the discount set and rebuilds the shared fee context from the current competition inputs.
     // The context lets each row recompute its total live (on a discount/raised-fee/group/chip change)
     // without a DB round-trip; the rows are still seeded with the server-precomputed total on load.
-    private async Task RefreshFeeDataAsync(bool hasEvent)
+    // <paramref name="silent"/> runs the reads off the busy service (plain Task.Run) so no loading
+    // overlay flashes — used by background refreshes like a rental-chip toggle.
+    private async Task RefreshFeeDataAsync(bool hasEvent, bool silent = false)
     {
         if (!hasEvent)
         {
@@ -1972,15 +1986,37 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             return;
         }
 
-        var info = await _busy.RunAsync(() => _editor.GetInfoAsync());
-        var groups = await _busy.RunAsync(() => _editor.GetGroupsAsync());
-        var chipPrices = await _busy.RunAsync(() => _editor.GetChipPriceOverridesAsync());
-        var discounts = await _busy.RunAsync(() => _editor.GetEntryFeeDiscountsAsync());
-        var rentalChips = await _busy.RunAsync(() => _editor.GetRentalChipsAsync());
+        Task<T> Read<T>(Func<Task<T>> read) => silent ? Task.Run(read) : _busy.RunAsync(read);
 
-        Discounts = discounts;
+        var info = await Read(() => _editor.GetInfoAsync());
+        var groups = await Read(() => _editor.GetGroupsAsync());
+        var chipPrices = await Read(() => _editor.GetChipPriceOverridesAsync());
+        var discounts = await Read(() => _editor.GetEntryFeeDiscountsAsync());
+        var rentalChips = await Read(() => _editor.GetRentalChipsAsync());
+
+        // Only reassign Discounts when the set actually changed: the property reference changing forces
+        // the SheetTable to Rebuild() its columns (one checkbox column per discount), which destroys the
+        // focused cell. GetEntryFeeDiscountsAsync hands back a fresh list each call, so guard by value —
+        // otherwise a background refresh (e.g. a rental toggle) would steal focus for no visible change.
+        if (!DiscountsEqual(Discounts, discounts))
+            Discounts = discounts;
         RaisedFeeEnabled = info?.RaisedFeeEnabled ?? false;
         _feeContext = new EntryFeeContext(_entryFeeCalculator, info, groups, chipPrices, discounts, rentalChips);
+    }
+
+    // Value-equality for the discount list: same count and, pairwise, same id / name / amount / kind.
+    // Used to skip a no-op Discounts reassignment that would needlessly rebuild the table columns.
+    private static bool DiscountsEqual(IReadOnlyList<EntryFeeDiscount> a, IReadOnlyList<EntryFeeDiscount> b)
+    {
+        if (ReferenceEquals(a, b))
+            return true;
+        if (a.Count != b.Count)
+            return false;
+        for (var i = 0; i < a.Count; i++)
+            if (a[i].Id != b[i].Id || a[i].Name != b[i].Name
+                || a[i].Percent != b[i].Percent || a[i].AppliesToChipRental != b[i].AppliesToChipRental)
+                return false;
+        return true;
     }
 
     // A row's raised-fee flag toggled: persist in the background (competition-level, all days).
@@ -2009,6 +2045,31 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // Double-clicking a chip cell toggles its number in the rental database: a non-rental chip is
     // added, a rental one removed. The registry is updated optimistically so the cell's bold-red
     // highlight flips immediately; the DB write runs in the background, after which the fee snapshot
+    // Recomputes every row's «Стартовий внесок» from the current fee snapshot — but only while the total
+    // column is actually visible. When it's hidden the work is skipped and a dirty flag is set; showing
+    // the column again flushes it (OnFeeColumnShown). Call this anywhere a fee-affecting change happened.
+    private void RefreshFeesIfVisible()
+    {
+        if (IsFeeColumnVisible is not null && !IsFeeColumnVisible())
+        {
+            _feesDirty = true;
+            return;
+        }
+        foreach (var row in Participants)
+            row.RefreshFees(_feeContext);
+        foreach (var row in Roster)
+            row.RefreshFees(_feeContext);
+        _feesDirty = false;
+    }
+
+    /// <summary>Called by the View when the fee:total column becomes visible: if a recompute was
+    /// deferred while it was hidden, run it now so the shown totals are current.</summary>
+    public void OnFeeColumnShown()
+    {
+        if (_feesDirty)
+            RefreshFeesIfVisible();
+    }
+
     // is rebuilt so every row's total reflects whether that chip is now charged rental.
     [RelayCommand]
     private void ToggleRentalChip(string? chip)
@@ -2032,11 +2093,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private async Task ToggleRentalChipAndRecomputeAsync(string number)
     {
         await Task.Run(() => _editor.ToggleRentalChipAsync(number));
-        await RefreshFeeDataAsync(hasEvent: true);
-        foreach (var row in Participants)
-            row.RefreshFees(_feeContext);
-        foreach (var row in Roster)
-            row.RefreshFees(_feeContext);
+        await RefreshFeeDataAsync(hasEvent: true, silent: true);
+        RefreshFeesIfVisible();
         // A rental toggle changes the in-rental / free counts shown in the status bar.
         RecomputeStatusInfo();
     }

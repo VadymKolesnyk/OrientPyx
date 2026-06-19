@@ -96,4 +96,8 @@ public sealed record SplitExportLabels(
     /// <summary>Bonus tooltip line template, "{0}" = signed bonus (e.g. "Бонус: {0}").</summary>
     string ScoreTooltipBonus,
     /// <summary>Total tooltip line template, "{0}" = net total (e.g. "Сума: {0}").</summary>
-    string ScoreTooltipTotal);
+    string ScoreTooltipTotal,
+    /// <summary>Set-course cell tooltip: loss to the leader by overall time, "{0}" = gap (e.g. "Відставання: +{0}").</summary>
+    string SplitLossTotal,
+    /// <summary>Set-course cell tooltip: loss on this leg, "{0}" = gap (e.g. "На перегоні: +{0}").</summary>
+    string SplitLossLeg);

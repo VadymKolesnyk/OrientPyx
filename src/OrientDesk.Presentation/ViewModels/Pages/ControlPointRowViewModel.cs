@@ -19,6 +19,12 @@ public sealed partial class ControlPointRowViewModel : ObservableObject
     private readonly DateTimeOffset _createdAt;
     private readonly Action<ControlPointRowViewModel> _requestSave;
 
+    // Paper-map position (mm) + scale captured at import; used to render the read-only "by map"
+    // ground-metre columns. Not edited here, so kept as plain fields and round-tripped via ToEntity.
+    private readonly double? _mapX;
+    private readonly double? _mapY;
+    private readonly int? _mapScale;
+
     // Suppresses save requests while the constructor seeds initial values.
     private readonly bool _initialized;
 
@@ -47,6 +53,9 @@ public sealed partial class ControlPointRowViewModel : ObservableObject
         _order = point.Order;
         _createdAt = point.CreatedAt;
         _requestSave = requestSave;
+        _mapX = point.MapX;
+        _mapY = point.MapY;
+        _mapScale = point.MapScale;
         Localization = localization;
 
         TypeOptions = Enum.GetValues<ControlPointType>()
@@ -66,6 +75,24 @@ public sealed partial class ControlPointRowViewModel : ObservableObject
 
     public Guid Id => _id;
 
+    /// <summary>
+    /// Read-only ground X in metres for the "by map" coordinate mode: paper millimetres scaled by
+    /// the map scale (mm × scale ÷ 1000). Empty when the row has no map position or no scale.
+    /// </summary>
+    public string MapXText => FormatMapMetres(_mapX);
+
+    /// <summary>Read-only ground Y in metres for the "by map" coordinate mode (see <see cref="MapXText"/>).</summary>
+    public string MapYText => FormatMapMetres(_mapY);
+
+    private string FormatMapMetres(double? mm)
+    {
+        if (mm is null || _mapScale is null or 0)
+            return string.Empty;
+
+        var metres = mm.Value * _mapScale.Value / 1000.0;
+        return metres.ToString("0.#", CultureInfo.InvariantCulture);
+    }
+
     /// <summary>Type options (value + localized label) shown in the Type ComboBox.</summary>
     public IReadOnlyList<ControlPointTypeOption> TypeOptions { get; } = [];
 
@@ -77,6 +104,9 @@ public sealed partial class ControlPointRowViewModel : ObservableObject
         Code = (Code ?? string.Empty).Trim(),
         Latitude = ParseCoord(LatitudeText),
         Longitude = ParseCoord(LongitudeText),
+        MapX = _mapX,
+        MapY = _mapY,
+        MapScale = _mapScale,
         Type = SelectedType.Value,
         Points = ParsePoints(PointsText),
         CreatedAt = _createdAt

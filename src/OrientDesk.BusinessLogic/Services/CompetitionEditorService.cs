@@ -2444,10 +2444,12 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             list.Add(new SplitPrintRow(
                 Index: p.Kind == PassageKind.Control ? p.Index.ToString(CultureInfo.InvariantCulture) : string.Empty,
                 Code: code,
-                DistanceText: FormatDistanceMetres(p.LegKm),
-                LegText: FormatDuration(p.Leg),
+                // Row-to-row leg/distance/pace (set course) so the slip shows час перегону + довжина for every
+                // row, extras included; falls back to the course leg for views that don't fill the display leg.
+                DistanceText: FormatDistanceMetres(p.DisplayLegKm ?? p.LegKm),
+                LegText: FormatDuration(p.DisplayLeg ?? p.Leg),
                 ElapsedText: FormatDuration(p.Elapsed),
-                PaceText: FormatPace(p.PaceSecondsPerKm),
+                PaceText: FormatPace(p.DisplayPace ?? p.PaceSecondsPerKm),
                 PointsText: pointsText,
                 OnCourse: p.Kind != PassageKind.Control || p.OnCourse,
                 CountsForTeam: p.CountsForTeam));

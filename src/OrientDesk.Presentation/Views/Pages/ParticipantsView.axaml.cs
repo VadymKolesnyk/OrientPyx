@@ -2,6 +2,7 @@ using System.IO;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.VisualTree;
 using OrientDesk.Presentation.Controls;
 using OrientDesk.Presentation.Services;
 using OrientDesk.Presentation.ViewModels.Pages;
@@ -18,6 +19,19 @@ public partial class ParticipantsView : UserControl
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += (_, _) => Unsubscribe();
 
+        // After navigation the new page isn't given keyboard focus — it sits on the sidebar button — so a
+        // tunnel KeyDown on this control never sees Ctrl+F / Shift+F3 until the user clicks into the page.
+        // Pull focus onto the page root on attach (the control is Focusable) so those shortcuts work the
+        // moment the page opens. A subsequent click into the table just moves focus deeper, which is fine.
+        AttachedToVisualTree += (_, _) =>
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => Focus());
+
+        // Ctrl+F (focus search) and Shift+F3 (clear the last filter) work even when focus is on the page,
+        // not yet inside the table. Tunnel so the page sees them before any child; the table also handles
+        // both itself (for focus already inside it). FocusSearch is idempotent and ClearLastFilter is a
+        // no-op when there's nothing to clear, so a double-route is harmless.
+        AddHandler(KeyDownEvent, OnPageKeyDown, RoutingStrategies.Tunnel);
+
         // The header context menu offers "bulk edit this column" for every column that maps to a field,
         // and routes the pick here. Both tables share the same column model, so both are wired.
         // Both tables offer the column menu for every column that maps to a bulk-editable field. The
@@ -27,6 +41,26 @@ public partial class ParticipantsView : UserControl
         RosterTable.CanBulkEditColumn = c => BulkEditKeyFor(c) is not null;
         DayTable.BulkEditColumnRequested += OnBulkEditColumnRequested;
         RosterTable.BulkEditColumnRequested += OnBulkEditColumnRequested;
+
+        // Skip the per-row fee recompute while the «Стартовий внесок» column is hidden; flush it when the
+        // column is shown again. The active table owns the fee:total column (same key on both).
+        DayTable.ColumnVisibilityChanged += OnFeeColumnVisibilityChanged;
+        RosterTable.ColumnVisibilityChanged += OnFeeColumnVisibilityChanged;
+    }
+
+    private const string FeeTotalKey = "fee:total";
+
+    // The fee column is on whichever table is currently shown; default to visible when neither is up yet.
+    private bool IsFeeColumnVisible()
+        => ActiveTable is not { } table || table.IsColumnVisible(FeeTotalKey);
+
+    private SheetTable? ActiveTable
+        => _vm is null ? null : _vm.IsRosterMode ? RosterTable : DayTable;
+
+    private void OnFeeColumnVisibilityChanged(object? sender, System.EventArgs e)
+    {
+        if (sender is SheetTable table && table.IsColumnVisible(FeeTotalKey))
+            _vm?.OnFeeColumnShown();
     }
 
     private void OnDataContextChanged(object? sender, System.EventArgs e)
@@ -38,10 +72,52 @@ public partial class ParticipantsView : UserControl
 
         _vm.RosterColumnsChanged += OnRosterColumnsChanged;
         _vm.FocusGridRequested += OnFocusGridRequested;
+        _vm.IsFeeColumnVisible = IsFeeColumnVisible;
     }
 
     private void OnFocusGridRequested(object? sender, System.EventArgs e)
         => Avalonia.Threading.Dispatcher.UIThread.Post(() => DayTable.Focus());
+
+    // Page-level shortcuts that should fire even when focus is on the page chrome (not inside the table):
+    //   • Ctrl+F   → focus the active table's search box.
+    //   • Shift+F3 → clear the most recently added column filter.
+    // The table's own handler covers focus already inside it; this one covers focus elsewhere on the page.
+    private void OnPageKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key == Avalonia.Input.Key.F && e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Control))
+        {
+            ActiveTable?.FocusSearch();
+            e.Handled = true;
+            return;
+        }
+
+        // Shift+F3 clears the last-added filter. Only act when focus is *outside* the table — when focus
+        // is inside it the table's own handler runs and does the smarter focused-column case. Match the
+        // in-table chord exactly: F3 + Shift only.
+        if (e.Key == Avalonia.Input.Key.F3
+            && (e.KeyModifiers & ~Avalonia.Input.KeyModifiers.Shift) == Avalonia.Input.KeyModifiers.None
+            && e.KeyModifiers.HasFlag(Avalonia.Input.KeyModifiers.Shift)
+            && ActiveTable is { } table
+            && !IsFocusInside(table))
+        {
+            table.ClearLastFilter();
+            e.Handled = true;
+        }
+    }
+
+    // True when the keyboard-focused element lives inside the given table (so the table's own key handler
+    // will run for it, and the page-level fallback should stay out of the way).
+    private static bool IsFocusInside(SheetTable table)
+    {
+        var focused = TopLevel.GetTopLevel(table)?.FocusManager?.GetFocusedElement() as Avalonia.Visual;
+        while (focused is not null)
+        {
+            if (ReferenceEquals(focused, table))
+                return true;
+            focused = focused.GetVisualParent();
+        }
+        return false;
+    }
 
     // File picking is a view concern (it needs the window's StorageProvider). We read the chosen
     // file's bytes and decode them honouring the encoding declared in the XML prolog (UOF files are
@@ -334,6 +410,7 @@ public partial class ParticipantsView : UserControl
         {
             _vm.RosterColumnsChanged -= OnRosterColumnsChanged;
             _vm.FocusGridRequested -= OnFocusGridRequested;
+            _vm.IsFeeColumnVisible = null;
         }
         _vm = null;
     }

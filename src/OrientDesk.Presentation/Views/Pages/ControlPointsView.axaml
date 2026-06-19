@@ -30,6 +30,11 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </controls:SearchableComboBox>
+                <ToggleSwitch IsChecked="{Binding ShowMapCoordinates, Mode=TwoWay}"
+                              VerticalAlignment="Center"
+                              OnContent="{Binding Localization[ControlPoints.Coords.Map]}"
+                              OffContent="{Binding Localization[ControlPoints.Coords.Map]}"
+                              ToolTip.Tip="{Binding Localization[ControlPoints.Coords.Hint]}" />
                 <Button Name="ImportButton" Classes="ghost" Click="OnImportClick"
                         ToolTip.Tip="{Binding Localization[Import.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">

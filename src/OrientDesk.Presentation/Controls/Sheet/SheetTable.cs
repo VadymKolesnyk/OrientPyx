@@ -266,6 +266,8 @@ public sealed class SheetTable : TemplatedControl
     private Border? _statusSumsRow;
     private TextBlock? _statusCounts;
     private TextBlock? _statusInfo;
+    private TextBox? _search;
+    private Button? _searchClear;
 
     // The full band set as built (every column, hidden or not) — the input to filtering, the basis for
     // reorder/width carry. _visibleBands is what the header and rows actually render: the same bands
@@ -354,6 +356,27 @@ public sealed class SheetTable : TemplatedControl
         }
 
         _headerScroll = e.NameScope.Find<ScrollViewer>("PART_HeaderScroll");
+
+        // Global search box: typing re-filters the body live; the ✕ clears it and is shown only while
+        // there is text. Escape (handled here so it works while the box has focus) clears + returns focus
+        // to the table body.
+        _search = e.NameScope.Find<TextBox>("PART_Search");
+        _searchClear = e.NameScope.Find<Button>("PART_SearchClear");
+        if (_search is not null)
+        {
+            _search.Text = _globalSearch;
+            _search.GetObservable(TextBox.TextProperty).Subscribe(new SearchTextSync(this));
+            _search.KeyDown += OnSearchKeyDown;
+        }
+        if (_searchClear is not null)
+            _searchClear.Click += (_, _) =>
+            {
+                if (_search is not null)
+                {
+                    _search.Text = string.Empty;
+                    _search.Focus();
+                }
+            };
 
         // Status bar parts. The per-column sums live in their own slot (a grid mirroring the leaf
         // columns), hosted in a scroller slaved to the body's horizontal offset like the header.
@@ -483,6 +506,18 @@ public sealed class SheetTable : TemplatedControl
     // the body's item list in ApplySortedView and never touches the bound source collection.
     private readonly Dictionary<string, SheetFilter> _filters = new();
 
+    // Filter keys in the order they were first added, so Shift+F3 can clear the most recent one when no
+    // filtered column is in focus. Re-applying an existing column's filter keeps its original position.
+    private readonly List<string> _filterOrder = new();
+
+    // ── Global search ─────────────────────────────────────────────────────────────────────────────
+    // A free-text "search every column" term, additive to the per-column filters: a row is shown only
+    // when each whitespace-separated token appears (case-insensitively) in at least one of its visible
+    // columns' displayed text. Display-only, like the column filters — it never touches the source
+    // collection. Edited via the toolbar search box and refreshed through ApplySortedView.
+    private string _globalSearch = string.Empty;
+    private string[] _searchTokens = Array.Empty<string>();
+
     /// <summary>Raised after the active-filter set changes, so a filter-chips bar can refresh.</summary>
     public event EventHandler? FiltersChanged;
 
@@ -501,6 +536,8 @@ public sealed class SheetTable : TemplatedControl
             ClearColumnFilter(key);
             return;
         }
+        if (!_filters.ContainsKey(key))
+            _filterOrder.Add(key);
         _filters[key] = filter;
         ApplySortedView();
         FiltersChanged?.Invoke(this, EventArgs.Empty);
@@ -511,9 +548,19 @@ public sealed class SheetTable : TemplatedControl
     {
         if (_filters.Remove(key))
         {
+            _filterOrder.Remove(key);
             ApplySortedView();
             FiltersChanged?.Invoke(this, EventArgs.Empty);
         }
+    }
+
+    /// <summary>Removes the most recently added filter (no-op if none). Used by Shift+F3 when the focused
+    /// column has no filter to clear.</summary>
+    public void ClearLastFilter()
+    {
+        if (_filterOrder.Count == 0)
+            return;
+        ClearColumnFilter(_filterOrder[^1]);
     }
 
     /// <summary>Removes every active filter.</summary>
@@ -522,8 +569,66 @@ public sealed class SheetTable : TemplatedControl
         if (_filters.Count == 0)
             return;
         _filters.Clear();
+        _filterOrder.Clear();
         ApplySortedView();
         FiltersChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// The global "search all columns" term. Setting it (whitespace-trimmed) re-filters the displayed
+    /// rows so each space-separated token must appear in some visible column's text. Empty ⇒ no search.
+    /// </summary>
+    public string GlobalSearch
+    {
+        get => _globalSearch;
+        set
+        {
+            var text = value ?? string.Empty;
+            if (text == _globalSearch)
+                return;
+            _globalSearch = text;
+            _searchTokens = text.Length == 0
+                ? Array.Empty<string>()
+                : text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            ApplySortedView();
+        }
+    }
+
+    /// <summary>Moves keyboard focus to the toolbar's global-search box (Ctrl+F). No-op until templated.</summary>
+    public void FocusSearch()
+    {
+        if (_search is null)
+            return;
+        _search.Focus();
+        _search.SelectAll();
+    }
+
+    // The search box's text changed: push it to the search term (re-filters) and toggle the ✕ button.
+    private void OnSearchTextChanged(string? text)
+    {
+        GlobalSearch = text ?? string.Empty;
+        if (_searchClear is not null)
+            _searchClear.IsVisible = !string.IsNullOrEmpty(text);
+    }
+
+    // Escape in the search box clears it and hands focus back to the table body, so the user can resume
+    // keyboard cell navigation; an empty Escape just moves focus out without changing anything.
+    private void OnSearchKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape)
+            return;
+        e.Handled = true;
+        if (_search is { } box && !string.IsNullOrEmpty(box.Text))
+            box.Text = string.Empty;
+        _body?.Focus();
+    }
+
+    /// <summary>Forwards the search box's Text changes to <see cref="OnSearchTextChanged"/>.</summary>
+    private sealed class SearchTextSync(SheetTable owner) : IObserver<string?>
+    {
+        public void OnCompleted() { }
+        public void OnError(Exception error) { }
+        public void OnNext(string? value) => owner.OnSearchTextChanged(value);
     }
 
     /// <summary>
@@ -584,10 +689,11 @@ public sealed class SheetTable : TemplatedControl
             _ => value.ToString() ?? string.Empty
         };
 
-    // True when a row passes every active filter (an absent/now-hidden column's filter is ignored).
+    // True when a row passes every active filter (an absent/now-hidden column's filter is ignored) AND
+    // the global search term. The two are independent gates; both must pass.
     private bool PassesFilters(object? row)
     {
-        if (row is null || _filters.Count == 0)
+        if (row is null)
             return true;
         foreach (var filter in _filters.Values)
         {
@@ -597,6 +703,32 @@ public sealed class SheetTable : TemplatedControl
             if (!filter.Matches(CellText(col, row)))
                 return false;
         }
+        return PassesGlobalSearch(row);
+    }
+
+    // True when every search token appears (case-insensitively) in at least one visible column's text.
+    // A token may match different columns; an empty term passes everything. Hidden columns are excluded
+    // so a search matches what the user can actually see, mirroring the column filters.
+    private bool PassesGlobalSearch(object row)
+    {
+        if (_searchTokens.Length == 0)
+            return true;
+
+        // Concatenate the row's visible-column text once, then test each token against it. The columns
+        // are few (tens at most) and the text is short, so this is cheaper than re-walking per token.
+        var sb = new System.Text.StringBuilder();
+        foreach (var band in _visibleBands)
+            foreach (var col in band.Columns)
+            {
+                if (!col.Filterable)
+                    continue;
+                sb.Append(CellText(col, row)).Append('\n');
+            }
+        var haystack = sb.ToString();
+
+        foreach (var token in _searchTokens)
+            if (haystack.IndexOf(token, StringComparison.CurrentCultureIgnoreCase) < 0)
+                return false;
         return true;
     }
 
@@ -642,8 +774,16 @@ public sealed class SheetTable : TemplatedControl
         {
             Rebuild();
             PersistLayout();
+            ColumnVisibilityChanged?.Invoke(this, EventArgs.Empty);
         }
     }
+
+    /// <summary>True if the column with this key is currently shown (not in the hidden set).</summary>
+    public bool IsColumnVisible(string key) => !_hiddenKeys.Contains(key);
+
+    /// <summary>Raised after a column is hidden or shown, so a page can lazily (re)compute the data
+    /// behind a column only while it's visible.</summary>
+    public event EventHandler? ColumnVisibilityChanged;
 
     // Hide a column from the header context menu.
     private void HideColumn(SheetColumn column) => SetColumnHidden(column.Key, true);
@@ -870,7 +1010,9 @@ public sealed class SheetTable : TemplatedControl
         // Drop any multi-cell selection so it can't highlight (or copy) the wrong rows.
         ClearRange();
 
-        var hasFilters = _filters.Count > 0;
+        // A global search shapes the body view exactly like a column filter, so it takes the same
+        // filtered path (a display copy) rather than the live-source fast path.
+        var hasFilters = _filters.Count > 0 || _searchTokens.Length > 0;
 
         if (_sortColumn is null || string.IsNullOrEmpty(_sortColumn.SortPath) || ItemsSource is null)
         {
@@ -1103,7 +1245,7 @@ public sealed class SheetTable : TemplatedControl
     // tooltip ("Показано 4 з 344"). Falls back to a plain "shown / total" when no localization is set.
     private (string Text, string Tooltip) CountText(int shown, int total)
     {
-        var filtered = _filters.Count > 0;
+        var filtered = _filters.Count > 0 || _searchTokens.Length > 0;
         if (Localization is not { } loc)
             return filtered ? ($"{shown} / {total}", $"{shown} / {total}") : (total.ToString(), total.ToString());
 
@@ -1630,6 +1772,9 @@ public sealed class SheetTable : TemplatedControl
     // Right-click on a body cell offers "filter by this value" (a Values filter pinned to that cell's
     // text) and, when the column already has a filter, "clear filter". Left untouched: left click and
     // the focus-to-edit flow. Skips non-filterable columns (actions / no value path).
+    //
+    // Each item shows its keyboard shortcut on the right; the shortcut keys themselves are wired in
+    // OnCellShortcutKey so the menu and the keyboard stay in lockstep (one set of action helpers).
     private void OnCellRightClick(object? sender, PointerPressedEventArgs e)
     {
         if (Localization is null || e.GetCurrentPoint(this).Properties.PointerUpdateKind != PointerUpdateKind.RightButtonPressed)
@@ -1645,65 +1790,6 @@ public sealed class SheetTable : TemplatedControl
         var value = CellText(column, row);
 
         var menu = new StackPanel { Spacing = 2, Margin = new Thickness(4) };
-        var byValue = new Button
-        {
-            Classes = { "ghost" },
-            Content = Localization.Get("Sheet.Filter.ByValue"),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Left,
-            Padding = new Thickness(10, 6)
-        };
-        menu.Children.Add(byValue);
-
-        var hasFilter = _filters.ContainsKey(column.Key);
-        Button? clear = null;
-        if (hasFilter)
-        {
-            clear = new Button
-            {
-                Classes = { "ghost" },
-                Content = Localization.Get("Sheet.Filter.Remove"),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Left,
-                Padding = new Thickness(10, 6)
-            };
-            menu.Children.Add(clear);
-        }
-
-        // Column-specific extra: a chip column adds a "mark (non-)rental" item, labelled for the chip's
-        // current state. Filter-by-value stays the default for every cell; this is the per-column add-on.
-        Button? rental = null;
-        var chip = column.RentalChipColumn ? value.Trim() : string.Empty;
-        if (chip.Length > 0 && ToggleRentalChipCommand?.CanExecute(chip) == true)
-        {
-            var isRental = RentalChips?.Contains(chip) == true;
-            rental = new Button
-            {
-                Classes = { "ghost" },
-                Content = Localization.Get(isRental ? "Participants.Chip.UnmarkRental" : "Participants.Chip.MarkRental"),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Left,
-                Padding = new Thickness(10, 6)
-            };
-            menu.Children.Add(rental);
-        }
-
-        // Column-specific extra: a "bulk edit this column" item when the page reports the column is
-        // bulk-editable. It opens the page's bulk-edit modal preselected to this column (request #1).
-        Button? bulkEdit = null;
-        if (CanBulkEditColumn?.Invoke(column) == true)
-        {
-            bulkEdit = new Button
-            {
-                Classes = { "ghost" },
-                Content = Localization.Get("Sheet.Columns.BulkEdit"),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Left,
-                Padding = new Thickness(10, 6)
-            };
-            menu.Children.Add(bulkEdit);
-        }
-
         var flyout = new Flyout
         {
             Placement = PlacementMode.Pointer,
@@ -1713,24 +1799,142 @@ public sealed class SheetTable : TemplatedControl
                 Child = menu
             }
         };
-        byValue.Click += (_, _) =>
+
+        // A ghost button whose content is the localized label on the left and a grey shortcut hint on
+        // the right. Clicking hides the flyout then runs the action.
+        Button MenuItem(string textKey, string shortcut, Action onClick)
         {
-            flyout.Hide();
-            SetColumnFilter(column.Key, new SheetFilter
+            var content = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            var label = new TextBlock { Text = Localization.Get(textKey), VerticalAlignment = VerticalAlignment.Center };
+            var hint = new TextBlock
             {
-                ColumnKey = column.Key,
-                Header = string.IsNullOrEmpty(column.PickerLabel) ? column.Header : column.PickerLabel,
-                Mode = SheetFilterMode.Values,
-                AllowedValues = new HashSet<string> { value }
-            });
-        };
-        if (clear is not null)
-            clear.Click += (_, _) => { flyout.Hide(); ClearColumnFilter(column.Key); };
-        if (rental is not null)
-            rental.Click += (_, _) => { flyout.Hide(); ToggleRental(chip); };
-        if (bulkEdit is not null)
-            bulkEdit.Click += (_, _) => { flyout.Hide(); BulkEditColumnRequested?.Invoke(this, column); };
+                Text = shortcut,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(24, 0, 0, 0),
+                Foreground = (IBrush?)this.FindResource("TextSecondary") ?? Brushes.Gray
+            };
+            Grid.SetColumn(label, 0);
+            Grid.SetColumn(hint, 1);
+            content.Children.Add(label);
+            content.Children.Add(hint);
+
+            var b = new Button
+            {
+                Classes = { "ghost" },
+                Content = content,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Padding = new Thickness(10, 6)
+            };
+            b.Click += (_, _) => { flyout.Hide(); onClick(); };
+            menu.Children.Add(b);
+            return b;
+        }
+
+        MenuItem("Sheet.Filter.ByValue", "F3", () => FilterByValue(column, value));
+
+        if (_filters.ContainsKey(column.Key))
+            MenuItem("Sheet.Filter.Remove", "Shift+F3", () => ClearColumnFilter(column.Key));
+
+        // Column-specific extra: a chip column adds a "mark (non-)rental" item, labelled for the chip's
+        // current state. Filter-by-value stays the default for every cell; this is the per-column add-on.
+        var chip = column.RentalChipColumn ? value.Trim() : string.Empty;
+        if (chip.Length > 0 && ToggleRentalChipCommand?.CanExecute(chip) == true)
+        {
+            var isRental = RentalChips?.Contains(chip) == true;
+            MenuItem(isRental ? "Participants.Chip.UnmarkRental" : "Participants.Chip.MarkRental",
+                "F4", () => ToggleRental(chip));
+        }
+
+        // Column-specific extra: a "bulk edit this column" item when the page reports the column is
+        // bulk-editable. It opens the page's bulk-edit modal preselected to this column.
+        if (CanBulkEditColumn?.Invoke(column) == true)
+            MenuItem("Sheet.Columns.BulkEdit", "F6", () => BulkEditColumnRequested?.Invoke(this, column));
+
+        // Hiding the selected cell's column — also available from the header menu, here as a cell action.
+        MenuItem("Sheet.Columns.Hide", "Ctrl+H", () => HideColumn(column));
+
         flyout.ShowAt(cell);
+    }
+
+    // Apply a "filter by this value" Values filter for the column (shared by the menu and the F3 key).
+    private void FilterByValue(SheetColumn column, string value)
+        => SetColumnFilter(column.Key, new SheetFilter
+        {
+            ColumnKey = column.Key,
+            Header = string.IsNullOrEmpty(column.PickerLabel) ? column.Header : column.PickerLabel,
+            Mode = SheetFilterMode.Values,
+            AllowedValues = new HashSet<string> { value }
+        });
+
+    // The key chords that map to a cell context-menu action: F3 (filter), Shift+F3 (clear), F4 (rental),
+    // F6 (bulk-edit), Ctrl+H (hide). Recognised before the edit branch in OnTunnelKeyDown so they fire
+    // even while a cell is being edited — they're keys a text editor never needs.
+    private static bool IsCellShortcut(KeyEventArgs e)
+    {
+        if (e.Key == Key.H && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+            return true;
+        var plain = (e.KeyModifiers & ~KeyModifiers.Shift) == KeyModifiers.None;
+        return plain && e.Key is Key.F3 or Key.F4 or Key.F6;
+    }
+
+    // Keyboard shortcuts for the cell context-menu actions, dispatched against the focused cell's
+    // column + row. Mirrors OnCellRightClick exactly: each key runs the same action, and is a no-op
+    // when that action isn't available for the column (non-filterable, not a chip, not bulk-editable).
+    // Returns true if the key was an action key (so the caller can mark it handled).
+    private bool OnCellShortcutKey(KeyEventArgs e)
+    {
+        // Ctrl+H hides the focused cell's column regardless of filterability (actions aside).
+        if (e.Key == Key.H && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            if (FindFocusedCell()?.Column is { } hideCol && hideCol.Filterable)
+                HideColumn(hideCol);
+            return true;
+        }
+
+        // The remaining shortcuts are unmodified F-keys (Shift+F3 is the one exception).
+        var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        var plain = (e.KeyModifiers & ~KeyModifiers.Shift) == KeyModifiers.None;
+        if (!plain || e.Key is not (Key.F3 or Key.F4 or Key.F6))
+            return false;
+
+        // Shift+F3 clears a filter even with no column in focus: the focused column's filter if it has
+        // one, otherwise the most recently added filter on the table. Handled before the filterable-cell
+        // gate so it works when no cell (or a non-filterable one) is selected.
+        if (e.Key == Key.F3 && shift)
+        {
+            var focusedKey = FindFocusedCell()?.Column?.Key;
+            if (focusedKey is not null && _filters.ContainsKey(focusedKey))
+                ClearColumnFilter(focusedKey);
+            else
+                ClearLastFilter();
+            return true;
+        }
+
+        if (FindFocusedCell() is not { } cell || !cell.Column.Filterable)
+            return e.Key is Key.F3 or Key.F4 or Key.F6; // swallow the key even with nothing to act on
+        if (RowItemFromCell(cell) is not { } row)
+            return true;
+
+        var column = cell.Column;
+        var value = CellText(column, row);
+
+        switch (e.Key)
+        {
+            case Key.F3:
+                FilterByValue(column, value);
+                return true;
+            case Key.F4:
+                var chip = column.RentalChipColumn ? value.Trim() : string.Empty;
+                if (chip.Length > 0 && ToggleRentalChipCommand?.CanExecute(chip) == true)
+                    ToggleRental(chip);
+                return true;
+            case Key.F6:
+                if (CanBulkEditColumn?.Invoke(column) == true)
+                    BulkEditColumnRequested?.Invoke(this, column);
+                return true;
+        }
+        return false;
     }
 
     // The row item a cell belongs to: the cell inherits the row container's DataContext (the item).
@@ -1788,6 +1992,16 @@ public sealed class SheetTable : TemplatedControl
 
     private void OnTunnelKeyDown(object? sender, KeyEventArgs e)
     {
+        // Ctrl+F focuses the toolbar's global-search box from anywhere in the table (incl. mid-edit),
+        // selecting any existing term so the user can type over it. Handled first so it wins over the
+        // cell-edit / navigation branches below.
+        if (e.Key == Key.F && e.KeyModifiers.HasFlag(KeyModifiers.Control) && _search is not null)
+        {
+            e.Handled = true;
+            FocusSearch();
+            return;
+        }
+
         // The focused element decides whether we're already editing (a focused TextBox in a cell).
         var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
 
@@ -1803,6 +2017,25 @@ public sealed class SheetTable : TemplatedControl
         }
 
         _editing = focused is TextBox;
+
+        // Context-menu action shortcuts must work even while a cell is in edit mode (focus is on the
+        // cell's TextBox). They're F-keys / Ctrl+H — keys a text editor never needs — so intercept them
+        // before the editing branch: commit the open edit first (so e.g. "filter by value" sees what was
+        // just typed), then run the action on the next cycle once the bound value has propagated.
+        if (IsCellShortcut(e))
+        {
+            e.Handled = true;
+            if (_editing)
+            {
+                CommitEdit();
+                Dispatcher.UIThread.Post(() => OnCellShortcutKey(e), DispatcherPriority.Background);
+            }
+            else
+            {
+                OnCellShortcutKey(e);
+            }
+            return;
+        }
 
         if (_editing)
         {
@@ -1894,6 +2127,8 @@ public sealed class SheetTable : TemplatedControl
         }
 
         var ctrlOrAlt = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Alt);
+        // (Context-menu action shortcuts — F3/Shift+F3/F4/F6/Ctrl+H — are handled at the top of this
+        //  method so they fire in edit mode too; see the IsCellShortcut check there.)
 
         if (e.Key == Key.C && e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {

@@ -184,6 +184,11 @@ public sealed class IofXmlParser : IIofXmlParser
 
     private static IReadOnlyList<IofControl> ReadControlsV3(XElement data)
     {
+        // OCAD's 3.0 export gives each <Control> definition only an <Id>, no `type` attribute, so
+        // start/finish are not marked there. The kind is instead carried by each <CourseControl
+        // type="Start|Finish|Control"> usage inside the courses. Build a code→type map from those
+        // first and fall back to the (usually absent) `type` attribute on the definition.
+        var typesFromCourses = ReadControlTypesFromCoursesV3(data);
         var controls = new List<IofControl>();
 
         foreach (var element in data.Elements().Where(e => LocalNameIs(e, "Control")))
@@ -197,10 +202,14 @@ public sealed class IofXmlParser : IIofXmlParser
             var lon = ParseDouble(position?.Attribute("lng")?.Value);
             var (mapX, mapY) = ReadMapPosition(element);
 
+            var type = typesFromCourses.TryGetValue(code, out var courseType)
+                ? courseType
+                : MapV3Type(element.Attribute("type")?.Value);
+
             controls.Add(new IofControl
             {
                 Code = code,
-                Type = MapV3Type(element.Attribute("type")?.Value),
+                Type = type,
                 Latitude = lat,
                 Longitude = lon,
                 MapX = mapX,
@@ -209,6 +218,32 @@ public sealed class IofXmlParser : IIofXmlParser
         }
 
         return controls;
+    }
+
+    /// <summary>
+    /// Scans every 3.0 &lt;Course&gt;/&lt;CourseControl type="..."&gt; and maps each control code to
+    /// its kind. A Start/Finish marking wins over Control, so a code used both as a course start and
+    /// (theoretically) a regular control is still reported as a start.
+    /// </summary>
+    private static Dictionary<string, ControlPointType> ReadControlTypesFromCoursesV3(XElement data)
+    {
+        var types = new Dictionary<string, ControlPointType>(StringComparer.Ordinal);
+
+        foreach (var course in data.Elements().Where(e => LocalNameIs(e, "Course")))
+        foreach (var cc in course.Elements().Where(e => LocalNameIs(e, "CourseControl")))
+        {
+            var code = Trim(ChildValue(cc, "Control"));
+            if (string.IsNullOrEmpty(code))
+                continue;
+
+            var type = MapV3Type(cc.Attribute("type")?.Value);
+            if (types.TryGetValue(code, out var existing) && existing != ControlPointType.Regular)
+                continue; // keep a previously seen Start/Finish marking
+
+            types[code] = type;
+        }
+
+        return types;
     }
 
     private static IReadOnlyList<IofCourse> ReadCoursesV3(XElement data)

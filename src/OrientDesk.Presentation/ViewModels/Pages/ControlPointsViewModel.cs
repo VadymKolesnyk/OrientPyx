@@ -78,8 +78,18 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
     [ObservableProperty]
     private bool _showPointsColumn;
 
-    /// <summary>Raised when <see cref="ShowPointsColumn"/> may have changed; the view re-applies
-    /// column visibility (columns live outside the visual tree).</summary>
+    /// <summary>
+    /// Coordinate display mode. True (default) shows relative "by map" coordinates — ground metres
+    /// derived from the imported map position and scale; false shows the real WGS-84 latitude/longitude.
+    /// Toggled by the header switch; the view rebuilds the columns when it changes.
+    /// </summary>
+    [ObservableProperty]
+    private bool _showMapCoordinates = true;
+
+    partial void OnShowMapCoordinatesChanged(bool value) => ColumnsChanged?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>Raised when <see cref="ShowPointsColumn"/> or the coordinate mode may have changed; the
+    /// view re-applies column visibility (columns live outside the visual tree).</summary>
     public event EventHandler? ColumnsChanged;
 
     // True while LoadAsync syncs SelectedDay to the session, so the setter does NOT call

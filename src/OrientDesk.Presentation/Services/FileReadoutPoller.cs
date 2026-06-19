@@ -86,23 +86,41 @@ public sealed class FileReadoutPoller : IFileReadoutPoller
     }
 
     // Reads the file allowing concurrent writers (the SI software keeps the log open), so we never
-    // fight it for a lock. A missing/locked file yields null and the loop retries next tick.
+    // fight it for a lock. We share read AND write so an open that keeps the file with FileShare.Read
+    // doesn't lock us out. Some writers, though, briefly hold the file *exclusively* (FileShare.None)
+    // while flushing a record — that open throws an IOException and would drop the whole tick. So we
+    // retry the open a few times with a short backoff inside the tick before giving up; a still-locked
+    // or missing file then yields null and the loop retries next tick.
+    private const int OpenAttempts = 5;
+    private static readonly TimeSpan OpenRetryDelay = TimeSpan.FromMilliseconds(100);
+
     private static async Task<string?> TryReadAsync(string filePath, CancellationToken token)
     {
-        try
+        for (var attempt = 0; attempt < OpenAttempts; attempt++)
         {
-            await using var stream = new FileStream(
-                filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            using var reader = new StreamReader(stream);
-            return await reader.ReadToEndAsync(token);
+            token.ThrowIfCancellationRequested();
+            try
+            {
+                await using var stream = new FileStream(
+                    filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var reader = new StreamReader(stream);
+                return await reader.ReadToEndAsync(token);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (IOException) when (attempt < OpenAttempts - 1)
+            {
+                // Most likely a transient exclusive lock while the writer flushes — wait and retry.
+                await Task.Delay(OpenRetryDelay, token);
+            }
+            catch
+            {
+                return null;
+            }
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch
-        {
-            return null;
-        }
+
+        return null;
     }
 }

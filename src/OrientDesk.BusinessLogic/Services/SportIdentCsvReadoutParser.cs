@@ -19,13 +19,24 @@ namespace OrientDesk.BusinessLogic.Services;
 /// </list>
 /// Rows are emitted as-is, including duplicate chip numbers (this is a raw log); de-duplication is
 /// left to the consumer.
+///
+/// Two real-world shapes of this export exist and both are handled:
+/// <list type="bullet">
+///   <item><b>Header mode</b> — the first line is a header row naming the columns (<c>SIID</c>,
+///   <c>Start time</c>, …). Columns are matched by name, so their order can vary.</item>
+///   <item><b>Positional mode</b> — the export carries <b>no</b> header line; the very first line is
+///   already a data record (<c>&lt;no&gt;;&lt;read on&gt;;&lt;SIID&gt;;…</c>). The fields then sit at
+///   fixed positions. SI-Config and some SI readers produce this headerless layout.</item>
+/// </list>
+/// The parser auto-detects: a first line containing the <c>SIID</c> token is treated as a header,
+/// otherwise every line (including the first) is read positionally.
 /// </summary>
 public sealed class SportIdentCsvReadoutParser : IReadoutParser
 {
     private const char Delimiter = ';';
     private const string SourceFormat = "SportIdent-CSV";
 
-    // Header names this parser keys on. A file missing SIID is not a chip readout.
+    // Header names this parser keys on (header mode). A file missing SIID is not a chip readout.
     private const string ChipColumn = "SIID";
     private const string ReadOnColumn = "Read on";
     private const string StartTimeColumn = "Start time";
@@ -37,17 +48,30 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
     // value is the punch count.
     private const string RecordCountColumn = "No. of records";
 
+    // Fixed field positions (0-based) for the HEADERLESS positional layout. These mirror the SI-Config
+    // CSV export: <no>;<read on>;<SIID>;... with the start/finish station triplets and "No. of records"
+    // at fixed offsets, followed by the variable tail of "<code>;<DOW>;<time>" course-punch triplets.
+    private const int PositionalChipIndex = 2;        // SIID
+    private const int PositionalReadOnIndex = 1;       // "Read on" date+time
+    private const int PositionalStartTimeIndex = 6;    // start station triplet's time field
+    private const int PositionalFinishTimeIndex = 21;  // finish station triplet's time field
+    private const int PositionalRecordCountIndex = 44; // "No. of records"; punch triplets follow it
+
     public bool CanParse(string content)
     {
         if (string.IsNullOrWhiteSpace(content))
             return false;
 
-        var header = FirstLine(content);
-        if (header is null)
+        var firstLine = FirstLine(content);
+        if (firstLine is null)
             return false;
 
-        var columns = SplitLine(header);
-        return IndexOf(columns, ChipColumn) >= 0;
+        var fields = SplitLine(firstLine);
+
+        // Header mode: a real header names the SIID column. Positional mode: no header, but the line
+        // is a data row whose third field is the chip number — accept when that field is non-empty.
+        return IndexOf(fields, ChipColumn) >= 0
+               || Field(fields, PositionalChipIndex).Trim().Length > 0;
     }
 
     public ChipReadData Parse(string content)
@@ -55,52 +79,67 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
         if (string.IsNullOrWhiteSpace(content))
             throw new ReadoutFormatException("The file is empty.");
 
-        // SPORTident exports are UTF-8 and may carry a BOM; strip it so the first header matches.
+        // SPORTident exports are UTF-8 and may carry a BOM; strip it so the first field/header matches.
         var text = content.TrimStart('﻿');
         var lines = text.Split('\n');
 
         if (lines.Length == 0)
-            throw new ReadoutFormatException("The file has no header row.");
+            throw new ReadoutFormatException("The file has no rows.");
 
         var header = SplitLine(lines[0]);
-        var chipIndex = IndexOf(header, ChipColumn);
-        if (chipIndex < 0)
+        var hasHeader = IndexOf(header, ChipColumn) >= 0;
+
+        var layout = hasHeader
+            ? new ColumnLayout(
+                Chip: IndexOf(header, ChipColumn),
+                ReadOn: IndexOf(header, ReadOnColumn),
+                Start: IndexOf(header, StartTimeColumn),
+                Finish: IndexOf(header, FinishTimeColumn),
+                // The punch triplets begin in the column immediately after "No. of records".
+                FirstPunch: NextOrNone(IndexOf(header, RecordCountColumn)))
+            : new ColumnLayout(
+                Chip: PositionalChipIndex,
+                ReadOn: PositionalReadOnIndex,
+                Start: PositionalStartTimeIndex,
+                Finish: PositionalFinishTimeIndex,
+                FirstPunch: PositionalRecordCountIndex + 1);
+
+        if (layout.Chip < 0)
             throw new ReadoutFormatException($"The file has no '{ChipColumn}' column; it is not a SPORTident readout.");
 
-        var readOnIndex = IndexOf(header, ReadOnColumn);
-        var startIndex = IndexOf(header, StartTimeColumn);
-        var finishIndex = IndexOf(header, FinishTimeColumn);
-
-        // The course punches are the headerless "<code> ; <DOW> ; <time>" triplets each row appends
-        // right after the "No. of records" column; that column's value is the punch count. The first
-        // punch field is therefore the column immediately after it.
-        var recordCountIndex = IndexOf(header, RecordCountColumn);
-        var firstPunchIndex = recordCountIndex >= 0 ? recordCountIndex + 1 : -1;
+        // In header mode the first line is the header; in positional mode it is already a data row.
+        var firstDataLine = hasHeader ? 1 : 0;
 
         var records = new List<ChipReadRecord>();
-        for (var i = 1; i < lines.Length; i++)
+        for (var i = firstDataLine; i < lines.Length; i++)
         {
             var line = lines[i].TrimEnd('\r');
             if (line.Length == 0)
                 continue;
 
             var fields = SplitLine(line);
-            var chip = Field(fields, chipIndex).Trim();
+            var chip = Field(fields, layout.Chip).Trim();
             if (chip.Length == 0)
                 continue;
 
-            var readOn = readOnIndex >= 0 ? ParseReadOn(Field(fields, readOnIndex)) : null;
+            var readOn = layout.ReadOn >= 0 ? ParseReadOn(Field(fields, layout.ReadOn)) : null;
             records.Add(new ChipReadRecord
             {
                 ChipNumber = chip,
-                StartTime = CombineDateAndTime(readOn, Field(fields, startIndex)),
-                FinishTime = CombineDateAndTime(readOn, Field(fields, finishIndex)),
-                Punches = ReadPunches(fields, firstPunchIndex, readOn)
+                StartTime = CombineDateAndTime(readOn, Field(fields, layout.Start)),
+                FinishTime = CombineDateAndTime(readOn, Field(fields, layout.Finish)),
+                Punches = ReadPunches(fields, layout.FirstPunch, readOn)
             });
         }
 
         return new ChipReadData { SourceFormat = SourceFormat, Records = records };
     }
+
+    // The resolved column positions for a file, whichever mode it is in. -1 means "absent".
+    private readonly record struct ColumnLayout(int Chip, int ReadOn, int Start, int Finish, int FirstPunch);
+
+    // The column after a found one, or -1 when the source column was absent.
+    private static int NextOrNone(int index) => index >= 0 ? index + 1 : -1;
 
     // --- Punches -------------------------------------------------------------
 
