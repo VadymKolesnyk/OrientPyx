@@ -1552,6 +1552,21 @@ public sealed class SheetTable : TemplatedControl
     private LazyEditCell? _pendingEditCell;
     private Point _pendingEditPoint;
 
+    // ── Edge autoscroll (Excel/Google-Sheets style) ──────────────────────────────────────────────────
+    // While drag-selecting, holding the pointer near (or past) the body's viewport edge scrolls the body
+    // toward that edge on a timer and keeps extending the selection to the cell now under the cursor, so
+    // a range can grow beyond what's on screen without releasing the button.
+    private DispatcherTimer? _edgeScrollTimer;
+    private bool _edgeScrollActive;
+    // The per-tick scroll delta (px) computed from how deep into the edge margin the pointer is; updated
+    // on each move so scrolling accelerates as the cursor pushes further past the edge.
+    private Vector _edgeScrollDelta;
+    // The last drag-pointer position, in table coordinates — re-hit-tested on each timer tick.
+    private Point _dragPoint;
+    // How close to the viewport edge (px) the pointer must be to trigger autoscroll, and the speed cap.
+    private const double EdgeScrollMargin = 28;
+    private const double EdgeScrollMaxStep = 24;
+
     private bool HasRange => _anchorRow >= 0 && (_anchorRow != _activeRow || _focusedColumn != _activeCol);
 
     // The index of a row object in the current sorted/filtered view, or -1 if not present.
@@ -1678,29 +1693,47 @@ public sealed class SheetTable : TemplatedControl
         if (!_dragging || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             return;
 
-        // Hit-test by position rather than e.Source: once we capture the pointer (below) the source is
-        // the capture target, not the cell under the cursor.
+        // Track the live pointer position (in table coordinates) so the edge-autoscroll timer can keep
+        // extending the selection toward the cursor while the body scrolls, even with no new move events.
+        _dragPoint = e.GetPosition(this);
+
+        // First real move out of the anchor cell: grab the pointer so moves keep coming to us even when
+        // the cursor leaves the table, and so the cell's editor doesn't also react to the drag. We grab
+        // it as soon as the pointer leaves the anchor cell OR reaches an autoscroll edge.
+        var leftAnchorCell = ExtendDragSelectionTo(_dragPoint);
+        UpdateEdgeAutoScroll(_dragPoint);
+
+        if (!leftAnchorCell && !_edgeScrollActive)
+            return;
+
+        if (e.Pointer.Captured != this)
+            e.Pointer.Capture(this);
+        e.Handled = true;
+    }
+
+    // Hit-test the cell under a table-space point and extend the selection rectangle to it. Returns true
+    // when the pointer is over a cell other than the current active corner (a real drag step), so the
+    // caller can decide to capture the pointer / mark the gesture a drag. Shared by the move handler and
+    // the edge-autoscroll timer.
+    private bool ExtendDragSelectionTo(Point point)
+    {
+        // Hit-test by position rather than e.Source: once we capture the pointer the source is the
+        // capture target, not the cell under the cursor.
         SheetCell? cell = null;
-        foreach (var hit in this.GetVisualsAt(e.GetPosition(this)))
+        foreach (var hit in this.GetVisualsAt(point))
             if (CellFromSource(hit) is { } c) { cell = c; break; }
         if (cell is null || RowItemFromCell(cell) is not { } row)
-            return;
+            return false;
 
         var rowIndex = RowIndexOf(row);
         if (rowIndex == _activeRow && cell.ColumnIndex == _activeCol)
-            return; // still in the same cell — nothing to extend
-
-        // First real move out of the anchor cell: grab the pointer so moves keep coming to us even when
-        // the cursor leaves the table, and so the cell's editor doesn't also react to the drag.
-        if (e.Pointer.Captured != this)
-            e.Pointer.Capture(this);
+            return false; // still in the same cell — nothing to extend
 
         // A real drag-select: cancel the deferred edit so releasing won't drop into edit mode.
         _dragExtended = true;
         _pendingEditCell = null;
-
-        e.Handled = true;
         ExtendRangeTo(rowIndex, cell.ColumnIndex);
+        return true;
     }
 
     private void OnTunnelPointerReleased(object? sender, PointerReleasedEventArgs e)
@@ -1708,6 +1741,7 @@ public sealed class SheetTable : TemplatedControl
         if (!_dragging)
             return;
         _dragging = false;
+        StopEdgeAutoScroll();
         if (e.Pointer.Captured == this)
             e.Pointer.Capture(null);
 
@@ -1719,6 +1753,95 @@ public sealed class SheetTable : TemplatedControl
             lazy.BeginEdit(open: true, caretAt: _pendingEditPoint);
         }
         _pendingEditCell = null;
+    }
+
+    // Recompute the autoscroll direction/speed from where the drag pointer sits relative to the body's
+    // viewport, then start or stop the timer. Within EdgeScrollMargin of an edge (or beyond it) we scroll
+    // toward that edge; the further past the margin the cursor is, the larger the per-tick step (capped).
+    private void UpdateEdgeAutoScroll(Point point)
+    {
+        if (_bodyScroll is null)
+        {
+            StopEdgeAutoScroll();
+            return;
+        }
+
+        // The body viewport in table coordinates (the scroller occupies the body's bounds).
+        var topLeft = _bodyScroll.TranslatePoint(new Point(0, 0), this) ?? new Point(0, 0);
+        var bounds = new Rect(topLeft, _bodyScroll.Bounds.Size);
+        var extent = _bodyScroll.Extent;
+        var viewport = _bodyScroll.Viewport;
+        var offset = _bodyScroll.Offset;
+
+        double dx = 0, dy = 0;
+        // Vertical: only when there's hidden content in that direction, so we don't spin uselessly.
+        if (point.Y < bounds.Top + EdgeScrollMargin && offset.Y > 0)
+            dy = -EdgeStep(bounds.Top + EdgeScrollMargin - point.Y);
+        else if (point.Y > bounds.Bottom - EdgeScrollMargin && offset.Y < extent.Height - viewport.Height - 0.5)
+            dy = EdgeStep(point.Y - (bounds.Bottom - EdgeScrollMargin));
+        // Horizontal: same, mirrored.
+        if (point.X < bounds.Left + EdgeScrollMargin && offset.X > 0)
+            dx = -EdgeStep(bounds.Left + EdgeScrollMargin - point.X);
+        else if (point.X > bounds.Right - EdgeScrollMargin && offset.X < extent.Width - viewport.Width - 0.5)
+            dx = EdgeStep(point.X - (bounds.Right - EdgeScrollMargin));
+
+        _edgeScrollDelta = new Vector(dx, dy);
+        if (dx == 0 && dy == 0)
+        {
+            StopEdgeAutoScroll();
+            return;
+        }
+
+        if (_edgeScrollTimer is null)
+        {
+            _edgeScrollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+            _edgeScrollTimer.Tick += OnEdgeScrollTick;
+        }
+        _edgeScrollActive = true;
+        if (!_edgeScrollTimer.IsEnabled)
+            _edgeScrollTimer.Start();
+    }
+
+    // Maps the pointer's overshoot past the edge margin (px) to a per-tick scroll step, ramping linearly
+    // from a gentle 4px at the margin to EdgeScrollMaxStep deep past it.
+    private static double EdgeStep(double overshoot)
+        => Math.Clamp(4 + overshoot * 0.6, 4, EdgeScrollMaxStep);
+
+    private void StopEdgeAutoScroll()
+    {
+        _edgeScrollActive = false;
+        _edgeScrollTimer?.Stop();
+    }
+
+    // One autoscroll step: nudge the body offset (clamped to its scrollable range) toward the edge, then
+    // re-hit-test the (stationary) cursor against the freshly scrolled rows and extend the selection.
+    private void OnEdgeScrollTick(object? sender, EventArgs e)
+    {
+        if (!_dragging || _bodyScroll is null)
+        {
+            StopEdgeAutoScroll();
+            return;
+        }
+
+        var extent = _bodyScroll.Extent;
+        var viewport = _bodyScroll.Viewport;
+        var offset = _bodyScroll.Offset;
+        var maxX = Math.Max(0, extent.Width - viewport.Width);
+        var maxY = Math.Max(0, extent.Height - viewport.Height);
+        var newOffset = new Vector(
+            Math.Clamp(offset.X + _edgeScrollDelta.X, 0, maxX),
+            Math.Clamp(offset.Y + _edgeScrollDelta.Y, 0, maxY));
+        if (newOffset == offset)
+            return; // already at the edge in that direction
+        _bodyScroll.Offset = newOffset;
+
+        // Extend the selection to whatever cell now sits under the unchanged cursor. Deferred to Loaded so
+        // the rows realized by the scroll above exist before we hit-test them.
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_dragging)
+                ExtendDragSelectionTo(_dragPoint);
+        }, DispatcherPriority.Loaded);
     }
 
     // The cell whose combo dropdown is currently open (a lazy combo cell we put into edit, or a combo we
@@ -1859,13 +1982,21 @@ public sealed class SheetTable : TemplatedControl
 
     // Apply a "filter by this value" Values filter for the column (shared by the menu and the F3 key).
     private void FilterByValue(SheetColumn column, string value)
-        => SetColumnFilter(column.Key, new SheetFilter
+    {
+        SetColumnFilter(column.Key, new SheetFilter
         {
             ColumnKey = column.Key,
             Header = string.IsNullOrEmpty(column.PickerLabel) ? column.Header : column.PickerLabel,
             Mode = SheetFilterMode.Values,
             AllowedValues = new HashSet<string> { value }
         });
+
+        // Re-binding the body's ItemsSource destroyed the focused SheetCell, so keyboard focus would
+        // otherwise escape the table (leaving the row visually selected but no cell focused, and a
+        // follow-up Shift+F3 then misses the table's own handler). The filtered-by-its-own-value row
+        // survives the filter, so put focus back on its same-column cell once the body relayouts.
+        Dispatcher.UIThread.Post(FocusSelectedRowCell, DispatcherPriority.Loaded);
+    }
 
     // The key chords that map to a cell context-menu action: F3 (filter), Shift+F3 (clear), F4 (rental),
     // F6 (bulk-edit), Ctrl+H (hide). Recognised before the edit branch in OnTunnelKeyDown so they fire
