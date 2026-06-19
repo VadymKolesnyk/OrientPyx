@@ -54,6 +54,10 @@ public static class BusinessLogicServiceCollectionExtensions
         // writer that renders the document needs a library and is registered in DataAccess.
         services.AddSingleton<IResultProtocolBuilder, ResultProtocolBuilder>();
 
+        // Split (splits) export builder (layer-neutral: raw day splits → renderable document). The HTML
+        // writer that renders the document is registered in DataAccess.
+        services.AddSingleton<ISplitExportBuilder, SplitExportBuilder>();
+
         // Placeholder competition data service (dashboard)
         services.AddSingleton<ICompetitionService, CompetitionService>();
         return services;

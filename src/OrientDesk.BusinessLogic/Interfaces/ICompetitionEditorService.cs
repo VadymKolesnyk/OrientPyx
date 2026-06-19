@@ -378,6 +378,16 @@ public interface ICompetitionEditorService
     Task<ResultProtocolData> GetResultProtocolDataAsync(Guid dayId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gathers the split-export data for one day: every group that runs on the day, with its course
+    /// metadata, discipline layout (ordered set-course vs scored) and its participant rows — each carrying
+    /// the discipline-built <see cref="SplitsView"/> (the passage/splits) and the computed result. Only
+    /// members whose chip was read on the day are included (no read-out ⇒ no splits to show). Groups follow
+    /// the day grid order; rows are unsorted (the builder orders them placed-first). Empty when no
+    /// competition is selected.
+    /// </summary>
+    Task<SplitExportData> GetDaySplitsExportDataAsync(Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Loads the current day's finish-read log (ordered by sequence), each row resolved against the
     /// day's participants so a known chip carries its holder's number, full name and group. Returns an
     /// empty list when no day is selected.

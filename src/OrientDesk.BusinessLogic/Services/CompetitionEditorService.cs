@@ -1477,6 +1477,237 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return new ResultProtocolData(sections);
     }
 
+    public async Task<SplitExportData> GetDaySplitsExportDataAsync(Guid dayId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return new SplitExportData([]);
+
+        var folder = FolderPath;
+        var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        var day = days.FirstOrDefault(d => d.Id == dayId);
+        if (day is null)
+            return new SplitExportData([]);
+
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
+        var controlPoints = await _eventStore.GetControlPointsAsync(folder, dayId, cancellationToken);
+        var readouts = await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
+
+        var byParticipant = participants.ToDictionary(p => p.Id);
+        var teamByParticipant = participants.ToDictionary(p => p.Id, p => p.Team.Trim());
+        var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
+        var settingsByGroup = settings.ToDictionary(s => s.GroupId);
+        var dayDefault = day.DefaultDiscipline;
+
+        // Shared per-day geometry/points/codes used to build every member's splits (mirrors the inputs the
+        // single-readout GetFinishSplitsAsync assembles, but loaded once for the whole day).
+        var inputs = BuildDaySplitInputs(controlPoints);
+
+        // Latest read-out per chip (the "last read-out" rule), so a re-read chip uses its newest punches.
+        var latestByChip = new Dictionary<string, FinishReadout>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in readouts)
+        {
+            var key = r.ChipNumber.Trim();
+            if (key.Length == 0)
+                continue;
+            if (!latestByChip.TryGetValue(key, out var cur) || r.Order > cur.Order)
+                latestByChip[key] = r;
+        }
+
+        // The per-link results (status/time/score/place) — reused from the same pipeline the tables use.
+        var results = await ComputeDayResultsAsync(folder, day, cancellationToken);
+
+        // Rogaine team-common controls, computed once per (group, team): a control counts for the team only
+        // when every member punched it. Members of a team share this set, so cache it by team key.
+        var teamCommonCache = new Dictionary<(Guid GroupId, string Team), IReadOnlySet<string>?>();
+
+        var rowsByGroup = new Dictionary<Guid, List<SplitExportDataRow>>();
+        foreach (var link in links)
+        {
+            if (link.GroupId is not { } gid || !byParticipant.TryGetValue(link.ParticipantId, out var p))
+                continue;
+
+            var chip = link.Chip.Trim();
+            if (chip.Length == 0 || !latestByChip.TryGetValue(chip, out var readout))
+                continue; // no read-out ⇒ nothing to show in a splits export
+
+            GroupDaySettings? gs = settingsByGroup.TryGetValue(gid, out var s) ? s : null;
+            var discipline = gs?.DisciplineOverride ?? dayDefault;
+            var strategy = _strategies.For(discipline);
+
+            IReadOnlySet<string>? teamCommon = null;
+            if (strategy.Type == DisciplineType.Rogaine)
+            {
+                var team = teamByParticipant.TryGetValue(link.ParticipantId, out var t) ? t : string.Empty;
+                var cacheKey = (gid, team);
+                if (!teamCommonCache.TryGetValue(cacheKey, out teamCommon))
+                {
+                    teamCommon = team.Length == 0
+                        ? null
+                        : ComputeTeamCommonControls(
+                            links, gid, team, teamByParticipant, settingsByGroup, latestByChip, inputs.StartFinishCodes);
+                    teamCommonCache[cacheKey] = teamCommon;
+                }
+            }
+
+            var splits = BuildSplitsForLink(inputs, gs, discipline, link, readout, teamCommon);
+            var result = results.TryGetValue(link.Id, out var rr) ? rr : ParticipantDayResult.Empty;
+
+            if (!rowsByGroup.TryGetValue(gid, out var bucket))
+            {
+                bucket = [];
+                rowsByGroup[gid] = bucket;
+            }
+            bucket.Add(new SplitExportDataRow(p.Number, p.FullName, p.Team.Trim(), result, splits));
+        }
+
+        // One section per group that runs on the day, in the day grid order. The layout is the discipline's:
+        // a set course shows the ordered table; rogaine (scored) shows the per-runner passage.
+        var startFinishCodes = inputs.StartFinishCodes;
+        var sections = new List<SplitExportDataGroup>(settings.Count);
+        foreach (var setting in settings.OrderBy(s => s.Order))
+        {
+            if (!groupName.TryGetValue(setting.GroupId, out var name))
+                continue;
+            if (!rowsByGroup.TryGetValue(setting.GroupId, out var rows) || rows.Count == 0)
+                continue; // a group with no read-out members has no splits to export
+
+            var discipline = setting.DisciplineOverride ?? dayDefault;
+            var strategy = _strategies.For(discipline);
+            var isScored = strategy.UsesControlPointPoints;
+            var layout = isScored ? SplitsLayout.Scored : SplitsLayout.Ordered;
+
+            var controls = SplitCodes(setting.CourseOrder)
+                .Where(c => !startFinishCodes.Contains(c))
+                .ToList();
+
+            sections.Add(new SplitExportDataGroup(
+                name, setting.Order, layout, setting.DistanceKm,
+                CountCourseControls(setting.CourseOrder, startFinishCodes), isScored, controls, rows));
+        }
+
+        return new SplitExportData(sections);
+    }
+
+    /// <summary>Per-day geometry/points/codes shared across every member's splits build.</summary>
+    private readonly record struct DaySplitInputs(
+        HashSet<string> StartFinishCodes,
+        Dictionary<string, int> PointsByCode,
+        Dictionary<string, GeoPoint> CoordsByCode,
+        Dictionary<string, MapPoint> MapByCode,
+        int? MapScale,
+        GeoPoint StartCoord,
+        GeoPoint FinishCoord,
+        MapPoint StartMap,
+        MapPoint FinishMap);
+
+    // Assembles the per-day inputs once (the same values GetFinishSplitsAsync builds for a single readout).
+    private static DaySplitInputs BuildDaySplitInputs(IReadOnlyList<ControlPoint> controlPoints)
+    {
+        var startFinishCodes = new HashSet<string>(
+            controlPoints
+                .Where(c => c.Type is ControlPointType.Start or ControlPointType.Finish)
+                .Select(c => c.Code.Trim()),
+            StringComparer.OrdinalIgnoreCase);
+
+        var pointsByCode = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var coordsByCode = new Dictionary<string, GeoPoint>(StringComparer.OrdinalIgnoreCase);
+        var mapByCode = new Dictionary<string, MapPoint>(StringComparer.OrdinalIgnoreCase);
+        foreach (var cp in controlPoints)
+        {
+            var code = cp.Code.Trim();
+            if (cp.Points is { } pts)
+                pointsByCode[code] = pts;
+            coordsByCode[code] = new GeoPoint(cp.Latitude, cp.Longitude);
+            mapByCode[code] = new MapPoint(cp.MapX, cp.MapY);
+        }
+        var mapScale = controlPoints.Select(c => c.MapScale).FirstOrDefault(s => s is > 0);
+
+        var startCp = controlPoints.FirstOrDefault(c => c.Type is ControlPointType.Start);
+        var finishCp = controlPoints.FirstOrDefault(c => c.Type is ControlPointType.Finish);
+
+        return new DaySplitInputs(
+            startFinishCodes, pointsByCode, coordsByCode, mapByCode, mapScale,
+            StartCoord: startCp is null ? default : new GeoPoint(startCp.Latitude, startCp.Longitude),
+            FinishCoord: finishCp is null ? default : new GeoPoint(finishCp.Latitude, finishCp.Longitude),
+            StartMap: startCp is null ? default : new MapPoint(startCp.MapX, startCp.MapY),
+            FinishMap: finishCp is null ? default : new MapPoint(finishCp.MapX, finishCp.MapY));
+    }
+
+    // Builds one member's SplitsView from the pre-loaded day inputs and their group/readout (the same context
+    // GetFinishSplitsAsync assembles for a single readout, factored to run per member without re-querying).
+    private SplitsView BuildSplitsForLink(
+        DaySplitInputs inputs, GroupDaySettings? gs, DisciplineType discipline,
+        ParticipantDay link, FinishReadout readout, IReadOnlySet<string>? teamCommon)
+    {
+        var expected = SplitCodes(gs?.CourseOrder).Where(c => !inputs.StartFinishCodes.Contains(c)).ToList();
+        var punches = DecodePunchTimes(readout.PunchTimes)
+            .Where(p => !inputs.StartFinishCodes.Contains(p.ControlCode.Trim()))
+            .ToList();
+        var start = readout.StartTime ?? CombineWithFinishDate(link.StartTime, readout.FinishTime);
+
+        var context = new SplitsContext
+        {
+            ExpectedControls = expected,
+            Punches = punches,
+            PointsByCode = inputs.PointsByCode,
+            CoordsByCode = inputs.CoordsByCode,
+            MapByCode = inputs.MapByCode,
+            MapScale = inputs.MapScale,
+            StartCoord = inputs.StartCoord,
+            FinishCoord = inputs.FinishCoord,
+            StartMap = inputs.StartMap,
+            FinishMap = inputs.FinishMap,
+            StartTime = start,
+            FinishTime = readout.FinishTime,
+            TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
+            PenaltyPerMinute = gs?.PenaltyPerMinute,
+            TeamCommonControls = teamCommon
+        };
+
+        return _strategies.For(discipline).BuildSplits(context);
+    }
+
+    // The rogaine team's common controls (every member punched them) for one (group, team) on the day —
+    // the synchronous counterpart to TeamCommonControlsAsync, over already-loaded links/readouts.
+    private IReadOnlySet<string>? ComputeTeamCommonControls(
+        IReadOnlyList<ParticipantDay> links, Guid groupId, string teamKey,
+        IReadOnlyDictionary<Guid, string> teamByParticipant,
+        IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup,
+        IReadOnlyDictionary<string, FinishReadout> latestByChip,
+        HashSet<string> startFinishCodes)
+    {
+        var mates = links.Where(l =>
+            l.GroupId == groupId &&
+            string.Equals(TeamKeyFor(l, teamByParticipant), teamKey, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        HashSet<string>? common = null;
+        foreach (var mate in mates)
+        {
+            GroupDaySettings? gs = mate.GroupId is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
+            var allowed = new HashSet<string>(
+                SplitCodes(gs?.CourseOrder).Where(c => !startFinishCodes.Contains(c)),
+                StringComparer.OrdinalIgnoreCase);
+
+            var punched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (latestByChip.TryGetValue(mate.Chip.Trim(), out var readout))
+                foreach (var p in DecodePunchTimes(readout.PunchTimes))
+                {
+                    var code = p.ControlCode.Trim();
+                    if (code.Length > 0 && allowed.Contains(code))
+                        punched.Add(code);
+                }
+
+            if (common is null)
+                common = punched;
+            else
+                common.IntersectWith(punched);
+        }
+        return common;
+    }
+
     // Counts the running controls in a free-form course order ("S1 31 32 33 F"), excluding the day's
     // start/finish codes. Null when the course order is blank (unknown count), so the protocol omits it.
     private static int? CountCourseControls(string courseOrder, HashSet<string> startFinishCodes)

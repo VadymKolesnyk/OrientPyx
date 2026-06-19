@@ -41,6 +41,9 @@ public static class DataAccessServiceCollectionExtensions
         // Renders a results protocol to a Word (.docx) document (Open XML; the builder is in BusinessLogic).
         services.AddSingleton<IResultProtocolWriter, DocxResultProtocolWriter>();
 
+        // Renders a day's splits to a UTF-8 HTML document (the builder is in BusinessLogic).
+        services.AddSingleton<ISplitHtmlWriter, HtmlSplitWriter>();
+
         return services;
     }
 

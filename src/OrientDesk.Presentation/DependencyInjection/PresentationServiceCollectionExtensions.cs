@@ -58,6 +58,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<RanksViewModel>();
         services.AddSingleton<EntryFeesViewModel>();
         services.AddSingleton<ProtocolsViewModel>();
+        services.AddSingleton<SplitsExportViewModel>();
 
         return services.BuildServiceProvider();
     }
