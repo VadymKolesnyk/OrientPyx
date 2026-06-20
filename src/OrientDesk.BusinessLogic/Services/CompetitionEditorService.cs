@@ -1790,9 +1790,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     null, null, noReadOverride ?? FinishStatus.None, noReadOverride, FinishStatus.None,
                     null, null, null, HasReadout: false);
                 // A rogaine member with no read-out makes their team incomplete — record it so the team
-                // earns no place until every member has finished.
+                // earns no place until every IN-COMPETITION member has finished. A поза конкурсом member who
+                // never read out does NOT drop the team (RankRogaineTeams excludes them from the OK check).
                 if (isRogaine)
-                    teamMembers.Add(TeamMember.Incomplete(link.Id, link.GroupId, TeamKeyFor(link, teamByParticipant), link.Bonus));
+                    teamMembers.Add(TeamMember.Incomplete(
+                        link.Id, link.GroupId, TeamKeyFor(link, teamByParticipant), link.OutOfCompetition, link.Bonus));
                 continue;
             }
 
@@ -1889,18 +1891,21 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         IReadOnlySet<string> Punched, TimeSpan? Elapsed, GroupDaySettings? Settings, DisciplineType Discipline,
         int? Bonus)
     {
-        /// <summary>A member with no read-out: present in the team but not finished, so the team is incomplete.</summary>
-        public static TeamMember Incomplete(Guid linkId, Guid? groupId, string teamKey, int? bonus) =>
-            new(linkId, groupId, teamKey, OutOfCompetition: false, Ok: false,
+        /// <summary>A member with no read-out: present in the team but not finished, so the team is incomplete
+        /// (unless they are поза конкурсом, in which case they don't drop the team).</summary>
+        public static TeamMember Incomplete(Guid linkId, Guid? groupId, string teamKey, bool outOfCompetition, int? bonus) =>
+            new(linkId, groupId, teamKey, outOfCompetition, Ok: false,
                 Punched: new HashSet<string>(StringComparer.OrdinalIgnoreCase), Elapsed: null, Settings: null,
                 Discipline: DisciplineType.Rogaine, Bonus: bonus);
     }
 
     // Ranks rogaine members by team and writes the team's net «Бали» and place onto every member.
-    // A control scores for the team only when every member punched it (intersection); the over-time
-    // penalty is computed once from the team's largest member time; the team time (tie-break) is the
-    // last finisher. A member with no team — or whose team has any non-OK / unfinished member — is
-    // поза конкурсом / знята: their team earns no place (rules 1–5).
+    // A control scores for the team only when every IN-COMPETITION member punched it (intersection); the
+    // over-time penalty is computed once from the team's largest member time (all members, поза конкурсом
+    // included); the team time (tie-break) is the last finisher. A member with no team is поза конкурсом
+    // (kept teamless, no place). A «поза конкурсом» member stays in the team and earns the team's Бали/Місце
+    // but does NOT count toward the team score or drop the team if non-OK; only when EVERY member is поза
+    // конкурсом does the whole team go unplaced (rules 1–5).
     private void RankRogaineTeams(
         List<TeamMember> members,
         IReadOnlyDictionary<string, int> pointsByCode,
@@ -1910,9 +1915,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             return;
 
         // Members with no team run поза конкурсом — keep their personal score, no place. (Done by simply
-        // not ranking them; their result already has Place == null.)
+        // not ranking them; their result already has Place == null.) Members WITH a team stay in the team
+        // even when поза конкурсом — they just don't count toward the score (filtered to `scoring` below).
         var teams = members
-            .Where(m => m.TeamKey.Length > 0 && !m.OutOfCompetition)
+            .Where(m => m.TeamKey.Length > 0)
             .GroupBy(m => (m.GroupId, m.TeamKey));
 
         // Each ranked team carries its net score and tie-break time, grouped back by GroupId for placing.
@@ -1922,26 +1928,37 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             var roster = team.ToList();
             var linkIds = roster.Select(m => m.LinkId).ToList();
 
-            // Rule 1/3: a team with any unfinished or non-OK member is not placed (still keeps personal Бали).
-            if (roster.Any(m => !m.Ok))
+            // The members who actually count toward the team result. A «поза конкурсом» runner is on the
+            // team (still shown, still gets the team place) but is excluded from the score/OK checks below.
+            var scoring = roster.Where(m => !m.OutOfCompetition).ToList();
+
+            // When EVERY member is поза конкурсом the whole team runs поза конкурсом — no place.
+            if (scoring.Count == 0)
                 continue;
 
-            // Rule 2: a control scores only when every member punched it — the intersection of their sets.
-            var common = new HashSet<string>(roster[0].Punched, StringComparer.OrdinalIgnoreCase);
-            for (var i = 1; i < roster.Count; i++)
-                common.IntersectWith(roster[i].Punched);
+            // Rule 1/3: a team with any unfinished or non-OK IN-COMPETITION member is not placed (still
+            // keeps personal Бали). A поза конкурсом member's status never drops the team.
+            if (scoring.Any(m => !m.Ok))
+                continue;
+
+            // Rule 2: a control scores only when every in-competition member punched it — the intersection
+            // of their sets. A поза конкурсом member's punches do not count toward the team total.
+            var common = new HashSet<string>(scoring[0].Punched, StringComparer.OrdinalIgnoreCase);
+            for (var i = 1; i < scoring.Count; i++)
+                common.IntersectWith(scoring[i].Punched);
             var gross = common.Sum(code => pointsByCode.TryGetValue(code, out var p) ? p : 0);
 
-            // Rule 2: one over-time penalty per team, measured from the largest member time. Reuse the
+            // Rule 2: one over-time penalty per team, measured from the largest member time — including a
+            // поза конкурсом member (their time still counts toward the team penalty / tie-break). Reuse the
             // strategy's penalty math by feeding it a synthetic read-out whose elapsed = the max time.
             var maxElapsed = roster.Select(m => m.Elapsed).Max();
-            var settings = roster.Select(m => m.Settings).FirstOrDefault(s => s is not null);
-            var afterPenalty = ApplyTeamPenalty(gross, maxElapsed, settings, roster[0].Discipline);
+            var settings = scoring.Select(m => m.Settings).FirstOrDefault(s => s is not null);
+            var afterPenalty = ApplyTeamPenalty(gross, maxElapsed, settings, scoring[0].Discipline);
 
-            // Points correction («бонус»): the smallest bonus ENTERED by a team member (an un-entered member
-            // does not drag it to 0). Null when nobody entered one ⇒ no correction. Added after the penalty.
-            var teamBonus = roster.Select(m => m.Bonus).Where(b => b.HasValue).Select(b => b!.Value).DefaultIfEmpty().Min();
-            var teamBonusOrNull = roster.Any(m => m.Bonus.HasValue) ? teamBonus : (int?)null;
+            // Points correction («бонус»): the smallest bonus ENTERED by an in-competition team member (an
+            // un-entered member does not drag it to 0). Null when nobody entered one ⇒ no correction.
+            var teamBonus = scoring.Select(m => m.Bonus).Where(b => b.HasValue).Select(b => b!.Value).DefaultIfEmpty().Min();
+            var teamBonusOrNull = scoring.Any(m => m.Bonus.HasValue) ? teamBonus : (int?)null;
             var net = afterPenalty + teamBonus;
 
             // Rule 5: tie-break by the last finisher's time (the largest member time).
@@ -2068,6 +2085,88 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return (net, punched);
     }
 
+    public async Task<DrawPrepData> GetDrawPrepDataAsync(Guid dayId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return new DrawPrepData([]);
+
+        var folder = FolderPath;
+        var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
+        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
+        var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
+
+        var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
+        var byParticipant = participants.ToDictionary(p => p.Id);
+        var regionName = regions.ToDictionary(r => r.Id, r => r.Name);
+        var clubName = clubs.ToDictionary(c => c.Id, c => c.Name);
+
+        // Members per group on this day (a link with no group is left out — the draw is per group).
+        var membersByGroup = new Dictionary<Guid, List<DrawParticipant>>();
+        foreach (var link in links)
+        {
+            if (link.GroupId is not { } gid)
+                continue;
+            if (!byParticipant.TryGetValue(link.ParticipantId, out var p))
+                continue;
+
+            var region = p.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
+            var club = p.ClubId is { } cid && clubName.TryGetValue(cid, out var cn) ? cn : string.Empty;
+
+            if (!membersByGroup.TryGetValue(gid, out var list))
+                membersByGroup[gid] = list = [];
+            list.Add(new DrawParticipant(link.Id, p.Id, p.FullName, p.Number, region, club, p.Team));
+        }
+
+        // One DrawGroup per group on the day, in the day grid order, carrying its first control point.
+        var drawGroups = new List<DrawGroup>(settings.Count);
+        foreach (var s in settings)
+        {
+            if (!groupName.TryGetValue(s.GroupId, out var name))
+                continue;
+            var members = membersByGroup.TryGetValue(s.GroupId, out var m) ? m : [];
+            var controls = CourseControlsOf(s.CourseOrder);
+            drawGroups.Add(new DrawGroup(
+                s.GroupId, name, controls.Count > 0 ? controls[0] : string.Empty, controls, members));
+        }
+
+        return new DrawPrepData(drawGroups);
+    }
+
+    /// <summary>
+    /// Parses the ordered control-point codes out of a free-text course order such as "S1 31 32 33 F". Start
+    /// and finish markers (pure-letter tokens like "S"/"Start"/"F"/"Фініш") are dropped; every token that
+    /// carries a digit is kept, in order. Returns an empty list when the order is blank or has no controls.
+    /// The first element is the opening control used to cluster start groups; the whole list is used to detect
+    /// groups that run an identical distance.
+    /// </summary>
+    private static IReadOnlyList<string> CourseControlsOf(string? courseOrder)
+    {
+        if (string.IsNullOrWhiteSpace(courseOrder))
+            return [];
+
+        var tokens = courseOrder.Split(
+            [' ', ',', ';', '\t', '-', '>'],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        // Any token that contains a digit is a real control (skips pure-letter S/Start/F markers); keep order.
+        return tokens.Where(t => t.Any(char.IsDigit)).ToList();
+    }
+
+    public Task<int> SaveDrawStartTimesAsync(
+        IReadOnlyList<DrawStartAssignment> assignments,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(assignments);
+        if (_session.CurrentEvent is null || assignments.Count == 0)
+            return Task.FromResult(0);
+
+        var batch = assignments.Select(a => (a.LinkId, a.StartTime)).ToList();
+        return _eventStore.SetParticipantDayStartTimesBatchAsync(FolderPath, batch, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<FinishReadoutRow>> GetFinishReadoutRowsAsync(CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null || _session.CurrentDay is null)
@@ -2178,6 +2277,13 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var mates = links.Where(l =>
             l.GroupId == link.GroupId &&
             string.Equals(TeamKeyFor(l, teamByParticipant), teamKey, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        // A поза конкурсом member's punches don't count toward the team total, so they don't shape the
+        // common-controls annotation either. Drop them unless the whole team is поза конкурсом (then there
+        // is nothing scoring to intersect, so fall back to all mates so the annotation still has a basis).
+        var scoring = mates.Where(m => !m.OutOfCompetition).ToList();
+        if (scoring.Count > 0)
+            mates = scoring;
 
         var readouts = await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
         var latestByChip = new Dictionary<string, FinishReadout>(StringComparer.OrdinalIgnoreCase);
@@ -2340,6 +2446,12 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var isRental = rentalChips.Any(c =>
             string.Equals(c.Number.Trim(), row.ChipNumber.Trim(), StringComparison.OrdinalIgnoreCase));
 
+        // Manual bonus («Бонус») the judge set on this runner's day record, if any: it corrects the score the
+        // same way the result columns do, so the slip prints the summed total and spells the bonus out.
+        var links = await _eventStore.GetParticipantDaysAsync(FolderPath, CurrentDayId, cancellationToken);
+        var bonus = links.FirstOrDefault(l =>
+            string.Equals(l.Chip.Trim(), row.ChipNumber.Trim(), StringComparison.OrdinalIgnoreCase))?.Bonus;
+
         var status = row.Status switch
         {
             FinishStatus.Ok => "OK",
@@ -2381,6 +2493,15 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             ? BuildCorrectOrderRows(view.Expected)
             : [];
 
+        // The result columns add the manual bonus on top of the discipline's net points; the slip mirrors that
+        // so the printed «Сума балів» matches the protocol. A bonus only applies to a point-scoring view.
+        var isScored = view.HasPoints || view.Layout == SplitsLayout.Scored;
+        var appliedBonus = isScored ? (bonus ?? 0) : 0;
+        var finalPoints = view.TotalPoints + appliedBonus;
+        // A breakdown ("X − Y + B = Z") is spelled out whenever there is a penalty OR a bonus to account for;
+        // with neither, the line is just "Сума балів: Z".
+        var hasBreakdown = isScored && (view.Penalty > 0 || appliedBonus != 0);
+
         return new SplitPrintDocument
         {
             FullName = row.FullName,
@@ -2391,14 +2512,21 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             ResultText = resultElapsed is { } re ? re.ToString("h\\:mm\\:ss") : string.Empty,
             StatusText = status,
             StatusDetail = row.StatusDetail,
-            // Points line for any point-scoring view (rogaine is Ordered+HasPoints, score is Scored). The net
-            // result prints as "Сума балів: Z"; when an over-time penalty applies the renderer instead spells
-            // out "X − Y = Z" from the gross/penalty values below.
-            TotalPointsText = view.HasPoints || view.Layout == SplitsLayout.Scored
-                ? view.TotalPoints.ToString(CultureInfo.InvariantCulture)
+            // Points line for any point-scoring view (rogaine is Ordered+HasPoints, score is Scored). The final
+            // result (net + bonus) prints as "Сума балів: Z"; when a penalty or bonus applies the renderer
+            // instead spells out the breakdown "X − Y + B = Z" from the gross/penalty/bonus values below.
+            TotalPointsText = isScored
+                ? finalPoints.ToString(CultureInfo.InvariantCulture)
                 : string.Empty,
-            GrossPointsText = view.Penalty > 0 ? view.GrossPoints.ToString(CultureInfo.InvariantCulture) : string.Empty,
+            // The breakdown's "X" is the gross collected before the penalty; without a penalty it equals the
+            // net, which is the starting point the bonus is applied to.
+            GrossPointsText = hasBreakdown
+                ? (view.Penalty > 0 ? view.GrossPoints : view.TotalPoints).ToString(CultureInfo.InvariantCulture)
+                : string.Empty,
             PenaltyText = view.Penalty > 0 ? view.Penalty.ToString(CultureInfo.InvariantCulture) : string.Empty,
+            BonusText = appliedBonus != 0
+                ? appliedBonus.ToString("+0;-0", CultureInfo.InvariantCulture)
+                : string.Empty,
             StartClock = startClock,
             FinishClock = finishClock,
             TotalDistanceText = FormatDistanceMetres(totalKm),

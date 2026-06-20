@@ -705,6 +705,38 @@ public sealed class EventStore : IEventStore
         return updated;
     }
 
+    public async Task<int> SetParticipantDayStartTimesBatchAsync(
+        string eventFolderPath,
+        IReadOnlyList<(Guid LinkId, TimeSpan StartTime)> assignments,
+        CancellationToken cancellationToken = default)
+    {
+        if (assignments.Count == 0)
+            return 0;
+
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        // Load the touched links (tracked) by id, set their start time in memory, then one SaveChanges
+        // commits the whole draw in a single transaction.
+        var ids = assignments.Select(a => a.LinkId).Distinct().ToList();
+        var links = await db.ParticipantDays
+            .Where(p => ids.Contains(p.Id))
+            .ToListAsync(cancellationToken);
+        var byId = links.ToDictionary(l => l.Id);
+
+        var updated = 0;
+        foreach (var (linkId, startTime) in assignments)
+        {
+            if (!byId.TryGetValue(linkId, out var link))
+                continue;
+            link.StartTime = startTime;
+            updated++;
+        }
+
+        if (updated > 0)
+            await db.SaveChangesAsync(cancellationToken);
+        return updated;
+    }
+
     public async Task DeleteParticipantDayAsync(string eventFolderPath, Guid linkId, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);

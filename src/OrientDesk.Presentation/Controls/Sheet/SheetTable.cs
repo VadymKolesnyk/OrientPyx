@@ -516,7 +516,7 @@ public sealed class SheetTable : TemplatedControl
     // columns' displayed text. Display-only, like the column filters — it never touches the source
     // collection. Edited via the toolbar search box and refreshed through ApplySortedView.
     private string _globalSearch = string.Empty;
-    private string[] _searchTokens = Array.Empty<string>();
+    private string _searchTerm = string.Empty;
 
     /// <summary>Raised after the active-filter set changes, so a filter-chips bar can refresh.</summary>
     public event EventHandler? FiltersChanged;
@@ -575,8 +575,9 @@ public sealed class SheetTable : TemplatedControl
     }
 
     /// <summary>
-    /// The global "search all columns" term. Setting it (whitespace-trimmed) re-filters the displayed
-    /// rows so each space-separated token must appear in some visible column's text. Empty ⇒ no search.
+    /// The global "search all columns" term. Setting it re-filters the displayed rows so the whole
+    /// (whitespace-trimmed) phrase appears as a substring of some visible column's text — spaces inside
+    /// the term are matched literally, not split into independent tokens. Empty ⇒ no search.
     /// </summary>
     public string GlobalSearch
     {
@@ -587,9 +588,7 @@ public sealed class SheetTable : TemplatedControl
             if (text == _globalSearch)
                 return;
             _globalSearch = text;
-            _searchTokens = text.Length == 0
-                ? Array.Empty<string>()
-                : text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            _searchTerm = text.Trim();
             ApplySortedView();
         }
     }
@@ -706,30 +705,25 @@ public sealed class SheetTable : TemplatedControl
         return PassesGlobalSearch(row);
     }
 
-    // True when every search token appears (case-insensitively) in at least one visible column's text.
-    // A token may match different columns; an empty term passes everything. Hidden columns are excluded
-    // so a search matches what the user can actually see, mirroring the column filters.
+    // True when the whole search phrase appears (case-insensitively) as a substring of at least one
+    // visible column's text. The phrase is matched literally — spaces inside it are part of the term, so
+    // "4 в 1" only matches a cell that actually contains "4 в 1", not any cell that happens to contain a
+    // "4", a "в" and a "1" separately. An empty term passes everything. Hidden columns are excluded so a
+    // search matches what the user can actually see, mirroring the column filters.
     private bool PassesGlobalSearch(object row)
     {
-        if (_searchTokens.Length == 0)
+        if (_searchTerm.Length == 0)
             return true;
 
-        // Concatenate the row's visible-column text once, then test each token against it. The columns
-        // are few (tens at most) and the text is short, so this is cheaper than re-walking per token.
-        var sb = new System.Text.StringBuilder();
         foreach (var band in _visibleBands)
             foreach (var col in band.Columns)
             {
                 if (!col.Filterable)
                     continue;
-                sb.Append(CellText(col, row)).Append('\n');
+                if (CellText(col, row).IndexOf(_searchTerm, StringComparison.CurrentCultureIgnoreCase) >= 0)
+                    return true;
             }
-        var haystack = sb.ToString();
-
-        foreach (var token in _searchTokens)
-            if (haystack.IndexOf(token, StringComparison.CurrentCultureIgnoreCase) < 0)
-                return false;
-        return true;
+        return false;
     }
 
     // Opens the per-column filter editor anchored at the given control (header cell or cell).
@@ -1012,7 +1006,7 @@ public sealed class SheetTable : TemplatedControl
 
         // A global search shapes the body view exactly like a column filter, so it takes the same
         // filtered path (a display copy) rather than the live-source fast path.
-        var hasFilters = _filters.Count > 0 || _searchTokens.Length > 0;
+        var hasFilters = _filters.Count > 0 || _searchTerm.Length > 0;
 
         if (_sortColumn is null || string.IsNullOrEmpty(_sortColumn.SortPath) || ItemsSource is null)
         {
@@ -1245,7 +1239,7 @@ public sealed class SheetTable : TemplatedControl
     // tooltip ("Показано 4 з 344"). Falls back to a plain "shown / total" when no localization is set.
     private (string Text, string Tooltip) CountText(int shown, int total)
     {
-        var filtered = _filters.Count > 0 || _searchTokens.Length > 0;
+        var filtered = _filters.Count > 0 || _searchTerm.Length > 0;
         if (Localization is not { } loc)
             return filtered ? ($"{shown} / {total}", $"{shown} / {total}") : (total.ToString(), total.ToString());
 

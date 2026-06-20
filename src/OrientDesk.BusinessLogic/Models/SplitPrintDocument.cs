@@ -40,18 +40,24 @@ public sealed class SplitPrintDocument
     /// The renderer appends the localized explanation after the status code.</summary>
     public string StatusDetail { get; init; } = string.Empty;
 
-    /// <summary>Total result points scored (rogaine), as plain digits — the net after any over-time penalty;
-    /// blank for a non-scoring discipline. Printed on its own header line ("Сума балів: 12"), mirroring the
-    /// status line. When <see cref="PenaltyText"/> is set the renderer prints the breakdown "X − Y = Z" instead.</summary>
+    /// <summary>Final result points scored (rogaine), as plain digits — the net after any over-time penalty
+    /// <b>and</b> the manual bonus; blank for a non-scoring discipline. Printed on its own header line
+    /// ("Сума балів: 12"), mirroring the status line. When <see cref="PenaltyText"/> or <see cref="BonusText"/>
+    /// is set the renderer prints the breakdown ("X − Y + B = Z") instead.</summary>
     public string TotalPointsText { get; init; } = string.Empty;
 
-    /// <summary>Gross points before the over-time penalty (the "X" in "X − Y = Z"); blank when there is no
-    /// penalty. Printed only alongside <see cref="PenaltyText"/>.</summary>
+    /// <summary>Gross points before the over-time penalty (the "X" in the breakdown); blank when there is no
+    /// penalty and no bonus. Printed only when a breakdown is shown.</summary>
     public string GrossPointsText { get; init; } = string.Empty;
 
-    /// <summary>Over-time penalty deducted (the "Y" in "X − Y = Z"), as plain digits; blank when none. Drives
+    /// <summary>Over-time penalty deducted (the "Y" in the breakdown), as plain digits; blank when none. Drives
     /// both the breakdown on the points line and the "−Y" shown beside the finish row.</summary>
     public string PenaltyText { get; init; } = string.Empty;
+
+    /// <summary>The manual bonus correction applied to the score from the participant's day record (the "+B" /
+    /// "−B" in the breakdown), already signed (e.g. "+2", "-1"); blank when no bonus is set. When present the
+    /// points line spells out the breakdown so the operator sees the bonus is included in the total.</summary>
+    public string BonusText { get; init; } = string.Empty;
 
     /// <summary>Start punch wall-clock time ("HH:mm:ss"), blank when unknown — printed on the СТАРТ/ФІНІШ line.</summary>
     public string StartClock { get; init; } = string.Empty;

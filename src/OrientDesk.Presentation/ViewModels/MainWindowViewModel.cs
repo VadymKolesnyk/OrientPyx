@@ -47,6 +47,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly EntryFeesViewModel _entryFees;
     private readonly ProtocolsViewModel _protocols;
     private readonly SplitsExportViewModel _splitsExport;
+    private readonly DrawViewModel _draw;
 
     public MainWindowViewModel(
         ISessionService session,
@@ -69,6 +70,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         EntryFeesViewModel entryFees,
         ProtocolsViewModel protocols,
         SplitsExportViewModel splitsExport,
+        DrawViewModel draw,
         ILocalizationService localization,
         IUiScaleService uiScale,
         IBusyService busy,
@@ -95,6 +97,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _entryFees = entryFees;
         _protocols = protocols;
         _splitsExport = splitsExport;
+        _draw = draw;
         Localization = localization;
         _uiScale = uiScale;
         _busy = busy;
@@ -264,6 +267,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _shell.SelectedPage = _splitsExport;
     }
 
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenDrawAsync()
+    {
+        await _draw.LoadAsync();
+        _shell.SelectedPage = _draw;
+    }
+
     /// <summary>Called once after construction to restore the last session or show the picker.</summary>
     public async Task InitializeAsync()
     {
@@ -333,6 +343,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenEntryFeesCommand.NotifyCanExecuteChanged();
         OpenProtocolsCommand.NotifyCanExecuteChanged();
         OpenSplitsExportCommand.NotifyCanExecuteChanged();
+        OpenDrawCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsEventSelected));
         OnPropertyChanged(nameof(WindowTitle));
 

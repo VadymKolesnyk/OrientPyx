@@ -219,6 +219,17 @@ public interface IEventStore
         IReadOnlyList<(Guid ParticipantId, Guid DayId, string Chip)> assignments,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Sets the start time on many participant-day links at once, in a single transaction (used by the
+    /// start draw). Each tuple is (link id, start time); a missing link is skipped. One
+    /// <see cref="DbContext.SaveChangesAsync"/> keeps a whole day's draw fast. Returns how many links were
+    /// updated.
+    /// </summary>
+    Task<int> SetParticipantDayStartTimesBatchAsync(
+        string eventFolderPath,
+        IReadOnlyList<(Guid LinkId, TimeSpan StartTime)> assignments,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Removes a participant-day link by id (detaches a participant from a day). Does nothing if it is missing.</summary>
     Task DeleteParticipantDayAsync(string eventFolderPath, Guid linkId, CancellationToken cancellationToken = default);
 

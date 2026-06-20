@@ -388,6 +388,21 @@ public interface ICompetitionEditorService
     Task<SplitExportData> GetDaySplitsExportDataAsync(Guid dayId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gathers the start-draw (жеребкування) preparation data for one day: every group that runs on the
+    /// day with its members and the first control point of its course, plus each member's region, club and
+    /// team (the attributes the draw can keep apart). Members carry their participant-day link id so the
+    /// drawn start time can be written straight back. Empty when no competition is selected.
+    /// </summary>
+    Task<DrawPrepData> GetDrawPrepDataAsync(Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Writes the drawn start times back onto the day's participant-day links in one batch. Each
+    /// assignment is (link id → start time); a missing link is skipped. Returns how many links were
+    /// updated. A no-op (returns 0) when no competition is selected.
+    /// </summary>
+    Task<int> SaveDrawStartTimesAsync(IReadOnlyList<DrawStartAssignment> assignments, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Loads the current day's finish-read log (ordered by sequence), each row resolved against the
     /// day's participants so a known chip carries its holder's number, full name and group. Returns an
     /// empty list when no day is selected.

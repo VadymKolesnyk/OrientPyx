@@ -229,6 +229,13 @@
                           Command="{Binding OpenEntryFeesCommand}" />
             </MenuItem>
 
+            <!-- Start: the start draw (жеребкування) and related start-list operations, while open -->
+            <MenuItem Header="{Binding Localization[Menu.Start]}"
+                      IsVisible="{Binding IsEventSelected}">
+                <MenuItem Header="{Binding Localization[Menu.Start.Draw]}"
+                          Command="{Binding OpenDrawCommand}" />
+            </MenuItem>
+
             <!-- Protocols: result protocols + (later) other printed outputs, while a competition is open -->
             <MenuItem Header="{Binding Localization[Menu.Protocols]}"
                       IsVisible="{Binding IsEventSelected}">

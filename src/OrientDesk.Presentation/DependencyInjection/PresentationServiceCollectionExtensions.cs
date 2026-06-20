@@ -59,6 +59,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<EntryFeesViewModel>();
         services.AddSingleton<ProtocolsViewModel>();
         services.AddSingleton<SplitsExportViewModel>();
+        services.AddSingleton<DrawViewModel>();
 
         return services.BuildServiceProvider();
     }

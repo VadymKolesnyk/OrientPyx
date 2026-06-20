@@ -254,12 +254,26 @@ internal sealed class ReceiptRenderer
         }
 
         // Total points (rogaine) on its own line, mirroring the status line: "Сума балів: 12". When an
-        // over-time penalty applies, spell out the breakdown "Сума балів: X - Y = Z" (gross − penalty = net).
+        // over-time penalty and/or a manual bonus applies, spell out the breakdown so the operator sees what
+        // makes up the total: "Сума балів: X - Y + B = Z" (gross − penalty + bonus = final). Each of the
+        // penalty/bonus terms appears only when present; with neither, just the final total is shown.
         if (_doc.TotalPointsText.Length > 0)
         {
-            var points = _doc.PenaltyText.Length > 0
-                ? $"{_doc.GrossPointsText} - {_doc.PenaltyText} = {_doc.TotalPointsText}"
-                : _doc.TotalPointsText;
+            string points;
+            if (_doc.PenaltyText.Length > 0 || _doc.BonusText.Length > 0)
+            {
+                points = _doc.GrossPointsText;
+                if (_doc.PenaltyText.Length > 0)
+                    points += $" - {_doc.PenaltyText}";
+                if (_doc.BonusText.Length > 0)
+                    // BonusText is already signed ("+2" / "-1"); show it as a "+ 2" / "- 1" term.
+                    points += $" {_doc.BonusText[0]} {_doc.BonusText[1..]}";
+                points += $" = {_doc.TotalPointsText}";
+            }
+            else
+            {
+                points = _doc.TotalPointsText;
+            }
             y = DrawCentred(g, $"{_labels.TotalPointsLabel}: {points}", font, centreX, y);
         }
 

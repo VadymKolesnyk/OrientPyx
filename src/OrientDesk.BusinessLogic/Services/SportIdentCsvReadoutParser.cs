@@ -49,13 +49,16 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
     private const string RecordCountColumn = "No. of records";
 
     // Fixed field positions (0-based) for the HEADERLESS positional layout. These mirror the SI-Config
-    // CSV export: <no>;<read on>;<SIID>;... with the start/finish station triplets and "No. of records"
-    // at fixed offsets, followed by the variable tail of "<code>;<DOW>;<time>" course-punch triplets.
-    private const int PositionalChipIndex = 2;        // SIID
-    private const int PositionalReadOnIndex = 1;       // "Read on" date+time
-    private const int PositionalStartTimeIndex = 6;    // start station triplet's time field
-    private const int PositionalFinishTimeIndex = 21;  // finish station triplet's time field
-    private const int PositionalRecordCountIndex = 44; // "No. of records"; punch triplets follow it
+    // CSV export: <no>;<read on>;<SIID>;... with the Clear / Check / Start / Finish station triplets
+    // ("<code>;<DOW>;<time>") and "No. of records" at fixed offsets, followed by the variable tail of
+    // "<code>;<DOW>;<time>" course-punch triplets.
+    private const int PositionalChipIndex = 2;          // SIID
+    private const int PositionalReadOnIndex = 1;         // "Read on" date+time
+    private const int PositionalClearCodeIndex = 4;      // Clear station triplet's code field
+    private const int PositionalStartCodeIndex = 10;     // Start station triplet's code field
+    private const int PositionalStartTimeIndex = 12;     // Start station triplet's time field
+    private const int PositionalFinishTimeIndex = 21;    // Finish station triplet's time field
+    private const int PositionalRecordCountIndex = 44;   // "No. of records"; punch triplets follow it
 
     public bool CanParse(string content)
     {
@@ -94,6 +97,10 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
                 Chip: IndexOf(header, ChipColumn),
                 ReadOn: IndexOf(header, ReadOnColumn),
                 Start: IndexOf(header, StartTimeColumn),
+                // In header mode the named "Start time" column already isolates the start station, so
+                // there is no clear-vs-start ambiguity to guard against.
+                ClearCode: -1,
+                StartCode: -1,
                 Finish: IndexOf(header, FinishTimeColumn),
                 // The punch triplets begin in the column immediately after "No. of records".
                 FirstPunch: NextOrNone(IndexOf(header, RecordCountColumn)))
@@ -101,6 +108,8 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
                 Chip: PositionalChipIndex,
                 ReadOn: PositionalReadOnIndex,
                 Start: PositionalStartTimeIndex,
+                ClearCode: PositionalClearCodeIndex,
+                StartCode: PositionalStartCodeIndex,
                 Finish: PositionalFinishTimeIndex,
                 FirstPunch: PositionalRecordCountIndex + 1);
 
@@ -126,7 +135,7 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
             records.Add(new ChipReadRecord
             {
                 ChipNumber = chip,
-                StartTime = CombineDateAndTime(readOn, Field(fields, layout.Start)),
+                StartTime = ReadStartTime(fields, layout, readOn),
                 FinishTime = CombineDateAndTime(readOn, Field(fields, layout.Finish)),
                 Punches = ReadPunches(fields, layout.FirstPunch, readOn)
             });
@@ -136,10 +145,32 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
     }
 
     // The resolved column positions for a file, whichever mode it is in. -1 means "absent".
-    private readonly record struct ColumnLayout(int Chip, int ReadOn, int Start, int Finish, int FirstPunch);
+    // ClearCode/StartCode are the station-box code fields used to tell a genuine start punch from a
+    // device that merely copied the clear-box punch into the start slot (positional mode only).
+    private readonly record struct ColumnLayout(
+        int Chip, int ReadOn, int Start, int ClearCode, int StartCode, int Finish, int FirstPunch);
 
     // The column after a found one, or -1 when the source column was absent.
     private static int NextOrNone(int index) => index >= 0 ? index + 1 : -1;
+
+    // The start time, but only when the chip carries a genuine start punch. Some SI readers fill the
+    // start station slot with a copy of the clear-box punch when no real start station was used; in that
+    // case the start triplet's station code equals the clear triplet's code, and we report no start
+    // (null) so the existing value is never overwritten with a clear time.
+    private static DateTimeOffset? ReadStartTime(IReadOnlyList<string> fields, ColumnLayout layout, DateTimeOffset? readOn)
+    {
+        if (layout.StartCode >= 0 && layout.ClearCode >= 0)
+        {
+            var startCode = Field(fields, layout.StartCode).Trim();
+            var clearCode = Field(fields, layout.ClearCode).Trim();
+            // No start code at all, or merely the clear punch copied over → no genuine start.
+            if (startCode.Length == 0 ||
+                string.Equals(startCode, clearCode, StringComparison.OrdinalIgnoreCase))
+                return null;
+        }
+
+        return CombineDateAndTime(readOn, Field(fields, layout.Start));
+    }
 
     // --- Punches -------------------------------------------------------------
 
