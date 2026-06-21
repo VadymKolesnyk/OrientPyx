@@ -57,3 +57,12 @@ public sealed record DrawParticipant(
 
 /// <summary>One assigned start time, to be written back onto a participant-day link.</summary>
 public readonly record struct DrawStartAssignment(Guid LinkId, TimeSpan StartTime);
+
+/// <summary>
+/// A single group for the classic draw, where every group is drawn independently with its own start time
+/// and interval (unlike the lane-based <see cref="DrawGroup"/>, which shares one global start/interval).
+/// </summary>
+/// <param name="Group">The group with its members.</param>
+/// <param name="Start">Start time of the group's first competitor.</param>
+/// <param name="Interval">Gap between consecutive competitors within the group.</param>
+public sealed record ClassicDrawGroup(DrawGroup Group, TimeSpan Start, TimeSpan Interval);

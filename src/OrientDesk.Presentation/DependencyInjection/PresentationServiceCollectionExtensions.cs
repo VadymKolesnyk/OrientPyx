@@ -60,6 +60,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<ProtocolsViewModel>();
         services.AddSingleton<SplitsExportViewModel>();
         services.AddSingleton<DrawViewModel>();
+        services.AddSingleton<ClassicDrawViewModel>();
 
         return services.BuildServiceProvider();
     }

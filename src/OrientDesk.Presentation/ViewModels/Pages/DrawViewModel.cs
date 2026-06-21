@@ -6,6 +6,7 @@ using OrientDesk.BusinessLogic.Interfaces;
 using OrientDesk.BusinessLogic.Models;
 using OrientDesk.Localization;
 using OrientDesk.Presentation.Services;
+using OrientDesk.Presentation.ViewModels.Dialogs;
 
 namespace OrientDesk.Presentation.ViewModels.Pages;
 
@@ -26,6 +27,7 @@ public sealed partial class DrawViewModel : PageViewModelBase
     private readonly ISessionService _session;
     private readonly IStartDrawService _draw;
     private readonly IBusyService _busy;
+    private readonly IDialogService _dialogs;
 
     // Guards SelectedDay sync during LoadAsync so the setter doesn't trigger a reload mid-load.
     private bool _syncingDay;
@@ -38,13 +40,15 @@ public sealed partial class DrawViewModel : PageViewModelBase
         ICompetitionEditorService editor,
         ISessionService session,
         IStartDrawService draw,
-        IBusyService busy)
+        IBusyService busy,
+        IDialogService dialogs)
         : base(localization)
     {
         _editor = editor;
         _session = session;
         _draw = draw;
         _busy = busy;
+        _dialogs = dialogs;
 
         SeparationOptions =
         [
@@ -53,7 +57,8 @@ public sealed partial class DrawViewModel : PageViewModelBase
             new DrawSeparationOption(DrawSeparationField.Club, localization),
             new DrawSeparationOption(DrawSeparationField.Team, localization),
         ];
-        _selectedSeparation = SeparationOptions[0];
+        // Default the "keep off consecutive slots" separation to Club — the most common requirement.
+        _selectedSeparation = SeparationOptions.First(o => o.Value == DrawSeparationField.Club);
 
         // Singleton VM: reload the day list + groups on a competition/day change (marshal to UI).
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
@@ -202,12 +207,15 @@ public sealed partial class DrawViewModel : PageViewModelBase
                 {
                     item.ProportionalHeight = double.NaN;
                     item.Compact = false;
+                    item.ShowTooltip = false;
                     continue;
                 }
 
                 var footprint = Math.Max(MinProportionalHeight, item.MemberCount * PixelsPerMember);
                 item.ProportionalHeight = footprint - ChipGap;
                 item.Compact = footprint < TwoRowMinHeight;
+                // Small groups clip in proportional mode — give them a hover tooltip with the full info.
+                item.ShowTooltip = item.MemberCount < 4;
             }
         }
     }
@@ -505,9 +513,13 @@ public sealed partial class DrawViewModel : PageViewModelBase
         }
     }
 
-    /// <summary>Runs the draw and fills the result table (does not save — that's a separate step).</summary>
+    /// <summary>
+    /// Runs the draw and writes the resulting start times straight onto the day's participants
+    /// (ParticipantDay.StartTime) — there is no separate "save" step. Asks for confirmation first, since this
+    /// overwrites every participant's start time on the day.
+    /// </summary>
     [RelayCommand]
-    private void RunDraw()
+    private async Task RunDrawAsync()
     {
         StatusMessage = string.Empty;
 
@@ -522,6 +534,35 @@ public sealed partial class DrawViewModel : PageViewModelBase
             return;
         }
 
+        var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+            Localization,
+            titleKey: "Draw.Run.ConfirmTitle",
+            messageKey: "Draw.Run.ConfirmMessage",
+            confirmKey: "Draw.Run.Confirm",
+            cancelKey: "Common.Cancel"));
+        if (!confirmed)
+            return;
+
+        BuildResults(start, interval);
+
+        if (Results.Count == 0)
+        {
+            StatusMessage = Localization.Get("Draw.Error.NoDraw");
+            return;
+        }
+
+        var assignments = Results
+            .Select(r => new DrawStartAssignment(r.LinkId, r.StartTime))
+            .ToList();
+
+        var saved = await _busy.RunAsync(() => _editor.SaveDrawStartTimesAsync(assignments));
+        StatusMessage = string.Format(Localization.Get("Draw.Saved"), saved);
+    }
+
+    // Runs the draw for the current arrangement and fills the result table (ordered by start time). Pure
+    // computation — does not persist anything.
+    private void BuildResults(TimeSpan start, TimeSpan interval)
+    {
         var separation = SelectedSeparation.Value;
         var startGroups = StartGroups
             .Select(c => (IReadOnlyList<DrawGroup>)c.Groups.Select(g => g.Group).ToList())
@@ -561,24 +602,6 @@ public sealed partial class DrawViewModel : PageViewModelBase
         DrawSeparationField.Team => p.Team,
         _ => string.Empty,
     };
-
-    /// <summary>Writes the drawn start times back onto the day's participants.</summary>
-    [RelayCommand]
-    private async Task SaveAsync()
-    {
-        if (Results.Count == 0)
-        {
-            StatusMessage = Localization.Get("Draw.Error.NoDraw");
-            return;
-        }
-
-        var assignments = Results
-            .Select(r => new DrawStartAssignment(r.LinkId, r.StartTime))
-            .ToList();
-
-        var saved = await _busy.RunAsync(() => _editor.SaveDrawStartTimesAsync(assignments));
-        StatusMessage = string.Format(Localization.Get("Draw.Saved"), saved);
-    }
 
     private int IndexOfColumnContaining(DrawGroupItemViewModel item)
     {

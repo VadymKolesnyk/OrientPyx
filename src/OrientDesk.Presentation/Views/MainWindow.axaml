@@ -234,6 +234,8 @@
                       IsVisible="{Binding IsEventSelected}">
                 <MenuItem Header="{Binding Localization[Menu.Start.Draw]}"
                           Command="{Binding OpenDrawCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Start.ClassicDraw]}"
+                          Command="{Binding OpenClassicDrawCommand}" />
             </MenuItem>
 
             <!-- Protocols: result protocols + (later) other printed outputs, while a competition is open -->

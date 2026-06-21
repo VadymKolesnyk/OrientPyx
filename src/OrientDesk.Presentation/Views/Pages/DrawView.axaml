@@ -263,9 +263,6 @@
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <Button Classes="accent" Content="{Binding Localization[Draw.Run]}"
                             Command="{Binding RunDrawCommand}" />
-                    <Button Classes="accent" Content="{Binding Localization[Draw.Save]}"
-                            Command="{Binding SaveCommand}"
-                            IsEnabled="{Binding HasResults}" />
                     <TextBlock Text="{Binding StatusMessage}" Classes="subtitle"
                                VerticalAlignment="Center" />
                 </StackPanel>

@@ -41,6 +41,32 @@ public sealed class StartDrawService : IStartDrawService
         return result;
     }
 
+    public IReadOnlyList<DrawStartAssignment> DrawClassic(
+        IReadOnlyList<ClassicDrawGroup> groups,
+        DrawSeparationField separation,
+        int? seed = null)
+    {
+        ArgumentNullException.ThrowIfNull(groups);
+
+        var random = seed is { } s ? new Random(s) : new Random();
+        var result = new List<DrawStartAssignment>();
+
+        // Each group is independent: drawn from its own start with its own interval.
+        foreach (var g in groups)
+        {
+            var ordered = DrawGroupOrder(g.Group.Members, separation, random);
+            var slot = 0;
+            foreach (var member in ordered)
+            {
+                var startTime = g.Start + TimeSpan.FromTicks(g.Interval.Ticks * slot);
+                result.Add(new DrawStartAssignment(member.LinkId, startTime));
+                slot++;
+            }
+        }
+
+        return result;
+    }
+
     /// <summary>
     /// Draws the running order for one group: a random shuffle, then (when a separation field is set) a
     /// reordering pass that avoids two consecutive competitors sharing the attribute where possible.

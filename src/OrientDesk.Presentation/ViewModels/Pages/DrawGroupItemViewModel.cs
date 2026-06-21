@@ -51,9 +51,14 @@ public sealed partial class DrawGroupItemViewModel : ObservableObject
 
     /// <summary>
     /// True for small groups (fewer than 4 members) whose chip is tight and may clip its text — the View
-    /// attaches a hover tooltip showing the full info (<see cref="TooltipText"/>).
+    /// attaches a hover tooltip showing the full info (<see cref="TooltipText"/>). Only set in proportional
+    /// mode (the page clears it otherwise), since normal content-sized chips never clip. Re-raises
+    /// <see cref="TooltipText"/> so the tooltip attaches/detaches when the mode toggles.
     /// </summary>
-    public bool ShowTooltip => MemberCount < 4;
+    [ObservableProperty]
+    private bool _showTooltip;
+
+    partial void OnShowTooltipChanged(bool value) => OnPropertyChanged(nameof(TooltipText));
 
     /// <summary>
     /// Full chip info as a single line for the hover tooltip — name, first control, member count and start

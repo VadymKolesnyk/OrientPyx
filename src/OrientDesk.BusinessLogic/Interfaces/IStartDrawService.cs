@@ -39,4 +39,18 @@ public interface IStartDrawService
         TimeSpan interval,
         DrawSeparationField separation,
         int? seed = null);
+
+    /// <summary>
+    /// Classic per-group draw: each group is drawn independently with its OWN start time and interval. Within
+    /// a group the members are shuffled (then separated by <paramref name="separation"/> exactly as in
+    /// <see cref="Draw"/>) and laid out from the group's start with its interval. Groups do not affect one
+    /// another's timing — the caller is responsible for choosing starts/intervals that don't overlap.
+    /// </summary>
+    /// <param name="groups">The groups to draw, each with its own start time and interval.</param>
+    /// <param name="separation">Which attribute to keep off consecutive slots within a group (or none).</param>
+    /// <param name="seed">Optional fixed seed for a reproducible draw; null uses a random seed.</param>
+    IReadOnlyList<DrawStartAssignment> DrawClassic(
+        IReadOnlyList<ClassicDrawGroup> groups,
+        DrawSeparationField separation,
+        int? seed = null);
 }
