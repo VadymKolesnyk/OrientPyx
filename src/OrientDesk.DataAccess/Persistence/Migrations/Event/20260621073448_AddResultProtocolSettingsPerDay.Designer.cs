@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using OrientDesk.DataAccess.Persistence;
 
@@ -10,9 +11,11 @@ using OrientDesk.DataAccess.Persistence;
 namespace OrientDesk.DataAccess.Persistence.Migrations.Event
 {
     [DbContext(typeof(EventDbContext))]
-    partial class EventDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260621073448_AddResultProtocolSettingsPerDay")]
+    partial class AddResultProtocolSettingsPerDay
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.8");
@@ -543,31 +546,6 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                         .IsUnique();
 
                     b.ToTable("ResultProtocolSettings");
-                });
-
-            modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.StartProtocolSettingsRow", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("EventDayId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Json")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("EventDayId", "Kind")
-                        .IsUnique();
-
-                    b.ToTable("StartProtocolSettings");
                 });
 #pragma warning restore 612, 618
         }

@@ -12,73 +12,67 @@ using OrientDesk.Presentation.Services;
 namespace OrientDesk.Presentation.ViewModels.Pages;
 
 /// <summary>
-/// «Протоколи результатів»: configures and exports a results protocol to a Word (.docx) document. The
-/// template (page orientation, the ordered/visible column set, the header text) is stored <b>per competition
-/// day</b> in the event database via <see cref="ICompetitionEditorService"/>; a day with no saved template
-/// is seeded from the application-level default (the Settings page layout, via <see cref="IAppSettingsService"/>)
-/// so a fresh day starts from the configured template and is saved per day thereafter. The header text fields
-/// fall back to the current competition's metadata when left blank.
+/// «Стартові протоколи»: configures and exports a start protocol to a Word (.docx) document. Two kinds share
+/// this VM (set via <see cref="Kind"/> on open): the <b>regular</b> start protocol — one section per group,
+/// members ordered by start time within the group — and the <b>judges'</b> protocol — one section per start
+/// minute, members of that minute (across all groups) under it. The template (orientation, ordered/visible
+/// columns, header text) is stored <b>per competition day and per kind</b> in the event database via
+/// <see cref="ICompetitionEditorService"/>; a (day, kind) with no saved template is seeded from the kind's
+/// built-in default. Header fields fall back to the competition metadata when blank.
 ///
-/// The page shows a live <see cref="ProtocolPreviewViewModel"/> — the actual document mock-up (header + one
-/// group section as a real table, filled with real participants of the selected day) built from the same
-/// <see cref="IResultProtocolBuilder"/> the export uses. Reordering a column (drag its header) or toggling its
-/// visibility rebuilds the preview immediately. Generating builds the document for the selected day and hands
-/// the .docx bytes to the View, which runs the save dialog. Choosing a day here never changes the active
-/// session day (a protocol is read-only over a day's results).
+/// The page shows the same live <see cref="ProtocolPreviewViewModel"/> the results protocol uses — the actual
+/// document mock-up (header + one section as a real table, filled with the day's real participants) built
+/// from the same <see cref="IStartProtocolBuilder"/> the export uses, so the preview matches the .docx.
+/// Reordering a column (drag its header) or toggling visibility rebuilds the preview immediately. Choosing a
+/// day here never changes the active session day.
 /// </summary>
-public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPreviewHost
+public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtocolPreviewHost
 {
     private readonly ICompetitionEditorService _editor;
     private readonly ISessionService _session;
-    private readonly IAppSettingsService _appSettings;
-    private readonly IResultProtocolBuilder _builder;
+    private readonly IStartProtocolBuilder _builder;
     private readonly IResultProtocolWriter _writer;
     private readonly IBusyService _busy;
 
     /// <summary>How many participant rows the preview shows (a mock-up, not the full protocol).</summary>
-    private const int PreviewRowCap = 8;
+    private const int PreviewRowCap = 10;
 
-    // Guards SelectedDay sync during LoadAsync so the setter doesn't fight the load.
     private bool _syncingDay;
-
-    // Suppresses per-field preview refreshes while a template is being applied (the preview is rebuilt once
-    // at the end of the load instead of on every header/column assignment).
     private bool _applyingSettings;
+    private StartProtocolData? _previewData;
+    private CompetitionInfo? _competitionInfo;
 
-    // The protocol data for the selected day, cached so a column reorder/hide can re-render the preview
-    // without a DB round-trip. Refreshed on a day change. Null until first loaded.
-    private ResultProtocolData? _previewData;
-
-    public ProtocolsViewModel(
+    public StartProtocolsViewModel(
         ILocalizationService localization,
         ICompetitionEditorService editor,
         ISessionService session,
-        IAppSettingsService appSettings,
-        IResultProtocolBuilder builder,
+        IStartProtocolBuilder builder,
         IResultProtocolWriter writer,
         IBusyService busy)
         : base(localization)
     {
         _editor = editor;
         _session = session;
-        _appSettings = appSettings;
         _builder = builder;
         _writer = writer;
         _busy = busy;
 
-        // Singleton VM: reload the day list + header defaults on a competition/day change (marshal to UI).
+        // Singleton VM: reload the day list + template on a competition/day change (marshal to UI).
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
     }
 
-    /// <summary>The live document preview shown on the page. Rebuilt by <see cref="RefreshPreview"/>.</summary>
+    /// <summary>Which start protocol this page is currently configuring. Set by the open command before LoadAsync.</summary>
+    public StartProtocolKind Kind { get; set; } = StartProtocolKind.Regular;
+
     public ProtocolPreviewViewModel Preview { get; } = new();
 
-    public override string NavKey => "Nav.Protocols";
-    public override string TitleKey => "Page.Protocols.Title";
-    public override string TextKey => "Page.Protocols.Text";
+    // The nav/title keys switch with the kind so the shell tab + heading read correctly for each protocol.
+    public override string NavKey => Kind == StartProtocolKind.Judges ? "Nav.StartProtocolJudges" : "Nav.StartProtocol";
+    public override string TitleKey => Kind == StartProtocolKind.Judges ? "Page.StartProtocolJudges.Title" : "Page.StartProtocol.Title";
+    public override string TextKey => Kind == StartProtocolKind.Judges ? "Page.StartProtocolJudges.Text" : "Page.StartProtocol.Text";
 
     public override string IconData =>
-        "M6,2 h8 l4,4 v14 a1,1 0 0 1 -1,1 h-11 a1,1 0 0 1 -1,-1 v-17 a1,1 0 0 1 1,-1 z M14,2 v4 h4 M8,12 h8 M8,16 h8 M8,8 h3";
+        "M12,2 a10,10 0 1 0 0.001,0 z M12,7 v5 l4,2 M12,2 v3 M22,12 h-3 M12,22 v-3 M2,12 h3";
 
     // ── Day picker (does NOT touch the session) ──────────────────────────────────────────────────────
 
@@ -91,8 +85,7 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
 
     // ── Settings ─────────────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>The configurable columns, in on-page order. Reordered with up/down; toggled visible.</summary>
-    public ObservableCollection<ProtocolColumnItemViewModel> Columns { get; } = [];
+    public ObservableCollection<StartProtocolColumnItemViewModel> Columns { get; } = [];
 
     [ObservableProperty]
     private bool _isLandscape;
@@ -112,36 +105,39 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
     [ObservableProperty]
     private string _dateText = string.Empty;
 
-    /// <summary>Confirmation flash after Save (the green "saved" hint), like the Settings page.</summary>
     [ObservableProperty]
     private bool _settingsSaved;
 
-    // The current competition's metadata, used to seed blank header fields on each day load.
-    private CompetitionInfo? _competitionInfo;
-
-    /// <summary>The localized caption for a column, used to build the list items and the builder labels.</summary>
-    private static string CaptionKey(ProtocolColumn column) => column switch
+    // The localized caption for a start-protocol column.
+    private static string CaptionKey(StartProtocolColumn column) => column switch
     {
-        ProtocolColumn.Sequence => "Protocols.Col.Sequence",
-        ProtocolColumn.Number => "Protocols.Col.Number",
-        ProtocolColumn.FullName => "Protocols.Col.FullName",
-        ProtocolColumn.BirthDate => "Protocols.Col.BirthDate",
-        ProtocolColumn.Club => "Protocols.Col.Club",
-        ProtocolColumn.Region => "Protocols.Col.Region",
-        ProtocolColumn.Dussh => "Protocols.Col.Dussh",
-        ProtocolColumn.Coach => "Protocols.Col.Coach",
-        ProtocolColumn.Rank => "Protocols.Col.Rank",
-        ProtocolColumn.Result => "Protocols.Col.Result",
-        ProtocolColumn.Place => "Protocols.Col.Place",
-        ProtocolColumn.Score => "Protocols.Col.Score",
-        _ => "Protocols.Col.FullName"
+        StartProtocolColumn.StartTime => "StartProtocols.Col.StartTime",
+        StartProtocolColumn.Sequence => "StartProtocols.Col.Sequence",
+        StartProtocolColumn.Number => "StartProtocols.Col.Number",
+        StartProtocolColumn.FullName => "StartProtocols.Col.FullName",
+        StartProtocolColumn.BirthDate => "StartProtocols.Col.BirthDate",
+        StartProtocolColumn.Club => "StartProtocols.Col.Club",
+        StartProtocolColumn.Region => "StartProtocols.Col.Region",
+        StartProtocolColumn.Dussh => "StartProtocols.Col.Dussh",
+        StartProtocolColumn.Coach => "StartProtocols.Col.Coach",
+        StartProtocolColumn.Rank => "StartProtocols.Col.Rank",
+        StartProtocolColumn.Chip => "StartProtocols.Col.Chip",
+        StartProtocolColumn.Group => "StartProtocols.Col.Group",
+        _ => "StartProtocols.Col.FullName"
     };
+
+    /// <summary>Re-raises the nav/title/text keys after the kind is switched (the shell binds to them).</summary>
+    public void RaiseKindLabels()
+    {
+        OnPropertyChanged(nameof(NavKey));
+        OnPropertyChanged(nameof(TitleKey));
+        OnPropertyChanged(nameof(TextKey));
+        OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(Text));
+    }
 
     public async Task LoadAsync()
     {
-        // Load the day list + competition info first (no day chosen yet), then load the chosen day's
-        // template. All DB reads happen off the UI thread (SQLite has no real async I/O); UI state is
-        // written only after the await.
         var (days, info) = await _busy.RunAsync(async () =>
         {
             var d = await _editor.GetDaysAsync();
@@ -169,9 +165,8 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         await LoadDayTemplateAsync();
     }
 
-    // Loads the selected day's template (seeding from the app-level default when the day has none), seeds
-    // the header defaults, fetches the day's protocol data, and renders the preview. Called on first load
-    // and on every day change, so each day shows its own saved layout.
+    // Loads the selected day's template for the current kind (seeding from the kind default when none),
+    // seeds header defaults, fetches the day's start data, and renders the preview.
     private async Task LoadDayTemplateAsync()
     {
         if (SelectedDay?.Day is not { } day)
@@ -181,19 +176,19 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
             return;
         }
 
+        var kind = Kind;
         var (settings, data) = await _busy.RunAsync(async () =>
         {
-            // The day's saved template, or the app-level default when the day has none yet.
-            var s = await _editor.GetResultProtocolSettingsAsync(day.Id)
-                    ?? await _appSettings.GetResultProtocolSettingsAsync();
-            var d = await _editor.GetResultProtocolDataAsync(day.Id);
+            var s = await _editor.GetStartProtocolSettingsAsync(day.Id, kind)
+                    ?? StartProtocolSettings.Default(kind);
+            var d = await _editor.GetStartProtocolDataAsync(day.Id);
             return (s, d);
         });
 
         _previewData = data;
         ApplySettings(settings);
 
-        _applyingSettings = true; // the seed mutates header fields; refresh once at the end, not per field
+        _applyingSettings = true;
         try
         {
             SeedHeaderDefaults(_competitionInfo);
@@ -206,9 +201,9 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         RefreshPreview();
     }
 
-    private void ApplySettings(ResultProtocolSettings settings)
+    private void ApplySettings(StartProtocolSettings settings)
     {
-        _applyingSettings = true; // suppress per-field preview refreshes; RefreshPreview runs once after the load
+        _applyingSettings = true;
         try
         {
             IsLandscape = settings.Orientation == ProtocolOrientation.Landscape;
@@ -226,11 +221,10 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         Columns.Clear();
         foreach (var c in settings.Columns)
         {
-            var item = new ProtocolColumnItemViewModel(c.Column, CaptionKey(c.Column), c.Visible, Localization);
-            // Toggling a column's visibility re-renders the preview live (and clears the saved flash).
+            var item = new StartProtocolColumnItemViewModel(c.Column, CaptionKey(c.Column), c.Visible, Localization);
             item.PropertyChanged += (_, e) =>
             {
-                if (e.PropertyName == nameof(ProtocolColumnItemViewModel.Visible))
+                if (e.PropertyName == nameof(StartProtocolColumnItemViewModel.Visible))
                 {
                     SettingsSaved = false;
                     RefreshPreview();
@@ -240,8 +234,6 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         }
     }
 
-    // Fills blank header fields with the competition's own values (and the selected day's date) so the
-    // generated protocol always has a header. Only fills what the user hasn't already typed/saved.
     private void SeedHeaderDefaults(CompetitionInfo? info)
     {
         if (string.IsNullOrWhiteSpace(Subtitle) && !string.IsNullOrWhiteSpace(info?.Organisation))
@@ -254,16 +246,13 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
 
     partial void OnSelectedDayChanged(DayOption? value)
     {
-        // A day change here only repoints the protocol target; it must NOT switch the session day. Load the
-        // newly chosen day's own template + preview data (each day has its own saved layout).
         if (_syncingDay)
             return;
         _ = LoadDayTemplateAsync();
     }
 
-    // Moving a column reorders the persisted on-page order; saved on the next Save. Re-renders the preview.
     [RelayCommand]
-    private void MoveColumnUp(ProtocolColumnItemViewModel? item)
+    private void MoveColumnUp(StartProtocolColumnItemViewModel? item)
     {
         if (item is null)
             return;
@@ -277,7 +266,7 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
     }
 
     [RelayCommand]
-    private void MoveColumnDown(ProtocolColumnItemViewModel? item)
+    private void MoveColumnDown(StartProtocolColumnItemViewModel? item)
     {
         if (item is null)
             return;
@@ -290,13 +279,9 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         }
     }
 
-    /// <summary>
-    /// Moves a column to a new index in the on-page order. Used by the preview's header drag-reorder, which
-    /// passes the dragged column's key (its enum name) and the drop index. Re-renders the preview.
-    /// </summary>
     public void MoveColumnByKey(string key, int targetIndex)
     {
-        if (!Enum.TryParse<ProtocolColumn>(key, out var column))
+        if (!Enum.TryParse<StartProtocolColumn>(key, out var column))
             return;
         var item = Columns.FirstOrDefault(c => c.Column == column);
         if (item is null)
@@ -304,7 +289,6 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         var from = Columns.IndexOf(item);
         if (from < 0)
             return;
-        // Clamp; account for the removal shifting indices when moving forward.
         targetIndex = Math.Clamp(targetIndex, 0, Columns.Count - 1);
         if (from == targetIndex)
             return;
@@ -319,57 +303,45 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         if (SelectedDay?.Day is not { } day)
             return;
         var settings = BuildSettings();
-        await _busy.RunAsync(() => _editor.SaveResultProtocolSettingsAsync(day.Id, settings));
+        await _busy.RunAsync(() => _editor.SaveStartProtocolSettingsAsync(day.Id, Kind, settings));
         SettingsSaved = true;
     }
 
-    // Rebuilds the live preview from the cached day data and the current template (columns + header). Uses
-    // the same builder the export uses, so the preview matches the .docx; the body is capped to a few rows.
     private void RefreshPreview()
     {
         var settings = BuildSettings();
 
         Preview.IsLandscape = settings.Orientation == ProtocolOrientation.Landscape;
-        Preview.Title = settings.Title.Length > 0 ? settings.Title : Localization.Get("Protocols.DefaultTitle");
+        Preview.Title = settings.Title.Length > 0 ? settings.Title : Localization.Get(DefaultTitleKey);
         Preview.Subtitle = settings.Subtitle;
         Preview.DateText = settings.DateText;
         Preview.CompetitionType = settings.CompetitionType;
         Preview.Venue = settings.Venue;
 
-        var data = _previewData ?? new ResultProtocolData([]);
-        var document = _builder.Build(data, settings, BuildLabels());
+        var data = _previewData ?? new StartProtocolData([]);
+        var document = _builder.Build(data, settings, Kind, BuildLabels());
 
         Preview.Columns.Clear();
         var visible = settings.Columns.Where(c => c.Visible).Select(c => c.Column).ToList();
         if (visible.Count == 0)
-            visible.Add(ProtocolColumn.FullName); // mirrors the builder's "always one column" guard
+            visible.Add(StartProtocolColumn.FullName);
         for (var i = 0; i < visible.Count && i < document.ColumnHeaders.Count; i++)
             Preview.Columns.Add(new ProtocolPreviewColumn(visible[i].ToString(), document.ColumnHeaders[i]));
 
-        // The first non-empty group section is the preview sample; fall back to the first section.
+        // First non-empty section is the preview sample (fall back to the first section).
         var section = document.Sections.FirstOrDefault(s => s.Rows.Count > 0) ?? document.Sections.FirstOrDefault();
 
         Preview.Rows.Clear();
         Preview.GroupName = section?.GroupName ?? string.Empty;
-        Preview.GroupSubcaption = section is null ? string.Empty : BuildSubcaption(section);
+        Preview.GroupSubcaption = string.Empty; // start sections have no course sub-caption
 
         if (section is not null)
-        {
             foreach (var row in section.Rows.Take(PreviewRowCap))
                 Preview.Rows.Add(new ProtocolPreviewRow(row.Cells, row.IsTeamHeader));
-        }
         Preview.IsEmpty = Preview.Rows.Count == 0;
     }
 
-    // Joins a section's non-blank course facts into one " · "-separated sub-caption line for the preview.
-    private static string BuildSubcaption(ResultProtocolSection section)
-    {
-        var parts = new[] { section.DistanceText, section.ControlCountText, section.TimeLimitText }
-            .Where(p => !string.IsNullOrWhiteSpace(p));
-        return string.Join(" · ", parts);
-    }
-
-    private ResultProtocolSettings BuildSettings() => new()
+    private StartProtocolSettings BuildSettings() => new()
     {
         Orientation = IsLandscape ? ProtocolOrientation.Landscape : ProtocolOrientation.Portrait,
         Title = Title?.Trim() ?? string.Empty,
@@ -381,9 +353,8 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
     };
 
     /// <summary>
-    /// Builds the protocol for the selected day and returns the .docx bytes + a suggested file name, or
-    /// null when there is nothing to export (no competition / no day). The View runs the save dialog.
-    /// Generating also persists the current settings so the layout the user sees is the one saved.
+    /// Builds the start protocol for the selected day and returns the .docx bytes + a suggested file name,
+    /// or null when there is nothing to export. The View runs the save dialog. Also persists the template.
     /// </summary>
     public async Task<ProtocolExportResult?> GenerateAsync()
     {
@@ -392,12 +363,13 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
 
         var settings = BuildSettings();
         var labels = BuildLabels();
+        var kind = Kind;
 
         var bytes = await _busy.RunAsync(async () =>
         {
-            await _editor.SaveResultProtocolSettingsAsync(day.Id, settings);
-            var data = await _editor.GetResultProtocolDataAsync(day.Id);
-            var document = _builder.Build(data, settings, labels);
+            await _editor.SaveStartProtocolSettingsAsync(day.Id, kind, settings);
+            var data = await _editor.GetStartProtocolDataAsync(day.Id);
+            var document = _builder.Build(data, settings, kind, labels);
             return _writer.Write(document);
         });
         SettingsSaved = true;
@@ -405,27 +377,28 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         return new ProtocolExportResult(bytes, SuggestedFileName(day));
     }
 
-    private ProtocolLabels BuildLabels()
+    private string DefaultTitleKey =>
+        Kind == StartProtocolKind.Judges ? "StartProtocols.DefaultTitle.Judges" : "StartProtocols.DefaultTitle.Regular";
+
+    private StartProtocolLabels BuildLabels()
     {
-        var headers = new Dictionary<ProtocolColumn, string>();
-        foreach (ProtocolColumn column in Enum.GetValues<ProtocolColumn>())
+        var headers = new Dictionary<StartProtocolColumn, string>();
+        foreach (StartProtocolColumn column in Enum.GetValues<StartProtocolColumn>())
             headers[column] = Localization.Get(CaptionKey(column));
 
-        return new ProtocolLabels(
-            DefaultTitle: Localization.Get("Protocols.DefaultTitle"),
+        return new StartProtocolLabels(
+            DefaultTitle: Localization.Get(DefaultTitleKey),
             ColumnHeaders: headers,
-            DistanceLabel: Localization.Get("Protocols.Section.Distance"),
-            ControlCountLabel: Localization.Get("Protocols.Section.ControlCount"),
-            TimeLimitLabel: Localization.Get("Protocols.Section.TimeLimit"));
+            NoStartTimeCaption: Localization.Get("StartProtocols.NoStartTime"));
     }
 
-    // "<competition> — протокол <День N> <date>.docx", sanitised for the save dialog.
     private string SuggestedFileName(EventDay day)
     {
         var competition = _session.CurrentEvent?.Name;
         if (string.IsNullOrWhiteSpace(competition))
             competition = Localization.Get("Protocols.DefaultName");
-        var part = Localization.Get("Protocols.NamePart");
+        var part = Localization.Get(Kind == StartProtocolKind.Judges
+            ? "StartProtocols.NamePart.Judges" : "StartProtocols.NamePart.Regular");
         var stamp = DateTime.Now.ToString("yyyy-MM-dd");
         var baseName = $"{competition} — {part} {Localization.Get("Header.Day")} {day.Number} {stamp}";
         foreach (var invalid in System.IO.Path.GetInvalidFileNameChars())
@@ -433,8 +406,6 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         return $"{baseName}.docx";
     }
 
-    // Clear the "saved" flash on any settings edit (and live-refresh the preview header). The guard stops
-    // these firing during ApplySettings, where the preview is rebuilt once at the end of the load instead.
     private void OnHeaderEdited()
     {
         if (_applyingSettings)
@@ -450,6 +421,3 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
     partial void OnCompetitionTypeChanged(string value) => OnHeaderEdited();
     partial void OnDateTextChanged(string value) => OnHeaderEdited();
 }
-
-/// <summary>The result of building a protocol: the .docx bytes and a suggested save file name.</summary>
-public sealed record ProtocolExportResult(byte[] Bytes, string SuggestedFileName);

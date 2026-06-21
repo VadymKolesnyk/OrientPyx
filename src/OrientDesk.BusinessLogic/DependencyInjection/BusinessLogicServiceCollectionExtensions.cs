@@ -54,6 +54,10 @@ public static class BusinessLogicServiceCollectionExtensions
         // writer that renders the document needs a library and is registered in DataAccess.
         services.AddSingleton<IResultProtocolBuilder, ResultProtocolBuilder>();
 
+        // Start-protocol builder (layer-neutral: raw day start data → renderable document, by-group or
+        // by-minute). Reuses the results-protocol .docx writer (same ResultProtocolDocument model).
+        services.AddSingleton<IStartProtocolBuilder, StartProtocolBuilder>();
+
         // Split (splits) export builder (layer-neutral: raw day splits → renderable document). The HTML
         // writer that renders the document is registered in DataAccess.
         services.AddSingleton<ISplitExportBuilder, SplitExportBuilder>();

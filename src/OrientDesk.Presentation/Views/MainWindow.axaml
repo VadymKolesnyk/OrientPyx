@@ -236,6 +236,11 @@
                           Command="{Binding OpenDrawCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Start.ClassicDraw]}"
                           Command="{Binding OpenClassicDrawCommand}" />
+                <Separator />
+                <MenuItem Header="{Binding Localization[Menu.Start.StartProtocol]}"
+                          Command="{Binding OpenStartProtocolCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Start.StartProtocolJudges]}"
+                          Command="{Binding OpenStartProtocolJudgesCommand}" />
             </MenuItem>
 
             <!-- Protocols: result protocols + (later) other printed outputs, while a competition is open -->

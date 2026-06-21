@@ -378,6 +378,35 @@ public interface ICompetitionEditorService
     Task<ResultProtocolData> GetResultProtocolDataAsync(Guid dayId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Loads a day's saved results-protocol template (orientation, ordered/visible columns, header text),
+    /// or null when the day has no template yet — the caller then seeds it from the app-level default. The
+    /// template is stored per day in the event database, so each day can have its own protocol layout.
+    /// Returns null when no competition is selected.
+    /// </summary>
+    Task<ResultProtocolSettings?> GetResultProtocolSettingsAsync(Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>Saves a day's results-protocol template. A no-op when no competition is selected.</summary>
+    Task SaveResultProtocolSettingsAsync(Guid dayId, ResultProtocolSettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gathers the start-protocol data for one day: every group that runs on the day with its members, each
+    /// carrying its drawn start time (<see cref="ParticipantDay.StartTime"/>) and identity fields. Groups
+    /// follow the day grid order; rows are unsorted (the start-protocol builder orders/groups them by kind).
+    /// Empty when no competition is selected.
+    /// </summary>
+    Task<StartProtocolData> GetStartProtocolDataAsync(Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Loads a day's saved start-protocol template for a kind, or null when the (day, kind) has no template
+    /// yet — the caller then seeds it from the kind's built-in default. Stored per day + kind in the event
+    /// database. Returns null when no competition is selected.
+    /// </summary>
+    Task<StartProtocolSettings?> GetStartProtocolSettingsAsync(Guid dayId, StartProtocolKind kind, CancellationToken cancellationToken = default);
+
+    /// <summary>Saves a day's start-protocol template for a kind. A no-op when no competition is selected.</summary>
+    Task SaveStartProtocolSettingsAsync(Guid dayId, StartProtocolKind kind, StartProtocolSettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gathers the split-export data for one day: every group that runs on the day, with its course
     /// metadata, discipline layout (ordered set-course vs scored) and its participant rows — each carrying
     /// the discipline-built <see cref="SplitsView"/> (the passage/splits) and the computed result. Only

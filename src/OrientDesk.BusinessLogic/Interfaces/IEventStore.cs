@@ -289,4 +289,22 @@ public interface IEventStore
 
     /// <summary>Removes an entry-fee discount by id. Does nothing if it is missing.</summary>
     Task DeleteEntryFeeDiscountAsync(string eventFolderPath, Guid discountId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns a day's saved results-protocol template JSON, or null when the day has no row yet (the
+    /// caller then seeds it from the app-level default).
+    /// </summary>
+    Task<string?> GetResultProtocolJsonAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>Stores (inserts/updates) a day's results-protocol template JSON.</summary>
+    Task SaveResultProtocolJsonAsync(string eventFolderPath, Guid dayId, string json, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns a day's saved start-protocol template JSON for a kind, or null when the (day, kind) has no row
+    /// yet (the caller then seeds it from the kind's built-in default).
+    /// </summary>
+    Task<string?> GetStartProtocolJsonAsync(string eventFolderPath, Guid dayId, StartProtocolKind kind, CancellationToken cancellationToken = default);
+
+    /// <summary>Stores (inserts/updates) a day's start-protocol template JSON for a kind.</summary>
+    Task SaveStartProtocolJsonAsync(string eventFolderPath, Guid dayId, StartProtocolKind kind, string json, CancellationToken cancellationToken = default);
 }

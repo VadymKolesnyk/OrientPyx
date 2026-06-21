@@ -1477,6 +1477,131 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return new ResultProtocolData(sections);
     }
 
+    public async Task<ResultProtocolSettings?> GetResultProtocolSettingsAsync(Guid dayId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return null;
+
+        var json = await _eventStore.GetResultProtocolJsonAsync(FolderPath, dayId, cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+            return null; // the caller seeds from the app-level default for a day with no template yet
+
+        try
+        {
+            var settings = System.Text.Json.JsonSerializer.Deserialize<ResultProtocolSettings>(json);
+            if (settings is null)
+                return null;
+            // A column list that lost its way (empty after a bad round-trip) falls back to the default set.
+            if (settings.Columns.Count == 0)
+                settings.Columns = ResultProtocolSettings.DefaultColumns();
+            return settings;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null; // corrupt JSON ⇒ treat as "no template" and seed from the default
+        }
+    }
+
+    public Task SaveResultProtocolSettingsAsync(Guid dayId, ResultProtocolSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (_session.CurrentEvent is null)
+            return Task.CompletedTask;
+
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        return _eventStore.SaveResultProtocolJsonAsync(FolderPath, dayId, json, cancellationToken);
+    }
+
+    public async Task<StartProtocolData> GetStartProtocolDataAsync(Guid dayId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return new StartProtocolData([]);
+
+        var folder = FolderPath;
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
+        var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
+        var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
+        var dusshes = await _eventStore.GetDusshesAsync(folder, cancellationToken);
+
+        var byParticipant = participants.ToDictionary(p => p.Id);
+        var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
+        var regionName = regions.ToDictionary(r => r.Id, r => r.Name);
+        var clubName = clubs.ToDictionary(c => c.Id, c => c.Name);
+        var dusshName = dusshes.ToDictionary(d => d.Id, d => d.Name);
+
+        // Bucket each member's row under its group; a member with no group is skipped (a start protocol is
+        // built per group / per minute, and a runner without a group has no section to land in).
+        var rowsByGroup = new Dictionary<Guid, List<StartProtocolRow>>();
+        foreach (var link in links)
+        {
+            if (link.GroupId is not { } gid || !byParticipant.TryGetValue(link.ParticipantId, out var p))
+                continue;
+
+            var region = p.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
+            var club = p.ClubId is { } cid && clubName.TryGetValue(cid, out var cn) ? cn : string.Empty;
+            var dussh = p.DusshId is { } did && dusshName.TryGetValue(did, out var dn) ? dn : string.Empty;
+            var gname = groupName.TryGetValue(gid, out var gn) ? gn : string.Empty;
+
+            if (!rowsByGroup.TryGetValue(gid, out var bucket))
+            {
+                bucket = [];
+                rowsByGroup[gid] = bucket;
+            }
+            bucket.Add(new StartProtocolRow(
+                link.StartTime, p.Number, p.FullName, p.BirthDate, club, region, dussh, p.Coach, p.Rank,
+                link.Chip.Trim(), gname));
+        }
+
+        // One section per group that runs on the day (in the day grid order), even when empty.
+        var sections = new List<StartProtocolGroup>(settings.Count);
+        foreach (var s in settings.OrderBy(s => s.Order))
+        {
+            if (!groupName.TryGetValue(s.GroupId, out var name))
+                continue;
+            var rows = rowsByGroup.TryGetValue(s.GroupId, out var b) ? b : [];
+            sections.Add(new StartProtocolGroup(name, s.Order, rows));
+        }
+
+        return new StartProtocolData(sections);
+    }
+
+    public async Task<StartProtocolSettings?> GetStartProtocolSettingsAsync(Guid dayId, StartProtocolKind kind, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return null;
+
+        var json = await _eventStore.GetStartProtocolJsonAsync(FolderPath, dayId, kind, cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+            return null; // the caller seeds from the kind's default for a (day, kind) with no template yet
+
+        try
+        {
+            var settings = System.Text.Json.JsonSerializer.Deserialize<StartProtocolSettings>(json);
+            if (settings is null)
+                return null;
+            if (settings.Columns.Count == 0)
+                settings.Columns = StartProtocolSettings.Default(kind).Columns;
+            return settings;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null; // corrupt JSON ⇒ treat as "no template" and seed from the default
+        }
+    }
+
+    public Task SaveStartProtocolSettingsAsync(Guid dayId, StartProtocolKind kind, StartProtocolSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (_session.CurrentEvent is null)
+            return Task.CompletedTask;
+
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        return _eventStore.SaveStartProtocolJsonAsync(FolderPath, dayId, kind, json, cancellationToken);
+    }
+
     public async Task<SplitExportData> GetDaySplitsExportDataAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null)

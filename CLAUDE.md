@@ -161,5 +161,23 @@ cloud sync. Keep this a lightweight starter.
 
 (The result protocol — «Протоколи результатів» — now exports a per-group results protocol to a
 Word .docx via `IResultProtocolBuilder` (BusinessLogic) + `DocxResultProtocolWriter` (DataAccess,
-Open XML SDK). Settings — orientation, ordered/visible columns, header text — are app-level in
-`app.db` (`AppSettingsRow.ResultProtocolJson`). The «Протоколи» top menu hosts it.)
+Open XML SDK). The template — orientation, ordered/visible columns, header text — is stored **per
+competition day** in `event.db` (`ResultProtocolSettingsRow`, JSON keyed on `EventDayId`, accessed via
+`ICompetitionEditorService.Get/SaveResultProtocolSettingsAsync(dayId)`); a day with no row is seeded from
+the app-level default (`AppSettingsRow.ResultProtocolJson` via `IAppSettingsService`). The page shows a
+**live document preview** (`ProtocolPreviewViewModel`) — the actual mock-up built from the same builder the
+export uses, filled with real participants of the selected day — whose column headers are drag-reorderable
+(code-built `Grid` via the shared `ProtocolPreviewTable` + `IProtocolPreviewHost`). The «Протоколи» top menu hosts it.
+
+The «Старт» menu also hosts two **start protocols** built on the same pattern (per-day template + live
+preview + .docx export, reusing `ResultProtocolDocument` + `DocxResultProtocolWriter`): «Стартовий протокол»
+(regular — one section per group, members ordered by start time within the group) and «Стартовий суддівський
+протокол» (judges — one section per start minute, members of that minute across all groups; undrawn runners
+in a trailing "no start time" section). Both run off one `StartProtocolsViewModel` (singleton, `Kind` set by
+the open command) → `IStartProtocolBuilder`/`StartProtocolBuilder` (BusinessLogic, produces a
+`ResultProtocolDocument`). Template stored per day **and per kind** in `event.db`
+(`StartProtocolSettingsRow`, JSON keyed on `(EventDayId, Kind)`) via
+`ICompetitionEditorService.Get/SaveStartProtocolSettingsAsync(dayId, kind)`; a missing row seeds from
+`StartProtocolSettings.Default(kind)`. Start columns are their own enum (`StartProtocolColumn`: Start/№/ПІБ/
+рік/клуб/регіон/ДЮСШ/тренер/кваліф./чіп/група). Source data: `GetStartProtocolDataAsync(dayId)` reads
+`ParticipantDay.StartTime`/`Chip`.)

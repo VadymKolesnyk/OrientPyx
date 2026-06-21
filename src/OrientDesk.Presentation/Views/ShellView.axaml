@@ -58,6 +58,9 @@
         <DataTemplate DataType="pages:DrawViewModel">
             <views:DrawView />
         </DataTemplate>
+        <DataTemplate DataType="pages:StartProtocolsViewModel">
+            <views:StartProtocolsView />
+        </DataTemplate>
         <DataTemplate DataType="pages:PageViewModelBase">
             <views:PageView />
         </DataTemplate>

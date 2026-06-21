@@ -5,11 +5,11 @@ using OrientDesk.Presentation.ViewModels.Pages;
 
 namespace OrientDesk.Presentation.Views.Pages;
 
-public partial class ProtocolsView : UserControl
+public partial class StartProtocolsView : UserControl
 {
     private ProtocolPreviewTable? _previewTable;
 
-    public ProtocolsView()
+    public StartProtocolsView()
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
@@ -24,13 +24,11 @@ public partial class ProtocolsView : UserControl
         _previewTable?.Bind(DataContext as IProtocolPreviewHost);
     }
 
-    // ── Generate (.docx) ─────────────────────────────────────────────────────────────────────────────────
-
-    // Build the protocol (the VM owns the build + settings persistence), then run the save dialog (it needs
-    // the window's StorageProvider) and write the .docx bytes. Mirrors the participants export code-behind.
+    // Build the start protocol (the VM owns the build + settings persistence), then run the save dialog and
+    // write the .docx bytes. Mirrors the results-protocol export code-behind.
     private async void OnGenerateClick(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not ProtocolsViewModel vm)
+        if (DataContext is not StartProtocolsViewModel vm)
             return;
 
         var topLevel = TopLevel.GetTopLevel(this);
@@ -66,8 +64,7 @@ public partial class ProtocolsView : UserControl
         }
         catch
         {
-            // The file couldn't be written (permissions, removed drive, etc.). The user can retry; a future
-            // toast could surface it. Mirrors the participants export behaviour.
+            // The file couldn't be written (permissions, removed drive, etc.). The user can retry.
         }
     }
 }

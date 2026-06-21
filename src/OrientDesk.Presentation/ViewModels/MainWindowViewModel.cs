@@ -46,6 +46,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly RanksViewModel _ranks;
     private readonly EntryFeesViewModel _entryFees;
     private readonly ProtocolsViewModel _protocols;
+    private readonly StartProtocolsViewModel _startProtocols;
     private readonly SplitsExportViewModel _splitsExport;
     private readonly DrawViewModel _draw;
     private readonly ClassicDrawViewModel _classicDraw;
@@ -70,6 +71,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         RanksViewModel ranks,
         EntryFeesViewModel entryFees,
         ProtocolsViewModel protocols,
+        StartProtocolsViewModel startProtocols,
         SplitsExportViewModel splitsExport,
         DrawViewModel draw,
         ClassicDrawViewModel classicDraw,
@@ -98,6 +100,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _ranks = ranks;
         _entryFees = entryFees;
         _protocols = protocols;
+        _startProtocols = startProtocols;
         _splitsExport = splitsExport;
         _draw = draw;
         _classicDraw = classicDraw;
@@ -264,6 +267,22 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private Task OpenStartProtocolAsync() => OpenStartProtocolKindAsync(BusinessLogic.Models.StartProtocolKind.Regular);
+
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private Task OpenStartProtocolJudgesAsync() => OpenStartProtocolKindAsync(BusinessLogic.Models.StartProtocolKind.Judges);
+
+    // The start-protocol page is one singleton VM reused for both kinds: set the kind (and re-raise its
+    // nav/title labels) before loading so the heading + saved template match the chosen protocol.
+    private async Task OpenStartProtocolKindAsync(BusinessLogic.Models.StartProtocolKind kind)
+    {
+        _startProtocols.Kind = kind;
+        _startProtocols.RaiseKindLabels();
+        await _startProtocols.LoadAsync();
+        _shell.SelectedPage = _startProtocols;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
     private async Task OpenSplitsExportAsync()
     {
         await _splitsExport.LoadAsync();
@@ -352,6 +371,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenRanksCommand.NotifyCanExecuteChanged();
         OpenEntryFeesCommand.NotifyCanExecuteChanged();
         OpenProtocolsCommand.NotifyCanExecuteChanged();
+        OpenStartProtocolCommand.NotifyCanExecuteChanged();
+        OpenStartProtocolJudgesCommand.NotifyCanExecuteChanged();
         OpenSplitsExportCommand.NotifyCanExecuteChanged();
         OpenDrawCommand.NotifyCanExecuteChanged();
         OpenClassicDrawCommand.NotifyCanExecuteChanged();

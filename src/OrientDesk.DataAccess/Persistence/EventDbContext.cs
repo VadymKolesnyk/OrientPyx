@@ -29,6 +29,8 @@ public class EventDbContext : DbContext
     public DbSet<FinishReadout> FinishReadouts => Set<FinishReadout>();
     public DbSet<ChipPriceOverride> ChipPriceOverrides => Set<ChipPriceOverride>();
     public DbSet<EntryFeeDiscount> EntryFeeDiscounts => Set<EntryFeeDiscount>();
+    public DbSet<ResultProtocolSettingsRow> ResultProtocolSettings => Set<ResultProtocolSettingsRow>();
+    public DbSet<StartProtocolSettingsRow> StartProtocolSettings => Set<StartProtocolSettingsRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -98,5 +100,19 @@ public class EventDbContext : DbContext
             .HasIndex(d => d.IsFsouMemberDiscount)
             .IsUnique()
             .HasFilter("\"IsFsouMemberDiscount\" = 1");
+
+        // At most one protocol template per day; the unique index enforces it and speeds the by-day lookup.
+        modelBuilder.Entity<ResultProtocolSettingsRow>()
+            .HasIndex(r => r.EventDayId)
+            .IsUnique();
+
+        // Start-protocol templates: the kind persists as its string name; at most one row per (day, kind).
+        modelBuilder.Entity<StartProtocolSettingsRow>()
+            .Property(r => r.Kind)
+            .HasConversion<string>();
+
+        modelBuilder.Entity<StartProtocolSettingsRow>()
+            .HasIndex(r => new { r.EventDayId, r.Kind })
+            .IsUnique();
     }
 }

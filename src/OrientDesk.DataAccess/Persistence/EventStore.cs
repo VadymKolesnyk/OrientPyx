@@ -918,6 +918,56 @@ public sealed class EventStore : IEventStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<string?> GetResultProtocolJsonAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var row = await db.ResultProtocolSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.EventDayId == dayId, cancellationToken);
+        return row?.Json;
+    }
+
+    public async Task SaveResultProtocolJsonAsync(string eventFolderPath, Guid dayId, string json, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var row = await db.ResultProtocolSettings.FirstOrDefaultAsync(r => r.EventDayId == dayId, cancellationToken);
+        if (row is null)
+        {
+            row = new ResultProtocolSettingsRow { EventDayId = dayId, Json = json };
+            db.ResultProtocolSettings.Add(row);
+        }
+        else
+        {
+            row.Json = json;
+        }
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<string?> GetStartProtocolJsonAsync(string eventFolderPath, Guid dayId, StartProtocolKind kind, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var row = await db.StartProtocolSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.EventDayId == dayId && r.Kind == kind, cancellationToken);
+        return row?.Json;
+    }
+
+    public async Task SaveStartProtocolJsonAsync(string eventFolderPath, Guid dayId, StartProtocolKind kind, string json, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var row = await db.StartProtocolSettings.FirstOrDefaultAsync(r => r.EventDayId == dayId && r.Kind == kind, cancellationToken);
+        if (row is null)
+        {
+            row = new StartProtocolSettingsRow { EventDayId = dayId, Kind = kind, Json = json };
+            db.StartProtocolSettings.Add(row);
+        }
+        else
+        {
+            row.Json = json;
+        }
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<ParticipantImportResult> ImportParticipantsBatchAsync(
         string eventFolderPath,
         UofParticipantData data,
