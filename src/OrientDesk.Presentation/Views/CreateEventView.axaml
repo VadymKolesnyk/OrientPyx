@@ -8,6 +8,8 @@
              x:DataType="vm:CreateEventViewModel">
 
     <Border Background="{DynamicResource SurfacePage}" Padding="40">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      HorizontalAlignment="Center" VerticalAlignment="Center">
         <Border Classes="card" Padding="32" Width="480"
                 HorizontalAlignment="Center" VerticalAlignment="Center">
             <StackPanel Spacing="16">
@@ -88,6 +90,48 @@
                     </StackPanel>
                 </Grid>
 
+                <!-- Officials (optional) — collapsed by default to keep the form compact. Editable later
+                     on the Information page too. Each named official has an optional judge category. -->
+                <Expander Header="{Binding Localization[CompetitionInfo.Officials]}" Padding="0">
+                    <StackPanel Spacing="12" Margin="0,12,0,0">
+                        <Grid ColumnDefinitions="*,12,130">
+                            <StackPanel Grid.Column="0" Spacing="6">
+                                <TextBlock Text="{Binding Localization[CompetitionInfo.CourseSetter]}" Classes="label" />
+                                <TextBox Text="{Binding CourseSetter, Mode=TwoWay}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Spacing="6">
+                                <TextBlock Text="{Binding Localization[CompetitionInfo.JudgeCategory]}" Classes="label" />
+                                <TextBox Text="{Binding CourseSetterCategory, Mode=TwoWay}" />
+                            </StackPanel>
+                        </Grid>
+                        <Grid ColumnDefinitions="*,12,130">
+                            <StackPanel Grid.Column="0" Spacing="6">
+                                <TextBlock Text="{Binding Localization[CompetitionInfo.ChiefJudge]}" Classes="label" />
+                                <TextBox Text="{Binding ChiefJudge, Mode=TwoWay}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Spacing="6">
+                                <TextBlock Text="{Binding Localization[CompetitionInfo.JudgeCategory]}" Classes="label" />
+                                <TextBox Text="{Binding ChiefJudgeCategory, Mode=TwoWay}" />
+                            </StackPanel>
+                        </Grid>
+                        <Grid ColumnDefinitions="*,12,130">
+                            <StackPanel Grid.Column="0" Spacing="6">
+                                <TextBlock Text="{Binding Localization[CompetitionInfo.ChiefSecretary]}" Classes="label" />
+                                <TextBox Text="{Binding ChiefSecretary, Mode=TwoWay}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Spacing="6">
+                                <TextBlock Text="{Binding Localization[CompetitionInfo.JudgeCategory]}" Classes="label" />
+                                <TextBox Text="{Binding ChiefSecretaryCategory, Mode=TwoWay}" />
+                            </StackPanel>
+                        </Grid>
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[CompetitionInfo.Jury]}" Classes="label" />
+                            <TextBox Text="{Binding Jury, Mode=TwoWay}" AcceptsReturn="True"
+                                     TextWrapping="Wrap" MinHeight="64" />
+                        </StackPanel>
+                    </StackPanel>
+                </Expander>
+
                 <!-- Inline error -->
                 <Border IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                         Background="{DynamicResource DangerSurface}" CornerRadius="8" Padding="12,8">
@@ -112,6 +156,7 @@
 
             </StackPanel>
         </Border>
+        </ScrollViewer>
     </Border>
 
 </UserControl>

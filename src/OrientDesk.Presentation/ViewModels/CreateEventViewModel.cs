@@ -40,6 +40,28 @@ public sealed partial class CreateEventViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isMultiDay;
 
+    // ── Officials (optional; printed on the protocols, editable later on the Information page) ──
+    [ObservableProperty]
+    private string _courseSetter = string.Empty;
+
+    [ObservableProperty]
+    private string _courseSetterCategory = string.Empty;
+
+    [ObservableProperty]
+    private string _chiefJudge = string.Empty;
+
+    [ObservableProperty]
+    private string _chiefJudgeCategory = string.Empty;
+
+    [ObservableProperty]
+    private string _chiefSecretary = string.Empty;
+
+    [ObservableProperty]
+    private string _chiefSecretaryCategory = string.Empty;
+
+    [ObservableProperty]
+    private string _jury = string.Empty;
+
     [ObservableProperty]
     private string? _errorMessage;
 
@@ -73,6 +95,13 @@ public sealed partial class CreateEventViewModel : ViewModelBase
         StartDate = null;
         EndDate = null;
         IsMultiDay = false;
+        CourseSetter = string.Empty;
+        CourseSetterCategory = string.Empty;
+        ChiefJudge = string.Empty;
+        ChiefJudgeCategory = string.Empty;
+        ChiefSecretary = string.Empty;
+        ChiefSecretaryCategory = string.Empty;
+        Jury = string.Empty;
         ErrorMessage = null;
         IsBusy = false;
     }
@@ -134,8 +163,13 @@ public sealed partial class CreateEventViewModel : ViewModelBase
             var endDate = dayCount == 1
                 ? startDate
                 : EndDate ?? startDate?.AddDays(dayCount - 1);
+            var officials = new CompetitionOfficials(
+                CourseSetter, CourseSetterCategory,
+                ChiefJudge, ChiefJudgeCategory,
+                ChiefSecretary, ChiefSecretaryCategory,
+                Jury);
             var summary = await _busy.RunAsync(
-                () => _catalog.CreateEventAsync(Name, Identifier, Venue, dayCount, startDate, endDate));
+                () => _catalog.CreateEventAsync(Name, Identifier, Venue, dayCount, startDate, endDate, officials));
             if (OnCreatedAsync is not null)
                 await OnCreatedAsync(summary);
         }

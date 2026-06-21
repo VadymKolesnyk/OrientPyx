@@ -37,6 +37,7 @@ public sealed class EventCatalogService : IEventCatalogService
         int dayCount,
         DateTimeOffset? startDate,
         DateTimeOffset? endDate,
+        CompetitionOfficials? officials = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -61,13 +62,21 @@ public sealed class EventCatalogService : IEventCatalogService
         // For a single day, end == start; otherwise fall back to start + dayCount-1 if no end given.
         endDate ??= dayCount == 1 ? startDate : startDate?.AddDays(dayCount - 1);
 
+        var o = officials ?? CompetitionOfficials.None;
         var info = new CompetitionInfo
         {
             Name = name.Trim(),
             Identifier = identifier,
             Venue = (venue ?? string.Empty).Trim(),
             StartDate = startDate,
-            EndDate = endDate
+            EndDate = endDate,
+            CourseSetter = (o.CourseSetter ?? string.Empty).Trim(),
+            CourseSetterCategory = (o.CourseSetterCategory ?? string.Empty).Trim(),
+            ChiefJudge = (o.ChiefJudge ?? string.Empty).Trim(),
+            ChiefJudgeCategory = (o.ChiefJudgeCategory ?? string.Empty).Trim(),
+            ChiefSecretary = (o.ChiefSecretary ?? string.Empty).Trim(),
+            ChiefSecretaryCategory = (o.ChiefSecretaryCategory ?? string.Empty).Trim(),
+            Jury = (o.Jury ?? string.Empty).Trim()
         };
         await _eventStore.SaveCompetitionInfoAsync(folderPath, info, cancellationToken);
 

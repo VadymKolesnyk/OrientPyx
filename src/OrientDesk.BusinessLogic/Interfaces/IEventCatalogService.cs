@@ -25,6 +25,10 @@ public interface IEventCatalogService
     /// Last day of the competition, stored as metadata. For a single-day competition this equals
     /// <paramref name="startDate"/>.
     /// </param>
+    /// <param name="officials">
+    /// Optional officials (course-setter, chief judge, chief secretary, jury) seeded onto the new
+    /// competition's metadata. When null, none are set (they can be filled in later on the Information page).
+    /// </param>
     Task<EventSummary> CreateEventAsync(
         string name,
         string identifier,
@@ -32,5 +36,6 @@ public interface IEventCatalogService
         int dayCount,
         DateTimeOffset? startDate,
         DateTimeOffset? endDate,
+        CompetitionOfficials? officials = null,
         CancellationToken cancellationToken = default);
 }
