@@ -123,6 +123,32 @@ public sealed class AppStore : IAppStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<string?> GetStartProtocolJsonAsync(StartProtocolKind kind, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+            return null;
+        return kind == StartProtocolKind.Judges ? row.StartProtocolJudgesJson : row.StartProtocolRegularJson;
+    }
+
+    public async Task SaveStartProtocolJsonAsync(StartProtocolKind kind, string json, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+        {
+            row = new AppSettingsRow { Id = 1 };
+            db.Settings.Add(row);
+        }
+        if (kind == StartProtocolKind.Judges)
+            row.StartProtocolJudgesJson = json;
+        else
+            row.StartProtocolRegularJson = json;
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<(string? Identifier, int? DayNumber)> GetLastSessionAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);

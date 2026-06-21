@@ -53,6 +53,27 @@
             <Setter Property="MinHeight" Value="38" />
             <Setter Property="Padding" Value="10,6" />
         </Style>
+
+        <!-- Inline-editable document text inside the protocol preview "sheet": looks like the printed text
+             (black, transparent, no chrome) but is a TextBox so the header can be edited in place. A faint
+             background appears on hover/focus to signal it is editable. -->
+        <Style Selector="TextBox.protocol-inline">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="3" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="3,1" />
+            <Setter Property="Foreground" Value="Black" />
+            <Setter Property="CaretBrush" Value="Black" />
+        </Style>
+        <Style Selector="TextBox.protocol-inline:pointerover /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="#11000000" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="TextBox.protocol-inline:focus /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="#0F6D4AFF" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
         <Style Selector="DatePicker">
             <Setter Property="CornerRadius" Value="8" />
             <Setter Property="MinHeight" Value="38" />
@@ -128,6 +149,10 @@
 
         <!-- Dims grid cells that aren't relevant for a row's discipline -->
         <conv:BoolToOpacityConverter x:Key="BoolToOpacity" />
+
+        <!-- Sizes the protocol document-preview "sheet" to true A4 portrait/landscape proportions
+             (ConverterParameter=width / =height) -->
+        <conv:LandscapeToPageWidthConverter x:Key="LandscapeToPageSize" />
 
         <!-- Colours the finish-splits status glyph (✓ green / ✗ red / — muted) -->
         <conv:SplitGlyphBrushConverter x:Key="SplitGlyphBrush" />

@@ -92,4 +92,34 @@ public sealed class AppSettingsService : IAppSettingsService
         var json = System.Text.Json.JsonSerializer.Serialize(settings);
         return _appStore.SaveResultProtocolJsonAsync(json, cancellationToken);
     }
+
+    public async Task<StartProtocolSettings> GetStartProtocolSettingsAsync(StartProtocolKind kind, CancellationToken cancellationToken = default)
+    {
+        var json = await _appStore.GetStartProtocolJsonAsync(kind, cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+            return StartProtocolSettings.Default(kind);
+
+        try
+        {
+            var settings = System.Text.Json.JsonSerializer.Deserialize<StartProtocolSettings>(json);
+            if (settings is null)
+                return StartProtocolSettings.Default(kind);
+            // A column list that lost its way (empty after a bad round-trip) falls back to the kind default.
+            if (settings.Columns.Count == 0)
+                settings.Columns = StartProtocolSettings.Default(kind).Columns;
+            return settings;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Corrupt JSON — start from the kind default rather than crashing the protocol page.
+            return StartProtocolSettings.Default(kind);
+        }
+    }
+
+    public Task SaveStartProtocolSettingsAsync(StartProtocolKind kind, StartProtocolSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        return _appStore.SaveStartProtocolJsonAsync(kind, json, cancellationToken);
+    }
 }

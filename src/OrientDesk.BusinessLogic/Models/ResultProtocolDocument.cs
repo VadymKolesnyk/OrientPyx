@@ -11,6 +11,9 @@ public sealed class ResultProtocolDocument
     /// <summary>Page orientation chosen in the settings.</summary>
     public ProtocolOrientation Orientation { get; init; } = ProtocolOrientation.Portrait;
 
+    /// <summary>Competition-name line (centred), printed above the title. Blank ⇒ nothing printed.</summary>
+    public string CompetitionName { get; init; } = string.Empty;
+
     /// <summary>Main title line (centred, bold).</summary>
     public string Title { get; init; } = string.Empty;
 
@@ -31,6 +34,21 @@ public sealed class ResultProtocolDocument
 
     /// <summary>The group sections, in display order.</summary>
     public IReadOnlyList<ResultProtocolSection> Sections { get; init; } = [];
+
+    /// <summary>The officials' signature block printed at the very end (chief judge, secretary, jury). Empty
+    /// when none are configured. Shared across all protocol kinds (results + both start protocols).</summary>
+    public IReadOnlyList<ProtocolOfficial> Officials { get; init; } = [];
+}
+
+/// <summary>
+/// One official line in a protocol's trailing signature block: a localized role caption ("Головний суддя"),
+/// the person's name, and an optional judge category (суддівська категорія). Pre-formatted in the builder so
+/// the renderers stay layout-only and localization-free.
+/// </summary>
+public sealed record ProtocolOfficial(string Role, string Name, string Category)
+{
+    /// <summary>The name with its category appended in parentheses when present ("Доценко О. (НК)").</summary>
+    public string NameWithCategory => Category.Length > 0 ? $"{Name} ({Category})" : Name;
 }
 
 /// <summary>
@@ -51,6 +69,10 @@ public sealed class ResultProtocolSection
 
     /// <summary>Time-limit text ("Контрольний час: 24:00:00"), blank when none — part of the section sub-caption.</summary>
     public string TimeLimitText { get; init; } = string.Empty;
+
+    /// <summary>Course-setter text ("Начальник дистанції: Рачук Тарас"), blank when none — printed next to the
+    /// group caption. The group's per-day override wins over the competition default (see the builder).</summary>
+    public string CourseSetterText { get; init; } = string.Empty;
 
     /// <summary>The data rows; each is the ordered cell strings matching the column headers.</summary>
     public IReadOnlyList<ResultProtocolBodyRow> Rows { get; init; } = [];

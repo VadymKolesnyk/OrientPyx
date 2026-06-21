@@ -36,41 +36,7 @@
         </Grid>
 
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel Spacing="16" MaxWidth="900">
-
-                <!-- Header text -->
-                <Border Classes="card" Padding="22">
-                    <StackPanel Spacing="14">
-                        <TextBlock Text="{Binding Localization[Protocols.Header.Title]}" Classes="h2"
-                                   FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
-                        <TextBlock Text="{Binding Localization[Protocols.Header.Hint]}" Classes="subtitle"
-                                   TextWrapping="Wrap" />
-
-                        <StackPanel Spacing="6">
-                            <TextBlock Text="{Binding Localization[Protocols.Header.MainTitle]}" Classes="label" />
-                            <TextBox Text="{Binding Title, Mode=TwoWay}"
-                                     PlaceholderText="{Binding Localization[Protocols.DefaultTitle]}" />
-                        </StackPanel>
-                        <StackPanel Spacing="6">
-                            <TextBlock Text="{Binding Localization[Protocols.Header.Subtitle]}" Classes="label" />
-                            <TextBox Text="{Binding Subtitle, Mode=TwoWay}" />
-                        </StackPanel>
-                        <StackPanel Spacing="6">
-                            <TextBlock Text="{Binding Localization[Protocols.Header.CompetitionType]}" Classes="label" />
-                            <TextBox Text="{Binding CompetitionType, Mode=TwoWay}" />
-                        </StackPanel>
-                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                            <StackPanel Grid.Column="0" Spacing="6">
-                                <TextBlock Text="{Binding Localization[Protocols.Header.Date]}" Classes="label" />
-                                <TextBox Text="{Binding DateText, Mode=TwoWay}" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Spacing="6">
-                                <TextBlock Text="{Binding Localization[Protocols.Header.Venue]}" Classes="label" />
-                                <TextBox Text="{Binding Venue, Mode=TwoWay}" />
-                            </StackPanel>
-                        </Grid>
-                    </StackPanel>
-                </Border>
+            <StackPanel Spacing="16" MaxWidth="1180">
 
                 <!-- Layout: orientation -->
                 <Border Classes="card" Padding="22">
@@ -82,7 +48,7 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Live document preview (drag column headers to reorder) -->
+                <!-- Live document preview (edit the header in place, drag column headers to reorder) -->
                 <Border Classes="card" Padding="22">
                     <StackPanel Spacing="14">
                         <TextBlock Text="{Binding Localization[Protocols.Preview.Title]}" Classes="h2"
@@ -90,48 +56,74 @@
                         <TextBlock Text="{Binding Localization[Protocols.Preview.Hint]}" Classes="subtitle"
                                    TextWrapping="Wrap" />
 
-                        <!-- The document mock-up: page-like sheet with the header text and one group table. -->
-                        <Border Background="White" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
-                                CornerRadius="4" Padding="20" ClipToBounds="True">
-                            <StackPanel Spacing="4">
-                                <!-- Header text, centred like the printed protocol -->
-                                <TextBlock Text="{Binding Preview.Title}" Foreground="Black"
-                                           FontWeight="Bold" FontSize="15" TextAlignment="Center"
-                                           TextWrapping="Wrap" />
-                                <TextBlock Text="{Binding Preview.Subtitle}" Foreground="Black"
-                                           FontSize="12" TextAlignment="Center" TextWrapping="Wrap"
-                                           IsVisible="{Binding Preview.Subtitle, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                <Grid ColumnDefinitions="*,Auto,*" Margin="0,4,0,0">
-                                    <TextBlock Grid.Column="0" Text="{Binding Preview.DateText}" Foreground="Black"
-                                               FontSize="11" HorizontalAlignment="Left" />
-                                    <TextBlock Grid.Column="1" Text="{Binding Preview.CompetitionType}" Foreground="Black"
-                                               FontSize="11" HorizontalAlignment="Center" TextWrapping="Wrap" />
-                                    <TextBlock Grid.Column="2" Text="{Binding Preview.Venue}" Foreground="Black"
-                                               FontSize="11" HorizontalAlignment="Right" />
-                                </Grid>
+                        <!-- The document mock-up: a fixed-size page-shaped sheet in true A4 proportions
+                             (portrait / landscape). It does NOT resize with content — content that overflows is
+                             clipped, just like a printed page. Centred on a soft backdrop like a print preview. -->
+                        <Border Background="#EEF0F4" CornerRadius="6" Padding="24">
+                            <Border Background="White" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                    CornerRadius="2" Padding="26" ClipToBounds="True"
+                                    HorizontalAlignment="Center" VerticalAlignment="Top"
+                                    BoxShadow="0 2 10 0 #22000000"
+                                    Width="{Binding Preview.IsLandscape, Converter={StaticResource LandscapeToPageSize}, ConverterParameter=width}"
+                                    Height="{Binding Preview.IsLandscape, Converter={StaticResource LandscapeToPageSize}, ConverterParameter=height}">
+                                <StackPanel Spacing="4">
+                                    <!-- Header text, centred like the printed protocol — editable in place. Each
+                                         field is multi-line (Enter inserts a new line). Order, top to bottom:
+                                         the organising body (subtitle), then the competition name, then the
+                                         title — exactly as the .docx stacks them. -->
+                                    <TextBox Classes="protocol-inline" Text="{Binding Subtitle, Mode=TwoWay}"
+                                             PlaceholderText="{Binding Localization[Protocols.Header.Subtitle]}"
+                                             FontSize="12" TextAlignment="Center"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                    <TextBox Classes="protocol-inline" Text="{Binding CompetitionName, Mode=TwoWay}"
+                                             PlaceholderText="{Binding Localization[Protocols.Header.CompetitionName]}"
+                                             FontSize="12" TextAlignment="Center"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                    <TextBox Classes="protocol-inline" Text="{Binding Title, Mode=TwoWay}"
+                                             PlaceholderText="{Binding Localization[Protocols.DefaultTitle]}"
+                                             FontWeight="Bold" FontSize="15" TextAlignment="Center"
+                                             AcceptsReturn="True" TextWrapping="Wrap" />
+                                    <Grid ColumnDefinitions="*,Auto,*" Margin="0,4,0,0">
+                                        <TextBox Grid.Column="0" Classes="protocol-inline" Text="{Binding DateText, Mode=TwoWay}"
+                                                 PlaceholderText="{Binding Localization[Protocols.Header.Date]}"
+                                                 FontSize="11" HorizontalAlignment="Left" TextAlignment="Left"
+                                                 AcceptsReturn="True" TextWrapping="Wrap" />
+                                        <TextBox Grid.Column="1" Classes="protocol-inline" Text="{Binding CompetitionType, Mode=TwoWay}"
+                                                 PlaceholderText="{Binding Localization[Protocols.Header.CompetitionType]}"
+                                                 FontSize="11" HorizontalAlignment="Center" TextAlignment="Center"
+                                                 AcceptsReturn="True" TextWrapping="Wrap" />
+                                        <TextBox Grid.Column="2" Classes="protocol-inline" Text="{Binding Venue, Mode=TwoWay}"
+                                                 PlaceholderText="{Binding Localization[Protocols.Header.Venue]}"
+                                                 FontSize="11" HorizontalAlignment="Right" TextAlignment="Right"
+                                                 AcceptsReturn="True" TextWrapping="Wrap" />
+                                    </Grid>
 
-                                <!-- Group caption -->
-                                <TextBlock Text="{Binding Preview.GroupName}" Foreground="Black"
-                                           FontWeight="Bold" FontSize="12" Margin="0,12,0,0"
-                                           IsVisible="{Binding Preview.GroupName, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                <TextBlock Text="{Binding Preview.GroupSubcaption}" Foreground="#444"
-                                           FontSize="11"
-                                           IsVisible="{Binding Preview.GroupSubcaption, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                    <!-- Empty hint when there are no rows -->
+                                    <TextBlock Text="{Binding Localization[Protocols.Preview.Empty]}" Foreground="#888"
+                                               FontStyle="Italic" FontSize="11" Margin="0,10,0,0" TextWrapping="Wrap"
+                                               IsVisible="{Binding Preview.IsEmpty}" />
 
-                                <!-- Empty hint when there are no rows -->
-                                <TextBlock Text="{Binding Localization[Protocols.Preview.Empty]}" Foreground="#888"
-                                           FontStyle="Italic" FontSize="11" Margin="0,10,0,0" TextWrapping="Wrap"
-                                           IsVisible="{Binding Preview.IsEmpty}" />
+                                    <!-- The group sections + tables are built in code-behind (print-faithful,
+                                         header drag-reorder). The page clips overflow, so no inner scroll. -->
+                                    <Grid x:Name="PreviewTableHost" Margin="0,8,0,0"
+                                          IsVisible="{Binding !Preview.IsEmpty}" />
 
-                                <!-- The table is built in code-behind (header drag-reorder + aligned cells). -->
-                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
-                                              Margin="0,8,0,0" IsVisible="{Binding !Preview.IsEmpty}">
-                                    <Grid x:Name="PreviewTableHost" />
-                                </ScrollViewer>
-                            </StackPanel>
+                                    <!-- Officials' signature block (chief judge / secretary / jury), printed
+                                         at the end exactly as the .docx does. -->
+                                    <ItemsControl ItemsSource="{Binding Preview.Officials}" Margin="60,16,0,0"
+                                                  IsVisible="{Binding Preview.HasOfficials}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding}" FontFamily="Times New Roman"
+                                                           FontSize="11" Margin="0,3" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
                         </Border>
 
-                        <!-- Column visibility + arrow reorder (re-show hidden columns here) -->
+                        <!-- Column visibility — simple checkboxes (reorder by dragging the preview headers) -->
                         <ItemsControl ItemsSource="{Binding Columns}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
@@ -140,25 +132,9 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="pages:ProtocolColumnItemViewModel">
-                                    <Border Classes="card" Padding="8,4" Margin="0,0,6,6">
-                                        <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="4">
-                                            <CheckBox Grid.Column="0" VerticalAlignment="Center"
-                                                      IsChecked="{Binding Visible, Mode=TwoWay}"
-                                                      Content="{Binding Caption}" />
-                                            <Button Grid.Column="1" Classes="ghost" Padding="6,3"
-                                                    Command="{Binding $parent[ItemsControl].((pages:ProtocolsViewModel)DataContext).MoveColumnUpCommand}"
-                                                    CommandParameter="{Binding}"
-                                                    ToolTip.Tip="{Binding $parent[ItemsControl].((pages:ProtocolsViewModel)DataContext).Localization[Protocols.Columns.Up]}">
-                                                <PathIcon Data="M12,8 l5,6 H7 Z" Width="10" Height="10" />
-                                            </Button>
-                                            <Button Grid.Column="2" Classes="ghost" Padding="6,3"
-                                                    Command="{Binding $parent[ItemsControl].((pages:ProtocolsViewModel)DataContext).MoveColumnDownCommand}"
-                                                    CommandParameter="{Binding}"
-                                                    ToolTip.Tip="{Binding $parent[ItemsControl].((pages:ProtocolsViewModel)DataContext).Localization[Protocols.Columns.Down]}">
-                                                <PathIcon Data="M7,10 h10 l-5,6 Z" Width="10" Height="10" />
-                                            </Button>
-                                        </Grid>
-                                    </Border>
+                                    <CheckBox VerticalAlignment="Center" Margin="0,0,18,6"
+                                              IsChecked="{Binding Visible, Mode=TwoWay}"
+                                              Content="{Binding Caption}" />
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>

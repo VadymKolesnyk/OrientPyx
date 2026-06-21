@@ -57,6 +57,57 @@
             </StackPanel>
         </Border>
 
+        <!-- Officials (printed on the protocols). Each named official has an optional judge category;
+             the course-setter here is the competition default — a group on a day may override it. -->
+        <Border Classes="card" Padding="28">
+            <StackPanel Spacing="16">
+
+                <TextBlock Text="{Binding Localization[CompetitionInfo.Officials]}" Classes="h2" />
+
+                <Grid ColumnDefinitions="*,16,160">
+                    <StackPanel Grid.Column="0" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CompetitionInfo.CourseSetter]}" Classes="label" />
+                        <TextBox Text="{Binding CourseSetter, Mode=TwoWay}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CompetitionInfo.JudgeCategory]}" Classes="label" />
+                        <TextBox Text="{Binding CourseSetterCategory, Mode=TwoWay}" />
+                    </StackPanel>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,16,160">
+                    <StackPanel Grid.Column="0" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CompetitionInfo.ChiefJudge]}" Classes="label" />
+                        <TextBox Text="{Binding ChiefJudge, Mode=TwoWay}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CompetitionInfo.JudgeCategory]}" Classes="label" />
+                        <TextBox Text="{Binding ChiefJudgeCategory, Mode=TwoWay}" />
+                    </StackPanel>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,16,160">
+                    <StackPanel Grid.Column="0" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CompetitionInfo.ChiefSecretary]}" Classes="label" />
+                        <TextBox Text="{Binding ChiefSecretary, Mode=TwoWay}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CompetitionInfo.JudgeCategory]}" Classes="label" />
+                        <TextBox Text="{Binding ChiefSecretaryCategory, Mode=TwoWay}" />
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[CompetitionInfo.Jury]}" Classes="label" />
+                    <TextBlock Text="{Binding Localization[CompetitionInfo.JuryHint]}" Classes="subtitle"
+                               FontSize="12" TextWrapping="Wrap" />
+                    <TextBox Text="{Binding Jury, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap"
+                             MinHeight="80" />
+                </StackPanel>
+
+            </StackPanel>
+        </Border>
+
         <StackPanel Orientation="Horizontal" Spacing="12">
             <Button Content="{Binding Localization[CompetitionInfo.Save]}"
                     Command="{Binding SaveCommand}"

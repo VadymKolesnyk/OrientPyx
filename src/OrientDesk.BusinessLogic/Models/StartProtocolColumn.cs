@@ -42,5 +42,11 @@ public enum StartProtocolColumn
     Chip,
 
     /// <summary>Group name («Група») — useful in the judges' protocol, where a minute section mixes groups.</summary>
-    Group
+    Group,
+
+    /// <summary>Team / region of the runner («команда») — printed on the judges' protocol.</summary>
+    Team,
+
+    /// <summary>A blank «Прим.» (note) column for the judge to write in on the printed sheet — always empty.</summary>
+    Note
 }

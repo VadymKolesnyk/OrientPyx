@@ -20,14 +20,26 @@ public enum StartProtocolKind
 /// <see cref="ResultProtocolDocument"/> (the same document model the results protocol and its .docx writer
 /// use), grouping/ordering it by the chosen <see cref="StartProtocolKind"/>.
 /// </summary>
-public sealed record StartProtocolData(IReadOnlyList<StartProtocolGroup> Groups);
+public sealed record StartProtocolData(
+    IReadOnlyList<StartProtocolGroup> Groups,
+    ProtocolOfficialsData Officials)
+{
+    /// <summary>Back-compat overload: no officials configured.</summary>
+    public StartProtocolData(IReadOnlyList<StartProtocolGroup> Groups)
+        : this(Groups, ProtocolOfficialsData.None) { }
+}
 
-/// <summary>One group's section of raw start data: its name and its members (with start times).</summary>
+/// <summary>One group's section of raw start data: its name, its members (with start times), and the group's
+/// effective course-setter (override, else competition default) printed in the section caption.</summary>
 public sealed record StartProtocolGroup(
     string Name,
     /// <summary>Display order within the day (mirrors the day grid order).</summary>
     int Order,
-    IReadOnlyList<StartProtocolRow> Rows);
+    IReadOnlyList<StartProtocolRow> Rows,
+    /// <summary>Effective course-setter (начальник дистанції) for this group; blank when none.</summary>
+    string CourseSetter = "",
+    /// <summary>Optional judge category for the effective course-setter; blank when none.</summary>
+    string CourseSetterCategory = "");
 
 /// <summary>
 /// One participant's raw row in a start protocol: identity fields plus the drawn start time (null when the
@@ -45,4 +57,6 @@ public sealed record StartProtocolRow(
     string Coach,
     string Rank,
     string Chip,
-    string GroupName);
+    string GroupName,
+    /// <summary>Team / команда of the runner; blank when none. Shown in the judges' protocol.</summary>
+    string Team = "");

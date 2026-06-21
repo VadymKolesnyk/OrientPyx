@@ -4,15 +4,18 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace OrientDesk.Presentation.ViewModels.Pages;
 
 /// <summary>
-/// A live preview of the results-protocol document the user is configuring: the page header (title /
-/// subtitle / type-date-venue row) plus one group section rendered as a real table. It is built from the
-/// same <see cref="OrientDesk.BusinessLogic.Interfaces.IResultProtocolBuilder"/> output the .docx export
-/// uses, so what the user sees is what they get. Rebuilt whenever a column is reordered, hidden/shown, the
-/// header text changes, or the previewed day changes. The column headers carry the drag-reorder interaction
-/// (see <see cref="ProtocolPreviewColumn"/>); the body rows are read-only formatted cells.
+/// A live preview of the protocol document the user is configuring: the page header (title / subtitle /
+/// type-date-venue row) plus the group sections rendered as real, print-faithful tables — the same multi-
+/// section layout, font and density the .docx export produces, so what the user sees is what they get. Built
+/// from the same builder output the export uses. Rebuilt whenever a column is reordered, hidden/shown, the
+/// header text changes, or the previewed day changes. The column headers (repeated per section) carry the
+/// drag-reorder interaction (see <see cref="ProtocolPreviewColumn"/>); the body rows are read-only.
 /// </summary>
 public sealed partial class ProtocolPreviewViewModel : ObservableObject
 {
+    [ObservableProperty]
+    private string _competitionName = string.Empty;
+
     [ObservableProperty]
     private string _title = string.Empty;
 
@@ -35,19 +38,19 @@ public sealed partial class ProtocolPreviewViewModel : ObservableObject
     [ObservableProperty]
     private bool _isEmpty = true;
 
-    /// <summary>The previewed group's caption ("Вікова група KIDS"), blank when there is no group.</summary>
-    [ObservableProperty]
-    private string _groupName = string.Empty;
-
-    /// <summary>The previewed group's course sub-caption ("Довжина: 1.300 км · 12 КП · Контрольний час: 24:00:00").</summary>
-    [ObservableProperty]
-    private string _groupSubcaption = string.Empty;
-
-    /// <summary>The visible columns, in on-page order. Header cells drive the drag-reorder.</summary>
+    /// <summary>The visible columns, in on-page order. Header cells (repeated per section) drive the drag-reorder.</summary>
     public ObservableCollection<ProtocolPreviewColumn> Columns { get; } = [];
 
-    /// <summary>The previewed body rows (capped), each a list of formatted cells aligned to <see cref="Columns"/>.</summary>
-    public ObservableCollection<ProtocolPreviewRow> Rows { get; } = [];
+    /// <summary>The group sections, in display order — each rendered as its own caption + table (like the .docx).</summary>
+    public ObservableCollection<ProtocolPreviewSection> Sections { get; } = [];
+
+    /// <summary>The officials' signature lines printed below the table (chief judge / secretary / jury), each
+    /// "<role>: <name (category)>". Empty when none are configured.</summary>
+    public ObservableCollection<string> Officials { get; } = [];
+
+    /// <summary>True when there are officials to print (drives the block's visibility on the page).</summary>
+    [ObservableProperty]
+    private bool _hasOfficials;
 }
 
 /// <summary>
@@ -70,7 +73,32 @@ public sealed class ProtocolPreviewColumn
     public string Caption { get; }
 }
 
-/// <summary>One body row in the preview table: the formatted cell strings and whether it is a team caption
+/// <summary>One group section in the preview: a bold group caption, an optional course sub-caption, and the
+/// ordered body rows. Mirrors a <c>ResultProtocolSection</c>/start section so the preview stacks groups on the
+/// page exactly as the .docx does.</summary>
+public sealed class ProtocolPreviewSection
+{
+    public ProtocolPreviewSection(string groupName, string subcaption, IReadOnlyList<ProtocolPreviewRow> rows,
+        string courseSetter = "")
+    {
+        GroupName = groupName;
+        Subcaption = subcaption;
+        Rows = rows;
+        CourseSetter = courseSetter;
+    }
+
+    public string GroupName { get; }
+
+    /// <summary>Course facts line ("Довжина: 1.300 км · 12 КП"), blank for start sections / unknown courses.</summary>
+    public string Subcaption { get; }
+
+    /// <summary>"Начальник дистанції: …" printed on the caption line; blank when no course-setter.</summary>
+    public string CourseSetter { get; }
+
+    public IReadOnlyList<ProtocolPreviewRow> Rows { get; }
+}
+
+/// <summary>One body row in a preview section: the formatted cell strings and whether it is a team caption
 /// row (rendered bold for a rogaine section), aligned to <see cref="ProtocolPreviewViewModel.Columns"/>.</summary>
 public sealed class ProtocolPreviewRow
 {

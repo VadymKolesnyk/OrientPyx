@@ -25,4 +25,8 @@ public sealed record ProtocolLabels(
     IReadOnlyDictionary<ProtocolColumn, string> ColumnHeaders,
     string DistanceLabel,
     string ControlCountLabel,
-    string TimeLimitLabel);
+    string TimeLimitLabel,
+    string CourseSetterLabel = "",
+    string ChiefJudgeLabel = "",
+    string ChiefSecretaryLabel = "",
+    string JuryLabel = "");

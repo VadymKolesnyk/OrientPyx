@@ -32,6 +32,12 @@ public interface IAppStore
 
     Task SaveResultProtocolJsonAsync(string json, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the app-level default start-protocol settings JSON for the given kind, or null/blank
+    /// when never saved.</summary>
+    Task<string?> GetStartProtocolJsonAsync(StartProtocolKind kind, CancellationToken cancellationToken = default);
+
+    Task SaveStartProtocolJsonAsync(StartProtocolKind kind, string json, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the last opened competition identifier + day number, if any.</summary>
     Task<(string? Identifier, int? DayNumber)> GetLastSessionAsync(CancellationToken cancellationToken = default);
 

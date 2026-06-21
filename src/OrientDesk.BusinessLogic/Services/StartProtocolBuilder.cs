@@ -41,26 +41,29 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
 
         var sections = kind == StartProtocolKind.Judges
             ? BuildJudgesSections(data, columns, labels)
-            : BuildRegularSections(data, columns);
+            : BuildRegularSections(data, columns, labels);
 
         var title = settings.Title.Trim().Length > 0 ? settings.Title.Trim() : labels.DefaultTitle;
 
         return new ResultProtocolDocument
         {
             Orientation = settings.Orientation,
+            CompetitionName = settings.CompetitionName.Trim(),
             Title = title,
             Subtitle = settings.Subtitle.Trim(),
             Venue = settings.Venue.Trim(),
             DateText = settings.DateText.Trim(),
             CompetitionType = settings.CompetitionType.Trim(),
             ColumnHeaders = headers,
-            Sections = sections
+            Sections = sections,
+            Officials = ProtocolOfficialsFactory.Build(
+                data.Officials, labels.ChiefJudgeLabel, labels.ChiefSecretaryLabel, labels.JuryLabel)
         };
     }
 
     // Regular: one section per group; members ordered by start time (drawn first, undrawn last), then name.
     private static List<ResultProtocolSection> BuildRegularSections(
-        StartProtocolData data, IReadOnlyList<StartProtocolColumn> columns)
+        StartProtocolData data, IReadOnlyList<StartProtocolColumn> columns, StartProtocolLabels labels)
     {
         var sections = new List<ResultProtocolSection>(data.Groups.Count);
         foreach (var group in data.Groups.OrderBy(g => g.Order))
@@ -78,9 +81,26 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
                 body.Add(new ResultProtocolBodyRow(columns.Select(c => Cell(c, row, seq)).ToList()));
             }
 
-            sections.Add(new ResultProtocolSection { GroupName = group.Name, Rows = body });
+            sections.Add(new ResultProtocolSection
+            {
+                GroupName = group.Name,
+                CourseSetterText = FormatCourseSetter(
+                    labels.CourseSetterLabel, group.CourseSetter, group.CourseSetterCategory),
+                Rows = body
+            });
         }
         return sections;
+    }
+
+    // "Начальник дистанції: Рачук Тарас" (category appended in parentheses), or blank when none.
+    private static string FormatCourseSetter(string label, string name, string category)
+    {
+        var trimmed = (name ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+            return string.Empty;
+        var cat = (category ?? string.Empty).Trim();
+        var who = cat.Length > 0 ? $"{trimmed} ({cat})" : trimmed;
+        return label.Length > 0 ? $"{label}: {who}" : who;
     }
 
     // Judges: one section per start minute (across all groups), members ordered by name; undrawn runners
@@ -139,7 +159,8 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
     // groups together. Start times are time-of-day, so this stays within a day.
     private static TimeSpan WholeMinute(TimeSpan t) => TimeSpan.FromMinutes(Math.Floor(t.TotalMinutes));
 
-    private static string FormatMinute(TimeSpan t) => t.ToString(@"hh\:mm", CultureInfo.InvariantCulture);
+    // The minute caption on the judges' sheet reads as a full time-of-day band ("11:01:00").
+    private static string FormatMinute(TimeSpan t) => t.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
 
     private static string Cell(StartProtocolColumn column, StartProtocolRow row, int sequence) => column switch
     {
@@ -156,6 +177,9 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
         StartProtocolColumn.Rank => row.Rank,
         StartProtocolColumn.Chip => row.Chip,
         StartProtocolColumn.Group => row.GroupName,
+        StartProtocolColumn.Team => row.Team,
+        // A blank note column for the judge to write in on the printed sheet.
+        StartProtocolColumn.Note => string.Empty,
         _ => string.Empty
     };
 }

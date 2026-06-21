@@ -26,4 +26,15 @@ public class AppSettingsRow
     /// application level so one protocol layout is shared across competitions.
     /// </summary>
     public string ResultProtocolJson { get; set; } = string.Empty;
+
+    /// <summary>
+    /// App-level default template for the <b>regular</b> start protocol, serialised as JSON. Blank until the
+    /// user saves one (via "save for next competitions"); a new day seeds from this, falling back to the
+    /// built-in kind default when blank. Stored per kind so each start protocol keeps its own default layout.
+    /// </summary>
+    public string StartProtocolRegularJson { get; set; } = string.Empty;
+
+    /// <summary>App-level default template for the <b>judges'</b> start protocol, serialised as JSON (see
+    /// <see cref="StartProtocolRegularJson"/>).</summary>
+    public string StartProtocolJudgesJson { get; set; } = string.Empty;
 }

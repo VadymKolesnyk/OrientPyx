@@ -33,4 +33,10 @@ public interface IAppSettingsService
     Task<ResultProtocolSettings> GetResultProtocolSettingsAsync(CancellationToken cancellationToken = default);
 
     Task SaveResultProtocolSettingsAsync(ResultProtocolSettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the app-level default start-protocol settings for the kind, applying the kind's
+    /// built-in default when never saved or unreadable.</summary>
+    Task<StartProtocolSettings> GetStartProtocolSettingsAsync(StartProtocolKind kind, CancellationToken cancellationToken = default);
+
+    Task SaveStartProtocolSettingsAsync(StartProtocolKind kind, StartProtocolSettings settings, CancellationToken cancellationToken = default);
 }

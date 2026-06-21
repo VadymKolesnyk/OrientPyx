@@ -49,6 +49,12 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     [ObservableProperty]
     private DisciplineOverrideOption _selectedDiscipline;
 
+    [ObservableProperty]
+    private string _courseSetter;
+
+    [ObservableProperty]
+    private string _courseSetterCategory;
+
     public GroupDayRowViewModel(
         GroupDayRow row,
         ILocalizationService localization,
@@ -76,6 +82,8 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         _requiredCountText = FormatInt(row.RequiredControlCount);
         _penaltyText = FormatDecimal(row.PenaltyPerMinute);
         _timeLimitText = FormatTime(row.TimeLimitSeconds);
+        _courseSetter = row.CourseSetter;
+        _courseSetterCategory = row.CourseSetterCategory;
         _selectedDiscipline = DisciplineOptions.First(o => o.Value == row.DisciplineOverride);
 
         // Rogaine penalises over-time by a default rate (1 бал/min), so show that default in the cell when the
@@ -126,7 +134,9 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         DayDefaultDiscipline: _dayDefaultDiscipline,
         TimeLimitSeconds: ParseTime(TimeLimitText),
         RequiredControlCount: ParseInt(RequiredCountText),
-        PenaltyPerMinute: ParseDecimal(PenaltyText));
+        PenaltyPerMinute: ParseDecimal(PenaltyText),
+        CourseSetter: (CourseSetter ?? string.Empty).Trim(),
+        CourseSetterCategory: (CourseSetterCategory ?? string.Empty).Trim());
 
     partial void OnNameChanged(string value) => QueueSave();
 
@@ -140,6 +150,8 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     partial void OnRequiredCountTextChanged(string value) => QueueSave();
     partial void OnPenaltyTextChanged(string value) => QueueSave();
     partial void OnTimeLimitTextChanged(string value) => QueueSave();
+    partial void OnCourseSetterChanged(string value) => QueueSave();
+    partial void OnCourseSetterCategoryChanged(string value) => QueueSave();
 
     partial void OnSelectedDisciplineChanged(DisciplineOverrideOption value)
     {

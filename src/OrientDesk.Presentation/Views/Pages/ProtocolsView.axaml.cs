@@ -61,8 +61,11 @@ public partial class ProtocolsView : UserControl
 
         try
         {
-            await using var stream = await file.OpenWriteAsync();
-            await stream.WriteAsync(result.Bytes);
+            await using (var stream = await file.OpenWriteAsync())
+                await stream.WriteAsync(result.Bytes);
+
+            // Open the freshly saved document in the OS default app (Word) so the user sees it immediately.
+            ProtocolFileLauncher.TryOpen(file);
         }
         catch
         {

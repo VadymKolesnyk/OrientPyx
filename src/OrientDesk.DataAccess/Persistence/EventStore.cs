@@ -44,6 +44,13 @@ public sealed class EventStore : IEventStore
             existing.RaisedFeeEnabled = info.RaisedFeeEnabled;
             existing.RaisedFeeAmount = info.RaisedFeeAmount;
             existing.ChipRentalPricePerDay = info.ChipRentalPricePerDay;
+            existing.CourseSetter = info.CourseSetter;
+            existing.CourseSetterCategory = info.CourseSetterCategory;
+            existing.ChiefJudge = info.ChiefJudge;
+            existing.ChiefJudgeCategory = info.ChiefJudgeCategory;
+            existing.ChiefSecretary = info.ChiefSecretary;
+            existing.ChiefSecretaryCategory = info.ChiefSecretaryCategory;
+            existing.Jury = info.Jury;
         }
 
         await db.SaveChangesAsync(cancellationToken);
@@ -277,6 +284,8 @@ public sealed class EventStore : IEventStore
         existing.TimeLimitSeconds = settings.TimeLimitSeconds;
         existing.RequiredControlCount = settings.RequiredControlCount;
         existing.PenaltyPerMinute = settings.PenaltyPerMinute;
+        existing.CourseSetter = settings.CourseSetter;
+        existing.CourseSetterCategory = settings.CourseSetterCategory;
         await db.SaveChangesAsync(cancellationToken);
     }
 

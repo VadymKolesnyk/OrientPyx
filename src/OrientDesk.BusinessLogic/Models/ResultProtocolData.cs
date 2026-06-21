@@ -6,7 +6,31 @@ namespace OrientDesk.BusinessLogic.Models;
 /// computed <see cref="ResultProtocolRow.Result"/>). The layer-neutral <c>IResultProtocolBuilder</c> turns
 /// this — plus the user's settings + localized labels — into a renderable <see cref="ResultProtocolDocument"/>.
 /// </summary>
-public sealed record ResultProtocolData(IReadOnlyList<ResultProtocolGroup> Groups);
+public sealed record ResultProtocolData(
+    IReadOnlyList<ResultProtocolGroup> Groups,
+    ProtocolOfficialsData Officials)
+{
+    /// <summary>Back-compat overload: no officials configured.</summary>
+    public ResultProtocolData(IReadOnlyList<ResultProtocolGroup> Groups)
+        : this(Groups, ProtocolOfficialsData.None) { }
+}
+
+/// <summary>
+/// The raw officials gathered from the competition metadata, shared by the results and both start protocols:
+/// the chief judge, chief secretary (each a name + optional judge category) and the jury (free multi-line
+/// text, one member per line). The builders turn this into the document's trailing signature block. The
+/// course-setter is NOT here — it is per-group (see <see cref="ResultProtocolGroup.CourseSetter"/>).
+/// </summary>
+public sealed record ProtocolOfficialsData(
+    string ChiefJudge,
+    string ChiefJudgeCategory,
+    string ChiefSecretary,
+    string ChiefSecretaryCategory,
+    string Jury)
+{
+    public static readonly ProtocolOfficialsData None =
+        new(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty);
+}
 
 /// <summary>One group's section of raw protocol data: its name, course metadata, and participant rows.</summary>
 public sealed record ResultProtocolGroup(
@@ -22,7 +46,12 @@ public sealed record ResultProtocolGroup(
     /// <summary>True for a team discipline (rogaine): the builder groups the rows by team and shows a team
     /// sub-row (team place / score) above its members, instead of a flat per-person ranking.</summary>
     bool IsTeam,
-    IReadOnlyList<ResultProtocolRow> Rows);
+    IReadOnlyList<ResultProtocolRow> Rows,
+    /// <summary>Effective course-setter (начальник дистанції) for this group: the group's per-day override,
+    /// else the competition default. Blank when none. Printed in the group caption.</summary>
+    string CourseSetter = "",
+    /// <summary>Optional judge category for the effective course-setter. Blank when none.</summary>
+    string CourseSetterCategory = "");
 
 /// <summary>
 /// One participant's raw row in a protocol group: the identity fields plus the computed day result. The

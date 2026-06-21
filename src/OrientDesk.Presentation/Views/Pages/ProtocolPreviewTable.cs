@@ -1,6 +1,8 @@
+using System.Collections.Generic;
 using System.Collections.Specialized;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Layout;
@@ -9,12 +11,16 @@ using OrientDesk.Presentation.ViewModels.Pages;
 namespace OrientDesk.Presentation.Views.Pages;
 
 /// <summary>
-/// Renders the shared protocol document preview into a host <see cref="Grid"/>: a header row of column
-/// captions (each a drag source + drop target so columns can be reordered) and one row per preview body
-/// row, with aligned, code-sized columns. Used by both the results-protocol and start-protocol pages — they
-/// each own a <see cref="ProtocolPreviewTable"/> bound to their <see cref="IProtocolPreviewHost"/> and the
-/// "PreviewTableHost" grid in their XAML. Built in code (not XAML) because the column set is dynamic and the
-/// headers carry the drag interaction. Rebuilds whenever the host's preview columns/rows change.
+/// Renders the shared protocol document preview into a host <see cref="Grid"/> as a print-faithful mock-up:
+/// the group sections are stacked exactly as the .docx export lays them out — each a bold group caption, an
+/// optional course sub-caption, a boxed column-header row, then border-less data rows — in Times New Roman at
+/// a compact size, with the table filling the page width (star columns). Every header row is a drag source +
+/// drop target, so columns can be reordered from any section; the whole target/dragged column is highlighted
+/// across all sections and an insertion line marks where the column will land.
+///
+/// Used by both the results-protocol and start-protocol pages — each owns a <see cref="ProtocolPreviewTable"/>
+/// bound to its <see cref="IProtocolPreviewHost"/> and the "PreviewTableHost" grid in its XAML. Built in code
+/// (not XAML) because the column set and section count are dynamic and the headers carry the drag interaction.
 /// </summary>
 public sealed class ProtocolPreviewTable
 {
@@ -23,11 +29,31 @@ public sealed class ProtocolPreviewTable
     private static readonly DataFormat<string> ColumnFormat =
         DataFormat.CreateInProcessFormat<string>("orientdesk-protocol-column");
 
-    private static readonly IBrush GridLine = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC));
-    private static readonly IBrush HeaderFill = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
+    // Print-faithful look: serif font, compact size, only the header row boxed (data rows border-less).
+    private const string SerifFont = "Times New Roman";
+    private const double BodyFontSize = 10;
+    private const double CaptionFontSize = 11.5;
+    private const double SubcaptionFontSize = 10;
+
+    private static readonly FontFamily Serif = new(SerifFont);
+    private static readonly IBrush HeaderBorder = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33));
+
+    // Column highlight while dragging: a translucent accent wash over the hovered column, a fainter wash over
+    // the dragged column, and a thick insertion line where the dragged column would land.
+    private static readonly IBrush DropColumnFill = new SolidColorBrush(Color.FromArgb(0x33, 0x6D, 0x4A, 0xFF));
+    private static readonly IBrush DraggedColumnFill = new SolidColorBrush(Color.FromArgb(0x22, 0x6D, 0x4A, 0xFF));
+    private static readonly IBrush DropLineBrush = new SolidColorBrush(Color.FromRgb(0x6D, 0x4A, 0xFF));
 
     private readonly Grid _host;
     private IProtocolPreviewHost? _previewHost;
+
+    // All cells of each column across every section (header + body), kept so a drag can tint a whole column.
+    // Index = column index. Header cells carry no fill (only a box), body cells are transparent, so the wash
+    // is applied/cleared uniformly.
+    private readonly List<List<Border>> _columnCells = [];
+
+    // The drop-insertion line, spanning the whole table. Repositioned during drag-over, hidden otherwise.
+    private Rectangle? _dropLine;
 
     public ProtocolPreviewTable(Grid host)
     {
@@ -40,98 +66,269 @@ public sealed class ProtocolPreviewTable
         if (_previewHost is { } old)
         {
             old.Preview.Columns.CollectionChanged -= OnPreviewChanged;
-            old.Preview.Rows.CollectionChanged -= OnPreviewChanged;
+            old.Preview.Sections.CollectionChanged -= OnPreviewChanged;
+            old.Preview.PropertyChanged -= OnPreviewPropertyChanged;
         }
         _previewHost = host;
         if (_previewHost is { } h)
         {
             h.Preview.Columns.CollectionChanged += OnPreviewChanged;
-            h.Preview.Rows.CollectionChanged += OnPreviewChanged;
+            h.Preview.Sections.CollectionChanged += OnPreviewChanged;
+            h.Preview.PropertyChanged += OnPreviewPropertyChanged;
         }
         Rebuild();
     }
 
     private void OnPreviewChanged(object? sender, NotifyCollectionChangedEventArgs e) => Rebuild();
 
+    // Orientation changes the page's printable width, so the content-fit column widths must be recomputed —
+    // rebuild on IsLandscape. (Other header-text properties don't affect the table, so they're ignored.)
+    private void OnPreviewPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ProtocolPreviewViewModel.IsLandscape))
+            Rebuild();
+    }
+
     private void Rebuild()
     {
         _host.Children.Clear();
         _host.ColumnDefinitions.Clear();
         _host.RowDefinitions.Clear();
+        _columnCells.Clear();
+        _dropLine = null;
 
         if (_previewHost is not { } host)
             return;
         var columns = host.Preview.Columns;
-        var rows = host.Preview.Rows;
-        if (columns.Count == 0)
+        var sections = host.Preview.Sections;
+        if (columns.Count == 0 || sections.Count == 0)
             return;
 
+        // Explicit, content-proportional pixel widths — computed with the SAME algorithm the .docx writer uses
+        // (widest content per column across every section, scaled to fill the page width), so the preview lines
+        // up with the generated document. Recomputed on every Rebuild, which fires whenever columns are
+        // reordered, shown or hidden — so the widths always reflect the current column set and data.
+        var widths = ComputeColumnWidths(columns, sections);
         for (var c = 0; c < columns.Count; c++)
-            _host.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
-        _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto)); // header
-        for (var r = 0; r < rows.Count; r++)
+            _host.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(widths[c], GridUnitType.Pixel)));
+
+        for (var c = 0; c < columns.Count; c++)
+            _columnCells.Add([]);
+
+        var row = 0;
+        for (var s = 0; s < sections.Count; s++)
+        {
+            var section = sections[s];
+
+            // Group caption (bold) — spans all columns. A little top gap between sections. The course-setter
+            // (начальник дистанції), when present, is shown right-aligned on the same caption row.
             _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            AddSpanningText(section.GroupName, row, columns.Count, bold: true, size: CaptionFontSize,
+                topMargin: s == 0 ? 0 : 12);
+            if (section.CourseSetter.Length > 0)
+                AddSpanningText(section.CourseSetter, row, columns.Count, bold: true, size: CaptionFontSize,
+                    topMargin: s == 0 ? 0 : 12, alignRight: true);
+            row++;
 
-        // Header cells — each is a drag source + drop target for reordering its column.
-        for (var c = 0; c < columns.Count; c++)
-        {
-            var col = columns[c];
-            var header = new Border
+            // Course sub-caption (only when present).
+            if (section.Subcaption.Length > 0)
             {
-                Background = HeaderFill,
-                BorderBrush = GridLine,
-                BorderThickness = new Thickness(0.5),
-                Padding = new Thickness(8, 5),
-                Cursor = new Cursor(StandardCursorType.SizeWestEast),
-                DataContext = col,
-                Child = new TextBlock
-                {
-                    Text = col.Caption,
-                    Foreground = Brushes.Black,
-                    FontWeight = FontWeight.SemiBold,
-                    FontSize = 11,
-                    VerticalAlignment = VerticalAlignment.Center
-                }
-            };
-            header.PointerPressed += OnHeaderPointerPressed;
-            header.AddHandler(DragDrop.DragOverEvent, OnHeaderDragOver);
-            header.AddHandler(DragDrop.DropEvent, OnHeaderDrop);
-            DragDrop.SetAllowDrop(header, true);
+                _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+                AddSpanningText(section.Subcaption, row, columns.Count, bold: false, size: SubcaptionFontSize,
+                    topMargin: 0, foreground: Brushes.DimGray);
+                row++;
+            }
 
-            Grid.SetColumn(header, c);
-            Grid.SetRow(header, 0);
-            _host.Children.Add(header);
-        }
-
-        // Body cells.
-        for (var r = 0; r < rows.Count; r++)
-        {
-            var row = rows[r];
+            // Header row — boxed; each cell is a drag source + drop target.
+            _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
             for (var c = 0; c < columns.Count; c++)
             {
-                var text = c < row.Cells.Count ? row.Cells[c] : string.Empty;
-                var cell = new Border
+                var header = BuildHeaderCell(columns[c]);
+                WireDrag(header);
+
+                Grid.SetColumn(header, c);
+                Grid.SetRow(header, row);
+                _host.Children.Add(header);
+                _columnCells[c].Add(header);
+            }
+            row++;
+
+            // Body rows — border-less, top/bottom hairline so rows read as a table without a heavy grid.
+            foreach (var bodyRow in section.Rows)
+            {
+                _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+                for (var c = 0; c < columns.Count; c++)
                 {
-                    BorderBrush = GridLine,
-                    BorderThickness = new Thickness(0.5),
-                    Padding = new Thickness(8, 4),
-                    Child = new TextBlock
-                    {
-                        Text = text,
-                        Foreground = Brushes.Black,
-                        FontSize = 11,
-                        FontWeight = row.IsTeamHeader ? FontWeight.Bold : FontWeight.Normal,
-                        VerticalAlignment = VerticalAlignment.Center
-                    }
-                };
-                Grid.SetColumn(cell, c);
-                Grid.SetRow(cell, r + 1);
-                _host.Children.Add(cell);
+                    var text = c < bodyRow.Cells.Count ? bodyRow.Cells[c] : string.Empty;
+                    var cell = BuildBodyCell(text, bodyRow.IsTeamHeader, columns[c]);
+                    WireDrag(cell); // drag anywhere in a column, not just its header
+                    Grid.SetColumn(cell, c);
+                    Grid.SetRow(cell, row);
+                    _host.Children.Add(cell);
+                    _columnCells[c].Add(cell);
+                }
+                row++;
             }
         }
+
+        // The drop-insertion line, spanning every row. Hidden until a drag hovers a header.
+        _dropLine = new Rectangle
+        {
+            Width = 3,
+            Fill = DropLineBrush,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            IsHitTestVisible = false,
+            IsVisible = false,
+            Margin = new Thickness(-1.5, 0, 0, 0)
+        };
+        Grid.SetColumn(_dropLine, 0);
+        Grid.SetRow(_dropLine, 0);
+        Grid.SetRowSpan(_dropLine, row);
+        _host.Children.Add(_dropLine);
     }
 
-    // ── Header drag-reorder ──────────────────────────────────────────────────────────────────────────────
+    // ── Content-proportional column widths (mirrors the .docx writer so the preview matches the document) ──
+
+    // The preview sheet's geometry, kept in sync with LandscapeToPageWidthConverter + the sheet padding in the
+    // protocol Views, so the table fills the same printable width the document does. (Short side × A4 ratio for
+    // the long side; minus the sheet's left+right padding for the content width.)
+    private const double SheetShortSide = 720;          // LandscapeToPageWidthConverter.PortraitShortSide
+    private const double A4Ratio = 297.0 / 210.0;
+    private const double SheetPadding = 26;             // the white sheet Border's Padding in the Views
+
+    // Per-column pixel widths sized to the widest content in each column (across the header and every section's
+    // rows), then scaled to fill the page's printable width. One shared set for all sections — content-sized but
+    // equal between groups. Same shape as DocxResultProtocolWriter.ComputeColumnWidths so the two agree.
+    private List<double> ComputeColumnWidths(
+        IReadOnlyList<ProtocolPreviewColumn> columns,
+        IReadOnlyList<ProtocolPreviewSection> sections)
+    {
+        var count = columns.Count;
+
+        // Longest text (characters) per column, across the header and all rows of all sections.
+        var maxChars = new int[count];
+        for (var c = 0; c < count; c++)
+            maxChars[c] = columns[c].Caption?.Length ?? 0;
+        foreach (var section in sections)
+            foreach (var bodyRow in section.Rows)
+                for (var c = 0; c < count && c < bodyRow.Cells.Count; c++)
+                    maxChars[c] = Math.Max(maxChars[c], bodyRow.Cells[c]?.Length ?? 0);
+
+        // Natural width per column from its character count (average glyph advance at the body font size) plus
+        // the cell's left+right padding, with a sane minimum.
+        const double charPx = BodyFontSize * 0.62; // ≈ average glyph advance for the serif body font
+        const double padPx = 8;                    // BuildBodyCell horizontal padding (4 + 4)
+        const double minColPx = 26;
+        var natural = new double[count];
+        var total = 0.0;
+        for (var c = 0; c < count; c++)
+        {
+            natural[c] = Math.Max(minColPx, maxChars[c] * charPx + padPx);
+            total += natural[c];
+        }
+
+        // Scale to the sheet's printable width (the inner content width of the page Border).
+        var landscape = _previewHost?.Preview.IsLandscape == true;
+        var sheetWidth = landscape ? SheetShortSide * A4Ratio : SheetShortSide;
+        var printable = sheetWidth - 2 * SheetPadding;
+
+        var widths = new List<double>(count);
+        var assigned = 0.0;
+        for (var c = 0; c < count; c++)
+        {
+            var w = total > 0 ? natural[c] * printable / total : printable / count;
+            widths.Add(w);
+            assigned += w;
+        }
+        // Hand any rounding remainder to the first (name) column so the row spans the full width exactly.
+        if (count > 0)
+            widths[0] += printable - assigned;
+        return widths;
+    }
+
+    private void AddSpanningText(string text, int row, int columnCount, bool bold, double size,
+        double topMargin, IBrush? foreground = null, bool alignRight = false)
+    {
+        var block = new TextBlock
+        {
+            Text = text,
+            FontFamily = Serif,
+            Foreground = foreground ?? Brushes.Black,
+            FontWeight = bold ? FontWeight.Bold : FontWeight.Normal,
+            FontSize = size,
+            HorizontalAlignment = alignRight ? HorizontalAlignment.Right : HorizontalAlignment.Left,
+            Margin = new Thickness(0, topMargin, 0, 2)
+        };
+        Grid.SetColumn(block, 0);
+        Grid.SetColumnSpan(block, columnCount);
+        Grid.SetRow(block, row);
+        _host.Children.Add(block);
+    }
+
+    private static Border BuildHeaderCell(ProtocolPreviewColumn col)
+    {
+        var header = new Border
+        {
+            BorderBrush = HeaderBorder,
+            BorderThickness = new Thickness(0.8),
+            Padding = new Thickness(4, 2),
+            // A transparent (non-null) background makes the WHOLE cell — not just the text — hit-testable, so
+            // the drag works over empty space and empty columns too.
+            Background = Brushes.Transparent,
+            // The 4-arrow "move" cursor signals a column reorder by dragging.
+            Cursor = new Cursor(StandardCursorType.SizeAll),
+            DataContext = col,
+            Child = new TextBlock
+            {
+                Text = col.Caption,
+                FontFamily = Serif,
+                Foreground = Brushes.Black,
+                FontWeight = FontWeight.Bold,
+                FontSize = BodyFontSize,
+                VerticalAlignment = VerticalAlignment.Center
+            }
+        };
+        return header;
+    }
+
+    // A body cell carries its column in DataContext so it is ALSO a drag source/target — columns can be
+    // reordered by dragging anywhere in the column, not just its header. Long text wraps to the next line
+    // (no ellipsis), matching the printed protocol.
+    private static Border BuildBodyCell(string text, bool teamHeader, ProtocolPreviewColumn col) => new()
+    {
+        // Hairline under each row only — the printed protocol has no inner grid, but a faint rule keeps long
+        // lists readable on screen. No left/right/top borders so data rows stay border-less like the .docx.
+        BorderBrush = new SolidColorBrush(Color.FromRgb(0xE2, 0xE2, 0xE2)),
+        BorderThickness = new Thickness(0, 0, 0, 0.5),
+        Padding = new Thickness(4, 1.5),
+        // Transparent (non-null) background so the entire cell area is hit-testable — the drag works over the
+        // blank part of a cell and over empty cells, not only over the text glyphs.
+        Background = Brushes.Transparent,
+        Cursor = new Cursor(StandardCursorType.SizeAll), // 4-arrow move cursor
+        DataContext = col,
+        Child = new TextBlock
+        {
+            Text = text,
+            FontFamily = Serif,
+            Foreground = Brushes.Black,
+            FontSize = BodyFontSize,
+            FontWeight = teamHeader ? FontWeight.Bold : FontWeight.Normal,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap
+        }
+    };
+
+    // Makes a cell (header or body) a drag source + drop target for its column's reorder. Both kinds carry the
+    // column in DataContext, so the same handlers serve both — letting the user grab a column anywhere in it.
+    private void WireDrag(Border cell)
+    {
+        cell.PointerPressed += OnHeaderPointerPressed;
+        cell.AddHandler(DragDrop.DragOverEvent, OnHeaderDragOver);
+        cell.AddHandler(DragDrop.DropEvent, OnHeaderDrop);
+        DragDrop.SetAllowDrop(cell, true);
+    }
+
+    // ── Column drag-reorder (from any cell in a column) ──────────────────────────────────────────────────
 
     private async void OnHeaderPointerPressed(object? sender, PointerPressedEventArgs e)
     {
@@ -142,7 +339,16 @@ public sealed class ProtocolPreviewTable
 
         var data = new DataTransfer();
         data.Add(DataTransferItem.Create(ColumnFormat, col.Key));
-        await DragDrop.DoDragDropAsync(e, data, DragDropEffects.Move);
+
+        TintDraggedColumn(col.Key);
+        try
+        {
+            await DragDrop.DoDragDropAsync(e, data, DragDropEffects.Move);
+        }
+        finally
+        {
+            ClearHighlight();
+        }
     }
 
     private static bool TryGetDragged(DragEventArgs e, out string key)
@@ -158,30 +364,41 @@ public sealed class ProtocolPreviewTable
 
     private void OnHeaderDragOver(object? sender, DragEventArgs e)
     {
-        e.DragEffects = TryGetDragged(e, out _) ? DragDropEffects.Move : DragDropEffects.None;
-        e.Handled = true;
-    }
-
-    // Drop onto a header column: move the dragged column to this column's index. Dropping on the right half
-    // inserts after it, so the user can move a column to the very end.
-    private void OnHeaderDrop(object? sender, DragEventArgs e)
-    {
         if (sender is not Border { DataContext: ProtocolPreviewColumn target } header ||
             _previewHost is not { } host || !TryGetDragged(e, out var draggedKey))
+        {
+            e.DragEffects = DragDropEffects.None;
+            e.Handled = true;
             return;
+        }
+
+        e.DragEffects = DragDropEffects.Move;
+        e.Handled = true;
 
         var targetIndex = IndexOfColumn(host, target.Key);
         if (targetIndex < 0)
             return;
 
-        if (e.GetPosition(header).X > header.Bounds.Width / 2)
-            targetIndex++;
+        // Highlight the hovered column, keep the dragged column tinted, and place the insertion line at the
+        // left or right edge of the hovered column depending on the pointer half.
+        var insertAfter = e.GetPosition(header).X > header.Bounds.Width / 2;
+        Highlight(draggedKey, targetIndex, insertAfter);
+    }
 
-        var fromIndex = IndexOfColumn(host, draggedKey);
-        if (fromIndex >= 0 && fromIndex < targetIndex)
-            targetIndex--;
+    // Drop onto a column: place the dragged column before or after this one (the pointer's half decides). The
+    // host resolves both keys against its full column list — so the move is unaffected by hidden columns. (The
+    // previous version passed a raw index computed against the visible-only preview list, which landed wrong
+    // whenever a column was hidden.)
+    private void OnHeaderDrop(object? sender, DragEventArgs e)
+    {
+        ClearHighlight();
 
-        host.MoveColumnByKey(draggedKey, targetIndex);
+        if (sender is not Border { DataContext: ProtocolPreviewColumn target } header ||
+            _previewHost is not { } host || !TryGetDragged(e, out var draggedKey))
+            return;
+
+        var insertAfter = e.GetPosition(header).X > header.Bounds.Width / 2;
+        host.MoveColumnByKey(draggedKey, target.Key, insertAfter);
         e.Handled = true;
     }
 
@@ -191,5 +408,57 @@ public sealed class ProtocolPreviewTable
             if (host.Preview.Columns[i].Key == key)
                 return i;
         return -1;
+    }
+
+    // ── Drag highlight ───────────────────────────────────────────────────────────────────────────────────
+
+    // Tints the dragged column (a faint wash) at drag start, before any column is hovered.
+    private void TintDraggedColumn(string draggedKey)
+    {
+        if (_previewHost is not { } host)
+            return;
+        ClearHighlight();
+        var dragged = IndexOfColumn(host, draggedKey);
+        if (dragged >= 0 && dragged < _columnCells.Count)
+            FillColumn(dragged, DraggedColumnFill);
+    }
+
+    // Highlights the hovered (drop-target) column, keeps the dragged column tinted, and positions the
+    // insertion line at the chosen edge of the hovered column.
+    private void Highlight(string draggedKey, int targetIndex, bool insertAfter)
+    {
+        if (_previewHost is not { } host)
+            return;
+        ClearHighlight();
+
+        var dragged = IndexOfColumn(host, draggedKey);
+        if (dragged >= 0 && dragged < _columnCells.Count)
+            FillColumn(dragged, DraggedColumnFill);
+        if (targetIndex >= 0 && targetIndex < _columnCells.Count)
+            FillColumn(targetIndex, DropColumnFill);
+
+        if (_dropLine is { } line)
+        {
+            Grid.SetColumn(line, targetIndex);
+            line.HorizontalAlignment = insertAfter ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+            line.Margin = insertAfter ? new Thickness(0, 0, -1.5, 0) : new Thickness(-1.5, 0, 0, 0);
+            line.IsVisible = true;
+        }
+    }
+
+    private void FillColumn(int columnIndex, IBrush brush)
+    {
+        foreach (var cell in _columnCells[columnIndex])
+            cell.Background = brush;
+    }
+
+    private void ClearHighlight()
+    {
+        foreach (var column in _columnCells)
+            foreach (var cell in column)
+                // Reset to transparent (NOT null) so cells stay fully hit-testable for the next drag.
+                cell.Background = Brushes.Transparent;
+        if (_dropLine is { } line)
+            line.IsVisible = false;
     }
 }

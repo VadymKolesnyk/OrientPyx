@@ -27,6 +27,9 @@ public sealed class StartProtocolSettings
 
     // ── Header text. Blank ⇒ fall back to the competition's own value at build time. ────────────────
 
+    /// <summary>Competition-name line, printed centred above the title. Blank ⇒ the current competition's name.</summary>
+    public string CompetitionName { get; set; } = string.Empty;
+
     /// <summary>Main title line. Blank ⇒ a localized default ("СТАРТОВИЙ ПРОТОКОЛ").</summary>
     public string Title { get; set; } = string.Empty;
 
@@ -58,21 +61,26 @@ public sealed class StartProtocolSettings
         new() { Column = StartProtocolColumn.Dussh, Visible = false },
         new() { Column = StartProtocolColumn.Coach, Visible = false },
         new() { Column = StartProtocolColumn.Group, Visible = false },
+        new() { Column = StartProtocolColumn.Team, Visible = false },
+        new() { Column = StartProtocolColumn.Note, Visible = false },
     ];
 
-    /// <summary>Default column layout for the judges' (by-minute) protocol: Старт, №, ПІБ, Група, чіп —
-    /// the «Група» column matters here because a minute section mixes groups.</summary>
+    /// <summary>Default column layout for the judges' (by-minute) protocol — the compact «суддівський» sheet
+    /// (one minute caption row, then a tight table): № з/п, Номер, Чіп, Група, ПІБ, команда, Прим. The start
+    /// time itself is the minute caption row, so the «Старт» column is hidden by default.</summary>
     public static List<StartProtocolColumnSetting> JudgesDefaultColumns() =>
     [
-        new() { Column = StartProtocolColumn.StartTime, Visible = true },
+        new() { Column = StartProtocolColumn.Sequence, Visible = true },
         new() { Column = StartProtocolColumn.Number, Visible = true },
-        new() { Column = StartProtocolColumn.FullName, Visible = true },
-        new() { Column = StartProtocolColumn.Group, Visible = true },
         new() { Column = StartProtocolColumn.Chip, Visible = true },
+        new() { Column = StartProtocolColumn.Group, Visible = true },
+        new() { Column = StartProtocolColumn.FullName, Visible = true },
+        new() { Column = StartProtocolColumn.Team, Visible = true },
+        new() { Column = StartProtocolColumn.Note, Visible = true },
+        new() { Column = StartProtocolColumn.StartTime, Visible = false },
         new() { Column = StartProtocolColumn.BirthDate, Visible = false },
         new() { Column = StartProtocolColumn.Club, Visible = false },
         new() { Column = StartProtocolColumn.Region, Visible = false },
-        new() { Column = StartProtocolColumn.Sequence, Visible = false },
         new() { Column = StartProtocolColumn.Rank, Visible = false },
         new() { Column = StartProtocolColumn.Dussh, Visible = false },
         new() { Column = StartProtocolColumn.Coach, Visible = false },

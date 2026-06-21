@@ -30,12 +30,13 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
 {
     private readonly ICompetitionEditorService _editor;
     private readonly ISessionService _session;
+    private readonly IAppSettingsService _appSettings;
     private readonly IStartProtocolBuilder _builder;
     private readonly IResultProtocolWriter _writer;
     private readonly IBusyService _busy;
 
-    /// <summary>How many participant rows the preview shows (a mock-up, not the full protocol).</summary>
-    private const int PreviewRowCap = 10;
+    /// <summary>How many participant rows the preview shows — enough to fill an A4 page; the page clips the rest.</summary>
+    private const int PreviewRowCap = 40;
 
     private bool _syncingDay;
     private bool _applyingSettings;
@@ -46,6 +47,7 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         ILocalizationService localization,
         ICompetitionEditorService editor,
         ISessionService session,
+        IAppSettingsService appSettings,
         IStartProtocolBuilder builder,
         IResultProtocolWriter writer,
         IBusyService busy)
@@ -53,6 +55,7 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
     {
         _editor = editor;
         _session = session;
+        _appSettings = appSettings;
         _builder = builder;
         _writer = writer;
         _busy = busy;
@@ -91,6 +94,9 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
     private bool _isLandscape;
 
     [ObservableProperty]
+    private string _competitionName = string.Empty;
+
+    [ObservableProperty]
     private string _title = string.Empty;
 
     [ObservableProperty]
@@ -123,6 +129,8 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         StartProtocolColumn.Rank => "StartProtocols.Col.Rank",
         StartProtocolColumn.Chip => "StartProtocols.Col.Chip",
         StartProtocolColumn.Group => "StartProtocols.Col.Group",
+        StartProtocolColumn.Team => "StartProtocols.Col.Team",
+        StartProtocolColumn.Note => "StartProtocols.Col.Note",
         _ => "StartProtocols.Col.FullName"
     };
 
@@ -179,8 +187,9 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         var kind = Kind;
         var (settings, data) = await _busy.RunAsync(async () =>
         {
+            // The day's saved template, or the app-level default for this kind when the day has none yet.
             var s = await _editor.GetStartProtocolSettingsAsync(day.Id, kind)
-                    ?? StartProtocolSettings.Default(kind);
+                    ?? await _appSettings.GetStartProtocolSettingsAsync(kind);
             var d = await _editor.GetStartProtocolDataAsync(day.Id);
             return (s, d);
         });
@@ -207,6 +216,7 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         try
         {
             IsLandscape = settings.Orientation == ProtocolOrientation.Landscape;
+            CompetitionName = settings.CompetitionName;
             Title = settings.Title;
             Subtitle = settings.Subtitle;
             Venue = settings.Venue;
@@ -226,8 +236,8 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
             {
                 if (e.PropertyName == nameof(StartProtocolColumnItemViewModel.Visible))
                 {
-                    SettingsSaved = false;
                     RefreshPreview();
+                    AutoSave();
                 }
             };
             Columns.Add(item);
@@ -236,6 +246,12 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
 
     private void SeedHeaderDefaults(CompetitionInfo? info)
     {
+        if (string.IsNullOrWhiteSpace(CompetitionName))
+        {
+            var name = !string.IsNullOrWhiteSpace(info?.Name) ? info!.Name : _session.CurrentEvent?.Name;
+            if (!string.IsNullOrWhiteSpace(name))
+                CompetitionName = name!;
+        }
         if (string.IsNullOrWhiteSpace(Subtitle) && !string.IsNullOrWhiteSpace(info?.Organisation))
             Subtitle = info!.Organisation;
         if (string.IsNullOrWhiteSpace(Venue) && !string.IsNullOrWhiteSpace(info?.Venue))
@@ -260,8 +276,8 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         if (i > 0)
         {
             Columns.Move(i, i - 1);
-            SettingsSaved = false;
             RefreshPreview();
+            AutoSave();
         }
     }
 
@@ -274,36 +290,66 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         if (i >= 0 && i < Columns.Count - 1)
         {
             Columns.Move(i, i + 1);
-            SettingsSaved = false;
             RefreshPreview();
+            AutoSave();
         }
     }
 
-    public void MoveColumnByKey(string key, int targetIndex)
+    public void MoveColumnByKey(string draggedKey, string targetKey, bool insertAfter)
     {
-        if (!Enum.TryParse<StartProtocolColumn>(key, out var column))
+        if (!Enum.TryParse<StartProtocolColumn>(draggedKey, out var dragged) ||
+            !Enum.TryParse<StartProtocolColumn>(targetKey, out var target))
             return;
-        var item = Columns.FirstOrDefault(c => c.Column == column);
-        if (item is null)
+        var from = IndexOf(dragged);
+        var targetIndex = IndexOf(target);
+        if (from < 0 || targetIndex < 0 || from == targetIndex)
             return;
-        var from = Columns.IndexOf(item);
-        if (from < 0)
+
+        // Insert before or after the target (in the full order). Removing the dragged item first shifts every
+        // later slot left by one, so when the source sits before the destination, drop the index by one.
+        var insertIndex = insertAfter ? targetIndex + 1 : targetIndex;
+        if (from < insertIndex)
+            insertIndex--;
+        insertIndex = Math.Clamp(insertIndex, 0, Columns.Count - 1);
+        if (from == insertIndex)
             return;
-        targetIndex = Math.Clamp(targetIndex, 0, Columns.Count - 1);
-        if (from == targetIndex)
-            return;
-        Columns.Move(from, targetIndex);
-        SettingsSaved = false;
+
+        Columns.Move(from, insertIndex);
         RefreshPreview();
+        AutoSave();
     }
 
+    private int IndexOf(StartProtocolColumn column)
+    {
+        for (var i = 0; i < Columns.Count; i++)
+            if (Columns[i].Column == column)
+                return i;
+        return -1;
+    }
+
+    // Auto-saves the current template to the SELECTED DAY (for this kind) on every change. Fire-and-forget off
+    // the UI thread; guarded so it doesn't fire while a template is being applied during a load.
+    private void AutoSave()
+    {
+        if (_applyingSettings)
+            return;
+        // Any edit invalidates the "saved as default" flash from a previous app-default save.
+        SettingsSaved = false;
+        if (SelectedDay?.Day is not { } day)
+            return;
+        var kind = Kind;
+        var settings = BuildSettings();
+        _ = Task.Run(() => _editor.SaveStartProtocolSettingsAsync(day.Id, kind, settings));
+    }
+
+    // "Save for next competitions": stores the current layout as the APPLICATION-LEVEL default for this kind,
+    // so a new day with no saved template of its own seeds from this. The per-day template is already auto-
+    // saved on every edit, so this button only sets the shared default.
     [RelayCommand]
     private async Task SaveSettingsAsync()
     {
-        if (SelectedDay?.Day is not { } day)
-            return;
         var settings = BuildSettings();
-        await _busy.RunAsync(() => _editor.SaveStartProtocolSettingsAsync(day.Id, Kind, settings));
+        await _busy.RunAsync(() => _appSettings.SaveStartProtocolSettingsAsync(Kind, settings));
         SettingsSaved = true;
     }
 
@@ -312,6 +358,7 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         var settings = BuildSettings();
 
         Preview.IsLandscape = settings.Orientation == ProtocolOrientation.Landscape;
+        Preview.CompetitionName = settings.CompetitionName;
         Preview.Title = settings.Title.Length > 0 ? settings.Title : Localization.Get(DefaultTitleKey);
         Preview.Subtitle = settings.Subtitle;
         Preview.DateText = settings.DateText;
@@ -328,22 +375,34 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         for (var i = 0; i < visible.Count && i < document.ColumnHeaders.Count; i++)
             Preview.Columns.Add(new ProtocolPreviewColumn(visible[i].ToString(), document.ColumnHeaders[i]));
 
-        // First non-empty section is the preview sample (fall back to the first section).
-        var section = document.Sections.FirstOrDefault(s => s.Rows.Count > 0) ?? document.Sections.FirstOrDefault();
+        // Render the sections exactly as the .docx stacks them (caption + table), capping the TOTAL body rows
+        // across sections so the page mock-up fills but stays cheap to build. Start sections have no course
+        // sub-caption.
+        Preview.Sections.Clear();
+        var remaining = PreviewRowCap;
+        foreach (var section in document.Sections)
+        {
+            if (remaining <= 0)
+                break;
+            var rows = section.Rows.Take(remaining)
+                .Select(r => new ProtocolPreviewRow(r.Cells, r.IsTeamHeader))
+                .ToList();
+            remaining -= rows.Count;
+            Preview.Sections.Add(new ProtocolPreviewSection(
+                section.GroupName, string.Empty, rows, section.CourseSetterText));
+        }
+        Preview.IsEmpty = Preview.Sections.Count == 0 || Preview.Sections.All(s => s.Rows.Count == 0);
 
-        Preview.Rows.Clear();
-        Preview.GroupName = section?.GroupName ?? string.Empty;
-        Preview.GroupSubcaption = string.Empty; // start sections have no course sub-caption
-
-        if (section is not null)
-            foreach (var row in section.Rows.Take(PreviewRowCap))
-                Preview.Rows.Add(new ProtocolPreviewRow(row.Cells, row.IsTeamHeader));
-        Preview.IsEmpty = Preview.Rows.Count == 0;
+        Preview.Officials.Clear();
+        foreach (var official in document.Officials)
+            Preview.Officials.Add($"{official.Role}:  {official.NameWithCategory}");
+        Preview.HasOfficials = Preview.Officials.Count > 0;
     }
 
     private StartProtocolSettings BuildSettings() => new()
     {
         Orientation = IsLandscape ? ProtocolOrientation.Landscape : ProtocolOrientation.Portrait,
+        CompetitionName = CompetitionName?.Trim() ?? string.Empty,
         Title = Title?.Trim() ?? string.Empty,
         Subtitle = Subtitle?.Trim() ?? string.Empty,
         Venue = Venue?.Trim() ?? string.Empty,
@@ -389,7 +448,11 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         return new StartProtocolLabels(
             DefaultTitle: Localization.Get(DefaultTitleKey),
             ColumnHeaders: headers,
-            NoStartTimeCaption: Localization.Get("StartProtocols.NoStartTime"));
+            NoStartTimeCaption: Localization.Get("StartProtocols.NoStartTime"),
+            CourseSetterLabel: Localization.Get("Protocols.CourseSetter"),
+            ChiefJudgeLabel: Localization.Get("Protocols.ChiefJudge"),
+            ChiefSecretaryLabel: Localization.Get("Protocols.ChiefSecretary"),
+            JuryLabel: Localization.Get("Protocols.Jury"));
     }
 
     private string SuggestedFileName(EventDay day)
@@ -406,15 +469,27 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         return $"{baseName}.docx";
     }
 
+    // The preview's header is the SAME two-way-bound text boxes, so a header-text edit updates the mock-up with
+    // no rebuild — typing must not re-run the (expensive) builder or re-render the table, or every keystroke
+    // would block the UI. Guarded against firing during ApplySettings (the load).
     private void OnHeaderEdited()
     {
         if (_applyingSettings)
             return;
-        SettingsSaved = false;
-        RefreshPreview();
+        AutoSave();
     }
 
-    partial void OnIsLandscapeChanged(bool value) => OnHeaderEdited();
+    // Orientation only reshapes the page (table content unchanged), so just push the flag the page-size
+    // converter watches — no builder run / table rebuild — then auto-save to the current day.
+    partial void OnIsLandscapeChanged(bool value)
+    {
+        if (_applyingSettings)
+            return;
+        Preview.IsLandscape = value;
+        AutoSave();
+    }
+
+    partial void OnCompetitionNameChanged(string value) => OnHeaderEdited();
     partial void OnTitleChanged(string value) => OnHeaderEdited();
     partial void OnSubtitleChanged(string value) => OnHeaderEdited();
     partial void OnVenueChanged(string value) => OnHeaderEdited();

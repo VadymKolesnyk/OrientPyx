@@ -408,7 +408,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             DisciplineOverride = row.DisciplineOverride,
             TimeLimitSeconds = row.TimeLimitSeconds,
             RequiredControlCount = row.RequiredControlCount,
-            PenaltyPerMinute = row.PenaltyPerMinute
+            PenaltyPerMinute = row.PenaltyPerMinute,
+            CourseSetter = (row.CourseSetter ?? string.Empty).Trim(),
+            CourseSetterCategory = (row.CourseSetterCategory ?? string.Empty).Trim()
         }, cancellationToken);
     }
 
@@ -1418,6 +1420,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
         var dusshes = await _eventStore.GetDusshesAsync(folder, cancellationToken);
         var controlPoints = await _eventStore.GetControlPointsAsync(folder, dayId, cancellationToken);
+        var info = await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken);
 
         var byParticipant = participants.ToDictionary(p => p.Id);
         var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
@@ -1470,12 +1473,34 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
             var controlCount = CountCourseControls(s.CourseOrder, startFinishCodes);
             var rows = rowsByGroup.TryGetValue(s.GroupId, out var b) ? b : [];
+            // Course-setter: the group's per-day override wins; else fall back to the competition default.
+            var (setter, setterCat) = ResolveCourseSetter(s, info);
             sections.Add(new ResultProtocolGroup(
-                name, s.Order, s.DistanceKm, controlCount, s.TimeLimitSeconds, isTeam, rows));
+                name, s.Order, s.DistanceKm, controlCount, s.TimeLimitSeconds, isTeam, rows, setter, setterCat));
         }
 
-        return new ResultProtocolData(sections);
+        return new ResultProtocolData(sections, OfficialsFrom(info));
     }
+
+    // The effective course-setter for a group on a day: the group's own override (when its name is non-blank),
+    // else the competition-wide default. Returns (name, category).
+    private static (string Name, string Category) ResolveCourseSetter(GroupDaySettings s, CompetitionInfo? info)
+    {
+        if (!string.IsNullOrWhiteSpace(s.CourseSetter))
+            return (s.CourseSetter.Trim(), (s.CourseSetterCategory ?? string.Empty).Trim());
+        return (
+            (info?.CourseSetter ?? string.Empty).Trim(),
+            (info?.CourseSetterCategory ?? string.Empty).Trim());
+    }
+
+    // The competition's chief judge / secretary / jury, as the raw officials the protocol builders fold into
+    // the trailing signature block.
+    private static ProtocolOfficialsData OfficialsFrom(CompetitionInfo? info) => info is null
+        ? ProtocolOfficialsData.None
+        : new ProtocolOfficialsData(
+            info.ChiefJudge, info.ChiefJudgeCategory,
+            info.ChiefSecretary, info.ChiefSecretaryCategory,
+            info.Jury);
 
     public async Task<ResultProtocolSettings?> GetResultProtocolSettingsAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
@@ -1525,6 +1550,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
         var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
         var dusshes = await _eventStore.GetDusshesAsync(folder, cancellationToken);
+        var info = await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken);
 
         var byParticipant = participants.ToDictionary(p => p.Id);
         var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
@@ -1552,7 +1578,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             }
             bucket.Add(new StartProtocolRow(
                 link.StartTime, p.Number, p.FullName, p.BirthDate, club, region, dussh, p.Coach, p.Rank,
-                link.Chip.Trim(), gname));
+                link.Chip.Trim(), gname, p.Team.Trim()));
         }
 
         // One section per group that runs on the day (in the day grid order), even when empty.
@@ -1562,10 +1588,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             if (!groupName.TryGetValue(s.GroupId, out var name))
                 continue;
             var rows = rowsByGroup.TryGetValue(s.GroupId, out var b) ? b : [];
-            sections.Add(new StartProtocolGroup(name, s.Order, rows));
+            var (setter, setterCat) = ResolveCourseSetter(s, info);
+            sections.Add(new StartProtocolGroup(name, s.Order, rows, setter, setterCat));
         }
 
-        return new StartProtocolData(sections);
+        return new StartProtocolData(sections, OfficialsFrom(info));
     }
 
     public async Task<StartProtocolSettings?> GetStartProtocolSettingsAsync(Guid dayId, StartProtocolKind kind, CancellationToken cancellationToken = default)
@@ -3314,5 +3341,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         DayDefaultDiscipline: CurrentDayDefaultDiscipline,
         TimeLimitSeconds: s.TimeLimitSeconds,
         RequiredControlCount: s.RequiredControlCount,
-        PenaltyPerMinute: s.PenaltyPerMinute);
+        PenaltyPerMinute: s.PenaltyPerMinute,
+        CourseSetter: s.CourseSetter,
+        CourseSetterCategory: s.CourseSetterCategory);
 }

@@ -30,4 +30,8 @@ public interface IStartProtocolBuilder
 public sealed record StartProtocolLabels(
     string DefaultTitle,
     IReadOnlyDictionary<StartProtocolColumn, string> ColumnHeaders,
-    string NoStartTimeCaption);
+    string NoStartTimeCaption,
+    string CourseSetterLabel = "",
+    string ChiefJudgeLabel = "",
+    string ChiefSecretaryLabel = "",
+    string JuryLabel = "");

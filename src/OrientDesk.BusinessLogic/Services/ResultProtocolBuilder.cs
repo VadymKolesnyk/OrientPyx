@@ -50,6 +50,8 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
                 TimeLimitText = group.TimeLimitSeconds is { } secs and > 0
                     ? $"{labels.TimeLimitLabel}: {FormatTimeLimit(secs)}"
                     : string.Empty,
+                CourseSetterText = FormatCourseSetter(
+                    labels.CourseSetterLabel, group.CourseSetter, group.CourseSetterCategory),
                 Rows = rows
             });
         }
@@ -59,14 +61,29 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         return new ResultProtocolDocument
         {
             Orientation = settings.Orientation,
+            CompetitionName = settings.CompetitionName.Trim(),
             Title = title,
             Subtitle = settings.Subtitle.Trim(),
             Venue = settings.Venue.Trim(),
             DateText = settings.DateText.Trim(),
             CompetitionType = settings.CompetitionType.Trim(),
             ColumnHeaders = headers,
-            Sections = sections
+            Sections = sections,
+            Officials = ProtocolOfficialsFactory.Build(
+                data.Officials, labels.ChiefJudgeLabel, labels.ChiefSecretaryLabel, labels.JuryLabel)
         };
+    }
+
+    // "Начальник дистанції: Рачук Тарас" (with " (категорія)" appended when a category is given), or blank
+    // when no course-setter is configured for the group.
+    private static string FormatCourseSetter(string label, string name, string category)
+    {
+        var trimmed = (name ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+            return string.Empty;
+        var cat = (category ?? string.Empty).Trim();
+        var who = cat.Length > 0 ? $"{trimmed} ({cat})" : trimmed;
+        return label.Length > 0 ? $"{label}: {who}" : who;
     }
 
     // A personal (non-team) section: placed finishers first by ascending place, then everyone else by name

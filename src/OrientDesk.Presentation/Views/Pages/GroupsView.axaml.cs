@@ -99,6 +99,11 @@ public partial class GroupsView : UserControl
                    nameof(DisciplineOverrideOption.Label),
                    minWidth: 170,
                    sortPath: $"{nameof(GroupDayRowViewModel.SelectedDiscipline)}.Value")
+            // Per-group course-setter (начальник дистанції) override; blank inherits the competition default.
+            .Text("Groups.Col.CourseSetter", nameof(GroupDayRowViewModel.CourseSetter),
+                  editPath: nameof(GroupDayRowViewModel.CourseSetter), minWidth: 150)
+            .Text("Groups.Col.CourseSetterCategory", nameof(GroupDayRowViewModel.CourseSetterCategory),
+                  editPath: nameof(GroupDayRowViewModel.CourseSetterCategory), minWidth: 90)
             .DeleteAction(OnDeleteButton, "Groups.Delete");
 
         Sheet.Bands = builder.Bands;

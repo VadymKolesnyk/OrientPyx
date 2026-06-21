@@ -37,5 +37,33 @@ public class CompetitionInfo
     /// <summary>Base rental-chip price per day, the default unless a note-keyed override matches. Null = unset.</summary>
     public decimal? ChipRentalPricePerDay { get; set; }
 
+    // --- Officials (edited on the «Інформація» page; printed on the protocols) ---
+    // Each named official has an optional judge category (суддівська категорія). The course-setter
+    // (начальник дистанції) is the competition-wide default; a group on a given day may override it
+    // (see GroupDaySettings.CourseSetter). Jury is a free multi-line text — one member per line — since
+    // a jury is a small, ad-hoc list rather than a fixed role.
+
+    /// <summary>Начальник дистанції — competition-wide default course-setter name. Blank = none.</summary>
+    public string CourseSetter { get; set; } = string.Empty;
+
+    /// <summary>Optional judge category (суддійська категорія) for the course-setter. Blank = none.</summary>
+    public string CourseSetterCategory { get; set; } = string.Empty;
+
+    /// <summary>Головний суддя — chief judge name. Blank = none.</summary>
+    public string ChiefJudge { get; set; } = string.Empty;
+
+    /// <summary>Optional judge category for the chief judge. Blank = none.</summary>
+    public string ChiefJudgeCategory { get; set; } = string.Empty;
+
+    /// <summary>Головний секретар — chief secretary name. Blank = none.</summary>
+    public string ChiefSecretary { get; set; } = string.Empty;
+
+    /// <summary>Optional judge category for the chief secretary. Blank = none.</summary>
+    public string ChiefSecretaryCategory { get; set; } = string.Empty;
+
+    /// <summary>Журі — free multi-line text, one jury member per line (a category may be typed inline).
+    /// Blank = no jury.</summary>
+    public string Jury { get; set; } = string.Empty;
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

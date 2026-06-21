@@ -35,6 +35,16 @@ public class GroupDaySettings
     public int? TimeLimitSeconds { get; set; }
 
     /// <summary>
+    /// Overrides the competition-wide course-setter (<see cref="CompetitionInfo.CourseSetter"/>) for this
+    /// group on this day; blank means the group inherits the competition default. Printed in the group's
+    /// protocol caption.
+    /// </summary>
+    public string CourseSetter { get; set; } = string.Empty;
+
+    /// <summary>Optional judge category for the per-group course-setter override. Blank = none.</summary>
+    public string CourseSetterCategory { get; set; } = string.Empty;
+
+    /// <summary>
     /// Minimum number of control points required to avoid disqualification; optional. Used by the
     /// score-by-count discipline.
     /// </summary>

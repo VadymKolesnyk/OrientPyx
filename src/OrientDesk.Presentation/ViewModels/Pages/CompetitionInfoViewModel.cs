@@ -37,6 +37,27 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
     private DateTimeOffset? _endDate;
 
     [ObservableProperty]
+    private string _courseSetter = string.Empty;
+
+    [ObservableProperty]
+    private string _courseSetterCategory = string.Empty;
+
+    [ObservableProperty]
+    private string _chiefJudge = string.Empty;
+
+    [ObservableProperty]
+    private string _chiefJudgeCategory = string.Empty;
+
+    [ObservableProperty]
+    private string _chiefSecretary = string.Empty;
+
+    [ObservableProperty]
+    private string _chiefSecretaryCategory = string.Empty;
+
+    [ObservableProperty]
+    private string _jury = string.Empty;
+
+    [ObservableProperty]
     private bool _saved;
 
     public CompetitionInfoViewModel(
@@ -70,6 +91,13 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
         Organisation = _info?.Organisation ?? string.Empty;
         StartDate = _info?.StartDate;
         EndDate = _info?.EndDate;
+        CourseSetter = _info?.CourseSetter ?? string.Empty;
+        CourseSetterCategory = _info?.CourseSetterCategory ?? string.Empty;
+        ChiefJudge = _info?.ChiefJudge ?? string.Empty;
+        ChiefJudgeCategory = _info?.ChiefJudgeCategory ?? string.Empty;
+        ChiefSecretary = _info?.ChiefSecretary ?? string.Empty;
+        ChiefSecretaryCategory = _info?.ChiefSecretaryCategory ?? string.Empty;
+        Jury = _info?.Jury ?? string.Empty;
     }
 
     [RelayCommand]
@@ -83,6 +111,13 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
         _info.Organisation = (Organisation ?? string.Empty).Trim();
         _info.StartDate = StartDate;
         _info.EndDate = EndDate;
+        _info.CourseSetter = (CourseSetter ?? string.Empty).Trim();
+        _info.CourseSetterCategory = (CourseSetterCategory ?? string.Empty).Trim();
+        _info.ChiefJudge = (ChiefJudge ?? string.Empty).Trim();
+        _info.ChiefJudgeCategory = (ChiefJudgeCategory ?? string.Empty).Trim();
+        _info.ChiefSecretary = (ChiefSecretary ?? string.Empty).Trim();
+        _info.ChiefSecretaryCategory = (ChiefSecretaryCategory ?? string.Empty).Trim();
+        _info.Jury = (Jury ?? string.Empty).Trim();
 
         await _busy.RunAsync(() => _editor.SaveInfoAsync(_info));
 
@@ -108,4 +143,11 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
     partial void OnOrganisationChanged(string value) => Saved = false;
     partial void OnStartDateChanged(DateTimeOffset? value) => Saved = false;
     partial void OnEndDateChanged(DateTimeOffset? value) => Saved = false;
+    partial void OnCourseSetterChanged(string value) => Saved = false;
+    partial void OnCourseSetterCategoryChanged(string value) => Saved = false;
+    partial void OnChiefJudgeChanged(string value) => Saved = false;
+    partial void OnChiefJudgeCategoryChanged(string value) => Saved = false;
+    partial void OnChiefSecretaryChanged(string value) => Saved = false;
+    partial void OnChiefSecretaryCategoryChanged(string value) => Saved = false;
+    partial void OnJuryChanged(string value) => Saved = false;
 }

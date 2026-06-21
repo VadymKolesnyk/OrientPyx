@@ -38,6 +38,9 @@ public sealed class ResultProtocolSettings
 
     // ── Header text. Blank ⇒ fall back to the competition's own value at build time. ────────────────
 
+    /// <summary>Competition-name line, printed centred above the title. Blank ⇒ the current competition's name.</summary>
+    public string CompetitionName { get; set; } = string.Empty;
+
     /// <summary>Main title line, e.g. "ПРОТОКОЛ РЕЗУЛЬТАТІВ ЗМАГАНЬ З ОРІЄНТУВАННЯ". Blank ⇒ a localized default.</summary>
     public string Title { get; set; } = string.Empty;
 

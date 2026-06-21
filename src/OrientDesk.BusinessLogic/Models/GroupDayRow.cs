@@ -19,4 +19,9 @@ public sealed record GroupDayRow(
     DisciplineType DayDefaultDiscipline,
     int? TimeLimitSeconds,
     int? RequiredControlCount,
-    decimal? PenaltyPerMinute);
+    decimal? PenaltyPerMinute,
+    /// <summary>Per-group course-setter (начальник дистанції) override; blank = inherit the competition
+    /// default. Printed in the group's protocol caption.</summary>
+    string CourseSetter = "",
+    /// <summary>Optional judge category for the per-group course-setter override; blank = none.</summary>
+    string CourseSetterCategory = "");
