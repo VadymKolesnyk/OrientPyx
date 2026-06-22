@@ -37,4 +37,22 @@ public class AppSettingsRow
     /// <summary>App-level default template for the <b>judges'</b> start protocol, serialised as JSON (see
     /// <see cref="StartProtocolRegularJson"/>).</summary>
     public string StartProtocolJudgesJson { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Мінімум учасників у групі для дійсності присвоєння будь-якого розряду (Додаток 89, п.7 — «не менше
+    /// трьох»): a group with fewer participants awards no ranks at all. Default 3.
+    /// </summary>
+    public int RankMinParticipants { get; set; } = 3;
+
+    /// <summary>
+    /// Minimum number of distinct regions across the whole competition (day) for any rank to be valid
+    /// (Додаток 89, п.51 — «не менше восьми областей» for individual events). Default 8.
+    /// </summary>
+    public int RankMinRegions { get; set; } = 8;
+
+    /// <summary>
+    /// How many of the group's highest-ranked participants are summed to compute the group's course rank
+    /// («Ранг змагань») — only the first N current-rank point values count (Додаток 89). Default 12.
+    /// </summary>
+    public int RankCountForRank { get; set; } = 12;
 }

@@ -13,7 +13,7 @@
         <!-- Heading + day picker + generate button -->
         <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
             <StackPanel Grid.Column="0" Spacing="4">
-                <TextBlock Text="{Binding Title}" Classes="h1"
+                <TextBlock Text="{Binding PageTitle}" Classes="h1"
                            FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
                 <TextBlock Text="{Binding Text}" Classes="subtitle" />
             </StackPanel>
@@ -71,28 +71,28 @@
                                          organising body (subtitle), competition name, then the title — as the
                                          .docx stacks them. -->
                                     <TextBox Classes="protocol-inline" Text="{Binding Subtitle, Mode=TwoWay}"
-                                             PlaceholderText="{Binding Localization[Protocols.Header.Subtitle]}"
+                                             PlaceholderText="{Binding SubtitlePlaceholder}"
                                              FontSize="12" TextAlignment="Center"
                                              AcceptsReturn="True" TextWrapping="Wrap" />
                                     <TextBox Classes="protocol-inline" Text="{Binding CompetitionName, Mode=TwoWay}"
-                                             PlaceholderText="{Binding Localization[Protocols.Header.CompetitionName]}"
+                                             PlaceholderText="{Binding CompetitionNamePlaceholder}"
                                              FontSize="12" TextAlignment="Center"
                                              AcceptsReturn="True" TextWrapping="Wrap" />
                                     <TextBox Classes="protocol-inline" Text="{Binding Title, Mode=TwoWay}"
-                                             PlaceholderText="{Binding Localization[Protocols.Header.MainTitle]}"
+                                             PlaceholderText="{Binding TitlePlaceholder}"
                                              FontWeight="Bold" FontSize="15" TextAlignment="Center"
                                              AcceptsReturn="True" TextWrapping="Wrap" />
                                     <Grid ColumnDefinitions="*,Auto,*" Margin="0,4,0,0">
                                         <TextBox Grid.Column="0" Classes="protocol-inline" Text="{Binding DateText, Mode=TwoWay}"
-                                                 PlaceholderText="{Binding Localization[Protocols.Header.Date]}"
+                                                 PlaceholderText="{Binding DateTextPlaceholder}"
                                                  FontSize="11" HorizontalAlignment="Left" TextAlignment="Left"
                                                  AcceptsReturn="True" TextWrapping="Wrap" />
                                         <TextBox Grid.Column="1" Classes="protocol-inline" Text="{Binding CompetitionType, Mode=TwoWay}"
-                                                 PlaceholderText="{Binding Localization[Protocols.Header.CompetitionType]}"
+                                                 PlaceholderText="{Binding CompetitionTypePlaceholder}"
                                                  FontSize="11" HorizontalAlignment="Center" TextAlignment="Center"
                                                  AcceptsReturn="True" TextWrapping="Wrap" />
                                         <TextBox Grid.Column="2" Classes="protocol-inline" Text="{Binding Venue, Mode=TwoWay}"
-                                                 PlaceholderText="{Binding Localization[Protocols.Header.Venue]}"
+                                                 PlaceholderText="{Binding VenuePlaceholder}"
                                                  FontSize="11" HorizontalAlignment="Right" TextAlignment="Right"
                                                  AcceptsReturn="True" TextWrapping="Wrap" />
                                     </Grid>

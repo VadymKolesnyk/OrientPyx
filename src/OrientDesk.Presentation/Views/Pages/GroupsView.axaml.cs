@@ -99,11 +99,30 @@ public partial class GroupsView : UserControl
                    nameof(DisciplineOverrideOption.Label),
                    minWidth: 170,
                    sortPath: $"{nameof(GroupDayRowViewModel.SelectedDiscipline)}.Value")
-            // Per-group course-setter (начальник дистанції) override; blank inherits the competition default.
+            // Per-group course-setter (начальник дистанції) override; a blank cell shows the competition
+            // default (greyed) as its placeholder, in both the resting label and the editor's watermark.
             .Text("Groups.Col.CourseSetter", nameof(GroupDayRowViewModel.CourseSetter),
-                  editPath: nameof(GroupDayRowViewModel.CourseSetter), minWidth: 150)
+                  editPath: nameof(GroupDayRowViewModel.CourseSetter), minWidth: 150,
+                  placeholderPath: nameof(GroupDayRowViewModel.CourseSetterPlaceholder))
             .Text("Groups.Col.CourseSetterCategory", nameof(GroupDayRowViewModel.CourseSetterCategory),
-                  editPath: nameof(GroupDayRowViewModel.CourseSetterCategory), minWidth: 90)
+                  editPath: nameof(GroupDayRowViewModel.CourseSetterCategory), minWidth: 90,
+                  placeholderPath: nameof(GroupDayRowViewModel.EffectiveCourseSetterCategoryPlaceholder))
+            // Per-group points-rule override; the "(default: …)" sentinel inherits the competition default.
+            .Combo("Groups.Col.PointsRule",
+                   nameof(GroupDayRowViewModel.PointsRuleOptions),
+                   nameof(GroupDayRowViewModel.SelectedPointsRule),
+                   nameof(PointsRuleOption.Label),
+                   minWidth: 170)
+            // Which sports-rank level this group awards (Додаток 89), and how many «Майстер спорту» to award.
+            .Combo("Groups.Col.RankLevel",
+                   nameof(GroupDayRowViewModel.RankLevelOptions),
+                   nameof(GroupDayRowViewModel.SelectedRankLevel),
+                   nameof(RankLevelOption.Label),
+                   minWidth: 150,
+                   sortPath: $"{nameof(GroupDayRowViewModel.SelectedRankLevel)}.Value")
+            .Text("Groups.Col.MasterCount", nameof(GroupDayRowViewModel.MasterCountText),
+                  editPath: nameof(GroupDayRowViewModel.MasterCountText), minWidth: 90,
+                  mask: SheetColumnBuilder.NumericMask.Integer)
             .DeleteAction(OnDeleteButton, "Groups.Delete");
 
         Sheet.Bands = builder.Bands;

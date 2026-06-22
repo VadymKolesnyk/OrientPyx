@@ -19,7 +19,11 @@ public enum RosterField
     Place,
     // Editable points correction («бонус»), only on point-scoring days; sits before Score (cause→effect).
     Bonus,
-    Score
+    Score,
+    // Ranking points («Очки»), computed from the group's points rule; shown on every day (read-only).
+    Points,
+    // Awarded sports rank («Виконаний розряд», Додаток 89), computed per group (read-only).
+    AwardedRank
 }
 
 /// <summary>

@@ -49,24 +49,28 @@
                         <StackPanel Spacing="6">
                             <TextBlock Text="{Binding Localization[Splits.Header.MainTitle]}" Classes="label" />
                             <TextBox Text="{Binding Title, Mode=TwoWay}"
-                                     PlaceholderText="{Binding Localization[Splits.DefaultTitle]}" />
+                                     PlaceholderText="{Binding TitlePlaceholder}" />
                         </StackPanel>
                         <StackPanel Spacing="6">
                             <TextBlock Text="{Binding Localization[Splits.Header.Subtitle]}" Classes="label" />
-                            <TextBox Text="{Binding Subtitle, Mode=TwoWay}" />
+                            <TextBox Text="{Binding Subtitle, Mode=TwoWay}"
+                                     PlaceholderText="{Binding SubtitlePlaceholder}" />
                         </StackPanel>
                         <StackPanel Spacing="6">
                             <TextBlock Text="{Binding Localization[Splits.Header.CompetitionType]}" Classes="label" />
-                            <TextBox Text="{Binding CompetitionType, Mode=TwoWay}" />
+                            <TextBox Text="{Binding CompetitionType, Mode=TwoWay}"
+                                     PlaceholderText="{Binding CompetitionTypePlaceholder}" />
                         </StackPanel>
                         <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
                             <StackPanel Grid.Column="0" Spacing="6">
                                 <TextBlock Text="{Binding Localization[Splits.Header.Date]}" Classes="label" />
-                                <TextBox Text="{Binding DateText, Mode=TwoWay}" />
+                                <TextBox Text="{Binding DateText, Mode=TwoWay}"
+                                         PlaceholderText="{Binding DateTextPlaceholder}" />
                             </StackPanel>
                             <StackPanel Grid.Column="1" Spacing="6">
                                 <TextBlock Text="{Binding Localization[Splits.Header.Venue]}" Classes="label" />
-                                <TextBox Text="{Binding Venue, Mode=TwoWay}" />
+                                <TextBox Text="{Binding Venue, Mode=TwoWay}"
+                                         PlaceholderText="{Binding VenuePlaceholder}" />
                             </StackPanel>
                         </Grid>
                     </StackPanel>

@@ -61,12 +61,14 @@ public sealed partial class ProtocolPreviewViewModel : ObservableObject
 /// </summary>
 public sealed class ProtocolPreviewColumn
 {
-    public ProtocolPreviewColumn(string key, string caption, string shortCaption = "", bool bodyWraps = false)
+    public ProtocolPreviewColumn(string key, string caption, string shortCaption = "", bool bodyWraps = false,
+        int shrinkPriority = 1)
     {
         Key = key;
         Caption = caption;
         ShortCaption = shortCaption;
         BodyWraps = bodyWraps;
+        ShrinkPriority = shrinkPriority;
     }
 
     /// <summary>Stable identity of the column (its enum name) — the drag payload, resolved by the owning VM.</summary>
@@ -81,6 +83,11 @@ public sealed class ProtocolPreviewColumn
     /// <summary>True when the column's body text may wrap (free-text columns — name, club, coach…), so the table
     /// sizes it to the typical content and long values wrap; false for short-code columns that stay on one line.</summary>
     public bool BodyWraps { get; }
+
+    /// <summary>How willingly the column gives up width when the table overflows the page (1 = never narrowed;
+    /// 4 = yields first and furthest). Mirrors <c>ResultProtocolDocument.ColumnShrinkPriority</c> so the preview
+    /// squeezes the same columns the .docx export does.</summary>
+    public int ShrinkPriority { get; }
 }
 
 /// <summary>One group section in the preview: a bold group caption, an optional course sub-caption, and the
@@ -89,13 +96,15 @@ public sealed class ProtocolPreviewColumn
 public sealed class ProtocolPreviewSection
 {
     public ProtocolPreviewSection(string groupName, string subcaption, IReadOnlyList<ProtocolPreviewRow> rows,
-        string courseSetter = "", bool isBanded = false)
+        string courseSetter = "", bool isBanded = false, string rankCalculation = "")
     {
         GroupName = groupName;
         Subcaption = subcaption;
         Rows = rows;
         CourseSetter = courseSetter;
         IsBanded = isBanded;
+        RankCalculation = rankCalculation;
+        HasRankCalculation = rankCalculation.Length > 0;
     }
 
     public string GroupName { get; }
@@ -109,6 +118,13 @@ public sealed class ProtocolPreviewSection
 
     /// <summary>"Начальник дистанції: …" printed on the caption line; blank when no course-setter.</summary>
     public string CourseSetter { get; }
+
+    /// <summary>The rank-derivation line printed under the table ("Клас дистанції: КМС ; Ранг змагань: 790 балів
+    /// ; …"), blank when the group awards no rank or its column is hidden.</summary>
+    public string RankCalculation { get; }
+
+    /// <summary>True when <see cref="RankCalculation"/> is non-blank (drives the line's visibility).</summary>
+    public bool HasRankCalculation { get; }
 
     public IReadOnlyList<ProtocolPreviewRow> Rows { get; }
 }

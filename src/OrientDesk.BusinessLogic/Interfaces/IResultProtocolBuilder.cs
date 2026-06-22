@@ -30,4 +30,16 @@ public sealed record ProtocolLabels(
     string ChiefJudgeLabel = "",
     string ChiefSecretaryLabel = "",
     string JuryLabel = "",
-    IReadOnlyDictionary<ProtocolColumn, string>? ColumnHeadersShort = null);
+    IReadOnlyDictionary<ProtocolColumn, string>? ColumnHeadersShort = null,
+    /// <summary>Caption for the rank-calc course class ("Клас дистанції").</summary>
+    string CourseClassLabel = "",
+    /// <summary>Caption for the rank-calc course rank ("Ранг змагань").</summary>
+    string CompetitionRankLabel = "",
+    /// <summary>Unit appended to the course-rank value ("балів").</summary>
+    string RankPointsUnitLabel = "",
+    /// <summary>The program name printed in the page footer ("П/З: OrientDesk"). Blank ⇒ no footer.</summary>
+    string FooterSoftwareName = "",
+    /// <summary>Caption before the footer's generation timestamp ("Згенеровано").</summary>
+    string FooterGeneratedLabel = "",
+    /// <summary>Caption before the footer's page number ("Сторінка").</summary>
+    string FooterPageLabel = "");

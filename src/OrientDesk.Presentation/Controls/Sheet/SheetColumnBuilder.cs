@@ -58,6 +58,7 @@ public sealed class SheetColumnBuilder
         string? enabledPath = null,
         string? opacityPath = null,
         string? placeholder = "—",
+        string? placeholderPath = null,
         RentalChipRegistry? rentalChips = null)
     {
         var column = NewColumn(headerKey, width, minWidth, sortPath ?? displayPath);
@@ -75,6 +76,7 @@ public sealed class SheetColumnBuilder
             {
                 Mask = mask,
                 Placeholder = placeholder,
+                PlaceholderPath = placeholderPath,
                 EnabledPath = enabledPath,
                 OpacityPath = opacityPath,
                 RentalChips = rentalChips,

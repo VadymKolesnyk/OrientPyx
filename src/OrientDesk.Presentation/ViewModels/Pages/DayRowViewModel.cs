@@ -27,13 +27,15 @@ public sealed partial class DayRowViewModel : ObservableObject
     [ObservableProperty]
     private bool _isDirty;
 
-    public DayRowViewModel(EventDay day, bool isActive, ILocalizationService localization)
+    public DayRowViewModel(EventDay day, bool isActive, ILocalizationService localization,
+        string venuePlaceholder = "")
     {
         _id = day.Id;
         _createdAt = day.CreatedAt;
         Number = day.Number;
         _date = day.Date;
         _venue = day.Venue;
+        VenuePlaceholder = venuePlaceholder;
         Localization = localization;
 
         DisciplineOptions = Enum.GetValues<DisciplineType>()
@@ -46,6 +48,10 @@ public sealed partial class DayRowViewModel : ObservableObject
     }
 
     public ILocalizationService Localization { get; }
+
+    /// <summary>The competition's own venue, shown (greyed) as the cell watermark while this day's venue is
+    /// blank — so an empty day venue reads as the competition venue, which the protocols inherit too.</summary>
+    public string VenuePlaceholder { get; }
 
     public Guid Id => _id;
 

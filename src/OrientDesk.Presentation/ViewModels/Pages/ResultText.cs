@@ -29,11 +29,20 @@ public static class ResultText
     /// <summary>The standard short status code (OK / MP / …), blank for None.</summary>
     public static string Status(ParticipantDayResult r) => FinishStatusOptions.ShortCode(r.Status);
 
-    /// <summary>1-based place, blank when unplaced.</summary>
-    public static string Place(ParticipantDayResult r) => r.Place is { } p ? p.ToString() : string.Empty;
+    /// <summary>1-based place; «П/К» for an out-of-competition runner; blank when otherwise unplaced.</summary>
+    public static string Place(ParticipantDayResult r) =>
+        r.Place is { } p ? p.ToString()
+        : r.OutOfCompetition ? ParticipantDayResult.OutOfCompetitionMark
+        : string.Empty;
 
     /// <summary>Score / «Бали» (rogaine), blank for non-scoring disciplines.</summary>
     public static string Score(ParticipantDayResult r) => r.Score is { } s ? s.ToString() : string.Empty;
+
+    /// <summary>Ranking points / «Очки» (two fractional digits), blank when no points were awarded.</summary>
+    public static string Points(ParticipantDayResult r) => r.Points is { } p ? PointsTable.Format(p) : string.Empty;
+
+    /// <summary>Awarded sports rank / «Виконаний розряд» (Додаток 89), blank when none.</summary>
+    public static string AwardedRank(ParticipantDayResult r) => r.AwardedRank ?? string.Empty;
 
     /// <summary>
     /// A multi-line breakdown of how the «Бали» total was made up — one "КП {code}: +{points}" line per

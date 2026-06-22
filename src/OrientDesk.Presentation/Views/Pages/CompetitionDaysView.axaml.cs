@@ -59,7 +59,8 @@ public partial class CompetitionDaysView : UserControl
                     sortPath: nameof(DayRowViewModel.Number))
             .Date("CompetitionDays.Col.Date", nameof(DayRowViewModel.Date), width: 160, minWidth: 140)
             .Text("CompetitionDays.Col.Venue", nameof(DayRowViewModel.Venue),
-                  editPath: nameof(DayRowViewModel.Venue), minWidth: 120)
+                  editPath: nameof(DayRowViewModel.Venue), minWidth: 120,
+                  placeholderPath: nameof(DayRowViewModel.VenuePlaceholder))
             .Combo("CompetitionDays.Col.Discipline",
                    nameof(DayRowViewModel.DisciplineOptions),
                    nameof(DayRowViewModel.SelectedDiscipline),

@@ -693,6 +693,8 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     public string CollapsedResult => MergedResult(c => c.ResultText_);
     public string CollapsedPlace => MergedResult(c => c.PlaceText);
     public string CollapsedScore => MergedResult(c => c.ScoreText);
+    public string CollapsedPoints => MergedResult(c => c.PointsText);
+    public string CollapsedAwardedRank => MergedResult(c => c.AwardedRankText);
     // The «бонус» merged cell is read-only like the start-time one (bonus is edited per day, not on the
     // merged cell): the shared entered value across member days, or "різні" when they disagree.
     public string CollapsedBonus => MergedResult(c => c.BonusText);
@@ -717,6 +719,8 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         OnPropertyChanged(nameof(CollapsedResult));
         OnPropertyChanged(nameof(CollapsedPlace));
         OnPropertyChanged(nameof(CollapsedScore));
+        OnPropertyChanged(nameof(CollapsedPoints));
+        OnPropertyChanged(nameof(CollapsedAwardedRank));
         OnPropertyChanged(nameof(CollapsedBonus));
     }
 
@@ -745,6 +749,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             case nameof(RosterDayCellViewModel.ResultText_):
             case nameof(RosterDayCellViewModel.PlaceText):
             case nameof(RosterDayCellViewModel.ScoreText):
+            case nameof(RosterDayCellViewModel.PointsText):
             case nameof(RosterDayCellViewModel.BonusText):
                 RaiseResultAggregates();
                 break;

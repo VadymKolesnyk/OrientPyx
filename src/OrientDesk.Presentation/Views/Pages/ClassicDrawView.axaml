@@ -32,139 +32,49 @@
             </controls:SearchableComboBox>
         </Grid>
 
-        <!-- Draw parameters (separation) docked above the scroll area. -->
-        <Border DockPanel.Dock="Top" Classes="card" Padding="22" Margin="0,0,0,16">
-            <StackPanel Spacing="14">
-                <TextBlock Text="{Binding Localization[Draw.Section.Params]}" Classes="h2"
-                           FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
-                <StackPanel Spacing="6" Width="220">
-                    <TextBlock Text="{Binding Localization[Draw.SeparationLabel]}" Classes="label" />
-                    <ComboBox MinWidth="200"
-                              ItemsSource="{Binding SeparationOptions}"
-                              SelectedItem="{Binding SelectedSeparation, Mode=TwoWay}">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate x:DataType="pages:DrawSeparationOption">
-                                <TextBlock Text="{Binding Label}" />
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
-                </StackPanel>
+        <!-- Toolbar: separation + select all/none + run, on one compact line. -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="10"
+              Margin="0,0,0,12" VerticalAlignment="Center">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Localization[Draw.SeparationLabel]}" Classes="label"
+                           VerticalAlignment="Center" />
+                <ComboBox MinWidth="150"
+                          ItemsSource="{Binding SeparationOptions}"
+                          SelectedItem="{Binding SelectedSeparation, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="pages:DrawSeparationOption">
+                            <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
             </StackPanel>
+            <Button Grid.Column="1" Classes="ghost small" VerticalAlignment="Center"
+                    Content="{Binding Localization[ClassicDraw.SelectAll]}"
+                    Command="{Binding SelectAllCommand}" />
+            <Button Grid.Column="2" Classes="ghost small" VerticalAlignment="Center"
+                    Content="{Binding Localization[ClassicDraw.SelectNone]}"
+                    Command="{Binding SelectNoneCommand}" />
+            <Button Grid.Column="3" Classes="accent" VerticalAlignment="Center"
+                    Content="{Binding Localization[Draw.Run]}"
+                    Command="{Binding RunDrawCommand}" />
+            <TextBlock Grid.Column="4" Text="{Binding StatusMessage}" Classes="subtitle"
+                       VerticalAlignment="Center" />
+        </Grid>
+
+        <!-- Drawn result table (shared SheetTable), docked at the bottom when present. -->
+        <Border DockPanel.Dock="Bottom" Classes="card" ClipToBounds="True"
+                MaxHeight="320" Margin="0,16,0,0" IsVisible="{Binding HasResults}">
+            <controls:SheetTable Name="ResultsSheet"
+                                 ItemsSource="{Binding Results}"
+                                 Localization="{Binding Localization}" />
         </Border>
 
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
-            <StackPanel Spacing="16">
-
-                <!-- Groups table -->
-                <Border Classes="card" Padding="0" ClipToBounds="True">
-                    <DockPanel LastChildFill="True">
-
-                        <!-- Toolbar: select all / none -->
-                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8"
-                                    Margin="16,14,16,12">
-                            <TextBlock Text="{Binding Localization[ClassicDraw.Section.Groups]}" Classes="h2"
-                                       FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}"
-                                       VerticalAlignment="Center" />
-                            <Button Classes="ghost small" Content="{Binding Localization[ClassicDraw.SelectAll]}"
-                                    Command="{Binding SelectAllCommand}" Margin="16,0,0,0" />
-                            <Button Classes="ghost small" Content="{Binding Localization[ClassicDraw.SelectNone]}"
-                                    Command="{Binding SelectNoneCommand}" />
-                        </StackPanel>
-
-                        <!-- Header row -->
-                        <Grid DockPanel.Dock="Top" Background="{DynamicResource SurfaceSubtle}"
-                              ColumnDefinitions="60,*,90,70,120,120,130" Height="36">
-                            <TextBlock Grid.Column="0" Text="{Binding Localization[ClassicDraw.Col.Selected]}"
-                                       FontWeight="Bold" VerticalAlignment="Center"
-                                       HorizontalAlignment="Center" />
-                            <TextBlock Grid.Column="1" Text="{Binding Localization[Draw.Col.Group]}"
-                                       FontWeight="Bold" VerticalAlignment="Center" Margin="12,0,0,0" />
-                            <TextBlock Grid.Column="2" Text="{Binding Localization[ClassicDraw.Col.Control]}"
-                                       FontWeight="Bold" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="3" Text="{Binding Localization[ClassicDraw.Col.Count]}"
-                                       FontWeight="Bold" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="4" Text="{Binding Localization[ClassicDraw.Col.Start]}"
-                                       FontWeight="Bold" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="5" Text="{Binding Localization[Draw.Interval]}"
-                                       FontWeight="Bold" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="6" Text="{Binding Localization[ClassicDraw.Col.FreeMinute]}"
-                                       FontWeight="Bold" VerticalAlignment="Center" />
-                        </Grid>
-
-                        <ListBox ItemsSource="{Binding Groups}" MaxHeight="520"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate x:DataType="pages:ClassicDrawGroupRowViewModel">
-                                    <Grid ColumnDefinitions="60,*,90,70,120,120,130" MinHeight="40">
-                                        <CheckBox Grid.Column="0" IsChecked="{Binding Selected, Mode=TwoWay}"
-                                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="Medium"
-                                                   VerticalAlignment="Center" Margin="12,0,0,0" />
-                                        <TextBlock Grid.Column="2" Text="{Binding FirstControlLabel}"
-                                                   Classes="muted" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="3" Text="{Binding CountLabel}"
-                                                   Classes="muted" VerticalAlignment="Center" />
-                                        <TextBox Grid.Column="4" Margin="0,4,8,4"
-                                                 Text="{Binding Start, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                 PlaceholderText="hh:mm:ss" VerticalAlignment="Center" />
-                                        <TextBox Grid.Column="5" Margin="0,4,8,4"
-                                                 Text="{Binding Interval, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                 PlaceholderText="hh:mm:ss" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="6" Text="{Binding FreeMinute}"
-                                                   FontFamily="Consolas,monospace" Classes="muted"
-                                                   VerticalAlignment="Center" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </DockPanel>
-                </Border>
-
-                <!-- Actions -->
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                    <Button Classes="accent" Content="{Binding Localization[Draw.Run]}"
-                            Command="{Binding RunDrawCommand}" />
-                    <TextBlock Text="{Binding StatusMessage}" Classes="subtitle"
-                               VerticalAlignment="Center" />
-                </StackPanel>
-
-                <!-- Result -->
-                <Border Classes="card" Padding="0" IsVisible="{Binding HasResults}" ClipToBounds="True">
-                    <DockPanel LastChildFill="True">
-                        <Grid DockPanel.Dock="Top" Background="{DynamicResource SurfaceSubtle}"
-                              ColumnDefinitions="100,90,*,160,110" Height="36">
-                            <TextBlock Grid.Column="0" Text="{Binding Localization[Draw.Col.StartTime]}"
-                                       FontWeight="Bold" VerticalAlignment="Center" Margin="12,0,0,0" />
-                            <TextBlock Grid.Column="1" Text="{Binding Localization[Draw.Col.Number]}"
-                                       FontWeight="Bold" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="2" Text="{Binding Localization[Draw.Col.Name]}"
-                                       FontWeight="Bold" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="3" Text="{Binding Localization[Draw.Col.Separation]}"
-                                       FontWeight="Bold" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="4" Text="{Binding Localization[Draw.Col.Group]}"
-                                       FontWeight="Bold" VerticalAlignment="Center" />
-                        </Grid>
-                        <ListBox ItemsSource="{Binding Results}" MaxHeight="420"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate x:DataType="pages:DrawResultRowViewModel">
-                                    <Grid ColumnDefinitions="100,90,*,160,110">
-                                        <TextBlock Grid.Column="0" Text="{Binding StartTimeLabel}"
-                                                   FontFamily="Consolas,monospace" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="1" Text="{Binding Number}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="2" Text="{Binding FullName}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="3" Text="{Binding SeparationValue}"
-                                                   Classes="muted" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="4" Text="{Binding GroupName}" VerticalAlignment="Center" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </DockPanel>
-                </Border>
-
-            </StackPanel>
-        </ScrollViewer>
+        <!-- Groups table (shared SheetTable) fills the rest. -->
+        <Border Classes="card" ClipToBounds="True">
+            <controls:SheetTable Name="GroupsSheet"
+                                 ItemsSource="{Binding Groups}"
+                                 Localization="{Binding Localization}" />
+        </Border>
 
     </DockPanel>
 

@@ -55,7 +55,11 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
 
             AppendOfficials(body, document, RightTabPosition(document.Orientation));
 
-            body.Append(PageSettings(document.Orientation));
+            // The page footer (нижній колонтитул) lives in its own part, referenced from the section properties.
+            // Built before PageSettings so the latter can carry the reference. Null ⇒ no footer is added.
+            var footerReference = AppendFooterPart(main, document);
+
+            body.Append(PageSettings(document.Orientation, footerReference));
             main.Document = new Document(body);
             main.Document.Save();
         }
@@ -141,6 +145,10 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
             body.Append(CaptionParagraph(sub, bold: false));
 
         body.Append(BuildTable(headers, section.Rows, columnWidths, bodyWrap));
+
+        // Rank-derivation line under the table, when the group awards a rank and the column is shown.
+        if (section.RankCalculationText.Length > 0)
+            body.Append(CaptionParagraph(section.RankCalculationText, bold: false));
 
         // Gap after the table before the next group.
         body.Append(new Paragraph());
@@ -339,9 +347,21 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
             natural[c] = Math.Max(preferredFloor[c], naturalChars[c] * charTwips + padTwips);
         }
 
+        // Per-column shrink priority (1 = never narrowed; 4 = yields first/furthest). Missing ⇒ protected (1).
+        var priority = new int[count];
+        for (var c = 0; c < count; c++)
+            priority[c] = c < doc.ColumnShrinkPriority.Count ? doc.ColumnShrinkPriority[c] : 1;
+
+        // The smallest each column may be squeezed to when the table overflows. Priority 1 never drops below its
+        // full preferred floor; priorities 2/3/4 may go below their data floor toward a content-derived minimum,
+        // ever lower for higher priority — but never below an absolute readable minimum, so they don't collapse.
+        var shrinkFloor = new int[count];
+        for (var c = 0; c < count; c++)
+            shrinkFloor[c] = ShrinkFloor(priority[c], dataFloor[c], preferredFloor[c], minColTwips);
+
         var pageWidth = doc.Orientation == ProtocolOrientation.Landscape ? A4HeightTwips : A4WidthTwips;
         var printable = (int)pageWidth - 720 - 720;
-        var widths = DistributeWidths(dataFloor, preferredFloor, natural, printable);
+        var widths = DistributeWidths(dataFloor, preferredFloor, natural, shrinkFloor, priority, printable);
 
         // Give any rounding remainder to the first (widest, name) column so the row spans the full width.
         widths[0] += printable - widths.Sum();
@@ -361,26 +381,42 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
         return widths;
     }
 
+    // The smallest a column may be squeezed to under width pressure, by shrink priority:
+    //  • priority 1 — never below its full preferred floor (data + full header); the protected spine.
+    //  • priority 2/3/4 — may dip below the data floor toward a fraction of it (higher priority ⇒ smaller
+    //    fraction, so it shrinks further), but never below an absolute readable minimum, so it can't collapse.
+    private static int ShrinkFloor(int priority, int dataFloor, int preferredFloor, int absoluteMin) => priority switch
+    {
+        <= 1 => preferredFloor,
+        2 => Math.Max(absoluteMin, (int)(dataFloor * 0.85)),
+        3 => Math.Max(absoluteMin, (int)(dataFloor * 0.70)),
+        _ => Math.Max(absoluteMin, (int)(dataFloor * 0.55)),
+    };
+
     // Lays the columns out across the printable width in three tiers, so the right things give way first when
-    // space is tight:
-    //  1. Every column gets at least its data floor (data must never wrap). If even those overflow, scale them
-    //     down proportionally — the only case where data is allowed to wrap (an extreme, very crowded table).
+    // space is tight. Shrink priority governs how much each column yields (1 protected; 4 yields most):
+    //  1. Every column wants at least its data floor (data on one line). If those overflow, share the deficit
+    //     across the shrinkable columns in proportion to their shrink weight (4→3, 3→2, 2→1, 1→0), each capped at
+    //     its shrink floor — protected (priority-1) columns keep their full preferred floor and never wrap.
     //  2. Raise columns toward their preferred floor (data + header word) so short headers stay unwrapped; if
     //     there isn't room for every header word, share the available room proportionally — the long header
     //     words wrap first since they ask for the most.
     //  3. Hand any remaining slack out by each column's natural-size "want", so wide columns (the name) grow.
-    private static int[] DistributeWidths(int[] dataFloor, int[] preferredFloor, int[] natural, int printable)
+    private static int[] DistributeWidths(
+        int[] dataFloor, int[] preferredFloor, int[] natural, int[] shrinkFloor, int[] priority, int printable)
     {
         var count = dataFloor.Length;
         var widths = new int[count];
 
         long dataTotal = dataFloor.Sum(w => (long)w);
 
-        // Tier 1: data floors don't even fit — scale them down (data wraps; unavoidable on a hugely crowded page).
+        // Tier 1: data floors don't all fit — squeeze the shrinkable columns (priority ≥ 2) down toward their
+        // shrink floors, taking the most from the highest-priority columns first. Protected columns are untouched.
         if (dataTotal >= printable)
         {
             for (var c = 0; c < count; c++)
-                widths[c] = dataTotal > 0 ? (int)((long)dataFloor[c] * printable / dataTotal) : printable / count;
+                widths[c] = dataFloor[c];
+            ShrinkByDeficit(widths, shrinkFloor, priority, (int)(dataTotal - printable));
             return widths;
         }
 
@@ -420,6 +456,78 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
         return widths;
     }
 
+    // The shrink weight of each priority: how big a share of the width deficit the column absorbs, relative to the
+    // others. Priority 1 = weight 0 (never narrowed); 2 → 1, 3 → 2, 4 → 3 — so a priority-4 column gives up three
+    // times as much as a priority-2 one. See ShrinkByDeficit.
+    private static int ShrinkWeight(int priority) => priority switch { 4 => 3, 3 => 2, 2 => 1, _ => 0 };
+
+    // Removes a total of <paramref name="deficit"/> twips from the columns by sharing it across ALL shrinkable
+    // columns at once, in proportion to their shrink weight (4→3, 3→2, 2→1, 1→0). A column that would be pushed
+    // below its shrink floor is capped there and its leftover share is redistributed over the remaining columns
+    // (repeated until everything settles). If the shrinkable columns can't absorb it all (an extreme, very crowded
+    // table) the rest is scaled out of everything proportionally as a last resort.
+    private static void ShrinkByDeficit(int[] widths, int[] shrinkFloor, int[] priority, int deficit)
+    {
+        if (deficit <= 0)
+            return;
+
+        var count = widths.Length;
+        var weight = new double[count];
+        for (var c = 0; c < count; c++)
+            weight[c] = ShrinkWeight(priority[c]);
+
+        // Iterate: distribute the remaining deficit by weight, clamp any column hitting its floor (drop it from the
+        // pool), and repeat with the unabsorbed remainder over the still-open columns.
+        var open = new bool[count];
+        for (var c = 0; c < count; c++)
+            open[c] = weight[c] > 0 && widths[c] > shrinkFloor[c];
+
+        for (var pass = 0; pass < count && deficit > 0; pass++)
+        {
+            double weightTotal = 0;
+            for (var c = 0; c < count; c++)
+                if (open[c])
+                    weightTotal += weight[c];
+            if (weightTotal <= 0)
+                break;
+
+            var clampedAny = false;
+            var remaining = deficit;
+            for (var c = 0; c < count; c++)
+            {
+                if (!open[c])
+                    continue;
+                var share = (int)(deficit * weight[c] / weightTotal);
+                var room = widths[c] - shrinkFloor[c];
+                if (share >= room)
+                {
+                    // Column bottoms out at its floor and leaves the pool.
+                    share = room;
+                    open[c] = false;
+                    clampedAny = true;
+                }
+                widths[c] -= share;
+                remaining -= share;
+            }
+            deficit = remaining;
+            // No column clamped this pass ⇒ the proportional split fully consumed the deficit (only integer
+            // rounding crumbs left); stop redistributing.
+            if (!clampedAny)
+                break;
+        }
+
+        // Last resort: even the shrinkable columns couldn't absorb it. Scale everything down proportionally so
+        // the table still fits the page (data may wrap) — for a hopelessly crowded sheet.
+        if (deficit > 0)
+        {
+            long total = widths.Sum(w => (long)w);
+            var target = total - deficit;
+            if (total > 0 && target > 0)
+                for (var c = 0; c < count; c++)
+                    widths[c] = (int)((long)widths[c] * target / total);
+        }
+    }
+
     // A header wraps between words; columns up to this many characters in a single word are kept on one line
     // (so short headers never break), while longer words may wrap so they don't inflate a narrow data column.
     private const int HeaderWordCap = 8;
@@ -451,8 +559,8 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
     // fits its column rather than wrapping. Applied to both the short and full header words.
     private const int HeaderSafetyChars = 1;
 
-    // Table font: 13 pt (half-points), sized so roughly 40 rows fit on an A4 page (was 9.5 pt / ~55 rows).
-    private const string TableFontHalfPoints = "26";
+    // Table font: 11 pt (half-points), used by both the header row and the data cells of every table.
+    private const string TableFontHalfPoints = "22";
 
     private static Table BuildTable(IReadOnlyList<string> headers, IReadOnlyList<ResultProtocolBodyRow> rows,
         int[] columnWidths, IReadOnlyList<bool> bodyWrap)
@@ -623,15 +731,58 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
         return (int)pageWidth - 720 - 720;
     }
 
-    // The final sectPr: A4 in the chosen orientation (landscape swaps width/height and sets the flag).
-    private static SectionProperties PageSettings(ProtocolOrientation orientation)
+    // The final sectPr: A4 in the chosen orientation (landscape swaps width/height and sets the flag). When a
+    // footer is present its reference is added and a footer distance is reserved so the colontitul sits below
+    // the body text rather than overlapping it.
+    private static SectionProperties PageSettings(ProtocolOrientation orientation, FooterReference? footer)
     {
         var landscape = orientation == ProtocolOrientation.Landscape;
         var size = landscape
             ? new PageSize { Width = A4HeightTwips, Height = A4WidthTwips, Orient = PageOrientationValues.Landscape }
             : new PageSize { Width = A4WidthTwips, Height = A4HeightTwips };
-        return new SectionProperties(
-            size,
-            new PageMargin { Top = 720, Bottom = 720, Left = 720, Right = 720, Header = 0, Footer = 0, Gutter = 0 });
+        var sectPr = new SectionProperties();
+        // Schema order (CT_SectPr): the footer reference comes before pgSz/pgMar.
+        if (footer is not null)
+            sectPr.Append(footer);
+        sectPr.Append(size);
+        // A 360-twip (≈0.25") footer band, leaving the 720-twip bottom margin for the body.
+        sectPr.Append(new PageMargin
+        {
+            Top = 720, Bottom = 720, Left = 720, Right = 720, Header = 0, Footer = footer is not null ? 360u : 0u, Gutter = 0
+        });
+        return sectPr;
+    }
+
+    // Builds the page footer (нижній колонтитул) into its own FooterPart and returns the reference to wire into
+    // the section properties. The footer lays three fields across the page like the header's date row: the
+    // software name at the left margin, the generation time centred, and "<page label> {PAGE}" flush right —
+    // the page number being a live Word field that renumbers per page. Returns null when no footer is configured.
+    private static FooterReference? AppendFooterPart(MainDocumentPart main, ResultProtocolDocument doc)
+    {
+        if (doc.Footer is not { } f)
+            return null;
+
+        var rightTab = RightTabPosition(doc.Orientation);
+        var p = new Paragraph(new ParagraphProperties(new Tabs(
+            new TabStop { Val = TabStopValues.Center, Position = rightTab / 2 },
+            new TabStop { Val = TabStopValues.Right, Position = rightTab })));
+
+        // Left: the software name (П/З). Centre: "<generated label> <timestamp>". Right: "<page label> {PAGE}".
+        p.Append(Run(f.SoftwareName));
+        p.Append(new Run(new TabChar()));
+        var generated = DateTime.Now.ToString("dd.MM.yyyy HH:mm");
+        p.Append(Run(f.GeneratedLabel.Length > 0 ? $"{f.GeneratedLabel}: {generated}" : generated));
+        p.Append(new Run(new TabChar()));
+        if (f.PageLabel.Length > 0)
+            p.Append(Run($"{f.PageLabel} "));
+        // The live page-number field, with a cached "1" run so it shows immediately even before a field update.
+        p.Append(new SimpleField(new Run(new Text("1"))) { Instruction = "PAGE" });
+
+        var footer = new Footer(p);
+        var part = main.AddNewPart<FooterPart>();
+        part.Footer = footer;
+        part.Footer.Save();
+
+        return new FooterReference { Type = HeaderFooterValues.Default, Id = main.GetIdOfPart(part) };
     }
 }

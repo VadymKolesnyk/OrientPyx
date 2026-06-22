@@ -33,6 +33,15 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.App
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("RankCountForRank")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RankMinParticipants")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RankMinRegions")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("ReceiptWidthMm")
                         .HasColumnType("INTEGER");
 
@@ -67,6 +76,85 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.App
                     b.HasKey("Id");
 
                     b.ToTable("LastSession");
+                });
+
+            modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.PointsRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Formula")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .UseCollation("NOCASE");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TableJson")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasFilter("\"Name\" <> ''");
+
+                    b.ToTable("PointsRules");
+                });
+
+            modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.RankQualificationRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("PointsFirst")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("PointsKms")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("PointsSecond")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("PointsThird")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("PointsThirdJunior")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Rank")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("TimeFirst")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("TimeKms")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("TimeSecond")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("TimeThird")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("TimeThirdJunior")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("RankQualification");
                 });
 
             modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.SportRank", b =>

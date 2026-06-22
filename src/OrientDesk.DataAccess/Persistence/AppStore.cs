@@ -149,6 +149,39 @@ public sealed class AppStore : IAppStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<(int MinParticipants, int MinRegions, int CountForRank)?> GetRankConditionsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+            return null;
+        return (row.RankMinParticipants, row.RankMinRegions, row.RankCountForRank);
+    }
+
+    public async Task SaveRankConditionsAsync(int minParticipants, int minRegions, int countForRank, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+        {
+            db.Settings.Add(new AppSettingsRow
+            {
+                Id = 1,
+                RankMinParticipants = minParticipants,
+                RankMinRegions = minRegions,
+                RankCountForRank = countForRank
+            });
+        }
+        else
+        {
+            row.RankMinParticipants = minParticipants;
+            row.RankMinRegions = minRegions;
+            row.RankCountForRank = countForRank;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<(string? Identifier, int? DayNumber)> GetLastSessionAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
@@ -243,6 +276,156 @@ public sealed class AppStore : IAppStore
             return;
 
         db.Ranks.Remove(existing);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    // ── Points rules ─────────────────────────────────────────────────────────────────────────────────
+
+    public async Task SeedPointsRulesIfEmptyAsync(IReadOnlyList<PointsRule> rules, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        if (await db.PointsRules.AnyAsync(cancellationToken))
+            return;
+
+        db.PointsRules.AddRange(rules);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<PointsRule>> GetPointsRulesAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await db.PointsRules
+            .AsNoTracking()
+            .OrderBy(r => r.Order)
+            .ThenBy(r => r.Name)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<PointsRule> AddPointsRuleAsync(PointsRuleKind kind, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+
+        var maxOrder = await db.PointsRules.AnyAsync(cancellationToken)
+            ? await db.PointsRules.MaxAsync(r => r.Order, cancellationToken)
+            : -1;
+
+        var rule = new PointsRule
+        {
+            Name = string.Empty,
+            Kind = kind,
+            TableJson = kind == PointsRuleKind.Table ? "[]" : null,
+            Formula = kind == PointsRuleKind.Formula ? string.Empty : null,
+            Order = maxOrder + 1
+        };
+        db.PointsRules.Add(rule);
+        await db.SaveChangesAsync(cancellationToken);
+        return rule;
+    }
+
+    public async Task UpdatePointsRuleAsync(PointsRule rule, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+
+        var existing = await db.PointsRules.FirstOrDefaultAsync(r => r.Id == rule.Id, cancellationToken);
+        if (existing is null)
+            return;
+
+        // Reject a rename that would collide with another rule (case-insensitive); keep the old name.
+        var name = (rule.Name ?? string.Empty).Trim();
+        if (name.Length > 0)
+        {
+            var clash = await db.PointsRules.AnyAsync(
+                r => r.Id != rule.Id && r.Name == name, cancellationToken);
+            if (!clash)
+                existing.Name = name;
+        }
+        else
+        {
+            existing.Name = string.Empty;
+        }
+
+        existing.TableJson = rule.TableJson;
+        existing.Formula = rule.Formula;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeletePointsRuleAsync(Guid ruleId, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var existing = await db.PointsRules.FirstOrDefaultAsync(r => r.Id == ruleId, cancellationToken);
+        if (existing is null)
+            return;
+
+        db.PointsRules.Remove(existing);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    // ── Rank qualification table ───────────────────────────────────────────────────────────────────────
+
+    public async Task SeedRankQualificationIfEmptyAsync(IReadOnlyList<RankQualificationRow> rows, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        if (await db.RankQualification.AnyAsync(cancellationToken))
+            return;
+
+        db.RankQualification.AddRange(rows);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<RankQualificationRow>> GetRankQualificationAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        return await db.RankQualification
+            .AsNoTracking()
+            .OrderBy(r => r.Order)
+            .ThenByDescending(r => r.Rank)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<RankQualificationRow> AddRankQualificationRowAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+
+        var maxOrder = await db.RankQualification.AnyAsync(cancellationToken)
+            ? await db.RankQualification.MaxAsync(r => r.Order, cancellationToken)
+            : -1;
+
+        var row = new RankQualificationRow { Rank = 0, Order = maxOrder + 1 };
+        db.RankQualification.Add(row);
+        await db.SaveChangesAsync(cancellationToken);
+        return row;
+    }
+
+    public async Task UpdateRankQualificationRowAsync(RankQualificationRow row, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+
+        var existing = await db.RankQualification.FirstOrDefaultAsync(r => r.Id == row.Id, cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.Rank = row.Rank;
+        existing.TimeKms = row.TimeKms;
+        existing.TimeFirst = row.TimeFirst;
+        existing.TimeSecond = row.TimeSecond;
+        existing.TimeThird = row.TimeThird;
+        existing.TimeThirdJunior = row.TimeThirdJunior;
+        existing.PointsKms = row.PointsKms;
+        existing.PointsFirst = row.PointsFirst;
+        existing.PointsSecond = row.PointsSecond;
+        existing.PointsThird = row.PointsThird;
+        existing.PointsThirdJunior = row.PointsThirdJunior;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteRankQualificationRowAsync(Guid rowId, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var existing = await db.RankQualification.FirstOrDefaultAsync(r => r.Id == rowId, cancellationToken);
+        if (existing is null)
+            return;
+
+        db.RankQualification.Remove(existing);
         await db.SaveChangesAsync(cancellationToken);
     }
 }

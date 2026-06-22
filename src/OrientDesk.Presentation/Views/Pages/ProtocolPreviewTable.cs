@@ -214,6 +214,16 @@ public sealed class ProtocolPreviewTable
                 }
                 row++;
             }
+
+            // Rank-derivation line under the table (Додаток 89), when the group awards a rank and its column is
+            // shown — spans every column, like the .docx's caption paragraph.
+            if (section.HasRankCalculation)
+            {
+                _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+                AddSpanningText(section.RankCalculation, row, columns.Count, bold: false,
+                    size: SubcaptionFontSize, topMargin: 2, foreground: Brushes.DimGray);
+                row++;
+            }
         }
 
         // The drop-insertion line, spanning every row. Hidden until a drag hovers a header.
@@ -323,12 +333,22 @@ public sealed class ProtocolPreviewTable
             dataTotal += dataFloor[c];
         }
 
+        // Per-column shrink priority (1 = never narrowed; 4 = yields first/furthest) and the matching shrink floor
+        // each column may be squeezed to. Mirrors DocxResultProtocolWriter so the preview squeezes the same columns.
+        var priority = new int[count];
+        var shrinkFloor = new double[count];
+        for (var c = 0; c < count; c++)
+        {
+            priority[c] = columns[c].ShrinkPriority;
+            shrinkFloor[c] = ShrinkFloor(priority[c], dataFloor[c], preferredFloor[c], minColPx);
+        }
+
         // Scale to the sheet's printable width (the inner content width of the page Border).
         var landscape = _previewHost?.Preview.IsLandscape == true;
         var sheetWidth = landscape ? SheetShortSide * A4Ratio : SheetShortSide;
         var printable = sheetWidth - 2 * SheetPadding;
 
-        var widths = DistributeWidths(dataFloor, preferredFloor, natural, dataTotal, printable);
+        var widths = DistributeWidths(dataFloor, preferredFloor, natural, shrinkFloor, priority, dataTotal, printable);
 
         // Pick the caption per column: use the FULL caption only when its WHOLE text fits the column on one line
         // (so a multi-word header like "Дата народження" abbreviates instead of wrapping at the space); else the
@@ -344,22 +364,37 @@ public sealed class ProtocolPreviewTable
         return widths;
     }
 
+    // The smallest a column may be squeezed to under width pressure, by shrink priority (mirrors
+    // DocxResultProtocolWriter.ShrinkFloor): priority 1 keeps its full preferred floor; 2/3/4 may dip below the
+    // data floor toward a fraction of it (higher priority ⇒ further), never below an absolute readable minimum.
+    private static double ShrinkFloor(int priority, double dataFloor, double preferredFloor, double absoluteMin) =>
+        priority switch
+        {
+            <= 1 => preferredFloor,
+            2 => Math.Max(absoluteMin, dataFloor * 0.85),
+            3 => Math.Max(absoluteMin, dataFloor * 0.70),
+            _ => Math.Max(absoluteMin, dataFloor * 0.55),
+        };
+
     // The 3-tier distribution shared with the .docx writer (see DocxResultProtocolWriter.DistributeWidths):
-    //  1. guarantee every data/abbreviation floor — if they overflow, scale down (extreme crowded case);
+    //  1. guarantee every data floor — if they overflow, share the deficit across the shrinkable columns by
+    //     shrink weight (4→3, 3→2, 2→1, 1→0), each capped at its shrink floor; protected columns are untouched;
     //  2. raise toward the full-header floors, sharing proportionally when they don't all fit (long headers
     //     fall back to the abbreviation first);
     //  3. hand any remaining slack out by natural-size want (the name column grows).
     private static List<double> DistributeWidths(double[] dataFloor, double[] preferredFloor, double[] natural,
-        double dataTotal, double printable)
+        double[] shrinkFloor, int[] priority, double dataTotal, double printable)
     {
         var count = dataFloor.Length;
         var widths = new List<double>(count);
 
-        // Tier 1.
+        // Tier 1: data floors don't all fit — squeeze the shrinkable columns down toward their shrink floors,
+        // taking the most from the highest-priority columns first; protected columns keep their data floor.
         if (dataTotal >= printable)
         {
             for (var c = 0; c < count; c++)
-                widths.Add(dataTotal > 0 ? dataFloor[c] * printable / dataTotal : printable / count);
+                widths.Add(dataFloor[c]);
+            ShrinkByDeficit(widths, shrinkFloor, priority, dataTotal - printable);
             return widths;
         }
 
@@ -402,6 +437,70 @@ public sealed class ProtocolPreviewTable
         if (count > 0)
             widths[0] += printable - assigned;
         return widths;
+    }
+
+    // The shrink weight of each priority (mirrors DocxResultProtocolWriter.ShrinkWeight): 4→3, 3→2, 2→1, 1→0.
+    private static double ShrinkWeight(int priority) => priority switch { 4 => 3, 3 => 2, 2 => 1, _ => 0 };
+
+    // Removes a total of <paramref name="deficit"/> px by sharing it across ALL shrinkable columns at once, in
+    // proportion to their shrink weight (4→3, 3→2, 2→1, 1→0). A column pushed below its shrink floor is capped
+    // there and its leftover share is redistributed over the rest (repeated until it settles). If the shrinkable
+    // columns can't absorb it all, the rest is scaled out of everything proportionally. Mirrors
+    // DocxResultProtocolWriter.ShrinkByDeficit so the preview matches the document.
+    private static void ShrinkByDeficit(List<double> widths, double[] shrinkFloor, int[] priority, double deficit)
+    {
+        if (deficit <= 0)
+            return;
+
+        var count = widths.Count;
+        var weight = new double[count];
+        var open = new bool[count];
+        for (var c = 0; c < count; c++)
+        {
+            weight[c] = ShrinkWeight(priority[c]);
+            open[c] = weight[c] > 0 && widths[c] > shrinkFloor[c];
+        }
+
+        for (var pass = 0; pass < count && deficit > 1e-6; pass++)
+        {
+            var weightTotal = 0.0;
+            for (var c = 0; c < count; c++)
+                if (open[c])
+                    weightTotal += weight[c];
+            if (weightTotal <= 0)
+                break;
+
+            var clampedAny = false;
+            var remaining = deficit;
+            for (var c = 0; c < count; c++)
+            {
+                if (!open[c])
+                    continue;
+                var share = deficit * weight[c] / weightTotal;
+                var room = widths[c] - shrinkFloor[c];
+                if (share >= room)
+                {
+                    share = room;
+                    open[c] = false;
+                    clampedAny = true;
+                }
+                widths[c] -= share;
+                remaining -= share;
+            }
+            deficit = remaining;
+            if (!clampedAny)
+                break;
+        }
+
+        // Last resort: even the shrinkable columns couldn't absorb it — scale everything down proportionally.
+        if (deficit > 1e-6)
+        {
+            var total = widths.Sum();
+            var target = total - deficit;
+            if (total > 0 && target > 0)
+                for (var c = 0; c < count; c++)
+                    widths[c] = widths[c] * target / total;
+        }
     }
 
     // The header's contribution to a column's FLOOR: the longest single word, capped at HeaderWordCap, plus a

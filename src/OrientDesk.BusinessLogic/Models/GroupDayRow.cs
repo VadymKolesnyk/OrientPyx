@@ -24,4 +24,12 @@ public sealed record GroupDayRow(
     /// default. Printed in the group's protocol caption.</summary>
     string CourseSetter = "",
     /// <summary>Optional judge category for the per-group course-setter override; blank = none.</summary>
-    string CourseSetterCategory = "");
+    string CourseSetterCategory = "",
+    /// <summary>Per-group points-rule override (app-level PointsRule id); null = inherit the competition
+    /// default (<c>CompetitionInfo.DefaultPointsRuleId</c>).</summary>
+    Guid? PointsRuleId = null,
+    /// <summary>Which sports-rank level this group awards on the day (Додаток 89). None = no ranks.</summary>
+    GroupRankLevel RankLevel = GroupRankLevel.None,
+    /// <summary>How many «Майстер спорту» titles to award to the top placed runners (adult groups);
+    /// null = none.</summary>
+    int? MasterCount = null);

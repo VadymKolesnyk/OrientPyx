@@ -100,6 +100,15 @@ public sealed class DayColumnBuilder
             bands.Add(scoreBand);
         }
 
+        // Ranking points («Очки»), computed from the group's effective points rule — shown on every day
+        // (any discipline can have a rule assigned), read-only. Blank when no rule applies / not rankable.
+        bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.Points", nameof(ParticipantDayRowViewModel.PointsText),
+            sortPath: nameof(ParticipantDayRowViewModel.PointsSort), fixedWidth: 70));
+
+        // Awarded sports rank («Виконаний розряд», Додаток 89), computed per group from its rank level and
+        // the qualification table — read-only. Blank when the group awards no ranks / not rankable.
+        bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.AwardedRank", nameof(ParticipantDayRowViewModel.AwardedRankText), fixedWidth: 120));
+
         // Entry-fee tail: raised-fee flag (when enabled), one column per discount, then the total.
         EntryFeeColumns.Append(bands, _loc, discounts, raisedFeeEnabled);
 

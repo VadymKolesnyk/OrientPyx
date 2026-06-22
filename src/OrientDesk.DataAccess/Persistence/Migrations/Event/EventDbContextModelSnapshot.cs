@@ -95,6 +95,9 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("DefaultPointsRuleId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset?>("EndDate")
                         .HasColumnType("TEXT");
 
@@ -359,10 +362,20 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                     b.Property<Guid>("GroupId")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("MasterCount")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Order")
                         .HasColumnType("INTEGER");
 
                     b.Property<decimal?>("PenaltyPerMinute")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("PointsRuleId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RankLevel")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<int?>("RequiredControlCount")

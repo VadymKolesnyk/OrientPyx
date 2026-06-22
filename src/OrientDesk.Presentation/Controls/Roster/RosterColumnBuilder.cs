@@ -272,6 +272,8 @@ public sealed class RosterColumnBuilder
         RosterField.Result => nameof(RosterDayCellViewModel.ResultText_),
         RosterField.Place => nameof(RosterDayCellViewModel.PlaceText),
         RosterField.Score => nameof(RosterDayCellViewModel.ScoreText),
+        RosterField.Points => nameof(RosterDayCellViewModel.PointsText),
+        RosterField.AwardedRank => nameof(RosterDayCellViewModel.AwardedRankText),
         RosterField.Bonus => nameof(RosterDayCellViewModel.BonusText),
         _ => string.Empty,
     };
@@ -288,7 +290,8 @@ public sealed class RosterColumnBuilder
     {
         RosterField.ActualStart or RosterField.Finish or RosterField.Result => 100.0,
         RosterField.ResultStatus => 90.0,
-        RosterField.Place or RosterField.Score => 70.0,
+        RosterField.Place or RosterField.Score or RosterField.Points => 70.0,
+        RosterField.AwardedRank => 120.0,
         RosterField.Bonus => 80.0,
         _ => 110.0, // groups / chips / start times / out-of-competition
     };
@@ -312,6 +315,8 @@ public sealed class RosterColumnBuilder
         RosterField.Result => nameof(ParticipantRosterRowViewModel.CollapsedResult),
         RosterField.Place => nameof(ParticipantRosterRowViewModel.CollapsedPlace),
         RosterField.Score => nameof(ParticipantRosterRowViewModel.CollapsedScore),
+        RosterField.Points => nameof(ParticipantRosterRowViewModel.CollapsedPoints),
+        RosterField.AwardedRank => nameof(ParticipantRosterRowViewModel.CollapsedAwardedRank),
         RosterField.Bonus => nameof(ParticipantRosterRowViewModel.CollapsedBonus),
         _ => string.Empty,
     };

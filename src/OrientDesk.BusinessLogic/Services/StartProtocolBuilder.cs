@@ -47,6 +47,9 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
         // Per-column body-wrap flags — free-text columns may wrap; short-code columns stay on one line.
         var bodyWrap = columns.Select(ColumnBodyWraps).ToList();
 
+        // Per-column shrink priority — which columns give up width first when the table overflows the page width.
+        var shrinkPriority = columns.Select(ShrinkPriority).ToList();
+
         var sections = kind == StartProtocolKind.Judges
             ? BuildJudgesSections(data, columns, labels)
             : BuildRegularSections(data, columns, labels);
@@ -65,9 +68,12 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
             ColumnHeaders = headers,
             ColumnHeadersShort = shortHeaders,
             ColumnBodyWrap = bodyWrap,
+            ColumnShrinkPriority = shrinkPriority,
             Sections = sections,
             Officials = ProtocolOfficialsFactory.Build(
-                data.Officials, labels.ChiefJudgeLabel, labels.ChiefSecretaryLabel, labels.JuryLabel)
+                data.Officials, labels.ChiefJudgeLabel, labels.ChiefSecretaryLabel, labels.JuryLabel),
+            Footer = ProtocolFooterFactory.Build(
+                labels.FooterSoftwareName, labels.FooterGeneratedLabel, labels.FooterPageLabel)
         };
     }
 
@@ -119,6 +125,31 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
         StartProtocolColumn.Group => true,
         StartProtocolColumn.Team => true,
         _ => false
+    };
+
+    // How willingly a column gives up width when the table is too wide for the page (see
+    // ResultProtocolDocument.ColumnShrinkPriority): 1 = never narrowed (protected); 2/3/4 = may shrink, ever more
+    // willingly (4 first and furthest), but never below a content-derived floor. The start sheet protects its
+    // spine (start time, № з/п, number, year, group) and lets the secondary identity columns (ДЮСШ, тренер,
+    // кваліфікація, регіон, нотатка) give way first.
+    private static int ShrinkPriority(StartProtocolColumn column) => column switch
+    {
+        StartProtocolColumn.StartTime => 1,
+        StartProtocolColumn.Sequence => 1,
+        StartProtocolColumn.Number => 1,
+        StartProtocolColumn.BirthDate => 1,
+        StartProtocolColumn.Group => 1,
+        StartProtocolColumn.FullName => 2,
+        StartProtocolColumn.Club => 2,
+        StartProtocolColumn.Chip => 2,
+        StartProtocolColumn.Region => 3,
+        StartProtocolColumn.Note => 3,
+        StartProtocolColumn.Dussh => 4,
+        StartProtocolColumn.Coach => 4,
+        StartProtocolColumn.Rank => 4,
+        // Team has no explicit category from the user; treat it as a secondary identity column.
+        StartProtocolColumn.Team => 3,
+        _ => 1
     };
 
     // "Начальник дистанції: Рачук Тарас" (category appended in parentheses), or blank when none.
@@ -211,8 +242,7 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
         StartProtocolColumn.Sequence => sequence.ToString(CultureInfo.InvariantCulture),
         StartProtocolColumn.Number => row.Number,
         StartProtocolColumn.FullName => row.FullName,
-        // A start protocol traditionally shows just the birth year, not the full date.
-        StartProtocolColumn.BirthDate => row.BirthDate is { } d ? d.Year.ToString(CultureInfo.InvariantCulture) : string.Empty,
+        StartProtocolColumn.BirthDate => row.BirthDate is { } d ? d.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) : string.Empty,
         StartProtocolColumn.Club => row.ClubName,
         StartProtocolColumn.Region => row.RegionName,
         StartProtocolColumn.Dussh => row.DusshName,

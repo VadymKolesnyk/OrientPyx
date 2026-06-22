@@ -55,5 +55,25 @@ public class GroupDaySettings
     /// </summary>
     public decimal? PenaltyPerMinute { get; set; }
 
+    /// <summary>
+    /// Overrides the competition-wide default points rule (<see cref="CompetitionInfo.DefaultPointsRuleId"/>)
+    /// for this group on this day; null means the group inherits the competition default. The id references
+    /// an application-level <c>PointsRule</c> (app.db). Scoring with this rule is a later feature.
+    /// </summary>
+    public Guid? PointsRuleId { get; set; }
+
+    /// <summary>
+    /// Which sports-rank level this group awards on this day (Додаток 89). <see cref="GroupRankLevel.None"/>
+    /// means no ranks are computed for the group. Persisted as a string in the database.
+    /// </summary>
+    public GroupRankLevel RankLevel { get; set; } = GroupRankLevel.None;
+
+    /// <summary>
+    /// How many «Майстер спорту» titles to award in this group on this day (simplified МС rule): the top
+    /// N placed runners with an OK result get «МСУ». Null/0 = none. Only meaningful when
+    /// <see cref="RankLevel"/> is <see cref="GroupRankLevel.Adult"/> (juniors cannot earn МС).
+    /// </summary>
+    public int? MasterCount { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

@@ -54,12 +54,19 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
     {
         var activeNumber = _session.CurrentDay?.Number;
         // BD read runs off the UI thread; the collection is rebuilt afterwards on the UI thread.
-        var days = await _busy.RunAsync(() => _editor.GetDaysAsync());
+        var (days, info) = await _busy.RunAsync(async () =>
+        {
+            var d = await _editor.GetDaysAsync();
+            var i = await _editor.GetInfoAsync();
+            return (d, i);
+        });
+
+        var venuePlaceholder = info?.Venue?.Trim() ?? string.Empty;
 
         Days.Clear();
         SelectedRow = null;
         foreach (var day in days)
-            Days.Add(new DayRowViewModel(day, day.Number == activeNumber, Localization));
+            Days.Add(new DayRowViewModel(day, day.Number == activeNumber, Localization, venuePlaceholder));
     }
 
     [RelayCommand]

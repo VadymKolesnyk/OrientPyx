@@ -29,7 +29,17 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     private readonly IBusyService _busy;
     private readonly IDisciplineStrategyProvider _strategies;
     private readonly IDialogService _dialogs;
+    private readonly IAppStore _appStore;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
+
+    // Used to debounce the competition-level settings strip (course-setter + default points rule).
+    private CancellationTokenSource? _infoSaveCts;
+
+    // The app-level points rules, loaded once per LoadAsync (shared across every row's combo).
+    private IReadOnlyList<PointsRule> _pointsRules = [];
+
+    // The current competition metadata being edited by the top settings strip.
+    private CompetitionInfo? _info;
 
     public GroupsViewModel(
         ILocalizationService localization,
@@ -38,7 +48,8 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         IXmlImportFlow importFlow,
         IBusyService busy,
         IDisciplineStrategyProvider strategies,
-        IDialogService dialogs)
+        IDialogService dialogs,
+        IAppStore appStore)
         : base(localization)
     {
         _editor = editor;
@@ -47,6 +58,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         _busy = busy;
         _strategies = strategies;
         _dialogs = dialogs;
+        _appStore = appStore;
         Localization.PropertyChanged += (_, _) => OnPropertyChanged(nameof(SelectedCourseHeader));
         // Singleton VM: when the competition/day changes, drop the previous event's rows so the
         // page never shows stale data before it is next opened. The event can be raised on a pool
@@ -68,6 +80,35 @@ public sealed partial class GroupsViewModel : PageViewModelBase
 
     /// <summary>Day picker is shown only when the competition has more than one day.</summary>
     public bool ShowDaySelector => DayOptions.Count > 1;
+
+    // ── Competition-level settings (top "Загальні налаштування" strip) ──────────────────────────────
+    // These are competition-wide defaults edited above the table: the global course-setter (начальник
+    // дистанції, which a group may override per day) and the default points rule (overridable per group).
+    // Persisted to CompetitionInfo, debounced. _suppressInfoSave guards the seeding in LoadAsync.
+
+    private bool _suppressInfoSave;
+
+    /// <summary>Whether the top "Загальні налаштування" card is expanded (collapsed by default).</summary>
+    [ObservableProperty]
+    private bool _isGlobalSettingsExpanded;
+
+    [RelayCommand]
+    private void ToggleGlobalSettings() => IsGlobalSettingsExpanded = !IsGlobalSettingsExpanded;
+
+    /// <summary>Competition-wide course-setter name (начальник дистанції). A group may override it per day.</summary>
+    [ObservableProperty]
+    private string _defaultCourseSetter = string.Empty;
+
+    /// <summary>Optional judge category for the competition-wide course-setter.</summary>
+    [ObservableProperty]
+    private string _defaultCourseSetterCategory = string.Empty;
+
+    /// <summary>Options for the competition default points rule: a "(none)" sentinel + every rule.</summary>
+    public ObservableCollection<PointsRuleOption> DefaultPointsRuleOptions { get; } = [];
+
+    /// <summary>The selected competition-wide default points rule (null id option = no default).</summary>
+    [ObservableProperty]
+    private PointsRuleOption? _selectedDefaultPointsRule;
 
     // The row whose course / control list is shown in the bottom editor. Null when nothing is
     // selected, which dims the editor and shows a hint instead.
@@ -107,12 +148,17 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         // Both BD reads run off the UI thread; every collection/property write below happens
         // afterwards on the UI thread (SQLite has no real async I/O, so this can't stay inline).
         var hasDay = _session.CurrentDay is not null;
-        var (days, rows) = await _busy.RunAsync(async () =>
+        var (days, rows, rules, info) = await _busy.RunAsync(async () =>
         {
             var d = await _editor.GetDaysAsync();
             var r = hasDay ? await _editor.GetGroupDayRowsAsync() : (IReadOnlyList<GroupDayRow>)[];
-            return (d, r);
+            var p = await _appStore.GetPointsRulesAsync();
+            var i = await _editor.GetInfoAsync();
+            return (d, r, p, i);
         });
+
+        _pointsRules = rules;
+        _info = info;
 
         foreach (var existing in Groups)
             existing.PropertyChanged -= OnRowPropertyChanged;
@@ -142,17 +188,80 @@ public sealed partial class GroupsViewModel : PageViewModelBase
 
         OnPropertyChanged(nameof(ShowDaySelector));
 
+        SeedCompetitionSettings();
+
+        // One shared per-group options list for this load (default sentinel + every rule).
+        _rowPointsRuleOptions = BuildRowPointsRuleOptions();
+
         foreach (var row in rows)
             Groups.Add(CreateRow(row));
 
         RaiseColumnVisibility();
     }
 
+    // The shared per-group points-rule options for the current load (rebuilt each LoadAsync).
+    private IReadOnlyList<PointsRuleOption> _rowPointsRuleOptions = [];
+
+    // Name of a points rule by id, or null when unset/unknown — used to label the per-group "(default: …)"
+    // sentinel and the competition default combo.
+    private string? RuleName(Guid? id) =>
+        id is { } gid ? _pointsRules.FirstOrDefault(r => r.Id == gid)?.Name : null;
+
+    // Fills the top settings strip from the loaded CompetitionInfo, and (re)builds both the competition
+    // default-rule options and the seed for each row's per-group options. Guarded so the property setters
+    // don't trigger a save while we seed.
+    private void SeedCompetitionSettings()
+    {
+        _suppressInfoSave = true;
+        try
+        {
+            DefaultCourseSetter = _info?.CourseSetter ?? string.Empty;
+            DefaultCourseSetterCategory = _info?.CourseSetterCategory ?? string.Empty;
+
+            // Competition default combo: a plain "немає" option (no default rule, stored as null) + every rule.
+            DefaultPointsRuleOptions.Clear();
+            DefaultPointsRuleOptions.Add(PointsRuleOption.None(Localization, explicitChoice: false));
+            foreach (var rule in _pointsRules)
+                DefaultPointsRuleOptions.Add(PointsRuleOption.ForRule(rule.Id, rule.Name, Localization));
+
+            var defId = _info?.DefaultPointsRuleId;
+            var match = DefaultPointsRuleOptions.FirstOrDefault(o => o.Id == defId);
+            if (match is null && defId is { } missing)
+            {
+                DefaultPointsRuleOptions.Insert(0, PointsRuleOption.Unknown(missing, Localization));
+                match = DefaultPointsRuleOptions[0];
+            }
+            SelectedDefaultPointsRule = match ?? DefaultPointsRuleOptions.FirstOrDefault(o => o.Id is null);
+        }
+        finally
+        {
+            _suppressInfoSave = false;
+        }
+    }
+
+    // Builds the shared per-group points-rule options: a "(default: <competition default name>)" sentinel,
+    // an explicit "немає" (no rule, ignore the default), then every rule. Rebuilt per LoadAsync so it
+    // reflects the current rule set and default name.
+    private IReadOnlyList<PointsRuleOption> BuildRowPointsRuleOptions()
+    {
+        var options = new List<PointsRuleOption>
+        {
+            PointsRuleOption.Default(Localization, RuleName(_info?.DefaultPointsRuleId)),
+            PointsRuleOption.None(Localization, explicitChoice: true)
+        };
+        options.AddRange(_pointsRules.Select(r => PointsRuleOption.ForRule(r.Id, r.Name, Localization)));
+        return options;
+    }
+
     // Builds a row VM wired with the discipline provider and a watch on its discipline so the grid's
     // column visibility refreshes when a group's effective type changes.
     private GroupDayRowViewModel CreateRow(GroupDayRow row)
     {
-        var vm = new GroupDayRowViewModel(row, Localization, _strategies, RequestRowSave);
+        var vm = new GroupDayRowViewModel(
+            row, Localization, _strategies, _rowPointsRuleOptions,
+            (DefaultCourseSetter ?? string.Empty).Trim(),
+            (DefaultCourseSetterCategory ?? string.Empty).Trim(),
+            RequestRowSave);
         vm.PropertyChanged += OnRowPropertyChanged;
         return vm;
     }
@@ -288,6 +397,74 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         // (now on the new selected row) so focus doesn't end up on the top menu.
         if (confirmed)
             RequestGridFocus();
+    }
+
+    // ── Competition-level settings strip: change handlers + debounced save ───────────────────────────
+
+    partial void OnDefaultCourseSetterChanged(string value)
+    {
+        // Live-propagate the new global course-setter to every row's placeholder so empty cells update
+        // immediately (no reload needed). The trimmed value is what a blank cell inherits.
+        var placeholder = (value ?? string.Empty).Trim();
+        foreach (var row in Groups)
+            row.CourseSetterPlaceholder = placeholder;
+        QueueInfoSave();
+    }
+
+    partial void OnDefaultCourseSetterCategoryChanged(string value)
+    {
+        var placeholder = (value ?? string.Empty).Trim();
+        foreach (var row in Groups)
+            row.CourseSetterCategoryPlaceholder = placeholder;
+        QueueInfoSave();
+    }
+
+    partial void OnSelectedDefaultPointsRuleChanged(PointsRuleOption? value)
+    {
+        // The competition default rule changed — refresh the per-group "(default: …)" sentinel label so
+        // every group combo that inherits the default shows the new name immediately.
+        var name = RuleName(value?.Id);
+        foreach (var option in _rowPointsRuleOptions)
+            if (option.Id is null)
+                option.UpdateDefaultName(name);
+        QueueInfoSave();
+    }
+
+    private void QueueInfoSave()
+    {
+        if (_suppressInfoSave || _info is null)
+            return;
+
+        _infoSaveCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _infoSaveCts = cts;
+        _ = SaveInfoDebouncedAsync(cts.Token);
+    }
+
+    private async Task SaveInfoDebouncedAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(SaveDebounce, token);
+
+            // Snapshot the edited fields onto the loaded info (UI thread) before the SQLite write.
+            var info = _info;
+            if (info is null)
+                return;
+            info.CourseSetter = (DefaultCourseSetter ?? string.Empty).Trim();
+            info.CourseSetterCategory = (DefaultCourseSetterCategory ?? string.Empty).Trim();
+            info.DefaultPointsRuleId = SelectedDefaultPointsRule?.Id;
+
+            await Task.Run(() => _editor.SaveInfoAsync(info, token), token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer edit (or the page reloaded) — ignore.
+        }
+        catch
+        {
+            // Background save failed; never crash the UI over an autosave.
+        }
     }
 
     // Invoked by a row on every edit (UI thread). Resets that row's debounce timer.

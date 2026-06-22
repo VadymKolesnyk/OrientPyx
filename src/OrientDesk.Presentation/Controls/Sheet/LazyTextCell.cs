@@ -7,6 +7,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.VisualTree;
+using Avalonia.Styling;
 using OrientDesk.Localization;
 using OrientDesk.Presentation.Behaviors;
 using OrientDesk.Presentation.Converters;
@@ -38,6 +39,27 @@ internal sealed class LazyTextCell : LazyEditCell
     {
         _editPath = editPath;
         _options = options;
+
+        // When a per-row placeholder path is supplied, the resting label falls back to that placeholder
+        // (greyed) while the value is blank — so an empty cell reads the inherited value the same way the
+        // editor's watermark does. Re-binds the label's Text/Foreground that the base bound to the value.
+        if (options.PlaceholderPath is { } placeholderPath)
+        {
+            Label[!TextBlock.TextProperty] = new MultiBinding
+            {
+                Converter = new PlaceholderTextConverter(),
+                Bindings = { new Binding(valuePath), new Binding(placeholderPath) }
+            };
+            Label[!TextBlock.ForegroundProperty] = new MultiBinding
+            {
+                Converter = new PlaceholderForegroundConverter
+                {
+                    NormalBrush = ResolveBrush("TextPrimary"),
+                    PlaceholderBrush = ResolveBrush("TextMuted"),
+                },
+                Bindings = { new Binding(valuePath), new Binding(placeholderPath) }
+            };
+        }
 
         // The resting label mirrors the editor's enabled/dim/rental-highlight so the cell reads the
         // same whether or not it is being edited (a disabled day cell stays dim; a non-rental chip
@@ -72,7 +94,10 @@ internal sealed class LazyTextCell : LazyEditCell
                     : UpdateSourceTrigger.PropertyChanged
             }
         };
-        if (_options.Placeholder is { } ph)
+        // A per-row placeholder path (inherited default) drives the watermark live; else the static one.
+        if (_options.PlaceholderPath is { } placeholderPath)
+            box[!TextBox.PlaceholderTextProperty] = new Binding(placeholderPath);
+        else if (_options.Placeholder is { } ph)
             box.PlaceholderText = ph;
         ApplyMask(box, _options.Mask);
         if (_options.EnabledPath is { } enabled)
@@ -82,6 +107,16 @@ internal sealed class LazyTextCell : LazyEditCell
         if (_options.RentalChips is { } registry)
             ChipHighlight.SetRegistry(box, registry);
         return box;
+    }
+
+    // Resolves a themed brush by resource key from the application resources, for the placeholder
+    // label colours. Falls back to null (inherit) when the key isn't found.
+    private static IBrush? ResolveBrush(string key)
+    {
+        var app = Avalonia.Application.Current;
+        if (app is not null && app.TryGetResource(key, app.ActualThemeVariant, out var value) && value is IBrush brush)
+            return brush;
+        return null;
     }
 
     // A text editor takes focus and the caret on entry; it never "opens" anything.
@@ -128,6 +163,14 @@ internal sealed class SheetTextOptions
 {
     public SheetColumnBuilder.NumericMask Mask { get; init; } = SheetColumnBuilder.NumericMask.None;
     public string? Placeholder { get; init; }
+
+    /// <summary>
+    /// Optional binding path to a per-row placeholder value (e.g. an inherited default). When set, it
+    /// drives the editor's watermark AND a greyed resting-label fallback shown while the cell's value is
+    /// blank. Takes precedence over the static <see cref="Placeholder"/> for the editor watermark.
+    /// </summary>
+    public string? PlaceholderPath { get; init; }
+
     public string? EnabledPath { get; init; }
     public string? OpacityPath { get; init; }
     public bool CommitOnLostFocus { get; init; }

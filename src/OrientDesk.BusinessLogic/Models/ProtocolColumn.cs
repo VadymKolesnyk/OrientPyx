@@ -42,5 +42,11 @@ public enum ProtocolColumn
     Place,
 
     /// <summary>Score / points for a point-scoring discipline («Бали»).</summary>
-    Score
+    Score,
+
+    /// <summary>Ranking points awarded by the group's points rule («Очки»).</summary>
+    Points,
+
+    /// <summary>The awarded sports rank computed from the result («Виконаний розряд», Додаток 89).</summary>
+    AwardedRank
 }

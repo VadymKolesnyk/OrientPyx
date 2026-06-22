@@ -1,0 +1,143 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientDesk.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientDesk.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="940" d:DesignHeight="560"
+             x:Class="OrientDesk.Presentation.Views.Pages.PointsView"
+             x:DataType="pages:PointsViewModel">
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Heading -->
+        <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,16">
+            <TextBlock Text="{Binding Title}" Classes="h1"
+                       FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+            <TextBlock Text="{Binding Text}" Classes="subtitle" />
+        </StackPanel>
+
+        <!-- Master (rule list) + detail (selected rule editor) -->
+        <Grid ColumnDefinitions="260,16,*">
+
+            <!-- ── Master: list of rules + add/delete actions ─────────────────────────────── -->
+            <Border Grid.Column="0" Classes="card" Padding="0" ClipToBounds="True">
+                <DockPanel LastChildFill="True">
+
+                    <StackPanel DockPanel.Dock="Bottom" Margin="8" Spacing="6">
+                        <Button Command="{Binding AddTableRuleCommand}"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center">
+                            <TextBlock Text="{Binding Localization[Points.Add.Table]}" />
+                        </Button>
+                        <Button Command="{Binding AddFormulaRuleCommand}"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center">
+                            <TextBlock Text="{Binding Localization[Points.Add.Formula]}" />
+                        </Button>
+                    </StackPanel>
+
+                    <ListBox ItemsSource="{Binding Rules}"
+                             SelectedItem="{Binding SelectedRule, Mode=TwoWay}"
+                             Background="Transparent" BorderThickness="0">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="pages:PointsRuleListItemViewModel">
+                                <StackPanel Spacing="1" Margin="2">
+                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding KindLabel}" Classes="subtitle" FontSize="11" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <!-- ── Detail: editor for the selected rule ───────────────────────────────────── -->
+            <Border Grid.Column="2" Classes="card" ClipToBounds="True">
+              <Grid>
+
+                <!-- Empty state -->
+                <TextBlock Text="{Binding Localization[Points.Empty]}" Classes="subtitle"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           IsVisible="{Binding !HasSelection}" />
+
+                <DockPanel LastChildFill="True" IsVisible="{Binding HasSelection}">
+
+                    <!-- Shared header: rule name + delete -->
+                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+                        <StackPanel Grid.Column="0" Spacing="3">
+                            <TextBlock Text="{Binding Localization[Points.Name]}" Classes="subtitle" FontSize="11" />
+                            <TextBox Text="{Binding EditName, Mode=TwoWay}"
+                                     PlaceholderText="{Binding Localization[Points.Name.Watermark]}" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Command="{Binding DeleteRuleCommand}"
+                                VerticalAlignment="Bottom" Margin="8,0,0,0">
+                            <TextBlock Text="{Binding Localization[Points.Delete]}" />
+                        </Button>
+                    </Grid>
+
+                    <!-- Table editor -->
+                    <DockPanel LastChildFill="True" IsVisible="{Binding IsTableEditor}">
+                        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="6" Margin="0,8,0,0">
+                            <Button Command="{Binding AddPlaceCommand}">
+                                <TextBlock Text="{Binding Localization[Points.Table.AddPlace]}" />
+                            </Button>
+                            <Button Command="{Binding RemovePlaceCommand}">
+                                <TextBlock Text="{Binding Localization[Points.Table.RemovePlace]}" />
+                            </Button>
+                        </StackPanel>
+                        <Border Classes="card" Padding="0" ClipToBounds="True">
+                            <controls:SheetTable Name="TableSheet"
+                                                 ItemsSource="{Binding TableRows}"
+                                                 Localization="{Binding Localization}" />
+                        </Border>
+                    </DockPanel>
+
+                    <!-- Formula editor -->
+                    <StackPanel IsVisible="{Binding IsFormulaEditor}" Spacing="10">
+                        <TextBlock Text="{Binding Localization[Points.Formula.Label]}" Classes="subtitle" FontSize="11" />
+                        <TextBox Name="FormulaBox"
+                                 Text="{Binding FormulaText, Mode=TwoWay}"
+                                 FontFamily="Consolas, monospace"
+                                 PlaceholderText="{Binding Localization[Points.Formula.Watermark]}" />
+
+                        <!-- Validity badge -->
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="✓" Foreground="#2E7D32" FontWeight="Bold"
+                                       IsVisible="{Binding FormulaValid}" />
+                            <TextBlock Text="{Binding Localization[Points.Formula.Valid]}" Foreground="#2E7D32"
+                                       IsVisible="{Binding FormulaValid}" />
+                            <TextBlock Text="⚠" Foreground="#C62828" FontWeight="Bold"
+                                       IsVisible="{Binding !FormulaValid}" />
+                            <TextBlock Text="{Binding Localization[Points.Formula.Invalid]}" Foreground="#C62828"
+                                       IsVisible="{Binding !FormulaValid}" />
+                        </StackPanel>
+
+                        <!-- Variable insert palette -->
+                        <TextBlock Text="{Binding Localization[Points.Formula.Variables]}" Classes="subtitle" FontSize="11" />
+                        <ItemsControl ItemsSource="{Binding Variables}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="pages:PointsVariableItem">
+                                    <Button Margin="0,0,6,6"
+                                            Command="{Binding $parent[ItemsControl].((pages:PointsViewModel)DataContext).InsertVariableCommand}"
+                                            CommandParameter="{Binding Token}"
+                                            ToolTip.Tip="{Binding Description}">
+                                        <TextBlock Text="{Binding Token}" FontFamily="Consolas, monospace" />
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                </DockPanel>
+              </Grid>
+            </Border>
+
+        </Grid>
+    </DockPanel>
+
+</UserControl>

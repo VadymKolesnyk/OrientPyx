@@ -112,6 +112,10 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     public string ScoreText => ResultText.Score(_result);
     /// <summary>Per-control «Бали» breakdown for the score column's hover tooltip; null when no score.</summary>
     public string? ScoreTooltip => ResultText.ScoreTooltip(_result, Localization);
+    /// <summary>Ranking points / «Очки» (from the group's points rule); blank when none awarded.</summary>
+    public string PointsText => ResultText.Points(_result);
+    /// <summary>Awarded sports rank / «Виконаний розряд» (Додаток 89); blank when none.</summary>
+    public string AwardedRankText => ResultText.AwardedRank(_result);
 
     /// <summary>
     /// The judge's points correction («бонус») as editable signed-integer text; empty clears it. Editable
@@ -168,6 +172,8 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         OnPropertyChanged(nameof(PlaceText));
         OnPropertyChanged(nameof(ScoreText));
         OnPropertyChanged(nameof(ScoreTooltip));
+        OnPropertyChanged(nameof(PointsText));
+        OnPropertyChanged(nameof(AwardedRankText));
     }
 
     /// <summary>

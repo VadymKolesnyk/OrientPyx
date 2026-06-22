@@ -51,6 +51,7 @@ public sealed class EventStore : IEventStore
             existing.ChiefSecretary = info.ChiefSecretary;
             existing.ChiefSecretaryCategory = info.ChiefSecretaryCategory;
             existing.Jury = info.Jury;
+            existing.DefaultPointsRuleId = info.DefaultPointsRuleId;
         }
 
         await db.SaveChangesAsync(cancellationToken);
@@ -286,6 +287,9 @@ public sealed class EventStore : IEventStore
         existing.PenaltyPerMinute = settings.PenaltyPerMinute;
         existing.CourseSetter = settings.CourseSetter;
         existing.CourseSetterCategory = settings.CourseSetterCategory;
+        existing.PointsRuleId = settings.PointsRuleId;
+        existing.RankLevel = settings.RankLevel;
+        existing.MasterCount = settings.MasterCount;
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -938,18 +942,23 @@ public sealed class EventStore : IEventStore
 
     public async Task SaveResultProtocolJsonAsync(string eventFolderPath, Guid dayId, string json, CancellationToken cancellationToken = default)
     {
-        await using var db = EventDbContextFactory.Create(eventFolderPath);
-        var row = await db.ResultProtocolSettings.FirstOrDefaultAsync(r => r.EventDayId == dayId, cancellationToken);
-        if (row is null)
+        // Auto-save fires fire-and-forget on every edit, so two saves for the same day can run concurrently:
+        // both read no row and both INSERT, which trips the (EventDayId) unique index. Retry once as an update
+        // if the concurrent insert won the race.
+        await UpsertWithUniqueRetryAsync(eventFolderPath, async db =>
         {
-            row = new ResultProtocolSettingsRow { EventDayId = dayId, Json = json };
-            db.ResultProtocolSettings.Add(row);
-        }
-        else
-        {
-            row.Json = json;
-        }
-        await db.SaveChangesAsync(cancellationToken);
+            var row = await db.ResultProtocolSettings.FirstOrDefaultAsync(r => r.EventDayId == dayId, cancellationToken);
+            if (row is null)
+            {
+                row = new ResultProtocolSettingsRow { EventDayId = dayId, Json = json };
+                db.ResultProtocolSettings.Add(row);
+            }
+            else
+            {
+                row.Json = json;
+            }
+            await db.SaveChangesAsync(cancellationToken);
+        });
     }
 
     public async Task<string?> GetStartProtocolJsonAsync(string eventFolderPath, Guid dayId, StartProtocolKind kind, CancellationToken cancellationToken = default)
@@ -963,19 +972,45 @@ public sealed class EventStore : IEventStore
 
     public async Task SaveStartProtocolJsonAsync(string eventFolderPath, Guid dayId, StartProtocolKind kind, string json, CancellationToken cancellationToken = default)
     {
-        await using var db = EventDbContextFactory.Create(eventFolderPath);
-        var row = await db.StartProtocolSettings.FirstOrDefaultAsync(r => r.EventDayId == dayId && r.Kind == kind, cancellationToken);
-        if (row is null)
+        // See SaveResultProtocolJsonAsync: concurrent auto-saves race on the (EventDayId, Kind) unique index.
+        await UpsertWithUniqueRetryAsync(eventFolderPath, async db =>
         {
-            row = new StartProtocolSettingsRow { EventDayId = dayId, Kind = kind, Json = json };
-            db.StartProtocolSettings.Add(row);
-        }
-        else
-        {
-            row.Json = json;
-        }
-        await db.SaveChangesAsync(cancellationToken);
+            var row = await db.StartProtocolSettings.FirstOrDefaultAsync(r => r.EventDayId == dayId && r.Kind == kind, cancellationToken);
+            if (row is null)
+            {
+                row = new StartProtocolSettingsRow { EventDayId = dayId, Kind = kind, Json = json };
+                db.StartProtocolSettings.Add(row);
+            }
+            else
+            {
+                row.Json = json;
+            }
+            await db.SaveChangesAsync(cancellationToken);
+        });
     }
+
+    // Runs a read-then-insert-or-update against a fresh context, retrying once on a SQLite UNIQUE violation:
+    // when two callers race, the loser's INSERT fails, so the retry re-reads (now seeing the winner's row) and
+    // updates instead. Each attempt gets its own context so the failed change tracker is discarded.
+    private static async Task UpsertWithUniqueRetryAsync(string eventFolderPath, Func<EventDbContext, Task> upsert)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            await using var db = EventDbContextFactory.Create(eventFolderPath);
+            try
+            {
+                await upsert(db);
+                return;
+            }
+            catch (DbUpdateException ex) when (attempt == 0 && IsUniqueViolation(ex))
+            {
+                // Lost the insert race; loop to re-read and update.
+            }
+        }
+    }
+
+    private static bool IsUniqueViolation(DbUpdateException ex) =>
+        ex.InnerException is Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 19 };
 
     public async Task<ParticipantImportResult> ImportParticipantsBatchAsync(
         string eventFolderPath,

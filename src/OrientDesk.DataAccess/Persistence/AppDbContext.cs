@@ -20,6 +20,12 @@ public class AppDbContext : DbContext
     /// <summary>Application-level sports ranks (розряди), shared across every competition.</summary>
     public DbSet<SportRank> Ranks => Set<SportRank>();
 
+    /// <summary>Application-level points rules (очки), shared across every competition.</summary>
+    public DbSet<PointsRule> PointsRules => Set<PointsRule>();
+
+    /// <summary>Application-level rank qualification table (Додаток 89), shared across every competition.</summary>
+    public DbSet<RankQualificationRow> RankQualification => Set<RankQualificationRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Single-row tables; key is not generated (fixed value 1).
@@ -34,6 +40,15 @@ public class AppDbContext : DbContext
             .IsUnique()
             .HasFilter("\"Name\" <> ''");
         modelBuilder.Entity<SportRank>()
+            .Property(r => r.Name)
+            .UseCollation("NOCASE");
+
+        // Points-rule names are unique (case-insensitive); blanks are exempt (same scheme as ranks).
+        modelBuilder.Entity<PointsRule>()
+            .HasIndex(r => r.Name)
+            .IsUnique()
+            .HasFilter("\"Name\" <> ''");
+        modelBuilder.Entity<PointsRule>()
             .Property(r => r.Name)
             .UseCollation("NOCASE");
     }

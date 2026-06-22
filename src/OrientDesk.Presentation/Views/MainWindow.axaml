@@ -225,6 +225,8 @@
                           Command="{Binding OpenDusshCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Competition.Ranks]}"
                           Command="{Binding OpenRanksCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Competition.Points]}"
+                          Command="{Binding OpenPointsCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Competition.EntryFees]}"
                           Command="{Binding OpenEntryFeesCommand}" />
             </MenuItem>

@@ -58,7 +58,9 @@ public sealed class ResultProtocolSettings
     public string DateText { get; set; } = string.Empty;
 
     /// <summary>The default column layout: a personal results protocol (№, name, birth, club, ДЮСШ, coach,
-    /// result, place, qualification, score). Score is shown for scored disciplines and blank otherwise.</summary>
+    /// result, place, qualification, score, points, awarded rank). Score is shown for scored disciplines and
+    /// blank otherwise; points (очки) are shown when a points rule is assigned and blank otherwise; the awarded
+    /// rank (виконаний розряд) is shown when the group awards ranks and blank otherwise.</summary>
     public static List<ProtocolColumnSetting> DefaultColumns() =>
     [
         new() { Column = ProtocolColumn.Sequence, Visible = true },
@@ -72,6 +74,8 @@ public sealed class ResultProtocolSettings
         new() { Column = ProtocolColumn.Place, Visible = true },
         new() { Column = ProtocolColumn.Rank, Visible = true },
         new() { Column = ProtocolColumn.Score, Visible = true },
+        new() { Column = ProtocolColumn.Points, Visible = true },
+        new() { Column = ProtocolColumn.AwardedRank, Visible = true },
         new() { Column = ProtocolColumn.Number, Visible = false },
     ];
 }

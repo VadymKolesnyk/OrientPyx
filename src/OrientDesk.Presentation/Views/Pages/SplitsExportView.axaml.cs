@@ -47,8 +47,12 @@ public partial class SplitsExportView : UserControl
 
         try
         {
-            await using var stream = await file.OpenWriteAsync();
-            await stream.WriteAsync(result.Bytes);
+            await using (var stream = await file.OpenWriteAsync())
+                await stream.WriteAsync(result.Bytes);
+
+            // Open the freshly saved splits HTML in the OS default app (browser) so the user sees it
+            // immediately — same behaviour as the result-protocol export.
+            ProtocolFileLauncher.TryOpen(file);
         }
         catch
         {

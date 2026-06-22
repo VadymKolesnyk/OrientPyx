@@ -50,6 +50,11 @@ public class EventDbContext : DbContext
             .Property(g => g.DisciplineOverride)
             .HasConversion<string>();
 
+        // The group's rank level (Додаток 89) persists as its string name.
+        modelBuilder.Entity<GroupDaySettings>()
+            .Property(g => g.RankLevel)
+            .HasConversion<string>();
+
         // A chip number identifies one rental chip per competition; the unique index both enforces
         // that and speeds the future join against participant entries by chip number.
         modelBuilder.Entity<RentalChip>()

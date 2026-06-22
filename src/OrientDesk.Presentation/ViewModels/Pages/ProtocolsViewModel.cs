@@ -115,6 +115,27 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
     [ObservableProperty]
     private string _dateText = string.Empty;
 
+    // ── Header placeholders (watermarks) ───────────────────────────────────────────────────────────────
+    // The resolved competition/day default for each header field, shown as the TextBox watermark when the
+    // user has typed nothing. A blank field falls back to this value at build/export time (so the printed
+    // protocol carries the competition's own metadata); when the placeholder is itself empty (the DB has no
+    // value) the field stays blank everywhere — the watermark is then a hint label, not inserted text.
+
+    [ObservableProperty]
+    private string _competitionNamePlaceholder = string.Empty;
+
+    [ObservableProperty]
+    private string _subtitlePlaceholder = string.Empty;
+
+    [ObservableProperty]
+    private string _venuePlaceholder = string.Empty;
+
+    [ObservableProperty]
+    private string _dateTextPlaceholder = string.Empty;
+
+    [ObservableProperty]
+    private string _competitionTypePlaceholder = string.Empty;
+
     /// <summary>Confirmation flash after Save (the green "saved" hint), like the Settings page.</summary>
     [ObservableProperty]
     private bool _settingsSaved;
@@ -137,6 +158,8 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         ProtocolColumn.Result => "Protocols.Col.Result",
         ProtocolColumn.Place => "Protocols.Col.Place",
         ProtocolColumn.Score => "Protocols.Col.Score",
+        ProtocolColumn.Points => "Protocols.Col.Points",
+        ProtocolColumn.AwardedRank => "Protocols.Col.AwardedRank",
         _ => "Protocols.Col.FullName"
     };
 
@@ -195,17 +218,7 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
 
         _previewData = data;
         ApplySettings(settings);
-
-        _applyingSettings = true; // the seed mutates header fields; refresh once at the end, not per field
-        try
-        {
-            SeedHeaderDefaults(_competitionInfo);
-        }
-        finally
-        {
-            _applyingSettings = false;
-        }
-
+        ResolveHeaderPlaceholders(_competitionInfo);
         RefreshPreview();
     }
 
@@ -227,6 +240,14 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
             _applyingSettings = false;
         }
 
+        // Reconcile against the full column set: a template saved before a column existed (e.g. «Очки»
+        // added later) is missing it, so append any absent column (visible) in enum order. Keeps old
+        // per-day templates current without a manual reset.
+        var present = settings.Columns.Select(c => c.Column).ToHashSet();
+        foreach (ProtocolColumn column in Enum.GetValues<ProtocolColumn>())
+            if (present.Add(column))
+                settings.Columns.Add(new ProtocolColumnSetting { Column = column, Visible = true });
+
         Columns.Clear();
         foreach (var c in settings.Columns)
         {
@@ -244,22 +265,38 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         }
     }
 
-    // Fills blank header fields with the competition's own values (and the selected day's date) so the
-    // generated protocol always has a header. Only fills what the user hasn't already typed/saved.
-    private void SeedHeaderDefaults(CompetitionInfo? info)
+    // Resolves the header watermark for each blank-able field. The per-day fields (date, venue, competition
+    // type) come from the SELECTED DAY first and fall back to the competition; the rest from the competition.
+    // These are shown as the TextBox placeholders and used as the build-time fallback for a field the user
+    // left blank — never written into the editable field, so an untouched field stays empty and a missing DB
+    // value yields an empty header cell, not the placeholder hint.
+    private void ResolveHeaderPlaceholders(CompetitionInfo? info)
     {
-        if (string.IsNullOrWhiteSpace(CompetitionName))
-        {
-            var name = !string.IsNullOrWhiteSpace(info?.Name) ? info!.Name : _session.CurrentEvent?.Name;
-            if (!string.IsNullOrWhiteSpace(name))
-                CompetitionName = name!;
-        }
-        if (string.IsNullOrWhiteSpace(Subtitle) && !string.IsNullOrWhiteSpace(info?.Organisation))
-            Subtitle = info!.Organisation;
-        if (string.IsNullOrWhiteSpace(Venue) && !string.IsNullOrWhiteSpace(info?.Venue))
-            Venue = info!.Venue;
-        if (string.IsNullOrWhiteSpace(DateText) && SelectedDay?.Day?.Date is { } date)
-            DateText = date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
+        var day = SelectedDay?.Day;
+
+        var name = !string.IsNullOrWhiteSpace(info?.Name) ? info!.Name : _session.CurrentEvent?.Name;
+        CompetitionNamePlaceholder = name?.Trim() ?? string.Empty;
+        SubtitlePlaceholder = info?.Organisation?.Trim() ?? string.Empty;
+
+        // Venue: the day's own venue, else the competition venue.
+        VenuePlaceholder = FirstNonBlank(day?.Venue, info?.Venue);
+
+        // Date: the day's date, else the competition's start date.
+        var date = day?.Date ?? info?.StartDate;
+        DateTextPlaceholder = date is { } d ? d.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) : string.Empty;
+
+        // Competition type ("тип дистанції"): the day's default discipline, localized. No competition-level
+        // equivalent, so blank when no day is selected.
+        CompetitionTypePlaceholder = day is { } ? Localization.Get("Discipline.Type." + day.DefaultDiscipline) : string.Empty;
+    }
+
+    // The first of the candidates that is non-blank (trimmed), or empty when none is.
+    private static string FirstNonBlank(params string?[] candidates)
+    {
+        foreach (var c in candidates)
+            if (!string.IsNullOrWhiteSpace(c))
+                return c!.Trim();
+        return string.Empty;
     }
 
     partial void OnSelectedDayChanged(DayOption? value)
@@ -349,7 +386,19 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         if (SelectedDay?.Day is not { } day)
             return;
         var settings = BuildSettings();
-        _ = Task.Run(() => _editor.SaveResultProtocolSettingsAsync(day.Id, settings));
+        // Observe the task's exception here: auto-save is fire-and-forget, so an unhandled failure would
+        // otherwise surface on the finalizer thread as an UnobservedTaskException and crash the app.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _editor.SaveResultProtocolSettingsAsync(day.Id, settings);
+            }
+            catch
+            {
+                // Best-effort auto-save; the next edit (or an explicit export) will persist again.
+            }
+        });
     }
 
     // "Save for next competitions": stores the current layout as the APPLICATION-LEVEL default, so a new day
@@ -367,7 +416,10 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
     // the same builder the export uses, so the preview matches the .docx; the body is capped to a few rows.
     private void RefreshPreview()
     {
-        var settings = BuildSettings();
+        // Build with the placeholder fallbacks folded in so the preview table mirrors the .docx. (The header
+        // text itself is shown by the inline TextBoxes bound to the raw VM fields + their watermarks, not by
+        // these Preview.* properties — kept in sync for completeness.)
+        var settings = BuildDocumentSettings();
 
         Preview.IsLandscape = settings.Orientation == ProtocolOrientation.Landscape;
         Preview.CompetitionName = settings.CompetitionName;
@@ -387,7 +439,8 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         for (var i = 0; i < visible.Count && i < document.ColumnHeaders.Count; i++)
             Preview.Columns.Add(new ProtocolPreviewColumn(visible[i].ToString(), document.ColumnHeaders[i],
                 i < document.ColumnHeadersShort.Count ? document.ColumnHeadersShort[i] : string.Empty,
-                i < document.ColumnBodyWrap.Count && document.ColumnBodyWrap[i]));
+                i < document.ColumnBodyWrap.Count && document.ColumnBodyWrap[i],
+                i < document.ColumnShrinkPriority.Count ? document.ColumnShrinkPriority[i] : 1));
 
         // Render the group sections exactly as the .docx stacks them (caption + sub-caption + table), capping
         // the TOTAL body rows across sections so the page mock-up fills but stays cheap to build.
@@ -402,7 +455,8 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
                 .ToList();
             remaining -= rows.Count;
             Preview.Sections.Add(new ProtocolPreviewSection(
-                section.GroupName, BuildSubcaption(section), rows, section.CourseSetterText));
+                section.GroupName, BuildSubcaption(section), rows, section.CourseSetterText,
+                rankCalculation: section.RankCalculationText));
         }
         Preview.IsEmpty = Preview.Sections.Count == 0 || Preview.Sections.All(s => s.Rows.Count == 0);
 
@@ -420,6 +474,8 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         return string.Join(" · ", parts);
     }
 
+    // The settings actually persisted on the day: the user's typed values, NOT the resolved placeholders, so a
+    // field left blank stays blank in the saved template (the watermark is a hint, never stored).
     private ResultProtocolSettings BuildSettings() => new()
     {
         Orientation = IsLandscape ? ProtocolOrientation.Landscape : ProtocolOrientation.Portrait,
@@ -432,6 +488,21 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         Columns = Columns.Select(c => c.ToSetting()).ToList()
     };
 
+    // The settings used to BUILD the document (preview + export): the saved template with each blank header
+    // field folded down to its resolved placeholder (the competition/day default). A field whose placeholder is
+    // also empty stays empty — the header cell is then simply blank. Title keeps its own localized default
+    // (handled by the builder), so it is left as-is here.
+    private ResultProtocolSettings BuildDocumentSettings()
+    {
+        var s = BuildSettings();
+        if (s.CompetitionName.Length == 0) s.CompetitionName = CompetitionNamePlaceholder;
+        if (s.Subtitle.Length == 0) s.Subtitle = SubtitlePlaceholder;
+        if (s.Venue.Length == 0) s.Venue = VenuePlaceholder;
+        if (s.DateText.Length == 0) s.DateText = DateTextPlaceholder;
+        if (s.CompetitionType.Length == 0) s.CompetitionType = CompetitionTypePlaceholder;
+        return s;
+    }
+
     /// <summary>
     /// Builds the protocol for the selected day and returns the .docx bytes + a suggested file name, or
     /// null when there is nothing to export (no competition / no day). The View runs the save dialog.
@@ -442,14 +513,15 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         if (_session.CurrentEvent is null || SelectedDay?.Day is not { } day)
             return null;
 
-        var settings = BuildSettings();
+        var settings = BuildSettings();          // persisted: the user's typed values (blanks stay blank)
+        var documentSettings = BuildDocumentSettings(); // built: blanks folded to the competition defaults
         var labels = BuildLabels();
 
         var bytes = await _busy.RunAsync(async () =>
         {
             await _editor.SaveResultProtocolSettingsAsync(day.Id, settings);
             var data = await _editor.GetResultProtocolDataAsync(day.Id);
-            var document = _builder.Build(data, settings, labels);
+            var document = _builder.Build(data, documentSettings, labels);
             return _writer.Write(document);
         });
         SettingsSaved = true;
@@ -478,7 +550,13 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
             ChiefJudgeLabel: Localization.Get("Protocols.ChiefJudge"),
             ChiefSecretaryLabel: Localization.Get("Protocols.ChiefSecretary"),
             JuryLabel: Localization.Get("Protocols.Jury"),
-            ColumnHeadersShort: shortHeaders);
+            ColumnHeadersShort: shortHeaders,
+            CourseClassLabel: Localization.Get("Protocols.RankCalc.CourseClass"),
+            CompetitionRankLabel: Localization.Get("Protocols.RankCalc.CompetitionRank"),
+            RankPointsUnitLabel: Localization.Get("Protocols.RankCalc.PointsUnit"),
+            FooterSoftwareName: Localization.Get("Protocols.Footer.Software"),
+            FooterGeneratedLabel: Localization.Get("Protocols.Footer.Generated"),
+            FooterPageLabel: Localization.Get("Protocols.Footer.Page"));
     }
 
     // The short (abbreviated) caption key for a column, or null when the column has no abbreviation (its full
@@ -491,6 +569,7 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         ProtocolColumn.Rank => "Protocols.Col.Short.Rank",
         ProtocolColumn.Result => "Protocols.Col.Short.Result",
         ProtocolColumn.Place => "Protocols.Col.Short.Place",
+        ProtocolColumn.AwardedRank => "Protocols.Col.Short.AwardedRank",
         _ => null
     };
 

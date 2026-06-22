@@ -35,4 +35,10 @@ public sealed record StartProtocolLabels(
     string ChiefJudgeLabel = "",
     string ChiefSecretaryLabel = "",
     string JuryLabel = "",
-    IReadOnlyDictionary<StartProtocolColumn, string>? ColumnHeadersShort = null);
+    IReadOnlyDictionary<StartProtocolColumn, string>? ColumnHeadersShort = null,
+    /// <summary>The program name printed in the page footer ("П/З: OrientDesk"). Blank ⇒ no footer.</summary>
+    string FooterSoftwareName = "",
+    /// <summary>Caption before the footer's generation timestamp ("Згенеровано").</summary>
+    string FooterGeneratedLabel = "",
+    /// <summary>Caption before the footer's page number ("Сторінка").</summary>
+    string FooterPageLabel = "");

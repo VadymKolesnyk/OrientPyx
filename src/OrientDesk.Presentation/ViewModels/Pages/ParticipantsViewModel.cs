@@ -115,7 +115,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         new(RosterField.Place, "Participants.Col.Place", c => c.IsMember),
         // Editable «Бонус» (cause) before the computed «Бали» (effect); both dropped on non-scoring days.
         new(RosterField.Bonus, "Participants.Col.Bonus", c => c.IsMember),
-        new(RosterField.Score, "Participants.Col.Score", c => c.IsMember)
+        new(RosterField.Score, "Participants.Col.Score", c => c.IsMember),
+        // Ranking points («Очки»), shown on every day (any discipline can have a points rule assigned).
+        new(RosterField.Points, "Participants.Col.Points", c => c.IsMember),
+        // Awarded sports rank («Виконаний розряд», Додаток 89), computed per group (read-only).
+        new(RosterField.AwardedRank, "Participants.Col.AwardedRank", c => c.IsMember)
     ];
 
     /// <summary>Selectable options: a leading roster sentinel, then each real day.</summary>

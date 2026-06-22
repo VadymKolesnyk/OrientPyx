@@ -46,6 +46,9 @@
         <DataTemplate DataType="pages:RanksViewModel">
             <views:RanksView />
         </DataTemplate>
+        <DataTemplate DataType="pages:PointsViewModel">
+            <views:PointsView />
+        </DataTemplate>
         <DataTemplate DataType="pages:EntryFeesViewModel">
             <views:EntryFeesView />
         </DataTemplate>
@@ -57,6 +60,9 @@
         </DataTemplate>
         <DataTemplate DataType="pages:DrawViewModel">
             <views:DrawView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:ClassicDrawViewModel">
+            <views:ClassicDrawView />
         </DataTemplate>
         <DataTemplate DataType="pages:StartProtocolsViewModel">
             <views:StartProtocolsView />

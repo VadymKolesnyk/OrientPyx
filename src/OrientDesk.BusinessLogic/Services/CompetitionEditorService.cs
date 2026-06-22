@@ -14,6 +14,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 {
     private readonly ISessionService _session;
     private readonly IEventStore _eventStore;
+    private readonly IAppStore _appStore;
     private readonly ICourseDistanceCalculator _distance;
     private readonly Disciplines.IDisciplineStrategyProvider _strategies;
     private readonly IEntryFeeCalculator _entryFees;
@@ -21,12 +22,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     public CompetitionEditorService(
         ISessionService session,
         IEventStore eventStore,
+        IAppStore appStore,
         ICourseDistanceCalculator distance,
         Disciplines.IDisciplineStrategyProvider strategies,
         IEntryFeeCalculator entryFees)
     {
         _session = session;
         _eventStore = eventStore;
+        _appStore = appStore;
         _distance = distance;
         _strategies = strategies;
         _entryFees = entryFees;
@@ -410,7 +413,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             RequiredControlCount = row.RequiredControlCount,
             PenaltyPerMinute = row.PenaltyPerMinute,
             CourseSetter = (row.CourseSetter ?? string.Empty).Trim(),
-            CourseSetterCategory = (row.CourseSetterCategory ?? string.Empty).Trim()
+            CourseSetterCategory = (row.CourseSetterCategory ?? string.Empty).Trim(),
+            PointsRuleId = row.PointsRuleId,
+            RankLevel = row.RankLevel,
+            MasterCount = row.MasterCount
         }, cancellationToken);
     }
 
@@ -1436,7 +1442,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 .Select(c => c.Code.Trim()),
             StringComparer.OrdinalIgnoreCase);
 
-        var results = await ComputeDayResultsAsync(folder, day, cancellationToken);
+        var rankCalcs = new Dictionary<Guid, GroupRankCalculation>();
+        var results = await ComputeDayResultsAsync(folder, day, cancellationToken, rankCalcs);
 
         // Bucket each member's row under its group; a member with no group is skipped (a protocol is by group).
         var rowsByGroup = new Dictionary<Guid, List<ResultProtocolRow>>();
@@ -1475,8 +1482,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             var rows = rowsByGroup.TryGetValue(s.GroupId, out var b) ? b : [];
             // Course-setter: the group's per-day override wins; else fall back to the competition default.
             var (setter, setterCat) = ResolveCourseSetter(s, info);
+            rankCalcs.TryGetValue(s.GroupId, out var rankCalc);
             sections.Add(new ResultProtocolGroup(
-                name, s.Order, s.DistanceKm, controlCount, s.TimeLimitSeconds, isTeam, rows, setter, setterCat));
+                name, s.Order, s.DistanceKm, controlCount, s.TimeLimitSeconds, isTeam, rows, setter, setterCat,
+                rankCalc));
         }
 
         return new ResultProtocolData(sections, OfficialsFrom(info));
@@ -1877,8 +1886,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     /// the scored splits tally (for rogaine «Бали»), then ranks the OK results within each group. A chip
     /// read more than once on the day resolves to its <b>latest</b> read-out (highest <c>Order</c>).
     /// </summary>
+    /// <param name="rankCalcs">When non-null, receives the per-group rank-award derivation built by the ranks
+    /// pass — used only by the results protocol to print its explanatory line. Null on every other caller.</param>
     private async Task<IReadOnlyDictionary<Guid, ParticipantDayResult>> ComputeDayResultsAsync(
-        string folder, EventDay day, CancellationToken cancellationToken)
+        string folder, EventDay day, CancellationToken cancellationToken,
+        Dictionary<Guid, GroupRankCalculation>? rankCalcs = null)
     {
         var dayId = day.Id;
         var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
@@ -1977,7 +1989,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 // Personal breakdown (the controls this chip scored). For a teamed rogaine runner the team
                 // pass replaces this with the team's common controls so the tooltip matches the team Бали.
                 ScoreBreakdown = punchedAllowed is { } pa ? ScoreLines(pa, pointsByCode) : [],
-                Bonus = link.Bonus
+                Bonus = link.Bonus,
+                // Personal-discipline поза конкурсом ⇒ marked «П/К», never placed (and excluded from `ranking`
+                // below so it doesn't shift the others). Rogaine поза конкурсом is the team pass's job.
+                OutOfCompetition = !isRogaine && link.OutOfCompetition
             };
 
             if (isRogaine)
@@ -1990,8 +2005,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     link.Id, link.GroupId, TeamKeyFor(link, teamByParticipant), link.OutOfCompetition,
                     status == FinishStatus.Ok, punchedAllowed ?? [], elapsed, gs, discipline, link.Bonus));
             }
-            // Only OK results are placed; a non-positive result time can't be ranked by time.
-            else if (status == FinishStatus.Ok)
+            // Only OK results are placed; a non-positive result time can't be ranked by time. A поза
+            // конкурсом runner is NOT placed and does NOT occupy a position — they are left out of the
+            // ranking entirely so the in-competition runners are placed as if they were absent.
+            else if (status == FinishStatus.Ok && !link.OutOfCompetition)
                 ranking.Add((link.Id, link.GroupId, score is not null,
                     score ?? 0, resultTime is { } t && t > TimeSpan.Zero ? t : TimeSpan.MaxValue));
         }
@@ -2022,7 +2039,259 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // Rogaine team pass: score and place by team, then stamp the team's Бали/Місце onto every member.
         RankRogaineTeams(teamMembers, pointsByCode, results);
 
+        // Points pass: award «Очки» from each group's effective points rule (its override, else the
+        // competition default), keyed off the place/time/score just computed.
+        await AwardPointsAsync(folder, links, settingsByGroup, info: null, results, cancellationToken);
+
+        // Ranks pass: award «виконаний розряд» (Додаток 89) per group from its rank level, the course rank
+        // (sum of the members' current-rank points) and the result-vs-leader percentage.
+        await AwardRanksAsync(links, settingsByGroup, participants, dayDefault, results, cancellationToken, rankCalcs);
+
         return results;
+    }
+
+    /// <summary>
+    /// Awards «Очки» (ranking points) for every member, per group, from the group's effective points rule
+    /// (its per-day override, else the competition default). Stamps <see cref="ParticipantDayResult.Points"/>
+    /// onto each result. A group with no effective rule, and any non-rankable member, is left blank.
+    ///
+    /// A <see cref="PointsRuleKind.Table"/> rule keys off the member's place; a formula rule additionally
+    /// references the group leader's time/score (the placed runner whose place is 1) and the group size,
+    /// so those are resolved once per group. Points rules live in the app database (shared across
+    /// competitions); the per-group / competition-default assignment lives in the event database.
+    /// </summary>
+    private async Task AwardPointsAsync(
+        string folder,
+        IReadOnlyList<ParticipantDay> links,
+        IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup,
+        CompetitionInfo? info,
+        Dictionary<Guid, ParticipantDayResult> results,
+        CancellationToken cancellationToken)
+    {
+        var rules = await _appStore.GetPointsRulesAsync(cancellationToken);
+        if (rules.Count == 0)
+            return;
+        var ruleById = rules.ToDictionary(r => r.Id);
+
+        info ??= await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken);
+        var defaultRuleId = info?.DefaultPointsRuleId;
+
+        // The members of each group, paired with their computed result, so points can be ranked per group.
+        var membersByGroup = new Dictionary<Guid, List<(Guid LinkId, ParticipantDayResult Result)>>();
+        foreach (var link in links)
+        {
+            if (link.GroupId is not { } gid || !results.TryGetValue(link.Id, out var result))
+                continue;
+            if (!membersByGroup.TryGetValue(gid, out var list))
+                membersByGroup[gid] = list = [];
+            list.Add((link.Id, result));
+        }
+
+        foreach (var (groupId, members) in membersByGroup)
+        {
+            // Effective rule: the group's override, else the competition default. A group override of
+            // Guid.Empty is an explicit "no points" choice — score nothing, never fall back to the default.
+            // Unknown ids likewise award nothing.
+            var ruleId = settingsByGroup.TryGetValue(groupId, out var gs) && gs.PointsRuleId is { } o
+                ? o
+                : defaultRuleId;
+            if (ruleId is not { } id || id == Guid.Empty || !ruleById.TryGetValue(id, out var rule))
+                continue;
+
+            // Group context the formula references: the leader (place 1) time/score and the group size
+            // (the number of placed finishers). A table rule ignores all of this and keys off place only.
+            var placed = members.Where(m => m.Result.Place is not null).ToList();
+            var groupSize = placed.Count;
+            var leader = placed.FirstOrDefault(m => m.Result.Place == 1).Result;
+            var leaderTime = leader?.ResultTime?.TotalSeconds;
+            var leaderScore = leader?.Score;
+
+            foreach (var (linkId, result) in members)
+            {
+                // Only a clean, in-competition finish earns points (a поза конкурсом runner, a problem
+                // status, or a no-result member is left blank).
+                if (result.Status != FinishStatus.Ok || result.OutOfCompetition)
+                    continue;
+
+                var input = new PointsRuleInput(
+                    Place: result.Place,
+                    ResultTimeSeconds: result.ResultTime?.TotalSeconds,
+                    Score: result.Score,
+                    LeaderTimeSeconds: leaderTime,
+                    LeaderScore: leaderScore,
+                    GroupSize: groupSize);
+                var points = PointsRuleEvaluator.Evaluate(rule, input);
+                if (points is not null)
+                    results[linkId] = results[linkId] with { Points = points };
+            }
+        }
+    }
+
+    /// <summary>
+    /// Awards «виконаний розряд» (Додаток 89, simplified) for every member, per group. A group whose level
+    /// is <see cref="GroupRankLevel.None"/> awards nothing; a group failing the validity conditions (fewer
+    /// placed members than the configured minimum, or fewer distinct regions) likewise awards nothing for
+    /// anyone. Otherwise the course rank is the sum of the current-rank point values of the first N participants
+    /// BY PLACE (the top finishers, N configurable default 12; from the seeded <c>SportRank</c> set); the top <c>MasterCount</c> placed runners get «МСУ»
+    /// (adult groups only); the rest are awarded from the editable qualification table by their result as a
+    /// percentage of the group leader's (time for time-based disciplines, score for point-scoring ones).
+    /// </summary>
+    /// <param name="rankCalcs">When non-null, receives the per-group rank-award derivation (course class, course
+    /// rank, attainable ranks with their % thresholds + implied cut-offs) for every group that actually awards a
+    /// rank — used by the results protocol to print the explanatory line. Null on the normal results path.</param>
+    private async Task AwardRanksAsync(
+        IReadOnlyList<ParticipantDay> links,
+        IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup,
+        IReadOnlyList<Participant> participants,
+        DisciplineType dayDefault,
+        Dictionary<Guid, ParticipantDayResult> results,
+        CancellationToken cancellationToken,
+        Dictionary<Guid, GroupRankCalculation>? rankCalcs = null)
+    {
+        // Any group awarding a rank short-circuits the load; otherwise we never touch the app DB here.
+        if (!settingsByGroup.Values.Any(s => s.RankLevel != GroupRankLevel.None))
+            return;
+
+        var rows = await _appStore.GetRankQualificationAsync(cancellationToken);
+        var conditions = await _appStore.GetRankConditionsAsync(cancellationToken) ?? (3, 8, 12);
+        var (minParticipants, minRegions, countForRank) = conditions;
+
+        var ranks = await _appStore.GetRanksAsync(cancellationToken);
+        // Key on a normalised rank name so a participant's rank still matches the seeded rank when the two use
+        // look-alike letters (the Roman numerals I/II/III are Latin in the seed but often arrive as Cyrillic
+        // «І» from a UOF/XML import — visually identical, different code points — which otherwise scores 0).
+        var pointsByRankName = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in ranks)
+            pointsByRankName[NormalizeRankName(r.Name)] = r.Points;
+
+        var rankByParticipant = participants.ToDictionary(p => p.Id, p => NormalizeRankName(p.Rank));
+        var regionByParticipant = participants.ToDictionary(p => p.Id, p => p.RegionId);
+
+        // Distinct regions are counted across the WHOLE day (every participant running it), not per group —
+        // the «не менше восьми областей» condition is competition-wide. When it fails, NO group awards a rank.
+        var dayRegions = links
+            .Select(l => regionByParticipant.TryGetValue(l.ParticipantId, out var rid) ? rid : null)
+            .Where(rid => rid is not null)
+            .Distinct()
+            .Count();
+        if (dayRegions < minRegions)
+            return;
+
+        // The members of each group, paired with their computed result (mirrors AwardPointsAsync).
+        var membersByGroup = new Dictionary<Guid, List<(ParticipantDay Link, ParticipantDayResult Result)>>();
+        foreach (var link in links)
+        {
+            if (link.GroupId is not { } gid || !results.TryGetValue(link.Id, out var result))
+                continue;
+            if (!membersByGroup.TryGetValue(gid, out var list))
+                membersByGroup[gid] = list = [];
+            list.Add((link, result));
+        }
+
+        foreach (var (groupId, members) in membersByGroup)
+        {
+            if (!settingsByGroup.TryGetValue(groupId, out var gs) || gs.RankLevel == GroupRankLevel.None)
+                continue;
+            var level = gs.RankLevel;
+
+            // Per-group validity (Додаток 89, п.7 — «не менше трьох»): too few participants ⇒ no ranks
+            // for this group. (The distinct-regions condition is checked competition-wide above.)
+            if (members.Count < minParticipants)
+                continue;
+
+            // Course rank: take the first N participants BY PLACE (the top finishers, not the highest-ranked),
+            // N configurable (default 12), and sum their CURRENT-rank point values. Members with a place come
+            // first by ascending place; the unplaced (DNS/DSQ/поза конкурсом — no place) sort last so they only
+            // fill the count after every placed runner. This mirrors the protocol's «перші N за місцем» rule.
+            var rank = (int)Math.Floor(members
+                .OrderBy(m => m.Result.Place ?? int.MaxValue)
+                .Take(countForRank)
+                .Select(m => rankByParticipant.TryGetValue(m.Link.ParticipantId, out var rn)
+                    && pointsByRankName.TryGetValue(rn, out var pts) ? pts : 0.0)
+                .Sum());
+
+            var discipline = gs.DisciplineOverride ?? dayDefault;
+            var pointsBased = _strategies.For(discipline).UsesControlPointPoints;
+
+            // Group leader (place 1) context the percentage is measured against.
+            var placed = members.Where(m => m.Result.Place is not null).ToList();
+            var leader = placed.FirstOrDefault(m => m.Result.Place == 1).Result;
+            var leaderTime = leader?.ResultTime?.TotalSeconds;
+            var leaderScore = leader?.Score;
+
+            var masterCount = level == GroupRankLevel.Adult ? gs.MasterCount ?? 0 : 0;
+
+            // The derivation line for the protocol: the applicable bracket's attainable ranks (highest first),
+            // each with its % threshold and the cut-off it implies against the leader's result. Only built when
+            // a leader's reference result exists (no leader ⇒ no percentages to show).
+            if (rankCalcs is not null &&
+                RankQualificationEvaluator.ApplicableRow(rows, rank, level) is { } bracket)
+            {
+                var leaderRef = pointsBased ? leaderScore : leaderTime;
+                if (leaderRef is { } reference && reference > 0)
+                {
+                    var attainable = RankQualificationEvaluator.AttainableRanks(bracket, level, pointsBased);
+                    if (attainable.Count > 0)
+                    {
+                        var entries = attainable
+                            .Select(a => new RankCalculationEntry(
+                                a.Name, a.Percent,
+                                CutoffTimeSeconds: pointsBased ? null : reference * a.Percent / 100.0,
+                                CutoffScore: pointsBased ? (int)Math.Round(reference * a.Percent / 100.0) : null))
+                            .ToList();
+                        rankCalcs[groupId] = new GroupRankCalculation(
+                            CourseClass: attainable[0].Name, Rank: rank, Entries: entries);
+                    }
+                }
+            }
+
+            foreach (var (link, result) in members)
+            {
+                // Only a clean, in-competition finish can earn a rank.
+                if (result.Status != FinishStatus.Ok || result.OutOfCompetition)
+                    continue;
+
+                // Master sporta: the top-N placed runners (adult groups only).
+                if (masterCount > 0 && result.Place is { } place && place <= masterCount)
+                {
+                    results[link.Id] = results[link.Id] with { AwardedRank = RankQualificationEvaluator.Master };
+                    continue;
+                }
+
+                // The rest: the qualification table, keyed off the result as a % of the leader's.
+                double? percent = pointsBased
+                    ? (leaderScore is { } ls && ls > 0 && result.Score is { } sc ? (double)sc / ls * 100.0 : null)
+                    : (leaderTime is { } lt && lt > 0 && result.ResultTime is { } rt ? rt.TotalSeconds / lt * 100.0 : null);
+                if (percent is not { } pct)
+                    continue;
+
+                var awarded = RankQualificationEvaluator.Award(rows, rank, level, pointsBased, pct);
+                if (awarded is not null)
+                    results[link.Id] = results[link.Id] with { AwardedRank = awarded };
+            }
+        }
+    }
+
+    // Normalises a rank name for matching: trims, then folds the Cyrillic «І» that looks identical to the Latin
+    // «I» used in the seeded rank names (I / II / III / I-ю …). Ukrainian rank strings carry the Roman numerals
+    // as Cyrillic «І» (U+0406) far more often than Latin «I» (U+0049) — visually identical, different code
+    // points — so without this fold an imported «ІІ» розряд would miss the seeded «II» and score 0. The «-ю»
+    // junior suffix is already Cyrillic on both sides, so it needs no fold. Comparison is otherwise
+    // case-insensitive (the dictionary uses OrdinalIgnoreCase).
+    private static string NormalizeRankName(string? name)
+    {
+        var trimmed = (name ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+            return trimmed;
+        var chars = trimmed.ToCharArray();
+        for (var i = 0; i < chars.Length; i++)
+            chars[i] = chars[i] switch
+            {
+                'І' => 'I',   // U+0406 Cyrillic capital І → Latin I
+                'і' => 'I',   // U+0456 Cyrillic small і → Latin I
+                _ => chars[i]
+            };
+        return new string(chars);
     }
 
     // The trimmed team name for a member's participant; empty when the participant has no team (поза
@@ -3343,5 +3612,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         RequiredControlCount: s.RequiredControlCount,
         PenaltyPerMinute: s.PenaltyPerMinute,
         CourseSetter: s.CourseSetter,
-        CourseSetterCategory: s.CourseSetterCategory);
+        CourseSetterCategory: s.CourseSetterCategory,
+        PointsRuleId: s.PointsRuleId,
+        RankLevel: s.RankLevel,
+        MasterCount: s.MasterCount);
 }

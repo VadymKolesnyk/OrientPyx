@@ -43,6 +43,10 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         // stay on one line. See ColumnBodyWraps.
         var bodyWrap = columns.Select(ColumnBodyWraps).ToList();
 
+        // Per-column shrink priority (parallel to the columns) — drives which columns give up width first when the
+        // table is too wide for the page. See ShrinkPriority.
+        var shrinkPriority = columns.Select(ShrinkPriority).ToList();
+
         var sections = new List<ResultProtocolSection>(data.Groups.Count);
         foreach (var group in data.Groups.OrderBy(g => g.Order))
         {
@@ -66,6 +70,11 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
                     : string.Empty,
                 CourseSetterText = FormatCourseSetter(
                     labels.CourseSetterLabel, group.CourseSetter, group.CourseSetterCategory),
+                // The rank-derivation line is shown only when the group awards a rank AND the «виконаний розряд»
+                // column is in the visible set — so it explains a column the reader can actually see.
+                RankCalculationText = columns.Contains(ProtocolColumn.AwardedRank)
+                    ? FormatRankCalculation(group.RankCalculation, labels)
+                    : string.Empty,
                 Rows = rows
             });
         }
@@ -84,9 +93,12 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
             ColumnHeaders = headers,
             ColumnHeadersShort = shortHeaders,
             ColumnBodyWrap = bodyWrap,
+            ColumnShrinkPriority = shrinkPriority,
             Sections = sections,
             Officials = ProtocolOfficialsFactory.Build(
-                data.Officials, labels.ChiefJudgeLabel, labels.ChiefSecretaryLabel, labels.JuryLabel)
+                data.Officials, labels.ChiefJudgeLabel, labels.ChiefSecretaryLabel, labels.JuryLabel),
+            Footer = ProtocolFooterFactory.Build(
+                labels.FooterSoftwareName, labels.FooterGeneratedLabel, labels.FooterPageLabel)
         };
     }
 
@@ -103,6 +115,67 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         ProtocolColumn.Coach => true,
         _ => false
     };
+
+    // How willingly a column gives up width when the table is too wide for the page (see
+    // ResultProtocolDocument.ColumnShrinkPriority): 1 = never narrowed (protected); 2/3/4 = may shrink, ever more
+    // willingly (4 first and furthest), but never below a content-derived floor. Tuned to keep the spine of the
+    // sheet (№/name/result/place/points/birth-date) readable while the secondary identity columns
+    // (ДЮСШ, тренер, клуб, регіон) give way under pressure.
+    private static int ShrinkPriority(ProtocolColumn column) => column switch
+    {
+        ProtocolColumn.BirthDate => 1,
+        ProtocolColumn.Result => 1,
+        ProtocolColumn.Place => 1,
+        ProtocolColumn.Points => 1,
+        ProtocolColumn.Sequence => 2,
+        ProtocolColumn.Number => 2,
+        ProtocolColumn.FullName => 2,
+        ProtocolColumn.Rank => 2,
+        ProtocolColumn.AwardedRank => 2,
+        ProtocolColumn.Score => 2,
+        ProtocolColumn.Club => 3,
+        ProtocolColumn.Region => 3,
+        ProtocolColumn.Dussh => 4,
+        ProtocolColumn.Coach => 4,
+        _ => 1
+    };
+
+    // The rank-derivation line: "Клас дистанції: КМС ; Ранг змагань: 790 балів ; КМСУ 120% 00:24:08 ; I 135%
+    // 00:27:09 …" — the course class, the computed course rank, then one segment per attainable rank with its
+    // qualifying % and the cut-off it implies (a time for a time discipline, a score for a point-scoring one).
+    // Blank when the group has no calc (awards no rank).
+    private static string FormatRankCalculation(GroupRankCalculation? calc, ProtocolLabels labels)
+    {
+        if (calc is null || calc.Entries.Count == 0)
+            return string.Empty;
+
+        var parts = new List<string>(calc.Entries.Count + 2);
+        if (labels.CourseClassLabel.Length > 0 && calc.CourseClass.Length > 0)
+            parts.Add($"{labels.CourseClassLabel}: {calc.CourseClass}");
+        var unit = labels.RankPointsUnitLabel.Length > 0 ? $" {labels.RankPointsUnitLabel}" : string.Empty;
+        parts.Add($"{labels.CompetitionRankLabel}: {calc.Rank.ToString(CultureInfo.InvariantCulture)}{unit}");
+
+        foreach (var e in calc.Entries)
+        {
+            var cutoff = e.CutoffTimeSeconds is { } secs
+                ? FormatCutoffTime(secs)
+                : e.CutoffScore is { } score ? score.ToString(CultureInfo.InvariantCulture) : string.Empty;
+            var seg = $"{e.RankName} {e.Percent.ToString(CultureInfo.InvariantCulture)}%";
+            if (cutoff.Length > 0)
+                seg += $" {cutoff}";
+            parts.Add(seg);
+        }
+
+        return string.Join(" ; ", parts);
+    }
+
+    // A rank cut-off time as "hh:mm:ss" (the time a result must not exceed to earn the rank), matching the
+    // printed sheet's two-digit-hour form (e.g. "00:24:08").
+    private static string FormatCutoffTime(double seconds)
+    {
+        var t = TimeSpan.FromSeconds(Math.Round(seconds));
+        return $"{(int)t.TotalHours:00}:{t.Minutes:00}:{t.Seconds:00}";
+    }
 
     // "Начальник дистанції: Рачук Тарас" (with " (категорія)" appended when a category is given), or blank
     // when no course-setter is configured for the group.
@@ -187,6 +260,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         ProtocolColumn.Result => ResultCell(lead.Result),
         ProtocolColumn.Place => lead.Result.Place is { } p ? p.ToString(CultureInfo.InvariantCulture) : string.Empty,
         ProtocolColumn.Score => lead.Result.Score is { } s ? s.ToString(CultureInfo.InvariantCulture) : string.Empty,
+        ProtocolColumn.Points => lead.Result.Points is { } pts ? PointsTable.Format(pts) : string.Empty,
         _ => string.Empty
     };
 
@@ -197,6 +271,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         ProtocolColumn.Sequence => string.Empty,
         ProtocolColumn.Place => string.Empty,
         ProtocolColumn.Score => string.Empty,
+        ProtocolColumn.Points => string.Empty,
         _ => Cell(column, row, 0)
     };
 
@@ -212,10 +287,19 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         ProtocolColumn.Coach => row.Coach,
         ProtocolColumn.Rank => row.Rank,
         ProtocolColumn.Result => ResultCell(row.Result),
-        ProtocolColumn.Place => row.Result.Place is { } p ? p.ToString(CultureInfo.InvariantCulture) : string.Empty,
+        ProtocolColumn.Place => PlaceCell(row.Result),
         ProtocolColumn.Score => row.Result.Score is { } s ? s.ToString(CultureInfo.InvariantCulture) : string.Empty,
+        ProtocolColumn.Points => row.Result.Points is { } pts ? PointsTable.Format(pts) : string.Empty,
+        ProtocolColumn.AwardedRank => row.Result.AwardedRank ?? string.Empty,
         _ => string.Empty
     };
+
+    // The place column: the 1-based rank, «П/К» for a personal-discipline out-of-competition runner (not
+    // placed but still listed), blank otherwise.
+    private static string PlaceCell(ParticipantDayResult r) =>
+        r.Place is { } p ? p.ToString(CultureInfo.InvariantCulture)
+        : r.OutOfCompetition ? ParticipantDayResult.OutOfCompetitionMark
+        : string.Empty;
 
     // An OK run shows its result time ("h:mm:ss"); any other status shows the standard short code (DNS / MP /
     // …); a blank status (no read-out, no override) shows nothing.

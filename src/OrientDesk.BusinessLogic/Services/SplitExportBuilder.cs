@@ -57,6 +57,7 @@ public sealed class SplitExportBuilder : ISplitExportBuilder
 
         var placeText = ok && r.Place is { } p
             ? p.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : r.OutOfCompetition ? ParticipantDayResult.OutOfCompetitionMark
             : string.Empty;
 
         var statusText = ok ? string.Empty : ShortCode(r.Status);

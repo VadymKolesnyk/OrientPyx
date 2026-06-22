@@ -80,6 +80,31 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
     [ObservableProperty]
     private string _dateText = string.Empty;
 
+    // ── Header placeholders (watermarks) ───────────────────────────────────────────────────────────────
+    // The resolved competition/day default for each header field, shown as the TextBox watermark when the
+    // user has typed nothing. A blank field falls back to this value at build/export time (so the exported
+    // split sheet carries the competition's own metadata); when the placeholder is itself empty (the DB has
+    // no value) the field stays blank everywhere — the watermark is then a hint label, not inserted text.
+    // Mirrors <see cref="ProtocolsViewModel"/>.
+
+    [ObservableProperty]
+    private string _titlePlaceholder = string.Empty;
+
+    [ObservableProperty]
+    private string _subtitlePlaceholder = string.Empty;
+
+    [ObservableProperty]
+    private string _venuePlaceholder = string.Empty;
+
+    [ObservableProperty]
+    private string _competitionTypePlaceholder = string.Empty;
+
+    [ObservableProperty]
+    private string _dateTextPlaceholder = string.Empty;
+
+    // The current competition's metadata, used to resolve the header placeholders on each day load.
+    private CompetitionInfo? _competitionInfo;
+
     public async Task LoadAsync()
     {
         var (days, info) = await _busy.RunAsync(async () =>
@@ -105,31 +130,52 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
         }
         OnPropertyChanged(nameof(ShowDaySelector));
 
-        SeedHeaderDefaults(info);
+        _competitionInfo = info;
+        ResolveHeaderPlaceholders(info);
     }
 
-    // Fills blank header fields with the competition's own values (and the selected day's date), so the
-    // export always has a header without the user typing anything.
-    private void SeedHeaderDefaults(CompetitionInfo? info)
+    // Resolves the header watermark for each blank-able field. The per-day fields (date, venue) come from the
+    // SELECTED DAY first and fall back to the competition; the rest from the competition. These are shown as
+    // the TextBox placeholders and used as the build-time fallback for a field the user left blank — never
+    // written into the editable field, so an untouched field stays empty and a missing DB value yields an
+    // empty header cell, not the placeholder hint. The split export's «Title» is the competition name and
+    // «Subtitle» the organising body (the split sheet has no separate competition-name line).
+    private void ResolveHeaderPlaceholders(CompetitionInfo? info)
     {
-        if (string.IsNullOrWhiteSpace(Title) && !string.IsNullOrWhiteSpace(info?.Name))
-            Title = info!.Name;
-        if (string.IsNullOrWhiteSpace(Subtitle) && !string.IsNullOrWhiteSpace(info?.Organisation))
-            Subtitle = info!.Organisation;
-        if (string.IsNullOrWhiteSpace(Venue) && !string.IsNullOrWhiteSpace(info?.Venue))
-            Venue = info!.Venue;
-        if (string.IsNullOrWhiteSpace(DateText) && SelectedDay?.Day?.Date is { } date)
-            DateText = date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
+        var day = SelectedDay?.Day;
+
+        var name = !string.IsNullOrWhiteSpace(info?.Name) ? info!.Name : _session.CurrentEvent?.Name;
+        TitlePlaceholder = name?.Trim() ?? Localization.Get("Splits.DefaultTitle");
+        SubtitlePlaceholder = info?.Organisation?.Trim() ?? string.Empty;
+
+        // Venue: the day's own venue, else the competition venue.
+        VenuePlaceholder = FirstNonBlank(day?.Venue, info?.Venue);
+
+        // Date: the day's date, else the competition's start date.
+        var date = day?.Date ?? info?.StartDate;
+        DateTextPlaceholder = date is { } d ? d.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) : string.Empty;
+
+        // Competition type ("тип дистанції"): the day's default discipline, localized. No competition-level
+        // equivalent, so blank when no day is selected.
+        CompetitionTypePlaceholder = day is { } ? Localization.Get("Discipline.Type." + day.DefaultDiscipline) : string.Empty;
+    }
+
+    // The first of the candidates that is non-blank (trimmed), or empty when none is.
+    private static string FirstNonBlank(params string?[] candidates)
+    {
+        foreach (var c in candidates)
+            if (!string.IsNullOrWhiteSpace(c))
+                return c!.Trim();
+        return string.Empty;
     }
 
     partial void OnSelectedDayChanged(DayOption? value)
     {
         // A day change here only repoints the export target; it must NOT switch the session day. Refresh the
-        // default date to the newly chosen day when the date field is still empty.
+        // header placeholders to the newly chosen day's defaults (the editable fields are untouched).
         if (_syncingDay)
             return;
-        if (string.IsNullOrWhiteSpace(DateText) && value?.Day?.Date is { } date)
-            DateText = date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
+        ResolveHeaderPlaceholders(_competitionInfo);
     }
 
     /// <summary>
@@ -141,12 +187,16 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
         if (_session.CurrentEvent is null || SelectedDay?.Day is not { } day)
             return null;
 
+        // Each blank field falls back to its resolved placeholder (the competition/day default), so the
+        // exported header carries the competition's own metadata without the user retyping it; a placeholder
+        // that is itself empty leaves the field blank (an empty header line). The builder applies its own
+        // localized default title when the title resolves to empty.
         var header = new SplitExportHeader(
-            Title?.Trim() ?? string.Empty,
-            Subtitle?.Trim() ?? string.Empty,
-            CompetitionType?.Trim() ?? string.Empty,
-            Venue?.Trim() ?? string.Empty,
-            DateText?.Trim() ?? string.Empty);
+            FoldPlaceholder(Title, TitlePlaceholder),
+            FoldPlaceholder(Subtitle, SubtitlePlaceholder),
+            FoldPlaceholder(CompetitionType, CompetitionTypePlaceholder),
+            FoldPlaceholder(Venue, VenuePlaceholder),
+            FoldPlaceholder(DateText, DateTextPlaceholder));
         var labels = BuildLabels();
 
         var bytes = await _busy.RunAsync(async () =>
@@ -157,6 +207,13 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
         });
 
         return new SplitsExportResult(bytes, SuggestedFileName(day));
+    }
+
+    // The user's typed value (trimmed), or the resolved placeholder when the field was left blank.
+    private static string FoldPlaceholder(string? value, string placeholder)
+    {
+        var v = value?.Trim() ?? string.Empty;
+        return v.Length > 0 ? v : placeholder;
     }
 
     private SplitExportLabels BuildLabels() => new(

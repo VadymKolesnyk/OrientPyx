@@ -55,10 +55,47 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     [ObservableProperty]
     private string _courseSetterCategory;
 
+    [ObservableProperty]
+    private PointsRuleOption _selectedPointsRule;
+
+    [ObservableProperty]
+    private RankLevelOption _selectedRankLevel;
+
+    [ObservableProperty]
+    private string _masterCountText;
+
+    /// <summary>
+    /// The competition-wide course-setter, shown as the cell placeholder when this group's own override
+    /// is blank (so an empty cell reads the inherited global value, greyed). Kept live by the page when
+    /// the global value changes above the table.
+    /// </summary>
+    [ObservableProperty]
+    private string _courseSetterPlaceholder = string.Empty;
+
+    /// <summary>
+    /// The competition-wide course-setter judge category (the raw global value). The cell binds to
+    /// <see cref="EffectiveCourseSetterCategoryPlaceholder"/>, not this, so the global category is only
+    /// suggested when the group hasn't overridden the course-setter name.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EffectiveCourseSetterCategoryPlaceholder))]
+    private string _courseSetterCategoryPlaceholder = string.Empty;
+
+    /// <summary>
+    /// The category placeholder actually shown in the cell: the global category, but only while this
+    /// group inherits the course-setter name (its own <see cref="CourseSetter"/> is blank). Once the
+    /// group sets its own course-setter, it no longer inherits the global category as a hint.
+    /// </summary>
+    public string EffectiveCourseSetterCategoryPlaceholder =>
+        string.IsNullOrWhiteSpace(CourseSetter) ? CourseSetterCategoryPlaceholder : string.Empty;
+
     public GroupDayRowViewModel(
         GroupDayRow row,
         ILocalizationService localization,
         IDisciplineStrategyProvider strategies,
+        IReadOnlyList<PointsRuleOption> pointsRuleOptions,
+        string courseSetterPlaceholder,
+        string courseSetterCategoryPlaceholder,
         Action<GroupDayRowViewModel> requestSave)
     {
         _settingsId = row.SettingsId;
@@ -84,7 +121,35 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         _timeLimitText = FormatTime(row.TimeLimitSeconds);
         _courseSetter = row.CourseSetter;
         _courseSetterCategory = row.CourseSetterCategory;
+        _courseSetterPlaceholder = courseSetterPlaceholder ?? string.Empty;
+        _courseSetterCategoryPlaceholder = courseSetterCategoryPlaceholder ?? string.Empty;
         _selectedDiscipline = DisciplineOptions.First(o => o.Value == row.DisciplineOverride);
+
+        // Points-rule options are the shared list [default sentinel + every rule]. Match the stored id;
+        // if it no longer exists (rule deleted), prepend a one-off "unknown" option just for this row so
+        // the choice still shows rather than silently snapping to default.
+        var match = pointsRuleOptions.FirstOrDefault(o => o.Id == row.PointsRuleId);
+        if (match is null && row.PointsRuleId is { } missingId)
+        {
+            PointsRuleOptions = [PointsRuleOption.Unknown(missingId, localization), .. pointsRuleOptions];
+            match = PointsRuleOptions[0];
+        }
+        else
+        {
+            PointsRuleOptions = pointsRuleOptions;
+            match ??= pointsRuleOptions.First(o => o.Id is null);
+        }
+        _selectedPointsRule = match;
+
+        // Rank-level options: one per GroupRankLevel value (None / Adult / Junior).
+        RankLevelOptions =
+        [
+            new RankLevelOption(GroupRankLevel.None, localization),
+            new RankLevelOption(GroupRankLevel.Adult, localization),
+            new RankLevelOption(GroupRankLevel.Junior, localization),
+        ];
+        _selectedRankLevel = RankLevelOptions.First(o => o.Value == row.RankLevel);
+        _masterCountText = FormatInt(row.MasterCount);
 
         // Rogaine penalises over-time by a default rate (1 бал/min), so show that default in the cell when the
         // group set none — the user can still change or clear it (clearing falls back to the same default).
@@ -104,6 +169,12 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
 
     /// <summary>Discipline options (value + localized label) shown in the Discipline ComboBox.</summary>
     public IReadOnlyList<DisciplineOverrideOption> DisciplineOptions { get; }
+
+    /// <summary>Points-rule options (default sentinel + every rule) shown in the Points ComboBox.</summary>
+    public IReadOnlyList<PointsRuleOption> PointsRuleOptions { get; }
+
+    /// <summary>Rank-level options (None / Adult / Junior) shown in the Rank-level ComboBox.</summary>
+    public IReadOnlyList<RankLevelOption> RankLevelOptions { get; }
 
     /// <summary>Effective discipline = the per-group override, or the day default when none is set.</summary>
     public DisciplineType EffectiveDiscipline => SelectedDiscipline.Value ?? _dayDefaultDiscipline;
@@ -136,7 +207,10 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         RequiredControlCount: ParseInt(RequiredCountText),
         PenaltyPerMinute: ParseDecimal(PenaltyText),
         CourseSetter: (CourseSetter ?? string.Empty).Trim(),
-        CourseSetterCategory: (CourseSetterCategory ?? string.Empty).Trim());
+        CourseSetterCategory: (CourseSetterCategory ?? string.Empty).Trim(),
+        PointsRuleId: SelectedPointsRule.Id,
+        RankLevel: SelectedRankLevel.Value,
+        MasterCount: ParseInt(MasterCountText));
 
     partial void OnNameChanged(string value) => QueueSave();
 
@@ -150,8 +224,18 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     partial void OnRequiredCountTextChanged(string value) => QueueSave();
     partial void OnPenaltyTextChanged(string value) => QueueSave();
     partial void OnTimeLimitTextChanged(string value) => QueueSave();
-    partial void OnCourseSetterChanged(string value) => QueueSave();
+    partial void OnCourseSetterChanged(string value)
+    {
+        // The category hint only applies while the group inherits the course-setter name (see the
+        // effective placeholder), so re-evaluate it whenever the name changes.
+        OnPropertyChanged(nameof(EffectiveCourseSetterCategoryPlaceholder));
+        QueueSave();
+    }
+
     partial void OnCourseSetterCategoryChanged(string value) => QueueSave();
+    partial void OnSelectedPointsRuleChanged(PointsRuleOption value) => QueueSave();
+    partial void OnSelectedRankLevelChanged(RankLevelOption value) => QueueSave();
+    partial void OnMasterCountTextChanged(string value) => QueueSave();
 
     partial void OnSelectedDisciplineChanged(DisciplineOverrideOption value)
     {

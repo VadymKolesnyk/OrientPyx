@@ -38,6 +38,13 @@ public interface IAppStore
 
     Task SaveStartProtocolJsonAsync(StartProtocolKind kind, string json, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the rank-validity conditions (min participants, min distinct regions per group, and how
+    /// many top-ranked members count toward the group's course rank), or null when never set (caller applies
+    /// the defaults).</summary>
+    Task<(int MinParticipants, int MinRegions, int CountForRank)?> GetRankConditionsAsync(CancellationToken cancellationToken = default);
+
+    Task SaveRankConditionsAsync(int minParticipants, int minRegions, int countForRank, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the last opened competition identifier + day number, if any.</summary>
     Task<(string? Identifier, int? DayNumber)> GetLastSessionAsync(CancellationToken cancellationToken = default);
 
@@ -62,4 +69,41 @@ public interface IAppStore
 
     /// <summary>Removes a rank. Participants keep their stored rank text; it just stops matching a known rank.</summary>
     Task DeleteRankAsync(Guid rankId, CancellationToken cancellationToken = default);
+
+    // ── Points rules (application-level, shared across competitions) ─────────────────────────────────
+
+    /// <summary>Seeds the given points rules only when the rules table is empty (first run). A no-op otherwise.</summary>
+    Task SeedPointsRulesIfEmptyAsync(IReadOnlyList<PointsRule> rules, CancellationToken cancellationToken = default);
+
+    /// <summary>Loads all points rules, ordered by their display order then name.</summary>
+    Task<IReadOnlyList<PointsRule>> GetPointsRulesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Appends a new, blank points rule of the given kind after the last one and returns it.</summary>
+    Task<PointsRule> AddPointsRuleAsync(PointsRuleKind kind, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Saves an edited points rule (name, table/formula). A change to a name already used by another rule
+    /// is ignored (the previous name is kept), keeping names unique.
+    /// </summary>
+    Task UpdatePointsRuleAsync(PointsRule rule, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a points rule.</summary>
+    Task DeletePointsRuleAsync(Guid ruleId, CancellationToken cancellationToken = default);
+
+    // ── Rank qualification table (application-level, shared across competitions) ──────────────────────
+
+    /// <summary>Seeds the given qualification rows only when the table is empty (first run). A no-op otherwise.</summary>
+    Task SeedRankQualificationIfEmptyAsync(IReadOnlyList<RankQualificationRow> rows, CancellationToken cancellationToken = default);
+
+    /// <summary>Loads all qualification rows, ordered by display order then rank (high to low).</summary>
+    Task<IReadOnlyList<RankQualificationRow>> GetRankQualificationAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Appends a new, blank qualification row after the last one and returns it.</summary>
+    Task<RankQualificationRow> AddRankQualificationRowAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Saves an edited qualification row (rank threshold + cells).</summary>
+    Task UpdateRankQualificationRowAsync(RankQualificationRow row, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes a qualification row.</summary>
+    Task DeleteRankQualificationRowAsync(Guid rowId, CancellationToken cancellationToken = default);
 }

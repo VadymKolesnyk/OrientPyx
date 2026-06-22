@@ -443,10 +443,16 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     public string ScoreText => ResultText.Score(_result);
     /// <summary>Per-control «Бали» breakdown for the score column's hover tooltip; null when no score.</summary>
     public string? ScoreTooltip => ResultText.ScoreTooltip(_result, Localization);
+    /// <summary>Ranking points / «Очки» (from the group's points rule); blank when none awarded.</summary>
+    public string PointsText => ResultText.Points(_result);
+    /// <summary>Awarded sports rank / «Виконаний розряд» (Додаток 89); blank when none.</summary>
+    public string AwardedRankText => ResultText.AwardedRank(_result);
     /// <summary>Raw place for sorting (max when unplaced, so OK results sort to the top).</summary>
     public int PlaceSort => _result.Place ?? int.MaxValue;
     /// <summary>Raw score for sorting.</summary>
     public int ScoreSort => _result.Score ?? -1;
+    /// <summary>Raw points for sorting (min when none, so awarded points sort together).</summary>
+    public decimal PointsSort => _result.Points ?? decimal.MinValue;
 
     /// <summary>
     /// The judge's points correction («бонус») as editable signed-integer text; empty clears it. A valid
@@ -752,7 +758,10 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         OnPropertyChanged(nameof(PlaceText));
         OnPropertyChanged(nameof(ScoreText));
         OnPropertyChanged(nameof(ScoreTooltip));
+        OnPropertyChanged(nameof(PointsText));
+        OnPropertyChanged(nameof(AwardedRankText));
         OnPropertyChanged(nameof(PlaceSort));
         OnPropertyChanged(nameof(ScoreSort));
+        OnPropertyChanged(nameof(PointsSort));
     }
 }

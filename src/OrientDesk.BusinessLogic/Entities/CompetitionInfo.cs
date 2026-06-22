@@ -65,5 +65,14 @@ public class CompetitionInfo
     /// Blank = no jury.</summary>
     public string Jury { get; set; } = string.Empty;
 
+    // --- Points (edited above the Groups table; a group may override per day) ---
+
+    /// <summary>
+    /// Competition-wide default points rule (правило нарахування очок). References an application-level
+    /// <c>PointsRule</c> (app.db) by id; null = no default. A group on a given day may override it
+    /// (see <see cref="GroupDaySettings.PointsRuleId"/>). Scoring with the rule is a later feature.
+    /// </summary>
+    public Guid? DefaultPointsRuleId { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

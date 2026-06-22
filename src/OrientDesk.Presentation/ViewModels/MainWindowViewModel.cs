@@ -44,6 +44,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly ClubsViewModel _clubs;
     private readonly DusshViewModel _dussh;
     private readonly RanksViewModel _ranks;
+    private readonly PointsViewModel _points;
     private readonly EntryFeesViewModel _entryFees;
     private readonly ProtocolsViewModel _protocols;
     private readonly StartProtocolsViewModel _startProtocols;
@@ -69,6 +70,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         ClubsViewModel clubs,
         DusshViewModel dussh,
         RanksViewModel ranks,
+        PointsViewModel points,
         EntryFeesViewModel entryFees,
         ProtocolsViewModel protocols,
         StartProtocolsViewModel startProtocols,
@@ -98,6 +100,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _clubs = clubs;
         _dussh = dussh;
         _ranks = ranks;
+        _points = points;
         _entryFees = entryFees;
         _protocols = protocols;
         _startProtocols = startProtocols;
@@ -253,6 +256,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenPointsAsync()
+    {
+        await _points.LoadAsync();
+        _shell.SelectedPage = _points;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
     private async Task OpenEntryFeesAsync()
     {
         await _entryFees.LoadAsync();
@@ -369,6 +379,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenClubsCommand.NotifyCanExecuteChanged();
         OpenDusshCommand.NotifyCanExecuteChanged();
         OpenRanksCommand.NotifyCanExecuteChanged();
+        OpenPointsCommand.NotifyCanExecuteChanged();
         OpenEntryFeesCommand.NotifyCanExecuteChanged();
         OpenProtocolsCommand.NotifyCanExecuteChanged();
         OpenStartProtocolCommand.NotifyCanExecuteChanged();

@@ -45,13 +45,42 @@ public sealed class ResultProtocolDocument
     /// so the column is always wide enough for its longest value. Missing entry ⇒ treated as non-wrapping.</summary>
     public IReadOnlyList<bool> ColumnBodyWrap { get; init; } = [];
 
+    /// <summary>Per-column shrink priority (parallel to <see cref="ColumnHeaders"/>) used when the table is too
+    /// wide for the page: it decides which columns give up width first and how far they may shrink.
+    /// <list type="bullet">
+    /// <item><b>1</b> — never narrowed: kept at its full floor (data + full header), the first thing protected.</item>
+    /// <item><b>2 / 3 / 4</b> — may give up width, increasingly willingly (4 yields first and furthest), but never
+    /// below a sensible floor derived from the typical content length — so they shrink fairly rather than collapsing
+    /// to nothing.</item>
+    /// </list>
+    /// Missing entry ⇒ treated as the most-protected priority (1). See the renderers' DistributeWidths.</summary>
+    public IReadOnlyList<int> ColumnShrinkPriority { get; init; } = [];
+
     /// <summary>The group sections, in display order.</summary>
     public IReadOnlyList<ResultProtocolSection> Sections { get; init; } = [];
 
     /// <summary>The officials' signature block printed at the very end (chief judge, secretary, jury). Empty
     /// when none are configured. Shared across all protocol kinds (results + both start protocols).</summary>
     public IReadOnlyList<ProtocolOfficial> Officials { get; init; } = [];
+
+    /// <summary>The page footer (нижній колонтитул) printed at the bottom of every page: the software name,
+    /// the generation time, and the page number. Carries only the localized label parts; the renderer adds the
+    /// live page-number field and stamps the actual generation timestamp. <c>null</c> ⇒ no footer is printed.
+    /// Shared across all protocol kinds (results + both start protocols).</summary>
+    public ProtocolFooter? Footer { get; init; }
 }
+
+/// <summary>
+/// The localized pieces of a protocol's page footer (нижній колонтитул). The renderer lays them out across the
+/// bottom of every page — software name left, generation time centred, page number right — supplying the live
+/// page-number field and the actual generation timestamp itself (so the document stays layout-only and these
+/// stay localization-free). Built in BusinessLogic from <c>ILocalizationService</c> values.
+/// </summary>
+/// <param name="SoftwareName">The program name shown in the footer ("П/З: OrientDesk"). Blank ⇒ omitted.</param>
+/// <param name="GeneratedLabel">Caption before the generation timestamp ("Згенеровано"). Blank ⇒ the timestamp
+/// is printed alone.</param>
+/// <param name="PageLabel">Caption before the page number ("Сторінка"). Blank ⇒ the number is printed alone.</param>
+public sealed record ProtocolFooter(string SoftwareName, string GeneratedLabel, string PageLabel);
 
 /// <summary>
 /// One official line in a protocol's trailing signature block: a localized role caption ("Головний суддя"),
@@ -92,6 +121,12 @@ public sealed class ResultProtocolSection
     /// <summary>Course-setter text ("Начальник дистанції: Рачук Тарас"), blank when none — printed next to the
     /// group caption. The group's per-day override wins over the competition default (see the builder).</summary>
     public string CourseSetterText { get; init; } = string.Empty;
+
+    /// <summary>The rank-award calculation line ("Клас дистанції: КМС ; Ранг змагань: 790 балів ; КМСУ 120%
+    /// 00:24:08 ; …"), printed under the table to show how the «виконаний розряд» values were derived. Blank
+    /// when the group awards no rank or the awarded-rank column is hidden (see the builder). Pre-formatted, so
+    /// the renderers stay layout-only.</summary>
+    public string RankCalculationText { get; init; } = string.Empty;
 
     /// <summary>The data rows; each is the ordered cell strings matching the column headers.</summary>
     public IReadOnlyList<ResultProtocolBodyRow> Rows { get; init; } = [];
