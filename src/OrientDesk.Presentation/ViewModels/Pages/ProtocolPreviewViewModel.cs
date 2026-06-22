@@ -61,16 +61,26 @@ public sealed partial class ProtocolPreviewViewModel : ObservableObject
 /// </summary>
 public sealed class ProtocolPreviewColumn
 {
-    public ProtocolPreviewColumn(string key, string caption)
+    public ProtocolPreviewColumn(string key, string caption, string shortCaption = "", bool bodyWraps = false)
     {
         Key = key;
         Caption = caption;
+        ShortCaption = shortCaption;
+        BodyWraps = bodyWraps;
     }
 
     /// <summary>Stable identity of the column (its enum name) — the drag payload, resolved by the owning VM.</summary>
     public string Key { get; }
 
     public string Caption { get; }
+
+    /// <summary>Abbreviated caption ("Дата нар.", "Рез."), or empty when the column has none. The preview table
+    /// falls back to this when the column is too narrow to fit <see cref="Caption"/> on one line.</summary>
+    public string ShortCaption { get; }
+
+    /// <summary>True when the column's body text may wrap (free-text columns — name, club, coach…), so the table
+    /// sizes it to the typical content and long values wrap; false for short-code columns that stay on one line.</summary>
+    public bool BodyWraps { get; }
 }
 
 /// <summary>One group section in the preview: a bold group caption, an optional course sub-caption, and the
@@ -79,15 +89,20 @@ public sealed class ProtocolPreviewColumn
 public sealed class ProtocolPreviewSection
 {
     public ProtocolPreviewSection(string groupName, string subcaption, IReadOnlyList<ProtocolPreviewRow> rows,
-        string courseSetter = "")
+        string courseSetter = "", bool isBanded = false)
     {
         GroupName = groupName;
         Subcaption = subcaption;
         Rows = rows;
         CourseSetter = courseSetter;
+        IsBanded = isBanded;
     }
 
     public string GroupName { get; }
+
+    /// <summary>True ⇒ render the caption as a shaded full-width band (judges' start protocol minute bands), with
+    /// the column header printed once at the top of the table instead of repeated per section.</summary>
+    public bool IsBanded { get; }
 
     /// <summary>Course facts line ("Довжина: 1.300 км · 12 КП"), blank for start sections / unknown courses.</summary>
     public string Subcaption { get; }

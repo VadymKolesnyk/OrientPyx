@@ -33,9 +33,23 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
             .Select(c => labels.ColumnHeaders.TryGetValue(c, out var h) ? h : c.ToString())
             .ToList();
 
+        // Parallel short captions — the renderer falls back to these for a column too narrow for the full one.
+        // Blank when no abbreviation is configured (the renderer then keeps the full caption).
+        var shortHeaders = columns
+            .Select(c => labels.ColumnHeadersShort is { } s && s.TryGetValue(c, out var h) ? h : string.Empty)
+            .ToList();
+
+        // Per-column body-wrap flags (parallel to the columns) — free-text columns may wrap; short-code columns
+        // stay on one line. See ColumnBodyWraps.
+        var bodyWrap = columns.Select(ColumnBodyWraps).ToList();
+
         var sections = new List<ResultProtocolSection>(data.Groups.Count);
         foreach (var group in data.Groups.OrderBy(g => g.Order))
         {
+            // Skip empty groups — a group with no participants produces no useful section on the sheet.
+            if (group.Rows.Count == 0)
+                continue;
+
             var rows = group.IsTeam
                 ? BuildTeamRows(group.Rows, columns)
                 : BuildPersonalRows(group.Rows, columns);
@@ -68,11 +82,27 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
             DateText = settings.DateText.Trim(),
             CompetitionType = settings.CompetitionType.Trim(),
             ColumnHeaders = headers,
+            ColumnHeadersShort = shortHeaders,
+            ColumnBodyWrap = bodyWrap,
             Sections = sections,
             Officials = ProtocolOfficialsFactory.Build(
                 data.Officials, labels.ChiefJudgeLabel, labels.ChiefSecretaryLabel, labels.JuryLabel)
         };
     }
+
+    // Whether a column's BODY text may wrap onto several lines. Free-text columns (name, club, region, sports
+    // school, coach) hold arbitrary-length values, so they wrap — sized to the typical content with long
+    // outliers wrapping. The short-code columns (№ з/п, number, birth date, rank, result, place, score) hold
+    // fixed short tokens that must stay on one line, so they never wrap.
+    private static bool ColumnBodyWraps(ProtocolColumn column) => column switch
+    {
+        ProtocolColumn.FullName => true,
+        ProtocolColumn.Club => true,
+        ProtocolColumn.Region => true,
+        ProtocolColumn.Dussh => true,
+        ProtocolColumn.Coach => true,
+        _ => false
+    };
 
     // "Начальник дистанції: Рачук Тарас" (with " (категорія)" appended when a category is given), or blank
     // when no course-setter is configured for the group.

@@ -32,6 +32,19 @@ public sealed class ResultProtocolDocument
     /// <summary>The column captions, in on-page order — one per <see cref="ResultProtocolSection.Rows"/> cell.</summary>
     public IReadOnlyList<string> ColumnHeaders { get; init; } = [];
 
+    /// <summary>Short (abbreviated) form of each column caption, parallel to <see cref="ColumnHeaders"/> — e.g.
+    /// "Дата нар." for "Дата народження", "Рез." for "Результат". The renderer falls back to the short form for
+    /// a column too narrow to fit the full caption on one line. Empty entry ⇒ no abbreviation (use the full
+    /// caption). May be shorter than <see cref="ColumnHeaders"/> or empty; the renderer guards the index.</summary>
+    public IReadOnlyList<string> ColumnHeadersShort { get; init; } = [];
+
+    /// <summary>Per-column flag (parallel to <see cref="ColumnHeaders"/>): <c>true</c> = the column's body text
+    /// may wrap onto several lines (free-text columns — name, club, coach…), so its width is sized to the
+    /// TYPICAL content and a long outlier wraps rather than widening the whole column; <c>false</c> = the data
+    /// is atomic and must stay on one line (рік, № з/п, номер, результат, місце, кваліфікація — short codes),
+    /// so the column is always wide enough for its longest value. Missing entry ⇒ treated as non-wrapping.</summary>
+    public IReadOnlyList<bool> ColumnBodyWrap { get; init; } = [];
+
     /// <summary>The group sections, in display order.</summary>
     public IReadOnlyList<ResultProtocolSection> Sections { get; init; } = [];
 
@@ -60,6 +73,12 @@ public sealed class ResultProtocolSection
 {
     /// <summary>Group name (the "Вікова група KIDS" caption).</summary>
     public string GroupName { get; init; } = string.Empty;
+
+    /// <summary>When <c>true</c> the caption is rendered as a distinct full-width <b>shaded band</b> (a single
+    /// centred row spanning every column), not a plain bold line. Used by the judges' start protocol so each
+    /// start-minute caption ("13:01:00") stands out as a band above its runners — matching the classic printed
+    /// sheet. Regular group/result sections leave this <c>false</c> (plain bold caption).</summary>
+    public bool IsBanded { get; init; }
 
     /// <summary>Course length text ("1.300 км"), blank when unknown — part of the section sub-caption.</summary>
     public string DistanceText { get; init; } = string.Empty;

@@ -385,7 +385,9 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         if (visible.Count == 0)
             visible.Add(ProtocolColumn.FullName); // mirrors the builder's "always one column" guard
         for (var i = 0; i < visible.Count && i < document.ColumnHeaders.Count; i++)
-            Preview.Columns.Add(new ProtocolPreviewColumn(visible[i].ToString(), document.ColumnHeaders[i]));
+            Preview.Columns.Add(new ProtocolPreviewColumn(visible[i].ToString(), document.ColumnHeaders[i],
+                i < document.ColumnHeadersShort.Count ? document.ColumnHeadersShort[i] : string.Empty,
+                i < document.ColumnBodyWrap.Count && document.ColumnBodyWrap[i]));
 
         // Render the group sections exactly as the .docx stacks them (caption + sub-caption + table), capping
         // the TOTAL body rows across sections so the page mock-up fills but stays cheap to build.
@@ -404,10 +406,10 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         }
         Preview.IsEmpty = Preview.Sections.Count == 0 || Preview.Sections.All(s => s.Rows.Count == 0);
 
+        // Officials are deliberately NOT shown in the on-screen preview — they're a fixed signature block at
+        // the very bottom of the printed sheet, off the visible mock-up area, and only clutter the preview.
         Preview.Officials.Clear();
-        foreach (var official in document.Officials)
-            Preview.Officials.Add($"{official.Role}:  {official.NameWithCategory}");
-        Preview.HasOfficials = Preview.Officials.Count > 0;
+        Preview.HasOfficials = false;
     }
 
     // Joins a section's non-blank course facts into one " · "-separated sub-caption line for the preview.
@@ -458,8 +460,13 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
     private ProtocolLabels BuildLabels()
     {
         var headers = new Dictionary<ProtocolColumn, string>();
+        var shortHeaders = new Dictionary<ProtocolColumn, string>();
         foreach (ProtocolColumn column in Enum.GetValues<ProtocolColumn>())
+        {
             headers[column] = Localization.Get(CaptionKey(column));
+            if (ShortCaptionKey(column) is { } key)
+                shortHeaders[column] = Localization.Get(key);
+        }
 
         return new ProtocolLabels(
             DefaultTitle: Localization.Get("Protocols.DefaultTitle"),
@@ -470,8 +477,22 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
             CourseSetterLabel: Localization.Get("Protocols.CourseSetter"),
             ChiefJudgeLabel: Localization.Get("Protocols.ChiefJudge"),
             ChiefSecretaryLabel: Localization.Get("Protocols.ChiefSecretary"),
-            JuryLabel: Localization.Get("Protocols.Jury"));
+            JuryLabel: Localization.Get("Protocols.Jury"),
+            ColumnHeadersShort: shortHeaders);
     }
+
+    // The short (abbreviated) caption key for a column, or null when the column has no abbreviation (its full
+    // caption is already short). Used when a column is too narrow to fit the full header on one line.
+    private static string? ShortCaptionKey(ProtocolColumn column) => column switch
+    {
+        ProtocolColumn.FullName => "Protocols.Col.Short.FullName",
+        ProtocolColumn.BirthDate => "Protocols.Col.Short.BirthDate",
+        ProtocolColumn.Coach => "Protocols.Col.Short.Coach",
+        ProtocolColumn.Rank => "Protocols.Col.Short.Rank",
+        ProtocolColumn.Result => "Protocols.Col.Short.Result",
+        ProtocolColumn.Place => "Protocols.Col.Short.Place",
+        _ => null
+    };
 
     // "<competition> — протокол <День N> <date>.docx", sanitised for the save dialog.
     private string SuggestedFileName(EventDay day)

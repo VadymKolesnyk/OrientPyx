@@ -39,6 +39,14 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
             .Select(c => labels.ColumnHeaders.TryGetValue(c, out var h) ? h : c.ToString())
             .ToList();
 
+        // Parallel short captions — the renderer falls back to these for a narrow column. Blank ⇒ keep full.
+        var shortHeaders = columns
+            .Select(c => labels.ColumnHeadersShort is { } s && s.TryGetValue(c, out var h) ? h : string.Empty)
+            .ToList();
+
+        // Per-column body-wrap flags — free-text columns may wrap; short-code columns stay on one line.
+        var bodyWrap = columns.Select(ColumnBodyWraps).ToList();
+
         var sections = kind == StartProtocolKind.Judges
             ? BuildJudgesSections(data, columns, labels)
             : BuildRegularSections(data, columns, labels);
@@ -55,6 +63,8 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
             DateText = settings.DateText.Trim(),
             CompetitionType = settings.CompetitionType.Trim(),
             ColumnHeaders = headers,
+            ColumnHeadersShort = shortHeaders,
+            ColumnBodyWrap = bodyWrap,
             Sections = sections,
             Officials = ProtocolOfficialsFactory.Build(
                 data.Officials, labels.ChiefJudgeLabel, labels.ChiefSecretaryLabel, labels.JuryLabel)
@@ -68,6 +78,10 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
         var sections = new List<ResultProtocolSection>(data.Groups.Count);
         foreach (var group in data.Groups.OrderBy(g => g.Order))
         {
+            // Skip empty groups — a group with no members produces no useful section on the sheet.
+            if (group.Rows.Count == 0)
+                continue;
+
             var ordered = group.Rows
                 .OrderBy(r => r.StartTime ?? TimeSpan.MaxValue)
                 .ThenBy(r => r.FullName, StringComparer.CurrentCultureIgnoreCase)
@@ -92,6 +106,21 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
         return sections;
     }
 
+    // Whether a column's BODY text may wrap. Free-text columns (name, club, region, sports school, coach,
+    // group, team) wrap; the short-code columns (start time, № з/п, number, year, rank, chip, note) stay on
+    // one line. Mirrors ResultProtocolBuilder.ColumnBodyWraps.
+    private static bool ColumnBodyWraps(StartProtocolColumn column) => column switch
+    {
+        StartProtocolColumn.FullName => true,
+        StartProtocolColumn.Club => true,
+        StartProtocolColumn.Region => true,
+        StartProtocolColumn.Dussh => true,
+        StartProtocolColumn.Coach => true,
+        StartProtocolColumn.Group => true,
+        StartProtocolColumn.Team => true,
+        _ => false
+    };
+
     // "Начальник дистанції: Рачук Тарас" (category appended in parentheses), or blank when none.
     private static string FormatCourseSetter(string label, string name, string category)
     {
@@ -112,6 +141,11 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
 
         var sections = new List<ResultProtocolSection>();
 
+        // The «№ з/п» runs CONTINUOUSLY down the whole sheet — it does NOT reset per minute band — so the
+        // judge can count entrants across the day at a glance. Carried across every minute section and into the
+        // trailing undrawn section.
+        var seq = 0;
+
         // Drawn runners, grouped by whole-minute start, in time order.
         var byMinute = all
             .Where(r => r.StartTime is { } t && t >= TimeSpan.Zero)
@@ -125,17 +159,22 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
                 .ToList();
 
             var body = new List<ResultProtocolBodyRow>(ordered.Count);
-            var seq = 0;
             foreach (var row in ordered)
             {
                 seq++;
                 body.Add(new ResultProtocolBodyRow(columns.Select(c => Cell(c, row, seq)).ToList()));
             }
 
-            sections.Add(new ResultProtocolSection { GroupName = FormatMinute(minute.Key), Rows = body });
+            // The minute caption is a shaded full-width band (IsBanded) so it stands out above its runners.
+            sections.Add(new ResultProtocolSection
+            {
+                GroupName = FormatMinute(minute.Key),
+                IsBanded = true,
+                Rows = body
+            });
         }
 
-        // Undrawn runners (no start time), last, by name.
+        // Undrawn runners (no start time), last, by name — the sequence keeps counting from the drawn runners.
         var undrawn = all
             .Where(r => r.StartTime is null)
             .OrderBy(r => r.FullName, StringComparer.CurrentCultureIgnoreCase)
@@ -143,13 +182,17 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
         if (undrawn.Count > 0)
         {
             var body = new List<ResultProtocolBodyRow>(undrawn.Count);
-            var seq = 0;
             foreach (var row in undrawn)
             {
                 seq++;
                 body.Add(new ResultProtocolBodyRow(columns.Select(c => Cell(c, row, seq)).ToList()));
             }
-            sections.Add(new ResultProtocolSection { GroupName = labels.NoStartTimeCaption, Rows = body });
+            sections.Add(new ResultProtocolSection
+            {
+                GroupName = labels.NoStartTimeCaption,
+                IsBanded = true,
+                Rows = body
+            });
         }
 
         return sections;

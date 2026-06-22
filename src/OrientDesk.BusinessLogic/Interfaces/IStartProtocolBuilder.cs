@@ -34,4 +34,5 @@ public sealed record StartProtocolLabels(
     string CourseSetterLabel = "",
     string ChiefJudgeLabel = "",
     string ChiefSecretaryLabel = "",
-    string JuryLabel = "");
+    string JuryLabel = "",
+    IReadOnlyDictionary<StartProtocolColumn, string>? ColumnHeadersShort = null);

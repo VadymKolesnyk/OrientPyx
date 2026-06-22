@@ -29,11 +29,25 @@ public sealed class ProtocolPreviewTable
     private static readonly DataFormat<string> ColumnFormat =
         DataFormat.CreateInProcessFormat<string>("orientdesk-protocol-column");
 
-    // Print-faithful look: serif font, compact size, only the header row boxed (data rows border-less).
+    // Print-faithful look: serif font, compact size, only the header row boxed (data rows border-less). The
+    // sizes run a touch larger than the .docx point sizes because the on-screen preview reads smaller than the
+    // printed sheet at the same nominal size — bumped so the preview better matches the actual Word output.
     private const string SerifFont = "Times New Roman";
-    private const double BodyFontSize = 10;
-    private const double CaptionFontSize = 11.5;
-    private const double SubcaptionFontSize = 10;
+    // Sized so the preview matches the .docx (13 pt body / ~40 rows per page). These run a touch larger than the
+    // nominal .docx point sizes because the on-screen sheet reads smaller than the printed page at the same size.
+    private const double BodyFontSize = 15.5;
+    private const double CaptionFontSize = 17;
+    private const double SubcaptionFontSize = 15.5;
+
+    // A header wraps between words; columns whose longest word is no longer than this are kept on one line.
+    // Matches DocxResultProtocolWriter.HeaderWordCap.
+    private const int HeaderWordCap = 8;
+
+    // Sizing of a WRAPPING free-text column's body (matches DocxResultProtocolWriter): target = mean cell
+    // length × WrapMeanSlack, clamped to [WrapColumnMinChars, WrapColumnMaxChars]; long outliers wrap.
+    private const double WrapMeanSlack = 1.35;
+    private const int WrapColumnMinChars = 6;
+    private const int WrapColumnMaxChars = 20;
 
     private static readonly FontFamily Serif = new(SerifFont);
     private static readonly IBrush HeaderBorder = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33));
@@ -108,7 +122,7 @@ public sealed class ProtocolPreviewTable
         // (widest content per column across every section, scaled to fill the page width), so the preview lines
         // up with the generated document. Recomputed on every Rebuild, which fires whenever columns are
         // reordered, shown or hidden — so the widths always reflect the current column set and data.
-        var widths = ComputeColumnWidths(columns, sections);
+        var widths = ComputeColumnWidths(columns, sections, out var captions);
         for (var c = 0; c < columns.Count; c++)
             _host.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(widths[c], GridUnitType.Pixel)));
 
@@ -116,51 +130,82 @@ public sealed class ProtocolPreviewTable
             _columnCells.Add([]);
 
         var row = 0;
-        for (var s = 0; s < sections.Count; s++)
+
+        // Banded layout (judges' start protocol): every section is a shaded full-width minute band, so the boxed
+        // column header is drawn ONCE at the very top and then each section is just its band + rows — the sheet
+        // reads as one running list with start-minute dividers (matches the .docx + the printed form).
+        var banded = sections.Count > 0 && AllBanded(sections);
+        if (banded)
         {
-            var section = sections[s];
-
-            // Group caption (bold) — spans all columns. A little top gap between sections. The course-setter
-            // (начальник дистанції), when present, is shown right-aligned on the same caption row.
-            _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-            AddSpanningText(section.GroupName, row, columns.Count, bold: true, size: CaptionFontSize,
-                topMargin: s == 0 ? 0 : 12);
-            if (section.CourseSetter.Length > 0)
-                AddSpanningText(section.CourseSetter, row, columns.Count, bold: true, size: CaptionFontSize,
-                    topMargin: s == 0 ? 0 : 12, alignRight: true);
-            row++;
-
-            // Course sub-caption (only when present).
-            if (section.Subcaption.Length > 0)
-            {
-                _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-                AddSpanningText(section.Subcaption, row, columns.Count, bold: false, size: SubcaptionFontSize,
-                    topMargin: 0, foreground: Brushes.DimGray);
-                row++;
-            }
-
-            // Header row — boxed; each cell is a drag source + drop target.
             _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
             for (var c = 0; c < columns.Count; c++)
             {
-                var header = BuildHeaderCell(columns[c]);
+                var header = BuildHeaderCell(columns[c], captions[c]);
                 WireDrag(header);
-
                 Grid.SetColumn(header, c);
                 Grid.SetRow(header, row);
                 _host.Children.Add(header);
                 _columnCells[c].Add(header);
             }
             row++;
+        }
 
-            // Body rows — border-less, top/bottom hairline so rows read as a table without a heavy grid.
+        for (var s = 0; s < sections.Count; s++)
+        {
+            var section = sections[s];
+
+            if (section.IsBanded)
+            {
+                // Shaded full-width caption band (bold, centred) — the minute divider.
+                _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+                AddBandRow(section.GroupName, row, columns.Count, topMargin: s == 0 ? 0 : 4);
+                row++;
+            }
+            else
+            {
+                // Group caption (bold) — spans all columns. A little top gap between sections. The course-setter
+                // (начальник дистанції), when present, is shown right-aligned on the same caption row.
+                _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+                AddSpanningText(section.GroupName, row, columns.Count, bold: true, size: CaptionFontSize,
+                    topMargin: s == 0 ? 0 : 12);
+                if (section.CourseSetter.Length > 0)
+                    AddSpanningText(section.CourseSetter, row, columns.Count, bold: true, size: CaptionFontSize,
+                        topMargin: s == 0 ? 0 : 12, alignRight: true);
+                row++;
+
+                // Course sub-caption (only when present).
+                if (section.Subcaption.Length > 0)
+                {
+                    _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+                    AddSpanningText(section.Subcaption, row, columns.Count, bold: false, size: SubcaptionFontSize,
+                        topMargin: 0, foreground: Brushes.DimGray);
+                    row++;
+                }
+
+                // Per-section header row — boxed; each cell is a drag source + drop target.
+                _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+                for (var c = 0; c < columns.Count; c++)
+                {
+                    var header = BuildHeaderCell(columns[c], captions[c]);
+                    WireDrag(header);
+
+                    Grid.SetColumn(header, c);
+                    Grid.SetRow(header, row);
+                    _host.Children.Add(header);
+                    _columnCells[c].Add(header);
+                }
+                row++;
+            }
+
+            // Body rows. Normal sections are border-less (just a bottom hairline); the banded judges' protocol
+            // draws a full cell grid so its rows sit in boxes like the printed sheet (matches the .docx).
             foreach (var bodyRow in section.Rows)
             {
                 _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
                 for (var c = 0; c < columns.Count; c++)
                 {
                     var text = c < bodyRow.Cells.Count ? bodyRow.Cells[c] : string.Empty;
-                    var cell = BuildBodyCell(text, bodyRow.IsTeamHeader, columns[c]);
+                    var cell = BuildBodyCell(text, bodyRow.IsTeamHeader, columns[c], boxed: banded);
                     WireDrag(cell); // drag anywhere in a column, not just its header
                     Grid.SetColumn(cell, c);
                     Grid.SetRow(cell, row);
@@ -201,30 +246,81 @@ public sealed class ProtocolPreviewTable
     // equal between groups. Same shape as DocxResultProtocolWriter.ComputeColumnWidths so the two agree.
     private List<double> ComputeColumnWidths(
         IReadOnlyList<ProtocolPreviewColumn> columns,
-        IReadOnlyList<ProtocolPreviewSection> sections)
+        IReadOnlyList<ProtocolPreviewSection> sections,
+        out string[] captions)
     {
         var count = columns.Count;
 
-        // Longest text (characters) per column, across the header and all rows of all sections.
-        var maxChars = new int[count];
+        // Char counts per column (mirrors DocxResultProtocolWriter.ComputeColumnWidths):
+        //  • dataChars      — body content width: the longest cell for non-wrapping (short-code) columns, but
+        //    only the TYPICAL value (mean × slack, capped) for wrapping free-text columns so long outliers wrap.
+        //  • shortWordChars — the short caption's longest word (or the full word when no abbreviation). Also
+        //    inviolable: the abbreviation is the fallback so it must always fit on one line.
+        //  • fullWordChars  — the full caption's longest word. PREFERRED: fit it when there's room, else fall
+        //    back to the short caption.
+        //  • naturalChars   — full caption length, used only to share out leftover slack.
+        const double charPx = BodyFontSize * 0.52; // ≈ average glyph advance for the serif body font
+        const double padPx = 8;                    // BuildBodyCell horizontal padding (4 + 4)
+        const double minColPx = 26;
+
+        var shortWordChars = new int[count];
+        var fullWordChars = new int[count];
         for (var c = 0; c < count; c++)
-            maxChars[c] = columns[c].Caption?.Length ?? 0;
+        {
+            var full = columns[c].Caption ?? string.Empty;
+            var shrt = columns[c].ShortCaption ?? string.Empty;
+            shortWordChars[c] = HeaderWidthChars(shrt.Length > 0 ? shrt : full);
+            fullWordChars[c] = HeaderWidthChars(full);
+        }
+
+        // Gather the longest cell + the mean over NON-EMPTY cells per column. Empty cells are excluded from the
+        // mean so a mostly-blank column (ДЮСШ) is sized to its typical FILLED value, not collapsed by blanks.
+        var maxCell = new int[count];
+        var sumCell = new long[count];
+        var filledCount = new int[count];
         foreach (var section in sections)
             foreach (var bodyRow in section.Rows)
                 for (var c = 0; c < count && c < bodyRow.Cells.Count; c++)
-                    maxChars[c] = Math.Max(maxChars[c], bodyRow.Cells[c]?.Length ?? 0);
+                {
+                    var len = bodyRow.Cells[c]?.Length ?? 0;
+                    maxCell[c] = Math.Max(maxCell[c], len);
+                    if (len > 0)
+                    {
+                        sumCell[c] += len;
+                        filledCount[c]++;
+                    }
+                }
 
-        // Natural width per column from its character count (average glyph advance at the body font size) plus
-        // the cell's left+right padding, with a sane minimum.
-        const double charPx = BodyFontSize * 0.62; // ≈ average glyph advance for the serif body font
-        const double padPx = 8;                    // BuildBodyCell horizontal padding (4 + 4)
-        const double minColPx = 26;
-        var natural = new double[count];
-        var total = 0.0;
+        var dataChars = new int[count];
+        var naturalChars = new int[count];
         for (var c = 0; c < count; c++)
         {
-            natural[c] = Math.Max(minColPx, maxChars[c] * charPx + padPx);
-            total += natural[c];
+            if (columns[c].BodyWraps && filledCount[c] > 0)
+            {
+                var mean = (double)sumCell[c] / filledCount[c];
+                var target = Math.Clamp((int)Math.Ceiling(mean * WrapMeanSlack), WrapColumnMinChars, WrapColumnMaxChars);
+                dataChars[c] = Math.Min(maxCell[c], target);
+            }
+            else
+            {
+                dataChars[c] = maxCell[c];
+            }
+            // Slack "want" = body content width only (NOT the full header length), so a long-header/short-data
+            // column ("Дата народження" over "16.05.2018") doesn't greedily soak up slack and stretch.
+            naturalChars[c] = dataChars[c];
+        }
+
+        var dataFloor = new double[count];      // inviolable: data AND the abbreviation must fit
+        var preferredFloor = new double[count]; // + the full header word, when there's room
+        var natural = new double[count];
+        var dataTotal = 0.0;
+        for (var c = 0; c < count; c++)
+        {
+            var hard = Math.Max(dataChars[c], shortWordChars[c]);
+            dataFloor[c] = Math.Max(minColPx, hard * charPx + padPx);
+            preferredFloor[c] = Math.Max(dataFloor[c], fullWordChars[c] * charPx + padPx);
+            natural[c] = Math.Max(preferredFloor[c], naturalChars[c] * charPx + padPx);
+            dataTotal += dataFloor[c];
         }
 
         // Scale to the sheet's printable width (the inner content width of the page Border).
@@ -232,18 +328,134 @@ public sealed class ProtocolPreviewTable
         var sheetWidth = landscape ? SheetShortSide * A4Ratio : SheetShortSide;
         var printable = sheetWidth - 2 * SheetPadding;
 
+        var widths = DistributeWidths(dataFloor, preferredFloor, natural, dataTotal, printable);
+
+        // Pick the caption per column: use the FULL caption only when its WHOLE text fits the column on one line
+        // (so a multi-word header like "Дата народження" abbreviates instead of wrapping at the space); else the
+        // short caption. Mirrors DocxResultProtocolWriter.
+        captions = new string[count];
+        for (var c = 0; c < count; c++)
+        {
+            var full = columns[c].Caption ?? string.Empty;
+            var shrt = columns[c].ShortCaption ?? string.Empty;
+            var fullNeeds = full.Length * charPx + padPx;
+            captions[c] = shrt.Length > 0 && fullNeeds > widths[c] ? shrt : full;
+        }
+        return widths;
+    }
+
+    // The 3-tier distribution shared with the .docx writer (see DocxResultProtocolWriter.DistributeWidths):
+    //  1. guarantee every data/abbreviation floor — if they overflow, scale down (extreme crowded case);
+    //  2. raise toward the full-header floors, sharing proportionally when they don't all fit (long headers
+    //     fall back to the abbreviation first);
+    //  3. hand any remaining slack out by natural-size want (the name column grows).
+    private static List<double> DistributeWidths(double[] dataFloor, double[] preferredFloor, double[] natural,
+        double dataTotal, double printable)
+    {
+        var count = dataFloor.Length;
         var widths = new List<double>(count);
+
+        // Tier 1.
+        if (dataTotal >= printable)
+        {
+            for (var c = 0; c < count; c++)
+                widths.Add(dataTotal > 0 ? dataFloor[c] * printable / dataTotal : printable / count);
+            return widths;
+        }
+
+        // Tier 2.
+        for (var c = 0; c < count; c++)
+            widths.Add(dataFloor[c]);
+        var toPreferred = printable - dataTotal;
+        var headerWant = 0.0;
+        var hWant = new double[count];
+        for (var c = 0; c < count; c++)
+        {
+            hWant[c] = preferredFloor[c] - dataFloor[c];
+            headerWant += hWant[c];
+        }
+        if (headerWant >= toPreferred)
+        {
+            for (var c = 0; c < count; c++)
+                widths[c] += headerWant > 0 ? hWant[c] * toPreferred / headerWant : 0;
+            return widths;
+        }
+
+        // Tier 3.
+        for (var c = 0; c < count; c++)
+            widths[c] = preferredFloor[c];
+        var slack = printable - widths.Sum();
+        var wantTotal = 0.0;
+        var want = new double[count];
+        for (var c = 0; c < count; c++)
+        {
+            want[c] = Math.Max(0, natural[c] - preferredFloor[c]);
+            wantTotal += want[c];
+        }
         var assigned = 0.0;
         for (var c = 0; c < count; c++)
         {
-            var w = total > 0 ? natural[c] * printable / total : printable / count;
-            widths.Add(w);
-            assigned += w;
+            widths[c] += wantTotal > 0 ? want[c] * slack / wantTotal : slack / count;
+            assigned += widths[c];
         }
         // Hand any rounding remainder to the first (name) column so the row spans the full width exactly.
         if (count > 0)
             widths[0] += printable - assigned;
         return widths;
+    }
+
+    // The header's contribution to a column's FLOOR: the longest single word, capped at HeaderWordCap, plus a
+    // one-char safety margin. Short header words stay on one line; long ones may wrap (the column then falls
+    // back to the abbreviation). Mirrors DocxResultProtocolWriter.HeaderWidthChars (incl. the safety char) so
+    // the preview makes the same full-vs-abbreviated choice the document does.
+    private const int HeaderSafetyChars = 1;
+
+    private static int HeaderWidthChars(string? header)
+    {
+        if (string.IsNullOrWhiteSpace(header))
+            return 0;
+        var longestWord = 0;
+        foreach (var word in header.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            longestWord = Math.Max(longestWord, word.Length);
+        return Math.Min(longestWord, HeaderWordCap) + HeaderSafetyChars;
+    }
+
+    // Light-grey caption-band fill (matches the .docx D9D9D9 shading).
+    private static readonly IBrush BandFill = new SolidColorBrush(Color.FromRgb(0xD9, 0xD9, 0xD9));
+    private static readonly IBrush BandBorder = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33));
+
+    private static bool AllBanded(IReadOnlyList<ProtocolPreviewSection> sections)
+    {
+        foreach (var s in sections)
+            if (!s.IsBanded)
+                return false;
+        return true;
+    }
+
+    // A shaded full-width caption band (bold, centred) spanning every column — the judges' minute divider.
+    private void AddBandRow(string text, int row, int columnCount, double topMargin)
+    {
+        var band = new Border
+        {
+            Background = BandFill,
+            BorderBrush = BandBorder,
+            BorderThickness = new Thickness(0.8),
+            Padding = new Thickness(4, 2),
+            Margin = new Thickness(0, topMargin, 0, 0),
+            Child = new TextBlock
+            {
+                Text = text,
+                FontFamily = Serif,
+                Foreground = Brushes.Black,
+                FontWeight = FontWeight.Bold,
+                FontSize = BodyFontSize,
+                HorizontalAlignment = HorizontalAlignment.Center
+            }
+        };
+        Grid.SetColumn(band, 0);
+        Grid.SetColumnSpan(band, columnCount);
+        Grid.SetRow(band, row);
+        _host.Children.Add(band);
     }
 
     private void AddSpanningText(string text, int row, int columnCount, bool bold, double size,
@@ -265,7 +477,7 @@ public sealed class ProtocolPreviewTable
         _host.Children.Add(block);
     }
 
-    private static Border BuildHeaderCell(ProtocolPreviewColumn col)
+    private static Border BuildHeaderCell(ProtocolPreviewColumn col, string caption)
     {
         var header = new Border
         {
@@ -280,7 +492,7 @@ public sealed class ProtocolPreviewTable
             DataContext = col,
             Child = new TextBlock
             {
-                Text = col.Caption,
+                Text = caption,
                 FontFamily = Serif,
                 Foreground = Brushes.Black,
                 FontWeight = FontWeight.Bold,
@@ -292,14 +504,15 @@ public sealed class ProtocolPreviewTable
     }
 
     // A body cell carries its column in DataContext so it is ALSO a drag source/target — columns can be
-    // reordered by dragging anywhere in the column, not just its header. Long text wraps to the next line
-    // (no ellipsis), matching the printed protocol.
-    private static Border BuildBodyCell(string text, bool teamHeader, ProtocolPreviewColumn col) => new()
+    // reordered by dragging anywhere in the column, not just its header. Free-text columns wrap long values to
+    // the next line (no ellipsis), matching the printed protocol; short-code columns (рік, № з/п, результат,
+    // місце, кваліфікація, номер) never wrap — their column is always sized for the longest value.
+    private static Border BuildBodyCell(string text, bool teamHeader, ProtocolPreviewColumn col, bool boxed) => new()
     {
-        // Hairline under each row only — the printed protocol has no inner grid, but a faint rule keeps long
-        // lists readable on screen. No left/right/top borders so data rows stay border-less like the .docx.
-        BorderBrush = new SolidColorBrush(Color.FromRgb(0xE2, 0xE2, 0xE2)),
-        BorderThickness = new Thickness(0, 0, 0, 0.5),
+        // Boxed (banded judges' protocol): a full cell grid, like the printed sheet — adjacent borders overlap to
+        // a single rule. Otherwise just a hairline under each row (no inner grid), so normal sections read clean.
+        BorderBrush = boxed ? HeaderBorder : new SolidColorBrush(Color.FromRgb(0xE2, 0xE2, 0xE2)),
+        BorderThickness = boxed ? new Thickness(0.8) : new Thickness(0, 0, 0, 0.5),
         Padding = new Thickness(4, 1.5),
         // Transparent (non-null) background so the entire cell area is hit-testable — the drag works over the
         // blank part of a cell and over empty cells, not only over the text glyphs.
@@ -314,7 +527,7 @@ public sealed class ProtocolPreviewTable
             FontSize = BodyFontSize,
             FontWeight = teamHeader ? FontWeight.Bold : FontWeight.Normal,
             VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = TextWrapping.Wrap
+            TextWrapping = col.BodyWraps ? TextWrapping.Wrap : TextWrapping.NoWrap
         }
     };
 

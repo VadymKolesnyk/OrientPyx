@@ -229,7 +229,7 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         }
 
         Columns.Clear();
-        foreach (var c in settings.Columns)
+        foreach (var c in MergeWithDefaults(settings.Columns))
         {
             var item = new StartProtocolColumnItemViewModel(c.Column, CaptionKey(c.Column), c.Visible, Localization);
             item.PropertyChanged += (_, e) =>
@@ -242,6 +242,19 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
             };
             Columns.Add(item);
         }
+    }
+
+    // A saved template predates any column added to the enum later (e.g. «Прим.»), so it would be missing from
+    // the loaded set and never show up as a checkbox or in the preview. Keep the saved order/visibility, then
+    // append (hidden) any column from the kind default the saved set doesn't have — so new columns always appear.
+    private IReadOnlyList<StartProtocolColumnSetting> MergeWithDefaults(IEnumerable<StartProtocolColumnSetting> saved)
+    {
+        var merged = saved.ToList();
+        var present = merged.Select(c => c.Column).ToHashSet();
+        foreach (var def in StartProtocolSettings.Default(Kind).Columns)
+            if (present.Add(def.Column))
+                merged.Add(new StartProtocolColumnSetting { Column = def.Column, Visible = false });
+        return merged;
     }
 
     private void SeedHeaderDefaults(CompetitionInfo? info)
@@ -373,7 +386,9 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         if (visible.Count == 0)
             visible.Add(StartProtocolColumn.FullName);
         for (var i = 0; i < visible.Count && i < document.ColumnHeaders.Count; i++)
-            Preview.Columns.Add(new ProtocolPreviewColumn(visible[i].ToString(), document.ColumnHeaders[i]));
+            Preview.Columns.Add(new ProtocolPreviewColumn(visible[i].ToString(), document.ColumnHeaders[i],
+                i < document.ColumnHeadersShort.Count ? document.ColumnHeadersShort[i] : string.Empty,
+                i < document.ColumnBodyWrap.Count && document.ColumnBodyWrap[i]));
 
         // Render the sections exactly as the .docx stacks them (caption + table), capping the TOTAL body rows
         // across sections so the page mock-up fills but stays cheap to build. Start sections have no course
@@ -389,14 +404,14 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
                 .ToList();
             remaining -= rows.Count;
             Preview.Sections.Add(new ProtocolPreviewSection(
-                section.GroupName, string.Empty, rows, section.CourseSetterText));
+                section.GroupName, string.Empty, rows, section.CourseSetterText, section.IsBanded));
         }
         Preview.IsEmpty = Preview.Sections.Count == 0 || Preview.Sections.All(s => s.Rows.Count == 0);
 
+        // Officials are deliberately NOT shown in the on-screen preview — they're a fixed signature block at
+        // the very bottom of the printed sheet, off the visible mock-up area, and only clutter the preview.
         Preview.Officials.Clear();
-        foreach (var official in document.Officials)
-            Preview.Officials.Add($"{official.Role}:  {official.NameWithCategory}");
-        Preview.HasOfficials = Preview.Officials.Count > 0;
+        Preview.HasOfficials = false;
     }
 
     private StartProtocolSettings BuildSettings() => new()
@@ -442,8 +457,13 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
     private StartProtocolLabels BuildLabels()
     {
         var headers = new Dictionary<StartProtocolColumn, string>();
+        var shortHeaders = new Dictionary<StartProtocolColumn, string>();
         foreach (StartProtocolColumn column in Enum.GetValues<StartProtocolColumn>())
+        {
             headers[column] = Localization.Get(CaptionKey(column));
+            if (ShortCaptionKey(column) is { } key)
+                shortHeaders[column] = Localization.Get(key);
+        }
 
         return new StartProtocolLabels(
             DefaultTitle: Localization.Get(DefaultTitleKey),
@@ -452,8 +472,19 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
             CourseSetterLabel: Localization.Get("Protocols.CourseSetter"),
             ChiefJudgeLabel: Localization.Get("Protocols.ChiefJudge"),
             ChiefSecretaryLabel: Localization.Get("Protocols.ChiefSecretary"),
-            JuryLabel: Localization.Get("Protocols.Jury"));
+            JuryLabel: Localization.Get("Protocols.Jury"),
+            ColumnHeadersShort: shortHeaders);
     }
+
+    // The short (abbreviated) caption key for a column, or null when it has no abbreviation (already short).
+    private static string? ShortCaptionKey(StartProtocolColumn column) => column switch
+    {
+        StartProtocolColumn.FullName => "StartProtocols.Col.Short.FullName",
+        StartProtocolColumn.BirthDate => "StartProtocols.Col.Short.BirthDate",
+        StartProtocolColumn.Rank => "StartProtocols.Col.Short.Rank",
+        StartProtocolColumn.Team => "StartProtocols.Col.Short.Team",
+        _ => null
+    };
 
     private string SuggestedFileName(EventDay day)
     {
