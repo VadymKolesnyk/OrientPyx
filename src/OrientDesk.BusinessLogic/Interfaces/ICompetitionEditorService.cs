@@ -407,6 +407,19 @@ public interface ICompetitionEditorService
     Task SaveStartProtocolSettingsAsync(Guid dayId, StartProtocolKind kind, StartProtocolSettings settings, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gathers the multi-day summary («Підсумковий залік») data: every competition day, and every group with
+    /// its members and each member's per-day computed result. The summary builder aggregates and ranks. Empty
+    /// when no competition is selected.
+    /// </summary>
+    Task<SummaryProtocolData> GetSummaryProtocolDataAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Loads the competition-level summary-protocol template, or null when none is stored yet.</summary>
+    Task<SummaryProtocolSettings?> GetSummaryProtocolSettingsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Saves the competition-level summary-protocol template. A no-op when no competition is selected.</summary>
+    Task SaveSummaryProtocolSettingsAsync(SummaryProtocolSettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gathers the split-export data for one day: every group that runs on the day, with its course
     /// metadata, discipline layout (ordered set-course vs scored) and its participant rows — each carrying
     /// the discipline-built <see cref="SplitsView"/> (the passage/splits) and the computed result. Only

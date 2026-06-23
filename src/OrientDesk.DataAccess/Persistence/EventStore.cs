@@ -989,6 +989,35 @@ public sealed class EventStore : IEventStore
         });
     }
 
+    public async Task<string?> GetSummaryProtocolJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var row = await db.SummaryProtocolSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(cancellationToken);
+        return row?.Json;
+    }
+
+    public async Task SaveSummaryProtocolJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default)
+    {
+        // Single competition-level row (Id = 1). Concurrent auto-saves race on the primary key, so use the same
+        // read-then-insert-or-update retry the per-day templates use.
+        await UpsertWithUniqueRetryAsync(eventFolderPath, async db =>
+        {
+            var row = await db.SummaryProtocolSettings.FirstOrDefaultAsync(cancellationToken);
+            if (row is null)
+            {
+                row = new SummaryProtocolSettingsRow { Id = 1, Json = json };
+                db.SummaryProtocolSettings.Add(row);
+            }
+            else
+            {
+                row.Json = json;
+            }
+            await db.SaveChangesAsync(cancellationToken);
+        });
+    }
+
     // Runs a read-then-insert-or-update against a fresh context, retrying once on a SQLite UNIQUE violation:
     // when two callers race, the loser's INSERT fails, so the retry re-reads (now seeing the winner's row) and
     // updates instead. Each attempt gets its own context so the failed change tracker is discarded.

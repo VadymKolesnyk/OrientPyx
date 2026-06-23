@@ -307,4 +307,10 @@ public interface IEventStore
 
     /// <summary>Stores (inserts/updates) a day's start-protocol template JSON for a kind.</summary>
     Task SaveStartProtocolJsonAsync(string eventFolderPath, Guid dayId, StartProtocolKind kind, string json, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the competition-level summary-protocol template JSON, or null when none is stored.</summary>
+    Task<string?> GetSummaryProtocolJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>Stores (inserts/updates) the competition-level summary-protocol template JSON.</summary>
+    Task SaveSummaryProtocolJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default);
 }

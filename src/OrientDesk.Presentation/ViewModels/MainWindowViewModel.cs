@@ -47,6 +47,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly PointsViewModel _points;
     private readonly EntryFeesViewModel _entryFees;
     private readonly ProtocolsViewModel _protocols;
+    private readonly SummaryProtocolsViewModel _summaryProtocols;
     private readonly StartProtocolsViewModel _startProtocols;
     private readonly SplitsExportViewModel _splitsExport;
     private readonly DrawViewModel _draw;
@@ -73,6 +74,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         PointsViewModel points,
         EntryFeesViewModel entryFees,
         ProtocolsViewModel protocols,
+        SummaryProtocolsViewModel summaryProtocols,
         StartProtocolsViewModel startProtocols,
         SplitsExportViewModel splitsExport,
         DrawViewModel draw,
@@ -103,6 +105,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _points = points;
         _entryFees = entryFees;
         _protocols = protocols;
+        _summaryProtocols = summaryProtocols;
         _startProtocols = startProtocols;
         _splitsExport = splitsExport;
         _draw = draw;
@@ -277,6 +280,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenSummaryProtocolAsync()
+    {
+        await _summaryProtocols.LoadAsync();
+        _shell.SelectedPage = _summaryProtocols;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
     private Task OpenStartProtocolAsync() => OpenStartProtocolKindAsync(BusinessLogic.Models.StartProtocolKind.Regular);
 
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]
@@ -382,6 +392,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenPointsCommand.NotifyCanExecuteChanged();
         OpenEntryFeesCommand.NotifyCanExecuteChanged();
         OpenProtocolsCommand.NotifyCanExecuteChanged();
+        OpenSummaryProtocolCommand.NotifyCanExecuteChanged();
         OpenStartProtocolCommand.NotifyCanExecuteChanged();
         OpenStartProtocolJudgesCommand.NotifyCanExecuteChanged();
         OpenSplitsExportCommand.NotifyCanExecuteChanged();

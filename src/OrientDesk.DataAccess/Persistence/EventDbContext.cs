@@ -31,6 +31,7 @@ public class EventDbContext : DbContext
     public DbSet<EntryFeeDiscount> EntryFeeDiscounts => Set<EntryFeeDiscount>();
     public DbSet<ResultProtocolSettingsRow> ResultProtocolSettings => Set<ResultProtocolSettingsRow>();
     public DbSet<StartProtocolSettingsRow> StartProtocolSettings => Set<StartProtocolSettingsRow>();
+    public DbSet<SummaryProtocolSettingsRow> SummaryProtocolSettings => Set<SummaryProtocolSettingsRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

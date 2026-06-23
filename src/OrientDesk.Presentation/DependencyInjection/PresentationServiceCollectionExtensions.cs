@@ -59,6 +59,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<PointsViewModel>();
         services.AddSingleton<EntryFeesViewModel>();
         services.AddSingleton<ProtocolsViewModel>();
+        services.AddSingleton<SummaryProtocolsViewModel>();
         services.AddSingleton<StartProtocolsViewModel>();
         services.AddSingleton<SplitsExportViewModel>();
         services.AddSingleton<DrawViewModel>();

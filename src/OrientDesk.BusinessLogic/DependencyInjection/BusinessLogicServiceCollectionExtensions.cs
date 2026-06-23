@@ -58,6 +58,10 @@ public static class BusinessLogicServiceCollectionExtensions
         // by-minute). Reuses the results-protocol .docx writer (same ResultProtocolDocument model).
         services.AddSingleton<IStartProtocolBuilder, StartProtocolBuilder>();
 
+        // Multi-day summary («Підсумковий залік») builder: aggregates each participant across the counted
+        // days and ranks the group per the chosen mode. The two-tier .docx writer is in DataAccess.
+        services.AddSingleton<ISummaryProtocolBuilder, SummaryProtocolBuilder>();
+
         // Split (splits) export builder (layer-neutral: raw day splits → renderable document). The HTML
         // writer that renders the document is registered in DataAccess.
         services.AddSingleton<ISplitExportBuilder, SplitExportBuilder>();

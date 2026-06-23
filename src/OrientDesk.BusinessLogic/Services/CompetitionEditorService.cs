@@ -1546,6 +1546,121 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return _eventStore.SaveResultProtocolJsonAsync(FolderPath, dayId, json, cancellationToken);
     }
 
+    public async Task<SummaryProtocolData> GetSummaryProtocolDataAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return SummaryProtocolData.Empty;
+
+        var folder = FolderPath;
+        var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var links = await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
+        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
+        var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
+        var dusshes = await _eventStore.GetDusshesAsync(folder, cancellationToken);
+        var info = await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken);
+
+        var byParticipant = participants.ToDictionary(p => p.Id);
+        var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
+        var regionName = regions.ToDictionary(r => r.Id, r => r.Name);
+        var clubName = clubs.ToDictionary(c => c.Id, c => c.Name);
+        var dusshName = dusshes.ToDictionary(d => d.Id, d => d.Name);
+
+        // Computed run results per day, keyed by participant-day link id (the summary spans all days).
+        var resultsByDay = new Dictionary<Guid, IReadOnlyDictionary<Guid, ParticipantDayResult>>(days.Count);
+        foreach (var day in days)
+            resultsByDay[day.Id] = await ComputeDayResultsAsync(folder, day, cancellationToken);
+
+        // The group a member runs in: the group of their FIRST day membership (groups are normally constant
+        // across days). The per-day result is keyed by day id. A member with no group on any day is skipped.
+        var orderedDays = days.OrderBy(d => d.Number).ToList();
+        var linksByParticipant = links
+            .Where(l => l.GroupId is not null)
+            .GroupBy(l => l.ParticipantId);
+
+        // Group order: follow the group entity order (mirrors the day grid). Build a per-group member list.
+        var groupOrder = groups.Select((g, i) => (g.Id, i)).ToDictionary(t => t.Id, t => t.i);
+        var membersByGroup = new Dictionary<Guid, List<SummaryProtocolParticipant>>();
+
+        foreach (var pg in linksByParticipant)
+        {
+            if (!byParticipant.TryGetValue(pg.Key, out var p))
+                continue;
+
+            // The member's group = the group of their earliest-numbered day membership.
+            var firstLink = pg
+                .OrderBy(l => orderedDays.FindIndex(d => d.Id == l.EventDayId))
+                .First();
+            if (firstLink.GroupId is not { } gid)
+                continue;
+
+            var perDay = new Dictionary<Guid, ParticipantDayResult>(pg.Count());
+            foreach (var link in pg)
+            {
+                if (resultsByDay.TryGetValue(link.EventDayId, out var dr) && dr.TryGetValue(link.Id, out var r))
+                    perDay[link.EventDayId] = r;
+            }
+
+            var region = p.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
+            var club = p.ClubId is { } cid && clubName.TryGetValue(cid, out var cn) ? cn : string.Empty;
+            var dussh = p.DusshId is { } did && dusshName.TryGetValue(did, out var dn) ? dn : string.Empty;
+
+            if (!membersByGroup.TryGetValue(gid, out var bucket))
+            {
+                bucket = [];
+                membersByGroup[gid] = bucket;
+            }
+            bucket.Add(new SummaryProtocolParticipant(
+                p.Id, p.Number, p.FullName, p.BirthDate, club, region,
+                dussh, p.Coach?.Trim() ?? string.Empty, p.Rank?.Trim() ?? string.Empty, perDay));
+        }
+
+        var summaryGroups = new List<SummaryProtocolGroup>(membersByGroup.Count);
+        foreach (var (gid, members) in membersByGroup)
+        {
+            if (!groupName.TryGetValue(gid, out var name))
+                continue;
+            var order = groupOrder.TryGetValue(gid, out var o) ? o : int.MaxValue;
+            summaryGroups.Add(new SummaryProtocolGroup(name, order, members));
+        }
+
+        var summaryDays = orderedDays
+            .Select(d => new SummaryProtocolDay(d.Id, d.Number, d.Date))
+            .ToList();
+
+        return new SummaryProtocolData(summaryDays, summaryGroups, OfficialsFrom(info));
+    }
+
+    public async Task<SummaryProtocolSettings?> GetSummaryProtocolSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return null;
+
+        var json = await _eventStore.GetSummaryProtocolJsonAsync(FolderPath, cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<SummaryProtocolSettings>(json);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
+    public Task SaveSummaryProtocolSettingsAsync(SummaryProtocolSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (_session.CurrentEvent is null)
+            return Task.CompletedTask;
+
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        return _eventStore.SaveSummaryProtocolJsonAsync(FolderPath, json, cancellationToken);
+    }
+
     public async Task<StartProtocolData> GetStartProtocolDataAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null)

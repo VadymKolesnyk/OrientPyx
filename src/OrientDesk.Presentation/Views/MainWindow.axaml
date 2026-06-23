@@ -250,6 +250,8 @@
                       IsVisible="{Binding IsEventSelected}">
                 <MenuItem Header="{Binding Localization[Menu.Protocols.Results]}"
                           Command="{Binding OpenProtocolsCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Protocols.Summary]}"
+                          Command="{Binding OpenSummaryProtocolCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Protocols.Splits]}"
                           Command="{Binding OpenSplitsExportCommand}" />
             </MenuItem>
