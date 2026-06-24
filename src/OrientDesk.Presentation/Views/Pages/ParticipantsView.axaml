@@ -31,59 +31,141 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </controls:SearchableComboBox>
+
                 <!-- The show/hide-columns gear (and filter chips) now live in each SheetTable's own
                      built-in toolbar, so no per-page columns button is needed here anymore. -->
-                <!-- Import participants from a UOF XML file. File picking lives in code-behind (it needs
-                     the window's StorageProvider); the decoded text is handed to the VM's import flow. -->
-                <Button Click="OnImportClick" Classes="ghost">
+
+                <!-- The bulky per-action buttons used to sit inline here, but the row no longer fits and
+                     more actions are coming. They're now grouped into dropdown menu-buttons: «Імпорт»
+                     (file / CSV-Excel) and «Дії» (the bulk operations). Each menu item carries its own
+                     icon and routes to the same click handler / command as before. The menu content is
+                     wrapped in a UI-scale LayoutTransformControl because the flyout is hosted in its own
+                     top-level popup, outside the window's scale transform (same approach as the settings
+                     flyout in MainWindow and the column picker). -->
+
+                <!-- Import group: UOF XML file + CSV/Excel. -->
+                <Button Classes="ghost">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <PathIcon Data="M12,3 v10 m0,0 l-4,-4 m4,4 l4,-4 M5,17 v2 h14 v-2" Width="14" Height="14" />
-                        <TextBlock Text="{Binding Localization[Participants.Import]}" />
+                        <TextBlock Text="{Binding Localization[Participants.ImportMenu]}" />
+                        <PathIcon Data="M7,10 l5,5 l5,-5 z" Width="10" Height="10" />
                     </StackPanel>
+                    <Button.Flyout>
+                        <Flyout Placement="BottomEdgeAlignedRight">
+                            <LayoutTransformControl>
+                                <LayoutTransformControl.LayoutTransform>
+                                    <ScaleTransform ScaleX="{ReflectionBinding Scale, Source={StaticResource UiScale}}"
+                                                    ScaleY="{ReflectionBinding Scale, Source={StaticResource UiScale}}" />
+                                </LayoutTransformControl.LayoutTransform>
+                                <StackPanel Spacing="2" Margin="4" MinWidth="240">
+                                    <!-- UOF XML import: file picking is in code-behind (needs the window's
+                                         StorageProvider); the decoded text goes to the VM's import flow.
+                                         Hotkey Ctrl+I (handled in OnPageKeyDown). -->
+                                    <Button Click="OnImportClick" Classes="menu" HorizontalAlignment="Stretch">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="Ctrl+I" />
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <PathIcon Data="M12,3 v10 m0,0 l-4,-4 m4,4 l4,-4 M5,17 v2 h14 v-2" Width="14" Height="14" />
+                                                <TextBlock Text="{Binding Localization[Participants.Import]}" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Button>
+                                    <!-- CSV / Excel import: pick the file in code-behind, then the VM's flow
+                                         shows a column-mapping modal before importing onto all days.
+                                         Hotkey Ctrl+Shift+I. -->
+                                    <Button Click="OnImportCsvClick" Classes="menu" HorizontalAlignment="Stretch">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="Ctrl+Shift+I" />
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <PathIcon Data="M5,3 h9 l5,5 v13 h-14 z M14,3 v5 h5 M8,13 h7 M8,16 h7" Width="14" Height="14" />
+                                                <TextBlock Text="{Binding Localization[Participants.ImportCsv]}" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Button>
+                                </StackPanel>
+                            </LayoutTransformControl>
+                        </Flyout>
+                    </Button.Flyout>
                 </Button>
-                <!-- Import participants from a CSV or Excel (.xlsx) file: pick the file in code-behind,
-                     then the VM's flow shows a column-mapping modal before importing onto all days. -->
-                <Button Click="OnImportCsvClick" Classes="ghost">
-                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <PathIcon Data="M12,3 v10 m0,0 l-4,-4 m4,4 l4,-4 M5,17 v2 h14 v-2" Width="14" Height="14" />
-                        <TextBlock Text="{Binding Localization[Participants.ImportCsv]}" />
-                    </StackPanel>
-                </Button>
+
                 <!-- Export the current view (visible columns + displayed rows) to CSV or Excel. A modal
                      picks the format; the file is then chosen via a save dialog in code-behind (it needs
-                     the window's StorageProvider). -->
-                <Button Click="OnExportClick" Classes="ghost">
+                     the window's StorageProvider). Kept inline — it's a single, frequently-used action. -->
+                <Button Click="OnExportClick" Classes="ghost"
+                        ToolTip.Tip="Ctrl+E">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <PathIcon Data="M12,21 v-10 m0,0 l-4,4 m4,-4 l4,4 M5,5 v-2 h14 v2" Width="14" Height="14" />
                         <TextBlock Text="{Binding Localization[Participants.Export]}" />
                     </StackPanel>
                 </Button>
-                <!-- Bulk-assign sequential start numbers to the rows currently shown (filtered/sorted),
-                     in on-screen order. The visible order lives in the SheetTable, so the click handler
-                     in code-behind reads the active table's VisibleItems and hands them to the VM. -->
-                <Button Click="OnAssignNumbersClick" Classes="ghost">
-                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <PathIcon Data="M4,7 h16 v2 h-16 z M4,15 h16 v2 h-16 z M7,3 v18 M13,3 v18" Width="14" Height="14" />
-                        <TextBlock Text="{Binding Localization[Participants.AssignNumbers]}" />
-                    </StackPanel>
-                </Button>
-                <!-- Bulk-assign unused rental chips to the shown participants without a chip, in on-screen
-                     order. Like the numbers action, the click handler reads the active table's VisibleItems. -->
-                <Button Click="OnAssignChipsClick" Classes="ghost">
-                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <PathIcon Data="M5,8 h14 a2,2 0 0 1 2,2 v4 a2,2 0 0 1 -2,2 h-14 a2,2 0 0 1 -2,-2 v-4 a2,2 0 0 1 2,-2 z M8,11 v2 M12,11 v2 M16,11 v2" Width="14" Height="14" />
-                        <TextBlock Text="{Binding Localization[Participants.AssignChips]}" />
-                    </StackPanel>
-                </Button>
-                <!-- Bulk-edit one field across all the rows currently shown (filtered/sorted): pick a
-                     field + value in the modal and apply it to every visible row. Like the other bulk
-                     actions, the click handler reads the active table's VisibleItems. -->
-                <Button Click="OnBulkEditClick" Classes="ghost">
+
+                <!-- Bulk-action group: assign numbers / chips, bulk-edit, mark out-of-competition by age.
+                     Each click handler in code-behind reads the active table's on-screen (filtered/sorted)
+                     VisibleItems and hands them to the matching command. -->
+                <Button Classes="ghost">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <PathIcon Data="M4,6 h10 v2 h-10 z M4,11 h10 v2 h-10 z M4,16 h6 v2 h-6 z M17,13 l3,3 l-6,6 h-3 v-3 z" Width="14" Height="14" />
-                        <TextBlock Text="{Binding Localization[Participants.BulkEdit]}" />
+                        <TextBlock Text="{Binding Localization[Participants.ActionsMenu]}" />
+                        <PathIcon Data="M7,10 l5,5 l5,-5 z" Width="10" Height="10" />
                     </StackPanel>
+                    <Button.Flyout>
+                        <Flyout Placement="BottomEdgeAlignedRight">
+                            <LayoutTransformControl>
+                                <LayoutTransformControl.LayoutTransform>
+                                    <ScaleTransform ScaleX="{ReflectionBinding Scale, Source={StaticResource UiScale}}"
+                                                    ScaleY="{ReflectionBinding Scale, Source={StaticResource UiScale}}" />
+                                </LayoutTransformControl.LayoutTransform>
+                                <StackPanel Spacing="2" Margin="4" MinWidth="280">
+                                    <!-- Sequential start numbers in on-screen order. Hotkey Ctrl+B. -->
+                                    <Button Click="OnAssignNumbersClick" Classes="menu" HorizontalAlignment="Stretch">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="Ctrl+B" />
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <PathIcon Data="M4,7 h16 v2 h-16 z M4,15 h16 v2 h-16 z M7,3 v18 M13,3 v18" Width="14" Height="14" />
+                                                <TextBlock Text="{Binding Localization[Participants.AssignNumbers]}" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Button>
+                                    <!-- Unused rental chips to the shown participants without a chip. Hotkey Ctrl+K. -->
+                                    <Button Click="OnAssignChipsClick" Classes="menu" HorizontalAlignment="Stretch">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="Ctrl+K" />
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <PathIcon Data="M5,8 h14 a2,2 0 0 1 2,2 v4 a2,2 0 0 1 -2,2 h-14 a2,2 0 0 1 -2,-2 v-4 a2,2 0 0 1 2,-2 z M8,11 v2 M12,11 v2 M16,11 v2" Width="14" Height="14" />
+                                                <TextBlock Text="{Binding Localization[Participants.AssignChips]}" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Button>
+                                    <!-- Bulk-edit one field across the shown rows. Hotkey F6 (also the table's
+                                         in-cell bulk-edit chord). -->
+                                    <Button Click="OnBulkEditClick" Classes="menu" HorizontalAlignment="Stretch">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="F6" />
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <PathIcon Data="M4,6 h10 v2 h-10 z M4,11 h10 v2 h-10 z M4,16 h6 v2 h-6 z M17,13 l3,3 l-6,6 h-3 v-3 z" Width="14" Height="14" />
+                                                <TextBlock Text="{Binding Localization[Participants.BulkEdit]}" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Button>
+                                    <Separator Margin="4,2" />
+                                    <!-- Mark every shown participant whose birth year breaches their group's
+                                         age window "поза конкурсом". Hotkey Ctrl+G. -->
+                                    <Button Click="OnMarkAgeViolatorsClick" Classes="menu" HorizontalAlignment="Stretch"
+                                            ToolTip.Tip="{Binding Localization[Participants.MarkAgeViolators.Hint]}">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="Ctrl+G" />
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <PathIcon Data="M12,2 l10,18 h-20 z M12,9 v5 M12,17 v0.5" Width="14" Height="14" />
+                                                <TextBlock Text="{Binding Localization[Participants.MarkAgeViolators]}" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Button>
+                                </StackPanel>
+                            </LayoutTransformControl>
+                        </Flyout>
+                    </Button.Flyout>
                 </Button>
+
                 <!-- Add works in both modes: on a day it attaches to that day; on Мандатка it attaches
                      the new participant to every day that has a group. -->
                 <Button Command="{Binding AddParticipantCommand}" Classes="accent">

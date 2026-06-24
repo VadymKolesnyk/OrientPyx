@@ -67,6 +67,10 @@ public interface IEventStore
     /// <summary>Sets a group's base entry fee (shared across days). Does nothing if the group is missing.</summary>
     Task UpdateGroupEntryFeeAsync(string eventFolderPath, Guid groupId, decimal? entryFee, CancellationToken cancellationToken = default);
 
+    /// <summary>Sets a group's allowed birth-year window (both bounds inclusive, either optional; shared
+    /// across days). Does nothing if the group is missing.</summary>
+    Task UpdateGroupAgeWindowAsync(string eventFolderPath, Guid groupId, int? minBirthYear, int? maxBirthYear, CancellationToken cancellationToken = default);
+
     /// <summary>Returns a day's group settings rows, ordered by their sort order.</summary>
     Task<IReadOnlyList<GroupDaySettings>> GetGroupDaySettingsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
 
@@ -313,4 +317,11 @@ public interface IEventStore
 
     /// <summary>Stores (inserts/updates) the competition-level summary-protocol template JSON.</summary>
     Task SaveSummaryProtocolJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the competition-level online-publish settings JSON, or null when none is stored (the
+    /// caller then seeds defaults from the competition metadata).</summary>
+    Task<string?> GetOnlinePublishJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>Stores (inserts/updates) the competition-level online-publish settings JSON.</summary>
+    Task SaveOnlinePublishJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default);
 }

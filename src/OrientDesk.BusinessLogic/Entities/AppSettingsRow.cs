@@ -55,4 +55,20 @@ public class AppSettingsRow
     /// («Ранг змагань») — only the first N current-rank point values count (Додаток 89). Default 12.
     /// </summary>
     public int RankCountForRank { get; set; } = 12;
+
+    // --- Online live-results (Supabase) connection, shared across competitions ----------------------
+
+    /// <summary>The Supabase project URL the live-results publisher pushes to. Blank until configured.</summary>
+    public string OnlineSupabaseUrl { get; set; } = string.Empty;
+
+    /// <summary>The Supabase <b>service-role</b> (write) key. Secret — kept only in this local database, never
+    /// shared with the spectator frontend (which uses the public anon key). Blank until configured.</summary>
+    public string OnlineServiceRoleKey { get; set; } = string.Empty;
+
+    /// <summary>The public base URL of the spectator frontend (GitHub Pages), used to print shareable
+    /// per-day links. Blank until configured.</summary>
+    public string OnlinePublicBaseUrl { get; set; } = string.Empty;
+
+    /// <summary>Seconds between live-results publish ticks. Default 10.</summary>
+    public int OnlineIntervalSeconds { get; set; } = 10;
 }

@@ -254,6 +254,9 @@
                           Command="{Binding OpenSummaryProtocolCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Protocols.Splits]}"
                           Command="{Binding OpenSplitsExportCommand}" />
+                <Separator />
+                <MenuItem Header="{Binding Localization[Menu.Protocols.OnlineResults]}"
+                          Command="{Binding OpenOnlineResultsCommand}" />
             </MenuItem>
 
             <!-- Navigation tabs, shown only while a competition is open -->

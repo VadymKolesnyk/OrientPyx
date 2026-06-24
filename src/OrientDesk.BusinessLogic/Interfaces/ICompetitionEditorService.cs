@@ -14,6 +14,14 @@ public interface ICompetitionEditorService
     /// <summary>Loads the current competition's metadata, or null when nothing is selected.</summary>
     Task<CompetitionInfo?> GetInfoAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Builds the dashboard overview for the selected competition and current day: competition summary,
+    /// current-day info, and live counts (participants, groups, rental chips, finish read-outs and run
+    /// results — finished / on-course). Returns a snapshot with <see cref="DashboardInfo.HasSelection"/>
+    /// false when no competition is selected.
+    /// </summary>
+    Task<DashboardInfo> GetDashboardAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Saves edited competition metadata for the current competition.</summary>
     Task SaveInfoAsync(CompetitionInfo info, CancellationToken cancellationToken = default);
 
@@ -90,6 +98,14 @@ public interface ICompetitionEditorService
     /// group is ignored (the previous name is kept).
     /// </summary>
     Task UpdateGroupDayRowAsync(GroupDayRow row, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Recomputes every competition group's birth-year window from its name and the competition start
+    /// year (the same rule used at group creation, <see cref="Entities.Group.DeriveAgeWindow"/>), and
+    /// overwrites the stored bounds. Unlike creation, this deliberately replaces existing windows — it
+    /// is the user-triggered "recalculate age limits" action. Returns how many groups were updated.
+    /// </summary>
+    Task<int> RecalculateGroupAgeWindowsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Removes a group from the current day (deletes its settings row). If the group then has no
@@ -554,6 +570,25 @@ public interface ICompetitionEditorService
         bool clearFirst,
         IProgress<ImportProgress>? progress = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Loads the current competition's online-publish settings (slug, displayed title/subtitle, standings /
+    /// points flags, enabled). When the competition has no row yet, returns defaults seeded from its metadata
+    /// (slug from identifier, title from name, subtitle from the date range). Returns null when no competition
+    /// is selected.
+    /// </summary>
+    Task<OnlinePublishSettings?> GetOnlinePublishSettingsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Saves the current competition's online-publish settings. A no-op when no competition is selected.</summary>
+    Task SaveOnlinePublishSettingsAsync(OnlinePublishSettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gathers one publish tick's data for the online live-results service: the competition's day list (for the
+    /// spectator day switcher) plus the given day's groups and computed result rows — built from the same
+    /// computed results the protocols use. Returns <see cref="OnlineResultsSnapshot.Empty"/> when no competition
+    /// is selected.
+    /// </summary>
+    Task<OnlineResultsSnapshot> GetOnlineResultsSnapshotAsync(Guid dayId, CancellationToken cancellationToken = default);
 
     /// <summary>Loads the current competition's chip-price overrides (note → price/day), ordered by note.</summary>
     Task<IReadOnlyList<ChipPriceOverride>> GetChipPriceOverridesAsync(CancellationToken cancellationToken = default);

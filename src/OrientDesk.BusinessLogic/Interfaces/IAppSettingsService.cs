@@ -39,4 +39,10 @@ public interface IAppSettingsService
     Task<StartProtocolSettings> GetStartProtocolSettingsAsync(StartProtocolKind kind, CancellationToken cancellationToken = default);
 
     Task SaveStartProtocolSettingsAsync(StartProtocolKind kind, StartProtocolSettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the app-level online live-results connection settings (Supabase URL, service-role key,
+    /// public frontend base URL, publish interval), applying defaults when never saved.</summary>
+    Task<OnlineApiSettings> GetOnlineApiSettingsAsync(CancellationToken cancellationToken = default);
+
+    Task SaveOnlineApiSettingsAsync(OnlineApiSettings settings, CancellationToken cancellationToken = default);
 }

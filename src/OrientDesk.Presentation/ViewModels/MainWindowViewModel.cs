@@ -33,6 +33,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly IDialogService _dialogs;
     private readonly IBackgroundActivityService _activities;
 
+    private readonly DashboardViewModel _dashboard;
     private readonly CompetitionInfoViewModel _competitionInfo;
     private readonly CompetitionDaysViewModel _competitionDays;
     private readonly ControlPointsViewModel _controlPoints;
@@ -49,6 +50,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly ProtocolsViewModel _protocols;
     private readonly SummaryProtocolsViewModel _summaryProtocols;
     private readonly StartProtocolsViewModel _startProtocols;
+    private readonly OnlineResultsViewModel _onlineResults;
     private readonly SplitsExportViewModel _splitsExport;
     private readonly DrawViewModel _draw;
     private readonly ClassicDrawViewModel _classicDraw;
@@ -60,6 +62,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         CreateEventViewModel create,
         ShellViewModel shell,
         SettingsViewModel settings,
+        DashboardViewModel dashboard,
         CompetitionInfoViewModel competitionInfo,
         CompetitionDaysViewModel competitionDays,
         ControlPointsViewModel controlPoints,
@@ -76,6 +79,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         ProtocolsViewModel protocols,
         SummaryProtocolsViewModel summaryProtocols,
         StartProtocolsViewModel startProtocols,
+        OnlineResultsViewModel onlineResults,
         SplitsExportViewModel splitsExport,
         DrawViewModel draw,
         ClassicDrawViewModel classicDraw,
@@ -91,6 +95,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _create = create;
         _shell = shell;
         Settings = settings;
+        _dashboard = dashboard;
         _competitionInfo = competitionInfo;
         _competitionDays = competitionDays;
         _controlPoints = controlPoints;
@@ -107,6 +112,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _protocols = protocols;
         _summaryProtocols = summaryProtocols;
         _startProtocols = startProtocols;
+        _onlineResults = onlineResults;
         _splitsExport = splitsExport;
         _draw = draw;
         _classicDraw = classicDraw;
@@ -127,6 +133,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _chips.NavigateToSelfRequested += async (_, _) => await OpenChipsAsync();
         // Same for the finish-read auto-read activity.
         _finishRead.NavigateToSelfRequested += async (_, _) => await OpenFinishReadAsync();
+        // "Go to settings" on the online-results publish activity opens the Online-results page.
+        _onlineResults.NavigateToSelfRequested += async (_, _) => await OpenOnlineResultsAsync();
+        // Dashboard quick-action buttons route through here (the dashboard owns no page-open commands).
+        _dashboard.QuickActionRequested += async (_, action) => await OnDashboardQuickActionAsync(action);
         _session.SessionChanged += OnSessionChanged;
         Localization.PropertyChanged += (_, _) => OnPropertyChanged(nameof(WindowTitle));
 
@@ -177,8 +187,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void Navigate(PageViewModelBase? page)
     {
-        if (page is not null)
-            _shell.SelectedPage = page;
+        if (page is null)
+            return;
+
+        // Refresh the dashboard's live counts each time it is opened (data may have changed elsewhere).
+        if (ReferenceEquals(page, _dashboard))
+            _ = _dashboard.LoadAsync();
+
+        _shell.SelectedPage = page;
     }
 
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]
@@ -303,6 +319,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenOnlineResultsAsync()
+    {
+        await _onlineResults.LoadAsync();
+        _shell.SelectedPage = _onlineResults;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
     private async Task OpenSplitsExportAsync()
     {
         await _splitsExport.LoadAsync();
@@ -321,6 +344,54 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     {
         await _classicDraw.LoadAsync();
         _shell.SelectedPage = _classicDraw;
+    }
+
+    // Routes a dashboard quick-action to the matching page-open command (guarded by HasSelection like
+    // the menu commands). Kept here because the page-open commands live on this root coordinator.
+    private async Task OnDashboardQuickActionAsync(DashboardQuickAction action)
+    {
+        if (!_session.HasSelection)
+            return;
+
+        switch (action)
+        {
+            case DashboardQuickAction.Participants:
+                await OpenParticipantsAsync();
+                break;
+            case DashboardQuickAction.FinishRead:
+                await OpenFinishReadAsync();
+                break;
+            case DashboardQuickAction.Draw:
+                await OpenDrawAsync();
+                break;
+            case DashboardQuickAction.StartProtocol:
+                await OpenStartProtocolAsync();
+                break;
+            case DashboardQuickAction.Protocols:
+                await OpenProtocolsAsync();
+                break;
+            case DashboardQuickAction.Splits:
+                await OpenSplitsExportAsync();
+                break;
+            case DashboardQuickAction.Groups:
+                await OpenGroupsAsync();
+                break;
+            case DashboardQuickAction.Chips:
+                await OpenChipsAsync();
+                break;
+            case DashboardQuickAction.ParticipantsWithoutChip:
+                _participants.RequestQuickFilter(ParticipantQuickFilter.WithoutChip);
+                await OpenParticipantsAsync();
+                break;
+            case DashboardQuickAction.ParticipantsWithoutGroup:
+                _participants.RequestQuickFilter(ParticipantQuickFilter.WithoutGroup);
+                await OpenParticipantsAsync();
+                break;
+            case DashboardQuickAction.ParticipantsOnCourse:
+                _participants.RequestQuickFilter(ParticipantQuickFilter.OnCourse);
+                await OpenParticipantsAsync();
+                break;
+        }
     }
 
     /// <summary>Called once after construction to restore the last session or show the picker.</summary>
@@ -395,6 +466,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenSummaryProtocolCommand.NotifyCanExecuteChanged();
         OpenStartProtocolCommand.NotifyCanExecuteChanged();
         OpenStartProtocolJudgesCommand.NotifyCanExecuteChanged();
+        OpenOnlineResultsCommand.NotifyCanExecuteChanged();
         OpenSplitsExportCommand.NotifyCanExecuteChanged();
         OpenDrawCommand.NotifyCanExecuteChanged();
         OpenClassicDrawCommand.NotifyCanExecuteChanged();

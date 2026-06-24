@@ -22,6 +22,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     private readonly Guid _groupId;
     private readonly int _order;
     private readonly DisciplineType _dayDefaultDiscipline;
+    private readonly int _participantCount;
     private readonly IDisciplineStrategyProvider _strategies;
     private readonly Action<GroupDayRowViewModel> _requestSave;
 
@@ -64,6 +65,14 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     [ObservableProperty]
     private string _masterCountText;
 
+    /// <summary>Earliest allowed birth year, inclusive ("не старше"); blank = no lower bound. Group-level.</summary>
+    [ObservableProperty]
+    private string _minBirthYearText;
+
+    /// <summary>Latest allowed birth year, inclusive ("не молодше"); blank = no upper bound. Group-level.</summary>
+    [ObservableProperty]
+    private string _maxBirthYearText;
+
     /// <summary>
     /// The competition-wide course-setter, shown as the cell placeholder when this group's own override
     /// is blank (so an empty cell reads the inherited global value, greyed). Kept live by the page when
@@ -102,6 +111,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         _groupId = row.GroupId;
         _order = row.Order;
         _dayDefaultDiscipline = row.DayDefaultDiscipline;
+        _participantCount = row.ParticipantCount;
         _strategies = strategies;
         _requestSave = requestSave;
         Localization = localization;
@@ -150,6 +160,8 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         ];
         _selectedRankLevel = RankLevelOptions.First(o => o.Value == row.RankLevel);
         _masterCountText = FormatInt(row.MasterCount);
+        _minBirthYearText = FormatInt(row.MinBirthYear);
+        _maxBirthYearText = FormatInt(row.MaxBirthYear);
 
         // Rogaine penalises over-time by a default rate (1 бал/min), so show that default in the cell when the
         // group set none — the user can still change or clear it (clearing falls back to the same default).
@@ -188,6 +200,13 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     public string ControlCountText =>
         Strategy.ControlCount(CourseOrder).ToString(CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// Read-only count of participants in this group on this day, computed by the editor service from
+    /// the day's participant links and refreshed on each page load.
+    /// </summary>
+    public string ParticipantCountText =>
+        _participantCount.ToString(CultureInfo.InvariantCulture);
+
     // Per-column relevance for the current effective discipline — drives cell enable/dim in the grid.
     public bool UsesCourseOrder => Strategy.UsesColumn(GroupColumn.CourseOrder);
     public bool UsesRequiredCount => Strategy.UsesColumn(GroupColumn.RequiredControlCount);
@@ -210,7 +229,9 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         CourseSetterCategory: (CourseSetterCategory ?? string.Empty).Trim(),
         PointsRuleId: SelectedPointsRule.Id,
         RankLevel: SelectedRankLevel.Value,
-        MasterCount: ParseInt(MasterCountText));
+        MasterCount: ParseInt(MasterCountText),
+        MinBirthYear: ParseInt(MinBirthYearText),
+        MaxBirthYear: ParseInt(MaxBirthYearText));
 
     partial void OnNameChanged(string value) => QueueSave();
 
@@ -236,6 +257,8 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     partial void OnSelectedPointsRuleChanged(PointsRuleOption value) => QueueSave();
     partial void OnSelectedRankLevelChanged(RankLevelOption value) => QueueSave();
     partial void OnMasterCountTextChanged(string value) => QueueSave();
+    partial void OnMinBirthYearTextChanged(string value) => QueueSave();
+    partial void OnMaxBirthYearTextChanged(string value) => QueueSave();
 
     partial void OnSelectedDisciplineChanged(DisciplineOverrideOption value)
     {

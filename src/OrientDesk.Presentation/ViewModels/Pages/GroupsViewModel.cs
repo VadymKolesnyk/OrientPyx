@@ -336,6 +336,18 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         await LoadAsync();
     }
 
+    [RelayCommand]
+    private async Task RecalculateAgeWindowsAsync()
+    {
+        if (_session.CurrentEvent is null)
+            return;
+
+        // Recompute every group's birth-year window from its name (overwriting any hand-edited bounds),
+        // then reload so the grid's Min/Max birth-year cells show the new values.
+        await _busy.RunAsync(() => _editor.RecalculateGroupAgeWindowsAsync());
+        await LoadAsync();
+    }
+
     /// <summary>
     /// Runs the single "Import from XML" action (chosen by the view's file picker): the shared flow
     /// parses the file, shows the two-toggle modal, and imports both control points and groups for

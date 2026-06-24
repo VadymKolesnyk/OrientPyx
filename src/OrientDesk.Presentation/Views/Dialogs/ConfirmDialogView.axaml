@@ -54,10 +54,14 @@
                 </StackPanel>
             </Border>
 
-            <!-- Body: message -->
-            <StackPanel Margin="22,18">
-                <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Classes="muted" />
-            </StackPanel>
+            <!-- Body: message. Scrolls when the text is long (e.g. a confirmation that lists many
+                 affected participants) so the card never grows past a usable height. -->
+            <ScrollViewer MaxHeight="320" HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="22,18">
+                    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Classes="muted" />
+                </StackPanel>
+            </ScrollViewer>
 
         </DockPanel>
     </Border>

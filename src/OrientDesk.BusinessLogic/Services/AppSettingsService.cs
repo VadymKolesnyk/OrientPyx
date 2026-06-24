@@ -122,4 +122,13 @@ public sealed class AppSettingsService : IAppSettingsService
         var json = System.Text.Json.JsonSerializer.Serialize(settings);
         return _appStore.SaveStartProtocolJsonAsync(kind, json, cancellationToken);
     }
+
+    public Task<OnlineApiSettings> GetOnlineApiSettingsAsync(CancellationToken cancellationToken = default) =>
+        _appStore.GetOnlineApiSettingsAsync(cancellationToken);
+
+    public Task SaveOnlineApiSettingsAsync(OnlineApiSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        return _appStore.SaveOnlineApiSettingsAsync(settings, cancellationToken);
+    }
 }

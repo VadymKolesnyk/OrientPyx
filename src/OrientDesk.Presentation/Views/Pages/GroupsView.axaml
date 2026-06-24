@@ -38,6 +38,14 @@
                         <TextBlock Text="{Binding Localization[Import]}" />
                     </StackPanel>
                 </Button>
+                <Button Command="{Binding RecalculateAgeWindowsCommand}" Classes="ghost"
+                        ToolTip.Tip="{Binding Localization[Groups.RecalcAge.Hint]}">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <PathIcon Data="M12,4 a8,8 0 1 1 -7.5,5.3 M12,4 V1 M12,4 l3,2 M8,12 h8 M10,15 h4"
+                                  Width="14" Height="14" />
+                        <TextBlock Text="{Binding Localization[Groups.RecalcAge]}" />
+                    </StackPanel>
+                </Button>
                 <Button Command="{Binding PullAllGroupsCommand}" Classes="ghost"
                         ToolTip.Tip="{Binding Localization[Groups.PullAll.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">

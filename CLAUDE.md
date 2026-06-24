@@ -181,3 +181,16 @@ the open command) → `IStartProtocolBuilder`/`StartProtocolBuilder` (BusinessLo
 `StartProtocolSettings.Default(kind)`. Start columns are their own enum (`StartProtocolColumn`: Start/№/ПІБ/
 рік/клуб/регіон/ДЮСШ/тренер/кваліф./чіп/група). Source data: `GetStartProtocolDataAsync(dayId)` reads
 `ParticipantDay.StartTime`/`Chip`.)
+
+(**Online live results** — «Онлайн-результати» (in the «Протоколи» top menu) publishes the active session day's
+already-computed results to a Supabase project that a separate, already-deployed React spectator frontend reads.
+OrientDesk only does the publisher side: a background process (`OnlineResultsViewModel`, surfaced in the top-bar
+activity block via `OnlineResultsActivity`) builds a snapshot each tick with `ICompetitionEditorService.
+GetOnlineResultsSnapshotAsync(dayId)` — which reuses `GetResultProtocolDataAsync`, so it's the same computed data
+the protocols show — and upserts it via `IResultPublisher`/`SupabaseResultPublisher` (DataAccess, PostgREST). The
+**connection keys** (Supabase URL, secret service-role key, public frontend URL, interval) are app-level: columns on
+`AppSettingsRow`, edited on the Settings page (`IAppSettingsService.Get/SaveOnlineApiSettingsAsync`,
+`OnlineApiSettings`). The **per-competition publish options** (slug, title, subtitle, standings/points flags) live
+per competition in `event.db` (`OnlinePublishSettingsRow`, JSON) via
+`ICompetitionEditorService.Get/SaveOnlinePublishSettingsAsync` (`OnlinePublishSettings`), seeded from the
+competition metadata. The service-role key never leaves the local app DB.)

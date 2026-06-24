@@ -182,6 +182,38 @@ public sealed class AppStore : IAppStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<OnlineApiSettings> GetOnlineApiSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+            return OnlineApiSettings.Empty;
+
+        return new OnlineApiSettings(
+            row.OnlineSupabaseUrl,
+            row.OnlineServiceRoleKey,
+            row.OnlinePublicBaseUrl,
+            row.OnlineIntervalSeconds <= 0 ? OnlineApiSettings.DefaultIntervalSeconds : row.OnlineIntervalSeconds);
+    }
+
+    public async Task SaveOnlineApiSettingsAsync(OnlineApiSettings settings, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+        {
+            row = new AppSettingsRow { Id = 1 };
+            db.Settings.Add(row);
+        }
+
+        row.OnlineSupabaseUrl = settings.SupabaseUrl;
+        row.OnlineServiceRoleKey = settings.ServiceRoleKey;
+        row.OnlinePublicBaseUrl = settings.PublicBaseUrl;
+        row.OnlineIntervalSeconds = settings.IntervalSeconds;
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<(string? Identifier, int? DayNumber)> GetLastSessionAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);

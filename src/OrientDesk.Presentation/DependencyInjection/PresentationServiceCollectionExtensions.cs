@@ -40,8 +40,10 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<EventSelectionViewModel>();
         services.AddSingleton<CreateEventViewModel>();
 
-        // Page view models
-        services.AddTransient<DashboardViewModel>();
+        // Page view models. Dashboard is a singleton like the other pages: the sidebar
+        // (NavigationService) and the host (MainWindowViewModel, which wires its quick actions and
+        // refreshes it on session change) must share one instance.
+        services.AddSingleton<DashboardViewModel>();
         services.AddTransient<SettingsViewModel>();
 
         // Competition info/days pages (opened from the "Competition" top menu)
@@ -61,6 +63,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<ProtocolsViewModel>();
         services.AddSingleton<SummaryProtocolsViewModel>();
         services.AddSingleton<StartProtocolsViewModel>();
+        services.AddSingleton<OnlineResultsViewModel>();
         services.AddSingleton<SplitsExportViewModel>();
         services.AddSingleton<DrawViewModel>();
         services.AddSingleton<ClassicDrawViewModel>();

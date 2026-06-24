@@ -1,0 +1,136 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientDesk.Presentation.ViewModels.Pages"
+             mc:Ignorable="d" d:DesignWidth="720" d:DesignHeight="640"
+             x:Class="OrientDesk.Presentation.Views.Pages.OnlineResultsView"
+             x:DataType="pages:OnlineResultsViewModel">
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,12">
+            <TextBlock Text="{Binding Title}" Classes="h1" />
+            <TextBlock Text="{Binding Text}" Classes="muted" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1">
+            <StackPanel Spacing="16" MaxWidth="620">
+
+                <!-- Connection-not-configured warning -->
+                <Border Classes="card" Padding="16" IsVisible="{Binding !IsConnectionConfigured}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <PathIcon Data="M12,2 L22,20 H2 Z M12,9 v5 M12,17 v0.5" Width="18" Height="18"
+                                  Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Top" />
+                        <TextBlock Text="{Binding Localization[OnlineResults.NotConfigured]}"
+                                   TextWrapping="Wrap" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Per-competition publish options -->
+                <Border Classes="card" Padding="22">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="{Binding Localization[OnlineResults.Options.Title]}" Classes="h2" />
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[OnlineResults.Slug]}" Classes="label" />
+                            <TextBox Text="{Binding Slug, Mode=TwoWay}" PlaceholderText="kyiv2025" />
+                            <TextBlock Text="{Binding Localization[OnlineResults.Slug.Hint]}" Classes="muted"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[OnlineResults.Title]}" Classes="label" />
+                            <TextBox Text="{Binding Title, Mode=TwoWay}" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[OnlineResults.Subtitle]}" Classes="label" />
+                            <TextBox Text="{Binding Subtitle, Mode=TwoWay}" />
+                        </StackPanel>
+
+                        <CheckBox Content="{Binding Localization[OnlineResults.Points]}"
+                                  IsChecked="{Binding Points, Mode=TwoWay}" />
+                        <CheckBox Content="{Binding Localization[OnlineResults.Standings]}"
+                                  IsChecked="{Binding Standings, Mode=TwoWay}" />
+
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Content="{Binding Localization[OnlineResults.SaveSettings]}"
+                                    Classes="ghost"
+                                    Command="{Binding SaveSettingsCommand}" />
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                                        IsVisible="{Binding SettingsSaved}">
+                                <PathIcon Data="M5,12 l4,4 l10,-10" Width="16" Height="16"
+                                          Foreground="{DynamicResource SuccessBrush}" />
+                                <TextBlock Text="{Binding Localization[Settings.PathsSavedHint]}"
+                                           Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Start / stop publishing -->
+                <Border Classes="card" Padding="22">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="{Binding Localization[OnlineResults.Publish.Title]}" Classes="h2" />
+
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Content="{Binding Localization[OnlineResults.Start]}"
+                                    Classes="accent"
+                                    IsVisible="{Binding IsStopped}"
+                                    IsEnabled="{Binding IsConnectionConfigured}"
+                                    Command="{Binding StartPublishingCommand}" />
+                            <Button Content="{Binding Localization[OnlineResults.Stop]}"
+                                    Classes="danger"
+                                    IsVisible="{Binding IsPublishing}"
+                                    Command="{Binding StopPublishingCommand}" />
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                                        IsVisible="{Binding IsPublishing}">
+                                <Ellipse Width="10" Height="10" Fill="{DynamicResource SuccessBrush}"
+                                         VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding Localization[OnlineResults.Running]}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Spectator links -->
+                        <StackPanel Spacing="6" IsVisible="{Binding Links.Count}">
+                            <TextBlock Text="{Binding Localization[OnlineResults.Links]}" Classes="label" />
+                            <ItemsControl ItemsSource="{Binding Links}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <SelectableTextBlock Text="{Binding}" FontFamily="Consolas,monospace"
+                                                             Margin="0,1" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Publish log -->
+                <Border Classes="card" Padding="22">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="{Binding Localization[OnlineResults.Log]}" Classes="h2" />
+                        <Border Classes="card" Padding="10" MinHeight="160" MaxHeight="260"
+                                ClipToBounds="True">
+                            <ScrollViewer>
+                                <ItemsControl ItemsSource="{Binding LogLines}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" FontFamily="Consolas,monospace"
+                                                       FontSize="12" Margin="0,1" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+
+</UserControl>

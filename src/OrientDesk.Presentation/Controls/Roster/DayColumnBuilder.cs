@@ -80,8 +80,14 @@ public sealed class DayColumnBuilder
         // are read-only; status is an editable override. «Бали» (score) only on a point-scoring day.
         bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.ActualStart", nameof(ParticipantDayRowViewModel.ActualStartText), fixedWidth: 100));
         bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.Finish", nameof(ParticipantDayRowViewModel.FinishText), fixedWidth: 100));
-        bands.Add(Identity(SheetCellKind.RowStatus, "Participants.Col.ResultStatus", path: string.Empty,
-            sortPath: $"{nameof(ParticipantDayRowViewModel.SelectedStatus)}.{nameof(FinishStatusOption.Label)}", fixedWidth: 90));
+        var statusBand = Identity(SheetCellKind.RowStatus, "Participants.Col.ResultStatus", path: string.Empty,
+            sortPath: $"{nameof(ParticipantDayRowViewModel.SelectedStatus)}.{nameof(FinishStatusOption.Label)}", fixedWidth: 90);
+        // Filter on the effective status text the cell actually shows (the short code — OK/MP/…, blank when
+        // none), not the dropdown's "auto" label, so filtering matches what's on screen and an "is empty"
+        // filter catches an on-course runner (no computed status yet). Used by the dashboard "На дистанції"
+        // drill-in (no finish + no actual start + no status).
+        statusBand.Columns[0].FilterPath = nameof(ParticipantDayRowViewModel.ResultStatusText);
+        bands.Add(statusBand);
         bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.Result", nameof(ParticipantDayRowViewModel.ResultText_), fixedWidth: 100));
         bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.Place", nameof(ParticipantDayRowViewModel.PlaceText),
             sortPath: nameof(ParticipantDayRowViewModel.PlaceSort), fixedWidth: 70));

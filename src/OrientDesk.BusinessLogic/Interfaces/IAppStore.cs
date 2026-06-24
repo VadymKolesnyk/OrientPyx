@@ -45,6 +45,12 @@ public interface IAppStore
 
     Task SaveRankConditionsAsync(int minParticipants, int minRegions, int countForRank, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the app-level online live-results connection settings (Supabase URL, service-role
+    /// key, public frontend base URL, publish interval), applying defaults when never saved.</summary>
+    Task<OnlineApiSettings> GetOnlineApiSettingsAsync(CancellationToken cancellationToken = default);
+
+    Task SaveOnlineApiSettingsAsync(OnlineApiSettings settings, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the last opened competition identifier + day number, if any.</summary>
     Task<(string? Identifier, int? DayNumber)> GetLastSessionAsync(CancellationToken cancellationToken = default);
 

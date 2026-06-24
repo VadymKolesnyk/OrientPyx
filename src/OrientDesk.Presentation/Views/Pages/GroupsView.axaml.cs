@@ -67,7 +67,9 @@ public partial class GroupsView : UserControl
                   enabledPath: nameof(GroupDayRowViewModel.UsesCourseOrder),
                   opacityPath: nameof(GroupDayRowViewModel.UsesCourseOrder))
             // Control count: auto-computed from the course/control list, read-only.
-            .Text("Groups.Col.ControlCount", nameof(GroupDayRowViewModel.ControlCountText), minWidth: 90);
+            .Text("Groups.Col.ControlCount", nameof(GroupDayRowViewModel.ControlCountText), minWidth: 90)
+            // Participant count: how many participants are in this group on the day, read-only.
+            .Text("Groups.Col.ParticipantCount", nameof(GroupDayRowViewModel.ParticipantCountText), minWidth: 90);
 
         // Required minimum control count (score by count).
         if (_vm.ShowRequiredCountColumn)
@@ -122,6 +124,14 @@ public partial class GroupsView : UserControl
                    sortPath: $"{nameof(GroupDayRowViewModel.SelectedRankLevel)}.Value")
             .Text("Groups.Col.MasterCount", nameof(GroupDayRowViewModel.MasterCountText),
                   editPath: nameof(GroupDayRowViewModel.MasterCountText), minWidth: 90,
+                  mask: SheetColumnBuilder.NumericMask.Integer)
+            // Age window (group-level, editable here): earliest ("не старше") and latest ("не молодше")
+            // allowed birth year, both inclusive. A blank cell means that bound is unset.
+            .Text("Groups.Col.MinBirthYear", nameof(GroupDayRowViewModel.MinBirthYearText),
+                  editPath: nameof(GroupDayRowViewModel.MinBirthYearText), minWidth: 110,
+                  mask: SheetColumnBuilder.NumericMask.Integer)
+            .Text("Groups.Col.MaxBirthYear", nameof(GroupDayRowViewModel.MaxBirthYearText),
+                  editPath: nameof(GroupDayRowViewModel.MaxBirthYearText), minWidth: 110,
                   mask: SheetColumnBuilder.NumericMask.Integer)
             .DeleteAction(OnDeleteButton, "Groups.Delete");
 

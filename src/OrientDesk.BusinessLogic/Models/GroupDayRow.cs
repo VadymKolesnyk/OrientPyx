@@ -32,4 +32,12 @@ public sealed record GroupDayRow(
     GroupRankLevel RankLevel = GroupRankLevel.None,
     /// <summary>How many «Майстер спорту» titles to award to the top placed runners (adult groups);
     /// null = none.</summary>
-    int? MasterCount = null);
+    int? MasterCount = null,
+    /// <summary>Earliest allowed birth year, inclusive ("не старше" — born this year or later); null = no
+    /// lower bound. Group-level, editable from any day.</summary>
+    int? MinBirthYear = null,
+    /// <summary>Latest allowed birth year, inclusive ("не молодше" — born this year or earlier); null = no
+    /// upper bound. Group-level, editable from any day.</summary>
+    int? MaxBirthYear = null,
+    /// <summary>How many participants are in this group on this day (read-only, auto-counted).</summary>
+    int ParticipantCount = 0);

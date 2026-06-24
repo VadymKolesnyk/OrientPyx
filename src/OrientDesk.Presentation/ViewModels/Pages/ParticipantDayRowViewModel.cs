@@ -548,9 +548,18 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     partial void OnNumberChanged(string value) => QueueSave();
     partial void OnRankChanged(string value) => QueueSave();
     partial void OnCoachChanged(string value) => QueueSave();
-    partial void OnBirthDateChanged(DateTimeOffset? value) => QueueSave();
+    partial void OnBirthDateChanged(DateTimeOffset? value)
+    {
+        OnPropertyChanged(nameof(BirthDateViolatesAge));
+        OnPropertyChanged(nameof(AgeViolationTooltip));
+        QueueSave();
+    }
     partial void OnSelectedGroupChanged(GroupOption value)
     {
+        // The age window comes from the selected group, so a group change can flip the highlight.
+        OnPropertyChanged(nameof(BirthDateViolatesAge));
+        OnPropertyChanged(nameof(AgeViolationTooltip));
+
         if (!_initialized)
             return;
 
@@ -562,6 +571,27 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         {
             QueueSave();
             RecomputeTotal();
+        }
+    }
+
+    /// <summary>
+    /// True when this participant's birth year falls outside their day-group's allowed age window
+    /// (<c>SelectedGroup.MinBirthYear</c>/<c>MaxBirthYear</c>, both inclusive). Drives the red tint on the
+    /// birth-date cell. False when the date or group is unset, or the group has no bounds.
+    /// </summary>
+    public bool BirthDateViolatesAge =>
+        Group.ViolatesAgeWindow(BirthDate?.Year, SelectedGroup?.MinBirthYear, SelectedGroup?.MaxBirthYear);
+
+    /// <summary>
+    /// Localized explanation of the age-window breach (names the group + the breached bound), shown as the
+    /// birth-date cell's tooltip; null when there is no violation, which suppresses the tooltip.
+    /// </summary>
+    public string? AgeViolationTooltip
+    {
+        get
+        {
+            var reason = SelectedGroup?.AgeViolationReason(BirthDate?.Year);
+            return string.IsNullOrEmpty(reason) ? null : reason;
         }
     }
     // The chip is NOT part of the debounced row save: a chip edit may collide with another competitor

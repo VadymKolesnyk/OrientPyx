@@ -10,6 +10,9 @@
              x:DataType="vm:ShellViewModel">
 
     <UserControl.DataTemplates>
+        <DataTemplate DataType="pages:DashboardViewModel">
+            <views:DashboardView />
+        </DataTemplate>
         <DataTemplate DataType="pages:SettingsViewModel">
             <views:SettingsView />
         </DataTemplate>
@@ -69,6 +72,9 @@
         </DataTemplate>
         <DataTemplate DataType="pages:StartProtocolsViewModel">
             <views:StartProtocolsView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:OnlineResultsViewModel">
+            <views:OnlineResultsView />
         </DataTemplate>
         <DataTemplate DataType="pages:PageViewModelBase">
             <views:PageView />

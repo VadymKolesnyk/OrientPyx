@@ -20,6 +20,23 @@ public sealed partial class SettingsViewModel : PageViewModelBase
     [ObservableProperty]
     private bool _pathsSaved;
 
+    // --- Online live-results (Supabase) connection -------------------------------------------------
+
+    [ObservableProperty]
+    private string _onlineSupabaseUrl = string.Empty;
+
+    [ObservableProperty]
+    private string _onlineServiceRoleKey = string.Empty;
+
+    [ObservableProperty]
+    private string _onlinePublicBaseUrl = string.Empty;
+
+    [ObservableProperty]
+    private int _onlineIntervalSeconds = OnlineApiSettings.DefaultIntervalSeconds;
+
+    [ObservableProperty]
+    private bool _onlineSaved;
+
     public SettingsViewModel(
         ILocalizationService localization,
         IAppSettingsService settings,
@@ -31,6 +48,7 @@ public sealed partial class SettingsViewModel : PageViewModelBase
         _uiScale = uiScale;
         _busy = busy;
         _ = LoadPathsAsync();
+        _ = LoadOnlineAsync();
     }
 
     public override string NavKey => "Nav.Settings";
@@ -76,5 +94,38 @@ public sealed partial class SettingsViewModel : PageViewModelBase
     {
         var paths = await _settings.GetPathsAsync();
         EventsPath = paths.EventsPath;
+    }
+
+    [RelayCommand]
+    private async Task SaveOnlineAsync()
+    {
+        var interval = Math.Max(OnlineApiSettings.MinIntervalSeconds, OnlineIntervalSeconds);
+        var settings = new OnlineApiSettings(
+            (OnlineSupabaseUrl ?? string.Empty).Trim(),
+            (OnlineServiceRoleKey ?? string.Empty).Trim(),
+            (OnlinePublicBaseUrl ?? string.Empty).Trim(),
+            interval);
+        await _busy.RunAsync(() => _settings.SaveOnlineApiSettingsAsync(settings));
+        OnlineIntervalSeconds = interval;
+        OnlineSaved = true;
+    }
+
+    [RelayCommand]
+    private void IncrementOnlineInterval() => OnlineIntervalSeconds++;
+
+    [RelayCommand]
+    private void DecrementOnlineInterval()
+    {
+        if (OnlineIntervalSeconds > OnlineApiSettings.MinIntervalSeconds)
+            OnlineIntervalSeconds--;
+    }
+
+    private async Task LoadOnlineAsync()
+    {
+        var online = await _settings.GetOnlineApiSettingsAsync();
+        OnlineSupabaseUrl = online.SupabaseUrl;
+        OnlineServiceRoleKey = online.ServiceRoleKey;
+        OnlinePublicBaseUrl = online.PublicBaseUrl;
+        OnlineIntervalSeconds = online.IntervalSeconds;
     }
 }

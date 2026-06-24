@@ -331,7 +331,40 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     partial void OnNumberChanged(string value) => QueueSave();
     partial void OnRankChanged(string value) => QueueSave();
     partial void OnCoachChanged(string value) => QueueSave();
-    partial void OnBirthDateChanged(DateTimeOffset? value) => QueueSave();
+    partial void OnBirthDateChanged(DateTimeOffset? value)
+    {
+        OnPropertyChanged(nameof(BirthDateViolatesAge));
+        OnPropertyChanged(nameof(AgeViolationTooltip));
+        QueueSave();
+    }
+
+    /// <summary>
+    /// True when this participant's birth year falls outside the allowed age window of ANY group they run
+    /// on a member day (each day's <c>SelectedGroup.Min/MaxBirthYear</c>, both inclusive). Drives the red
+    /// tint on the single (competition-level) birth-date cell. False when the date is unset or no member
+    /// day's group has bounds.
+    /// </summary>
+    public bool BirthDateViolatesAge =>
+        Days.Where(d => d.IsMember && d.SelectedGroup.Id is not null)
+            .Any(d => Group.ViolatesAgeWindow(BirthDate?.Year, d.SelectedGroup.MinBirthYear, d.SelectedGroup.MaxBirthYear));
+
+    /// <summary>
+    /// Localized explanation of every breached day-group age window (one line per distinct group), shown as
+    /// the birth-date cell's tooltip; null when no member day's group is breached, which hides the tooltip.
+    /// </summary>
+    public string? AgeViolationTooltip
+    {
+        get
+        {
+            var reasons = Days
+                .Where(d => d.IsMember && d.SelectedGroup.Id is not null)
+                .Select(d => d.SelectedGroup.AgeViolationReason(BirthDate?.Year))
+                .Where(r => !string.IsNullOrEmpty(r))
+                .Distinct()
+                .ToList();
+            return reasons.Count == 0 ? null : string.Join(Environment.NewLine, reasons);
+        }
+    }
 
     // Region is competition-level and NOT part of the debounced identity save: "+ new" has a modal
     // side effect, so the page owns it. A real region / "(none)" persists via its own callback.
@@ -790,6 +823,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         OnPropertyChanged(nameof(GroupShowsSingle));
         OnPropertyChanged(nameof(GroupShowsDifferent));
         OnPropertyChanged(nameof(GroupSingleSummary));
+        // The age window is read off each day's group, so a group/membership change can flip the highlight.
+        OnPropertyChanged(nameof(BirthDateViolatesAge));
+        OnPropertyChanged(nameof(AgeViolationTooltip));
     }
 
     private void RaiseChipAggregates()

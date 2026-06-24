@@ -16,6 +16,21 @@ using OrientDesk.Presentation.ViewModels.Dialogs;
 namespace OrientDesk.Presentation.ViewModels.Pages;
 
 /// <summary>
+/// A pre-applied day-grid filter the page can be opened with (e.g. from a dashboard tile that drills
+/// into "participants without a chip"). Targets the day grid's chip / group column with an IsEmpty /
+/// "no group" filter; <see cref="ParticipantQuickFilter.None"/> means open normally.
+/// </summary>
+public enum ParticipantQuickFilter
+{
+    None,
+    WithoutChip,
+    WithoutGroup,
+
+    /// <summary>Still on course: no actual (chip) start, no finish, and no status yet.</summary>
+    OnCourse,
+}
+
+/// <summary>
 /// The central participant database. A participant's identity is competition-level; group and chip
 /// are per-day. The day picker carries a leading "Мандатка" (roster) option that aggregates every
 /// day — one row per participant with a group column per day — alongside the per-day options.
@@ -262,6 +277,40 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     /// <summary>Raised when the roster's day set changed, so the view rebuilds its per-day columns.</summary>
     public event EventHandler? RosterColumnsChanged;
 
+    /// <summary>
+    /// Raised after a reload that was opened with a pending quick filter, once the day grid is populated,
+    /// so an already-attached view applies the matching column filter. The view ALSO consumes the pending
+    /// filter on attach (see <see cref="ConsumePendingQuickFilter"/>) — the event covers the case where the
+    /// view is already on screen (re-navigation), the attach path covers a first open (the page is loaded
+    /// before it is shown, so this event would fire before the view subscribes).
+    /// </summary>
+    public event EventHandler<ParticipantQuickFilter>? QuickFilterRequested;
+
+    // A filter the page should apply when next shown (set by RequestQuickFilter before LoadAsync). Forces
+    // day mode on load so the chip/group column it targets is the current day's. Held until the view
+    // consumes it (on attach or via the event), so a first open — where LoadAsync runs before the view
+    // exists — still applies it.
+    private ParticipantQuickFilter _pendingQuickFilter = ParticipantQuickFilter.None;
+
+    /// <summary>
+    /// Asks the page to open with a day-grid filter pre-applied (e.g. only chipless participants). Must be
+    /// called before <see cref="LoadAsync"/>; the filter targets the current day's grid, so it forces day
+    /// mode on load. <see cref="ParticipantQuickFilter.None"/> clears any pending request.
+    /// </summary>
+    public void RequestQuickFilter(ParticipantQuickFilter filter) => _pendingQuickFilter = filter;
+
+    /// <summary>
+    /// Returns the pending quick filter and clears it (so it applies once). Day-grid filters only apply in
+    /// day mode; returns <see cref="ParticipantQuickFilter.None"/> in roster mode. Called by the view when
+    /// it is shown.
+    /// </summary>
+    public ParticipantQuickFilter ConsumePendingQuickFilter()
+    {
+        var filter = _pendingQuickFilter;
+        _pendingQuickFilter = ParticipantQuickFilter.None;
+        return IsDayMode ? filter : ParticipantQuickFilter.None;
+    }
+
     // True while LoadAsync syncs SelectedDay, so the setter does not act on the programmatic change.
     private bool _syncingDay;
 
@@ -300,11 +349,22 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         {
             RebuildDayOptions(days);
 
+            // A pending quick filter (from a dashboard drill-in) targets the current day's chip/group
+            // column, so force day mode for the current day regardless of the remembered roster choice.
+            if (_pendingQuickFilter != ParticipantQuickFilter.None)
+            {
+                _rosterChosen = false;
+                var current = _session.CurrentDay?.Number;
+                SelectedDay =
+                    DayOptions.FirstOrDefault(o => !o.IsRoster && o.Number == current)
+                    ?? DayOptions.FirstOrDefault(o => !o.IsRoster)
+                    ?? DayOptions.FirstOrDefault();
+            }
             // Resolve the selected option: honour a remembered roster choice, else follow the
             // session day, else the first real day (or the roster option when no day exists).
             // When the picker is hidden (a single real day), force the roster — there is no UI to
             // switch back to it, so a stale day choice must not leave the page stuck in day mode.
-            if (_rosterChosen || DayOptions.Count <= 2)
+            else if (_rosterChosen || DayOptions.Count <= 2)
             {
                 SelectedDay = DayOptions.FirstOrDefault(o => o.IsRoster);
             }
@@ -324,6 +384,12 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
         OnPropertyChanged(nameof(ShowDaySelector));
         await ReloadContentAsync();
+
+        // Signal an already-attached view to apply a pending quick filter now that the day grid is up.
+        // The handler consumes it (clearing it) — a first open applies it from the view's attach path
+        // instead, since LoadAsync runs before the view is shown. Day-mode only (filter targets the grid).
+        if (_pendingQuickFilter != ParticipantQuickFilter.None && IsDayMode)
+            QuickFilterRequested?.Invoke(this, _pendingQuickFilter);
     }
 
     /// <summary>
@@ -465,7 +531,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (includeNone)
             options.Add(new GroupOption(null, string.Empty, Localization));
         foreach (var g in groups)
-            options.Add(new GroupOption(g.GroupId, g.Name, Localization));
+            options.Add(new GroupOption(g.GroupId, g.Name, Localization, g.MinBirthYear, g.MaxBirthYear));
         return options;
     }
 
@@ -1081,6 +1147,35 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             .Select(c => (c.Number ?? string.Empty).Trim())
             .Where(number => number.Length > 0 && !used.ContainsKey(number)));
 
+        // Confirm before touching anything (this is a sweeping change). Count the recipients WITHOUT
+        // mutating any cell — chip-less shown rows, capped by the number of free chips — so the prompt
+        // states exactly how many participants will be handed a chip. If nobody qualifies (no chip-less
+        // rows, or no free chips for the filter), say so and stop rather than opening an empty confirm.
+        var recipients = CountChipRecipients(visibleRows, free.Count);
+        if (recipients == 0)
+        {
+            await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+                Localization,
+                titleKey: "Participants.AssignChips.ConfirmTitle",
+                messageKey: "Participants.AssignChips.NoneToAssign",
+                confirmKey: "Common.Ok",
+                cancelKey: "Common.Ok"));
+            _log.Action(Localization.Get("Participants.AssignChips.Log.None"));
+            return;
+        }
+
+        var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+            Localization,
+            titleKey: "Participants.AssignChips.ConfirmTitle",
+            messageKey: "Participants.AssignChips.ConfirmMessage",
+            confirmKey: "Participants.AssignChips.Confirm",
+            cancelKey: "Common.Cancel")
+        {
+            MessageArgs = [recipients, free.Count]
+        });
+        if (!confirmed)
+            return;
+
         // Build the assignment in memory (updating the cells live), collecting the (participant, day, chip)
         // writes; then commit them all at once.
         var assignments = new List<(string Name, string Chip)>();
@@ -1103,6 +1198,36 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         }
 
         LogChipAssignment(assignments, free.Count);
+    }
+
+    // How many participants would actually be handed a chip, WITHOUT mutating anything — used by the
+    // confirmation prompt. Mirrors the eligibility in AssignChipsToDay/AssignChipsToRoster (a chip-less
+    // shown row in day mode; a shown participant with ≥1 chip-less member day in the roster), capped by
+    // the number of free chips available (each recipient consumes exactly one chip).
+    private int CountChipRecipients(IReadOnlyList<object?> visibleRows, int freeCount)
+    {
+        if (freeCount == 0)
+            return 0;
+
+        var count = 0;
+        foreach (var item in visibleRows)
+        {
+            if (count >= freeCount)
+                break;
+
+            if (IsRosterMode)
+            {
+                if (item is ParticipantRosterRowViewModel row
+                    && row.Days.Any(d => d.IsMember && string.IsNullOrWhiteSpace(d.Chip)))
+                    count++;
+            }
+            else
+            {
+                if (item is ParticipantDayRowViewModel row && string.IsNullOrWhiteSpace(row.Chip))
+                    count++;
+            }
+        }
+        return count;
     }
 
     // Day mode: every shown row is a member of the current day, so give each one without a chip the next
@@ -1183,6 +1308,112 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 string.IsNullOrWhiteSpace(name) ? Localization.Get("Participants.Chip.UnnamedHolder") : name));
     }
 
+    // ── Mark age-window violators "поза конкурсом" ─────────────────────────────────────────────
+    // Sets «поза конкурсом» (out of competition) on every shown participant whose birth year falls
+    // outside their group's allowed age window — the same rule that red-tints the birth-date cell
+    // (Group.ViolatesAgeWindow). In day mode this checks the current day's group; in the roster it
+    // checks each member day's own group (a participant may breach on one day but not another, so it is
+    // marked per day). Already-OOC and non-violating rows are left untouched. Each change goes through
+    // the existing per-row / per-cell OOC persistence (debounced save / background write), so there is
+    // no new DB code. Confirms first (it is a sweeping change) and writes a summary to the activity log.
+    [RelayCommand]
+    private async Task MarkAgeViolatorsOutOfCompetitionAsync(IReadOnlyList<object?>? visibleRows)
+    {
+        if (visibleRows is null || visibleRows.Count == 0 || _session.CurrentEvent is null)
+            return;
+
+        // Collect who will be marked (and the deferred set-OOC actions) BEFORE asking, so the
+        // confirmation can list them. Day mode marks the current day's row; the roster marks each
+        // breaching member day of a participant (a participant may breach on one day but not another).
+        var names = new List<string>();
+        var apply = new List<Action>();
+
+        if (IsRosterMode)
+        {
+            foreach (var item in visibleRows)
+            {
+                if (item is not ParticipantRosterRowViewModel row)
+                    continue;
+                var year = row.BirthDate?.Year;
+                var cells = row.Days
+                    .Where(c => c.IsMember && !c.OutOfCompetition
+                        && Group.ViolatesAgeWindow(year, c.SelectedGroup.MinBirthYear, c.SelectedGroup.MaxBirthYear))
+                    .ToList();
+                if (cells.Count == 0)
+                    continue;
+                names.Add(row.FullName ?? string.Empty);
+                // Setting it fires the cell's change callback, which persists it in the background.
+                apply.Add(() => { foreach (var cell in cells) cell.OutOfCompetition = true; });
+            }
+        }
+        else
+        {
+            foreach (var item in visibleRows)
+            {
+                if (item is not ParticipantDayRowViewModel row)
+                    continue;
+                if (row.OutOfCompetition || !row.BirthDateViolatesAge)
+                    continue;
+                names.Add(row.FullName ?? string.Empty);
+                // Setting it goes through the row's debounced autosave (OnOutOfCompetitionChanged).
+                apply.Add(() => row.OutOfCompetition = true);
+            }
+        }
+
+        // Nobody to mark — say so (and skip the prompt) rather than opening an empty confirmation.
+        if (names.Count == 0)
+        {
+            await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+                Localization,
+                titleKey: "Participants.MarkAgeViolators.ConfirmTitle",
+                messageKey: "Participants.MarkAgeViolators.NoneMessage",
+                confirmKey: "Common.Ok",
+                cancelKey: "Common.Ok"));
+            LogAgeViolatorsMarked([]);
+            return;
+        }
+
+        // List the affected participants in the confirmation message (one per line). A "(без імені)"
+        // placeholder stands in for a still-unnamed row.
+        var list = string.Join("\n", names.Select(n =>
+            "• " + (string.IsNullOrWhiteSpace(n) ? Localization.Get("Participants.Chip.UnnamedHolder") : n)));
+        var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+            Localization,
+            titleKey: "Participants.MarkAgeViolators.ConfirmTitle",
+            messageKey: "Participants.MarkAgeViolators.ConfirmMessage",
+            confirmKey: "Participants.MarkAgeViolators.Confirm",
+            cancelKey: "Common.Cancel")
+        {
+            MessageArgs = [names.Count, list]
+        });
+        if (!confirmed)
+            return;
+
+        foreach (var action in apply)
+            action();
+
+        LogAgeViolatorsMarked(names);
+    }
+
+    private void LogAgeViolatorsMarked(IReadOnlyList<string> marked)
+    {
+        if (marked.Count == 0)
+        {
+            _log.Action(Localization.Get("Participants.MarkAgeViolators.Log.None"));
+            return;
+        }
+
+        _log.Action(string.Format(
+            CultureInfo.CurrentCulture,
+            Localization.Get("Participants.MarkAgeViolators.Log.Marked"),
+            marked.Count));
+        foreach (var name in marked)
+            _log.Action(string.Format(
+                CultureInfo.CurrentCulture,
+                Localization.Get("Participants.MarkAgeViolators.Log.MarkedRow"),
+                string.IsNullOrWhiteSpace(name) ? Localization.Get("Participants.Chip.UnnamedHolder") : name));
+    }
+
     // ── Bulk edit one field across the shown rows ──────────────────────────────────────────────
     // Changes a single field on every row currently shown (the filtered + sorted set the view hands in
     // as VisibleItems), e.g. set the same group / representative / "Член ФСОУ" for everyone visible. We
@@ -1208,7 +1439,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 .Where(o => o.Id is not null).ToList()
             : IsRosterMode
                 ? (await _busy.RunAsync(() => _editor.GetGroupsAsync()))
-                    .Select(g => new GroupOption(g.Id, g.Name, Localization)).ToList()
+                    .Select(g => new GroupOption(g.Id, g.Name, Localization, g.MinBirthYear, g.MaxBirthYear)).ToList()
                 : new List<GroupOption>();
 
         var fields = BuildBulkEditFields(groupOptions.Count > 0);

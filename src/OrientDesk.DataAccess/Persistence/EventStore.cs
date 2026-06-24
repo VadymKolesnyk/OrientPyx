@@ -236,6 +236,19 @@ public sealed class EventStore : IEventStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task UpdateGroupAgeWindowAsync(string eventFolderPath, Guid groupId, int? minBirthYear, int? maxBirthYear, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.Groups.FirstOrDefaultAsync(g => g.Id == groupId, cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.MinBirthYear = minBirthYear;
+        existing.MaxBirthYear = maxBirthYear;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<GroupDaySettings>> GetGroupDaySettingsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
@@ -1018,6 +1031,34 @@ public sealed class EventStore : IEventStore
         });
     }
 
+    public async Task<string?> GetOnlinePublishJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var row = await db.OnlinePublishSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(cancellationToken);
+        return row?.Json;
+    }
+
+    public async Task SaveOnlinePublishJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default)
+    {
+        // Single competition-level row (Id = 1); same read-then-insert-or-update retry as the protocol templates.
+        await UpsertWithUniqueRetryAsync(eventFolderPath, async db =>
+        {
+            var row = await db.OnlinePublishSettings.FirstOrDefaultAsync(cancellationToken);
+            if (row is null)
+            {
+                row = new OnlinePublishSettingsRow { Id = 1, Json = json };
+                db.OnlinePublishSettings.Add(row);
+            }
+            else
+            {
+                row.Json = json;
+            }
+            await db.SaveChangesAsync(cancellationToken);
+        });
+    }
+
     // Runs a read-then-insert-or-update against a fresh context, retrying once on a SQLite UNIQUE violation:
     // when two callers race, the loser's INSERT fails, so the retry re-reads (now seeing the winner's row) and
     // updates instead. Each attempt gets its own context so the failed change tracker is discarded.
@@ -1083,6 +1124,8 @@ public sealed class EventStore : IEventStore
         var clubs = await db.Clubs.ToListAsync(cancellationToken);
         var dusshes = await db.Dusshes.ToListAsync(cancellationToken);
         var groups = await db.Groups.ToListAsync(cancellationToken);
+        var startYear = (await db.Competition.AsNoTracking().FirstOrDefaultAsync(cancellationToken))
+            ?.StartDate?.Year ?? DateTimeOffset.Now.Year;
 
         Guid? ResolveRegion(string name) => ResolveLookup(name, regions, n => new Region { Name = n }, db.Regions);
         Guid? ResolveClub(string name) => ResolveLookup(name, clubs, n => new Club { Name = n }, db.Clubs);
@@ -1095,7 +1138,8 @@ public sealed class EventStore : IEventStore
             var existing = groups.FirstOrDefault(g => string.Equals(g.Name, trimmed, StringComparison.OrdinalIgnoreCase));
             if (existing is null)
             {
-                existing = new Group { Name = trimmed };
+                var (min, max) = Group.DeriveAgeWindow(trimmed, startYear);
+                existing = new Group { Name = trimmed, MinBirthYear = min, MaxBirthYear = max };
                 db.Groups.Add(existing);
                 groups.Add(existing);
             }

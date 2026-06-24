@@ -67,6 +67,62 @@
             </StackPanel>
         </Border>
 
+        <!-- Online live-results connection (Supabase) -->
+        <Border Classes="card" Padding="22">
+            <StackPanel Spacing="14">
+                <TextBlock Text="{Binding Localization[Settings.Online.Title]}" Classes="h2"
+                           FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+                <TextBlock Text="{Binding Localization[Settings.Online.Hint]}" Classes="muted"
+                           TextWrapping="Wrap" />
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[Settings.Online.SupabaseUrl]}" Classes="label" />
+                    <TextBox Text="{Binding OnlineSupabaseUrl, Mode=TwoWay}"
+                             PlaceholderText="https://xxxxx.supabase.co" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[Settings.Online.ServiceKey]}" Classes="label" />
+                    <TextBox Text="{Binding OnlineServiceRoleKey, Mode=TwoWay}" PasswordChar="•" />
+                    <TextBlock Text="{Binding Localization[Settings.Online.ServiceKeyHint]}" Classes="muted"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[Settings.Online.PublicUrl]}" Classes="label" />
+                    <TextBox Text="{Binding OnlinePublicBaseUrl, Mode=TwoWay}"
+                             PlaceholderText="https://login.github.io/orientir-results" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[Settings.Online.Interval]}" Classes="label" />
+                    <StackPanel Orientation="Horizontal" Spacing="2">
+                        <Button Content="−" Command="{Binding DecrementOnlineIntervalCommand}"
+                                Width="36" Classes="ghost" Padding="0"
+                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+                        <TextBlock Text="{Binding OnlineIntervalSeconds}" MinWidth="44"
+                                   VerticalAlignment="Center" TextAlignment="Center" FontWeight="Medium" />
+                        <Button Content="+" Command="{Binding IncrementOnlineIntervalCommand}"
+                                Width="36" Classes="ghost" Padding="0"
+                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button Content="{Binding Localization[Settings.Online.Save]}"
+                            Classes="accent"
+                            Command="{Binding SaveOnlineCommand}" />
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                                IsVisible="{Binding OnlineSaved}">
+                        <PathIcon Data="M5,12 l4,4 l10,-10" Width="16" Height="16"
+                                  Foreground="{DynamicResource SuccessBrush}" />
+                        <TextBlock Text="{Binding Localization[Settings.PathsSavedHint]}"
+                                   Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
     </StackPanel>
 
 </UserControl>

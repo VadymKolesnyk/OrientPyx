@@ -1478,6 +1478,21 @@ public sealed class SheetTable : TemplatedControl
                             Converter = Behaviors.PaymentHighlight.Instance
                         };
                 }
+                else if (column.Kind == SheetCellKind.BirthDate)
+                {
+                    // Red-tint the birth-date cell when the participant's birth year is outside their group's
+                    // allowed age window (same red as an unrecognised finish-read chip). Both the day-grid and
+                    // roster row VMs expose this bool under the same name, so one binding serves both tables.
+                    cell[!TemplatedControl.BackgroundProperty] =
+                        new Avalonia.Data.Binding(nameof(ParticipantRosterRowViewModel.BirthDateViolatesAge))
+                        {
+                            Converter = Behaviors.RowHighlight.Instance
+                        };
+                    // Explain the breach on hover. The bound text is empty when within the window, which
+                    // suppresses the tooltip; both row VMs expose this property under the same name.
+                    cell[!ToolTip.TipProperty] =
+                        new Avalonia.Data.Binding(nameof(ParticipantRosterRowViewModel.AgeViolationTooltip));
+                }
                 else if (RowHighlightPath is { Length: > 0 } highlightPath)
                 {
                     // Whole-row tint (e.g. an unrecognised chip on the finish-read log): every cell in the

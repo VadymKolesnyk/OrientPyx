@@ -54,10 +54,131 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return _eventStore.GetCompetitionInfoAsync(FolderPath, cancellationToken);
     }
 
+    /// <summary>
+    /// The competition's start year, used to turn an age class in a group name into birth-year bounds.
+    /// Falls back to the current year when the competition has no start date set.
+    /// </summary>
+    private async Task<int> GetCompetitionStartYearAsync(string folder, CancellationToken cancellationToken)
+    {
+        var info = await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken);
+        return info?.StartDate?.Year ?? DateTimeOffset.Now.Year;
+    }
+
+    /// <summary>Derives the default age window for a newly created group from its name and the competition year.</summary>
+    private async Task<(int? MinBirthYear, int? MaxBirthYear)> DeriveAgeWindowAsync(
+        string name, CancellationToken cancellationToken)
+    {
+        var startYear = await GetCompetitionStartYearAsync(FolderPath, cancellationToken);
+        return Group.DeriveAgeWindow(name, startYear);
+    }
+
     public Task SaveInfoAsync(CompetitionInfo info, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(info);
         return _eventStore.SaveCompetitionInfoAsync(FolderPath, info, cancellationToken);
+    }
+
+    public async Task<DashboardInfo> GetDashboardAsync(CancellationToken cancellationToken = default)
+    {
+        var ev = _session.CurrentEvent;
+        var day = _session.CurrentDay;
+        if (ev is null || day is null)
+            return new DashboardInfo { HasSelection = false };
+
+        var folder = ev.FolderPath;
+
+        // Competition-wide counts.
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var chips = await _eventStore.GetRentalChipsAsync(folder, cancellationToken);
+        var allLinks = await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
+
+        // Rental chips: a chip is "handed out" when its number is held by at least one participant on any
+        // day. Match the holder map's case-insensitive trimmed-number keying.
+        var heldNumbers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var link in allLinks)
+        {
+            var chip = link.Chip.Trim();
+            if (chip.Length != 0)
+                heldNumbers.Add(chip);
+        }
+        var chipsHandedOut = chips.Count(c => heldNumbers.Contains(c.Number.Trim()));
+
+        // Current-day counts.
+        var dayLinks = await _eventStore.GetParticipantDaysAsync(folder, day.Id, cancellationToken);
+        var groupsToday = await _eventStore.GetGroupDaySettingsAsync(folder, day.Id, cancellationToken);
+        var readouts = await _eventStore.GetFinishReadoutsAsync(folder, day.Id, cancellationToken);
+
+        // Start times (жеребкування): the day's earliest/latest assigned start and how many are drawn.
+        var startTimes = dayLinks
+            .Where(l => l.StartTime is not null)
+            .Select(l => l.StartTime!.Value)
+            .ToList();
+        TimeSpan? firstStart = startTimes.Count > 0 ? startTimes.Min() : null;
+        TimeSpan? lastStart = startTimes.Count > 0 ? startTimes.Max() : null;
+        var withoutChip = dayLinks.Count(l => string.IsNullOrWhiteSpace(l.Chip));
+        var withoutGroup = dayLinks.Count(l => l.GroupId is null);
+
+        // Run results for the current day, computed exactly as the participant tables do.
+        var results = await ComputeDayResultsAsync(folder, day, cancellationToken);
+
+        int finishedOk = 0, finishedProblem = 0, onCourse = 0;
+        foreach (var link in dayLinks)
+        {
+            var r = results.TryGetValue(link.Id, out var res) ? res : ParticipantDayResult.Empty;
+            if (r.Status == FinishStatus.Ok)
+                finishedOk++;
+            else if (r.StatusIsProblem)
+                finishedProblem++;
+            else if (r.ActualStart is null && r.FinishTime is null)
+            {
+                // Still on course: no actual (chip) start, no finish and no (blank) status — the exact same
+                // three-field test the "На дистанції" participants filter uses, so the count matches the
+                // filtered list. (A read that produced no start/finish punch and no status counts here too.)
+                onCourse++;
+            }
+        }
+
+        var dateRange = ev.DateRange;
+        if (string.IsNullOrEmpty(dateRange))
+        {
+            var info = await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken);
+            if (info?.StartDate is { } start)
+                dateRange = info.EndDate is { } end && end.Date != start.Date
+                    ? $"{start:dd.MM.yyyy} – {end:dd.MM.yyyy}"
+                    : start.ToString("dd.MM.yyyy");
+        }
+
+        return new DashboardInfo
+        {
+            HasSelection = true,
+            CompetitionName = ev.Name,
+            Venue = ev.Venue,
+            DateRange = dateRange,
+            DayCount = ev.DayCount,
+
+            CurrentDayNumber = day.Number,
+            CurrentDayDate = day.Date is { } d ? d.ToString("dd.MM.yyyy") : string.Empty,
+            CurrentDayDiscipline = day.DefaultDiscipline,
+
+            ParticipantTotal = participants.Count,
+            ParticipantsToday = dayLinks.Count,
+            GroupsToday = groupsToday.Count,
+
+            ChipsTotal = chips.Count,
+            ChipsHandedOut = chipsHandedOut,
+            ChipsFree = chips.Count - chipsHandedOut,
+
+            FirstStart = firstStart,
+            LastStart = lastStart,
+            StartsAssigned = startTimes.Count,
+            WithoutChip = withoutChip,
+            WithoutGroup = withoutGroup,
+
+            ReadoutsToday = readouts.Count,
+            FinishedOk = finishedOk,
+            FinishedWithProblem = finishedProblem,
+            OnCourse = onCourse,
+        };
     }
 
     public Task<IReadOnlyList<EventDay>> GetDaysAsync(CancellationToken cancellationToken = default)
@@ -306,12 +427,19 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var groups = await _eventStore.GetGroupsAsync(FolderPath, cancellationToken);
         var byId = groups.ToDictionary(g => g.Id);
 
+        // Count this day's participants per group so the grid can show a live headcount per group.
+        var links = await _eventStore.GetParticipantDaysAsync(FolderPath, CurrentDayId, cancellationToken);
+        var countByGroup = links
+            .Where(l => l.GroupId is not null)
+            .GroupBy(l => l.GroupId!.Value)
+            .ToDictionary(g => g.Key, g => g.Count());
+
         var rows = new List<GroupDayRow>(settings.Count);
         foreach (var s in settings)
         {
             // Defensive: skip a settings row whose group was removed out from under it.
             if (byId.TryGetValue(s.GroupId, out var group))
-                rows.Add(ToRow(s, group.Name));
+                rows.Add(ToRow(s, group, countByGroup.GetValueOrDefault(s.GroupId)));
         }
         return rows;
     }
@@ -337,7 +465,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var group = groups.FirstOrDefault(g => string.Equals(g.Name, trimmed, StringComparison.OrdinalIgnoreCase));
         if (group is null)
         {
-            group = new Group { Name = trimmed };
+            var (min, max) = await DeriveAgeWindowAsync(trimmed, cancellationToken);
+            group = new Group { Name = trimmed, MinBirthYear = min, MaxBirthYear = max };
             await _eventStore.AddGroupAsync(FolderPath, group, cancellationToken);
         }
 
@@ -345,7 +474,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var settings = await _eventStore.GetGroupDaySettingsAsync(FolderPath, dayId, cancellationToken);
         var existing = settings.FirstOrDefault(s => s.GroupId == group.Id);
         if (existing is not null)
-            return ToRow(existing, group.Name);
+            return ToRow(existing, group);
 
         var nextOrder = settings.Count == 0 ? 1 : settings.Max(s => s.Order) + 1;
         var row = new GroupDaySettings
@@ -355,7 +484,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Order = nextOrder
         };
         await _eventStore.AddGroupDaySettingsAsync(FolderPath, row, cancellationToken);
-        return ToRow(row, group.Name);
+        return ToRow(row, group);
     }
 
     public async Task<IReadOnlyList<GroupDayRow>> PullAllGroupsIntoDayAsync(CancellationToken cancellationToken = default)
@@ -400,6 +529,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 await _eventStore.UpdateGroupAsync(FolderPath, new Group { Id = row.GroupId, Name = target }, cancellationToken);
         }
 
+        // The age window is a group-level field (shared across days) but edited from this per-day grid, so
+        // it is written straight to the group rather than the per-day settings below.
+        await _eventStore.UpdateGroupAgeWindowAsync(
+            FolderPath, row.GroupId, row.MinBirthYear, row.MaxBirthYear, cancellationToken);
+
         await _eventStore.UpdateGroupDaySettingsAsync(FolderPath, new GroupDaySettings
         {
             Id = row.SettingsId,
@@ -418,6 +552,29 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             RankLevel = row.RankLevel,
             MasterCount = row.MasterCount
         }, cancellationToken);
+    }
+
+    public async Task<int> RecalculateGroupAgeWindowsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return 0;
+
+        var folder = FolderPath;
+        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var startYear = await GetCompetitionStartYearAsync(folder, cancellationToken);
+
+        var updated = 0;
+        foreach (var group in groups)
+        {
+            var (min, max) = Group.DeriveAgeWindow(group.Name, startYear);
+            // Skip groups whose window already matches what the name derives — nothing to write.
+            if (group.MinBirthYear == min && group.MaxBirthYear == max)
+                continue;
+
+            await _eventStore.UpdateGroupAgeWindowAsync(folder, group.Id, min, max, cancellationToken);
+            updated++;
+        }
+        return updated;
     }
 
     public async Task RemoveGroupFromDayAsync(Guid settingsId, Guid groupId, CancellationToken cancellationToken = default)
@@ -471,6 +628,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var groupsByName = groups
             .GroupBy(g => g.Name.Trim(), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var startYear = await GetCompetitionStartYearAsync(folder, cancellationToken);
 
         var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
         var settingsByGroupId = settings.ToDictionary(s => s.GroupId);
@@ -495,7 +653,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             // Resolve (or create) the competition-level group for this course name.
             if (!groupsByName.TryGetValue(name, out var group))
             {
-                group = new Group { Name = name };
+                var (min, max) = Group.DeriveAgeWindow(name, startYear);
+                group = new Group { Name = name, MinBirthYear = min, MaxBirthYear = max };
                 await _eventStore.AddGroupAsync(folder, group, cancellationToken);
                 groupsByName[name] = group;
             }
@@ -3506,7 +3665,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         foreach (var s in settings)
         {
             if (byId.TryGetValue(s.GroupId, out var group))
-                rows.Add(ToRow(s, group.Name));
+                rows.Add(ToRow(s, group));
         }
         return rows;
     }
@@ -3573,6 +3732,134 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         return await _eventStore.ImportParticipantsBatchAsync(
             FolderPath, data, clearFirst, daysCreated, progress, cancellationToken);
+    }
+
+    // ── Online live-results publishing ───────────────────────────────────────────────────────────────
+
+    public async Task<OnlinePublishSettings?> GetOnlinePublishSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return null;
+
+        var folder = FolderPath;
+        var info = await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken);
+        var defaults = DefaultOnlinePublishSettings(info, _session.CurrentEvent);
+
+        var json = await _eventStore.GetOnlinePublishJsonAsync(folder, cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+            return defaults; // no row yet — seed from the competition metadata
+
+        try
+        {
+            var saved = System.Text.Json.JsonSerializer.Deserialize<OnlinePublishSettings>(json);
+            if (saved is null)
+                return defaults;
+            // A blank slug/title fell out of an old/empty save — backfill from the metadata defaults.
+            return saved with
+            {
+                Slug = string.IsNullOrWhiteSpace(saved.Slug) ? defaults.Slug : saved.Slug,
+                Title = string.IsNullOrWhiteSpace(saved.Title) ? defaults.Title : saved.Title,
+            };
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return defaults;
+        }
+    }
+
+    public Task SaveOnlinePublishSettingsAsync(OnlinePublishSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (_session.CurrentEvent is null)
+            return Task.CompletedTask;
+
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        return _eventStore.SaveOnlinePublishJsonAsync(FolderPath, json, cancellationToken);
+    }
+
+    // Default publish options for a competition that has never been configured: slug from its folder
+    // identifier (URL-safe), title from its name, subtitle from the date range.
+    private static OnlinePublishSettings DefaultOnlinePublishSettings(CompetitionInfo? info, EventSummary ev)
+    {
+        var slug = Slugify(!string.IsNullOrWhiteSpace(info?.Identifier) ? info.Identifier : ev.Name);
+        var title = !string.IsNullOrWhiteSpace(info?.Name) ? info.Name : ev.Name;
+        var subtitle = FormatDateRange(info);
+        return OnlinePublishSettings.Default(slug, title, subtitle);
+    }
+
+    // Folder-identifier → URL slug: lower-case, keep latin letters/digits, collapse the rest to dashes.
+    private static string Slugify(string source)
+    {
+        var chars = (source ?? string.Empty).Trim().ToLowerInvariant()
+            .Select(c => char.IsLetterOrDigit(c) && c < 128 ? c : '-')
+            .ToArray();
+        var slug = new string(chars).Trim('-');
+        while (slug.Contains("--"))
+            slug = slug.Replace("--", "-");
+        return slug;
+    }
+
+    private static string FormatDateRange(CompetitionInfo? info)
+    {
+        if (info?.StartDate is not { } start)
+            return string.Empty;
+        return info.EndDate is { } end && end.Date != start.Date
+            ? $"{start:dd.MM.yyyy} – {end:dd.MM.yyyy}"
+            : start.ToString("dd.MM.yyyy");
+    }
+
+    public async Task<OnlineResultsSnapshot> GetOnlineResultsSnapshotAsync(Guid dayId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return OnlineResultsSnapshot.Empty;
+
+        var folder = FolderPath;
+        var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        var day = days.FirstOrDefault(d => d.Id == dayId);
+        if (day is null)
+            return OnlineResultsSnapshot.Empty;
+
+        // The day list for the frontend's day switcher (label = the day's date, blank when unset).
+        var onlineDays = days
+            .OrderBy(d => d.Number)
+            .Select(d => new OnlineDay(d.Number, d.Date is { } dt ? dt.ToString("dd.MM.yyyy") : string.Empty))
+            .ToList();
+
+        // Reuse the protocol data: it already computes one section per group with each member's result.
+        var data = await GetResultProtocolDataAsync(dayId, cancellationToken);
+
+        var groups = data.Groups
+            .Select(g => new OnlineGroup(g.Name, g.DistanceKm, g.ControlCount, g.Order))
+            .ToList();
+
+        var rows = new List<OnlineResultRow>();
+        foreach (var g in data.Groups)
+        {
+            foreach (var r in g.Rows)
+            {
+                var res = r.Result;
+                rows.Add(new OnlineResultRow(
+                    Bib: int.TryParse(r.Number?.Trim(), out var bib) ? bib : null,
+                    GroupName: g.Name,
+                    FullName: r.FullName,
+                    Team: r.Team,
+                    Club: r.ClubName,
+                    Region: r.RegionName,
+                    Birth: r.BirthDate is { } bd ? bd.ToString("dd.MM.yyyy") : string.Empty,
+                    Qual: r.Rank,
+                    Place: res.Place,
+                    ResultTime: res.ResultTime,
+                    StartTime: res.ActualStart?.TimeOfDay,
+                    FinishTime: res.FinishTime?.TimeOfDay,
+                    Score: res.Score,
+                    Points: res.Points,
+                    Status: res.Status,
+                    HasReadout: res.HasReadout,
+                    OutOfCompetition: res.OutOfCompetition));
+            }
+        }
+
+        return new OnlineResultsSnapshot(onlineDays, day.Number, groups, rows);
     }
 
     public Task<IReadOnlyList<ChipPriceOverride>> GetChipPriceOverridesAsync(CancellationToken cancellationToken = default)
@@ -3714,11 +4001,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Result: result ?? ParticipantDayResult.Empty);
     }
 
-    private GroupDayRow ToRow(GroupDaySettings s, string name) => new(
+    private GroupDayRow ToRow(GroupDaySettings s, Group group, int participantCount = 0) => new(
         SettingsId: s.Id,
         GroupId: s.GroupId,
         Order: s.Order,
-        Name: name,
+        Name: group.Name,
         CourseOrder: s.CourseOrder,
         DistanceKm: s.DistanceKm,
         DisciplineOverride: s.DisciplineOverride,
@@ -3730,5 +4017,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         CourseSetterCategory: s.CourseSetterCategory,
         PointsRuleId: s.PointsRuleId,
         RankLevel: s.RankLevel,
-        MasterCount: s.MasterCount);
+        MasterCount: s.MasterCount,
+        // Age window lives on the group itself (shared across days), so it comes from the group, not the
+        // per-day settings.
+        MinBirthYear: group.MinBirthYear,
+        MaxBirthYear: group.MaxBirthYear,
+        ParticipantCount: participantCount);
 }
