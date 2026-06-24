@@ -234,6 +234,18 @@ public interface IEventStore
         IReadOnlyList<(Guid LinkId, TimeSpan StartTime)> assignments,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Sets the start number (<see cref="Entities.Participant.Number"/>, competition-level) on many
+    /// participants at once, in a single transaction (used by bulk number assignment). Each tuple is
+    /// (participantId, number text); a missing participant is skipped. One
+    /// <see cref="DbContext.SaveChangesAsync"/> commits the whole assignment so nothing is lost to
+    /// overlapping per-row autosaves. Returns how many participants were updated.
+    /// </summary>
+    Task<int> SetParticipantNumbersBatchAsync(
+        string eventFolderPath,
+        IReadOnlyList<(Guid ParticipantId, string Number)> assignments,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Removes a participant-day link by id (detaches a participant from a day). Does nothing if it is missing.</summary>
     Task DeleteParticipantDayAsync(string eventFolderPath, Guid linkId, CancellationToken cancellationToken = default);
 

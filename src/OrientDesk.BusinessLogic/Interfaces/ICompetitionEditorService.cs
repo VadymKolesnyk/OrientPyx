@@ -352,6 +352,15 @@ public interface ICompetitionEditorService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Sets the start number (competition-level) on many participants at once, in a single transaction.
+    /// Used by bulk number assignment so the whole batch persists together instead of through overlapping
+    /// per-row autosaves. Each tuple is (participantId, number text). Returns how many were updated.
+    /// </summary>
+    Task<int> SetParticipantNumbersBatchAsync(
+        IReadOnlyList<(Guid ParticipantId, string Number)> assignments,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Sets a participant's start time on a specific day (roster edit). A no-op when the participant is
     /// not a member that day. No uniqueness rule, so it is stored directly. A null time clears it.
     /// </summary>

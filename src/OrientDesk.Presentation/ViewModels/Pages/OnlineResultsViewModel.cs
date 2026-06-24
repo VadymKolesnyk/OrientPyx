@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using OrientDesk.BusinessLogic.Entities;
 using OrientDesk.BusinessLogic.Interfaces;
 using OrientDesk.BusinessLogic.Models;
 using OrientDesk.Localization;
@@ -24,6 +25,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
     private readonly ICompetitionEditorService _editor;
     private readonly ISessionService _session;
     private readonly IAppSettingsService _appSettings;
+    private readonly IAppStore _appStore;
     private readonly IResultPublisher _publisher;
     private readonly IBackgroundActivityService _activities;
     private readonly IBusyService _busy;
@@ -44,6 +46,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         ICompetitionEditorService editor,
         ISessionService session,
         IAppSettingsService appSettings,
+        IAppStore appStore,
         IResultPublisher publisher,
         IBackgroundActivityService activities,
         IBusyService busy,
@@ -53,6 +56,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         _editor = editor;
         _session = session;
         _appSettings = appSettings;
+        _appStore = appStore;
         _publisher = publisher;
         _activities = activities;
         _busy = busy;
@@ -94,6 +98,26 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
     [ObservableProperty]
     private bool _settingsSaved;
 
+    // --- «Очки» rule status (shown next to the "show points column" checkbox) ----------------------
+
+    /// <summary>True when at least one points rule applies to the active day (a competition default or a
+    /// per-group override). When false, the published «Очки» column will be empty — surfaced as a warning.</summary>
+    [ObservableProperty]
+    private bool _hasPointsRule;
+
+    /// <summary>The warning shown when NO rule applies — «жодній групі не призначено правило…».</summary>
+    [ObservableProperty]
+    private string _pointsWarning = string.Empty;
+
+    /// <summary>When a rule DOES apply: a line naming the effective default rule and its formula/table.</summary>
+    [ObservableProperty]
+    private string _pointsFormulaInfo = string.Empty;
+
+    /// <summary>When some groups deviate from the default (own rule or explicit "no points"): a line listing
+    /// those exception groups. Empty when every group uses the default.</summary>
+    [ObservableProperty]
+    private string _pointsExceptionsInfo = string.Empty;
+
     // --- Connection state (read-only here; edited in Settings) -------------------------------------
 
     /// <summary>True when the app-level Supabase URL + service-role key are configured.</summary>
@@ -121,17 +145,27 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
     /// <summary>The publish log, newest at the bottom.</summary>
     public ObservableCollection<string> LogLines { get; } = [];
 
+    /// <summary>The whole log as one block of text, so the View can show it in a single selectable/copyable
+    /// control (drag-select across lines). Refreshed whenever <see cref="LogLines"/> changes.</summary>
+    public string LogText => string.Join(Environment.NewLine, LogLines);
+
     /// <summary>Reloads the connection state, the per-competition options and the spectator links.</summary>
     public async Task LoadAsync()
     {
         if (_session.CurrentEvent is null)
             return;
 
-        var (api, publish) = await _busy.RunAsync(async () =>
+        var (api, publish, rules, info, groups) = await _busy.RunAsync(async () =>
         {
             var a = await _appSettings.GetOnlineApiSettingsAsync();
             var p = await _editor.GetOnlinePublishSettingsAsync();
-            return (a, p);
+            var r = await _appStore.GetPointsRulesAsync();
+            var i = await _editor.GetInfoAsync();
+            // The published day is the active session day; describe its groups (null when no day).
+            var g = _session.CurrentDay is null
+                ? (IReadOnlyList<GroupDayRow>)[]
+                : await _editor.GetGroupDayRowsAsync();
+            return (a, p, r, i, g);
         });
 
         _api = api;
@@ -147,8 +181,75 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
             Points = publish.Points;
         }
 
+        UpdatePointsRuleStatus(rules, info?.DefaultPointsRuleId, groups);
         RebuildLinks();
     }
+
+    // Describes the «Очки» situation for the active day, for the info/warning beside the "show points
+    // column" checkbox. The effective rule per group is its own PointsRuleId override, else the competition
+    // default; Guid.Empty means an explicit "no points". When NOTHING applies we warn the column will be
+    // empty; otherwise we name the default rule + its formula/table and list any deviating (exception) groups.
+    private void UpdatePointsRuleStatus(
+        IReadOnlyList<PointsRule> rules, Guid? defaultRuleId, IReadOnlyList<GroupDayRow> groups)
+    {
+        PointsWarning = string.Empty;
+        PointsFormulaInfo = string.Empty;
+        PointsExceptionsInfo = string.Empty;
+
+        var byId = rules.ToDictionary(r => r.Id);
+        PointsRule? Effective(Guid? id) =>
+            id is { } gid && gid != Guid.Empty && byId.TryGetValue(gid, out var rule) ? rule : null;
+
+        var defaultRule = Effective(defaultRuleId);
+
+        // A group earns points when its effective rule (override, else default) resolves to a real rule.
+        bool GroupScores(GroupDayRow g) =>
+            g.PointsRuleId is { } over
+                ? over != Guid.Empty && byId.ContainsKey(over)
+                : defaultRule is not null;
+
+        HasPointsRule = defaultRule is not null || groups.Any(GroupScores);
+
+        if (!HasPointsRule)
+        {
+            PointsWarning = Localization.Get("OnlineResults.Points.Warning");
+            return;
+        }
+
+        // The headline formula/table line. When there's a default, it names that; when only some groups
+        // have a rule (no default), it says points come from per-group rules instead.
+        PointsFormulaInfo = defaultRule is not null
+            ? string.Format(Localization.Get("OnlineResults.Points.Formula"),
+                defaultRule.Name, DescribeRule(defaultRule))
+            : Localization.Get("OnlineResults.Points.PerGroupOnly");
+
+        // Exception groups: those whose effective rule differs from the default (an explicit other rule,
+        // or an explicit "no points"). Only meaningful when a default exists.
+        if (defaultRule is not null)
+        {
+            var exceptions = new List<string>();
+            foreach (var g in groups)
+            {
+                if (g.PointsRuleId is not { } over)
+                    continue; // inherits the default — not an exception
+                var label = over == Guid.Empty
+                    ? Localization.Get("OnlineResults.Points.NoPoints")
+                    : byId.TryGetValue(over, out var rule) ? rule.Name : Localization.Get("OnlineResults.Points.NoPoints");
+                exceptions.Add($"{g.Name} — {label}");
+            }
+
+            if (exceptions.Count > 0)
+                PointsExceptionsInfo = string.Format(
+                    Localization.Get("OnlineResults.Points.Exceptions"),
+                    string.Join("; ", exceptions));
+        }
+    }
+
+    // A short human description of how a rule scores: the formula text, or "таблиця місць" for a table.
+    private string DescribeRule(PointsRule rule) =>
+        rule.Kind == PointsRuleKind.Formula && !string.IsNullOrWhiteSpace(rule.Formula)
+            ? rule.Formula!
+            : Localization.Get("OnlineResults.Points.TableKind");
 
     // Builds the shareable spectator links in the frontend's hash form: {base}/#/{slug}/d{n} per day,
     // plus a «Сума» link when standings are on. Empty when the base URL or slug isn't set.
@@ -211,6 +312,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
 
         IsPublishing = true;
         IsPaused = false;
+        _lastSkippedNoNumber = -1; // a fresh run should warn again about un-numbered participants
 
         // Persist the current options + that publishing is enabled, and reset the publisher's metadata cache.
         await SaveSettingsAsync();
@@ -294,8 +396,23 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         AppendLog(string.Format(
             Localization.Get("OnlineResults.Log.Tick"),
             day.Number, snapshot.Rows.Count, finished));
+
+        // Warn (once, until it changes) that some participants are left out because they have no start
+        // number — the frontend can't address an un-numbered runner, so they won't appear online.
+        if (snapshot.SkippedNoNumber != _lastSkippedNoNumber)
+        {
+            _lastSkippedNoNumber = snapshot.SkippedNoNumber;
+            if (snapshot.SkippedNoNumber > 0)
+                AppendLog(string.Format(
+                    Localization.Get("OnlineResults.Log.SkippedNoNumber"), snapshot.SkippedNoNumber));
+        }
+
         UpdateActivityStatus();
     }
+
+    // The last skipped-no-number count we warned about, so the warning is logged only when it changes
+    // (not on every tick). Reset when publishing (re)starts so a fresh run warns again.
+    private int _lastSkippedNoNumber = -1;
 
     // --- Top-bar background activity ---------------------------------------------------------------
 
@@ -362,5 +479,6 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         LogLines.Add(line);
         while (LogLines.Count > MaxLogLines)
             LogLines.RemoveAt(0);
+        OnPropertyChanged(nameof(LogText));
     }
 }

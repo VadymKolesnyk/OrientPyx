@@ -1469,6 +1469,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         CancellationToken cancellationToken = default)
         => _eventStore.SetParticipantDayChipsBatchAsync(FolderPath, assignments, cancellationToken);
 
+    public Task<int> SetParticipantNumbersBatchAsync(
+        IReadOnlyList<(Guid ParticipantId, string Number)> assignments,
+        CancellationToken cancellationToken = default)
+        => _eventStore.SetParticipantNumbersBatchAsync(FolderPath, assignments, cancellationToken);
+
     public async Task SetParticipantDayStartTimeAsync(Guid participantId, Guid dayId, TimeSpan? startTime, CancellationToken cancellationToken = default)
     {
         var folder = FolderPath;
@@ -3832,14 +3837,25 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             .Select(g => new OnlineGroup(g.Name, g.DistanceKm, g.ControlCount, g.Order))
             .ToList();
 
+        // The frontend keys results by (event, bib, day) with bib an integer, so a participant with no
+        // (positive integer) start number can't be addressed and is left out of the snapshot. Count them so
+        // the publish log can warn that some runners won't appear online until they're given a number.
         var rows = new List<OnlineResultRow>();
+        var skippedNoNumber = 0;
         foreach (var g in data.Groups)
         {
             foreach (var r in g.Rows)
             {
+                var trimmed = (r.Number ?? string.Empty).Trim();
+                if (!int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bib) || bib <= 0)
+                {
+                    skippedNoNumber++;
+                    continue;
+                }
+
                 var res = r.Result;
                 rows.Add(new OnlineResultRow(
-                    Bib: int.TryParse(r.Number?.Trim(), out var bib) ? bib : null,
+                    Bib: bib,
                     GroupName: g.Name,
                     FullName: r.FullName,
                     Team: r.Team,
@@ -3859,7 +3875,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             }
         }
 
-        return new OnlineResultsSnapshot(onlineDays, day.Number, groups, rows);
+        return new OnlineResultsSnapshot(onlineDays, day.Number, groups, rows, skippedNoNumber);
     }
 
     public Task<IReadOnlyList<ChipPriceOverride>> GetChipPriceOverridesAsync(CancellationToken cancellationToken = default)

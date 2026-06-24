@@ -52,6 +52,28 @@
 
                         <CheckBox Content="{Binding Localization[OnlineResults.Points]}"
                                   IsChecked="{Binding Points, Mode=TwoWay}" />
+
+                        <!-- «Очки» rule status: a warning when nothing is configured (column will be empty),
+                             otherwise the effective formula + any exception groups. Only shown while «Очки» is on. -->
+                        <StackPanel Spacing="6" Margin="26,0,0,0" IsVisible="{Binding Points}">
+                            <!-- Not configured → warning -->
+                            <StackPanel Orientation="Horizontal" Spacing="8"
+                                        IsVisible="{Binding !HasPointsRule}">
+                                <PathIcon Data="M12,2 L22,20 H2 Z M12,9 v5 M12,17 v0.5" Width="15" Height="15"
+                                          Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Top" />
+                                <TextBlock Text="{Binding PointsWarning}" Classes="muted"
+                                           TextWrapping="Wrap" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <!-- Configured → formula + exceptions -->
+                            <StackPanel Spacing="2" IsVisible="{Binding HasPointsRule}">
+                                <TextBlock Text="{Binding PointsFormulaInfo}" Classes="muted"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding PointsExceptionsInfo}" Classes="muted"
+                                           TextWrapping="Wrap"
+                                           IsVisible="{Binding PointsExceptionsInfo, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            </StackPanel>
+                        </StackPanel>
+
                         <CheckBox Content="{Binding Localization[OnlineResults.Standings]}"
                                   IsChecked="{Binding Standings, Mode=TwoWay}" />
 
@@ -100,8 +122,27 @@
                             <ItemsControl ItemsSource="{Binding Links}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <SelectableTextBlock Text="{Binding}" FontFamily="Consolas,monospace"
-                                                             Margin="0,1" />
+                                        <Grid ColumnDefinitions="*,Auto" Margin="0,1">
+                                            <!-- Whole-row clickable link: opens the URL in the browser.
+                                                 A big hit target so you needn't click exactly on the text. -->
+                                            <Button Grid.Column="0" Classes="ghost"
+                                                    HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Left"
+                                                    Cursor="Hand"
+                                                    Click="OnLinkClick"
+                                                    Tag="{Binding}"
+                                                    ToolTip.Tip="{Binding}">
+                                                <TextBlock Text="{Binding}" FontFamily="Consolas,monospace"
+                                                           Foreground="{DynamicResource AccentBrush}"
+                                                           TextDecorations="Underline" />
+                                            </Button>
+                                            <Button Grid.Column="1" Classes="ghost" Padding="8,4"
+                                                    Click="OnCopyLinkClick" Tag="{Binding}"
+                                                    ToolTip.Tip="{Binding $parent[ItemsControl].((pages:OnlineResultsViewModel)DataContext).Localization[OnlineResults.Copy]}">
+                                                <PathIcon Width="14" Height="14"
+                                                          Data="M9,2 h7 a1,1 0 0 1 1,1 v10 a1,1 0 0 1 -1,1 h-7 a1,1 0 0 1 -1,-1 v-10 a1,1 0 0 1 1,-1 z M5,6 v10 a1,1 0 0 0 1,1 h7" />
+                                            </Button>
+                                        </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
@@ -116,14 +157,9 @@
                         <Border Classes="card" Padding="10" MinHeight="160" MaxHeight="260"
                                 ClipToBounds="True">
                             <ScrollViewer>
-                                <ItemsControl ItemsSource="{Binding LogLines}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding}" FontFamily="Consolas,monospace"
-                                                       FontSize="12" Margin="0,1" />
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                <SelectableTextBlock Text="{Binding LogText}"
+                                                     FontFamily="Consolas,monospace" FontSize="12"
+                                                     TextWrapping="Wrap" />
                             </ScrollViewer>
                         </Border>
                     </StackPanel>

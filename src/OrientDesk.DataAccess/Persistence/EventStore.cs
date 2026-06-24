@@ -763,6 +763,38 @@ public sealed class EventStore : IEventStore
         return updated;
     }
 
+    public async Task<int> SetParticipantNumbersBatchAsync(
+        string eventFolderPath,
+        IReadOnlyList<(Guid ParticipantId, string Number)> assignments,
+        CancellationToken cancellationToken = default)
+    {
+        if (assignments.Count == 0)
+            return 0;
+
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        // Load only the touched participants (tracked), set each number in memory, then one SaveChanges
+        // commits the whole assignment in a single transaction — no overlapping per-row writes to drop.
+        var ids = assignments.Select(a => a.ParticipantId).Distinct().ToList();
+        var participants = await db.Participants
+            .Where(p => ids.Contains(p.Id))
+            .ToListAsync(cancellationToken);
+        var byId = participants.ToDictionary(p => p.Id);
+
+        var updated = 0;
+        foreach (var (participantId, number) in assignments)
+        {
+            if (!byId.TryGetValue(participantId, out var participant))
+                continue;
+            participant.Number = (number ?? string.Empty).Trim();
+            updated++;
+        }
+
+        if (updated > 0)
+            await db.SaveChangesAsync(cancellationToken);
+        return updated;
+    }
+
     public async Task DeleteParticipantDayAsync(string eventFolderPath, Guid linkId, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);

@@ -17,8 +17,12 @@ public sealed record OnlineResultsSnapshot(
     int PublishedDayNumber,
     /// <summary>The published day's groups (name, course metadata, display order).</summary>
     IReadOnlyList<OnlineGroup> Groups,
-    /// <summary>The published day's participant result rows.</summary>
-    IReadOnlyList<OnlineResultRow> Rows)
+    /// <summary>The published day's participant result rows. Only numbered participants are included — the
+    /// frontend keys results by an integer bib, so an un-numbered runner cannot be published.</summary>
+    IReadOnlyList<OnlineResultRow> Rows,
+    /// <summary>How many of the day's participants were left out because they have no start number — they
+    /// can't be addressed by the (event, bib, day) key. Surfaced as a warning in the publish log.</summary>
+    int SkippedNoNumber = 0)
 {
     /// <summary>An empty snapshot (no day selected / nothing to publish).</summary>
     public static readonly OnlineResultsSnapshot Empty = new([], 0, [], []);

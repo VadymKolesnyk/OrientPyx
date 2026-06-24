@@ -970,6 +970,13 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
         var assignments = new List<(string Name, int Number)>();
         var cleared = new List<(string Name, int Number)>();
+        // Every row whose number actually changed, in assignment order — the source of the one batch write.
+        // Keyed by participant id so a participant appearing on two visible rows (different days share the
+        // competition-level number) is written once with its final value.
+        var touched = new Dictionary<Guid, NumberRow>();
+        // Every touched row instance (with duplicates) so we can cancel each one's own debounce timer — a
+        // participant on two visible day rows has two distinct timer keys that must both be cancelled.
+        var touchedRows = new List<NumberRow>();
         var n = result.StartNumber;
 
         foreach (var row in visible)
@@ -988,6 +995,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 // The number is held by a *different* participant: free it from them before reusing it.
                 prev.SetNumber(string.Empty);
                 cleared.Add((prev.GetName(), n));
+                touched[prev.ParticipantId] = prev;
+                touchedRows.Add(prev);
                 holders.Remove(n);
             }
 
@@ -1001,8 +1010,38 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
             row.SetNumber(n.ToString(CultureInfo.InvariantCulture));
             holders[n] = row;
+            touched[row.ParticipantId] = row;
+            touchedRows.Add(row);
             assignments.Add((row.GetName(), n));
             n++;
+        }
+
+        // Persist the whole assignment in ONE transaction. Setting each row's Number above also queued the
+        // row's own debounced autosave; those overlapping per-row writes are exactly the race that dropped
+        // numbers, so cancel every touched row's pending timer and write the batch ourselves instead.
+        if (touched.Count > 0)
+        {
+            foreach (var row in touchedRows)
+            {
+                if (_saveTimers.TryGetValue(row.TimerKey, out var cts))
+                {
+                    cts.Cancel();
+                    _saveTimers.Remove(row.TimerKey);
+                }
+            }
+
+            var batch = touched.Values
+                .Select(r => (r.ParticipantId, Number: r.GetNumber()))
+                .ToList();
+            try
+            {
+                await Task.Run(() => _editor.SetParticipantNumbersBatchAsync(batch));
+            }
+            catch
+            {
+                // A failed batch leaves the in-memory rows showing the intended numbers; a reload reverts
+                // them. Don't crash the UI — the activity log below still records what was attempted.
+            }
         }
 
         LogNumberAssignment(assignments, cleared);
@@ -1013,6 +1052,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private sealed class NumberRow
     {
         public required object Source { get; init; }
+        public required Guid ParticipantId { get; init; }
+        // The key under which this row's debounced autosave is tracked in _saveTimers (the link id for a
+        // day row, the participant id for a roster row), so bulk assign can cancel it before its own batch.
+        public required Guid TimerKey { get; init; }
         public required Func<string> GetNumber { get; init; }
         public required Action<string> SetNumber { get; init; }
         public required Func<string> GetName { get; init; }
@@ -1029,6 +1072,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                     list.Add(new NumberRow
                     {
                         Source = r,
+                        ParticipantId = r.ParticipantId,
+                        TimerKey = r.ParticipantId,
                         GetNumber = () => r.Number ?? string.Empty,
                         SetNumber = v => r.Number = v,
                         GetName = () => r.FullName ?? string.Empty
@@ -1038,6 +1083,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                     list.Add(new NumberRow
                     {
                         Source = d,
+                        ParticipantId = d.ParticipantId,
+                        TimerKey = d.Id,
                         GetNumber = () => d.Number ?? string.Empty,
                         SetNumber = v => d.Number = v,
                         GetName = () => d.FullName ?? string.Empty

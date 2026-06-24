@@ -125,8 +125,11 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
                 continue;
 
             var status = MapStatus(r);
-            // The "points" column carries the rogaine score where present, else the ranking points («Бали»).
-            decimal? points = r.Score is { } sc ? sc : r.Points;
+            // The frontend's single "points" column is the ranking points («Очки») the group's points rule
+            // awards (PointsRuleEvaluator — time/score ratio vs the leader, or a placement table). Prefer it;
+            // only fall back to the raw rogaine score («Бали») when the group has no points rule, so a
+            // rogaine day with no rule still publishes a number rather than a blank.
+            decimal? points = r.Points ?? r.Score;
 
             rows.Add(new Dictionary<string, object?>
             {
