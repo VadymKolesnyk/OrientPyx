@@ -217,15 +217,21 @@ public sealed class SetCourseStrategy : DisciplineStrategyBase
             context.FinishTime, finishLeg, finishElapsed, PassageKind.Finish, finishKm, finishPace,
             DisplayLeg: finishDisplayLeg, DisplayLegKm: finishDisplayKm, DisplayPace: finishDisplayPace));
 
-        var prescribed = new List<ExpectedControl>(expected.Count);
+        var prescribed = new List<ExpectedControl>(expected.Count + context.DisabledControls.Count);
         for (var i = 0; i < expected.Count; i++)
             prescribed.Add(new ExpectedControl(i + 1, expected[i].Trim(), matched[i]));
+
+        // Disabled («проблемні») controls were removed from the prescribed course (so missing them isn't an
+        // MP), but still list them — flagged Ignored — so the operator sees the control was dropped for the day.
+        foreach (var disabled in context.DisabledControls)
+            prescribed.Add(new ExpectedControl(0, disabled.Trim(), Taken: false, Ignored: true));
 
         return new SplitsView
         {
             Layout = SplitsLayout.Ordered,
             Passage = passage,
             Expected = prescribed,
+            DisabledControls = context.DisabledControls,
             VisitedCount = taken,
             ExpectedCount = expected.Count
         };

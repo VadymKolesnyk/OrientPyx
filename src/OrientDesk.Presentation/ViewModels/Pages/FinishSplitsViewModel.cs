@@ -242,18 +242,24 @@ public sealed class ExpectedControlViewModel
         _localization = localization;
     }
 
-    public string SequenceText => _control.Sequence.ToString();
+    // A disabled («проблемний») control carries no course sequence (it was dropped from the required course).
+    public string SequenceText => _control.Ignored ? string.Empty : _control.Sequence.ToString();
     public string Code => _control.Code;
-    public bool Taken => _control.Taken;
 
-    /// <summary>Status glyph: ✓ taken / — missing.</summary>
-    public string Glyph => _control.Taken ? "✓" : "—";
+    /// <summary>Dim a disabled or un-taken control; a taken one stays full opacity. (The view binds Taken
+    /// through a bool→opacity converter, so a disabled control reads as "not taken" = dimmed.)</summary>
+    public bool Taken => _control.Taken && !_control.Ignored;
+
+    /// <summary>Status glyph: a disabled control shows ∅; otherwise ✓ taken / — missing.</summary>
+    public string Glyph => _control.Ignored ? "∅" : _control.Taken ? "✓" : "—";
 
     /// <summary>Point value of this control (rogaine), e.g. "+5"; blank when it carries no points.</summary>
     public string PointsText => _control.Points is { } p && p != 0 ? $"+{p}" : string.Empty;
 
-    /// <summary>"missing" label for an un-taken control; blank otherwise.</summary>
-    public string Note => _control.Taken ? string.Empty : _localization.Get("FinishRead.Splits.Missing");
+    /// <summary>"disabled" label for a problem control, "missing" for an un-taken one; blank otherwise.</summary>
+    public string Note => _control.Ignored
+        ? _localization.Get("FinishRead.Problematic.Disabled")
+        : _control.Taken ? string.Empty : _localization.Get("FinishRead.Splits.Missing");
 
     /// <summary>Team marker: ★ when this control counts toward the rogaine team result (every member
     /// punched it); blank otherwise. Only ever set in a team context.</summary>

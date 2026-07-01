@@ -160,6 +160,28 @@ public sealed class SheetColumnBuilder
         return Add(column);
     }
 
+    // ── CheckBox (bool) ───────────────────────────────────────────────────────────────────────────
+    /// <summary>
+    /// A boolean column rendered as a centred <see cref="CheckBox"/> two-way bound to <paramref name="path"/>
+    /// on the row. Sorts and filters on the same bool. Use for opt-in flags edited inline (e.g. a КП's
+    /// "проблемний" toggle).
+    /// </summary>
+    public SheetColumnBuilder Check(
+        string headerKey,
+        string path,
+        double? width = 90,
+        double minWidth = 70)
+    {
+        var column = NewColumn(headerKey, width, minWidth, path);
+        column.CellBuilder = () => new CheckBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            [!ToggleButton.IsCheckedProperty] = new Binding(path) { Mode = BindingMode.TwoWay }
+        };
+        return Add(column);
+    }
+
     // ── Trailing delete action ────────────────────────────────────────────────────────────────────
     /// <summary>
     /// The trailing single-icon delete column. Clicking invokes <paramref name="onDelete"/> with the

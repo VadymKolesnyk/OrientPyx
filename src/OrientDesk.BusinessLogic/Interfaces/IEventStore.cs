@@ -52,6 +52,15 @@ public interface IEventStore
     /// <summary>Removes a control point by id. Does nothing if it is missing.</summary>
     Task DeleteControlPointAsync(string eventFolderPath, Guid pointId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Sets the disabled («проблемний КП») flag across a day's control points: every point whose id is in
+    /// <paramref name="disabledPointIds"/> is flagged disabled, the rest cleared, in one transaction.
+    /// Returns the number of points whose flag actually changed.
+    /// </summary>
+    Task<int> SetControlPointsDisabledAsync(
+        string eventFolderPath, Guid dayId, IReadOnlyCollection<Guid> disabledPointIds,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Returns the competition's groups, ordered by name.</summary>
     Task<IReadOnlyList<Group>> GetGroupsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
@@ -336,4 +345,10 @@ public interface IEventStore
 
     /// <summary>Stores (inserts/updates) the competition-level online-publish settings JSON.</summary>
     Task SaveOnlinePublishJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the competition-level results-monitor settings JSON, or null when none is stored.</summary>
+    Task<string?> GetMonitorJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>Stores (inserts/updates) the competition-level results-monitor settings JSON.</summary>
+    Task SaveMonitorJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default);
 }

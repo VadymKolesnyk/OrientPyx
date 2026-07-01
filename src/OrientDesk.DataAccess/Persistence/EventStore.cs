@@ -169,6 +169,7 @@ public sealed class EventStore : IEventStore
         existing.Longitude = point.Longitude;
         existing.Type = point.Type;
         existing.Points = point.Points;
+        existing.IsDisabled = point.IsDisabled;
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -182,6 +183,32 @@ public sealed class EventStore : IEventStore
 
         db.ControlPoints.Remove(existing);
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<int> SetControlPointsDisabledAsync(
+        string eventFolderPath, Guid dayId, IReadOnlyCollection<Guid> disabledPointIds,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var disabled = disabledPointIds as ISet<Guid> ?? disabledPointIds.ToHashSet();
+        var points = await db.ControlPoints
+            .Where(cp => cp.EventDayId == dayId)
+            .ToListAsync(cancellationToken);
+
+        var changed = 0;
+        foreach (var cp in points)
+        {
+            var shouldDisable = disabled.Contains(cp.Id);
+            if (cp.IsDisabled == shouldDisable)
+                continue;
+            cp.IsDisabled = shouldDisable;
+            changed++;
+        }
+
+        if (changed > 0)
+            await db.SaveChangesAsync(cancellationToken);
+        return changed;
     }
 
     public async Task<IReadOnlyList<Group>> GetGroupsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
@@ -1082,6 +1109,34 @@ public sealed class EventStore : IEventStore
             {
                 row = new OnlinePublishSettingsRow { Id = 1, Json = json };
                 db.OnlinePublishSettings.Add(row);
+            }
+            else
+            {
+                row.Json = json;
+            }
+            await db.SaveChangesAsync(cancellationToken);
+        });
+    }
+
+    public async Task<string?> GetMonitorJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var row = await db.MonitorSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(cancellationToken);
+        return row?.Json;
+    }
+
+    public async Task SaveMonitorJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default)
+    {
+        // Single competition-level row (Id = 1); same read-then-insert-or-update retry as the protocol templates.
+        await UpsertWithUniqueRetryAsync(eventFolderPath, async db =>
+        {
+            var row = await db.MonitorSettings.FirstOrDefaultAsync(cancellationToken);
+            if (row is null)
+            {
+                row = new MonitorSettingsRow { Id = 1, Json = json };
+                db.MonitorSettings.Add(row);
             }
             else
             {

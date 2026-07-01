@@ -109,4 +109,23 @@ public interface IDialogService : INotifyPropertyChanged
     /// is shown at a time.
     /// </summary>
     Task<FinishReadoutEdit?> ShowFinishReadoutEditAsync(FinishReadoutEditViewModel dialog);
+
+    /// <summary>
+    /// Shows the «проблемні КП» modal (tick the day's broken controls) and awaits the user's choice.
+    /// Returns the ids of the controls to disable on save, or null when cancelled/closed. Only one dialog
+    /// is shown at a time.
+    /// </summary>
+    Task<IReadOnlyList<Guid>?> ShowProblematicControlsAsync(ProblematicControlsViewModel dialog);
+
+    /// <summary>
+    /// Shows the read-only course-pattern help modal (how to write the «mixed» order pattern) and awaits
+    /// its close. Only one dialog is shown at a time.
+    /// </summary>
+    Task ShowCoursePatternHelpAsync(CoursePatternHelpViewModel dialog);
+
+    /// <summary>
+    /// Shows the read-only per-screen help modal («що це / для чого / як користуватися») and awaits its
+    /// close. Opened from the «?» button in each page header. Only one dialog is shown at a time.
+    /// </summary>
+    Task ShowScreenHelpAsync(ScreenHelpViewModel dialog);
 }

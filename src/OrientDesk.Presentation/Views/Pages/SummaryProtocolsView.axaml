@@ -17,9 +17,13 @@
                            FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
                 <TextBlock Text="{Binding Text}" Classes="subtitle" />
             </StackPanel>
-            <Button Grid.Column="1" Classes="accent" VerticalAlignment="Center"
-                    Click="OnGenerateClick"
-                    Content="{Binding Localization[SummaryProtocol.Generate]}" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button Classes="help" Command="{Binding ShowHelpCommand}"
+                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                <Button Classes="accent"
+                        Click="OnGenerateClick"
+                        Content="{Binding Localization[SummaryProtocol.Generate]}" />
+            </StackPanel>
         </Grid>
 
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">

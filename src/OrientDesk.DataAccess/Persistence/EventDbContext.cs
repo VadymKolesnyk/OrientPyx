@@ -33,6 +33,7 @@ public class EventDbContext : DbContext
     public DbSet<StartProtocolSettingsRow> StartProtocolSettings => Set<StartProtocolSettingsRow>();
     public DbSet<SummaryProtocolSettingsRow> SummaryProtocolSettings => Set<SummaryProtocolSettingsRow>();
     public DbSet<OnlinePublishSettingsRow> OnlinePublishSettings => Set<OnlinePublishSettingsRow>();
+    public DbSet<MonitorSettingsRow> MonitorSettings => Set<MonitorSettingsRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

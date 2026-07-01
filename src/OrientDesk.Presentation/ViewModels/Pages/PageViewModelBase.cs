@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using OrientDesk.Localization;
 
 namespace OrientDesk.Presentation.ViewModels.Pages;
@@ -13,6 +14,7 @@ public abstract class PageViewModelBase : ViewModelBase
     {
         Localization = localization;
         Localization.PropertyChanged += OnLocalizationChanged;
+        ShowHelpCommand = new RelayCommand(() => HelpRequested?.Invoke(this, EventArgs.Empty));
     }
 
     /// <summary>Exposed so Views can also bind literal keys: {Binding Localization[App.Title]}.</summary>
@@ -37,6 +39,26 @@ public abstract class PageViewModelBase : ViewModelBase
     public string NavLabel => Localization.Get(NavKey);
     public string Title => Localization.Get(TitleKey);
     public string Text => Localization.Get(TextKey);
+
+    /// <summary>
+    /// Localization key prefix for this screen's «?» help modal. The dialog resolves
+    /// <c>{prefix}.Title/.What/.Why/.How</c>. Defaults to a prefix derived from the page's class
+    /// name (<c>Help.{Name-without-ViewModel}</c>); a page may override it if its class name and
+    /// help keys differ.
+    /// </summary>
+    public virtual string HelpKeyPrefix =>
+        $"Help.{GetType().Name.Replace("ViewModel", string.Empty)}";
+
+    /// <summary>
+    /// Raised when the user clicks the page's «?» button. Handled by the root
+    /// <see cref="MainWindowViewModel"/> (which owns the dialog service) to open the help modal —
+    /// same event-based wiring as <see cref="FocusGridRequested"/>, so the base needs no dialog
+    /// dependency of its own.
+    /// </summary>
+    public event EventHandler? HelpRequested;
+
+    /// <summary>Opens this screen's help modal (see <see cref="HelpRequested"/>).</summary>
+    public System.Windows.Input.ICommand ShowHelpCommand { get; }
 
     /// <summary>
     /// Raised when the page wants keyboard focus moved back onto its main grid. Showing a modal

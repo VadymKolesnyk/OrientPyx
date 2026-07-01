@@ -112,6 +112,29 @@
             <Setter Property="Background" Value="{DynamicResource SurfaceSubtle}" />
             <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
         </Style>
+        <!-- Round "?" help button shown in every page header (opens the per-screen help modal). Small,
+             circular, subtle by default; tints to the accent surface on hover. Content is set to "?"
+             by the pages so no per-View markup beyond Classes="help" is needed. -->
+        <Style Selector="Button.help">
+            <Setter Property="Width" Value="30" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CornerRadius" Value="15" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceSubtle}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Content" Value="?" />
+        </Style>
+        <Style Selector="Button.help:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AccentSurface}" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+        </Style>
+
         <!-- Flyout/dropdown menu row: transparent, full-width, left-aligned content with a hover tint.
              Used by the grouped action menus (e.g. the Participants «Імпорт» / «Дії» dropdowns). -->
         <Style Selector="Button.menu">

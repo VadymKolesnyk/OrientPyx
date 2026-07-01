@@ -32,18 +32,22 @@
                            FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
                 <TextBlock Text="{Binding Localization[Page.Draw.Text]}" Classes="subtitle" />
             </StackPanel>
-            <controls:SearchableComboBox Grid.Column="1"
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button Classes="help" Command="{Binding ShowHelpCommand}"
+                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                <controls:SearchableComboBox
                       IsVisible="{Binding ShowDaySelector}"
                       MinWidth="140" VerticalAlignment="Center"
                       SearchWatermark="{Binding Localization[Common.Search]}"
                       ItemsSource="{Binding DayOptions}"
                       SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
-                <ComboBox.ItemTemplate>
-                    <DataTemplate x:DataType="pages:DayOption">
-                        <TextBlock Text="{Binding Label}" />
-                    </DataTemplate>
-                </ComboBox.ItemTemplate>
-            </controls:SearchableComboBox>
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="pages:DayOption">
+                            <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </controls:SearchableComboBox>
+            </StackPanel>
         </Grid>
 
         <!-- Draw parameters + start-group toolbar are docked ABOVE the scroll area so the stepper / auto-group

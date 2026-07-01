@@ -76,6 +76,9 @@
         <DataTemplate DataType="pages:OnlineResultsViewModel">
             <views:OnlineResultsView />
         </DataTemplate>
+        <DataTemplate DataType="pages:MonitorResultsViewModel">
+            <views:MonitorResultsView />
+        </DataTemplate>
         <DataTemplate DataType="pages:PageViewModelBase">
             <views:PageView />
         </DataTemplate>

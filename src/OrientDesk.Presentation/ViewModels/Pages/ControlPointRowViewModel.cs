@@ -43,6 +43,14 @@ public sealed partial class ControlPointRowViewModel : ObservableObject
     [ObservableProperty]
     private string _pointsText;
 
+    /// <summary>
+    /// «Проблемний КП»: when checked, the control is dropped from the required/allowed course so a runner
+    /// who missed it is not penalised and a scored control no longer counts (the same flag the read-out
+    /// page's «Проблемні КП» modal sets). Edited inline via the grid's checkbox column.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isDisabled;
+
     public ControlPointRowViewModel(
         ControlPoint point,
         ILocalizationService localization,
@@ -67,6 +75,7 @@ public sealed partial class ControlPointRowViewModel : ObservableObject
         _longitudeText = FormatCoord(point.Longitude);
         _pointsText = FormatPoints(point.Points);
         _selectedType = TypeOptions.First(o => o.Value == point.Type);
+        _isDisabled = point.IsDisabled;
 
         _initialized = true;
     }
@@ -109,6 +118,7 @@ public sealed partial class ControlPointRowViewModel : ObservableObject
         MapScale = _mapScale,
         Type = SelectedType.Value,
         Points = ParsePoints(PointsText),
+        IsDisabled = IsDisabled,
         CreatedAt = _createdAt
     };
 
@@ -117,6 +127,7 @@ public sealed partial class ControlPointRowViewModel : ObservableObject
     partial void OnLongitudeTextChanged(string value) => QueueSave();
     partial void OnPointsTextChanged(string value) => QueueSave();
     partial void OnSelectedTypeChanged(ControlPointTypeOption value) => QueueSave();
+    partial void OnIsDisabledChanged(bool value) => QueueSave();
 
     private void QueueSave()
     {

@@ -18,6 +18,8 @@
                 <TextBlock Text="{Binding Text}" Classes="subtitle" />
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <Button Classes="help" Command="{Binding ShowHelpCommand}"
+                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
                 <controls:SearchableComboBox IsVisible="{Binding ShowDaySelector}"
                           MinWidth="140" VerticalAlignment="Center"
                           SearchWatermark="{Binding Localization[Common.Search]}"

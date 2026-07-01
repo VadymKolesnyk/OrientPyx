@@ -64,6 +64,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<SummaryProtocolsViewModel>();
         services.AddSingleton<StartProtocolsViewModel>();
         services.AddSingleton<OnlineResultsViewModel>();
+        services.AddSingleton<MonitorResultsViewModel>();
         services.AddSingleton<SplitsExportViewModel>();
         services.AddSingleton<DrawViewModel>();
         services.AddSingleton<ClassicDrawViewModel>();

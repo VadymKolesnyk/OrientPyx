@@ -151,6 +151,9 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                     b.Property<Guid>("EventDayId")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsDisabled")
+                        .HasColumnType("INTEGER");
+
                     b.Property<double?>("Latitude")
                         .HasColumnType("REAL");
 
@@ -393,6 +396,21 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                     b.HasKey("Id");
 
                     b.ToTable("GroupDaySettings");
+                });
+
+            modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.MonitorSettingsRow", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Json")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("MonitorSettings");
                 });
 
             modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.OnlinePublishSettingsRow", b =>

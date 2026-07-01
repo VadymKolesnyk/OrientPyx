@@ -353,6 +353,17 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     public Task DeleteControlPointAsync(Guid pointId, CancellationToken cancellationToken = default)
         => _eventStore.DeleteControlPointAsync(FolderPath, pointId, cancellationToken);
 
+    public Task<int> SetProblematicControlsAsync(
+        IReadOnlyCollection<Guid> disabledPointIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(disabledPointIds);
+        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+            return Task.FromResult(0);
+
+        return _eventStore.SetControlPointsDisabledAsync(
+            FolderPath, CurrentDayId, disabledPointIds, cancellationToken);
+    }
+
     public async Task<ControlPointImportResult> ImportControlPointsAsync(
         IofCourseData data,
         bool replaceAll,
@@ -1599,12 +1610,16 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var dusshName = dusshes.ToDictionary(d => d.Id, d => d.Name);
         var settingsByGroup = settings.ToDictionary(s => s.GroupId);
 
-        // Start/finish codes, so a group's control count counts only the running controls in its course.
+        // Start/finish codes, so a group's control count counts only the running controls in its course. The
+        // day's disabled («проблемні») controls are folded in too, so the printed count matches what was
+        // actually required after the broken КП were dropped.
         var startFinishCodes = new HashSet<string>(
             controlPoints
                 .Where(c => c.Type is ControlPointType.Start or ControlPointType.Finish)
                 .Select(c => c.Code.Trim()),
             StringComparer.OrdinalIgnoreCase);
+        var countExcluded = new HashSet<string>(startFinishCodes, StringComparer.OrdinalIgnoreCase);
+        countExcluded.UnionWith(DisabledCodesOf(controlPoints));
 
         var rankCalcs = new Dictionary<Guid, GroupRankCalculation>();
         var results = await ComputeDayResultsAsync(folder, day, cancellationToken, rankCalcs);
@@ -1640,9 +1655,17 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 continue;
 
             var discipline = s.DisciplineOverride ?? day.DefaultDiscipline;
-            var isTeam = _strategies.For(discipline).Type == DisciplineType.Rogaine;
+            var strategy = _strategies.For(discipline);
+            var isTeam = strategy.Type == DisciplineType.Rogaine;
 
-            var controlCount = CountCourseControls(s.CourseOrder, startFinishCodes);
+            // Control count: blank order ⇒ unknown (null). For the «mixed» pattern the count is what the
+            // pattern requires (via the strategy), not a flat token count; other disciplines count the
+            // running controls minus the day's start/finish codes.
+            var controlCount = string.IsNullOrWhiteSpace(s.CourseOrder)
+                ? (int?)null
+                : discipline == DisciplineType.Mixed
+                    ? strategy.ControlCount(s.CourseOrder)
+                    : CountCourseControls(s.CourseOrder, countExcluded);
             var rows = rowsByGroup.TryGetValue(s.GroupId, out var b) ? b : [];
             // Course-setter: the group's per-day override wins; else fall back to the competition default.
             var (setter, setterCat) = ResolveCourseSetter(s, info);
@@ -1987,7 +2010,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     teamCommon = team.Length == 0
                         ? null
                         : ComputeTeamCommonControls(
-                            links, gid, team, teamByParticipant, settingsByGroup, latestByChip, inputs.StartFinishCodes);
+                            links, gid, team, teamByParticipant, settingsByGroup, latestByChip,
+                            inputs.StartFinishCodes, inputs.DisabledCodes);
                     teamCommonCache[cacheKey] = teamCommon;
                 }
             }
@@ -2006,6 +2030,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // One section per group that runs on the day, in the day grid order. The layout is the discipline's:
         // a set course shows the ordered table; rogaine (scored) shows the per-runner passage.
         var startFinishCodes = inputs.StartFinishCodes;
+        var disabledCodes = inputs.DisabledCodes;
         var sections = new List<SplitExportDataGroup>(settings.Count);
         foreach (var setting in settings.OrderBy(s => s.Order))
         {
@@ -2019,13 +2044,13 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             var isScored = strategy.UsesControlPointPoints;
             var layout = isScored ? SplitsLayout.Scored : SplitsLayout.Ordered;
 
-            var controls = SplitCodes(setting.CourseOrder)
-                .Where(c => !startFinishCodes.Contains(c))
-                .ToList();
+            // Disabled («проблемні») controls are dropped from the export's column header / count too, so the
+            // table matches what was actually required and scored.
+            var controls = CourseControls(setting.CourseOrder, startFinishCodes, disabledCodes);
 
             sections.Add(new SplitExportDataGroup(
                 name, setting.Order, layout, setting.DistanceKm,
-                CountCourseControls(setting.CourseOrder, startFinishCodes), isScored, controls, rows));
+                controls.Count, isScored, controls, rows));
         }
 
         return new SplitExportData(sections);
@@ -2034,6 +2059,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     /// <summary>Per-day geometry/points/codes shared across every member's splits build.</summary>
     private readonly record struct DaySplitInputs(
         HashSet<string> StartFinishCodes,
+        HashSet<string> DisabledCodes,
         Dictionary<string, int> PointsByCode,
         Dictionary<string, GeoPoint> CoordsByCode,
         Dictionary<string, MapPoint> MapByCode,
@@ -2051,6 +2077,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 .Where(c => c.Type is ControlPointType.Start or ControlPointType.Finish)
                 .Select(c => c.Code.Trim()),
             StringComparer.OrdinalIgnoreCase);
+        var disabledCodes = DisabledCodesOf(controlPoints);
 
         var pointsByCode = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var coordsByCode = new Dictionary<string, GeoPoint>(StringComparer.OrdinalIgnoreCase);
@@ -2069,7 +2096,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var finishCp = controlPoints.FirstOrDefault(c => c.Type is ControlPointType.Finish);
 
         return new DaySplitInputs(
-            startFinishCodes, pointsByCode, coordsByCode, mapByCode, mapScale,
+            startFinishCodes, disabledCodes, pointsByCode, coordsByCode, mapByCode, mapScale,
             StartCoord: startCp is null ? default : new GeoPoint(startCp.Latitude, startCp.Longitude),
             FinishCoord: finishCp is null ? default : new GeoPoint(finishCp.Latitude, finishCp.Longitude),
             StartMap: startCp is null ? default : new MapPoint(startCp.MapX, startCp.MapY),
@@ -2082,7 +2109,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         DaySplitInputs inputs, GroupDaySettings? gs, DisciplineType discipline,
         ParticipantDay link, FinishReadout readout, IReadOnlySet<string>? teamCommon)
     {
-        var expected = SplitCodes(gs?.CourseOrder).Where(c => !inputs.StartFinishCodes.Contains(c)).ToList();
+        var expected = CourseControls(gs?.CourseOrder, inputs.StartFinishCodes, inputs.DisabledCodes);
+        var disabledInCourse = DisabledInCourse(gs?.CourseOrder, inputs.StartFinishCodes, inputs.DisabledCodes);
         var punches = DecodePunchTimes(readout.PunchTimes)
             .Where(p => !inputs.StartFinishCodes.Contains(p.ControlCode.Trim()))
             .ToList();
@@ -2091,6 +2119,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var context = new SplitsContext
         {
             ExpectedControls = expected,
+            CourseOrderText = gs?.CourseOrder ?? string.Empty,
+            DisabledControls = disabledInCourse,
             Punches = punches,
             PointsByCode = inputs.PointsByCode,
             CoordsByCode = inputs.CoordsByCode,
@@ -2117,7 +2147,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         IReadOnlyDictionary<Guid, string> teamByParticipant,
         IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup,
         IReadOnlyDictionary<string, FinishReadout> latestByChip,
-        HashSet<string> startFinishCodes)
+        HashSet<string> startFinishCodes, HashSet<string> disabledCodes)
     {
         var mates = links.Where(l =>
             l.GroupId == groupId &&
@@ -2128,7 +2158,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         {
             GroupDaySettings? gs = mate.GroupId is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
             var allowed = new HashSet<string>(
-                SplitCodes(gs?.CourseOrder).Where(c => !startFinishCodes.Contains(c)),
+                CourseControls(gs?.CourseOrder, startFinishCodes, disabledCodes),
                 StringComparer.OrdinalIgnoreCase);
 
             var punched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -2185,6 +2215,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 .Where(c => c.Type is ControlPointType.Start or ControlPointType.Finish)
                 .Select(c => c.Code.Trim()),
             StringComparer.OrdinalIgnoreCase);
+        var disabledCodes = DisabledCodesOf(controlPoints);
         var dayDefault = day.DefaultDiscipline;
 
         // Per-control point values, positions and map scale — needed only to tally rogaine «Бали».
@@ -2241,7 +2272,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 continue;
             }
 
-            var (computed, _, resolvedStart) = EvaluateFinish(readout, link, settingsByGroup, startFinishCodes, dayDefault);
+            var (computed, _, resolvedStart) = EvaluateFinish(readout, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault);
             var status = link.ResultStatusOverride ?? computed;
 
             var resultTime = status == FinishStatus.Ok && resolvedStart is { } rs && readout.FinishTime is { } f
@@ -2254,7 +2285,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             int? score = null;
             if (_strategies.For(discipline).UsesControlPointPoints)
             {
-                var detail = ScoreDetailFor(readout, gs, startFinishCodes, pointsByCode, discipline, resolvedStart);
+                var detail = ScoreDetailFor(readout, gs, startFinishCodes, disabledCodes, pointsByCode, discipline, resolvedStart);
                 // Fold in the judge's points correction («бонус»): the personal score is the computed net
                 // plus this member's own bonus. For a teamed rogaine runner the team pass below replaces
                 // this Score with the team net (which folds in the team-min bonus instead).
@@ -2740,10 +2771,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         FinishReadout readout,
         GroupDaySettings? gs,
         HashSet<string> startFinishCodes,
+        HashSet<string> disabledCodes,
         IReadOnlyDictionary<string, int> pointsByCode,
         DisciplineType discipline,
         DateTimeOffset? resolvedStart)
-        => ScoreDetailFor(readout, gs, startFinishCodes, pointsByCode, discipline, resolvedStart).Net;
+        => ScoreDetailFor(readout, gs, startFinishCodes, disabledCodes, pointsByCode, discipline, resolvedStart).Net;
 
     // The personal score plus the set of allowed controls the chip actually punched (first punch each),
     // used by the rogaine team tally (a control scores for the team only when every member's set has it).
@@ -2751,11 +2783,12 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         FinishReadout readout,
         GroupDaySettings? gs,
         HashSet<string> startFinishCodes,
+        HashSet<string> disabledCodes,
         IReadOnlyDictionary<string, int> pointsByCode,
         DisciplineType discipline,
         DateTimeOffset? resolvedStart)
     {
-        var expected = SplitCodes(gs?.CourseOrder).Where(c => !startFinishCodes.Contains(c)).ToList();
+        var expected = CourseControls(gs?.CourseOrder, startFinishCodes, disabledCodes);
         var punches = DecodePunchTimes(readout.PunchTimes)
             .Where(p => !startFinishCodes.Contains(p.ControlCode.Trim()))
             .ToList();
@@ -2847,9 +2880,13 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         if (string.IsNullOrWhiteSpace(courseOrder))
             return [];
 
-        var tokens = courseOrder.Split(
-            [' ', ',', ';', '\t', '-', '>'],
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        // A «mixed» order pattern (with <…>/[N …] blocks) flattens to its leaf controls; a plain order is
+        // split on the usual separators. Either way, keep only digit-bearing tokens (drop S/Start/F markers).
+        IEnumerable<string> tokens = courseOrder.IndexOfAny(['<', '[']) >= 0
+            ? CourseOrderCodes(courseOrder)
+            : courseOrder.Split(
+                [' ', ',', ';', '\t', '-', '>'],
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         // Any token that contains a digit is a real control (skips pure-letter S/Start/F markers); keep order.
         return tokens.Where(t => t.Any(char.IsDigit)).ToList();
@@ -2893,6 +2930,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 .Where(c => c.Type is ControlPointType.Start or ControlPointType.Finish)
                 .Select(c => c.Code.Trim()),
             StringComparer.OrdinalIgnoreCase);
+        var disabledCodes = DisabledCodesOf(controlPoints);
         var dayDefault = CurrentDayDefaultDiscipline;
 
         // Per-control point values — needed only to tally the «Бали» column on point-scoring days.
@@ -2916,7 +2954,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             if (holderByChip.TryGetValue(r.ChipNumber.Trim(), out var link) && byId.TryGetValue(link.ParticipantId, out var p))
             {
                 var group = link.GroupId is { } gid && groupName.TryGetValue(gid, out var gn) ? gn : string.Empty;
-                var (status, detail, resolvedStart) = EvaluateFinish(r, link, settingsByGroup, startFinishCodes, dayDefault);
+                var (status, detail, resolvedStart) = EvaluateFinish(r, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault);
                 // A judge's manual status override wins over the computed one (and clears its detail).
                 if (r.ManualStatus is { } manual)
                 {
@@ -2928,7 +2966,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 GroupDaySettings? gs = link.GroupId is { } sgid && settingsByGroup.TryGetValue(sgid, out var sset) ? sset : null;
                 var discipline = gs?.DisciplineOverride ?? dayDefault;
                 int? score = _strategies.For(discipline).UsesControlPointPoints
-                    ? ScoreFor(r, gs, startFinishCodes, pointsByCode, discipline, resolvedStart)
+                    ? ScoreFor(r, gs, startFinishCodes, disabledCodes, pointsByCode, discipline, resolvedStart)
                     : null;
                 rows.Add(new FinishReadoutRow(r.Id, r.Order, r.ChipNumber, r.StartTime, r.FinishTime,
                     IsKnown: true, p.Number, p.FullName, group, status, detail, resolvedStart, elapsed, score));
@@ -2966,7 +3004,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     private async Task<IReadOnlySet<string>?> TeamCommonControlsAsync(
         string folder, Guid dayId, ParticipantDay link, IReadOnlyList<ParticipantDay> links,
         IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup, HashSet<string> startFinishCodes,
-        CancellationToken cancellationToken)
+        HashSet<string> disabledCodes, CancellationToken cancellationToken)
     {
         var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
         var teamByParticipant = participants.ToDictionary(p => p.Id, p => p.Team.Trim());
@@ -3001,7 +3039,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         {
             GroupDaySettings? gs = mate.GroupId is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
             var allowed = new HashSet<string>(
-                SplitCodes(gs?.CourseOrder).Where(c => !startFinishCodes.Contains(c)),
+                CourseControls(gs?.CourseOrder, startFinishCodes, disabledCodes),
                 StringComparer.OrdinalIgnoreCase);
 
             var punched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -3050,6 +3088,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 .Where(c => c.Type is ControlPointType.Start or ControlPointType.Finish)
                 .Select(c => c.Code.Trim()),
             StringComparer.OrdinalIgnoreCase);
+        var disabledCodes = DisabledCodesOf(controlPoints);
 
         // Per-control point values (score formats); last write wins on a duplicate code.
         var pointsByCode = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -3087,13 +3126,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         IReadOnlySet<string>? teamCommon = null;
         if (link is not null && _strategies.For(discipline).Type == DisciplineType.Rogaine)
             teamCommon = await TeamCommonControlsAsync(
-                folder, dayId, link, links, settingsByGroup, startFinishCodes, cancellationToken);
+                folder, dayId, link, links, settingsByGroup, startFinishCodes, disabledCodes, cancellationToken);
 
         // Expected = course controls minus start/finish; punches = read punches (with times) minus the
         // same. An unknown chip (no link) has no prescribed course, so the expected list is empty and
         // every punch reads off-course. Start = chip start when present, else the assigned start (only
         // when a holder is known) paired with the finish's date.
-        var expected = SplitCodes(gs?.CourseOrder).Where(c => !startFinishCodes.Contains(c)).ToList();
+        var expected = CourseControls(gs?.CourseOrder, startFinishCodes, disabledCodes);
+        var disabledInCourse = DisabledInCourse(gs?.CourseOrder, startFinishCodes, disabledCodes);
         var punches = DecodePunchTimes(readout.PunchTimes)
             .Where(p => !startFinishCodes.Contains(p.ControlCode.Trim()))
             .ToList();
@@ -3102,6 +3142,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var context = new SplitsContext
         {
             ExpectedControls = expected,
+            CourseOrderText = gs?.CourseOrder ?? string.Empty,
+            DisabledControls = disabledInCourse,
             Punches = punches,
             PointsByCode = pointsByCode,
             CoordsByCode = coordsByCode,
@@ -3344,14 +3386,17 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         ParticipantDay link,
         IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup,
         HashSet<string> startFinishCodes,
+        HashSet<string> disabledCodes,
         DisciplineType dayDefault)
     {
         GroupDaySettings? gs = link.GroupId is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
         var discipline = gs?.DisciplineOverride ?? dayDefault;
 
-        // Expected = course-order codes minus the day's start/finish controls; punched = read codes
-        // minus the same (the chip records start/finish boxes too, which are not course controls).
-        var expected = SplitCodes(gs?.CourseOrder).Where(c => !startFinishCodes.Contains(c)).ToList();
+        // Expected = course-order codes minus the day's start/finish controls AND its disabled («проблемні»)
+        // controls, so missing a disabled control is never an MP. Punched keeps disabled codes — a chip may
+        // still have punched one; for a set course it just reads as an extra, for a scored one it's ignored
+        // because it's no longer in the allowed set. We only drop the start/finish boxes from the punches.
+        var expected = CourseControls(gs?.CourseOrder, startFinishCodes, disabledCodes);
         var punched = SplitCodes(readout.Punches).Where(c => !startFinishCodes.Contains(c)).ToList();
 
         // Start = chip read-out start when present, else the assigned start (a time-of-day) paired with
@@ -3361,6 +3406,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var context = new FinishContext
         {
             ExpectedControls = expected,
+            CourseOrderText = gs?.CourseOrder ?? string.Empty,
             PunchedControls = punched,
             StartTime = start,
             FinishTime = readout.FinishTime,
@@ -3380,6 +3426,39 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         string.IsNullOrWhiteSpace(text)
             ? []
             : text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    // The control codes referenced by a course order, in reading order (duplicates kept). For a plain order
+    // ("S1 31 32 F") this is just the tokens; for a «mixed» order <b>pattern</b> ("&lt;41 42&gt; [2 45 46]")
+    // it flattens the &lt;…&gt;/[N …] blocks to their leaf controls (the bracket/amount tokens are not codes).
+    // Every course-order consumer routes through this so a pattern is never mistaken for literal tokens.
+    private static List<string> CourseOrderCodes(string? courseOrder) =>
+        string.IsNullOrWhiteSpace(courseOrder)
+            ? []
+            : courseOrder.IndexOfAny(['<', '[']) < 0
+                ? SplitCodes(courseOrder).ToList()
+                : Disciplines.CoursePattern.CoursePattern.Parse(courseOrder).ControlCodes.ToList();
+
+    // The day's disabled («проблемні») control codes (trimmed), case-insensitive. These are dropped from the
+    // prescribed/allowed course wherever it is required, so a runner missing one is not penalised and a scored
+    // control no longer counts.
+    private static HashSet<string> DisabledCodesOf(IReadOnlyList<ControlPoint> controlPoints) =>
+        new(controlPoints.Where(c => c.IsDisabled).Select(c => c.Code.Trim()),
+            StringComparer.OrdinalIgnoreCase);
+
+    // The prescribed course codes minus the day's start/finish markers AND its disabled controls, in order —
+    // the canonical "controls that must be visited / are allowed" list every scoring/status/splits path uses.
+    private static List<string> CourseControls(
+        string? courseOrder, IReadOnlySet<string> startFinishCodes, IReadOnlySet<string> disabledCodes) =>
+        CourseOrderCodes(courseOrder)
+            .Where(c => !startFinishCodes.Contains(c) && !disabledCodes.Contains(c))
+            .ToList();
+
+    // The disabled («проблемні») controls that actually appear in a given group's course order (start/finish
+    // markers aside), so the splits view lists only the ones relevant to that course as «вимкнено».
+    private static HashSet<string> DisabledInCourse(
+        string? courseOrder, IReadOnlySet<string> startFinishCodes, IReadOnlySet<string> disabledCodes) =>
+        new(CourseOrderCodes(courseOrder).Where(c => !startFinishCodes.Contains(c) && disabledCodes.Contains(c)),
+            StringComparer.OrdinalIgnoreCase);
 
     public async Task<FinishReadoutImportResult> ImportFinishReadoutsAsync(ChipReadData data, CancellationToken cancellationToken = default)
     {
@@ -3877,6 +3956,251 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         return new OnlineResultsSnapshot(onlineDays, day.Number, groups, rows, skippedNoNumber);
     }
+
+    public async Task<MonitorSettings?> GetMonitorSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return null;
+
+        var json = await _eventStore.GetMonitorJsonAsync(FolderPath, cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+            return MonitorSettings.Empty;
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<MonitorSettings>(json) ?? MonitorSettings.Empty;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return MonitorSettings.Empty;
+        }
+    }
+
+    public Task SaveMonitorSettingsAsync(MonitorSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (_session.CurrentEvent is null)
+            return Task.CompletedTask;
+
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        return _eventStore.SaveMonitorJsonAsync(FolderPath, json, cancellationToken);
+    }
+
+    public string? GetMonitorOutputDirectory() =>
+        _session.CurrentEvent is null || _session.CurrentDay is not { } day
+            ? null
+            : DayFolders.PathFor(FolderPath, day.Number);
+
+    public string? ResolveMonitorFilePath(string fileName)
+    {
+        if (GetMonitorOutputDirectory() is not { } dir || string.IsNullOrWhiteSpace(fileName))
+            return null;
+        // Defend against a stored value that is a full path or has stray separators — use the leaf name only.
+        var leaf = System.IO.Path.GetFileName(fileName.Trim());
+        if (string.IsNullOrWhiteSpace(leaf))
+            return null;
+        return System.IO.Path.Combine(dir, leaf);
+    }
+
+    public async Task<IReadOnlyList<MonitorFileDocument>> BuildMonitorDocumentsAsync(
+        Guid dayId, MonitorLabels labels, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(labels);
+        if (_session.CurrentEvent is null)
+            return [];
+
+        var settings = await GetMonitorSettingsAsync(cancellationToken);
+        var files = settings?.ActiveFiles;
+        if (files is null || files.Count == 0)
+            return [];
+
+        // Resolve the built day's folder — the screens are written there (the day whose results they show).
+        var days = await _eventStore.GetDaysAsync(FolderPath, cancellationToken);
+        var builtDay = days.FirstOrDefault(d => d.Id == dayId);
+        if (builtDay is null)
+            return [];
+        var dayFolder = DayFolders.PathFor(FolderPath, builtDay.Number);
+
+        // Reuse the same computed data the protocols and online publish use — one section per group, each
+        // member already carrying their result. Group rows are kept in the protocol order (placed finishers
+        // first, then the rest), which is exactly the monitor order.
+        var data = await GetResultProtocolDataAsync(dayId, cancellationToken);
+        var info = await _eventStore.GetCompetitionInfoAsync(FolderPath, cancellationToken);
+        var subtitle = !string.IsNullOrWhiteSpace(info?.Name) ? info!.Name : _session.CurrentEvent.Name;
+
+        // Pre-compute, per group, the leader's clean result so the «Відставання» (gap) column can be filled.
+        var groupsByName = data.Groups.ToDictionary(g => g.Name, StringComparer.OrdinalIgnoreCase);
+
+        var columns = settings!.EffectiveColumns; // one shared column layout for every file
+        var documents = new List<MonitorFileDocument>(files.Count);
+        foreach (var file in files)
+        {
+            // Files are addressed by name only; write them into the built day's folder.
+            var leaf = System.IO.Path.GetFileName(file.Path.Trim());
+            documents.Add(new MonitorFileDocument(
+                System.IO.Path.Combine(dayFolder, leaf),
+                BuildMonitorDocument(file, columns, data, groupsByName, subtitle, labels)));
+        }
+
+        return documents;
+    }
+
+    public async Task<MonitorDocument?> BuildMonitorPreviewAsync(
+        Guid dayId, MonitorFile file, ResultColumnSelection columns, MonitorLabels labels,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        ArgumentNullException.ThrowIfNull(columns);
+        ArgumentNullException.ThrowIfNull(labels);
+        if (_session.CurrentEvent is null)
+            return null;
+
+        var data = await GetResultProtocolDataAsync(dayId, cancellationToken);
+        var info = await _eventStore.GetCompetitionInfoAsync(FolderPath, cancellationToken);
+        var subtitle = !string.IsNullOrWhiteSpace(info?.Name) ? info!.Name : _session.CurrentEvent.Name;
+        var groupsByName = data.Groups.ToDictionary(g => g.Name, StringComparer.OrdinalIgnoreCase);
+
+        return BuildMonitorDocument(file, columns, data, groupsByName, subtitle, labels);
+    }
+
+    public async Task<MonitorPreviewSource?> GetMonitorPreviewSourceAsync(
+        Guid dayId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return null;
+
+        var data = await GetResultProtocolDataAsync(dayId, cancellationToken);
+        var info = await _eventStore.GetCompetitionInfoAsync(FolderPath, cancellationToken);
+        var subtitle = !string.IsNullOrWhiteSpace(info?.Name) ? info!.Name : _session.CurrentEvent.Name;
+        return new MonitorPreviewSource(data, subtitle);
+    }
+
+    public MonitorDocument BuildMonitorPreview(
+        MonitorFile file, ResultColumnSelection columns, MonitorPreviewSource source, MonitorLabels labels)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        ArgumentNullException.ThrowIfNull(columns);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(labels);
+        var groupsByName = source.Data.Groups.ToDictionary(g => g.Name, StringComparer.OrdinalIgnoreCase);
+        return BuildMonitorDocument(file, columns, source.Data, groupsByName, source.Subtitle, labels);
+    }
+
+    // Builds one monitor document from a file (groups + title + timing) and the SHARED column selection against
+    // the day's computed result data. Shared by the batch generation (BuildMonitorDocumentsAsync) and the page's
+    // single-file live preview (BuildMonitorPreviewAsync). Columns are the same for every file.
+    private static MonitorDocument BuildMonitorDocument(
+        MonitorFile file, ResultColumnSelection columnSelection, ResultProtocolData data,
+        IReadOnlyDictionary<string, ResultProtocolGroup> groupsByName, string subtitle, MonitorLabels labels)
+    {
+        var columns = columnSelection.Resolve()
+            .Select(d => new MonitorColumn(d.Column, labels.ColumnHeaders.GetValueOrDefault(d.Column, d.Key)))
+            .ToList();
+
+        // The chosen groups in day order; an empty selection means "all groups of the day".
+        var chosen = file.GroupNames.Count == 0
+            ? data.Groups
+            : file.GroupNames
+                .Select(n => groupsByName.GetValueOrDefault(n))
+                .Where(g => g is not null)
+                .Select(g => g!)
+                .ToList();
+
+        var monitorGroups = new List<MonitorGroup>(chosen.Count);
+        foreach (var g in chosen.OrderBy(g => g.Name, StringComparer.CurrentCulture))
+        {
+            var leader = g.Rows
+                .Where(r => r.Result.Place is not null && r.Result.ResultTime is not null)
+                .OrderBy(r => r.Result.ResultTime!.Value)
+                .Select(r => r.Result.ResultTime)
+                .FirstOrDefault();
+
+            // Sort by result: placed finishers first by ascending place, then everyone still unplaced
+            // (DNS/MP/running/поза конкурсом) after them — the same order the printed protocol uses.
+            var rows = g.Rows
+                .OrderBy(r => r.Result.Place ?? int.MaxValue)
+                .ThenBy(r => r.Result.ResultTime ?? TimeSpan.MaxValue)
+                .ThenBy(r => r.FullName, StringComparer.CurrentCultureIgnoreCase)
+                .Select(r => BuildMonitorRow(r, columns, leader, labels))
+                .ToList();
+
+            monitorGroups.Add(new MonitorGroup(g.Name, BuildGroupCaption(g, labels), rows));
+        }
+
+        return new MonitorDocument(
+            Title: string.IsNullOrWhiteSpace(file.Title) ? subtitle : file.Title,
+            Subtitle: subtitle,
+            RefreshSeconds: Math.Max(MonitorFile.MinRefreshSeconds, file.RefreshSeconds),
+            ScrollSpeed: Math.Max(0, file.ScrollSpeed),
+            Columns: columns,
+            Groups: monitorGroups);
+    }
+
+    // The caption under a group's name on the monitor: distance + control count, when known.
+    private static string BuildGroupCaption(ResultProtocolGroup g, MonitorLabels labels)
+    {
+        var parts = new List<string>(2);
+        if (g.DistanceKm is { } km && km > 0)
+            parts.Add(string.Format(labels.DistanceLabel, km.ToString("0.#", CultureInfo.InvariantCulture)));
+        if (g.ControlCount is { } cc && cc > 0)
+            parts.Add(string.Format(labels.ControlCountLabel, cc));
+        return string.Join("  ·  ", parts);
+    }
+
+    // Formats one participant's row into the page's chosen columns, parallel to the column list.
+    private static MonitorRow BuildMonitorRow(
+        ResultProtocolRow r, IReadOnlyList<MonitorColumn> columns, TimeSpan? leader, MonitorLabels labels)
+    {
+        var res = r.Result;
+        var placed = res.Place is not null && !res.OutOfCompetition;
+        var values = new List<string>(columns.Count);
+
+        foreach (var col in columns)
+            values.Add(col.Column switch
+            {
+                ResultColumn.Place => res.OutOfCompetition ? "—" : res.Place?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                ResultColumn.FullName => r.FullName,
+                ResultColumn.Bib => r.Number,
+                ResultColumn.Birth => r.BirthDate is { } bd ? bd.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) : string.Empty,
+                ResultColumn.Qual => r.Rank,
+                ResultColumn.Team => r.Team,
+                ResultColumn.Club => r.ClubName,
+                ResultColumn.Region => r.RegionName,
+                ResultColumn.StartTime => FormatClock(res.ActualStart?.TimeOfDay),
+                ResultColumn.ResultTime => res.Status == FinishStatus.Ok ? FormatSpan(res.ResultTime) : string.Empty,
+                ResultColumn.Gap => placed && leader is { } l && res.ResultTime is { } rt && rt > l
+                    ? "+" + FormatSpan(rt - l)
+                    : string.Empty,
+                ResultColumn.Status => StatusText(res, labels),
+                ResultColumn.Points => res.Points?.ToString("0.##", CultureInfo.InvariantCulture)
+                    ?? res.Score?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                _ => string.Empty,
+            });
+
+        // Grey out a row that has no place yet (DNS / MP / running / out-of-competition), like the legacy monitor.
+        return new MonitorRow(values, Unplaced: res.Place is null || res.OutOfCompetition);
+    }
+
+    // The short status code shown for an unplaced run; blank for a clean finish (its time is in the result column).
+    private static string StatusText(ParticipantDayResult res, MonitorLabels labels) => res.Status switch
+    {
+        FinishStatus.Dns => labels.StatusDns,
+        FinishStatus.Mp => labels.StatusMp,
+        FinishStatus.Ovt => labels.StatusOvt,
+        FinishStatus.Dnf => labels.StatusDnf,
+        FinishStatus.Dsq => labels.StatusDsq,
+        FinishStatus.Ok => string.Empty,
+        _ => res.HasReadout ? string.Empty : labels.StatusRunning,
+    };
+
+    private static string FormatSpan(TimeSpan? t) =>
+        t is { } v ? (v.TotalHours >= 1
+            ? v.ToString(@"h\:mm\:ss", CultureInfo.InvariantCulture)
+            : v.ToString(@"m\:ss", CultureInfo.InvariantCulture))
+        : string.Empty;
+
+    private static string FormatClock(TimeSpan? t) =>
+        t is { } v ? v.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture) : string.Empty;
 
     public Task<IReadOnlyList<ChipPriceOverride>> GetChipPriceOverridesAsync(CancellationToken cancellationToken = default)
     {

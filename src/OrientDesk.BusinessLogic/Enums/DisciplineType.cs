@@ -22,5 +22,12 @@ public enum DisciplineType
     /// Rogaine: long score format; competitor picks control points within a (usually long) time
     /// limit and is ranked by the points collected.
     /// </summary>
-    Rogaine
+    Rogaine,
+
+    /// <summary>
+    /// Mixed (змішаний): the course order is a pattern that mixes prescribed order with free-choice
+    /// sections — an ordered run <c>&lt;41 42&gt;</c>, an "any N of" block <c>[2 45 46 47]</c>, and nesting.
+    /// Judged like a set course but against the pattern (see the «змішаний» course-pattern help).
+    /// </summary>
+    Mixed
 }

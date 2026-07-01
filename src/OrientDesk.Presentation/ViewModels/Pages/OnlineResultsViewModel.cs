@@ -1,12 +1,16 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
+using System.Linq;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientDesk.BusinessLogic.Entities;
+using OrientDesk.BusinessLogic.Enums;
 using OrientDesk.BusinessLogic.Interfaces;
 using OrientDesk.BusinessLogic.Models;
 using OrientDesk.Localization;
 using OrientDesk.Presentation.Services;
+using OrientDesk.Presentation.ViewModels.Shared;
 
 namespace OrientDesk.Presentation.ViewModels.Pages;
 
@@ -62,11 +66,21 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         _busy = busy;
         _log = log;
 
+        Columns = new OnlineColumnsEditorViewModel(localization);
+        Columns.Changed += (_, _) =>
+        {
+            SettingsSaved = false;
+            UpdatePointsColumnVisible();
+            RequestPreviewRefresh();
+        };
+
         // Singleton VM: on a competition/day change, stop publishing (it belongs to the old selection) and
         // reload. SessionChanged may be raised on a pool thread, so marshal onto the UI thread.
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() =>
         {
             StopPublishing();
+            _previewSource = null; // the day's cached snapshot no longer applies
+            _previewSourceDay = Guid.Empty;
             _ = LoadAsync();
         });
     }
@@ -93,10 +107,21 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
     private bool _standings;
 
     [ObservableProperty]
-    private bool _points;
-
-    [ObservableProperty]
     private bool _settingsSaved;
+
+    /// <summary>True when the «Очки» column is enabled (large or small screen) in the column editor. Gates the
+    /// points-rule status/warning below — there's no longer a separate "show points" toggle: the column's own
+    /// visibility check-boxes decide whether it appears.</summary>
+    [ObservableProperty]
+    private bool _pointsColumnVisible;
+
+    /// <summary>The editor for which result columns the spectator frontend displays, each with its large /
+    /// small-screen visibility (sent as display_config).</summary>
+    public OnlineColumnsEditorViewModel Columns { get; }
+
+    /// <summary>A live mock-up of the spectator results table for the active day — reflects the column order +
+    /// large-screen set + a per-column phone-hidden badge; its header cells are the drag-reorder surface.</summary>
+    public OnlinePreviewViewModel Preview { get; } = new();
 
     // --- «Очки» rule status (shown next to the "show points column" checkbox) ----------------------
 
@@ -178,12 +203,19 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
             Title = publish.Title;
             Subtitle = publish.Subtitle;
             Standings = publish.Standings;
-            Points = publish.Points;
+            Columns.Load(publish.EffectiveDisplay);
         }
 
+        UpdatePointsColumnVisible();
         UpdatePointsRuleStatus(rules, info?.DefaultPointsRuleId, groups);
         RebuildLinks();
+        RequestPreviewRefresh(immediate: true);
     }
+
+    // Recomputes whether the «Очки» column is enabled on either screen, so the points-rule status below the
+    // options is shown only when the column will actually appear.
+    private void UpdatePointsColumnVisible() =>
+        PointsColumnVisible = Columns.Columns.Any(c => c.Key == "points" && (c.Lg || c.Sm));
 
     // Describes the «Очки» situation for the active day, for the info/warning beside the "show points
     // column" checkbox. The effective rule per group is its own PointsRuleId override, else the competition
@@ -270,6 +302,10 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
     partial void OnSlugChanged(string value) => RebuildLinks();
     partial void OnStandingsChanged(bool value) => RebuildLinks();
 
+    // The preview mirrors the published header; keep it in step as the user edits the title/subtitle.
+    partial void OnTitleChanged(string value) => Preview.Title = value;
+    partial void OnSubtitleChanged(string value) => Preview.Subtitle = value;
+
     [RelayCommand]
     private async Task SaveSettingsAsync()
     {
@@ -277,7 +313,10 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
             return;
 
         var settings = new OnlinePublishSettings(
-            Slug.Trim(), Title.Trim(), Subtitle.Trim(), Standings, Points, Enabled: IsPublishing);
+            // Points is always enabled: whether the «Очки» column appears is now decided purely by its own
+            // large/small-screen visibility in the column config (display_config), not a separate toggle.
+            Slug.Trim(), Title.Trim(), Subtitle.Trim(), Standings, Points: true, Enabled: IsPublishing,
+            Columns: null, Display: Columns.BuildConfig());
         await _busy.RunAsync(() => _editor.SaveOnlinePublishSettingsAsync(settings));
 
         // The metadata changed — make the next tick re-upload events/days/groups.
@@ -341,7 +380,8 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
 
         // Record that publishing is no longer enabled for this competition.
         _ = _editor.SaveOnlinePublishSettingsAsync(new OnlinePublishSettings(
-            Slug.Trim(), Title.Trim(), Subtitle.Trim(), Standings, Points, Enabled: false));
+            Slug.Trim(), Title.Trim(), Subtitle.Trim(), Standings, Points: true, Enabled: false,
+            Columns: null, Display: Columns.BuildConfig()));
     }
 
     // The publish loop — runs on a pool thread. Each tick builds a snapshot for the active day and pushes it.
@@ -462,6 +502,205 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         var key = IsPaused ? "Activity.OnlineResults.StatusPaused" : "Activity.OnlineResults.Status";
         _activity.StatusText = string.Format(Localization.Get(key), Slug, _api.IntervalSeconds);
     }
+
+    // --- Live spectator preview -------------------------------------------------------------------
+
+    // The active day's computed snapshot the preview builds from (the SAME data the publisher sends), loaded
+    // ONCE per day and cached so a column/toggle change re-renders the preview without a DB read. Cleared on a
+    // session/day change (see the SessionChanged handler in the ctor).
+    private OnlineResultsSnapshot? _previewSource;
+    private Guid _previewSourceDay;
+
+    // Debounce: a burst of toggles (or dragging) coalesces into ONE preview rebuild once the user pauses,
+    // instead of rebuilding the preview grid on every change. Each request restarts the timer.
+    private const int PreviewDebounceMs = 180;
+    private CancellationTokenSource? _previewDebounceCts;
+
+    /// <summary>Moves a column next to another in the editor's list (drag-reorder from the preview header). Keys
+    /// are the stable <see cref="ResultColumnDef.Key"/>. The editor's Changed then re-renders the preview.</summary>
+    public void MoveColumnByKey(string draggedKey, string targetKey, bool insertAfter)
+    {
+        var dragged = Columns.Columns.FirstOrDefault(c => c.Key == draggedKey);
+        var target = Columns.Columns.FirstOrDefault(c => c.Key == targetKey);
+        Columns.MoveColumn(dragged, target, insertAfter);
+    }
+
+    private void RequestPreviewRefresh(bool immediate = false)
+    {
+        _previewDebounceCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _previewDebounceCts = cts;
+        _ = RefreshPreviewAsync(immediate ? 0 : PreviewDebounceMs, cts.Token);
+    }
+
+    // Re-renders the preview for the active day, debounced. The snapshot load is the only DB hit (off the UI
+    // thread, once per day); the layout/format work is cheap; the visual apply is on the UI thread.
+    private async Task RefreshPreviewAsync(int delayMs, CancellationToken ct)
+    {
+        try
+        {
+            if (delayMs > 0)
+                await Task.Delay(delayMs, ct);
+
+            if (_session.CurrentEvent is null || _session.CurrentDay is not { } day)
+            {
+                ApplyPreview(null);
+                return;
+            }
+
+            if (_previewSource is null || _previewSourceDay != day.Id)
+            {
+                var source = await Task.Run(() => _editor.GetOnlineResultsSnapshotAsync(day.Id, ct), ct);
+                ct.ThrowIfCancellationRequested();
+                _previewSource = source;
+                _previewSourceDay = day.Id;
+            }
+
+            ApplyPreview(_previewSource);
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer request — ignore.
+        }
+        catch (Exception ex)
+        {
+            AppendLog(string.Format(Localization.Get("OnlineResults.Log.Error"), ex.Message));
+        }
+    }
+
+    // The preview is a MOCK-UP, not the whole page — cap the total body rows so the visual tree stays small.
+    private const int PreviewTotalRowCap = 10;
+    private const int PreviewPerGroupCap = 10;
+
+    // Fills Preview from the day's snapshot + the editor's current column layout: the large-screen columns in
+    // order (small-screen-hidden ones badged), and each group's rows (placed finishers first) formatted per
+    // column. A column shown only on the small screen is still drawn (so it's visible for reordering) but always
+    // carries the phone badge concept via ShownOnSmall.
+    private void ApplyPreview(OnlineResultsSnapshot? snapshot)
+    {
+        Preview.Columns.Clear();
+        Preview.Sections.Clear();
+
+        // The columns the preview draws = everything visible on at least one screen, in the editor's order.
+        var visible = Columns.Columns.Where(c => c.Lg || c.Sm).ToList();
+
+        if (snapshot is null || !snapshot.HasData || visible.Count == 0)
+        {
+            Preview.Title = string.Empty;
+            Preview.Subtitle = string.Empty;
+            Preview.IsEmpty = true;
+            Preview.RaiseChanged();
+            return;
+        }
+
+        Preview.Title = Title;
+        Preview.Subtitle = Subtitle;
+
+        foreach (var c in visible)
+            Preview.Columns.Add(new OnlinePreviewColumn(c.Key, c.Label, c.Column, ShownOnSmall: c.Sm));
+
+        // Group the day's rows by group, in the snapshot's group order.
+        var byGroup = snapshot.Rows
+            .GroupBy(r => r.GroupName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var remaining = PreviewTotalRowCap;
+        foreach (var group in snapshot.Groups)
+        {
+            if (remaining <= 0)
+                break;
+            if (!byGroup.TryGetValue(group.Name, out var rows) || rows.Count == 0)
+                continue;
+
+            // Leader's clean time for the «Відставання» column.
+            var leader = rows
+                .Where(r => r.Place is not null && r.ResultTime is not null && !r.OutOfCompetition)
+                .OrderBy(r => r.ResultTime!.Value)
+                .Select(r => r.ResultTime)
+                .FirstOrDefault();
+
+            var ordered = rows
+                .OrderBy(r => r.Place ?? int.MaxValue)
+                .ThenBy(r => r.ResultTime ?? TimeSpan.MaxValue)
+                .ThenBy(r => r.FullName, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+
+            var take = Math.Min(Math.Min(PreviewPerGroupCap, remaining), ordered.Count);
+            var previewRows = new List<OnlinePreviewRow>(take);
+            for (var i = 0; i < take; i++)
+                previewRows.Add(BuildPreviewRow(ordered[i], visible, leader));
+            remaining -= take;
+
+            var facts = BuildGroupFacts(group);
+            Preview.Sections.Add(new OnlinePreviewSection(group.Name, facts, previewRows));
+        }
+
+        Preview.IsEmpty = Preview.Sections.Count == 0 || Preview.Sections.All(s => s.Rows.Count == 0);
+        Preview.RaiseChanged();
+    }
+
+    private static string BuildGroupFacts(OnlineGroup g)
+    {
+        var parts = new List<string>(2);
+        if (g.ControlCount is { } cc && cc > 0)
+            parts.Add($"{cc} КП");
+        if (g.DistanceKm is { } km && km > 0)
+            parts.Add($"{km.ToString("0.#", CultureInfo.InvariantCulture)} км");
+        return string.Join("  ·  ", parts);
+    }
+
+    // Formats one result row into the visible columns, parallel to the column list — mirrors the values the
+    // spectator frontend renders from the published fields.
+    private OnlinePreviewRow BuildPreviewRow(OnlineResultRow r, IReadOnlyList<OnlineColumnItem> columns, TimeSpan? leader)
+    {
+        var placed = r.Place is not null && !r.OutOfCompetition;
+        var values = new List<string>(columns.Count);
+
+        foreach (var col in columns)
+            values.Add(col.Column switch
+            {
+                ResultColumn.Place => r.OutOfCompetition ? "П/К" : r.Place?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                ResultColumn.FullName => r.FullName,
+                ResultColumn.Bib => r.Bib?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                ResultColumn.Birth => r.Birth,
+                ResultColumn.Qual => r.Qual,
+                ResultColumn.Team => r.Team,
+                ResultColumn.Club => r.Club,
+                ResultColumn.Region => r.Region,
+                ResultColumn.StartTime => FormatClock(r.StartTime),
+                ResultColumn.ResultTime => r.Status == FinishStatus.Ok ? FormatSpan(r.ResultTime) : string.Empty,
+                ResultColumn.Gap => placed && leader is { } l && r.ResultTime is { } rt && rt > l
+                    ? "+" + FormatSpan(rt - l)
+                    : string.Empty,
+                ResultColumn.Status => PreviewStatusText(r),
+                ResultColumn.Points => r.Points?.ToString("0.##", CultureInfo.InvariantCulture)
+                    ?? r.Score?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                _ => string.Empty,
+            });
+
+        return new OnlinePreviewRow(values, Unplaced: r.Place is null || r.OutOfCompetition);
+    }
+
+    // The short status shown for an unplaced run; blank for a clean finish (its time is in the result column).
+    private static string PreviewStatusText(OnlineResultRow r) => r.Status switch
+    {
+        FinishStatus.Dns => "DNS",
+        FinishStatus.Mp => "MP",
+        FinishStatus.Ovt => "OVT",
+        FinishStatus.Dnf => "DNF",
+        FinishStatus.Dsq => "DSQ",
+        FinishStatus.Ok => string.Empty,
+        _ => r.HasReadout ? string.Empty : "на дистанції",
+    };
+
+    private static string FormatSpan(TimeSpan? t) =>
+        t is { } v ? (v.TotalHours >= 1
+            ? v.ToString(@"h\:mm\:ss", CultureInfo.InvariantCulture)
+            : v.ToString(@"m\:ss", CultureInfo.InvariantCulture))
+        : string.Empty;
+
+    private static string FormatClock(TimeSpan? t) =>
+        t is { } v ? v.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture) : string.Empty;
 
     // Appends a timestamped line to the log, trimming the oldest when it grows too long. Safe from a pool
     // thread (the publish loop calls it): it marshals onto the UI thread, since LogLines backs the UI.

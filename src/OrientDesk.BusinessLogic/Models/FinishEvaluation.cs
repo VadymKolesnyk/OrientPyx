@@ -10,8 +10,16 @@ namespace OrientDesk.BusinessLogic.Models;
 /// </summary>
 public sealed class FinishContext
 {
-    /// <summary>Control codes that must be visited, in the prescribed order (no start/finish markers).</summary>
+    /// <summary>Control codes that must be visited, in the prescribed order (no start/finish markers, and
+    /// with any disabled «проблемні» controls already removed by the caller).</summary>
     public IReadOnlyList<string> ExpectedControls { get; init; } = [];
+
+    /// <summary>
+    /// The group's raw course-order text as entered, needed by the «mixed» discipline to parse the
+    /// order <b>pattern</b> (<c>&lt;…&gt;</c> / <c>[N …]</c> blocks) that <see cref="ExpectedControls"/>
+    /// flattens away. Other disciplines ignore it. Empty when there is no course order.
+    /// </summary>
+    public string CourseOrderText { get; init; } = string.Empty;
 
     /// <summary>Control codes the chip actually punched, in read order (start/finish already excluded).</summary>
     public IReadOnlyList<string> PunchedControls { get; init; } = [];

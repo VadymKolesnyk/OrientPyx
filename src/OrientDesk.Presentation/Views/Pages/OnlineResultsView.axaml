@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:pages="using:OrientDesk.Presentation.ViewModels.Pages"
+             xmlns:shared="using:OrientDesk.Presentation.ViewModels.Shared"
              mc:Ignorable="d" d:DesignWidth="720" d:DesignHeight="640"
              x:Class="OrientDesk.Presentation.Views.Pages.OnlineResultsView"
              x:DataType="pages:OnlineResultsViewModel">
@@ -10,13 +11,18 @@
     <Grid RowDefinitions="Auto,*">
 
         <!-- Header -->
-        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,12">
-            <TextBlock Text="{Binding Title}" Classes="h1" />
-            <TextBlock Text="{Binding Text}" Classes="muted" TextWrapping="Wrap" />
-        </StackPanel>
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="{Binding Title}" Classes="h1" />
+                <TextBlock Text="{Binding Text}" Classes="muted" TextWrapping="Wrap" />
+            </StackPanel>
+            <Button Grid.Column="1" Classes="help" VerticalAlignment="Center"
+                    Command="{Binding ShowHelpCommand}"
+                    ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+        </Grid>
 
         <ScrollViewer Grid.Row="1">
-            <StackPanel Spacing="16" MaxWidth="620">
+            <StackPanel Spacing="16">
 
                 <!-- Connection-not-configured warning -->
                 <Border Classes="card" Padding="16" IsVisible="{Binding !IsConnectionConfigured}">
@@ -50,12 +56,13 @@
                             <TextBox Text="{Binding Subtitle, Mode=TwoWay}" />
                         </StackPanel>
 
-                        <CheckBox Content="{Binding Localization[OnlineResults.Points]}"
-                                  IsChecked="{Binding Points, Mode=TwoWay}" />
+                        <CheckBox Content="{Binding Localization[OnlineResults.Standings]}"
+                                  IsChecked="{Binding Standings, Mode=TwoWay}" />
 
-                        <!-- «Очки» rule status: a warning when nothing is configured (column will be empty),
-                             otherwise the effective formula + any exception groups. Only shown while «Очки» is on. -->
-                        <StackPanel Spacing="6" Margin="26,0,0,0" IsVisible="{Binding Points}">
+                        <!-- «Очки» rule status: shown only when the «Очки» column is actually enabled below. A
+                             warning when nothing is configured (column will be empty), otherwise the effective
+                             formula + any exception groups. -->
+                        <StackPanel Spacing="6" IsVisible="{Binding PointsColumnVisible}">
                             <!-- Not configured → warning -->
                             <StackPanel Orientation="Horizontal" Spacing="8"
                                         IsVisible="{Binding !HasPointsRule}">
@@ -74,8 +81,73 @@
                             </StackPanel>
                         </StackPanel>
 
-                        <CheckBox Content="{Binding Localization[OnlineResults.Standings]}"
-                                  IsChecked="{Binding Standings, Mode=TwoWay}" />
+                        <!-- Displayed columns (sent to the frontend as display_config). A live preview mirrors
+                             the spectator table; drag a column header to reorder. Below it each column has a
+                             large-screen and a small-screen (phone) check-box. -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[OnlineResults.Columns]}" Classes="label" />
+                            <TextBlock Text="{Binding Localization[OnlineResults.Columns.Hint]}" Classes="muted"
+                                       TextWrapping="Wrap" />
+
+                            <!-- Spectator-table mock-up (built in code-behind; header drag-reorder). -->
+                            <Border Background="#FBFCFE" BorderBrush="{DynamicResource BorderBrush}"
+                                    BorderThickness="1" CornerRadius="6" Padding="18" ClipToBounds="True"
+                                    BoxShadow="0 2 10 0 #18000000">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="{Binding Preview.Title}" Foreground="#16202F"
+                                               FontWeight="Bold" FontSize="20" TextAlignment="Center"
+                                               IsVisible="{Binding Preview.Title, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                    <TextBlock Text="{Binding Preview.Subtitle}" Foreground="#5A6B86"
+                                               FontSize="12" TextAlignment="Center" Margin="0,0,0,8"
+                                               IsVisible="{Binding Preview.Subtitle, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                    <TextBlock Text="{Binding Localization[OnlineResults.Preview.Empty]}"
+                                               Foreground="#888" FontStyle="Italic" FontSize="12"
+                                               TextWrapping="Wrap" IsVisible="{Binding Preview.IsEmpty}" />
+                                    <Grid x:Name="PreviewTableHost" Margin="0,4,0,0"
+                                          IsVisible="{Binding !Preview.IsEmpty}" />
+                                </StackPanel>
+                            </Border>
+                            <TextBlock Text="{Binding Localization[OnlineResults.Columns.PhoneHint]}" Classes="muted"
+                                       FontSize="11" TextWrapping="Wrap" />
+
+                            <!-- Per-column visibility: Вел. (large / venue screen) + Мал. (phone). -->
+                            <Border Classes="card" Padding="8" MaxHeight="300" ClipToBounds="True">
+                                <ScrollViewer>
+                                    <StackPanel Spacing="1">
+                                        <!-- Header row -->
+                                        <Grid ColumnDefinitions="*,70,70" Margin="0,0,0,4">
+                                            <TextBlock Grid.Column="1" Text="{Binding Localization[OnlineResults.Columns.Large]}"
+                                                       Classes="muted" FontSize="11" HorizontalAlignment="Center" />
+                                            <TextBlock Grid.Column="2" Text="{Binding Localization[OnlineResults.Columns.Small]}"
+                                                       Classes="muted" FontSize="11" HorizontalAlignment="Center" />
+                                        </Grid>
+                                        <ItemsControl ItemsSource="{Binding Columns.Columns}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="shared:OnlineColumnItem">
+                                                    <Grid ColumnDefinitions="*,70,70" Margin="0,1">
+                                                        <TextBlock Grid.Column="0" Text="{Binding Label}"
+                                                                   VerticalAlignment="Center" />
+                                                        <CheckBox Grid.Column="1" IsChecked="{Binding Lg, Mode=TwoWay}"
+                                                                  HorizontalAlignment="Center" />
+                                                        <CheckBox Grid.Column="2" IsChecked="{Binding Sm, Mode=TwoWay}"
+                                                                  HorizontalAlignment="Center" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </Border>
+
+                            <!-- Separate «Статус/DSQ» column, per screen. -->
+                            <StackPanel Spacing="4" Margin="0,4,0,0">
+                                <TextBlock Text="{Binding Localization[OnlineResults.SeparateDsq]}" Classes="label" />
+                                <CheckBox Content="{Binding Localization[OnlineResults.SeparateDsq.Large]}"
+                                          IsChecked="{Binding Columns.SeparateDsqLarge, Mode=TwoWay}" />
+                                <CheckBox Content="{Binding Localization[OnlineResults.SeparateDsq.Small]}"
+                                          IsChecked="{Binding Columns.SeparateDsqSmall, Mode=TwoWay}" />
+                            </StackPanel>
+                        </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <Button Content="{Binding Localization[OnlineResults.SaveSettings]}"

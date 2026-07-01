@@ -49,5 +49,13 @@ public class ControlPoint
     /// </summary>
     public int? Points { get; set; }
 
+    /// <summary>
+    /// True when this control stopped working during the day («проблемний КП»). A disabled control is
+    /// dropped from the prescribed/allowed course everywhere it is required: a set-course runner who
+    /// missed it is not penalised (no MP), and a scored control no longer counts toward points. Edited
+    /// from the «Проблемні КП» modal on the read-out (зчитка) page.
+    /// </summary>
+    public bool IsDisabled { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

@@ -122,6 +122,11 @@ public partial class ControlPointsView : UserControl
                          editPath: nameof(ControlPointRowViewModel.PointsText), minWidth: 80,
                          mask: SheetColumnBuilder.NumericMask.Integer);
 
+        // «Проблемний» toggle: marks a control that stopped working so it stops being required (no MP /
+        // not counted), the same flag the read-out page's «Проблемні КП» modal sets.
+        builder.Check("ControlPoints.Col.Disabled", nameof(ControlPointRowViewModel.IsDisabled),
+                      width: 110, minWidth: 90);
+
         builder.DeleteAction(OnDeleteButton, "ControlPoints.Delete");
 
         Sheet.Bands = builder.Bands;

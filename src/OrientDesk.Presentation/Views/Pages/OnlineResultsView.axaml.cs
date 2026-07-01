@@ -2,14 +2,27 @@ using System;
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
+using OrientDesk.Presentation.ViewModels.Pages;
 
 namespace OrientDesk.Presentation.Views.Pages;
 
 public partial class OnlineResultsView : UserControl
 {
+    private OnlinePreviewTable? _previewTable;
+
     public OnlineResultsView()
     {
         InitializeComponent();
+        DataContextChanged += OnDataContextChanged;
+    }
+
+    // The preview table renders the active day's spectator-table mock-up with drag-reorderable column headers.
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        _previewTable ??= this.FindControl<Grid>("PreviewTableHost") is { } host
+            ? new OnlinePreviewTable(host)
+            : null;
+        _previewTable?.Bind(DataContext as OnlineResultsViewModel);
     }
 
     // Opens a spectator link in the default browser (whole-row button, so a near-miss still works).

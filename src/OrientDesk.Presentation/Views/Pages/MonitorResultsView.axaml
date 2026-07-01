@@ -1,0 +1,311 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientDesk.Presentation.ViewModels.Pages"
+             xmlns:shared="using:OrientDesk.Presentation.ViewModels.Shared"
+             xmlns:controls="using:OrientDesk.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="860" d:DesignHeight="640"
+             x:Class="OrientDesk.Presentation.Views.Pages.MonitorResultsView"
+             x:DataType="pages:MonitorResultsViewModel">
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- Header + day picker -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="{Binding Title}" Classes="h1" />
+                <TextBlock Text="{Binding Text}" Classes="muted" TextWrapping="Wrap" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button Classes="help" Command="{Binding ShowHelpCommand}"
+                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                <controls:SearchableComboBox IsVisible="{Binding ShowDaySelector}"
+                      MinWidth="120" VerticalAlignment="Center"
+                      SearchWatermark="{Binding Localization[Common.Search]}"
+                      ItemsSource="{Binding DayOptions}"
+                      SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="pages:DayOption">
+                        <TextBlock Text="{Binding Label}" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </controls:SearchableComboBox>
+            </StackPanel>
+        </Grid>
+
+        <ScrollViewer Grid.Row="1">
+            <StackPanel Spacing="16">
+
+                <!-- No-day warning -->
+                <Border Classes="card" Padding="16" IsVisible="{Binding !HasDay}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <PathIcon Data="M12,2 L22,20 H2 Z M12,9 v5 M12,17 v0.5" Width="18" Height="18"
+                                  Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Top" />
+                        <TextBlock Text="{Binding Localization[Monitor.NoDay]}"
+                                   TextWrapping="Wrap" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Files: list on the left, detail on the right -->
+                <Grid ColumnDefinitions="240,*" MinHeight="360">
+
+                    <!-- File list -->
+                    <Border Grid.Column="0" Classes="card" Padding="12" Margin="0,0,12,0">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Classes="h2"
+                                       Text="{Binding Localization[Monitor.Files.Title]}" Margin="0,0,0,8" />
+                            <Button DockPanel.Dock="Bottom" Classes="ghost" HorizontalAlignment="Stretch"
+                                    Margin="0,8,0,0" Command="{Binding AddFileCommand}"
+                                    Content="{Binding Localization[Monitor.Files.Add]}" />
+                            <ListBox ItemsSource="{Binding Files}"
+                                     SelectedItem="{Binding SelectedFile, Mode=TwoWay}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="pages:MonitorFileViewModel">
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <CheckBox Grid.Column="0" IsChecked="{Binding Enabled, Mode=TwoWay}"
+                                                      VerticalAlignment="Center" Margin="0,0,6,0" />
+                                            <TextBlock Grid.Column="1" Text="{Binding DisplayName}"
+                                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <!-- Open this file in the browser -->
+                                            <Button Grid.Column="2" Classes="ghost" Padding="6,2"
+                                                    VerticalAlignment="Center"
+                                                    ToolTip.Tip="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.File.Open]}"
+                                                    Command="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).OpenFileCommand}"
+                                                    CommandParameter="{Binding}">
+                                                <PathIcon Width="13" Height="13"
+                                                          Data="M14,3 h7 v7 M21,3 L10,14 M19,13 v6 a1,1 0 0 1 -1,1 h-13 a1,1 0 0 1 -1,-1 v-13 a1,1 0 0 1 1,-1 h6" />
+                                            </Button>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Selected file detail (no inner scroll — the whole page scrolls as one) -->
+                    <Border Grid.Column="1" Classes="card" Padding="20" IsVisible="{Binding HasSelectedFile}">
+                            <StackPanel Spacing="14" DataContext="{Binding SelectedFile}"
+                                        x:DataType="pages:MonitorFileViewModel">
+
+                                <!-- File name + open-in-browser -->
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.File.Name]}"
+                                               Classes="label" />
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBox Grid.Column="0" Text="{Binding Path, Mode=TwoWay}"
+                                                 PlaceholderText="rez01.html" />
+                                        <Button Grid.Column="1" Classes="ghost" Margin="6,0,0,0"
+                                                Command="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).OpenFileCommand}"
+                                                CommandParameter="{Binding}"
+                                                Content="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.File.Open]}" />
+                                    </Grid>
+                                </StackPanel>
+
+                                <!-- Title -->
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.File.Title]}"
+                                               Classes="label" />
+                                    <TextBox Text="{Binding Title, Mode=TwoWay}" />
+                                </StackPanel>
+
+                                <!-- Timing: refresh + scroll steppers -->
+                                <Grid ColumnDefinitions="*,*" >
+                                    <StackPanel Grid.Column="0" Spacing="6" Margin="0,0,8,0">
+                                        <TextBlock Text="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.File.Refresh]}"
+                                                   Classes="label" />
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <Button Classes="ghost" Content="−" Width="34"
+                                                    Command="{Binding DecrementRefreshCommand}" />
+                                            <Border Classes="card" Padding="12,6" MinWidth="64">
+                                                <TextBlock Text="{Binding RefreshSeconds}" HorizontalAlignment="Center" />
+                                            </Border>
+                                            <Button Classes="ghost" Content="+" Width="34"
+                                                    Command="{Binding IncrementRefreshCommand}" />
+                                            <TextBlock Text="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.Unit.Seconds]}"
+                                                       Classes="muted" VerticalAlignment="Center" Margin="4,0,0,0" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Spacing="6" Margin="8,0,0,0">
+                                        <TextBlock Text="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.File.Scroll]}"
+                                                   Classes="label" />
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <Button Classes="ghost" Content="−" Width="34"
+                                                    Command="{Binding DecrementScrollCommand}" />
+                                            <Border Classes="card" Padding="12,6" MinWidth="64">
+                                                <TextBlock Text="{Binding ScrollSpeed}" HorizontalAlignment="Center" />
+                                            </Border>
+                                            <Button Classes="ghost" Content="+" Width="34"
+                                                    Command="{Binding IncrementScrollCommand}" />
+                                            <TextBlock Text="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.Unit.PxPerSec]}"
+                                                       Classes="muted" VerticalAlignment="Center" Margin="4,0,0,0" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Groups: three categorised columns (Ж/W · Ч/М/M · інші), each with «зняти всі» -->
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.File.Groups]}"
+                                               Classes="label" />
+                                    <TextBlock Text="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.File.GroupsHint]}"
+                                               Classes="muted" TextWrapping="Wrap" />
+                                    <Border Classes="card" Padding="10">
+                                        <Grid ColumnDefinitions="*,*,*">
+                                            <!-- Women (Ж/W) -->
+                                            <StackPanel Grid.Column="0" Spacing="4" Margin="0,0,8,0">
+                                                <Button Classes="ghost" Padding="6,2"
+                                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                        Command="{Binding ToggleWomenCommand}"
+                                                        Content="{Binding WomenToggleLabel}" />
+                                                <ItemsControl ItemsSource="{Binding WomenGroups}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="pages:GroupToggle">
+                                                            <CheckBox Content="{Binding Name}"
+                                                                      IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                            <!-- Men (Ч/М/M) -->
+                                            <StackPanel Grid.Column="1" Spacing="4" Margin="4,0">
+                                                <Button Classes="ghost" Padding="6,2"
+                                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                        Command="{Binding ToggleMenCommand}"
+                                                        Content="{Binding MenToggleLabel}" />
+                                                <ItemsControl ItemsSource="{Binding MenGroups}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="pages:GroupToggle">
+                                                            <CheckBox Content="{Binding Name}"
+                                                                      IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                            <!-- Other -->
+                                            <StackPanel Grid.Column="2" Spacing="4" Margin="8,0,0,0">
+                                                <Button Classes="ghost" Padding="6,2"
+                                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                                        Command="{Binding ToggleOtherCommand}"
+                                                        Content="{Binding OtherToggleLabel}" />
+                                                <ItemsControl ItemsSource="{Binding OtherGroups}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="pages:GroupToggle">
+                                                            <CheckBox Content="{Binding Name}"
+                                                                      IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+
+                                <!-- Columns: a live preview of the actual monitor HTML screen this file produces
+                                     (drag a header to reorder) + show/hide check-boxes below. -->
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.File.Columns]}"
+                                               Classes="label" />
+                                    <TextBlock Text="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.File.ColumnsHint]}"
+                                               Classes="muted" TextWrapping="Wrap" />
+
+                                    <!-- The monitor screen mock-up: same light palette + large type the generated
+                                         HTML uses (centred header, then the section tables built in code-behind). -->
+                                    <Border Background="#F4F6FB" BorderBrush="{DynamicResource BorderBrush}"
+                                            BorderThickness="1" CornerRadius="6" Padding="20" ClipToBounds="True"
+                                            BoxShadow="0 2 10 0 #18000000">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="{Binding Preview.Title}" Foreground="#16202F"
+                                                       FontWeight="Bold" FontSize="22" TextAlignment="Center"
+                                                       IsVisible="{Binding Preview.Title, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                            <TextBlock Text="{Binding Preview.Subtitle}" Foreground="#5A6B86"
+                                                       FontSize="13" TextAlignment="Center" Margin="0,0,0,8"
+                                                       IsVisible="{Binding Preview.Subtitle, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                            <TextBlock Text="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.Preview.Empty]}"
+                                                       Foreground="#888" FontStyle="Italic" FontSize="12"
+                                                       TextWrapping="Wrap" IsVisible="{Binding Preview.IsEmpty}" />
+                                            <!-- Built in code-behind (HTML-faithful, header drag-reorder). -->
+                                            <Grid x:Name="PreviewTableHost" Margin="0,4,0,0"
+                                                  IsVisible="{Binding !Preview.IsEmpty}" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Column visibility — SHARED across all files (reorder by dragging the
+                                         preview headers). Bound to the page VM, not the selected file. -->
+                                    <ItemsControl ItemsSource="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Columns.Columns}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="shared:ResultColumnItem">
+                                                <CheckBox VerticalAlignment="Center" Margin="0,0,18,6"
+                                                          IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                                          Content="{Binding Label}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
+                                <!-- Remove this file -->
+                                <Button Classes="danger ghost" HorizontalAlignment="Left"
+                                        Command="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).RemoveFileCommand}"
+                                        CommandParameter="{Binding}"
+                                        Content="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.File.Remove]}" />
+
+                            </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- Save + start/stop -->
+                <Border Classes="card" Padding="20">
+                    <StackPanel Spacing="14">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Content="{Binding Localization[Monitor.Save]}" Classes="ghost"
+                                    Command="{Binding SaveSettingsCommand}" />
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                                        IsVisible="{Binding SettingsSaved}">
+                                <PathIcon Data="M5,12 l4,4 l10,-10" Width="16" Height="16"
+                                          Foreground="{DynamicResource SuccessBrush}" />
+                                <TextBlock Text="{Binding Localization[Settings.PathsSavedHint]}"
+                                           Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Content="{Binding Localization[Monitor.Start]}" Classes="accent"
+                                    IsVisible="{Binding IsStopped}"
+                                    IsEnabled="{Binding HasDay}"
+                                    Command="{Binding StartGeneratingCommand}" />
+                            <Button Content="{Binding Localization[Monitor.Stop]}" Classes="danger"
+                                    IsVisible="{Binding IsGenerating}"
+                                    Command="{Binding StopGeneratingCommand}" />
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                                        IsVisible="{Binding IsGenerating}">
+                                <Ellipse Width="10" Height="10" Fill="{DynamicResource SuccessBrush}"
+                                         VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding Localization[Monitor.Running]}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Log -->
+                <Border Classes="card" Padding="20">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="{Binding Localization[Monitor.Log]}" Classes="h2" />
+                        <Border Classes="card" Padding="10" MinHeight="120" MaxHeight="220" ClipToBounds="True">
+                            <ScrollViewer>
+                                <SelectableTextBlock Text="{Binding LogText}"
+                                                     FontFamily="Consolas,monospace" FontSize="12"
+                                                     TextWrapping="Wrap" />
+                            </ScrollViewer>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+
+</UserControl>

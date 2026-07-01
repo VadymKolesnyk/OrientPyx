@@ -4,7 +4,9 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientDesk.BusinessLogic.Disciplines;
+using OrientDesk.BusinessLogic.Disciplines.CoursePattern;
 using OrientDesk.BusinessLogic.Entities;
+using OrientDesk.BusinessLogic.Enums;
 using OrientDesk.BusinessLogic.Interfaces;
 using OrientDesk.BusinessLogic.Models;
 using OrientDesk.Localization;
@@ -59,7 +61,11 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         _strategies = strategies;
         _dialogs = dialogs;
         _appStore = appStore;
-        Localization.PropertyChanged += (_, _) => OnPropertyChanged(nameof(SelectedCourseHeader));
+        Localization.PropertyChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(SelectedCourseHeader));
+            RefreshPatternPreview();
+        };
         // Singleton VM: when the competition/day changes, drop the previous event's rows so the
         // page never shows stale data before it is next opened. The event can be raised on a pool
         // thread (session writes run inside RunAsync), so marshal LoadAsync onto the UI thread.
@@ -95,6 +101,11 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     [RelayCommand]
     private void ToggleGlobalSettings() => IsGlobalSettingsExpanded = !IsGlobalSettingsExpanded;
 
+    /// <summary>Opens the read-only help explaining how to write the «mixed» discipline's order pattern.</summary>
+    [RelayCommand]
+    private Task ShowCoursePatternHelpAsync() =>
+        _dialogs.ShowCoursePatternHelpAsync(new CoursePatternHelpViewModel(Localization));
+
     /// <summary>Competition-wide course-setter name (начальник дистанції). A group may override it per day.</summary>
     [ObservableProperty]
     private string _defaultCourseSetter = string.Empty;
@@ -127,6 +138,63 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             string.IsNullOrWhiteSpace(row.Name) ? "—" : row.Name)
         : Localization.Get("Groups.SelectedCourse.None");
 
+    // ── «Mixed» course-order pattern live preview ────────────────────────────────────────────────────
+    // Only meaningful when the selected group's effective discipline is Mixed: the order field is then a
+    // pattern, so we parse it on every keystroke and show either the normalized "S … F" order (valid) or
+    // the first structural error (invalid). The day's start/finish codes label the S/F markers.
+
+    private string? _startCode;
+    private string? _finishCode;
+
+    /// <summary>True when the selected group runs the «mixed» discipline, so the pattern preview shows.</summary>
+    [ObservableProperty]
+    private bool _isPatternPreviewVisible;
+
+    /// <summary>True when the current pattern parsed without a structural error (drives the ✔/✖ glyph).</summary>
+    [ObservableProperty]
+    private bool _isPatternValid = true;
+
+    /// <summary>The normalized order ("S … F") when valid, or the localized error message when invalid.</summary>
+    [ObservableProperty]
+    private string _patternPreviewText = string.Empty;
+
+    // Recomputes the pattern preview from the selected group's course order. No-op (hidden) unless the
+    // selected group is a mixed-discipline group.
+    private void RefreshPatternPreview()
+    {
+        var row = SelectedGroup;
+        if (row is null || row.EffectiveDiscipline != DisciplineType.Mixed)
+        {
+            IsPatternPreviewVisible = false;
+            IsPatternValid = true;
+            PatternPreviewText = string.Empty;
+            return;
+        }
+
+        IsPatternPreviewVisible = true;
+        var pattern = CoursePattern.Parse(row.CourseOrder, _startCode, _finishCode);
+        IsPatternValid = pattern.IsValid;
+        PatternPreviewText = pattern.IsValid
+            ? pattern.NormalizedOrder()
+            : DescribeError(pattern.Errors[0]);
+    }
+
+    // Maps a parse error to a localized, human-readable message (with the offending token spliced in).
+    private string DescribeError(CoursePatternError error)
+    {
+        var key = error.Kind switch
+        {
+            CoursePatternErrorKind.UnbalancedBracket => "CoursePattern.Error.UnbalancedBracket",
+            CoursePatternErrorKind.ChoiceMissingColon => "CoursePattern.Error.ChoiceMissingColon",
+            CoursePatternErrorKind.ChoiceBadCount => "CoursePattern.Error.ChoiceBadCount",
+            CoursePatternErrorKind.EmptyChoiceBlock => "CoursePattern.Error.EmptyChoiceBlock",
+            CoursePatternErrorKind.ChoiceCountTooLarge => "CoursePattern.Error.ChoiceCountTooLarge",
+            CoursePatternErrorKind.EmptyOrderedBlock => "CoursePattern.Error.EmptyOrderedBlock",
+            _ => "CoursePattern.Error.Generic"
+        };
+        return string.Format(Localization.Get(key), error.Token);
+    }
+
     // Type-specific columns are shown only when at least one row's effective discipline uses them.
     // (Course order, control count and time limit are used by every discipline, so they have no toggle.)
     public bool ShowRequiredCountColumn => Groups.Any(r => r.UsesRequiredCount);
@@ -148,14 +216,20 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         // Both BD reads run off the UI thread; every collection/property write below happens
         // afterwards on the UI thread (SQLite has no real async I/O, so this can't stay inline).
         var hasDay = _session.CurrentDay is not null;
-        var (days, rows, rules, info) = await _busy.RunAsync(async () =>
+        var (days, rows, rules, info, controlPoints) = await _busy.RunAsync(async () =>
         {
             var d = await _editor.GetDaysAsync();
             var r = hasDay ? await _editor.GetGroupDayRowsAsync() : (IReadOnlyList<GroupDayRow>)[];
             var p = await _appStore.GetPointsRulesAsync();
             var i = await _editor.GetInfoAsync();
-            return (d, r, p, i);
+            var cp = hasDay ? await _editor.GetControlPointsAsync() : (IReadOnlyList<ControlPoint>)[];
+            return (d, r, p, i, cp);
         });
+
+        // The day's start/finish control codes — used only to label the «mixed» pattern preview's
+        // S … F markers with the actual boxes (falls back to "S"/"F" when a day has none set).
+        _startCode = controlPoints.FirstOrDefault(c => c.Type == ControlPointType.Start)?.Code.Trim();
+        _finishCode = controlPoints.FirstOrDefault(c => c.Type == ControlPointType.Finish)?.Code.Trim();
 
         _pointsRules = rules;
         _info = info;
@@ -274,7 +348,17 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         // Keep the bottom editor's caption in sync while the selected group is being renamed in-grid.
         if (e.PropertyName == nameof(GroupDayRowViewModel.Name) && ReferenceEquals(sender, SelectedGroup))
             OnPropertyChanged(nameof(SelectedCourseHeader));
+
+        // Live-update the «mixed» pattern preview as the selected group's order is typed or its
+        // discipline is switched.
+        if (ReferenceEquals(sender, SelectedGroup)
+            && e.PropertyName is nameof(GroupDayRowViewModel.CourseOrder)
+                or nameof(GroupDayRowViewModel.EffectiveDiscipline))
+            RefreshPatternPreview();
     }
+
+    // Refresh the pattern preview whenever the selected group changes.
+    partial void OnSelectedGroupChanged(GroupDayRowViewModel? value) => RefreshPatternPreview();
 
     private void RaiseColumnVisibility()
     {

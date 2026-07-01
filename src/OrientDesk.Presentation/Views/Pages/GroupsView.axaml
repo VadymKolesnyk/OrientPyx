@@ -19,6 +19,8 @@
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
                         VerticalAlignment="Center">
+                <Button Classes="help" Command="{Binding ShowHelpCommand}"
+                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
                 <controls:SearchableComboBox IsVisible="{Binding ShowDaySelector}"
                           MinWidth="120" VerticalAlignment="Center"
                           SearchWatermark="{Binding Localization[Common.Search]}"
@@ -146,10 +148,46 @@
              above adjusts that row, and the Border stretches to fill it. -->
         <Border Grid.Row="2" Classes="card" Padding="12">
             <DockPanel LastChildFill="True">
-                <TextBlock DockPanel.Dock="Top"
-                           Text="{Binding SelectedCourseHeader}"
-                           Classes="subtitle"
-                           Margin="2,0,0,8" />
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="2,0,0,8">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding SelectedCourseHeader}"
+                               Classes="subtitle"
+                               VerticalAlignment="Center" />
+                    <!-- Help: how to write the «mixed» order pattern (< >, [N: …], nesting). Shown only
+                         for a mixed-discipline group (same condition as the pattern preview below). -->
+                    <Button Grid.Column="1" Classes="ghost"
+                            Padding="8,2"
+                            IsVisible="{Binding IsPatternPreviewVisible}"
+                            Command="{Binding ShowCoursePatternHelpCommand}"
+                            ToolTip.Tip="{Binding Localization[CoursePattern.Help.Title]}">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <PathIcon Data="M12,4 a8,8 0 1 1 0,16 a8,8 0 0 1 0,-16 M9.5,9 a2.5,2.5 0 0 1 3.6,-2 a2.2,2.2 0 0 1 0.4,3.4 c-0.9,0.8 -1.5,1.2 -1.5,2.3 M12,16.5 v0.2"
+                                      Width="14" Height="14" />
+                            <TextBlock Text="{Binding Localization[CoursePattern.Help.Button]}" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
+                <!-- Live validation of the «mixed» order pattern: a ✔ with the normalized "S … F" order
+                     when valid, or a ✖ with the first structural error when not. Shown only for a
+                     mixed-discipline group; the TextBox fills the space above. -->
+                <Border DockPanel.Dock="Bottom"
+                        IsVisible="{Binding IsPatternPreviewVisible}"
+                        Margin="0,8,0,0" Padding="10,7" CornerRadius="6"
+                        Background="{DynamicResource SurfaceSubtle}">
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <!-- Valid: green check / Invalid: red cross. Glyphs (not PathIcon, which fills an
+                             open stroke into a sliver) so they render crisply. -->
+                        <TextBlock IsVisible="{Binding IsPatternValid}"
+                                   Text="✓" FontWeight="Bold" FontSize="15"
+                                   Foreground="#16A34A" VerticalAlignment="Center" />
+                        <TextBlock IsVisible="{Binding !IsPatternValid}"
+                                   Text="✕" FontWeight="Bold" FontSize="15"
+                                   Foreground="#DC2626" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding PatternPreviewText}"
+                                   TextWrapping="Wrap" VerticalAlignment="Center"
+                                   FontFamily="Consolas, 'Courier New', monospace" />
+                    </StackPanel>
+                </Border>
                 <TextBox AcceptsReturn="True"
                          TextWrapping="Wrap"
                          VerticalContentAlignment="Top"

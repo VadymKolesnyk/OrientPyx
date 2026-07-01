@@ -90,8 +90,37 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
         ["days_count"] = daysCount,
         ["standings"] = p.Standings,
         ["points"] = p.Points,
+        // The frontend reads its column layout from display_config (jsonb): the ordered list of visible
+        // column keys. PostgREST serialises this nested object straight into the jsonb column.
+        ["display_config"] = BuildDisplayConfig(p),
         ["updated_at"] = DateTime.UtcNow.ToString("o"),
     };
+
+    // The events.display_config payload the spectator frontend reads (1:1 with DisplayConfig in
+    // web/src/types.ts): a version marker, the points/standings flags (duplicated so the frontend can read
+    // everything from one place), the separate-DSQ-column toggles per screen, and the ordered columns each with
+    // its large/small-screen visibility.
+    private static Dictionary<string, object?> BuildDisplayConfig(OnlinePublishSettings p)
+    {
+        var display = p.EffectiveDisplay;
+        return new()
+        {
+            ["version"] = 1,
+            ["points"] = p.Points,
+            ["standings"] = p.Standings,
+            ["separateDsqLg"] = display.SeparateDsqLg,
+            ["separateDsqSm"] = display.SeparateDsqSm,
+            ["columns"] = display.Resolve()
+                .Select((c, i) => new Dictionary<string, object?>
+                {
+                    ["key"] = c.Def.Key,
+                    ["order"] = i,
+                    ["lg"] = c.Lg,
+                    ["sm"] = c.Sm,
+                })
+                .ToList(),
+        };
+    }
 
     private static List<Dictionary<string, object?>> BuildDayRows(string slug, IReadOnlyList<OnlineDay> days) =>
         days.Select((d, i) => new Dictionary<string, object?>

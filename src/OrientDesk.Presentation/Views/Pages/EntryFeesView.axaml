@@ -15,11 +15,16 @@
         <StackPanel Spacing="20">
 
             <!-- Heading -->
-            <StackPanel Spacing="4">
-                <TextBlock Text="{Binding Title}" Classes="h1"
-                           FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
-                <TextBlock Text="{Binding Text}" Classes="subtitle" />
-            </StackPanel>
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Spacing="4">
+                    <TextBlock Text="{Binding Title}" Classes="h1"
+                               FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+                    <TextBlock Text="{Binding Text}" Classes="subtitle" />
+                </StackPanel>
+                <Button Grid.Column="1" Classes="help" VerticalAlignment="Center"
+                        Command="{Binding ShowHelpCommand}"
+                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+            </Grid>
 
             <!-- 1. Per-group entry fees (shared across all days) -->
             <StackPanel Spacing="8">

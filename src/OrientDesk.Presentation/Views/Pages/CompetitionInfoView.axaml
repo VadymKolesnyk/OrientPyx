@@ -12,8 +12,12 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <StackPanel Spacing="20" MaxWidth="640" HorizontalAlignment="Left">
 
-        <TextBlock Text="{Binding Title}" Classes="h1"
-                   FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+        <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0" Text="{Binding Title}" Classes="h1" VerticalAlignment="Center"
+                       FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+            <Button Grid.Column="1" Classes="help" Command="{Binding ShowHelpCommand}"
+                    ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+        </Grid>
 
         <Border Classes="card" Padding="28">
             <StackPanel Spacing="16">

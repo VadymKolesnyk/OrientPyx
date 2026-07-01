@@ -51,6 +51,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly SummaryProtocolsViewModel _summaryProtocols;
     private readonly StartProtocolsViewModel _startProtocols;
     private readonly OnlineResultsViewModel _onlineResults;
+    private readonly MonitorResultsViewModel _monitorResults;
     private readonly SplitsExportViewModel _splitsExport;
     private readonly DrawViewModel _draw;
     private readonly ClassicDrawViewModel _classicDraw;
@@ -80,6 +81,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         SummaryProtocolsViewModel summaryProtocols,
         StartProtocolsViewModel startProtocols,
         OnlineResultsViewModel onlineResults,
+        MonitorResultsViewModel monitorResults,
         SplitsExportViewModel splitsExport,
         DrawViewModel draw,
         ClassicDrawViewModel classicDraw,
@@ -113,6 +115,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _summaryProtocols = summaryProtocols;
         _startProtocols = startProtocols;
         _onlineResults = onlineResults;
+        _monitorResults = monitorResults;
         _splitsExport = splitsExport;
         _draw = draw;
         _classicDraw = classicDraw;
@@ -135,10 +138,25 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _finishRead.NavigateToSelfRequested += async (_, _) => await OpenFinishReadAsync();
         // "Go to settings" on the online-results publish activity opens the Online-results page.
         _onlineResults.NavigateToSelfRequested += async (_, _) => await OpenOnlineResultsAsync();
+        // Same for the results-monitor generation activity.
+        _monitorResults.NavigateToSelfRequested += async (_, _) => await OpenMonitorResultsAsync();
         // Dashboard quick-action buttons route through here (the dashboard owns no page-open commands).
         _dashboard.QuickActionRequested += async (_, action) => await OnDashboardQuickActionAsync(action);
         _session.SessionChanged += OnSessionChanged;
         Localization.PropertyChanged += (_, _) => OnPropertyChanged(nameof(WindowTitle));
+
+        // Every page's «?» header button raises HelpRequested; the root coordinator owns the dialog
+        // service, so it opens the per-screen help modal here (same wiring as the quick-action events).
+        foreach (var page in new PageViewModelBase[]
+                 {
+                     _dashboard, _competitionInfo, _competitionDays, _controlPoints, _groups, _chips,
+                     _finishRead, _participants, _regions, _clubs, _dussh, _ranks, _points, _entryFees,
+                     _protocols, _summaryProtocols, _startProtocols, _onlineResults, _monitorResults,
+                     _splitsExport, _draw, _classicDraw, Settings,
+                 })
+        {
+            page.HelpRequested += OnPageHelpRequested;
+        }
 
         // Initial view; replaced by InitializeAsync.
         _currentView = _selection;
@@ -196,6 +214,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         _shell.SelectedPage = page;
     }
+
+    /// <summary>Opens the dashboard (Панель) — the only navigable sidebar page.</summary>
+    [RelayCommand]
+    private void OpenDashboard() => Navigate(_dashboard);
 
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]
     private async Task OpenCompetitionInfoAsync()
@@ -326,6 +348,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenMonitorResultsAsync()
+    {
+        await _monitorResults.LoadAsync();
+        _shell.SelectedPage = _monitorResults;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
     private async Task OpenSplitsExportAsync()
     {
         await _splitsExport.LoadAsync();
@@ -392,6 +421,16 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 await OpenParticipantsAsync();
                 break;
         }
+    }
+
+    // Opens the per-screen help modal for whichever page raised the event.
+    private void OnPageHelpRequested(object? sender, EventArgs e)
+    {
+        if (sender is not PageViewModelBase page)
+            return;
+
+        _ = _dialogs.ShowScreenHelpAsync(
+            new ViewModels.Dialogs.ScreenHelpViewModel(Localization, page.HelpKeyPrefix));
     }
 
     /// <summary>Called once after construction to restore the last session or show the picker.</summary>
@@ -467,6 +506,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenStartProtocolCommand.NotifyCanExecuteChanged();
         OpenStartProtocolJudgesCommand.NotifyCanExecuteChanged();
         OpenOnlineResultsCommand.NotifyCanExecuteChanged();
+        OpenMonitorResultsCommand.NotifyCanExecuteChanged();
         OpenSplitsExportCommand.NotifyCanExecuteChanged();
         OpenDrawCommand.NotifyCanExecuteChanged();
         OpenClassicDrawCommand.NotifyCanExecuteChanged();

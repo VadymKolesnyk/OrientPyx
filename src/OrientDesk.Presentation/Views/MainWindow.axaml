@@ -69,8 +69,17 @@
         <DataTemplate DataType="dialogs:FinishReadoutEditViewModel">
             <dialogViews:FinishReadoutEditView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:ProblematicControlsViewModel">
+            <dialogViews:ProblematicControlsView />
+        </DataTemplate>
         <DataTemplate DataType="dialogs:ExportFormatViewModel">
             <dialogViews:ExportFormatView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:CoursePatternHelpViewModel">
+            <dialogViews:CoursePatternHelpView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:ScreenHelpViewModel">
+            <dialogViews:ScreenHelpView />
         </DataTemplate>
     </Window.DataTemplates>
 
@@ -200,36 +209,48 @@
                           Command="{Binding ExitCommand}" />
             </MenuItem>
 
-            <!-- Competition: metadata + days, shown only while a competition is open -->
+            <!-- Competition setup + reference data, shown only while a competition is open.
+                 Course setup first (groups / chips / CP), then metadata, then reference
+                 dictionaries (incl. entry fees) and the global qualification tables in sub-menus. -->
             <MenuItem Header="{Binding Localization[Menu.Competition]}"
                       IsVisible="{Binding IsEventSelected}">
-                <MenuItem Header="{Binding Localization[Menu.Competition.Info]}"
-                          Command="{Binding OpenCompetitionInfoCommand}" />
-                <MenuItem Header="{Binding Localization[Menu.Competition.Days]}"
-                          Command="{Binding OpenCompetitionDaysCommand}" />
-                <MenuItem Header="{Binding Localization[Menu.Competition.ControlPoints]}"
-                          Command="{Binding OpenControlPointsCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Competition.Groups]}"
                           Command="{Binding OpenGroupsCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Competition.Chips]}"
                           Command="{Binding OpenChipsCommand}" />
-                <MenuItem Header="{Binding Localization[Menu.Competition.Participants]}"
-                          Command="{Binding OpenParticipantsCommand}" />
-                <MenuItem Header="{Binding Localization[Menu.Competition.FinishRead]}"
-                          Command="{Binding OpenFinishReadCommand}" />
-                <MenuItem Header="{Binding Localization[Menu.Competition.Regions]}"
-                          Command="{Binding OpenRegionsCommand}" />
-                <MenuItem Header="{Binding Localization[Menu.Competition.Clubs]}"
-                          Command="{Binding OpenClubsCommand}" />
-                <MenuItem Header="{Binding Localization[Menu.Competition.Dussh]}"
-                          Command="{Binding OpenDusshCommand}" />
-                <MenuItem Header="{Binding Localization[Menu.Competition.Ranks]}"
-                          Command="{Binding OpenRanksCommand}" />
-                <MenuItem Header="{Binding Localization[Menu.Competition.Points]}"
-                          Command="{Binding OpenPointsCommand}" />
-                <MenuItem Header="{Binding Localization[Menu.Competition.EntryFees]}"
-                          Command="{Binding OpenEntryFeesCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Competition.ControlPoints]}"
+                          Command="{Binding OpenControlPointsCommand}" />
+                <Separator />
+                <MenuItem Header="{Binding Localization[Menu.Competition.Info]}"
+                          Command="{Binding OpenCompetitionInfoCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Competition.Days]}"
+                          Command="{Binding OpenCompetitionDaysCommand}" />
+                <Separator />
+                <!-- Reference dictionaries -->
+                <MenuItem Header="{Binding Localization[Menu.Competition.Directories]}">
+                    <MenuItem Header="{Binding Localization[Menu.Competition.Regions]}"
+                              Command="{Binding OpenRegionsCommand}" />
+                    <MenuItem Header="{Binding Localization[Menu.Competition.Clubs]}"
+                              Command="{Binding OpenClubsCommand}" />
+                    <MenuItem Header="{Binding Localization[Menu.Competition.Dussh]}"
+                              Command="{Binding OpenDusshCommand}" />
+                    <Separator />
+                    <MenuItem Header="{Binding Localization[Menu.Participants.EntryFees]}"
+                              Command="{Binding OpenEntryFeesCommand}" />
+                </MenuItem>
+                <!-- Global (app-level) qualification tables: ranks & points -->
+                <MenuItem Header="{Binding Localization[Menu.Competition.Qualification]}">
+                    <MenuItem Header="{Binding Localization[Menu.Competition.Ranks]}"
+                              Command="{Binding OpenRanksCommand}" />
+                    <MenuItem Header="{Binding Localization[Menu.Competition.Points]}"
+                              Command="{Binding OpenPointsCommand}" />
+                </MenuItem>
             </MenuItem>
+
+            <!-- Participants: opens the roster table directly, while a competition is open -->
+            <MenuItem Header="{Binding Localization[Menu.Participants]}"
+                      IsVisible="{Binding IsEventSelected}"
+                      Command="{Binding OpenParticipantsCommand}" />
 
             <!-- Start: the start draw (жеребкування) and related start-list operations, while open -->
             <MenuItem Header="{Binding Localization[Menu.Start]}"
@@ -245,6 +266,13 @@
                           Command="{Binding OpenStartProtocolJudgesCommand}" />
             </MenuItem>
 
+            <!-- Finish: read-out of finishing chips, while a competition is open -->
+            <MenuItem Header="{Binding Localization[Menu.Finish]}"
+                      IsVisible="{Binding IsEventSelected}">
+                <MenuItem Header="{Binding Localization[Menu.Finish.Read]}"
+                          Command="{Binding OpenFinishReadCommand}" />
+            </MenuItem>
+
             <!-- Protocols: result protocols + (later) other printed outputs, while a competition is open -->
             <MenuItem Header="{Binding Localization[Menu.Protocols]}"
                       IsVisible="{Binding IsEventSelected}">
@@ -257,21 +285,14 @@
                 <Separator />
                 <MenuItem Header="{Binding Localization[Menu.Protocols.OnlineResults]}"
                           Command="{Binding OpenOnlineResultsCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Protocols.Monitor]}"
+                          Command="{Binding OpenMonitorResultsCommand}" />
             </MenuItem>
 
-            <!-- Navigation tabs, shown only while a competition is open -->
-            <MenuItem Header="{Binding Localization[Menu.Navigate]}"
+            <!-- Dashboard (Панель): the only navigable sidebar page, opened directly -->
+            <MenuItem Header="{Binding Localization[Nav.Dashboard]}"
                       IsVisible="{Binding IsEventSelected}"
-                      ItemsSource="{Binding Pages}">
-                <MenuItem.Styles>
-                    <Style Selector="MenuItem > MenuItem">
-                        <Setter Property="Header" Value="{ReflectionBinding NavLabel}" />
-                        <Setter Property="Command"
-                                Value="{ReflectionBinding $parent[Menu].DataContext.NavigateCommand}" />
-                        <Setter Property="CommandParameter" Value="{ReflectionBinding}" />
-                    </Style>
-                </MenuItem.Styles>
-            </MenuItem>
+                      Command="{Binding OpenDashboardCommand}" />
 
             <MenuItem Header="{Binding Localization[Menu.Help]}">
                 <MenuItem Header="{Binding Localization[Menu.Help.About]}" />
@@ -304,13 +325,16 @@
                         <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
                                 BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
                                 Padding="22,16">
-                            <Grid ColumnDefinitions="*,Auto">
+                            <Grid ColumnDefinitions="*,Auto,Auto">
                                 <TextBlock Grid.Column="0"
                                            Text="{Binding Localization[Settings.OverlayTitle]}"
                                            Classes="h2"
                                            FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}"
                                            VerticalAlignment="Center" />
-                                <Button Grid.Column="1"
+                                <Button Grid.Column="1" Classes="help" Margin="0,0,8,0"
+                                        Command="{Binding Settings.ShowHelpCommand}"
+                                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                                <Button Grid.Column="2"
                                         Content="{Binding Localization[Settings.Close]}"
                                         Classes="ghost"
                                         Command="{Binding CloseSettingsCommand}" />

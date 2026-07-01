@@ -58,6 +58,15 @@ public interface ICompetitionEditorService
     Task DeleteControlPointAsync(Guid pointId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Marks the current day's «проблемні КП»: every control whose id is in <paramref name="disabledPointIds"/>
+    /// is flagged disabled, the rest are cleared. A disabled control is dropped from the prescribed/allowed
+    /// course wherever it is required, so a runner missing it is not penalised (no MP) and a scored control no
+    /// longer counts. Returns the number of control points whose flag changed.
+    /// </summary>
+    Task<int> SetProblematicControlsAsync(
+        IReadOnlyCollection<Guid> disabledPointIds, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Imports the control points from a parsed IOF file into the current day. When
     /// <paramref name="replaceAll"/> is true the day's existing points are cleared and fully
     /// replaced; otherwise only codes not already present are appended (existing rows untouched).
@@ -598,6 +607,60 @@ public interface ICompetitionEditorService
     /// is selected.
     /// </summary>
     Task<OnlineResultsSnapshot> GetOnlineResultsSnapshotAsync(Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Loads the current competition's results-monitor settings (the list of output HTML files with their
+    /// group selection, columns and timing). Returns <see cref="MonitorSettings.Empty"/> when no row is stored
+    /// yet, or null when no competition is selected.
+    /// </summary>
+    Task<MonitorSettings?> GetMonitorSettingsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Saves the current competition's results-monitor settings. A no-op when no competition is selected.</summary>
+    Task SaveMonitorSettingsAsync(MonitorSettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The absolute output directory the monitor HTML files are written into — the active session day's folder
+    /// (<c>events/&lt;id&gt;/day{N}</c>), so the screens live with the day whose results they show. Monitor
+    /// files are addressed by file name only; this resolves where they live so the page can both write and open
+    /// them. Returns null when no competition or day is selected.
+    /// </summary>
+    string? GetMonitorOutputDirectory();
+
+    /// <summary>Resolves a monitor file name to its absolute path under <see cref="GetMonitorOutputDirectory"/>
+    /// (the active day's folder). Returns null when no competition/day is selected or the name is blank.</summary>
+    string? ResolveMonitorFilePath(string fileName);
+
+    /// <summary>
+    /// Builds the renderable monitor documents for the given day — one per active output file — from the day's
+    /// computed results: each file's chosen groups (in day order), filtered to its selected columns and
+    /// already-formatted. Pairs each document with its target file path so the caller can write it. Returns an
+    /// empty list when no competition/day is selected or no file is configured.
+    /// </summary>
+    Task<IReadOnlyList<MonitorFileDocument>> BuildMonitorDocumentsAsync(
+        Guid dayId, MonitorLabels labels, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Builds the renderable monitor document for a <b>single, possibly-unsaved</b> file — its chosen groups
+    /// (in day order) filtered to the shared <paramref name="columns"/> selection, formatted from the day's
+    /// computed results. Used by the configuration page's live preview, so reordering / hiding a column or
+    /// toggling a group re-renders without saving first. Returns null when no competition is selected.
+    /// </summary>
+    Task<MonitorDocument?> BuildMonitorPreviewAsync(
+        Guid dayId, MonitorFile file, ResultColumnSelection columns, MonitorLabels labels,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Loads (off the UI thread, once) the day's computed result snapshot the monitor preview builds from, so
+    /// the page can cache it and re-render the preview on a column/group toggle <b>without</b> a DB round-trip
+    /// (see <see cref="BuildMonitorPreview"/>). Returns null when no competition is selected.
+    /// </summary>
+    Task<MonitorPreviewSource?> GetMonitorPreviewSourceAsync(Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>Synchronously builds one monitor document from a file + the shared <paramref name="columns"/>
+    /// selection + a cached <see cref="MonitorPreviewSource"/> (no I/O), for instant live-preview re-renders as
+    /// the user edits the shared columns or a file's groups.</summary>
+    MonitorDocument BuildMonitorPreview(
+        MonitorFile file, ResultColumnSelection columns, MonitorPreviewSource source, MonitorLabels labels);
 
     /// <summary>Loads the current competition's chip-price overrides (note → price/day), ordered by note.</summary>
     Task<IReadOnlyList<ChipPriceOverride>> GetChipPriceOverridesAsync(CancellationToken cancellationToken = default);

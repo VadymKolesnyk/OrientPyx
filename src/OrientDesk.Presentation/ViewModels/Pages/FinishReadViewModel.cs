@@ -382,6 +382,43 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         await LoadAsync();
     }
 
+    // Opens the «проблемні КП» modal: tick the day's broken controls. On save it persists the disabled set
+    // and reloads so the log statuses and splits recompute (a disabled control is no longer required, so a
+    // runner who missed it is not penalised). A no-op when no day is selected.
+    [RelayCommand]
+    private async Task OpenProblematicControlsAsync()
+    {
+        if (_session.CurrentDay is null)
+            return;
+
+        var controls = await _busy.RunAsync(() => _editor.GetControlPointsAsync());
+        var items = controls
+            .Select(cp => new ProblematicControlItem(cp.Id, ControlLabel(cp), cp.IsDisabled))
+            .ToList();
+
+        var disabledIds = await _dialogs.ShowProblematicControlsAsync(
+            new ProblematicControlsViewModel(Localization, items));
+        if (disabledIds is null)
+            return;
+
+        await _busy.RunAsync(() => _editor.SetProblematicControlsAsync(disabledIds));
+        _log.Action(string.Format(Localization.Get("FinishRead.Problematic.Log"), disabledIds.Count));
+        await LoadAsync();
+    }
+
+    // The label shown for a control point in the «проблемні КП» modal: its code, plus a parenthetical type
+    // hint for the start/finish markers (so they're recognisable — they don't normally count as КП).
+    private string ControlLabel(BusinessLogic.Entities.ControlPoint cp)
+    {
+        var code = string.IsNullOrWhiteSpace(cp.Code) ? "—" : cp.Code.Trim();
+        return cp.Type switch
+        {
+            BusinessLogic.Enums.ControlPointType.Start => $"{code} ({Localization.Get("ControlPoints.Type.Start")})",
+            BusinessLogic.Enums.ControlPointType.Finish => $"{code} ({Localization.Get("ControlPoints.Type.Finish")})",
+            _ => code
+        };
+    }
+
     // Opens the print-settings modal from the page header (printer + roll width), independent of a print.
     [RelayCommand]
     private async Task OpenPrintSettingsAsync()

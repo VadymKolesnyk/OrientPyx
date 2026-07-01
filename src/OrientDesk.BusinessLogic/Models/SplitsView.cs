@@ -13,8 +13,25 @@ namespace OrientDesk.BusinessLogic.Models;
 /// </summary>
 public sealed class SplitsContext
 {
-    /// <summary>Control codes prescribed by the course, in order (no start/finish markers).</summary>
+    /// <summary>Control codes prescribed by the course, in order (no start/finish markers, with any
+    /// disabled «проблемні» controls already removed by the caller — see <see cref="DisabledControls"/>).</summary>
     public IReadOnlyList<string> ExpectedControls { get; init; } = [];
+
+    /// <summary>
+    /// The group's raw course-order text as entered, needed by the «mixed» discipline to parse the order
+    /// <b>pattern</b> (<c>&lt;…&gt;</c> / <c>[N …]</c> blocks) that <see cref="ExpectedControls"/> flattens
+    /// away, so its ordered splits follow the pattern. Other layouts ignore it. Empty when none.
+    /// </summary>
+    public string CourseOrderText { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Codes (trimmed) of prescribed controls that were marked disabled («проблемний КП») for the day and
+    /// therefore dropped from <see cref="ExpectedControls"/>: they are no longer required and missing one is
+    /// not penalised. The set-course ordered layout still lists them (flagged «вимкнено») so the operator
+    /// sees the control was ignored. Empty when no control is disabled.
+    /// </summary>
+    public IReadOnlySet<string> DisabledControls { get; init; } =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Controls the chip actually punched, in read order (start/finish already excluded).</summary>
     public IReadOnlyList<ChipPunch> Punches { get; init; } = [];
@@ -108,6 +125,14 @@ public sealed class SplitsView
     /// </summary>
     public IReadOnlyList<ExpectedControl> Expected { get; init; } = [];
 
+    /// <summary>
+    /// Codes (trimmed) of this course's controls that were marked disabled («проблемний КП») for the day and
+    /// dropped from the required course — missing one is not penalised. The ordered layout lists them in
+    /// <see cref="Expected"/> flagged <see cref="ExpectedControl.Ignored"/>; empty when none.
+    /// </summary>
+    public IReadOnlySet<string> DisabledControls { get; init; } =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Scored-layout rows: allowed controls in passage order, then unvisited ones.</summary>
     public IReadOnlyList<ScoreEntry> Entries { get; init; } = [];
 
@@ -195,7 +220,7 @@ public sealed record PassagePunch(
 /// <see cref="CountsForTeam"/> is true when the whole rogaine team punched this control (it scores for the
 /// team); always false outside a team context.
 /// </summary>
-public sealed record ExpectedControl(int Sequence, string Code, bool Taken, int? Points = null, bool CountsForTeam = false);
+public sealed record ExpectedControl(int Sequence, string Code, bool Taken, int? Points = null, bool CountsForTeam = false, bool Ignored = false);
 
 /// <summary>
 /// One row of the scored (score/choice/rogaine) splits panel: an allowed control, whether it was

@@ -48,6 +48,9 @@ public static class DataAccessServiceCollectionExtensions
         // Renders a day's splits to a UTF-8 HTML document (the builder is in BusinessLogic).
         services.AddSingleton<ISplitHtmlWriter, HtmlSplitWriter>();
 
+        // Renders an on-screen results monitor page (self-contained, auto-refresh + auto-scroll HTML).
+        services.AddSingleton<IMonitorHtmlWriter, HtmlMonitorWriter>();
+
         // Publishes live results to Supabase (PostgREST). Transient: each running publish session needs its
         // own instance because the publisher remembers which metadata it has already uploaded.
         services.AddTransient<IResultPublisher, Online.SupabaseResultPublisher>();

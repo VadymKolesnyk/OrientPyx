@@ -19,6 +19,11 @@
                 <TextBlock Text="{Binding Text}" Classes="subtitle" />
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <Button Classes="help" Command="{Binding ShowHelpCommand}"
+                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                <Button Classes="ghost" VerticalAlignment="Center"
+                        Command="{Binding OpenProblematicControlsCommand}"
+                        Content="{Binding Localization[FinishRead.Problematic.Button]}" />
                 <Button Classes="ghost" VerticalAlignment="Center"
                         Command="{Binding OpenPrintSettingsCommand}"
                         Content="{Binding Localization[Print.Settings.Title]}" />
