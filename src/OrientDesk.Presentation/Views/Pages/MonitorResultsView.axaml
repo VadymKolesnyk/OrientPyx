@@ -115,12 +115,12 @@
                                         <TextBlock Text="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.File.Refresh]}"
                                                    Classes="label" />
                                         <StackPanel Orientation="Horizontal" Spacing="4">
-                                            <Button Classes="ghost" Content="−" Width="34"
+                                            <Button Classes="ghost stepper" Content="−" Width="34"
                                                     Command="{Binding DecrementRefreshCommand}" />
                                             <Border Classes="card" Padding="12,6" MinWidth="64">
                                                 <TextBlock Text="{Binding RefreshSeconds}" HorizontalAlignment="Center" />
                                             </Border>
-                                            <Button Classes="ghost" Content="+" Width="34"
+                                            <Button Classes="ghost stepper" Content="+" Width="34"
                                                     Command="{Binding IncrementRefreshCommand}" />
                                             <TextBlock Text="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.Unit.Seconds]}"
                                                        Classes="muted" VerticalAlignment="Center" Margin="4,0,0,0" />
@@ -130,12 +130,12 @@
                                         <TextBlock Text="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.File.Scroll]}"
                                                    Classes="label" />
                                         <StackPanel Orientation="Horizontal" Spacing="4">
-                                            <Button Classes="ghost" Content="−" Width="34"
+                                            <Button Classes="ghost stepper" Content="−" Width="34"
                                                     Command="{Binding DecrementScrollCommand}" />
                                             <Border Classes="card" Padding="12,6" MinWidth="64">
                                                 <TextBlock Text="{Binding ScrollSpeed}" HorizontalAlignment="Center" />
                                             </Border>
-                                            <Button Classes="ghost" Content="+" Width="34"
+                                            <Button Classes="ghost stepper" Content="+" Width="34"
                                                     Command="{Binding IncrementScrollCommand}" />
                                             <TextBlock Text="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.Unit.PxPerSec]}"
                                                        Classes="muted" VerticalAlignment="Center" Margin="4,0,0,0" />

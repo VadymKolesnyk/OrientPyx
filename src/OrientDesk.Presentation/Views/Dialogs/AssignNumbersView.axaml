@@ -47,17 +47,15 @@
                     <TextBlock Text="{Binding Localization[Participants.AssignNumbers.StartNumber]}" Classes="label" />
                     <StackPanel Orientation="Horizontal" Spacing="2">
                         <Button Content="−" Command="{Binding DecrementCommand}"
-                                Width="36" Height="36" Classes="ghost" Padding="0"
-                                VerticalAlignment="Center"
-                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+                                Height="36" Classes="ghost stepper"
+                                VerticalAlignment="Center" />
                         <TextBox Text="{Binding StartNumber, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                  behaviors:NumericInput.Digits="True"
                                  Height="36" MinWidth="80"
                                  TextAlignment="Center" VerticalContentAlignment="Center" />
                         <Button Content="+" Command="{Binding IncrementCommand}"
-                                Width="36" Height="36" Classes="ghost" Padding="0"
-                                VerticalAlignment="Center"
-                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+                                Height="36" Classes="ghost stepper"
+                                VerticalAlignment="Center" />
                     </StackPanel>
                 </StackPanel>
 

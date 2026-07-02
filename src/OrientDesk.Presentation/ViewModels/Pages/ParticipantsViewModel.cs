@@ -214,7 +214,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     public IReadOnlyList<EventDay> RosterDays
     {
         get => _rosterDays;
-        private set => SetProperty(ref _rosterDays, value);
+        private set
+        {
+            if (SetProperty(ref _rosterDays, value))
+                OnPropertyChanged(nameof(CanEditStartOrder));
+        }
     }
 
     /// <summary>
@@ -235,6 +239,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsRosterMode))]
     [NotifyPropertyChangedFor(nameof(IsDayMode))]
+    [NotifyPropertyChangedFor(nameof(CanEditStartOrder))]
     private DayOption? _selectedDay;
 
     /// <summary>True while the roster ("Мандатка") aggregate is shown.</summary>
@@ -242,6 +247,19 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
     /// <summary>True while a real day's participants are shown (the inverse of roster mode).</summary>
     public bool IsDayMode => !IsRosterMode;
+
+    /// <summary>
+    /// The single day the page is currently bound to, or null when there is no unambiguous day: a real day
+    /// in day mode, or — in roster mode — the sole day of a single-day competition (the roster shows the
+    /// whole competition, but with one day it still targets that day). Null when the roster spans multiple
+    /// days (no single day to act on).
+    /// </summary>
+    private Guid? EffectiveDayId => IsDayMode
+        ? SelectedDay?.Day?.Id
+        : RosterDays.Count == 1 ? RosterDays[0].Id : null;
+
+    /// <summary>True when a single day is unambiguously in view, gating the manual start-order action.</summary>
+    public bool CanEditStartOrder => EffectiveDayId is not null;
 
     /// <summary>The day picker is shown only when the competition has more than one real day. With a
     /// single day there is nothing to switch between, so we hide it and always show the roster
@@ -1146,6 +1164,43 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                     number,
                     string.IsNullOrWhiteSpace(name) ? Localization.Get("Participants.Chip.UnnamedHolder") : name));
         }
+    }
+
+    // ── Manual start-order editing ────────────────────────────────────────────────────────────
+    // Opens a modal to re-order the start sequence within a group on the day currently in view (a real day
+    // in day mode, or the sole day of a single-day competition when on the roster). The dialog lists a
+    // group's members ordered by their start time (from the start protocol) and lets the user drag them into
+    // a new order; the SET of start minutes stays fixed and is re-handed out in the new order on save. The
+    // changed links are written in ONE batch and the page reloads so the start-time cells refresh.
+    [RelayCommand]
+    private async Task EditStartOrderAsync()
+    {
+        if (EffectiveDayId is not { } dayId)
+            return;
+
+        var data = await _busy.RunAsync(() => _editor.GetStartOrderDataAsync(dayId));
+        if (data.Groups.Count == 0)
+        {
+            await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+                Localization,
+                titleKey: "Participants.StartOrder.Title",
+                messageKey: "Participants.StartOrder.NoGroups",
+                confirmKey: "Common.Ok",
+                cancelKey: "Common.Ok"));
+            return;
+        }
+
+        var assignments = await _dialogs.ShowStartOrderAsync(new StartOrderViewModel(Localization, data));
+        if (assignments is null || assignments.Count == 0)
+            return;
+
+        await _busy.RunAsync(() => _editor.SaveDrawStartTimesAsync(assignments));
+        _log.Action(string.Format(
+            CultureInfo.CurrentCulture,
+            Localization.Get("Participants.StartOrder.Log.Saved"),
+            assignments.Count));
+
+        await LoadAsync();
     }
 
     // ── Bulk assign rental chips ──────────────────────────────────────────────────────────────

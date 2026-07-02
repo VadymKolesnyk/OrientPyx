@@ -33,6 +33,7 @@ public sealed partial class DrawGroupItemViewModel : ObservableObject
     /// different start group — the View renders the first-control label (КП N) in bold red as a warning.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasClash))]
     private bool _firstControlClash;
 
     /// <summary>
@@ -40,7 +41,18 @@ public sealed partial class DrawGroupItemViewModel : ObservableObject
     /// start group — the View tints the whole chip red as a stronger warning than a shared first control.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasClash))]
     private bool _courseClash;
+
+    /// <summary>True when the chip is highlighted red for any reason — drives the on-chip «?» explain button.</summary>
+    public bool HasClash => FirstControlClash || CourseClash;
+
+    /// <summary>
+    /// The groups this one overlaps with (same start minutes, different lane), recorded by the page when it
+    /// recomputes clashes so the on-chip «?» dialog can name them, their lane, the shared control(s) and the
+    /// overlapping start times. Empty when there is no clash. Presentation-only detail — never persisted.
+    /// </summary>
+    public IReadOnlyList<DrawClashPeer> ClashPeers { get; set; } = [];
 
     /// <summary>"×12" member-count badge.</summary>
     public string CountLabel => $"×{MemberCount}";
@@ -110,3 +122,20 @@ public sealed partial class DrawGroupItemViewModel : ObservableObject
     [ObservableProperty]
     private bool _showDropLineBefore;
 }
+
+/// <summary>
+/// One group that clashes with another on the draw page: the colliding group, the (1-based) start lane it
+/// sits in, whether the whole course matches (vs just the opening control) and the inclusive window of start
+/// times the two overlap on. Built by the page's clash pass so the «?» explain dialog can spell out the why.
+/// </summary>
+/// <param name="Group">The overlapping group.</param>
+/// <param name="LaneNumber">1-based start-group (lane) number the overlapping group sits in.</param>
+/// <param name="SameCourse">True when the two run an identical full course; false when only the first КП matches.</param>
+/// <param name="OverlapFrom">First overlapping start time (formatted), or "" when times are unavailable.</param>
+/// <param name="OverlapTo">Last overlapping start time (formatted), or "" when times are unavailable.</param>
+public sealed record DrawClashPeer(
+    DrawGroupItemViewModel Group,
+    int LaneNumber,
+    bool SameCourse,
+    string OverlapFrom,
+    string OverlapTo);

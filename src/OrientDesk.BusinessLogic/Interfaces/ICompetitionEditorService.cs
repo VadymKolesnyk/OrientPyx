@@ -479,6 +479,14 @@ public interface ICompetitionEditorService
     Task<int> SaveDrawStartTimesAsync(IReadOnlyList<DrawStartAssignment> assignments, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gathers the data for the manual start-order editor on one day: every group that runs on the day with
+    /// its members carrying their current start time (and display fields), ordered by start time. The editor
+    /// re-orders members within a group and re-hands out the same set of start minutes in the new order.
+    /// Empty when no competition is selected.
+    /// </summary>
+    Task<StartOrderData> GetStartOrderDataAsync(Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Loads the current day's finish-read log (ordered by sequence), each row resolved against the
     /// day's participants so a known chip carries its holder's number, full name and group. Returns an
     /// empty list when no day is selected.

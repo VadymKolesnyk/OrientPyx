@@ -69,8 +69,9 @@ internal sealed class SheetHeaderPanel : Grid
     /// <summary>The block collapse/expand command, bound live so it can be set after construction.</summary>
     public System.Windows.Input.ICommand? ToggleBlock { get; set; }
 
-    /// <summary>Invoked when a header is clicked to sort by the given column.</summary>
-    public Action<SheetColumn>? SortBy { get; set; }
+    /// <summary>Invoked when a header's sort button is clicked. The bool is true for a Shift+click, which
+    /// adds/toggles the column as an additional sort level rather than replacing the sort.</summary>
+    public Action<SheetColumn, bool>? SortBy { get; set; }
 
     /// <summary>Invoked to move a band from one top-level index to another (reorder).</summary>
     public Action<int, int>? MoveBand { get; set; }
@@ -117,6 +118,10 @@ internal sealed class SheetHeaderPanel : Grid
     /// <summary>The column currently sorted, and the direction, so the arrow indicator can render.</summary>
     public SheetColumn? SortColumn { get; set; }
     public bool SortDescending { get; set; }
+
+    /// <summary>All active sort levels in priority order, so a secondary/tertiary column can show its rank
+    /// badge ("2", "3", …) next to the arrow. The primary level (index 0) shows the plain arrow only.</summary>
+    public IReadOnlyList<SheetTable.SortLevel> SortLevels { get; set; } = [];
 
     /// <summary>Rebuilds the header grid for the given bands.</summary>
     public void Rebuild(IReadOnlyList<SheetBand> bands)
@@ -278,20 +283,57 @@ internal sealed class SheetHeaderPanel : Grid
         return grid;
     }
 
-    // Small ghost icon button that sorts by the column. Shows a neutral up/down glyph when inactive,
-    // a directional arrow when this column is the active sort.
-    private Button BuildSortButton(SheetColumn column)
+    // Small ghost icon button that sorts by the column. Shows a neutral up/down glyph when this column is
+    // not part of the sort, a directional arrow when it is. For a secondary/tertiary level it also shows a
+    // small rank number ("2", "3", …) so the user can read the sort priority. Shift+click adds this column
+    // as an extra sort level (multi-column sort) instead of replacing the sort.
+    private Control BuildSortButton(SheetColumn column)
     {
-        var active = SortColumn == column;
+        // This column's position in the active sort (0 = primary), or -1 if it isn't a sort level.
+        var level = -1;
+        var descending = false;
+        for (var i = 0; i < SortLevels.Count; i++)
+            if (SortLevels[i].Column.Key == column.Key)
+            {
+                level = i;
+                descending = SortLevels[i].Descending;
+                break;
+            }
+
+        var active = level >= 0;
         var icon = new PathIcon
         {
             Width = 13,
             Height = 13,
             Foreground = active ? Brushes.DodgerBlue : Brushes.Gray,
             Data = Geometry.Parse(active
-                ? (SortDescending ? "M2,4 L8,4 L5,9 Z" : "M5,1 L8,6 L2,6 Z")
+                ? (descending ? "M2,4 L8,4 L5,9 Z" : "M5,1 L8,6 L2,6 Z")
                 : "M5,0 L8,4 L2,4 Z M5,10 L2,6 L8,6 Z") // neutral: up+down chevrons
         };
+
+        object content = icon;
+        // A rank badge for a non-primary level, so a multi-column sort reads "1, 2, 3…" across columns.
+        if (level >= 1)
+        {
+            content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 1,
+                VerticalAlignment = VerticalAlignment.Center,
+                Children =
+                {
+                    icon,
+                    new TextBlock
+                    {
+                        Text = (level + 1).ToString(),
+                        FontSize = 9,
+                        Foreground = Brushes.DodgerBlue,
+                        VerticalAlignment = VerticalAlignment.Center
+                    }
+                }
+            };
+        }
+
         var btn = new Button
         {
             Classes = { "ghost", "rosterSort" },
@@ -299,10 +341,15 @@ internal sealed class SheetHeaderPanel : Grid
             MinWidth = 0,
             MinHeight = 0,
             VerticalAlignment = VerticalAlignment.Center,
-            Content = icon,
-            [ToolTip.TipProperty] = _loc.Get("Common.Sort")
+            Content = content,
+            [ToolTip.TipProperty] = _loc.Get("Sheet.Sort.ButtonTooltip")
         };
-        btn.Click += (_, _) => SortBy?.Invoke(column);
+        // Read the Shift modifier at click time: Shift ⇒ additive (multi-column) sort. The Click event has
+        // no modifier info, so capture it from the preceding PointerPressed (KeyModifiers) on the button.
+        var shiftHeld = false;
+        btn.AddHandler(PointerPressedEvent, (_, e) => shiftHeld = (e.KeyModifiers & KeyModifiers.Shift) != 0,
+            Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        btn.Click += (_, _) => SortBy?.Invoke(column, shiftHeld);
         return btn;
     }
 

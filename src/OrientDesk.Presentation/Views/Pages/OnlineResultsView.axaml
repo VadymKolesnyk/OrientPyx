@@ -37,7 +37,13 @@
                 <!-- Per-competition publish options -->
                 <Border Classes="card" Padding="22">
                     <StackPanel Spacing="14">
-                        <TextBlock Text="{Binding Localization[OnlineResults.Options.Title]}" Classes="h2" />
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Localization[OnlineResults.Options.Title]}" Classes="h2"
+                                       VerticalAlignment="Center" />
+                            <Button Classes="help"
+                                    Command="{Binding ShowBlockHelpCommand}" CommandParameter="Help.OnlineResults.Options"
+                                    ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                        </StackPanel>
 
                         <StackPanel Spacing="6">
                             <TextBlock Text="{Binding Localization[OnlineResults.Slug]}" Classes="label" />
@@ -167,7 +173,13 @@
                 <!-- Start / stop publishing -->
                 <Border Classes="card" Padding="22">
                     <StackPanel Spacing="14">
-                        <TextBlock Text="{Binding Localization[OnlineResults.Publish.Title]}" Classes="h2" />
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Localization[OnlineResults.Publish.Title]}" Classes="h2"
+                                       VerticalAlignment="Center" />
+                            <Button Classes="help"
+                                    Command="{Binding ShowBlockHelpCommand}" CommandParameter="Help.OnlineResults.Publish"
+                                    ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                        </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <Button Content="{Binding Localization[OnlineResults.Start]}"

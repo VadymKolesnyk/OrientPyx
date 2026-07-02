@@ -156,6 +156,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                  })
         {
             page.HelpRequested += OnPageHelpRequested;
+            page.BlockHelpRequested += OnPageBlockHelpRequested;
         }
 
         // Initial view; replaced by InitializeAsync.
@@ -432,6 +433,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _ = _dialogs.ShowScreenHelpAsync(
             new ViewModels.Dialogs.ScreenHelpViewModel(Localization, page.HelpKeyPrefix));
     }
+
+    // Opens the per-block help modal for a section that raised the event with its own key prefix.
+    private void OnPageBlockHelpRequested(object? sender, string keyPrefix)
+        => _ = _dialogs.ShowScreenHelpAsync(
+            new ViewModels.Dialogs.ScreenHelpViewModel(Localization, keyPrefix));
 
     /// <summary>Called once after construction to restore the last session or show the picker.</summary>
     public async Task InitializeAsync()

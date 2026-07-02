@@ -59,6 +59,32 @@ public sealed record DrawParticipant(
 public readonly record struct DrawStartAssignment(Guid LinkId, TimeSpan StartTime);
 
 /// <summary>
+/// Data for manually re-ordering the start sequence within a group on one day: every group that runs on
+/// the day with its members carrying their current drawn start time (from the start protocol). The user
+/// re-orders the members within a group; the set of start minutes stays fixed and is re-handed out in the
+/// new order (member i takes the i-th smallest start time), written back via <see cref="DrawStartAssignment"/>.
+/// </summary>
+public sealed record StartOrderData(IReadOnlyList<StartOrderGroup> Groups);
+
+/// <summary>One group on the day with its members, for manual start-order editing.</summary>
+/// <param name="GroupId">The competition-level group id.</param>
+/// <param name="Name">The group's display name (e.g. "Ч21").</param>
+/// <param name="Members">The group's competitors on this day, ordered by their current start time (unset last).</param>
+public sealed record StartOrderGroup(Guid GroupId, string Name, IReadOnlyList<StartOrderMember> Members);
+
+/// <summary>
+/// One competitor in the start-order editor: the participant-day link id (so the reassigned start time can
+/// be written back), the current start time, and the display fields shown in the reorder list.
+/// </summary>
+public sealed record StartOrderMember(
+    Guid LinkId,
+    TimeSpan? StartTime,
+    string Number,
+    string FullName,
+    string RegionName,
+    string ClubName);
+
+/// <summary>
 /// A single group for the classic draw, where every group is drawn independently with its own start time
 /// and interval (unlike the lane-based <see cref="DrawGroup"/>, which shares one global start/interval).
 /// </summary>

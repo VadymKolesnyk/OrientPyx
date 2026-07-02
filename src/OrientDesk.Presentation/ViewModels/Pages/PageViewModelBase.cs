@@ -15,6 +15,11 @@ public abstract class PageViewModelBase : ViewModelBase
         Localization = localization;
         Localization.PropertyChanged += OnLocalizationChanged;
         ShowHelpCommand = new RelayCommand(() => HelpRequested?.Invoke(this, EventArgs.Empty));
+        ShowBlockHelpCommand = new RelayCommand<string>(prefix =>
+        {
+            if (!string.IsNullOrWhiteSpace(prefix))
+                BlockHelpRequested?.Invoke(this, prefix);
+        });
     }
 
     /// <summary>Exposed so Views can also bind literal keys: {Binding Localization[App.Title]}.</summary>
@@ -59,6 +64,21 @@ public abstract class PageViewModelBase : ViewModelBase
 
     /// <summary>Opens this screen's help modal (see <see cref="HelpRequested"/>).</summary>
     public System.Windows.Input.ICommand ShowHelpCommand { get; }
+
+    /// <summary>
+    /// Raised when the user clicks a per-block «?» button on a multi-section page, carrying that
+    /// block's own help key prefix (e.g. <c>Help.EntryFees.Chips</c>). Handled by
+    /// <see cref="MainWindowViewModel"/> exactly like <see cref="HelpRequested"/>, but the dialog
+    /// resolves <c>{prefix}.Title/.What/.Why/.How</c> from the supplied prefix instead of the page's
+    /// own <see cref="HelpKeyPrefix"/>. Lets any page put a focused help modal next to each section.
+    /// </summary>
+    public event EventHandler<string>? BlockHelpRequested;
+
+    /// <summary>
+    /// Opens a section-specific help modal for the given key prefix (see <see cref="BlockHelpRequested"/>).
+    /// Bind a block's «?» button to this with <c>CommandParameter</c> set to the prefix.
+    /// </summary>
+    public System.Windows.Input.ICommand ShowBlockHelpCommand { get; }
 
     /// <summary>
     /// Raised when the page wants keyboard focus moved back onto its main grid. Showing a modal

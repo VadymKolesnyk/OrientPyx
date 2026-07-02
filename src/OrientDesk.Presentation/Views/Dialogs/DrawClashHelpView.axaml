@@ -1,0 +1,114 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:dialogs="using:OrientDesk.Presentation.ViewModels.Dialogs"
+             mc:Ignorable="d" d:DesignWidth="560" d:DesignHeight="560"
+             x:Class="OrientDesk.Presentation.Views.Dialogs.DrawClashHelpView"
+             x:DataType="dialogs:DrawClashHelpViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock.h3">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.code">
+            <Setter Property="FontFamily" Value="Consolas, 'Courier New', monospace" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </UserControl.Styles>
+
+    <!-- Centered card; the backdrop is supplied by the host overlay. -->
+    <Border Background="{DynamicResource SurfaceCard}"
+            CornerRadius="12"
+            MinWidth="480" MaxWidth="620"
+            BoxShadow="0 10 40 0 #40000000"
+            HorizontalAlignment="Center" VerticalAlignment="Center"
+            ClipToBounds="True"
+            KeyboardNavigation.TabNavigation="Cycle">
+        <DockPanel LastChildFill="True">
+
+            <!-- Header: a warning glyph + the pre-resolved title. -->
+            <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
+                    Padding="22,16">
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <Border Width="30" Height="30" CornerRadius="15"
+                            Background="{DynamicResource DangerSurface}"
+                            VerticalAlignment="Center">
+                        <TextBlock Text="!" FontWeight="Bold" FontSize="16"
+                                   Foreground="{DynamicResource DangerBrush}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="{Binding Title}" Classes="h2" VerticalAlignment="Center"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <!-- Footer -->
+            <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
+                    Padding="22,14">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="{Binding Localization[Common.Close]}"
+                            Classes="accent"
+                            IsDefault="True" IsCancel="True"
+                            Command="{Binding CloseCommand}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Body -->
+            <ScrollViewer MaxHeight="480" HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="22,18" Spacing="16">
+
+                    <!-- What the clash is, in one line. -->
+                    <TextBlock Text="{Binding Intro}" TextWrapping="Wrap" Classes="muted" />
+
+                    <!-- This group's own course order. -->
+                    <StackPanel Spacing="4"
+                                IsVisible="{Binding CourseLabel, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                        <TextBlock Text="{Binding Localization[Draw.Clash.ThisCourse]}" Classes="h3" />
+                        <TextBlock Text="{Binding CourseLabel}" Classes="code muted" />
+                    </StackPanel>
+
+                    <!-- One card per overlapping group. -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="{Binding Localization[Draw.Clash.Overlaps]}" Classes="h3" />
+                        <ItemsControl ItemsSource="{Binding Clashes}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="dialogs:DrawClashEntry">
+                                    <Border Background="{DynamicResource SurfaceSubtle}"
+                                            CornerRadius="6" Padding="12,10" Margin="0,4,0,0">
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="{Binding Heading}" FontWeight="SemiBold"
+                                                       TextWrapping="Wrap" />
+                                            <ItemsControl ItemsSource="{Binding Details}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="x:String">
+                                                        <TextBlock Text="{Binding}" Classes="muted"
+                                                                   FontSize="12" TextWrapping="Wrap" />
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- How to fix it. -->
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="{Binding Localization[Draw.Clash.HowTitle]}" Classes="h3" />
+                        <TextBlock Text="{Binding Localization[Draw.Clash.HowBody]}"
+                                   TextWrapping="Wrap" Classes="muted" />
+                    </StackPanel>
+
+                </StackPanel>
+            </ScrollViewer>
+
+        </DockPanel>
+    </Border>
+
+</UserControl>

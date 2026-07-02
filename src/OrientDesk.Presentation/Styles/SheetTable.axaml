@@ -9,6 +9,14 @@
          Wrap in Border.card for the rounded frame, like the sheet grids.
          ============================================================ -->
 
+    <!-- The multi-column sort editor's flyout: lift the FlyoutPresenter's default MaxWidth (288) and drop
+         its padding so the fixed-width, aligned editor panel is neither clipped nor forced to scroll
+         horizontally. Matched via SheetSortButton's FlyoutPresenterClasses="sortFlyout". -->
+    <Style Selector="FlyoutPresenter.sortFlyout">
+        <Setter Property="MaxWidth" Value="900" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+
     <Style Selector="controls|SheetTable">
         <Setter Property="Template">
             <ControlTemplate>
@@ -26,6 +34,10 @@
                     <DockPanel DockPanel.Dock="Top" LastChildFill="True" Margin="8,6"
                                Background="Transparent">
                         <controls:SheetColumnsButton DockPanel.Dock="Right"
+                            Table="{Binding $parent[controls:SheetTable]}"
+                            Localization="{Binding Localization, RelativeSource={RelativeSource TemplatedParent}}" />
+                        <!-- Custom multi-column sort editor, next to the search box. -->
+                        <controls:SheetSortButton DockPanel.Dock="Right" Margin="0,0,6,0"
                             Table="{Binding $parent[controls:SheetTable]}"
                             Localization="{Binding Localization, RelativeSource={RelativeSource TemplatedParent}}" />
                         <Grid DockPanel.Dock="Right" Width="170" Margin="0,0,6,0"

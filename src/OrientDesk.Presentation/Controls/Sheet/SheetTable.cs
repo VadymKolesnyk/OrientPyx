@@ -465,7 +465,7 @@ public sealed class SheetTable : TemplatedControl
         if (_header is not null)
         {
             _header.ToggleBlock = ToggleBlockCommand;
-            _header.SortBy = ApplySort;
+            _header.SortBy = (column, additive) => ApplySort(column, additive);
             _header.MoveBand = MoveBand;
             _header.HideColumn = HideColumn;
             _header.BulkEditColumn = column => BulkEditColumnRequested?.Invoke(this, column);
@@ -476,6 +476,7 @@ public sealed class SheetTable : TemplatedControl
             _header.HasFilter = column => _filters.ContainsKey(column.Key);
             _header.SortColumn = _sortColumn;
             _header.SortDescending = _sortDescending;
+            _header.SortLevels = _sortLevels;
             _header.Rebuild(_visibleBands);
         }
 
@@ -517,6 +518,9 @@ public sealed class SheetTable : TemplatedControl
     // collection. Edited via the toolbar search box and refreshed through ApplySortedView.
     private string _globalSearch = string.Empty;
     private string _searchTerm = string.Empty;
+    // Layout-tolerant variants of _searchTerm (wrong-keyboard-layout + s/i→ы), precomputed when the
+    // term changes so PassesGlobalSearch only does substring checks per row. Empty when no search.
+    private IReadOnlyList<string> _searchVariants = Array.Empty<string>();
 
     /// <summary>Raised after the active-filter set changes, so a filter-chips bar can refresh.</summary>
     public event EventHandler? FiltersChanged;
@@ -589,8 +593,92 @@ public sealed class SheetTable : TemplatedControl
                 return;
             _globalSearch = text;
             _searchTerm = text.Trim();
-            ApplySortedView();
+            _searchVariants = TextSearch.Variants(_searchTerm);
+            // Debounce: typing fires this on every keystroke, and re-filtering scans every row's every
+            // column (reflection-heavy). Coalesce a burst of keystrokes into one filter pass that runs
+            // after a short pause, off the UI thread, so typing stays responsive at hundreds of rows.
+            ScheduleSearchFilter();
         }
+    }
+
+    // ── Debounced search filtering ──────────────────────────────────────────────────────────────────
+    // A timer that fires the actual re-filter a short moment after the last keystroke. Each keystroke
+    // restarts it, so we filter once when typing pauses rather than on every character.
+    private DispatcherTimer? _searchDebounce;
+    // A monotonically increasing token: the background filter pass captures the current value and, when it
+    // finishes, only applies its result if the token is still current (no newer keystroke has landed).
+    private int _searchGeneration;
+    private static readonly TimeSpan SearchDebounceDelay = TimeSpan.FromMilliseconds(180);
+
+    private void ScheduleSearchFilter()
+    {
+        _searchDebounce ??= new DispatcherTimer { Interval = SearchDebounceDelay };
+        _searchDebounce.Stop();
+        // Re-point the tick handler each schedule so it always runs the latest closure state; simpler than
+        // sharing one handler and reading fields, and the timer only ever has this one subscriber.
+        _searchDebounce.Tick -= OnSearchDebounceTick;
+        _searchDebounce.Tick += OnSearchDebounceTick;
+        _searchDebounce.Start();
+    }
+
+    private void OnSearchDebounceTick(object? sender, EventArgs e)
+    {
+        _searchDebounce?.Stop();
+        RunSearchFilterAsync();
+    }
+
+    // Computes the displayed list for the current search term OFF the UI thread (the reflection-heavy
+    // filter/sort scan), then marshals only the body-assignment back to the UI thread. Guarded by a
+    // generation token so a slow pass whose term is already stale is discarded instead of flickering the
+    // old result back in.
+    private async void RunSearchFilterAsync()
+    {
+        if (_body is null)
+            return;
+
+        var generation = ++_searchGeneration;
+
+        // Snapshot the source on the UI thread (enumerating a live ObservableCollection off-thread is
+        // unsafe); the per-row property reads inside BuildDisplayedItems are plain getters and safe to run
+        // on the pool thread.
+        var snapshot = new List<object?>();
+        foreach (var item in ItemsSource ?? Array.Empty<object?>())
+            snapshot.Add(item);
+
+        List<object?>? displayed;
+        try
+        {
+            displayed = await System.Threading.Tasks.Task.Run(() => BuildDisplayedItems(snapshot)).ConfigureAwait(true);
+        }
+        catch
+        {
+            // A row property throwing mid-scan (rare) shouldn't wedge search — fall back to a synchronous
+            // pass on the UI thread, which matches the old behaviour.
+            if (generation == _searchGeneration)
+                ApplySortedView();
+            return;
+        }
+
+        // A newer keystroke already scheduled another pass; drop this now-stale result.
+        if (generation != _searchGeneration || _body is null)
+            return;
+
+        ClearRange();
+        if (displayed is null)
+        {
+            // Search cleared and nothing else filters/sorts: bind the live source directly again.
+            var unsorted = new List<object?>();
+            foreach (var item in ItemsSource ?? Array.Empty<object?>())
+                unsorted.Add(item);
+            _sortedItems = unsorted;
+            _body.ItemsSource = ItemsSource;
+        }
+        else
+        {
+            _sortedItems = displayed;
+            _body.ItemsSource = displayed;
+        }
+        UpdateStatusBar();
     }
 
     /// <summary>Moves keyboard focus to the toolbar's global-search box (Ctrl+F). No-op until templated.</summary>
@@ -709,7 +797,8 @@ public sealed class SheetTable : TemplatedControl
     // visible column's text. The phrase is matched literally — spaces inside it are part of the term, so
     // "4 в 1" only matches a cell that actually contains "4 в 1", not any cell that happens to contain a
     // "4", a "в" and a "1" separately. An empty term passes everything. Hidden columns are excluded so a
-    // search matches what the user can actually see, mirroring the column filters.
+    // search matches what the user can actually see, mirroring the column filters. The term is expanded
+    // via TextSearch into wrong-keyboard-layout and s/i→ы variants — a cell matches any of them.
     private bool PassesGlobalSearch(object row)
     {
         if (_searchTerm.Length == 0)
@@ -720,8 +809,10 @@ public sealed class SheetTable : TemplatedControl
             {
                 if (!col.Filterable)
                     continue;
-                if (CellText(col, row).IndexOf(_searchTerm, StringComparison.CurrentCultureIgnoreCase) >= 0)
-                    return true;
+                var cell = CellText(col, row);
+                foreach (var variant in _searchVariants)
+                    if (cell.IndexOf(variant, StringComparison.CurrentCultureIgnoreCase) >= 0)
+                        return true;
             }
         return false;
     }
@@ -813,8 +904,16 @@ public sealed class SheetTable : TemplatedControl
     // ── Band reorder (drag) ─────────────────────────────────────────────────────────────────────
     // The desired top-level band order, as stable signatures. Null until the user reorders.
     private List<string>? _bandOrder;
-    private SheetColumn? _sortColumn;
-    private bool _sortDescending;
+
+    // The active sort, as an ordered list of levels: sort first by [0], ties broken by [1], and so on.
+    // Empty ⇒ unsorted (source order). A plain header click replaces the whole list with one level;
+    // Shift+click appends/toggles an additional level; the custom-sort dialog sets the list wholesale.
+    private readonly List<SortLevel> _sortLevels = new();
+
+    // The primary (first) sort level's column/direction, kept in sync so the header arrow indicator and
+    // the existing single-level fast path keep working unchanged.
+    private SheetColumn? _sortColumn => _sortLevels.Count > 0 ? _sortLevels[0].Column : null;
+    private bool _sortDescending => _sortLevels.Count > 0 && _sortLevels[0].Descending;
 
     // ── Persisted view (per-competition views.json) ─────────────────────────────────────────────
     // Saved widths by column key, applied onto freshly built columns (the first build has no previous
@@ -966,29 +1065,104 @@ public sealed class SheetTable : TemplatedControl
         => ApplySortedView();
 
     // ── Sorting ─────────────────────────────────────────────────────────────────────────────────
-    // Click cycles: unsorted → ascending → descending → ascending… on the same column; a new column
-    // starts ascending. Sorting reorders a display copy of the items; the source collection is left
-    // untouched so the VM's selection/delete keep working by reference.
-    private void ApplySort(SheetColumn column)
+    // One level of a multi-column sort: the column and its direction. The sort is an ordered list of
+    // these — rows are ordered by the first, ties broken by the second, and so on.
+    public sealed class SortLevel(SheetColumn column, bool descending)
+    {
+        public SheetColumn Column { get; } = column;
+        public bool Descending { get; set; } = descending;
+    }
+
+    // A plain header click: cycles unsorted → ascending → descending on that column, REPLACING any
+    // existing multi-level sort with a single level. Shift+click instead adds/toggles this column as an
+    // additional (secondary, tertiary, …) sort level, preserving the earlier levels. Sorting reorders a
+    // display copy of the items; the source collection is left untouched so the VM's selection/delete
+    // keep working by reference.
+    private void ApplySort(SheetColumn column) => ApplySort(column, additive: false);
+
+    private void ApplySort(SheetColumn column, bool additive)
     {
         if (string.IsNullOrEmpty(column.SortPath))
             return;
 
-        if (_sortColumn == column)
-            _sortDescending = !_sortDescending;
+        var existing = _sortLevels.Find(l => l.Column.Key == column.Key);
+        if (additive)
+        {
+            // Shift+click: toggle this column's direction if it's already a level, else append it.
+            if (existing is not null)
+                existing.Descending = !existing.Descending;
+            else
+                _sortLevels.Add(new SortLevel(column, descending: false));
+        }
         else
         {
-            _sortColumn = column;
-            _sortDescending = false;
+            // Plain click: if this column is ALREADY the sole primary sort, flip its direction; otherwise
+            // start a fresh single-level ascending sort on it (discarding any multi-level sort).
+            var flipToDescending = _sortLevels.Count == 1 && _sortLevels[0].Column.Key == column.Key && !_sortLevels[0].Descending;
+            _sortLevels.Clear();
+            _sortLevels.Add(new SortLevel(column, descending: flipToDescending));
         }
 
-        if (_header is not null)
-        {
-            _header.SortColumn = _sortColumn;
-            _header.SortDescending = _sortDescending;
-            _header.Rebuild(_visibleBands); // refresh arrow indicators
-        }
+        RefreshSortHeader();
         ApplySortedView();
+        SortChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // Pushes the current primary level to the header (arrow indicator) and the full level list (so it can
+    // paint the "1/2/3" rank badges on secondary columns), then rebuilds the header visuals.
+    private void RefreshSortHeader()
+    {
+        if (_header is null)
+            return;
+        _header.SortColumn = _sortColumn;
+        _header.SortDescending = _sortDescending;
+        _header.SortLevels = _sortLevels;
+        _header.Rebuild(_visibleBands);
+    }
+
+    /// <summary>Raised after the active sort (columns or directions) changes, so a sort dialog can refresh.</summary>
+    public event EventHandler? SortChanged;
+
+    /// <summary>The active sort levels, in priority order (first = primary). Empty ⇒ unsorted.</summary>
+    public IReadOnlyList<SortLevel> SortLevels => _sortLevels;
+
+    /// <summary>The leaf columns that can take part in a sort (have a sort path, are toggleable), in
+    /// display order — the choices offered by the custom-sort dialog.</summary>
+    public IReadOnlyList<SheetColumn> SortableColumns()
+    {
+        var list = new List<SheetColumn>();
+        foreach (var band in _bands)
+            foreach (var col in band.Columns)
+                if (!string.IsNullOrEmpty(col.SortPath) && !string.IsNullOrEmpty(col.PickerLabel))
+                    list.Add(col);
+        return list;
+    }
+
+    /// <summary>Replaces the whole sort with the given ordered levels (as (column key, descending) pairs).
+    /// Unknown keys are ignored. Used by the custom-sort dialog's Apply.</summary>
+    public void SetSortLevels(IReadOnlyList<(string Key, bool Descending)> levels)
+    {
+        _sortLevels.Clear();
+        foreach (var (key, desc) in levels)
+        {
+            var col = FindColumnByKey(key);
+            if (col is not null && !string.IsNullOrEmpty(col.SortPath))
+                _sortLevels.Add(new SortLevel(col, desc));
+        }
+        RefreshSortHeader();
+        ApplySortedView();
+        SortChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Clears the sort entirely (back to source order).</summary>
+    public void ClearSort()
+    {
+        if (_sortLevels.Count == 0)
+            return;
+        _sortLevels.Clear();
+        RefreshSortHeader();
+        ApplySortedView();
+        SortChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // The body's current item order (sorted view, or the source order when unsorted). Cached so row
@@ -1000,60 +1174,87 @@ public sealed class SheetTable : TemplatedControl
         if (_body is null)
             return;
 
+        // A pending debounced search pass would clobber this result a moment later; cancel it. Any
+        // structural change routed through here (sort, filter, source change, rebuild) already reflects
+        // the current search term via BuildDisplayedItems, so the queued pass is redundant.
+        _searchDebounce?.Stop();
+        _searchGeneration++;
+
         // The view is about to change order/membership, which invalidates the range's row indices.
         // Drop any multi-cell selection so it can't highlight (or copy) the wrong rows.
         ClearRange();
 
-        // A global search shapes the body view exactly like a column filter, so it takes the same
-        // filtered path (a display copy) rather than the live-source fast path.
-        var hasFilters = _filters.Count > 0 || _searchTerm.Length > 0;
-
-        if (_sortColumn is null || string.IsNullOrEmpty(_sortColumn.SortPath) || ItemsSource is null)
+        // When nothing is sorted or filtered, bind the live source directly (cheapest path — keeps
+        // optimistic row add/delete reflecting instantly). BuildDisplayedItems returns null to signal this.
+        var displayed = BuildDisplayedItems(ItemsSource);
+        if (displayed is null)
         {
-            // Unsorted: when nothing is filtered, bind the live source directly (cheapest path — keeps
-            // optimistic row add/delete reflecting instantly). Otherwise bind a filtered display copy.
-            if (!hasFilters)
-            {
-                var unsorted = new List<object?>();
-                foreach (var item in ItemsSource ?? Array.Empty<object?>())
-                    unsorted.Add(item);
-                _sortedItems = unsorted;
-                _body.ItemsSource = ItemsSource;
-                UpdateStatusBar();
-                return;
-            }
-
-            var filtered = new List<object?>();
-            foreach (var item in ItemsSource!)
-                if (PassesFilters(item))
-                    filtered.Add(item);
-            _sortedItems = filtered;
-            _body.ItemsSource = filtered;
+            var unsorted = new List<object?>();
+            foreach (var item in ItemsSource ?? Array.Empty<object?>())
+                unsorted.Add(item);
+            _sortedItems = unsorted;
+            _body.ItemsSource = ItemsSource;
             UpdateStatusBar();
             return;
         }
 
-        var path = _sortColumn.SortPath;
+        _sortedItems = displayed;
+        _body.ItemsSource = displayed;
+        UpdateStatusBar();
+    }
 
-        // Schwartzian transform: read each item's sort key once (reflection is the costly part), then
-        // sort the (key, item) pairs. Avoids re-reading both operands on every comparison. Filtered rows
-        // are dropped before keying so we don't sort what we won't show.
-        var keyed = new List<(object? Key, object Item)>();
-        foreach (var item in ItemsSource)
-            if (item is not null && PassesFilters(item))
-                keyed.Add((ReadPath(item, path), item));
+    // Computes the filtered + sorted display list from a source, doing only reflective row reads (no UI
+    // access) so it can run on a background thread for the debounced search path. Returns null when
+    // nothing is sorted or filtered, meaning the caller should bind the live source directly. `source`
+    // is any snapshot/collection of rows; callers on a pool thread must pass a snapshot, not a live one.
+    private List<object?>? BuildDisplayedItems(IEnumerable? source)
+    {
+        var hasFilters = _filters.Count > 0 || _searchTerm.Length > 0;
 
-        keyed.Sort((a, b) => CompareKeys(a.Key, b.Key));
-        if (_sortDescending)
-            keyed.Reverse();
+        if (_sortColumn is null || string.IsNullOrEmpty(_sortColumn.SortPath) || source is null)
+        {
+            if (!hasFilters)
+                return null;
+
+            var filtered = new List<object?>();
+            foreach (var item in source ?? Array.Empty<object?>())
+                if (PassesFilters(item))
+                    filtered.Add(item);
+            return filtered;
+        }
+
+        // Multi-level Schwartzian transform: read every level's sort key for each item once (reflection is
+        // the costly part), then compare the key arrays level by level. Avoids re-reading operands on every
+        // comparison. Filtered rows are dropped before keying so we don't sort what we won't show.
+        var levels = _sortLevels;
+        var keyed = new List<(object?[] Keys, int Index, object Item)>();
+        var index = 0;
+        foreach (var item in source)
+        {
+            if (item is null || !PassesFilters(item))
+                continue;
+            var keys = new object?[levels.Count];
+            for (var i = 0; i < levels.Count; i++)
+                keys[i] = ReadPath(item, levels[i].Column.SortPath);
+            keyed.Add((keys, index++, item));
+        }
+
+        keyed.Sort((a, b) =>
+        {
+            for (var i = 0; i < levels.Count; i++)
+            {
+                var cmp = CompareKeys(a.Keys[i], b.Keys[i]);
+                if (cmp != 0)
+                    return levels[i].Descending ? -cmp : cmp;
+            }
+            // All levels equal: keep the source order (stable sort) rather than an arbitrary shuffle.
+            return a.Index.CompareTo(b.Index);
+        });
 
         var items = new List<object?>(keyed.Count);
-        foreach (var (_, item) in keyed)
+        foreach (var (_, _, item) in keyed)
             items.Add(item);
-
-        _sortedItems = items;
-        _body.ItemsSource = items;
-        UpdateStatusBar();
+        return items;
     }
 
     // ── Status bar ────────────────────────────────────────────────────────────────────────────────

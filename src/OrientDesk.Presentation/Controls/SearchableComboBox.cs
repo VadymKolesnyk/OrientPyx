@@ -287,7 +287,7 @@ public sealed class SearchableComboBox : ComboBox
         {
             var q = query.Trim();
             view = _source.Cast<object?>()
-                .Where(item => TextOf(item).Contains(q, StringComparison.OrdinalIgnoreCase))
+                .Where(item => TextSearch.Matches(TextOf(item), q))
                 .ToList();
         }
 

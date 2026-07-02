@@ -234,6 +234,7 @@ public sealed partial class DrawViewModel : PageViewModelBase
                     item.StartLabel = string.Empty;
                     item.FirstControlClash = false;
                     item.CourseClash = false;
+                    item.ClashPeers = [];
                 }
                 column.FooterText = string.Empty;
             }
@@ -260,7 +261,7 @@ public sealed partial class DrawViewModel : PageViewModelBase
             column.RaiseTotalsChanged();
         }
 
-        RecomputeClashes();
+        RecomputeClashes(start, interval);
         ApplyChipHeights();
     }
 
@@ -268,11 +269,15 @@ public sealed partial class DrawViewModel : PageViewModelBase
     // overlapping minute means two runners would punch the same opening control at once (FirstControlClash →
     // КП N shown red); identical full courses is the stronger case (CourseClash → whole chip red). A group
     // with no members occupies no slots and never clashes.
-    private void RecomputeClashes()
+    private void RecomputeClashes(TimeSpan start, TimeSpan interval)
     {
         var all = StartGroups
             .SelectMany((column, ci) => column.Groups.Select(g => (Column: ci, Item: g)))
             .ToList();
+
+        // Collect the clashing peers per item so the on-chip «?» dialog can explain the why. Keyed by item;
+        // the recorded lane is 1-based and the overlap window is formatted from the shared start slots.
+        var peers = all.ToDictionary(x => x.Item, _ => new List<DrawClashPeer>());
 
         foreach (var (_, item) in all)
         {
@@ -293,7 +298,8 @@ public sealed partial class DrawViewModel : PageViewModelBase
                 if (!SlotsOverlap(ia, ib))
                     continue;
 
-                if (SameCourse(ia, ib))
+                var sameCourse = SameCourse(ia, ib);
+                if (sameCourse)
                 {
                     ia.CourseClash = true;
                     ib.CourseClash = true;
@@ -304,8 +310,34 @@ public sealed partial class DrawViewModel : PageViewModelBase
                     ia.FirstControlClash = true;
                     ib.FirstControlClash = true;
                 }
+                else
+                {
+                    continue; // overlapping in time but nothing shared — not a clash
+                }
+
+                var (from, to) = OverlapWindow(ia, ib, start, interval);
+                // Each is the other's peer, recorded in the other's lane.
+                peers[ia].Add(new DrawClashPeer(ib, cb + 1, sameCourse, from, to));
+                peers[ib].Add(new DrawClashPeer(ia, ca + 1, sameCourse, from, to));
             }
         }
+
+        foreach (var (_, item) in all)
+            item.ClashPeers = peers[item];
+    }
+
+    // Formats the inclusive window of start times two overlapping groups share, from their overlapping slot
+    // range. Both groups start at the global start; slot N maps to (start + N × interval).
+    private static (string From, string To) OverlapWindow(
+        DrawGroupItemViewModel a, DrawGroupItemViewModel b, TimeSpan start, TimeSpan interval)
+    {
+        var from = Math.Max(a.FirstSlot, b.FirstSlot);
+        var to = Math.Min(a.FirstSlot + a.MemberCount, b.FirstSlot + b.MemberCount) - 1;
+        if (to < from)
+            return (string.Empty, string.Empty);
+        return (
+            StartTimeFormat.Format(start + TimeSpan.FromTicks(interval.Ticks * from)),
+            StartTimeFormat.Format(start + TimeSpan.FromTicks(interval.Ticks * to)));
     }
 
     private static bool SlotsOverlap(DrawGroupItemViewModel a, DrawGroupItemViewModel b)
@@ -364,6 +396,53 @@ public sealed partial class DrawViewModel : PageViewModelBase
         }
         Reindex();
         RecomputeColumnTimes();
+    }
+
+    /// <summary>
+    /// Opens the «?» explanation for a highlighted (red) group chip: names every group it overlaps with,
+    /// which lane they sit in, whether they share only the opening control or the whole course, and the exact
+    /// window of start times the two share. A no-op for a chip with no clash.
+    /// </summary>
+    [RelayCommand]
+    private async Task ShowClashHelp(DrawGroupItemViewModel? item)
+    {
+        if (item is null || item.ClashPeers.Count == 0)
+            return;
+
+        string L(string key) => Localization.Get(key);
+
+        // Title + intro: strongest clash type wins (identical course is stronger than a shared first control).
+        var anySameCourse = item.CourseClash;
+        var title = string.Format(L("Draw.Clash.Title"), item.Name);
+        var intro = anySameCourse
+            ? string.Format(L("Draw.Clash.Intro.Course"), item.Name)
+            : string.Format(L("Draw.Clash.Intro.FirstControl"), item.Name, item.FirstControl);
+
+        var courseLabel = item.CourseControls.Count > 0
+            ? $"{L("Draw.Clash.CoursePrefix")} {string.Join(" → ", item.CourseControls)}"
+            : string.Empty;
+
+        var entries = new List<DrawClashEntry>();
+        foreach (var peer in item.ClashPeers)
+        {
+            var heading = string.Format(L("Draw.Clash.Peer.Heading"), peer.Group.Name, peer.LaneNumber);
+
+            var details = new List<string>
+            {
+                peer.SameCourse
+                    ? L("Draw.Clash.Peer.SameCourse")
+                    : string.Format(L("Draw.Clash.Peer.SameFirst"), item.FirstControl),
+            };
+            if (!string.IsNullOrEmpty(peer.OverlapFrom))
+                details.Add(string.Format(L("Draw.Clash.Peer.Window"), peer.OverlapFrom, peer.OverlapTo));
+            if (peer.Group.CourseControls.Count > 0)
+                details.Add($"{L("Draw.Clash.CoursePrefix")} {string.Join(" → ", peer.Group.CourseControls)}");
+
+            entries.Add(new DrawClashEntry(heading, details));
+        }
+
+        await _dialogs.ShowDrawClashHelpAsync(
+            new DrawClashHelpViewModel(Localization, title, intro, courseLabel, entries));
     }
 
     /// <summary>

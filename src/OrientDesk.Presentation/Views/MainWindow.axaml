@@ -42,6 +42,9 @@
         <DataTemplate DataType="dialogs:AssignChipsViewModel">
             <dialogViews:AssignChipsView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:StartOrderViewModel">
+            <dialogViews:StartOrderView />
+        </DataTemplate>
         <DataTemplate DataType="dialogs:SplitGroupsViewModel">
             <dialogViews:SplitGroupsView />
         </DataTemplate>
@@ -80,6 +83,9 @@
         </DataTemplate>
         <DataTemplate DataType="dialogs:ScreenHelpViewModel">
             <dialogViews:ScreenHelpView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:DrawClashHelpViewModel">
+            <dialogViews:DrawClashHelpView />
         </DataTemplate>
     </Window.DataTemplates>
 
@@ -198,7 +204,7 @@
         </Button>
 
         <!-- Always-visible top menu, with the page navigation as top-level items -->
-        <Menu>
+        <Menu x:Name="TopMenu">
             <MenuItem Header="{Binding Localization[Menu.File]}">
                 <MenuItem Header="{Binding Localization[Menu.File.Settings]}"
                           Command="{Binding OpenSettingsCommand}" />

@@ -439,6 +439,10 @@ public partial class ParticipantsView : UserControl
         await _vm.MarkAgeViolatorsOutOfCompetitionCommand.ExecuteAsync(table.VisibleItems);
     }
 
+    // Manually re-order the start sequence within a group. Works off the day currently in view (resolved
+    // by the VM), not the visible rows, so it just runs the command.
+    private void OnEditStartOrderClick(object? sender, RoutedEventArgs e) => _ = _vm?.EditStartOrderCommand.ExecuteAsync(null);
+
     // Bulk-edit one field across the shown rows. Same shape as OnAssignNumbersClick: read the active
     // table's on-screen (filtered + sorted) rows and hand them to the command, which prompts for the
     // field + value and applies it to each. The dialog opens preselected on the column the user was last

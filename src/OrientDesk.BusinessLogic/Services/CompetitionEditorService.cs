@@ -2868,6 +2868,59 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return new DrawPrepData(drawGroups);
     }
 
+    public async Task<StartOrderData> GetStartOrderDataAsync(Guid dayId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return new StartOrderData([]);
+
+        var folder = FolderPath;
+        var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
+        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
+        var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
+
+        var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
+        var byParticipant = participants.ToDictionary(p => p.Id);
+        var regionName = regions.ToDictionary(r => r.Id, r => r.Name);
+        var clubName = clubs.ToDictionary(c => c.Id, c => c.Name);
+
+        // Members per group on this day, carrying each member's current start time (a link with no group is
+        // left out — start order is edited per group).
+        var membersByGroup = new Dictionary<Guid, List<StartOrderMember>>();
+        foreach (var link in links)
+        {
+            if (link.GroupId is not { } gid)
+                continue;
+            if (!byParticipant.TryGetValue(link.ParticipantId, out var p))
+                continue;
+
+            var region = p.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
+            var club = p.ClubId is { } cid && clubName.TryGetValue(cid, out var cn) ? cn : string.Empty;
+
+            if (!membersByGroup.TryGetValue(gid, out var list))
+                membersByGroup[gid] = list = [];
+            list.Add(new StartOrderMember(link.Id, link.StartTime, p.Number, p.FullName, region, club));
+        }
+
+        // One group per group on the day, in the day grid order; members ordered by start time (unset last).
+        var orderGroups = new List<StartOrderGroup>(settings.Count);
+        foreach (var s in settings)
+        {
+            if (!groupName.TryGetValue(s.GroupId, out var name))
+                continue;
+            var members = membersByGroup.TryGetValue(s.GroupId, out var m) ? m : [];
+            var ordered = members
+                .OrderBy(x => x.StartTime is null)
+                .ThenBy(x => x.StartTime ?? TimeSpan.Zero)
+                .ToList();
+            orderGroups.Add(new StartOrderGroup(s.GroupId, name, ordered));
+        }
+
+        return new StartOrderData(orderGroups);
+    }
+
     /// <summary>
     /// Parses the ordered control-point codes out of a free-text course order such as "S1 31 32 33 F". Start
     /// and finish markers (pure-letter tokens like "S"/"Start"/"F"/"Фініш") are dropped; every token that

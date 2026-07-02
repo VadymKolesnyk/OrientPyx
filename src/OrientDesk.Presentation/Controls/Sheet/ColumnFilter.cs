@@ -88,17 +88,32 @@ public sealed class SheetFilter
     private bool MatchesCondition(string value)
     {
         const StringComparison ci = StringComparison.CurrentCultureIgnoreCase;
+        // Text conditions are layout-tolerant: the typed term is expanded (wrong keyboard layout, s/i→ы)
+        // and the condition holds if it holds for ANY variant (for the negative DoesNotContain, ALL).
+        var variants = TextSearch.Variants(Text);
         return Condition switch
         {
             SheetFilterCondition.IsEmpty => string.IsNullOrWhiteSpace(value),
             SheetFilterCondition.IsNotEmpty => !string.IsNullOrWhiteSpace(value),
-            SheetFilterCondition.Contains => value.Contains(Text, ci),
-            SheetFilterCondition.DoesNotContain => !value.Contains(Text, ci),
-            SheetFilterCondition.Equals => value.Equals(Text, ci),
-            SheetFilterCondition.StartsWith => value.StartsWith(Text, ci),
-            SheetFilterCondition.EndsWith => value.EndsWith(Text, ci),
+            SheetFilterCondition.Contains => AnyVariant(variants, v => value.Contains(v, ci)),
+            SheetFilterCondition.DoesNotContain => !AnyVariant(variants, v => value.Contains(v, ci)),
+            SheetFilterCondition.Equals => AnyVariant(variants, v => value.Equals(v, ci)),
+            SheetFilterCondition.StartsWith => AnyVariant(variants, v => value.StartsWith(v, ci)),
+            SheetFilterCondition.EndsWith => AnyVariant(variants, v => value.EndsWith(v, ci)),
             _ => true
         };
+    }
+
+    // True when any variant satisfies the predicate. An empty variant set means the term was blank, in
+    // which case the original substring behaviour (empty term matches everything) is preserved.
+    private bool AnyVariant(IReadOnlyList<string> variants, Func<string, bool> predicate)
+    {
+        if (variants.Count == 0)
+            return predicate(Text);
+        foreach (var v in variants)
+            if (predicate(v))
+                return true;
+        return false;
     }
 
     /// <summary>The chip text shown above the table, e.g. «Прізвище: містить «іван»».</summary>

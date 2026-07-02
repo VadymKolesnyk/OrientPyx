@@ -48,6 +48,13 @@ public interface IDialogService : INotifyPropertyChanged
     Task<AssignChipsResult?> ShowAssignChipsAsync(AssignChipsViewModel dialog);
 
     /// <summary>
+    /// Shows the manual start-order modal (drag members to re-order a group's start sequence) and awaits
+    /// the user's input. Returns the start-time reassignments on save (empty when nothing changed), or null
+    /// when cancelled/closed. Only one dialog is shown at a time.
+    /// </summary>
+    Task<IReadOnlyList<BusinessLogic.Models.DrawStartAssignment>?> ShowStartOrderAsync(StartOrderViewModel dialog);
+
+    /// <summary>
     /// Shows the group-splitting preprocessing modal and awaits the user's choice. Returns the
     /// rewritten course data (one course per split group) on confirm, or null when cancelled/closed.
     /// Only one dialog is shown at a time.
@@ -128,4 +135,10 @@ public interface IDialogService : INotifyPropertyChanged
     /// close. Opened from the «?» button in each page header. Only one dialog is shown at a time.
     /// </summary>
     Task ShowScreenHelpAsync(ScreenHelpViewModel dialog);
+
+    /// <summary>
+    /// Shows the read-only draw-clash explanation modal (why a group chip is highlighted red — which groups
+    /// it overlaps and what they share) and awaits its close. Only one dialog is shown at a time.
+    /// </summary>
+    Task ShowDrawClashHelpAsync(DrawClashHelpViewModel dialog);
 }

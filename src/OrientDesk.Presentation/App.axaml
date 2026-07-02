@@ -112,6 +112,24 @@
             <Setter Property="Background" Value="{DynamicResource SurfaceSubtle}" />
             <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
         </Style>
+        <!-- Square +/- stepper button used by every custom numeric stepper (draw group count, auto-read
+             interval, day count, …). Centres the +/- glyph both ways: the base Button padding (16,8) plus
+             the glyphs' own high line metrics pushed the sign toward the top-left, so it's zeroed here and
+             the ContentPresenter is forced to centre. Combine with Classes="ghost stepper"; set only Width
+             per use if a non-default size is wanted (Height tracks the 38px button min-height). -->
+        <Style Selector="Button.stepper">
+            <Setter Property="Width" Value="36" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.stepper /template/ ContentPresenter">
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="TextAlignment" Value="Center" />
+        </Style>
         <!-- Round "?" help button shown in every page header (opens the per-screen help modal). Small,
              circular, subtle by default; tints to the accent surface on hover. Content is set to "?"
              by the pages so no per-View markup beyond Classes="help" is needed. -->

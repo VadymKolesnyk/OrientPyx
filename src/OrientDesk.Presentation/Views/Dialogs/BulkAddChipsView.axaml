@@ -54,14 +54,12 @@
                     <TextBlock Text="{Binding Localization[Chips.BulkAdd.Count]}" Classes="label" />
                     <StackPanel Orientation="Horizontal" Spacing="2">
                         <Button Content="−" Command="{Binding DecrementCommand}"
-                                Width="36" Classes="ghost" Padding="0"
-                                HorizontalContentAlignment="Center" />
+                                Classes="ghost stepper" />
                         <TextBlock Text="{Binding Count}" MinWidth="44"
                                    VerticalAlignment="Center"
                                    TextAlignment="Center" FontWeight="Medium" />
                         <Button Content="+" Command="{Binding IncrementCommand}"
-                                Width="36" Classes="ghost" Padding="0"
-                                HorizontalContentAlignment="Center" />
+                                Classes="ghost stepper" />
                     </StackPanel>
                 </StackPanel>
 

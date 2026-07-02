@@ -17,6 +17,11 @@ namespace OrientDesk.Presentation.ViewModels.Pages;
 /// chip-rental base price plus note-keyed price overrides, and a list of percentage discounts. Cells
 /// auto-save in the background (debounced) like the other grid pages. These values feed the computed
 /// «Стартовий внесок» column and the per-discount / raised-fee columns on the participants table.
+///
+/// Each of the four blocks has its own «?» help button (in addition to the page-level one) that opens
+/// the shared screen-help modal with a block-specific key prefix via the base
+/// <see cref="PageViewModelBase.ShowBlockHelpCommand"/>, so the detailed explanation of how that block
+/// affects the participants table sits next to it.
 /// </summary>
 public sealed partial class EntryFeesViewModel : PageViewModelBase
 {

@@ -45,14 +45,12 @@
                             CornerRadius="6" Padding="2" HorizontalAlignment="Left">
                         <StackPanel Orientation="Horizontal" Spacing="2">
                             <Button Content="−" Command="{Binding DecrementDaysCommand}"
-                                    Width="36" Classes="ghost" Padding="0"
-                                    HorizontalContentAlignment="Center" />
+                                    Classes="ghost stepper" />
                             <TextBlock Text="{Binding DayCount}" MinWidth="44"
                                        VerticalAlignment="Center" HorizontalAlignment="Center"
                                        TextAlignment="Center" FontWeight="Medium" />
                             <Button Content="+" Command="{Binding IncrementDaysCommand}"
-                                    Width="36" Classes="ghost" Padding="0"
-                                    HorizontalContentAlignment="Center" />
+                                    Classes="ghost stepper" />
                         </StackPanel>
                     </Border>
                 </StackPanel>

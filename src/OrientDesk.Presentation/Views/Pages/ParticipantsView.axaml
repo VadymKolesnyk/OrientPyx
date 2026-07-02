@@ -138,6 +138,16 @@
                                             </StackPanel>
                                         </DockPanel>
                                     </Button>
+                                    <!-- Manually re-order the start sequence within a group. Only when a
+                                         single day is in view (a real day, or the sole day of a one-day
+                                         competition on the roster). -->
+                                    <Button Click="OnEditStartOrderClick" Classes="menu" HorizontalAlignment="Stretch"
+                                            IsVisible="{Binding CanEditStartOrder}">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <PathIcon Data="M4,5 h16 v2 h-16 z M4,11 h16 v2 h-16 z M4,17 h16 v2 h-16 z M9,3 l3,3 l3,-3 M9,21 l3,-3 l3,3" Width="14" Height="14" />
+                                            <TextBlock Text="{Binding Localization[Participants.StartOrder]}" />
+                                        </StackPanel>
+                                    </Button>
                                     <!-- Bulk-edit one field across the shown rows. Hotkey F6 (also the table's
                                          in-cell bulk-edit chord). -->
                                     <Button Click="OnBulkEditClick" Classes="menu" HorizontalAlignment="Stretch">

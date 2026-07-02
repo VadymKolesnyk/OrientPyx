@@ -92,16 +92,12 @@
                         <TextBlock Text="{Binding Localization[Chips.AutoRead.Interval]}" Classes="label" />
                         <StackPanel Orientation="Horizontal" Spacing="2">
                             <Button Content="−" Command="{Binding DecrementIntervalCommand}"
-                                    Width="36" Classes="ghost" Padding="0"
-                                    HorizontalContentAlignment="Center"
-                                    VerticalContentAlignment="Center" />
+                                    Classes="ghost stepper" />
                             <TextBlock Text="{Binding AutoReadIntervalSeconds}" MinWidth="44"
                                        VerticalAlignment="Center"
                                        TextAlignment="Center" FontWeight="Medium" />
                             <Button Content="+" Command="{Binding IncrementIntervalCommand}"
-                                    Width="36" Classes="ghost" Padding="0"
-                                    HorizontalContentAlignment="Center"
-                                    VerticalContentAlignment="Center" />
+                                    Classes="ghost stepper" />
                         </StackPanel>
                     </StackPanel>
 

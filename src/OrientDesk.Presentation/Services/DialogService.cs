@@ -98,6 +98,22 @@ public sealed partial class DialogService : ObservableObject, IDialogService
         }
     }
 
+    public async Task<IReadOnlyList<DrawStartAssignment>?> ShowStartOrderAsync(StartOrderViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
+
     public async Task<IofCourseData?> ShowSplitGroupsAsync(SplitGroupsViewModel dialog)
     {
         ArgumentNullException.ThrowIfNull(dialog);
@@ -291,6 +307,22 @@ public sealed partial class DialogService : ObservableObject, IDialogService
     }
 
     public async Task ShowScreenHelpAsync(ScreenHelpViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
+
+    public async Task ShowDrawClashHelpAsync(DrawClashHelpViewModel dialog)
     {
         ArgumentNullException.ThrowIfNull(dialog);
 
