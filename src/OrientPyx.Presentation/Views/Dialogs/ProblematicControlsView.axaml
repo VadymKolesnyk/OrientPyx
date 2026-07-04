@@ -1,0 +1,63 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
+             mc:Ignorable="d" d:DesignWidth="440" d:DesignHeight="520"
+             x:Class="OrientPyx.Presentation.Views.Dialogs.ProblematicControlsView"
+             x:DataType="dialogs:ProblematicControlsViewModel">
+
+    <!-- Centered card; the backdrop is supplied by the host overlay. -->
+    <Border Background="{DynamicResource SurfaceCard}"
+            CornerRadius="12"
+            MinWidth="420" MaxWidth="480" MaxHeight="600"
+            BoxShadow="0 10 40 0 #40000000"
+            HorizontalAlignment="Center" VerticalAlignment="Center"
+            ClipToBounds="True">
+        <DockPanel LastChildFill="True">
+
+            <!-- Header -->
+            <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
+                    Padding="22,16">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding Title}" Classes="h2" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Hint}" Classes="subtitle" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <!-- Footer actions -->
+            <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
+                    Padding="22,14">
+                <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+                    <Button Content="{Binding Localization[Common.Cancel]}"
+                            Classes="ghost"
+                            Command="{Binding CancelCommand}" />
+                    <Button Content="{Binding Localization[Common.Save]}"
+                            Classes="accent"
+                            Command="{Binding ConfirmCommand}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Body: the day's control points, each with a checkbox. Scrolls when long. -->
+            <Panel Margin="22,18">
+                <TextBlock Text="{Binding Empty}" Classes="subtitle" TextWrapping="Wrap"
+                           IsVisible="{Binding !HasControls}" />
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                              IsVisible="{Binding HasControls}">
+                    <ItemsControl ItemsSource="{Binding Controls}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="dialogs:ProblematicControlItem">
+                                <CheckBox IsChecked="{Binding IsDisabled, Mode=TwoWay}"
+                                          Content="{Binding Label}" Margin="0,3" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Panel>
+
+        </DockPanel>
+    </Border>
+
+</UserControl>

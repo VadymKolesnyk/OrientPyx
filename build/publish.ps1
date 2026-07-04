@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Builds a Velopack installer + update package for OrientDesk and (optionally) uploads it to GitHub Releases.
+    Builds a Velopack installer + update package for OrientPyx and (optionally) uploads it to GitHub Releases.
 
 .DESCRIPTION
     Produces a Windows installer (Setup.exe), a full package and — from the second release on — delta
@@ -14,7 +14,7 @@
     Semantic version of this release, e.g. 1.1.0. Must be higher than the previous release for clients to update.
 
 .PARAMETER Upload
-    If set, uploads the release to GitHub Releases (repo VadymKolesnyk/OrientDesk). Needs a token in
+    If set, uploads the release to GitHub Releases (repo VadymKolesnyk/OrientPyx). Needs a token in
     $env:GITHUB_TOKEN with 'repo' scope.
 
 .EXAMPLE
@@ -29,12 +29,12 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $repoRoot   = Split-Path -Parent $PSScriptRoot
-$project    = Join-Path $repoRoot 'src/OrientDesk.Presentation/OrientDesk.Presentation.csproj'
+$project    = Join-Path $repoRoot 'src/OrientPyx.Presentation/OrientPyx.Presentation.csproj'
 $publishDir = Join-Path $repoRoot 'build/publish'
 $releaseDir = Join-Path $repoRoot 'build/releases'
 $runtime    = 'win-x64'
-$packId     = 'OrientDesk'
-$packTitle  = 'OrientDesk'
+$packId     = 'OrientPyx'
+$packTitle  = 'OrientPyx'
 
 # --- 0. Ensure the vpk tool is available ----------------------------------------------------------
 if (-not (Get-Command vpk -ErrorAction SilentlyContinue)) {
@@ -61,7 +61,7 @@ vpk pack `
     --packId $packId `
     --packVersion $Version `
     --packDir $publishDir `
-    --mainExe 'OrientDesk.Presentation.exe' `
+    --mainExe 'OrientPyx.Presentation.exe' `
     --packTitle $packTitle `
     --outputDir $releaseDir
 if ($LASTEXITCODE -ne 0) { throw "vpk pack failed." }
@@ -74,10 +74,10 @@ if ($Upload) {
     Write-Host "Uploading release $Version to GitHub..." -ForegroundColor Cyan
     vpk upload github `
         --outputDir $releaseDir `
-        --repoUrl 'https://github.com/VadymKolesnyk/OrientDesk' `
+        --repoUrl 'https://github.com/VadymKolesnyk/OrientPyx' `
         --token $env:GITHUB_TOKEN `
         --publish `
-        --releaseName "OrientDesk $Version" `
+        --releaseName "OrientPyx $Version" `
         --tag "v$Version"
     if ($LASTEXITCODE -ne 0) { throw "vpk upload failed." }
     Write-Host "Uploaded." -ForegroundColor Green

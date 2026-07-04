@@ -1,0 +1,130 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="700"
+             x:Class="OrientPyx.Presentation.Views.Dialogs.StartOrderView"
+             x:DataType="dialogs:StartOrderViewModel">
+
+    <!-- Near-full-screen card: the host overlay wraps it in a 40px margin, so stretching fills the window. -->
+    <Border Background="{DynamicResource SurfaceCard}"
+            CornerRadius="12"
+            BoxShadow="0 10 40 0 #40000000"
+            HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+            ClipToBounds="True">
+        <DockPanel LastChildFill="True">
+
+            <!-- Header -->
+            <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
+                    Padding="22,16">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding Title}" Classes="h2" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Hint}" Classes="subtitle" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <!-- Footer actions -->
+            <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
+                    Padding="22,14">
+                <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+                    <Button Content="{Binding Localization[Common.Cancel]}"
+                            Classes="ghost"
+                            Command="{Binding CancelCommand}" />
+                    <Button Content="{Binding Localization[Common.Save]}"
+                            Classes="accent"
+                            Command="{Binding ConfirmCommand}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Body -->
+            <DockPanel Margin="22,18" LastChildFill="True">
+
+                <!-- Group picker -->
+                <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,14">
+                    <TextBlock Text="{Binding Localization[Participants.StartOrder.Group]}" Classes="label" />
+                    <controls:SearchableComboBox MinWidth="240" HorizontalAlignment="Left"
+                              SearchWatermark="{Binding Localization[Common.Search]}"
+                              ItemsSource="{Binding Groups}"
+                              SelectedItem="{Binding SelectedGroup, Mode=TwoWay}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="dialogs:StartOrderGroupOption">
+                                <TextBlock Text="{Binding Name}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </controls:SearchableComboBox>
+                </StackPanel>
+
+                <!-- Reorderable member list. Each row is a drag source AND a drop target; the shared drag
+                     payload is the row view-model (see code-behind). The time column is bound to the row's
+                     SLOT time (its position), so it never moves while a competitor is dragged — only who
+                     sits in each slot changes. The insertion line + faded drag row match the Draw page. -->
+                <Border BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1" CornerRadius="8"
+                        ClipToBounds="True">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  DragDrop.AllowDrop="True"
+                                  DragDrop.DragOver="OnListDragOver"
+                                  DragDrop.DragLeave="OnListDragLeave"
+                                  DragDrop.Drop="OnListDrop">
+                        <ItemsControl ItemsSource="{Binding Members}" Padding="0,2,0,8">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="dialogs:StartOrderMemberViewModel">
+                                    <!-- Fixed-height gap holding the insertion line above the row, then the row.
+                                         The line toggles via IsVisible inside a fixed gap so it never reflows the
+                                         list (same trick as DrawView). -->
+                                    <StackPanel Spacing="0">
+                                        <Border Height="6" IsHitTestVisible="False">
+                                            <Border Height="3" CornerRadius="2" Margin="8,0"
+                                                    VerticalAlignment="Center"
+                                                    Background="{DynamicResource AccentBrush}"
+                                                    IsVisible="{Binding ShowDropLineBefore}" />
+                                        </Border>
+                                        <Border Name="MemberRow"
+                                                Background="Transparent"
+                                                Padding="12,5"
+                                                Cursor="Hand"
+                                                Opacity="{Binding !IsDragging, Converter={StaticResource BoolToOpacity}}"
+                                                PointerPressed="OnRowPointerPressed">
+                                            <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto">
+                                                <!-- Drag handle -->
+                                                <PathIcon Grid.Column="0" VerticalAlignment="Center" Margin="0,0,10,0"
+                                                          Width="11" Height="11" Foreground="{DynamicResource TextSecondary}"
+                                                          Data="M4,6 h12 M4,10 h12 M4,14 h12" />
+                                                <!-- Start time — bound to the SLOT (position), so it stays put -->
+                                                <TextBlock Grid.Column="1" Text="{Binding SlotTimeText}"
+                                                           FontFamily="Consolas,Menlo,monospace"
+                                                           VerticalAlignment="Center" Margin="0,0,16,0"
+                                                           MinWidth="76" />
+                                                <!-- Number -->
+                                                <TextBlock Grid.Column="2" Text="{Binding Number}" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextSecondary}"
+                                                           VerticalAlignment="Center" MinWidth="40" Margin="0,0,8,0" />
+                                                <!-- Name -->
+                                                <TextBlock Grid.Column="3" Text="{Binding FullName}"
+                                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                <!-- Region / club -->
+                                                <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="10"
+                                                            VerticalAlignment="Center" HorizontalAlignment="Right">
+                                                    <TextBlock Text="{Binding RegionName}" FontSize="12"
+                                                               Foreground="{DynamicResource TextSecondary}" />
+                                                    <TextBlock Text="{Binding ClubName}" FontSize="12"
+                                                               Foreground="{DynamicResource TextSecondary}" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+
+            </DockPanel>
+
+        </DockPanel>
+    </Border>
+
+</UserControl>

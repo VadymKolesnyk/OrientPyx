@@ -1,4 +1,4 @@
-Explain and enforce the OrientDesk architecture when adding new code.
+Explain and enforce the OrientPyx architecture when adding new code.
 
 ## Layers
 
@@ -11,16 +11,16 @@ BusinessLogic -> (none)                                     (domain + abstractio
 
 ## Where new code goes
 
-- **New page / screen / widget** → `OrientDesk.Presentation` (View under `Views/`,
+- **New page / screen / widget** → `OrientPyx.Presentation` (View under `Views/`,
   ViewModel under `ViewModels/`; navigable pages go in `ViewModels/Pages/` and derive
   from `PageViewModelBase`, then register in
   `DependencyInjection/PresentationServiceCollectionExtensions.cs` and in
   `Services/NavigationService.cs`).
-- **New domain concept** (entity, model, enum) → `OrientDesk.BusinessLogic`
+- **New domain concept** (entity, model, enum) → `OrientPyx.BusinessLogic`
   (`Entities/`, `Models/`, `Enums/`).
 - **New business operation** → an interface in `BusinessLogic/Interfaces/` + a service
   in `BusinessLogic/Services/`, registered in `BusinessLogicServiceCollectionExtensions`.
-- **New persistence / file / infrastructure** → `OrientDesk.DataAccess`
+- **New persistence / file / infrastructure** → `OrientPyx.DataAccess`
   (`Persistence/`, `Repositories/`, `FileSystem/`). EF Core / SQLite stay here only.
 
 ## Hard rules
@@ -28,7 +28,7 @@ BusinessLogic -> (none)                                     (domain + abstractio
 - **UI text must be Ukrainian by default.**
 - **Do not hardcode user-facing UI strings** in Views or ViewModels.
 - **Put new localization keys into the localization resources**
-  (`src/OrientDesk.Localization/Resources/uk-UA.json` and `en-US.json`), then resolve
+  (`src/OrientPyx.Localization/Resources/uk-UA.json` and `en-US.json`), then resolve
   through `ILocalizationService`.
 - **Keep future multilingual support possible** — every user-facing string goes through
   a key; never inline a translated literal.

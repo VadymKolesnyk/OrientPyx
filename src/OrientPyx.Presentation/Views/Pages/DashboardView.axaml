@@ -1,0 +1,271 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="640"
+             x:Class="OrientPyx.Presentation.Views.Pages.DashboardView"
+             x:DataType="pages:DashboardViewModel">
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Page heading + refresh -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,20">
+            <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Title}" Classes="h1"
+                           FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+                <TextBlock Text="{Binding Text}" Classes="subtitle" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <Button Classes="help" Command="{Binding ShowHelpCommand}"
+                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                <controls:SearchableComboBox IsVisible="{Binding ShowDaySelector}"
+                          MinWidth="140" VerticalAlignment="Center"
+                          SearchWatermark="{Binding Localization[Common.Search]}"
+                          ItemsSource="{Binding DayOptions}"
+                          SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="pages:DayOption">
+                            <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </controls:SearchableComboBox>
+                <Button Classes="ghost" VerticalAlignment="Center"
+                        Command="{Binding RefreshCommand}"
+                        IsVisible="{Binding Info.HasSelection}"
+                        Content="{Binding Localization[Dashboard.Refresh]}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Empty state: no competition selected -->
+        <Border Classes="card" Padding="40" IsVisible="{Binding !Info.HasSelection}">
+            <StackPanel Spacing="16" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420">
+                <Border Width="72" Height="72" CornerRadius="36"
+                        Background="{DynamicResource AccentSurface}" HorizontalAlignment="Center">
+                    <PathIcon Data="{Binding IconData}" Width="34" Height="34"
+                              Foreground="{DynamicResource AccentBrush}" />
+                </Border>
+                <TextBlock Text="{Binding Localization[Dashboard.Empty.Title]}" Classes="h2"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="{Binding Localization[Dashboard.Empty.Text]}" Classes="subtitle"
+                           HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <!-- Live dashboard -->
+        <ScrollViewer IsVisible="{Binding Info.HasSelection}"
+                      HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="20">
+
+                <!-- Quick actions: kept at the top — the most-used shortcuts while running a competition -->
+                <Border Classes="card" Padding="20">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="{Binding Localization[Dashboard.Section.QuickActions]}" Classes="label" />
+                        <WrapPanel Orientation="Horizontal">
+                            <Button Classes="accent" Margin="0,0,10,10"
+                                    Command="{Binding QuickActionCommand}"
+                                    CommandParameter="{x:Static pages:DashboardQuickAction.Participants}"
+                                    Content="{Binding Localization[Dashboard.Action.Participants]}" />
+                            <Button Classes="accent" Margin="0,0,10,10"
+                                    Command="{Binding QuickActionCommand}"
+                                    CommandParameter="{x:Static pages:DashboardQuickAction.FinishRead}"
+                                    Content="{Binding Localization[Dashboard.Action.FinishRead]}" />
+                            <Button Classes="ghost" Margin="0,0,10,10"
+                                    Command="{Binding QuickActionCommand}"
+                                    CommandParameter="{x:Static pages:DashboardQuickAction.Draw}"
+                                    Content="{Binding Localization[Dashboard.Action.Draw]}" />
+                            <Button Classes="ghost" Margin="0,0,10,10"
+                                    Command="{Binding QuickActionCommand}"
+                                    CommandParameter="{x:Static pages:DashboardQuickAction.StartProtocol}"
+                                    Content="{Binding Localization[Dashboard.Action.StartProtocol]}" />
+                            <Button Classes="ghost" Margin="0,0,10,10"
+                                    Command="{Binding QuickActionCommand}"
+                                    CommandParameter="{x:Static pages:DashboardQuickAction.Protocols}"
+                                    Content="{Binding Localization[Dashboard.Action.Protocols]}" />
+                            <Button Classes="ghost" Margin="0,0,10,10"
+                                    Command="{Binding QuickActionCommand}"
+                                    CommandParameter="{x:Static pages:DashboardQuickAction.Splits}"
+                                    Content="{Binding Localization[Dashboard.Action.Splits]}" />
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Top row: competition overview + current day + start -->
+                <Grid ColumnDefinitions="2*,*,*" ColumnSpacing="16">
+
+                    <!-- Competition overview -->
+                    <Border Grid.Column="0" Classes="card" Padding="20">
+                        <StackPanel Spacing="14">
+                            <TextBlock Text="{Binding Localization[Dashboard.Section.Overview]}" Classes="label" />
+                            <TextBlock Text="{Binding Info.CompetitionName}" Classes="h2"
+                                       FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}"
+                                       TextWrapping="Wrap" />
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="16">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Localization[Dashboard.Overview.Venue]}" Classes="subtitle" />
+                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Info.Venue}" TextWrapping="Wrap" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding Localization[Dashboard.Overview.Dates]}" Classes="subtitle" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Info.DateRange}" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="{Binding Localization[Dashboard.Overview.Days]}" Classes="subtitle" />
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Info.DayCount}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Current day -->
+                    <Border Grid.Column="1" Classes="card" Padding="20">
+                        <StackPanel Spacing="14">
+                            <TextBlock Text="{Binding Localization[Dashboard.Section.Today]}" Classes="label" />
+                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <Border Classes="badge"><TextBlock Text="{Binding DayLabel}" /></Border>
+                                <TextBlock Text="{Binding Info.CurrentDayDate}" Classes="subtitle" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="{Binding Localization[Dashboard.Today.Discipline]}" Classes="subtitle" />
+                                <TextBlock Text="{Binding DisciplineName}" FontWeight="Medium" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Start window → Жеребкування -->
+                    <Button Grid.Column="2" Classes="tile" Padding="20"
+                            Command="{Binding QuickActionCommand}"
+                            CommandParameter="{x:Static pages:DashboardQuickAction.Draw}">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="{Binding Localization[Dashboard.Section.Start]}" Classes="label" />
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="{Binding Localization[Dashboard.Start.First]}" Classes="subtitle" />
+                                <TextBlock Text="{Binding FirstStartText}" Classes="h2"
+                                           FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}"
+                                           Foreground="{DynamicResource AccentBrush}" />
+                            </StackPanel>
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="{Binding Localization[Dashboard.Start.Last]}" Classes="subtitle" />
+                                <TextBlock Text="{Binding LastStartText}" FontWeight="Medium" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="{Binding Localization[Dashboard.Start.Assigned]}" Classes="muted" FontSize="12" />
+                                <TextBlock Text="{Binding Info.StartsAssigned}" FontSize="12" FontWeight="SemiBold" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+
+                <!-- Stat tiles -->
+                <ItemsControl>
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+
+                    <!-- Participants → Учасники -->
+                    <Button Classes="tile" Width="200" Margin="0,0,12,12"
+                            Command="{Binding QuickActionCommand}"
+                            CommandParameter="{x:Static pages:DashboardQuickAction.Participants}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[Dashboard.Stat.Participants]}" Classes="subtitle" />
+                            <TextBlock Text="{Binding Info.ParticipantTotal}" Classes="h1" FontSize="30" />
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="{Binding Localization[Dashboard.Stat.ParticipantsToday]}" Classes="muted" FontSize="12" />
+                                <TextBlock Text="{Binding Info.ParticipantsToday}" FontSize="12" FontWeight="SemiBold" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Groups today → Групи -->
+                    <Button Classes="tile" Width="200" Margin="0,0,12,12"
+                            Command="{Binding QuickActionCommand}"
+                            CommandParameter="{x:Static pages:DashboardQuickAction.Groups}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[Dashboard.Stat.GroupsToday]}" Classes="subtitle" />
+                            <TextBlock Text="{Binding Info.GroupsToday}" Classes="h1" FontSize="30" />
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Without chip → Учасники (filtered to chipless) -->
+                    <Button Classes="tile" Width="200" Margin="0,0,12,12"
+                            Command="{Binding QuickActionCommand}"
+                            CommandParameter="{x:Static pages:DashboardQuickAction.ParticipantsWithoutChip}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[Dashboard.Stat.WithoutChip]}" Classes="subtitle" />
+                            <TextBlock Text="{Binding Info.WithoutChip}" Classes="h1" FontSize="30"
+                                       Foreground="{DynamicResource DangerBrush}" />
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Without group → Учасники (filtered to groupless) -->
+                    <Button Classes="tile" Width="200" Margin="0,0,12,12"
+                            Command="{Binding QuickActionCommand}"
+                            CommandParameter="{x:Static pages:DashboardQuickAction.ParticipantsWithoutGroup}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[Dashboard.Stat.WithoutGroup]}" Classes="subtitle" />
+                            <TextBlock Text="{Binding Info.WithoutGroup}" Classes="h1" FontSize="30" />
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Chips → Чіпи -->
+                    <Button Classes="tile" Width="200" Margin="0,0,12,12"
+                            Command="{Binding QuickActionCommand}"
+                            CommandParameter="{x:Static pages:DashboardQuickAction.Chips}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[Dashboard.Stat.ChipsTotal]}" Classes="subtitle" />
+                            <TextBlock Text="{Binding Info.ChipsTotal}" Classes="h1" FontSize="30" />
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <TextBlock Text="{Binding Localization[Dashboard.Stat.ChipsHandedOut]}" Classes="muted" FontSize="12" />
+                                    <TextBlock Text="{Binding Info.ChipsHandedOut}" FontSize="12" FontWeight="SemiBold" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <TextBlock Text="{Binding Localization[Dashboard.Stat.ChipsFree]}" Classes="muted" FontSize="12" />
+                                    <TextBlock Text="{Binding Info.ChipsFree}" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource SuccessBrush}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Read-outs → Зчитка на фініші -->
+                    <Button Classes="tile" Width="200" Margin="0,0,12,12"
+                            Command="{Binding QuickActionCommand}"
+                            CommandParameter="{x:Static pages:DashboardQuickAction.FinishRead}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[Dashboard.Stat.Readouts]}" Classes="subtitle" />
+                            <TextBlock Text="{Binding Info.ReadoutsToday}" Classes="h1" FontSize="30" />
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Finished OK / problem → Зчитка на фініші -->
+                    <Button Classes="tile" Width="200" Margin="0,0,12,12"
+                            Command="{Binding QuickActionCommand}"
+                            CommandParameter="{x:Static pages:DashboardQuickAction.FinishRead}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[Dashboard.Stat.Finished]}" Classes="subtitle" />
+                            <TextBlock Text="{Binding Info.FinishedOk}" Classes="h1" FontSize="30"
+                                       Foreground="{DynamicResource SuccessBrush}" />
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="{Binding Localization[Dashboard.Stat.Problem]}" Classes="muted" FontSize="12" />
+                                <TextBlock Text="{Binding Info.FinishedWithProblem}" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource DangerBrush}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- On course → Учасники (filtered to still-running: no start/finish/status) -->
+                    <Button Classes="tile" Width="200" Margin="0,0,12,12"
+                            Command="{Binding QuickActionCommand}"
+                            CommandParameter="{x:Static pages:DashboardQuickAction.ParticipantsOnCourse}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[Dashboard.Stat.OnCourse]}" Classes="subtitle" />
+                            <TextBlock Text="{Binding Info.OnCourse}" Classes="h1" FontSize="30"
+                                       Foreground="{DynamicResource AccentBrush}" />
+                        </StackPanel>
+                    </Button>
+                </ItemsControl>
+
+            </StackPanel>
+        </ScrollViewer>
+
+    </DockPanel>
+
+</UserControl>

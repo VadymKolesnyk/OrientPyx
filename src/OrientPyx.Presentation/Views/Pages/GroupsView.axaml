@@ -1,0 +1,204 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="940" d:DesignHeight="560"
+             x:Class="OrientPyx.Presentation.Views.Pages.GroupsView"
+             x:DataType="pages:GroupsViewModel">
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Heading + actions on one line -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="{Binding Title}" Classes="h1"
+                           FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+                <TextBlock Text="{Binding Text}" Classes="subtitle" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
+                        VerticalAlignment="Center">
+                <Button Classes="help" Command="{Binding ShowHelpCommand}"
+                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                <controls:SearchableComboBox IsVisible="{Binding ShowDaySelector}"
+                          MinWidth="120" VerticalAlignment="Center"
+                          SearchWatermark="{Binding Localization[Common.Search]}"
+                          ItemsSource="{Binding DayOptions}"
+                          SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="pages:DayOption">
+                            <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </controls:SearchableComboBox>
+                <Button Name="ImportButton" Classes="ghost" Click="OnImportClick"
+                        ToolTip.Tip="{Binding Localization[Import.Hint]}">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <PathIcon Data="M12,3 v10 M8,9 l4,4 l4,-4 M5,15 v3 a1,1 0 0 0 1,1 h12 a1,1 0 0 0 1,-1 v-3"
+                                  Width="14" Height="14" />
+                        <TextBlock Text="{Binding Localization[Import]}" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding RecalculateAgeWindowsCommand}" Classes="ghost"
+                        ToolTip.Tip="{Binding Localization[Groups.RecalcAge.Hint]}">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <PathIcon Data="M12,4 a8,8 0 1 1 -7.5,5.3 M12,4 V1 M12,4 l3,2 M8,12 h8 M10,15 h4"
+                                  Width="14" Height="14" />
+                        <TextBlock Text="{Binding Localization[Groups.RecalcAge]}" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding PullAllGroupsCommand}" Classes="ghost"
+                        ToolTip.Tip="{Binding Localization[Groups.PullAll.Hint]}">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <PathIcon Data="M12,3 v10 M8,9 l4,4 l4,-4 M5,15 v3 a1,1 0 0 0 1,1 h12 a1,1 0 0 0 1,-1 v-3"
+                                  Width="14" Height="14" />
+                        <TextBlock Text="{Binding Localization[Groups.PullAll]}" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding AddGroupCommand}" Classes="accent">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <PathIcon Data="M11,5 h2 v6 h6 v2 h-6 v6 h-2 v-6 h-6 v-2 h6 z" Width="14" Height="14" Foreground="White" />
+                        <TextBlock Text="{Binding Localization[Groups.Add]}" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- Competition-wide defaults, editable above the table (collapsible card — same pattern as the
+             finish-read auto-read panel). The global course-setter (начальник дистанції) and the default
+             points rule; a group may override either per day. The fields WrapPanel so a narrow window
+             reflows them onto another line instead of pushing the controls off-screen. -->
+        <Border DockPanel.Dock="Top" Classes="card" Padding="14" Margin="0,0,0,16">
+            <StackPanel Spacing="10">
+
+                <Button Command="{Binding ToggleGlobalSettingsCommand}" Classes="ghost"
+                        Padding="0" HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Left" Background="Transparent">
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <PathIcon Data="M8,5 l8,7 l-8,7" Width="12" Height="12"
+                                  IsVisible="{Binding !IsGlobalSettingsExpanded}" />
+                        <PathIcon Data="M5,8 l7,8 l7,-8" Width="12" Height="12"
+                                  IsVisible="{Binding IsGlobalSettingsExpanded}" />
+                        <TextBlock Text="{Binding Localization[Groups.GlobalSettings]}" Classes="h2"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
+                <WrapPanel Orientation="Horizontal" IsVisible="{Binding IsGlobalSettingsExpanded}">
+                    <!-- Course-setter (name + category) -->
+                    <StackPanel Spacing="4" Margin="0,0,28,8" VerticalAlignment="Bottom">
+                        <TextBlock Text="{Binding Localization[Groups.GlobalSettings.CourseSetter]}" Classes="label" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBox Width="200"
+                                     Text="{Binding DefaultCourseSetter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBox Width="110"
+                                     PlaceholderText="{Binding Localization[Groups.Col.CourseSetterCategory]}"
+                                     Text="{Binding DefaultCourseSetterCategory, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Default points rule -->
+                    <StackPanel Spacing="4" Margin="0,0,0,8" VerticalAlignment="Bottom">
+                        <TextBlock Text="{Binding Localization[Groups.GlobalSettings.DefaultPoints]}" Classes="label" />
+                        <ComboBox Width="220"
+                                  ItemsSource="{Binding DefaultPointsRuleOptions}"
+                                  SelectedItem="{Binding SelectedDefaultPointsRule, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="pages:PointsRuleOption">
+                                    <TextBlock Text="{Binding Label}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
+                </WrapPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Grid + a resizable bottom editor for the selected group's course / control list.
+             Row 0 (the table) takes the remaining space; the GridSplitter on row 1 drags the
+             editor (row 2) taller/shorter. The editor's starting height is fixed but user-resizable. -->
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" MinHeight="80" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="160" MinHeight="64" />
+            </Grid.RowDefinitions>
+
+        <!-- Spreadsheet-style table; the card border supplies the rounded frame. Columns are built
+             in code-behind (SheetColumnBuilder) and handed to the shared SheetTable via Bands. -->
+        <Border Grid.Row="0" Classes="card" ClipToBounds="True">
+            <controls:SheetTable Name="Sheet"
+                                 ItemsSource="{Binding Groups}"
+                                 Localization="{Binding Localization}"
+                                 SelectedItem="{Binding SelectedGroup, Mode=TwoWay}"
+                                 DeleteRequested="OnDeleteRequested" />
+        </Border>
+
+        <!-- Vertical resizer between the table and the course editor. -->
+        <GridSplitter Grid.Row="1"
+                      Height="6"
+                      Margin="0,6"
+                      HorizontalAlignment="Stretch"
+                      ResizeDirection="Rows"
+                      Background="Transparent" />
+
+        <!-- Large editor for the selected group's course / control list. Disabled (and showing a
+             hint caption) until a group is selected. Row 2 carries the height; the GridSplitter
+             above adjusts that row, and the Border stretches to fill it. -->
+        <Border Grid.Row="2" Classes="card" Padding="12">
+            <DockPanel LastChildFill="True">
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="2,0,0,8">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding SelectedCourseHeader}"
+                               Classes="subtitle"
+                               VerticalAlignment="Center" />
+                    <!-- Help: how to write the «mixed» order pattern (< >, [N: …], nesting). Shown only
+                         for a mixed-discipline group (same condition as the pattern preview below). -->
+                    <Button Grid.Column="1" Classes="ghost"
+                            Padding="8,2"
+                            IsVisible="{Binding IsPatternPreviewVisible}"
+                            Command="{Binding ShowCoursePatternHelpCommand}"
+                            ToolTip.Tip="{Binding Localization[CoursePattern.Help.Title]}">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <PathIcon Data="M12,4 a8,8 0 1 1 0,16 a8,8 0 0 1 0,-16 M9.5,9 a2.5,2.5 0 0 1 3.6,-2 a2.2,2.2 0 0 1 0.4,3.4 c-0.9,0.8 -1.5,1.2 -1.5,2.3 M12,16.5 v0.2"
+                                      Width="14" Height="14" />
+                            <TextBlock Text="{Binding Localization[CoursePattern.Help.Button]}" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
+                <!-- Live validation of the «mixed» order pattern: a ✔ with the normalized "S … F" order
+                     when valid, or a ✖ with the first structural error when not. Shown only for a
+                     mixed-discipline group; the TextBox fills the space above. -->
+                <Border DockPanel.Dock="Bottom"
+                        IsVisible="{Binding IsPatternPreviewVisible}"
+                        Margin="0,8,0,0" Padding="10,7" CornerRadius="6"
+                        Background="{DynamicResource SurfaceSubtle}">
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <!-- Valid: green check / Invalid: red cross. Glyphs (not PathIcon, which fills an
+                             open stroke into a sliver) so they render crisply. -->
+                        <TextBlock IsVisible="{Binding IsPatternValid}"
+                                   Text="✓" FontWeight="Bold" FontSize="15"
+                                   Foreground="#16A34A" VerticalAlignment="Center" />
+                        <TextBlock IsVisible="{Binding !IsPatternValid}"
+                                   Text="✕" FontWeight="Bold" FontSize="15"
+                                   Foreground="#DC2626" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding PatternPreviewText}"
+                                   TextWrapping="Wrap" VerticalAlignment="Center"
+                                   FontFamily="Consolas, 'Courier New', monospace" />
+                    </StackPanel>
+                </Border>
+                <TextBox AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         VerticalContentAlignment="Top"
+                         IsEnabled="{Binding HasSelectedGroup}"
+                         PlaceholderText="{Binding Localization[Groups.SelectedCourse.Placeholder]}"
+                         Text="{Binding SelectedGroup.CourseOrder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}" />
+            </DockPanel>
+        </Border>
+
+        </Grid>
+
+    </DockPanel>
+
+</UserControl>

@@ -1,0 +1,256 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             xmlns:shared="using:OrientPyx.Presentation.ViewModels.Shared"
+             mc:Ignorable="d" d:DesignWidth="720" d:DesignHeight="640"
+             x:Class="OrientPyx.Presentation.Views.Pages.OnlineResultsView"
+             x:DataType="pages:OnlineResultsViewModel">
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- Header -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="{Binding Title}" Classes="h1" />
+                <TextBlock Text="{Binding Text}" Classes="muted" TextWrapping="Wrap" />
+            </StackPanel>
+            <Button Grid.Column="1" Classes="help" VerticalAlignment="Center"
+                    Command="{Binding ShowHelpCommand}"
+                    ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+        </Grid>
+
+        <ScrollViewer Grid.Row="1">
+            <StackPanel Spacing="16">
+
+                <!-- Connection-not-configured warning -->
+                <Border Classes="card" Padding="16" IsVisible="{Binding !IsConnectionConfigured}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <PathIcon Data="M12,2 L22,20 H2 Z M12,9 v5 M12,17 v0.5" Width="18" Height="18"
+                                  Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Top" />
+                        <TextBlock Text="{Binding Localization[OnlineResults.NotConfigured]}"
+                                   TextWrapping="Wrap" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Per-competition publish options -->
+                <Border Classes="card" Padding="22">
+                    <StackPanel Spacing="14">
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Localization[OnlineResults.Options.Title]}" Classes="h2"
+                                       VerticalAlignment="Center" />
+                            <Button Classes="help"
+                                    Command="{Binding ShowBlockHelpCommand}" CommandParameter="Help.OnlineResults.Options"
+                                    ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[OnlineResults.Slug]}" Classes="label" />
+                            <TextBox Text="{Binding Slug, Mode=TwoWay}" PlaceholderText="kyiv2025" />
+                            <TextBlock Text="{Binding Localization[OnlineResults.Slug.Hint]}" Classes="muted"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[OnlineResults.Title]}" Classes="label" />
+                            <TextBox Text="{Binding Title, Mode=TwoWay}" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[OnlineResults.Subtitle]}" Classes="label" />
+                            <TextBox Text="{Binding Subtitle, Mode=TwoWay}" />
+                        </StackPanel>
+
+                        <CheckBox Content="{Binding Localization[OnlineResults.Standings]}"
+                                  IsChecked="{Binding Standings, Mode=TwoWay}" />
+
+                        <!-- «Очки» rule status: shown only when the «Очки» column is actually enabled below. A
+                             warning when nothing is configured (column will be empty), otherwise the effective
+                             formula + any exception groups. -->
+                        <StackPanel Spacing="6" IsVisible="{Binding PointsColumnVisible}">
+                            <!-- Not configured → warning -->
+                            <StackPanel Orientation="Horizontal" Spacing="8"
+                                        IsVisible="{Binding !HasPointsRule}">
+                                <PathIcon Data="M12,2 L22,20 H2 Z M12,9 v5 M12,17 v0.5" Width="15" Height="15"
+                                          Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Top" />
+                                <TextBlock Text="{Binding PointsWarning}" Classes="muted"
+                                           TextWrapping="Wrap" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <!-- Configured → formula + exceptions -->
+                            <StackPanel Spacing="2" IsVisible="{Binding HasPointsRule}">
+                                <TextBlock Text="{Binding PointsFormulaInfo}" Classes="muted"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding PointsExceptionsInfo}" Classes="muted"
+                                           TextWrapping="Wrap"
+                                           IsVisible="{Binding PointsExceptionsInfo, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Displayed columns (sent to the frontend as display_config). A live preview mirrors
+                             the spectator table; drag a column header to reorder. Below it each column has a
+                             large-screen and a small-screen (phone) check-box. -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[OnlineResults.Columns]}" Classes="label" />
+                            <TextBlock Text="{Binding Localization[OnlineResults.Columns.Hint]}" Classes="muted"
+                                       TextWrapping="Wrap" />
+
+                            <!-- Spectator-table mock-up (built in code-behind; header drag-reorder). -->
+                            <Border Background="#FBFCFE" BorderBrush="{DynamicResource BorderBrush}"
+                                    BorderThickness="1" CornerRadius="6" Padding="18" ClipToBounds="True"
+                                    BoxShadow="0 2 10 0 #18000000">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="{Binding Preview.Title}" Foreground="#16202F"
+                                               FontWeight="Bold" FontSize="20" TextAlignment="Center"
+                                               IsVisible="{Binding Preview.Title, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                    <TextBlock Text="{Binding Preview.Subtitle}" Foreground="#5A6B86"
+                                               FontSize="12" TextAlignment="Center" Margin="0,0,0,8"
+                                               IsVisible="{Binding Preview.Subtitle, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                    <TextBlock Text="{Binding Localization[OnlineResults.Preview.Empty]}"
+                                               Foreground="#888" FontStyle="Italic" FontSize="12"
+                                               TextWrapping="Wrap" IsVisible="{Binding Preview.IsEmpty}" />
+                                    <Grid x:Name="PreviewTableHost" Margin="0,4,0,0"
+                                          IsVisible="{Binding !Preview.IsEmpty}" />
+                                </StackPanel>
+                            </Border>
+                            <TextBlock Text="{Binding Localization[OnlineResults.Columns.PhoneHint]}" Classes="muted"
+                                       FontSize="11" TextWrapping="Wrap" />
+
+                            <!-- Per-column visibility: Вел. (large / venue screen) + Мал. (phone). -->
+                            <Border Classes="card" Padding="8" MaxHeight="300" ClipToBounds="True">
+                                <ScrollViewer>
+                                    <StackPanel Spacing="1">
+                                        <!-- Header row -->
+                                        <Grid ColumnDefinitions="*,70,70" Margin="0,0,0,4">
+                                            <TextBlock Grid.Column="1" Text="{Binding Localization[OnlineResults.Columns.Large]}"
+                                                       Classes="muted" FontSize="11" HorizontalAlignment="Center" />
+                                            <TextBlock Grid.Column="2" Text="{Binding Localization[OnlineResults.Columns.Small]}"
+                                                       Classes="muted" FontSize="11" HorizontalAlignment="Center" />
+                                        </Grid>
+                                        <ItemsControl ItemsSource="{Binding Columns.Columns}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="shared:OnlineColumnItem">
+                                                    <Grid ColumnDefinitions="*,70,70" Margin="0,1">
+                                                        <TextBlock Grid.Column="0" Text="{Binding Label}"
+                                                                   VerticalAlignment="Center" />
+                                                        <CheckBox Grid.Column="1" IsChecked="{Binding Lg, Mode=TwoWay}"
+                                                                  HorizontalAlignment="Center" />
+                                                        <CheckBox Grid.Column="2" IsChecked="{Binding Sm, Mode=TwoWay}"
+                                                                  HorizontalAlignment="Center" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </Border>
+
+                            <!-- Separate «Статус/DSQ» column, per screen. -->
+                            <StackPanel Spacing="4" Margin="0,4,0,0">
+                                <TextBlock Text="{Binding Localization[OnlineResults.SeparateDsq]}" Classes="label" />
+                                <CheckBox Content="{Binding Localization[OnlineResults.SeparateDsq.Large]}"
+                                          IsChecked="{Binding Columns.SeparateDsqLarge, Mode=TwoWay}" />
+                                <CheckBox Content="{Binding Localization[OnlineResults.SeparateDsq.Small]}"
+                                          IsChecked="{Binding Columns.SeparateDsqSmall, Mode=TwoWay}" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Content="{Binding Localization[OnlineResults.SaveSettings]}"
+                                    Classes="ghost"
+                                    Command="{Binding SaveSettingsCommand}" />
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                                        IsVisible="{Binding SettingsSaved}">
+                                <PathIcon Data="M5,12 l4,4 l10,-10" Width="16" Height="16"
+                                          Foreground="{DynamicResource SuccessBrush}" />
+                                <TextBlock Text="{Binding Localization[Settings.PathsSavedHint]}"
+                                           Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Start / stop publishing -->
+                <Border Classes="card" Padding="22">
+                    <StackPanel Spacing="14">
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Localization[OnlineResults.Publish.Title]}" Classes="h2"
+                                       VerticalAlignment="Center" />
+                            <Button Classes="help"
+                                    Command="{Binding ShowBlockHelpCommand}" CommandParameter="Help.OnlineResults.Publish"
+                                    ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Content="{Binding Localization[OnlineResults.Start]}"
+                                    Classes="accent"
+                                    IsVisible="{Binding IsStopped}"
+                                    IsEnabled="{Binding IsConnectionConfigured}"
+                                    Command="{Binding StartPublishingCommand}" />
+                            <Button Content="{Binding Localization[OnlineResults.Stop]}"
+                                    Classes="danger"
+                                    IsVisible="{Binding IsPublishing}"
+                                    Command="{Binding StopPublishingCommand}" />
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                                        IsVisible="{Binding IsPublishing}">
+                                <Ellipse Width="10" Height="10" Fill="{DynamicResource SuccessBrush}"
+                                         VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding Localization[OnlineResults.Running]}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Spectator links -->
+                        <StackPanel Spacing="6" IsVisible="{Binding Links.Count}">
+                            <TextBlock Text="{Binding Localization[OnlineResults.Links]}" Classes="label" />
+                            <ItemsControl ItemsSource="{Binding Links}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid ColumnDefinitions="*,Auto" Margin="0,1">
+                                            <!-- Whole-row clickable link: opens the URL in the browser.
+                                                 A big hit target so you needn't click exactly on the text. -->
+                                            <Button Grid.Column="0" Classes="ghost"
+                                                    HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Left"
+                                                    Cursor="Hand"
+                                                    Click="OnLinkClick"
+                                                    Tag="{Binding}"
+                                                    ToolTip.Tip="{Binding}">
+                                                <TextBlock Text="{Binding}" FontFamily="Consolas,monospace"
+                                                           Foreground="{DynamicResource AccentBrush}"
+                                                           TextDecorations="Underline" />
+                                            </Button>
+                                            <Button Grid.Column="1" Classes="ghost" Padding="8,4"
+                                                    Click="OnCopyLinkClick" Tag="{Binding}"
+                                                    ToolTip.Tip="{Binding $parent[ItemsControl].((pages:OnlineResultsViewModel)DataContext).Localization[OnlineResults.Copy]}">
+                                                <PathIcon Width="14" Height="14"
+                                                          Data="M9,2 h7 a1,1 0 0 1 1,1 v10 a1,1 0 0 1 -1,1 h-7 a1,1 0 0 1 -1,-1 v-10 a1,1 0 0 1 1,-1 z M5,6 v10 a1,1 0 0 0 1,1 h7" />
+                                            </Button>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Publish log -->
+                <Border Classes="card" Padding="22">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="{Binding Localization[OnlineResults.Log]}" Classes="h2" />
+                        <Border Classes="card" Padding="10" MinHeight="160" MaxHeight="260"
+                                ClipToBounds="True">
+                            <ScrollViewer>
+                                <SelectableTextBlock Text="{Binding LogText}"
+                                                     FontFamily="Consolas,monospace" FontSize="12"
+                                                     TextWrapping="Wrap" />
+                            </ScrollViewer>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+
+</UserControl>

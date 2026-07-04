@@ -1,4 +1,4 @@
-# OrientDesk
+# OrientPyx
 
 Cross-platform desktop application for managing orienteering competitions.
 Currently this is a **starter architecture only**: a working UI shell, localization
@@ -8,12 +8,12 @@ features are intentionally not implemented yet.
 ## Solution structure
 
 ```
-OrientDesk.sln
+OrientPyx.sln
 src/
-  OrientDesk.Presentation/    Avalonia UI (Views, ViewModels, navigation, app startup, DI composition)
-  OrientDesk.BusinessLogic/   Entities, models, enums, service interfaces + placeholder implementations
-  OrientDesk.DataAccess/      EF Core + SQLite: app & event DbContexts, stores, events-folder scanner
-  OrientDesk.Localization/    ILocalizationService + JSON resource dictionaries (uk-UA default, en-US)
+  OrientPyx.Presentation/    Avalonia UI (Views, ViewModels, navigation, app startup, DI composition)
+  OrientPyx.BusinessLogic/   Entities, models, enums, service interfaces + placeholder implementations
+  OrientPyx.DataAccess/      EF Core + SQLite: app & event DbContexts, stores, events-folder scanner
+  OrientPyx.Localization/    ILocalizationService + JSON resource dictionaries (uk-UA default, en-US)
 ```
 
 ## Architecture rules
@@ -66,7 +66,7 @@ instances over the same `./data`, and runtime state must not be shared through i
 
 - **UI text is Ukrainian (uk-UA) by default.**
 - **Do not hardcode user-facing strings** in Views or ViewModels.
-- New user-facing text → add a key to **both** `src/OrientDesk.Localization/Resources/uk-UA.json`
+- New user-facing text → add a key to **both** `src/OrientPyx.Localization/Resources/uk-UA.json`
   and `en-US.json`, then bind/resolve it through `ILocalizationService`.
 - Keep keys clear and grouped, e.g. `Nav.Participants`, `Page.Results.Title`.
 - Resolve dynamic-key text via a VM property that calls `ILocalizationService.Get(key)`
@@ -128,7 +128,7 @@ dotnet build
 ## How to run
 
 ```bash
-dotnet run --project src/OrientDesk.Presentation
+dotnet run --project src/OrientPyx.Presentation
 ```
 
 The window opens with a Ukrainian sidebar and Ukrainian placeholder pages; the default
@@ -140,13 +140,13 @@ first run.
 EF Core **migrations** are the canonical way schema evolves, for both databases:
 `AppDbContext` (`./data/app.db`) and `EventDbContext` (per-competition `event.db`). Apply
 them at runtime with `Database.Migrate()` — the app DB on startup
-(`InitializeOrientDeskDatabase`) and each event DB when it is opened
+(`InitializeOrientPyxDatabase`) and each event DB when it is opened
 (`EventStore.EnsureCreatedAsync`, which now calls `MigrateAsync`). Add a new migration when
 you change an entity, e.g.:
 
 ```bash
 dotnet ef migrations add <Name> --context EventDbContext \
-  --project src/OrientDesk.DataAccess --startup-project src/OrientDesk.DataAccess \
+  --project src/OrientPyx.DataAccess --startup-project src/OrientPyx.DataAccess \
   --output-dir Persistence/Migrations/Event
 ```
 
@@ -184,7 +184,7 @@ the open command) → `IStartProtocolBuilder`/`StartProtocolBuilder` (BusinessLo
 
 (**Online live results** — «Онлайн-результати» (in the «Протоколи» top menu) publishes the active session day's
 already-computed results to a Supabase project that a separate, already-deployed React spectator frontend reads.
-OrientDesk only does the publisher side: a background process (`OnlineResultsViewModel`, surfaced in the top-bar
+OrientPyx only does the publisher side: a background process (`OnlineResultsViewModel`, surfaced in the top-bar
 activity block via `OnlineResultsActivity`) builds a snapshot each tick with `ICompetitionEditorService.
 GetOnlineResultsSnapshotAsync(dayId)` — which reuses `GetResultProtocolDataAsync`, so it's the same computed data
 the protocols show — and upserts it via `IResultPublisher`/`SupabaseResultPublisher` (DataAccess, PostgREST). The

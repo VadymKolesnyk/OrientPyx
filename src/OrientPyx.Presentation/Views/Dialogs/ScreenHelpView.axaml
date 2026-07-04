@@ -1,0 +1,99 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
+             mc:Ignorable="d" d:DesignWidth="560" d:DesignHeight="560"
+             x:Class="OrientPyx.Presentation.Views.Dialogs.ScreenHelpView"
+             x:DataType="dialogs:ScreenHelpViewModel">
+
+    <UserControl.Styles>
+        <!-- Section heading (no global h3 class exists — define it locally, as CoursePatternHelpView does). -->
+        <Style Selector="TextBlock.h3">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <!-- One "How to use" step: a bullet + wrapped text. -->
+        <Style Selector="Grid.step > TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        </Style>
+    </UserControl.Styles>
+
+    <!-- Centered card; the backdrop is supplied by the host overlay. -->
+    <Border Background="{DynamicResource SurfaceCard}"
+            CornerRadius="12"
+            MinWidth="480" MaxWidth="620"
+            BoxShadow="0 10 40 0 #40000000"
+            HorizontalAlignment="Center" VerticalAlignment="Center"
+            ClipToBounds="True"
+            KeyboardNavigation.TabNavigation="Cycle">
+        <DockPanel LastChildFill="True">
+
+            <!-- Header -->
+            <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
+                    Padding="22,16">
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <Border Width="30" Height="30" CornerRadius="15"
+                            Background="{DynamicResource AccentSurface}"
+                            VerticalAlignment="Center">
+                        <TextBlock Text="?" FontWeight="Bold" FontSize="16"
+                                   Foreground="{DynamicResource AccentBrush}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="{Binding Title}" Classes="h2" VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
+
+            <!-- Footer -->
+            <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
+                    Padding="22,14">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="{Binding Localization[Common.Close]}"
+                            Classes="accent"
+                            IsDefault="True" IsCancel="True"
+                            Command="{Binding CloseCommand}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Body -->
+            <ScrollViewer MaxHeight="480" HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="22,18" Spacing="16">
+
+                    <!-- Що це -->
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="{Binding Localization[Help.Section.What]}" Classes="h3" />
+                        <TextBlock Text="{Binding What}" TextWrapping="Wrap" Classes="muted" />
+                    </StackPanel>
+
+                    <!-- Для чого -->
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="{Binding Localization[Help.Section.Why]}" Classes="h3" />
+                        <TextBlock Text="{Binding Why}" TextWrapping="Wrap" Classes="muted" />
+                    </StackPanel>
+
+                    <!-- Як користуватися (bullet list) -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="{Binding Localization[Help.Section.How]}" Classes="h3" />
+                        <ItemsControl ItemsSource="{Binding HowLines}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <Grid Classes="step" ColumnDefinitions="Auto,*" Margin="0,2,0,0">
+                                        <TextBlock Grid.Column="0" Text="•" Margin="0,0,8,0"
+                                                   Foreground="{DynamicResource AccentBrush}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding}" TextWrapping="Wrap" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                </StackPanel>
+            </ScrollViewer>
+
+        </DockPanel>
+    </Border>
+
+</UserControl>

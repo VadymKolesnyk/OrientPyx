@@ -1,0 +1,99 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:OrientPyx.Presentation.ViewModels"
+             xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             xmlns:views="using:OrientPyx.Presentation.Views.Pages"
+             mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="640"
+             x:Class="OrientPyx.Presentation.Views.ShellView"
+             x:DataType="vm:ShellViewModel">
+
+    <UserControl.DataTemplates>
+        <DataTemplate DataType="pages:DashboardViewModel">
+            <views:DashboardView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:SettingsViewModel">
+            <views:SettingsView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:CompetitionInfoViewModel">
+            <views:CompetitionInfoView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:CompetitionDaysViewModel">
+            <views:CompetitionDaysView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:ControlPointsViewModel">
+            <views:ControlPointsView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:GroupsViewModel">
+            <views:GroupsView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:ChipsViewModel">
+            <views:ChipsView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:ParticipantsViewModel">
+            <views:ParticipantsView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:RegionsViewModel">
+            <views:RegionsView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:ClubsViewModel">
+            <views:ClubsView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:DusshViewModel">
+            <views:DusshView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:FinishReadViewModel">
+            <views:FinishReadView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:RanksViewModel">
+            <views:RanksView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:PointsViewModel">
+            <views:PointsView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:EntryFeesViewModel">
+            <views:EntryFeesView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:ProtocolsViewModel">
+            <views:ProtocolsView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:SummaryProtocolsViewModel">
+            <views:SummaryProtocolsView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:SplitsExportViewModel">
+            <views:SplitsExportView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:DrawViewModel">
+            <views:DrawView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:ClassicDrawViewModel">
+            <views:ClassicDrawView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:StartProtocolsViewModel">
+            <views:StartProtocolsView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:OnlineResultsViewModel">
+            <views:OnlineResultsView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:MonitorResultsViewModel">
+            <views:MonitorResultsView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:PageViewModelBase">
+            <views:PageView />
+        </DataTemplate>
+    </UserControl.DataTemplates>
+
+    <DockPanel LastChildFill="True" Background="{DynamicResource SurfacePage}">
+
+        <!-- Content. No outer ScrollViewer here: it would hand the page infinite height, which
+             breaks a DataGrid (it then renders all rows and loses its own horizontal/vertical
+             scrollbars). Instead the padded Border fills the area with a bounded height, so grid
+             pages let the DataGrid scroll itself. Tall static pages add their own ScrollViewer. -->
+        <Border Padding="28">
+            <ContentControl Content="{Binding SelectedPage}" />
+        </Border>
+
+    </DockPanel>
+
+</UserControl>

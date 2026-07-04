@@ -1,0 +1,131 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             mc:Ignorable="d" d:DesignWidth="760" d:DesignHeight="560"
+             x:Class="OrientPyx.Presentation.Views.Pages.CompetitionInfoView"
+             x:DataType="pages:CompetitionInfoViewModel">
+
+    <!-- Own ScrollViewer: the ShellView no longer wraps pages in one (that broke the DataGrid
+         pages), so this form scrolls itself when the window is short. -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Spacing="20" MaxWidth="640" HorizontalAlignment="Left">
+
+        <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0" Text="{Binding Title}" Classes="h1" VerticalAlignment="Center"
+                       FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+            <Button Grid.Column="1" Classes="help" Command="{Binding ShowHelpCommand}"
+                    ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+        </Grid>
+
+        <Border Classes="card" Padding="28">
+            <StackPanel Spacing="16">
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[CompetitionInfo.Name]}" Classes="label" />
+                    <TextBox Text="{Binding Name, Mode=TwoWay}" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[CompetitionInfo.Venue]}" Classes="label" />
+                    <TextBox Text="{Binding Venue, Mode=TwoWay}" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[CompetitionInfo.Organisation]}" Classes="label" />
+                    <TextBox Text="{Binding Organisation, Mode=TwoWay}" />
+                </StackPanel>
+
+                <Grid ColumnDefinitions="*,20,*">
+                    <StackPanel Grid.Column="0" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CompetitionInfo.StartDate]}" Classes="label" />
+                        <CalendarDatePicker SelectedDate="{Binding StartDate, Mode=TwoWay,
+                                                Converter={StaticResource DateTimeOffsetToDateTime}}"
+                                            SelectedDateFormat="Custom"
+                                            CustomDateFormatString="dd.MM.yyyy"
+                                            PlaceholderText="{Binding Localization[Common.DatePlaceholder]}"
+                                            HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CompetitionInfo.EndDate]}" Classes="label" />
+                        <CalendarDatePicker SelectedDate="{Binding EndDate, Mode=TwoWay,
+                                                Converter={StaticResource DateTimeOffsetToDateTime}}"
+                                            SelectedDateFormat="Custom"
+                                            CustomDateFormatString="dd.MM.yyyy"
+                                            PlaceholderText="{Binding Localization[Common.DatePlaceholder]}"
+                                            HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                </Grid>
+
+            </StackPanel>
+        </Border>
+
+        <!-- Officials (printed on the protocols). Each named official has an optional judge category;
+             the course-setter here is the competition default — a group on a day may override it. -->
+        <Border Classes="card" Padding="28">
+            <StackPanel Spacing="16">
+
+                <TextBlock Text="{Binding Localization[CompetitionInfo.Officials]}" Classes="h2" />
+
+                <Grid ColumnDefinitions="*,16,160">
+                    <StackPanel Grid.Column="0" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CompetitionInfo.CourseSetter]}" Classes="label" />
+                        <TextBox Text="{Binding CourseSetter, Mode=TwoWay}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CompetitionInfo.JudgeCategory]}" Classes="label" />
+                        <TextBox Text="{Binding CourseSetterCategory, Mode=TwoWay}" />
+                    </StackPanel>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,16,160">
+                    <StackPanel Grid.Column="0" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CompetitionInfo.ChiefJudge]}" Classes="label" />
+                        <TextBox Text="{Binding ChiefJudge, Mode=TwoWay}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CompetitionInfo.JudgeCategory]}" Classes="label" />
+                        <TextBox Text="{Binding ChiefJudgeCategory, Mode=TwoWay}" />
+                    </StackPanel>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,16,160">
+                    <StackPanel Grid.Column="0" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CompetitionInfo.ChiefSecretary]}" Classes="label" />
+                        <TextBox Text="{Binding ChiefSecretary, Mode=TwoWay}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="6">
+                        <TextBlock Text="{Binding Localization[CompetitionInfo.JudgeCategory]}" Classes="label" />
+                        <TextBox Text="{Binding ChiefSecretaryCategory, Mode=TwoWay}" />
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[CompetitionInfo.Jury]}" Classes="label" />
+                    <TextBlock Text="{Binding Localization[CompetitionInfo.JuryHint]}" Classes="subtitle"
+                               FontSize="12" TextWrapping="Wrap" />
+                    <TextBox Text="{Binding Jury, Mode=TwoWay}" AcceptsReturn="True" TextWrapping="Wrap"
+                             MinHeight="80" />
+                </StackPanel>
+
+            </StackPanel>
+        </Border>
+
+        <StackPanel Orientation="Horizontal" Spacing="12">
+            <Button Content="{Binding Localization[CompetitionInfo.Save]}"
+                    Command="{Binding SaveCommand}"
+                    Classes="accent" />
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                        IsVisible="{Binding Saved}">
+                <PathIcon Data="M5,12 l4,4 l10,-10" Width="16" Height="16"
+                          Foreground="{DynamicResource SuccessBrush}" />
+                <TextBlock Text="{Binding Localization[CompetitionInfo.Saved]}"
+                           Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
+            </StackPanel>
+        </StackPanel>
+
+    </StackPanel>
+    </ScrollViewer>
+
+</UserControl>

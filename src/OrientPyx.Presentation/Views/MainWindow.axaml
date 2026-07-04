@@ -1,0 +1,433 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:OrientPyx.Presentation.ViewModels"
+        xmlns:views="using:OrientPyx.Presentation.Views"
+        xmlns:pageViews="using:OrientPyx.Presentation.Views.Pages"
+        xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
+        xmlns:dialogViews="using:OrientPyx.Presentation.Views.Dialogs"
+        xmlns:services="using:OrientPyx.Presentation.Services"
+        mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="640"
+        x:Class="OrientPyx.Presentation.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Width="1000" Height="640"
+        MinWidth="760" MinHeight="480"
+        FontSize="14"
+        Icon="/Assets/orientpyx.ico"
+        Title="{Binding WindowTitle}">
+
+    <Window.DataTemplates>
+        <DataTemplate DataType="vm:ShellViewModel">
+            <views:ShellView />
+        </DataTemplate>
+        <DataTemplate DataType="vm:EventSelectionViewModel">
+            <views:EventSelectionView />
+        </DataTemplate>
+        <DataTemplate DataType="vm:CreateEventViewModel">
+            <views:CreateEventView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:ImportOptionsViewModel">
+            <dialogViews:ImportOptionsView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:ConfirmDialogViewModel">
+            <dialogViews:ConfirmDialogView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:BulkAddChipsViewModel">
+            <dialogViews:BulkAddChipsView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:AssignNumbersViewModel">
+            <dialogViews:AssignNumbersView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:AssignChipsViewModel">
+            <dialogViews:AssignChipsView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:StartOrderViewModel">
+            <dialogViews:StartOrderView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:SplitGroupsViewModel">
+            <dialogViews:SplitGroupsView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:ChangeDayNumberViewModel">
+            <dialogViews:ChangeDayNumberView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:AddRegionViewModel">
+            <dialogViews:AddRegionView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:AddClubViewModel">
+            <dialogViews:AddClubView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:AddDusshViewModel">
+            <dialogViews:AddDusshView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:CsvMappingViewModel">
+            <dialogViews:CsvMappingView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:BulkEditViewModel">
+            <dialogViews:BulkEditView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:PrintSettingsViewModel">
+            <dialogViews:PrintSettingsView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:FinishReadoutEditViewModel">
+            <dialogViews:FinishReadoutEditView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:ProblematicControlsViewModel">
+            <dialogViews:ProblematicControlsView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:ExportFormatViewModel">
+            <dialogViews:ExportFormatView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:CoursePatternHelpViewModel">
+            <dialogViews:CoursePatternHelpView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:ScreenHelpViewModel">
+            <dialogViews:ScreenHelpView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:DrawClashHelpViewModel">
+            <dialogViews:DrawClashHelpView />
+        </DataTemplate>
+    </Window.DataTemplates>
+
+    <!-- One transform scales the WHOLE interface — fonts, inputs, paddings, spacing,
+         icons and borders all grow/shrink together with the Settings "Interface size"
+         slider. HorizontalAlignment/VerticalAlignment Stretch lets the scaled content
+         fill (and overflow) the window so the layout reflows at any scale. -->
+    <LayoutTransformControl HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+        <LayoutTransformControl.LayoutTransform>
+            <ScaleTransform ScaleX="{Binding UiScale.Scale}"
+                            ScaleY="{Binding UiScale.Scale}" />
+        </LayoutTransformControl.LayoutTransform>
+
+        <DockPanel LastChildFill="True">
+
+        <!-- Top bar: the menu fills the row; the background-processes block sits at the right. -->
+        <DockPanel DockPanel.Dock="Top" LastChildFill="True">
+
+        <!-- Running background processes: a clickable icon with a count badge, opening a popup that
+             lists each active process with pause/resume, stop, and "go to its settings page". Hidden
+             when nothing is running. The whole block is generic — it binds to IBackgroundActivityService
+             and never knows which concrete processes exist. -->
+        <Button DockPanel.Dock="Right" Classes="ghost"
+                VerticalAlignment="Center" Margin="0,0,8,0" Padding="8,4"
+                IsVisible="{Binding Activities.IsAnyActive}"
+                ToolTip.Tip="{Binding Localization[Activity.Title]}">
+            <Panel>
+                <!-- Gear-ish activity glyph -->
+                <PathIcon Data="M12,4 a8,8 0 1 1 -8,8 M12,4 v4 M4,12 h4"
+                          Width="18" Height="18"
+                          Foreground="{DynamicResource AccentBrush}" />
+                <!-- Count badge -->
+                <Border Background="{DynamicResource AccentBrush}"
+                        CornerRadius="8" MinWidth="16" Height="16"
+                        Padding="4,0" Margin="0,-8,-10,0"
+                        HorizontalAlignment="Right" VerticalAlignment="Top">
+                    <TextBlock Text="{Binding Activities.ActiveCount}"
+                               Foreground="White" FontSize="10" FontWeight="Bold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+            </Panel>
+            <Button.Flyout>
+                <Flyout Placement="BottomEdgeAlignedRight">
+                    <!-- The flyout is hosted in its own PopupRoot, outside the window's scale
+                         transform, so wrap its content in a LayoutTransformControl tracking the
+                         same UiScale (same approach as the date-picker / menu popups). -->
+                    <LayoutTransformControl>
+                        <LayoutTransformControl.LayoutTransform>
+                            <ScaleTransform ScaleX="{ReflectionBinding Scale, Source={StaticResource UiScale}}"
+                                            ScaleY="{ReflectionBinding Scale, Source={StaticResource UiScale}}" />
+                        </LayoutTransformControl.LayoutTransform>
+                    <Border Padding="6" MinWidth="320" MaxWidth="420">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[Activity.Title]}"
+                                       Classes="h2" Margin="6,2,6,6" />
+                            <ItemsControl ItemsSource="{Binding Activities.Activities}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="services:IBackgroundActivity">
+                                        <Border Classes="card" Padding="12" Margin="0,0,0,6">
+                                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto"
+                                                  ColumnSpacing="8">
+                                                <!-- Title + live status -->
+                                                <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2">
+                                                    <TextBlock Text="{Binding Title}" FontWeight="Medium" />
+                                                    <TextBlock Text="{Binding StatusText}" Classes="subtitle"
+                                                               TextWrapping="Wrap" />
+                                                </StackPanel>
+
+                                                <!-- State chip (Running / Paused) -->
+                                                <TextBlock Grid.Row="0" Grid.Column="1"
+                                                           VerticalAlignment="Top"
+                                                           FontSize="11" FontWeight="Bold"
+                                                           IsVisible="{Binding !IsPaused}"
+                                                           Foreground="{DynamicResource AccentBrush}"
+                                                           Text="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).Localization[Activity.State.Running]}" />
+                                                <TextBlock Grid.Row="0" Grid.Column="1"
+                                                           VerticalAlignment="Top"
+                                                           FontSize="11" FontWeight="Bold"
+                                                           IsVisible="{Binding IsPaused}"
+                                                           Foreground="{DynamicResource TextSecondary}"
+                                                           Text="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).Localization[Activity.State.Paused]}" />
+
+                                                <!-- Actions -->
+                                                <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                                                            Orientation="Horizontal" Spacing="6" Margin="0,10,0,0">
+                                                    <!-- Pause / Resume (single toggling button) -->
+                                                    <Button Classes="ghost small"
+                                                            Command="{Binding TogglePauseCommand}"
+                                                            IsVisible="{Binding CanPause}">
+                                                        <TextBlock IsVisible="{Binding !IsPaused}"
+                                                                   Text="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).Localization[Activity.Pause]}" />
+                                                    </Button>
+                                                    <Button Classes="accent small"
+                                                            Command="{Binding TogglePauseCommand}"
+                                                            IsVisible="{Binding IsPaused}"
+                                                            Content="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).Localization[Activity.Resume]}" />
+                                                    <Button Classes="ghost danger small"
+                                                            Command="{Binding StopCommand}"
+                                                            IsVisible="{Binding CanStop}"
+                                                            Content="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).Localization[Activity.Stop]}" />
+                                                    <Button Classes="ghost small"
+                                                            Command="{Binding OpenSettingsCommand}"
+                                                            IsVisible="{Binding CanOpenSettings}"
+                                                            Content="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).Localization[Activity.OpenSettings]}" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                    </LayoutTransformControl>
+                </Flyout>
+            </Button.Flyout>
+        </Button>
+
+        <!-- Always-visible top menu, with the page navigation as top-level items -->
+        <Menu x:Name="TopMenu">
+            <MenuItem Header="{Binding Localization[Menu.File]}">
+                <MenuItem Header="{Binding Localization[Menu.File.Settings]}"
+                          Command="{Binding OpenSettingsCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.File.ChangeEvent]}"
+                          Command="{Binding ChangeEventCommand}" />
+                <Separator />
+                <MenuItem Header="{Binding Localization[Menu.File.Exit]}"
+                          Command="{Binding ExitCommand}" />
+            </MenuItem>
+
+            <!-- Competition setup + reference data, shown only while a competition is open.
+                 Course setup first (groups / chips / CP), then metadata, then reference
+                 dictionaries (incl. entry fees) and the global qualification tables in sub-menus. -->
+            <MenuItem Header="{Binding Localization[Menu.Competition]}"
+                      IsVisible="{Binding IsEventSelected}">
+                <MenuItem Header="{Binding Localization[Menu.Competition.Groups]}"
+                          Command="{Binding OpenGroupsCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Competition.Chips]}"
+                          Command="{Binding OpenChipsCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Competition.ControlPoints]}"
+                          Command="{Binding OpenControlPointsCommand}" />
+                <Separator />
+                <MenuItem Header="{Binding Localization[Menu.Competition.Info]}"
+                          Command="{Binding OpenCompetitionInfoCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Competition.Days]}"
+                          Command="{Binding OpenCompetitionDaysCommand}" />
+                <Separator />
+                <!-- Reference dictionaries -->
+                <MenuItem Header="{Binding Localization[Menu.Competition.Directories]}">
+                    <MenuItem Header="{Binding Localization[Menu.Competition.Regions]}"
+                              Command="{Binding OpenRegionsCommand}" />
+                    <MenuItem Header="{Binding Localization[Menu.Competition.Clubs]}"
+                              Command="{Binding OpenClubsCommand}" />
+                    <MenuItem Header="{Binding Localization[Menu.Competition.Dussh]}"
+                              Command="{Binding OpenDusshCommand}" />
+                    <Separator />
+                    <MenuItem Header="{Binding Localization[Menu.Participants.EntryFees]}"
+                              Command="{Binding OpenEntryFeesCommand}" />
+                </MenuItem>
+                <!-- Global (app-level) qualification tables: ranks & points -->
+                <MenuItem Header="{Binding Localization[Menu.Competition.Qualification]}">
+                    <MenuItem Header="{Binding Localization[Menu.Competition.Ranks]}"
+                              Command="{Binding OpenRanksCommand}" />
+                    <MenuItem Header="{Binding Localization[Menu.Competition.Points]}"
+                              Command="{Binding OpenPointsCommand}" />
+                </MenuItem>
+            </MenuItem>
+
+            <!-- Participants: opens the roster table directly, while a competition is open -->
+            <MenuItem Header="{Binding Localization[Menu.Participants]}"
+                      IsVisible="{Binding IsEventSelected}"
+                      Command="{Binding OpenParticipantsCommand}" />
+
+            <!-- Start: the start draw (жеребкування) and related start-list operations, while open -->
+            <MenuItem Header="{Binding Localization[Menu.Start]}"
+                      IsVisible="{Binding IsEventSelected}">
+                <MenuItem Header="{Binding Localization[Menu.Start.Draw]}"
+                          Command="{Binding OpenDrawCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Start.ClassicDraw]}"
+                          Command="{Binding OpenClassicDrawCommand}" />
+                <Separator />
+                <MenuItem Header="{Binding Localization[Menu.Start.StartProtocol]}"
+                          Command="{Binding OpenStartProtocolCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Start.StartProtocolJudges]}"
+                          Command="{Binding OpenStartProtocolJudgesCommand}" />
+            </MenuItem>
+
+            <!-- Finish: read-out of finishing chips, while a competition is open -->
+            <MenuItem Header="{Binding Localization[Menu.Finish]}"
+                      IsVisible="{Binding IsEventSelected}">
+                <MenuItem Header="{Binding Localization[Menu.Finish.Read]}"
+                          Command="{Binding OpenFinishReadCommand}" />
+            </MenuItem>
+
+            <!-- Protocols: result protocols + (later) other printed outputs, while a competition is open -->
+            <MenuItem Header="{Binding Localization[Menu.Protocols]}"
+                      IsVisible="{Binding IsEventSelected}">
+                <MenuItem Header="{Binding Localization[Menu.Protocols.Results]}"
+                          Command="{Binding OpenProtocolsCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Protocols.Summary]}"
+                          Command="{Binding OpenSummaryProtocolCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Protocols.Splits]}"
+                          Command="{Binding OpenSplitsExportCommand}" />
+                <Separator />
+                <MenuItem Header="{Binding Localization[Menu.Protocols.OnlineResults]}"
+                          Command="{Binding OpenOnlineResultsCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Protocols.Monitor]}"
+                          Command="{Binding OpenMonitorResultsCommand}" />
+            </MenuItem>
+
+            <!-- Dashboard (Панель): the only navigable sidebar page, opened directly -->
+            <MenuItem Header="{Binding Localization[Nav.Dashboard]}"
+                      IsVisible="{Binding IsEventSelected}"
+                      Command="{Binding OpenDashboardCommand}" />
+
+            <MenuItem Header="{Binding Localization[Menu.Help]}">
+                <MenuItem Header="{Binding Localization[Menu.Help.About]}" />
+            </MenuItem>
+        </Menu>
+
+        </DockPanel>
+
+        <!-- Main content with the global settings overlay on top -->
+        <Panel>
+            <ContentControl Content="{Binding CurrentView}" />
+
+            <!-- Settings overlay: covers whatever screen is active.
+                 The backdrop Border stretches to fill the Panel (which is inside
+                 LayoutTransformControl and has a known logical height). The inner card
+                 Border uses VerticalAlignment=Stretch so DockPanel gets a finite height
+                 and ScrollViewer can actually scroll. -->
+            <Border x:Name="SettingsBackdrop"
+                    IsVisible="{Binding IsSettingsOpen}"
+                    Background="#80000000">
+                <Border Background="{DynamicResource SurfacePage}"
+                        CornerRadius="12"
+                        Margin="60"
+                        MaxWidth="720"
+                        VerticalAlignment="Stretch"
+                        BoxShadow="0 10 40 0 #40000000"
+                        Padding="0"
+                        ClipToBounds="True">
+                    <DockPanel LastChildFill="True">
+                        <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
+                                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
+                                Padding="22,16">
+                            <Grid ColumnDefinitions="*,Auto,Auto">
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding Localization[Settings.OverlayTitle]}"
+                                           Classes="h2"
+                                           FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}"
+                                           VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Classes="help" Margin="0,0,8,0"
+                                        Command="{Binding Settings.ShowHelpCommand}"
+                                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                                <Button Grid.Column="2"
+                                        Content="{Binding Localization[Settings.Close]}"
+                                        Classes="ghost"
+                                        Command="{Binding CloseSettingsCommand}" />
+                            </Grid>
+                        </Border>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <pageViews:SettingsView DataContext="{Binding Settings}"
+                                                   Margin="24" />
+                        </ScrollViewer>
+                    </DockPanel>
+                </Border>
+            </Border>
+
+            <!-- Global loading overlay: shown during any async operation, blocks input. Declared BEFORE
+                 the dialog overlay so a background operation that starts while a dialog is open (e.g. a
+                 debounced autosave or fee refresh) renders BEHIND the dialog rather than covering its
+                 buttons and trapping the user on "Завантаження". -->
+            <Border IsVisible="{Binding Busy.IsBusy}"
+                    Background="#66000000">
+                <Border Background="{DynamicResource SurfaceCard}"
+                        CornerRadius="12"
+                        Padding="28,24"
+                        BoxShadow="0 10 40 0 #40000000"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center">
+                    <StackPanel Spacing="12" MaxWidth="460">
+                        <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                            <PathIcon Data="M12,4 a8,8 0 1 1 -8,8"
+                                      Width="22" Height="22"
+                                      Foreground="{DynamicResource AccentBrush}">
+                                <PathIcon.Styles>
+                                    <Style Selector="PathIcon">
+                                        <Style.Animations>
+                                            <Animation Duration="0:0:0.9" IterationCount="INFINITE">
+                                                <KeyFrame Cue="0%">
+                                                    <Setter Property="RotateTransform.Angle" Value="0" />
+                                                </KeyFrame>
+                                                <KeyFrame Cue="100%">
+                                                    <Setter Property="RotateTransform.Angle" Value="360" />
+                                                </KeyFrame>
+                                            </Animation>
+                                        </Style.Animations>
+                                    </Style>
+                                </PathIcon.Styles>
+                            </PathIcon>
+                            <TextBlock Text="{Binding Localization[Common.Loading]}"
+                                       Foreground="{DynamicResource TextPrimary}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <!-- Live step-by-step progress for long operations (imports, etc.) -->
+                        <Border IsVisible="{Binding !!Busy.Progress.Count}"
+                                Background="{DynamicResource SurfaceSubtle}"
+                                CornerRadius="8"
+                                Padding="12,8"
+                                MaxHeight="180">
+                            <ScrollViewer x:Name="ProgressScroll"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding Busy.Progress}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}"
+                                                       TextWrapping="Wrap"
+                                                       FontSize="12"
+                                                       Foreground="{DynamicResource TextSecondary}" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </Border>
+
+            <!-- Application-modal dialog overlay (e.g. import options). The backdrop blocks input to
+                 whatever is behind it; the dialog view supplies its own centered card. Declared LAST so
+                 it stays on top of the loading overlay — a dialog must remain clickable even while a
+                 background operation runs behind it. -->
+            <Border IsVisible="{Binding Dialogs.IsOpen}"
+                    Background="#80000000">
+                <ContentControl Content="{Binding Dialogs.Current}" Margin="40" />
+            </Border>
+        </Panel>
+
+        </DockPanel>
+    </LayoutTransformControl>
+
+</Window>

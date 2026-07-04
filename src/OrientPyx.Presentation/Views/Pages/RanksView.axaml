@@ -1,0 +1,100 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="940" d:DesignHeight="560"
+             x:Class="OrientPyx.Presentation.Views.Pages.RanksView"
+             x:DataType="pages:RanksViewModel">
+
+    <!-- This page scrolls as a whole (unlike the data pages, which keep a bounded table): both tables are
+         laid out at their natural height inside one ScrollViewer, so the qualification table never needs an
+         inner scrollbar. The tables are small (the rank list ~12 rows, the qualification table ~30), so
+         rendering every row is fine here. -->
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="12">
+
+            <!-- Heading + add-rank action -->
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Spacing="4">
+                    <TextBlock Text="{Binding Title}" Classes="h1"
+                               FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+                    <TextBlock Text="{Binding Text}" Classes="subtitle" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
+                            VerticalAlignment="Center">
+                    <Button Classes="help" Command="{Binding ShowHelpCommand}"
+                            ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                    <Button Command="{Binding AddRankCommand}" Classes="accent">
+                        <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                            <PathIcon Data="M11,5 h2 v6 h6 v2 h-6 v6 h-2 v-6 h-6 v-2 h6 z" Width="14" Height="14" Foreground="White" />
+                            <TextBlock Text="{Binding Localization[Ranks.Add]}" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- Rank list -->
+            <Border Classes="card" ClipToBounds="True">
+                <controls:SheetTable Name="Sheet"
+                                     ItemsSource="{Binding Ranks}"
+                                     Localization="{Binding Localization}"
+                                     SelectedItem="{Binding SelectedRank, Mode=TwoWay}"
+                                     DeleteRequested="OnDeleteRequested" />
+            </Border>
+
+            <!-- Rank validity conditions -->
+            <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Localization[Ranks.Cond.Title]}" Classes="h2" VerticalAlignment="Center" />
+                    <Button Classes="help"
+                            Command="{Binding ShowBlockHelpCommand}" CommandParameter="Help.Ranks.Conditions"
+                            ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Localization[Ranks.Cond.MinParticipants]}" VerticalAlignment="Center" />
+                    <TextBox Text="{Binding MinParticipantsText, Mode=TwoWay}" Width="70" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Localization[Ranks.Cond.MinRegions]}" VerticalAlignment="Center" />
+                    <TextBox Text="{Binding MinRegionsText, Mode=TwoWay}" Width="70" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Localization[Ranks.Cond.CountForRank]}" VerticalAlignment="Center" />
+                    <TextBox Text="{Binding CountForRankText, Mode=TwoWay}" Width="70" />
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Qualification table heading + add-row action -->
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Spacing="4">
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Localization[Ranks.Qual.Title]}" Classes="h2" VerticalAlignment="Center" />
+                        <Button Classes="help"
+                                Command="{Binding ShowBlockHelpCommand}" CommandParameter="Help.Ranks.Qualification"
+                                ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding Localization[Ranks.Qual.Subtitle]}" Classes="subtitle" TextWrapping="Wrap" />
+                </StackPanel>
+                <Button Grid.Column="1" Command="{Binding AddQualRowCommand}" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <PathIcon Data="M11,5 h2 v6 h6 v2 h-6 v6 h-2 v-6 h-6 v-2 h6 z" Width="14" Height="14" />
+                        <TextBlock Text="{Binding Localization[Ranks.Qual.Add]}" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+
+            <!-- Qualification table -->
+            <Border Classes="card" ClipToBounds="True">
+                <controls:SheetTable Name="QualSheet"
+                                     ItemsSource="{Binding Qual}"
+                                     Localization="{Binding Localization}"
+                                     SelectedItem="{Binding SelectedQual, Mode=TwoWay}"
+                                     DeleteRequested="OnQualDeleteRequested" />
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+
+</UserControl>

@@ -1,4 +1,4 @@
-# OrientDesk — Задачі
+# OrientPyx — Задачі
 
 ## 1. Типи змагань (Discipline)
 

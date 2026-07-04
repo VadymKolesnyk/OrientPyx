@@ -1,0 +1,93 @@
+using OrientPyx.BusinessLogic.Enums;
+using OrientPyx.BusinessLogic.Models;
+using OrientPyx.Localization;
+
+namespace OrientPyx.Presentation.ViewModels.Pages;
+
+/// <summary>
+/// One read-only row in the finish-read log: the log sequence id, the chip number, and — when a
+/// participant on the current day holds that chip — their number, full name and group. An unrecognised
+/// chip (held by nobody on the day) shows a localized "невідомий" marker instead.
+/// </summary>
+public sealed class FinishReadRowViewModel
+{
+    private readonly FinishReadoutRow _row;
+    private readonly ILocalizationService _localization;
+
+    public FinishReadRowViewModel(FinishReadoutRow row, ILocalizationService localization)
+    {
+        _row = row;
+        _localization = localization;
+    }
+
+    /// <summary>Stable identity for the grid (the readout's entity id).</summary>
+    public Guid Id => _row.Id;
+
+    /// <summary>The per-day log sequence number, shown as the "Id" column.</summary>
+    public int Order => _row.Order;
+
+    public string ChipNumber => _row.ChipNumber;
+
+    /// <summary>
+    /// Start time as "HH:mm:ss", or blank when none is known. For a recognised chip this is the resolved
+    /// start used for evaluation (chip read-out start, else the assigned start); for an unrecognised chip
+    /// — which has no resolved start — it falls back to the raw start the readout file carried, so an
+    /// unknown chip still shows the start it was read with.
+    /// </summary>
+    public string StartTimeText => (_row.ResolvedStartTime ?? _row.StartTime) is { } t
+        ? t.ToString("HH:mm:ss")
+        : string.Empty;
+
+    /// <summary>Finish time as "HH:mm:ss", or blank when the readout carried none.</summary>
+    public string FinishTimeText => _row.FinishTime is { } t ? t.ToString("HH:mm:ss") : string.Empty;
+
+    /// <summary>Result (finish − start) as "H:mm:ss", or blank when either time is unknown.</summary>
+    public string ElapsedText => _row.Elapsed is { } e && e >= TimeSpan.Zero
+        ? e.ToString("h\\:mm\\:ss")
+        : string.Empty;
+
+    public bool IsKnown => _row.IsKnown;
+
+    /// <summary>True for an unrecognised chip — drives the row's red highlight.</summary>
+    public bool IsUnknown => !_row.IsKnown;
+
+    /// <summary>Participant bib number when known; otherwise blank.</summary>
+    public string ParticipantNumber => _row.ParticipantNumber;
+
+    /// <summary>Full name when known; otherwise the localized "unknown chip" marker.</summary>
+    public string FullName => _row.IsKnown ? _row.FullName : _localization.Get("FinishRead.Unknown");
+
+    /// <summary>Group when known; otherwise blank.</summary>
+    public string GroupName => _row.GroupName;
+
+    /// <summary>Collected «Бали» for a point-scoring day; blank when the discipline doesn't score points.</summary>
+    public string ScoreText => _row.Score is { } s ? s.ToString() : string.Empty;
+
+    /// <summary>
+    /// Short status code shown in the status column (OK / MP / OVT / DNF / DNS / DSQ). Blank when there
+    /// is no status (unknown chip, or a discipline that doesn't evaluate finishes yet).
+    /// </summary>
+    public string StatusText => _row.Status switch
+    {
+        FinishStatus.Ok => "OK",
+        FinishStatus.Mp => "MP",
+        FinishStatus.Ovt => "OVT",
+        FinishStatus.Dnf => "DNF",
+        FinishStatus.Dns => "DNS",
+        FinishStatus.Dsq => "DSQ",
+        _ => string.Empty
+    };
+
+    /// <summary>
+    /// Tooltip detail for the status: for MP, the localized "missing control N"; otherwise blank.
+    /// </summary>
+    public string StatusDetail => _row.Status == FinishStatus.Mp && _row.StatusDetail.Length > 0
+        ? string.Format(_localization.Get("FinishRead.Status.MpDetail"), _row.StatusDetail)
+        : string.Empty;
+
+    /// <summary>
+    /// True when the row carries a non-OK status (MP / OVT / DNF / DNS / DSQ) — drives the red tint on
+    /// the status cell. A missing status (<see cref="FinishStatus.None"/>) and OK both read false.
+    /// </summary>
+    public bool StatusIsBad => _row.Status is not (FinishStatus.None or FinishStatus.Ok);
+}

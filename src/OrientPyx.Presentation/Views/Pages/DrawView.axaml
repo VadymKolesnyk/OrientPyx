@@ -1,0 +1,359 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="980" d:DesignHeight="720"
+             x:Class="OrientPyx.Presentation.Views.Pages.DrawView"
+             x:Name="Root"
+             x:DataType="pages:DrawViewModel">
+
+    <UserControl.Styles>
+        <!-- Collision warnings on draw chips: a shared first control on the same minute paints the КП label
+             red+bold; an identical full course paints the whole chip red. -->
+        <Style Selector="TextBlock.clash">
+            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+            <Setter Property="FontWeight" Value="Bold" />
+        </Style>
+        <Style Selector="Border.courseClash">
+            <Setter Property="Background" Value="{DynamicResource DangerSurface}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}" />
+            <Setter Property="BorderThickness" Value="2" />
+        </Style>
+        <!-- Small danger-tinted «?» button that appears on a clashing chip and opens the explanation. -->
+        <Style Selector="Button.clashHelp">
+            <Setter Property="Width" Value="18" />
+            <Setter Property="Height" Value="18" />
+            <Setter Property="MinWidth" Value="18" />
+            <Setter Property="MinHeight" Value="18" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CornerRadius" Value="9" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Background" Value="{DynamicResource DangerBrush}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.clashHelp:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource DangerBrush}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Opacity" Value="0.85" />
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Heading + day picker -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="{Binding Localization[Page.Draw.Title]}" Classes="h1"
+                           FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+                <TextBlock Text="{Binding Localization[Page.Draw.Text]}" Classes="subtitle" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button Classes="help" Command="{Binding ShowHelpCommand}"
+                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                <controls:SearchableComboBox
+                      IsVisible="{Binding ShowDaySelector}"
+                      MinWidth="140" VerticalAlignment="Center"
+                      SearchWatermark="{Binding Localization[Common.Search]}"
+                      ItemsSource="{Binding DayOptions}"
+                      SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="pages:DayOption">
+                            <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </controls:SearchableComboBox>
+            </StackPanel>
+        </Grid>
+
+        <!-- Draw parameters + start-group toolbar are docked ABOVE the scroll area so the stepper / auto-group
+             buttons stay on screen no matter how far the start-group columns scroll. -->
+        <StackPanel DockPanel.Dock="Top" Spacing="16" Margin="0,0,0,16">
+
+            <!-- Draw parameters -->
+            <Border Classes="card" Padding="22">
+                <StackPanel Spacing="14">
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Localization[Draw.Section.Params]}" Classes="h2"
+                                   VerticalAlignment="Center"
+                                   FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+                        <Button Classes="help"
+                                Command="{Binding ShowBlockHelpCommand}" CommandParameter="Help.Draw.Params"
+                                ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                    </StackPanel>
+
+                    <WrapPanel Orientation="Horizontal" ItemSpacing="18" LineSpacing="12">
+                        <StackPanel Spacing="6" Width="150">
+                            <TextBlock Text="{Binding Localization[Draw.GlobalStart]}" Classes="label" />
+                            <TextBox Text="{Binding GlobalStart, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     PlaceholderText="hh:mm:ss" />
+                        </StackPanel>
+                        <StackPanel Spacing="6" Width="150">
+                            <TextBlock Text="{Binding Localization[Draw.Interval]}" Classes="label" />
+                            <TextBox Text="{Binding Interval, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     PlaceholderText="hh:mm:ss" />
+                        </StackPanel>
+                        <StackPanel Spacing="6" Width="200">
+                            <TextBlock Text="{Binding Localization[Draw.SeparationLabel]}" Classes="label" />
+                            <ComboBox MinWidth="180"
+                                      ItemsSource="{Binding SeparationOptions}"
+                                      SelectedItem="{Binding SelectedSeparation, Mode=TwoWay}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="pages:DrawSeparationOption">
+                                        <TextBlock Text="{Binding Label}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Start-group toolbar (title + centered stepper + actions). -->
+            <Border Classes="card" Padding="22,16">
+                <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Localization[Draw.Section.StartGroups]}" Classes="h2"
+                                   VerticalAlignment="Center"
+                                   FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+                        <Button Classes="help"
+                                Command="{Binding ShowBlockHelpCommand}" CommandParameter="Help.Draw.StartGroups"
+                                ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                    </StackPanel>
+
+                    <!-- Stepper + actions, all pinned to the right. -->
+                    <StackPanel Orientation="Horizontal" Spacing="8"
+                                HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Localization[Draw.AutoGroupCount]}" Classes="label"
+                                   VerticalAlignment="Center" />
+                        <!-- Custom +/- stepper, not NumericUpDown (its Windows automation peer crashes on spin). -->
+                        <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                            <Button Content="−" Command="{Binding DecrementAutoGroupCountCommand}"
+                                    Width="32" Classes="ghost stepper" />
+                            <TextBlock Text="{Binding AutoGroupCount}" MinWidth="40"
+                                       VerticalAlignment="Center" TextAlignment="Center" FontWeight="Medium" />
+                            <Button Content="+" Command="{Binding IncrementAutoGroupCountCommand}"
+                                    Width="32" Classes="ghost stepper" />
+                        </StackPanel>
+                        <Button Classes="accent" Content="{Binding Localization[Draw.AutoGroup]}"
+                                Command="{Binding AutoGroupCommand}" />
+                        <Button Classes="ghost" Content="{Binding Localization[Draw.AddStartGroup]}"
+                                Command="{Binding AddStartGroupCommand}" />
+                    </StackPanel>
+
+                    <CheckBox IsChecked="{Binding ProportionalHeights, Mode=TwoWay}"
+                              Content="{Binding Localization[Draw.ProportionalHeights]}"
+                              HorizontalAlignment="Right" />
+
+                    <TextBlock Text="{Binding Localization[Draw.StartGroups.Hint]}" Classes="subtitle"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+            <StackPanel Spacing="16">
+
+                <!-- Start groups (columns) -->
+                <Border Classes="card" Padding="22">
+                    <StackPanel Spacing="14">
+
+                        <ItemsControl ItemsSource="{Binding StartGroups}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="pages:DrawStartGroupViewModel">
+                                    <!-- The whole column is the drop surface. A faint accent outline overlays it
+                                         while a drag is hovering (IsDropTarget). -->
+                                    <Panel Margin="0,0,10,10">
+                                      <Border Background="{DynamicResource SurfaceSubtle}"
+                                              CornerRadius="8" Padding="10"
+                                              MinWidth="230" MaxWidth="280"
+                                              DragDrop.AllowDrop="True"
+                                              DragDrop.DragOver="OnColumnDragOver"
+                                              DragDrop.DragLeave="OnColumnDragLeave"
+                                              DragDrop.Drop="OnColumnDrop">
+                                        <StackPanel Spacing="8">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBlock Grid.Column="0" Text="{Binding Title}" FontWeight="Bold"
+                                                           VerticalAlignment="Center" />
+                                                <Button Grid.Column="1" Classes="ghost danger small"
+                                                        Content="✕"
+                                                        ToolTip.Tip="{Binding #Root.((pages:DrawViewModel)DataContext).Localization[Draw.RemoveStartGroup]}"
+                                                        Command="{Binding #Root.((pages:DrawViewModel)DataContext).RemoveStartGroupCommand}"
+                                                        CommandParameter="{Binding}" />
+                                            </Grid>
+
+                                            <ItemsControl ItemsSource="{Binding Groups}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="pages:DrawGroupItemViewModel">
+                                                      <!-- Two always-present rows: a fixed 6px gap (holding the
+                                                           insertion line) and the chip. The line toggles via Opacity,
+                                                           never IsVisible, so showing it NEVER reflows the list — that
+                                                           reflow was making the chip jump out from under the cursor and
+                                                           the line flicker on/off. The gap is IsHitTestVisible=False so
+                                                           it can't steal the DragOver target. -->
+                                                      <StackPanel Spacing="0">
+                                                        <Border Height="6" IsHitTestVisible="False">
+                                                            <Border Height="3" CornerRadius="2"
+                                                                    VerticalAlignment="Center"
+                                                                    Background="{DynamicResource AccentBrush}"
+                                                                    IsVisible="{Binding ShowDropLineBefore}" />
+                                                        </Border>
+                                                        <Border x:Name="ChipBorder"
+                                                                Classes.courseClash="{Binding CourseClash}"
+                                                                Background="{DynamicResource SurfaceCard}"
+                                                                BorderBrush="{DynamicResource BorderSubtle}"
+                                                                BorderThickness="1" CornerRadius="6"
+                                                                Padding="8,6"
+                                                                Height="{Binding ProportionalHeight}"
+                                                                ToolTip.Tip="{Binding TooltipText}"
+                                                                Cursor="Hand"
+                                                                Opacity="{Binding !IsDragging, Converter={StaticResource BoolToOpacity}}"
+                                                                PointerPressed="OnChipPointerPressed">
+                                                            <Panel VerticalAlignment="Top" ClipToBounds="True">
+                                                                <!-- Default two-row layout: name above the КП / count / time
+                                                                     detail row. Hidden when the chip is too short (Compact). -->
+                                                                <StackPanel Spacing="1" IsVisible="{Binding !Compact}">
+                                                                    <TextBlock Text="{Binding Name}" FontWeight="Medium" />
+                                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                                        <!-- КП label goes red+bold when this group's first
+                                                                             control clashes with another lane on the same minute. -->
+                                                                        <TextBlock Text="{Binding FirstControlLabel}"
+                                                                                   FontSize="11"
+                                                                                   Classes.muted="{Binding !FirstControlClash}"
+                                                                                   Classes.clash="{Binding FirstControlClash}" />
+                                                                        <TextBlock Text="{Binding CountLabel}"
+                                                                                   Classes="muted" FontSize="11" />
+                                                                        <TextBlock Text="{Binding StartLabel}"
+                                                                                   Classes="muted" FontSize="11" />
+                                                                    </StackPanel>
+                                                                </StackPanel>
+
+                                                                <!-- Compact single-line layout for short (small-group)
+                                                                     chips: name + КП + count + time all on one row. -->
+                                                                <StackPanel Orientation="Horizontal" Spacing="6"
+                                                                            VerticalAlignment="Center"
+                                                                            IsVisible="{Binding Compact}">
+                                                                    <TextBlock Text="{Binding Name}" FontWeight="Medium"
+                                                                               FontSize="11" VerticalAlignment="Center" />
+                                                                    <TextBlock Text="{Binding FirstControlLabel}"
+                                                                               FontSize="11" VerticalAlignment="Center"
+                                                                               Classes.muted="{Binding !FirstControlClash}"
+                                                                               Classes.clash="{Binding FirstControlClash}" />
+                                                                    <TextBlock Text="{Binding CountLabel}"
+                                                                               Classes="muted" FontSize="11"
+                                                                               VerticalAlignment="Center" />
+                                                                    <TextBlock Text="{Binding StartLabel}"
+                                                                               Classes="muted" FontSize="11"
+                                                                               VerticalAlignment="Center" />
+                                                                </StackPanel>
+
+                                                                <!-- On-chip «?» explain button, shown only when the chip
+                                                                     is highlighted red. Tapping it opens a dialog naming
+                                                                     the overlapping groups, their lane, the shared control
+                                                                     / course and the overlapping start times. It's a Button
+                                                                     so the chip's drag handler (which skips clicks landing
+                                                                     on a Button) leaves it alone. -->
+                                                                <Button Classes="clashHelp"
+                                                                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                                        IsVisible="{Binding HasClash}"
+                                                                        Content="?"
+                                                                        ToolTip.Tip="{Binding #Root.((pages:DrawViewModel)DataContext).Localization[Draw.Clash.Tooltip]}"
+                                                                        Command="{Binding #Root.((pages:DrawViewModel)DataContext).ShowClashHelpCommand}"
+                                                                        CommandParameter="{Binding}" />
+                                                            </Panel>
+                                                        </Border>
+                                                      </StackPanel>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+
+                                            <!-- Insertion line shown when the drop lands at the END of the column.
+                                                 Fixed-height gap so toggling the line never reflows the column. -->
+                                            <Border Height="6" IsHitTestVisible="False">
+                                                <Border Height="3" CornerRadius="2"
+                                                        VerticalAlignment="Center"
+                                                        Background="{DynamicResource AccentBrush}"
+                                                        IsVisible="{Binding ShowDropLineAtEnd}" />
+                                            </Border>
+
+                                            <TextBlock Text="{Binding FooterLabel}" Classes="muted" FontSize="11"
+                                                       IsVisible="{Binding FooterText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                        </StackPanel>
+                                      </Border>
+
+                                      <!-- Drop-target highlight overlay (non-interactive); a faint accent tint +
+                                           outline over the whole column while a drag hovers it. Opacity keeps the
+                                           chips visible underneath. -->
+                                      <Border IsHitTestVisible="False"
+                                              CornerRadius="8"
+                                              BorderBrush="{DynamicResource AccentBrush}"
+                                              BorderThickness="2"
+                                              Background="{DynamicResource AccentSurface}"
+                                              Opacity="0.28"
+                                              IsVisible="{Binding IsDropTarget}" />
+                                    </Panel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- Actions -->
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button Classes="accent" Content="{Binding Localization[Draw.Run]}"
+                            Command="{Binding RunDrawCommand}" />
+                    <TextBlock Text="{Binding StatusMessage}" Classes="subtitle"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Result -->
+                <Border Classes="card" Padding="0" IsVisible="{Binding HasResults}" ClipToBounds="True">
+                    <DockPanel LastChildFill="True">
+                        <Grid DockPanel.Dock="Top" Background="{DynamicResource SurfaceSubtle}"
+                              ColumnDefinitions="100,90,*,160,110" Height="36">
+                            <TextBlock Grid.Column="0" Text="{Binding Localization[Draw.Col.StartTime]}"
+                                       FontWeight="Bold" VerticalAlignment="Center" Margin="12,0,0,0" />
+                            <TextBlock Grid.Column="1" Text="{Binding Localization[Draw.Col.Number]}"
+                                       FontWeight="Bold" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Text="{Binding Localization[Draw.Col.Name]}"
+                                       FontWeight="Bold" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="3" Text="{Binding Localization[Draw.Col.Separation]}"
+                                       FontWeight="Bold" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="4" Text="{Binding Localization[Draw.Col.Group]}"
+                                       FontWeight="Bold" VerticalAlignment="Center" />
+                        </Grid>
+                        <ListBox ItemsSource="{Binding Results}" MaxHeight="420"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="pages:DrawResultRowViewModel">
+                                    <Grid ColumnDefinitions="100,90,*,160,110">
+                                        <TextBlock Grid.Column="0" Text="{Binding StartTimeLabel}"
+                                                   FontFamily="Consolas,monospace" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Number}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" Text="{Binding FullName}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="3" Text="{Binding SeparationValue}"
+                                                   Classes="muted" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="4" Text="{Binding GroupName}" VerticalAlignment="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+    </DockPanel>
+
+</UserControl>

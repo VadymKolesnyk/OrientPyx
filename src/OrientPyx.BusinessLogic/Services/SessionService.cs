@@ -1,0 +1,106 @@
+using OrientPyx.BusinessLogic.Entities;
+using OrientPyx.BusinessLogic.Interfaces;
+using OrientPyx.BusinessLogic.Models;
+
+namespace OrientPyx.BusinessLogic.Services;
+
+/// <summary>
+/// In-memory session holder. See <see cref="ISessionService"/> — runtime selection is a local
+/// field; the app database only stores a pointer for startup restore.
+/// </summary>
+public sealed class SessionService : ISessionService
+{
+    private readonly IAppStore _appStore;
+    private readonly IEventCatalogService _catalog;
+    private readonly IEventStore _eventStore;
+    private readonly IActivityLog _log;
+
+    public SessionService(IAppStore appStore, IEventCatalogService catalog, IEventStore eventStore, IActivityLog log)
+    {
+        _appStore = appStore;
+        _catalog = catalog;
+        _eventStore = eventStore;
+        _log = log;
+    }
+
+    public EventSummary? CurrentEvent { get; private set; }
+    public EventDay? CurrentDay { get; private set; }
+    public bool HasSelection => CurrentEvent is not null && CurrentDay is not null;
+
+    public event EventHandler? SessionChanged;
+
+    public async Task SelectAsync(EventSummary competition, EventDay day, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(competition);
+        ArgumentNullException.ThrowIfNull(day);
+
+        // Bring the event database up to the current schema before it is used. Migrations are only
+        // applied on create otherwise, so a competition made before a new migration would be missing
+        // the new tables until opened here.
+        await _eventStore.EnsureCreatedAsync(competition.FolderPath, cancellationToken);
+
+        // Move logging into this competition's own folder so its diagnostics live alongside its data.
+        _log.UseEventFolder(competition.FolderPath);
+        _log.Action($"Select competition '{competition.Identifier}', day {day.Number}");
+        CurrentEvent = competition;
+        CurrentDay = day;
+
+        await _appStore.SaveLastSessionAsync(competition.Identifier, day.Number, cancellationToken);
+        SessionChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public async Task SetCurrentDayAsync(EventDay day, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(day);
+        if (CurrentEvent is null)
+            return;
+
+        _log.Action($"Switch to day {day.Number}");
+        CurrentDay = day;
+        await _appStore.SaveLastSessionAsync(CurrentEvent.Identifier, day.Number, cancellationToken);
+        SessionChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void UpdateCurrentEvent(EventSummary competition)
+    {
+        ArgumentNullException.ThrowIfNull(competition);
+        if (CurrentEvent is null)
+            return;
+
+        CurrentEvent = competition;
+        SessionChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void Clear()
+    {
+        CurrentEvent = null;
+        CurrentDay = null;
+        SessionChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public async Task<bool> TryRestoreLastAsync(CancellationToken cancellationToken = default)
+    {
+        var (identifier, dayNumber) = await _appStore.GetLastSessionAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(identifier))
+            return false;
+
+        var summary = await _catalog.FindByIdentifierAsync(identifier, cancellationToken);
+        if (summary is null)
+            return false;
+
+        // Apply any pending migrations to the restored event database before reading from it.
+        await _eventStore.EnsureCreatedAsync(summary.FolderPath, cancellationToken);
+        _log.UseEventFolder(summary.FolderPath);
+
+        var days = await _eventStore.GetDaysAsync(summary.FolderPath, cancellationToken);
+        if (days.Count == 0)
+            return false;
+
+        var day = days.FirstOrDefault(d => d.Number == dayNumber) ?? days[0];
+
+        CurrentEvent = summary;
+        CurrentDay = day;
+        SessionChanged?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+}

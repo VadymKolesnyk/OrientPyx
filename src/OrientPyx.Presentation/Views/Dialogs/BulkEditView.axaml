@@ -1,0 +1,146 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
+             xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="440" d:DesignHeight="300"
+             x:Class="OrientPyx.Presentation.Views.Dialogs.BulkEditView"
+             x:DataType="dialogs:BulkEditViewModel">
+
+    <!-- Centered card; the backdrop is supplied by the host overlay. -->
+    <Border Background="{DynamicResource SurfaceCard}"
+            CornerRadius="12"
+            MinWidth="400" MaxWidth="480"
+            BoxShadow="0 10 40 0 #40000000"
+            HorizontalAlignment="Center" VerticalAlignment="Center"
+            ClipToBounds="True">
+        <DockPanel LastChildFill="True">
+
+            <!-- Header -->
+            <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
+                    Padding="22,16">
+                <TextBlock Text="{Binding Title}" Classes="h2" VerticalAlignment="Center" />
+            </Border>
+
+            <!-- Footer actions -->
+            <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
+                    Padding="22,14">
+                <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+                    <Button Content="{Binding Localization[Common.Cancel]}"
+                            Classes="ghost"
+                            Command="{Binding CancelCommand}" />
+                    <Button Content="{Binding Localization[Participants.BulkEdit.Confirm]}"
+                            Classes="accent"
+                            Command="{Binding ConfirmCommand}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Body: field picker, then the value editor swapped by the chosen field's kind. -->
+            <StackPanel Margin="22,18" Spacing="14">
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding FieldLabel}" Classes="label" />
+                    <ComboBox ItemsSource="{Binding Fields}"
+                              SelectedItem="{Binding SelectedField, Mode=TwoWay}"
+                              HorizontalAlignment="Stretch">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="dialogs:BulkEditFieldOption">
+                                <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding ValueLabel}" Classes="label"
+                               IsVisible="{Binding !IsBoolField}" />
+
+                    <!-- Text value -->
+                    <TextBox Text="{Binding TextValue, Mode=TwoWay}"
+                             IsVisible="{Binding IsTextField}"
+                             HorizontalAlignment="Stretch" />
+
+                    <!-- Bool value -->
+                    <CheckBox Content="{Binding SelectedField.Label}"
+                              IsChecked="{Binding BoolValue, Mode=TwoWay}"
+                              IsVisible="{Binding IsBoolField}" />
+
+                    <!-- Group value -->
+                    <controls:SearchableComboBox ItemsSource="{Binding GroupOptions}"
+                              SelectedItem="{Binding SelectedGroup, Mode=TwoWay}"
+                              SearchWatermark="{Binding Localization[Common.Search]}"
+                              IsVisible="{Binding IsGroupField}"
+                              HorizontalAlignment="Stretch">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="pages:GroupOption">
+                                <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </controls:SearchableComboBox>
+
+                    <!-- Region value -->
+                    <controls:SearchableComboBox ItemsSource="{Binding RegionOptions}"
+                              SelectedItem="{Binding SelectedRegion, Mode=TwoWay}"
+                              SearchWatermark="{Binding Localization[Common.Search]}"
+                              IsVisible="{Binding IsRegionField}"
+                              HorizontalAlignment="Stretch">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="pages:RegionOption">
+                                <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </controls:SearchableComboBox>
+
+                    <!-- Club value -->
+                    <controls:SearchableComboBox ItemsSource="{Binding ClubOptions}"
+                              SelectedItem="{Binding SelectedClub, Mode=TwoWay}"
+                              SearchWatermark="{Binding Localization[Common.Search]}"
+                              IsVisible="{Binding IsClubField}"
+                              HorizontalAlignment="Stretch">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="pages:ClubOption">
+                                <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </controls:SearchableComboBox>
+
+                    <!-- ДЮСШ value -->
+                    <controls:SearchableComboBox ItemsSource="{Binding DusshOptions}"
+                              SelectedItem="{Binding SelectedDussh, Mode=TwoWay}"
+                              SearchWatermark="{Binding Localization[Common.Search]}"
+                              IsVisible="{Binding IsDusshField}"
+                              HorizontalAlignment="Stretch">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="pages:DusshOption">
+                                <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </controls:SearchableComboBox>
+
+                    <!-- Rank value -->
+                    <controls:SearchableComboBox ItemsSource="{Binding RankOptions}"
+                              SelectedItem="{Binding SelectedRank, Mode=TwoWay}"
+                              SearchWatermark="{Binding Localization[Common.Search]}"
+                              IsVisible="{Binding IsRankField}"
+                              HorizontalAlignment="Stretch">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="pages:RankOption">
+                                <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </controls:SearchableComboBox>
+                </StackPanel>
+
+                <TextBlock Text="{Binding Hint}"
+                           Classes="subtitle" TextWrapping="Wrap" />
+
+            </StackPanel>
+
+        </DockPanel>
+    </Border>
+
+</UserControl>

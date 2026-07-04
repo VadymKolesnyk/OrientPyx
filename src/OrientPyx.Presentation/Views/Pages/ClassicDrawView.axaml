@@ -1,0 +1,85 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="980" d:DesignHeight="720"
+             x:Class="OrientPyx.Presentation.Views.Pages.ClassicDrawView"
+             x:Name="Root"
+             x:DataType="pages:ClassicDrawViewModel">
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Heading + day picker -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="{Binding Localization[Page.ClassicDraw.Title]}" Classes="h1"
+                           FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+                <TextBlock Text="{Binding Localization[Page.ClassicDraw.Text]}" Classes="subtitle" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button Classes="help" Command="{Binding ShowHelpCommand}"
+                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                <controls:SearchableComboBox
+                      IsVisible="{Binding ShowDaySelector}"
+                      MinWidth="140" VerticalAlignment="Center"
+                      SearchWatermark="{Binding Localization[Common.Search]}"
+                      ItemsSource="{Binding DayOptions}"
+                      SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="pages:DayOption">
+                            <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </controls:SearchableComboBox>
+            </StackPanel>
+        </Grid>
+
+        <!-- Toolbar: separation + select all/none + run, on one compact line. -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,Auto,Auto,*" ColumnSpacing="10"
+              Margin="0,0,0,12" VerticalAlignment="Center">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Localization[Draw.SeparationLabel]}" Classes="label"
+                           VerticalAlignment="Center" />
+                <ComboBox MinWidth="150"
+                          ItemsSource="{Binding SeparationOptions}"
+                          SelectedItem="{Binding SelectedSeparation, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="pages:DrawSeparationOption">
+                            <TextBlock Text="{Binding Label}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </StackPanel>
+            <Button Grid.Column="1" Classes="ghost small" VerticalAlignment="Center"
+                    Content="{Binding Localization[ClassicDraw.SelectAll]}"
+                    Command="{Binding SelectAllCommand}" />
+            <Button Grid.Column="2" Classes="ghost small" VerticalAlignment="Center"
+                    Content="{Binding Localization[ClassicDraw.SelectNone]}"
+                    Command="{Binding SelectNoneCommand}" />
+            <Button Grid.Column="3" Classes="accent" VerticalAlignment="Center"
+                    Content="{Binding Localization[Draw.Run]}"
+                    Command="{Binding RunDrawCommand}" />
+            <TextBlock Grid.Column="4" Text="{Binding StatusMessage}" Classes="subtitle"
+                       VerticalAlignment="Center" />
+        </Grid>
+
+        <!-- Drawn result table (shared SheetTable), docked at the bottom when present. -->
+        <Border DockPanel.Dock="Bottom" Classes="card" ClipToBounds="True"
+                MaxHeight="320" Margin="0,16,0,0" IsVisible="{Binding HasResults}">
+            <controls:SheetTable Name="ResultsSheet"
+                                 ItemsSource="{Binding Results}"
+                                 Localization="{Binding Localization}" />
+        </Border>
+
+        <!-- Groups table (shared SheetTable) fills the rest. -->
+        <Border Classes="card" ClipToBounds="True">
+            <controls:SheetTable Name="GroupsSheet"
+                                 ItemsSource="{Binding Groups}"
+                                 Localization="{Binding Localization}" />
+        </Border>
+
+    </DockPanel>
+
+</UserControl>

@@ -1,0 +1,33 @@
+namespace OrientPyx.BusinessLogic.Enums;
+
+/// <summary>
+/// Kind of competition for a day (or, later, a group override). Stored as a string in the
+/// event database. New values (e.g. rogaine, relay) can be appended without reworking storage.
+/// </summary>
+public enum DisciplineType
+{
+    /// <summary>Classic: competitor visits all control points in a prescribed order.</summary>
+    SetCourse,
+
+    /// <summary>Score: competitor picks any control points; ranked by count (then time).</summary>
+    ScoreByCount,
+
+    /// <summary>
+    /// Score by time: competitor picks control points within a time limit; ranked by points
+    /// collected, with a penalty deducted per minute of finishing late.
+    /// </summary>
+    ScoreByTime,
+
+    /// <summary>
+    /// Rogaine: long score format; competitor picks control points within a (usually long) time
+    /// limit and is ranked by the points collected.
+    /// </summary>
+    Rogaine,
+
+    /// <summary>
+    /// Mixed (змішаний): the course order is a pattern that mixes prescribed order with free-choice
+    /// sections — an ordered run <c>&lt;41 42&gt;</c>, an "any N of" block <c>[2 45 46 47]</c>, and nesting.
+    /// Judged like a set course but against the pattern (see the «змішаний» course-pattern help).
+    /// </summary>
+    Mixed
+}
