@@ -14,6 +14,7 @@ public sealed partial class SettingsViewModel : PageViewModelBase
     private readonly IAppSettingsService _settings;
     private readonly IUiScaleService _uiScale;
     private readonly IBusyService _busy;
+    private readonly IUpdateService _updates;
 
     [ObservableProperty]
     private string _eventsPath = string.Empty;
@@ -53,15 +54,64 @@ public sealed partial class SettingsViewModel : PageViewModelBase
         ILocalizationService localization,
         IAppSettingsService settings,
         IUiScaleService uiScale,
-        IBusyService busy)
+        IBusyService busy,
+        IUpdateService updates)
         : base(localization)
     {
         _settings = settings;
         _uiScale = uiScale;
         _busy = busy;
+        _updates = updates;
         _ = LoadPathsAsync();
         _ = LoadOnlineAsync();
         _ = LoadReadoutTypeAsync();
+    }
+
+    // --- Updates -----------------------------------------------------------------------------------
+
+    /// <summary>The running app version (e.g. "1.4.0"), or "—" for a dev/xcopy build.</summary>
+    public string AppVersion =>
+        System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "—";
+
+    /// <summary>Whether the «check for updates» control is meaningful (only for installed builds).</summary>
+    public bool CanCheckForUpdates => _updates.IsInstalled;
+
+    /// <summary>Status line under the update button: available version, "up to date", or an error hint.</summary>
+    [ObservableProperty]
+    private string _updateStatus = string.Empty;
+
+    // Set once a check finds a newer version, so the button flips to «download & restart».
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPendingUpdate))]
+    private string? _availableVersion;
+
+    public bool HasPendingUpdate => AvailableVersion is not null;
+
+    [RelayCommand]
+    private async Task CheckForUpdatesAsync()
+    {
+        if (!_updates.IsInstalled)
+            return;
+
+        UpdateStatus = Localization.Get("Page.Settings.Update.Checking");
+        var version = await _updates.CheckForUpdateAsync();
+        AvailableVersion = version;
+        UpdateStatus = version is null
+            ? Localization.Get("Page.Settings.Update.UpToDate")
+            : string.Format(Localization.Get("Page.Settings.Update.Available"), version);
+    }
+
+    [RelayCommand]
+    private async Task DownloadUpdateAsync()
+    {
+        if (AvailableVersion is null)
+            return;
+
+        UpdateStatus = Localization.Get("Page.Settings.Update.Downloading");
+        var ok = await _updates.DownloadAndRestartAsync();
+        // On success the process restarts and never reaches here; a false means it failed and we stay.
+        if (!ok)
+            UpdateStatus = Localization.Get("Page.Settings.Update.Failed");
     }
 
     // --- Readout type (timing system) --------------------------------------------------------------

@@ -184,6 +184,35 @@
             </StackPanel>
         </Border>
 
+        <!-- Version & updates -->
+        <Border Classes="card" Padding="22">
+            <StackPanel Spacing="14">
+                <TextBlock Text="{Binding Localization[Settings.Update.Title]}" Classes="h2"
+                           FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{Binding Localization[Settings.Update.Version]}" Classes="label"
+                               VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding AppVersion}" FontWeight="Medium" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding CanCheckForUpdates}">
+                    <Button Content="{Binding Localization[Settings.Update.Check]}"
+                            Classes="ghost"
+                            IsVisible="{Binding !HasPendingUpdate}"
+                            Command="{Binding CheckForUpdatesCommand}" />
+                    <Button Content="{Binding Localization[Settings.Update.Install]}"
+                            Classes="accent"
+                            IsVisible="{Binding HasPendingUpdate}"
+                            Command="{Binding DownloadUpdateCommand}" />
+                    <TextBlock Text="{Binding UpdateStatus}" Classes="muted" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <TextBlock Text="{Binding Localization[Settings.Update.DevHint]}" Classes="muted"
+                           TextWrapping="Wrap" IsVisible="{Binding !CanCheckForUpdates}" />
+            </StackPanel>
+        </Border>
+
     </StackPanel>
 
 </UserControl>

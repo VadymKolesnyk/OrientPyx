@@ -39,5 +39,9 @@ Thumbs.db
 
 # NuGet
 *.nupkg
+
+# Velopack packaging output (publish staging + generated installers/packages)
+/build/publish/
+/build/releases/
 *.snupkg
 .nuget/

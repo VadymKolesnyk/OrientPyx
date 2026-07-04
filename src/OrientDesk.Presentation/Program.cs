@@ -3,12 +3,15 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using OrientDesk.BusinessLogic.Interfaces;
+using OrientDesk.DataAccess.Persistence;
+using Velopack;
 
 namespace OrientDesk.Presentation;
 
 internal static class Program
 {
-    private static readonly string CrashLogPath = Path.Combine(AppContext.BaseDirectory, "crash.log");
+    // Resolved lazily: the data root can be redirected (installed builds) before the first crash is logged.
+    private static string CrashLogPath => Path.Combine(AppDatabasePaths.BaseDirectory, "crash.log");
 
     /// <summary>
     /// The per-launch activity log, set once DI is built (see <c>App</c>). Crashes are also routed
@@ -21,6 +24,14 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // Velopack install/update/uninstall hooks. MUST run first: on those code paths it does its work
+        // and exits the process before the UI is ever built. On a normal launch it returns immediately.
+        VelopackApp.Build().Run();
+
+        // Installed builds keep competition data in a stable per-user folder so it survives auto-updates
+        // (which replace the application directory wholesale). No-op for an in-place dev/xcopy build.
+        RedirectDataRootIfInstalled();
+
         // Capture any crash (background threads, finalizers) to a file and surface it to the
         // user, so UI-only failures aren't lost when there's no console attached.
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
@@ -40,6 +51,32 @@ internal static class Program
         {
             HandleCrash("Main", ex);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// When running as a Velopack-installed app, redirect data/events/logs to a stable per-user folder
+    /// so they survive updates. Velopack lays the app out as <c>&lt;root&gt;\current\OrientDesk.exe</c> with
+    /// <c>&lt;root&gt;\Update.exe</c> one level up; the presence of that sibling is our "installed" signal.
+    /// A plain build (no sibling Update.exe) is left untouched so <c>dotnet run</c> writes next to the exe.
+    /// </summary>
+    private static void RedirectDataRootIfInstalled()
+    {
+        try
+        {
+            var appDir = AppContext.BaseDirectory;
+            var updateExe = Path.Combine(Directory.GetParent(appDir)?.FullName ?? appDir, "Update.exe");
+            if (!File.Exists(updateExe))
+                return;
+
+            var root = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "OrientDesk", "data-root");
+            AppDatabasePaths.UseDataRoot(root);
+        }
+        catch
+        {
+            // Best-effort: if detection fails, fall back to the default (next to the exe).
         }
     }
 

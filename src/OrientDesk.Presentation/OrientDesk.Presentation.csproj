@@ -18,6 +18,7 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.8" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.9" />
+    <PackageReference Include="Velopack" Version="1.2.0" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -28,6 +29,15 @@
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <!-- Release identity. Bump <Version> for each release; the publish script passes the same value to
+       Velopack so the installed app can tell it is out of date. See build/publish.ps1. -->
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <Product>OrientDesk</Product>
+    <Company>OrientDesk</Company>
+    <Authors>OrientDesk</Authors>
   </PropertyGroup>
 
 </Project>

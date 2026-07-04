@@ -11,7 +11,29 @@ public static class AppDatabasePaths
     public const string AppDatabaseFileName = "app.db";
     public const string EventDatabaseFileName = "event.db";
 
-    private static string BaseDirectory => AppContext.BaseDirectory;
+    private static string? _overrideBaseDirectory;
+
+    /// <summary>
+    /// The root under which <c>data</c>, <c>events</c> and diagnostic logs live. By default this is the
+    /// application directory (so a <c>dotnet run</c> / xcopy build keeps its files next to the exe). An
+    /// installed build calls <see cref="UseDataRoot"/> at startup to point it at a stable per-user folder
+    /// (e.g. <c>%LocalAppData%\OrientDesk\data-root</c>) so competition data survives auto-updates, which
+    /// replace the application directory wholesale.
+    /// </summary>
+    public static string BaseDirectory => _overrideBaseDirectory ?? AppContext.BaseDirectory;
+
+    /// <summary>
+    /// Redirects the data root (see <see cref="BaseDirectory"/>). Call once at startup, before any
+    /// database or log is opened. The folder is created if missing.
+    /// </summary>
+    public static void UseDataRoot(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        Directory.CreateDirectory(path);
+        _overrideBaseDirectory = path;
+    }
 
     /// <summary>Default ./data path (absolute).</summary>
     public static string DefaultDataPath => Path.Combine(BaseDirectory, DefaultDataFolderName);

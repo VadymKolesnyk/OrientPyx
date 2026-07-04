@@ -1085,6 +1085,17 @@
   "Settings.Readout.SportIdent": "SportIdent",
   "Settings.Readout.SportTime": "SportTime",
 
+  "Settings.Update.Title": "Версія та оновлення",
+  "Settings.Update.Version": "Поточна версія:",
+  "Settings.Update.Check": "Перевірити оновлення",
+  "Settings.Update.Install": "Завантажити й перезапустити",
+  "Settings.Update.DevHint": "Оновлення доступні лише у встановленій версії програми.",
+  "Page.Settings.Update.Checking": "Перевірка…",
+  "Page.Settings.Update.UpToDate": "Використовується найновіша версія.",
+  "Page.Settings.Update.Available": "Доступна версія {0}.",
+  "Page.Settings.Update.Downloading": "Завантаження оновлення…",
+  "Page.Settings.Update.Failed": "Не вдалося оновити. Спробуйте пізніше.",
+
   "Header.CurrentEvent": "Змагання:",
   "Header.Day": "День",
   "Header.ChangeEvent": "Змінити змагання",

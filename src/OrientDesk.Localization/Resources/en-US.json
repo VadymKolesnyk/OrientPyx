@@ -1175,6 +1175,17 @@
   "Settings.Readout.SportIdent": "SportIdent",
   "Settings.Readout.SportTime": "SportTime",
 
+  "Settings.Update.Title": "Version & updates",
+  "Settings.Update.Version": "Current version:",
+  "Settings.Update.Check": "Check for updates",
+  "Settings.Update.Install": "Download & restart",
+  "Settings.Update.DevHint": "Updates are only available in the installed build of the app.",
+  "Page.Settings.Update.Checking": "Checking…",
+  "Page.Settings.Update.UpToDate": "You are on the latest version.",
+  "Page.Settings.Update.Available": "Version {0} is available.",
+  "Page.Settings.Update.Downloading": "Downloading update…",
+  "Page.Settings.Update.Failed": "Update failed. Please try again later.",
+
   "Header.CurrentEvent": "Competition:",
   "Header.Day": "Day",
   "Header.ChangeEvent": "Change competition",

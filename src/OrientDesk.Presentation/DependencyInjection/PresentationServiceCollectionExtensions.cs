@@ -33,6 +33,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<IBackgroundActivityService, BackgroundActivityService>();
         services.AddSingleton<ITableLayoutStore, TableLayoutStore>();
         services.AddSingleton<IUiPreferencesService, UiPreferencesService>();
+        services.AddSingleton<IUpdateService, UpdateService>();
 
         // Root + gating view models
         services.AddSingleton<MainWindowViewModel>();
