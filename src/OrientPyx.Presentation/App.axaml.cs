@@ -5,6 +5,7 @@ using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.DataAccess.DependencyInjection;
+using OrientPyx.DataAccess.Persistence;
 using OrientPyx.Presentation.DependencyInjection;
 using OrientPyx.Presentation.Services;
 using OrientPyx.Presentation.ViewModels;
@@ -50,10 +51,24 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var mainViewModel = services.GetRequiredService<MainWindowViewModel>();
-            desktop.MainWindow = new MainWindow { DataContext = mainViewModel };
+            var mainWindow = new MainWindow { DataContext = mainViewModel };
+            desktop.MainWindow = mainWindow;
 
             // Restore the last session (or show the picker) once the UI is up.
             _ = mainViewModel.InitializeAsync();
+
+            // On the very first launch after a Velopack install/update, greet the user and confirm
+            // where the app and their (update-safe) competition data live. Shown once, non-blocking.
+            if (Program.IsFirstRun)
+            {
+                mainWindow.Opened += (_, _) =>
+                {
+                    var welcome = new WelcomeWindow(
+                        AppContext.BaseDirectory,
+                        AppDatabasePaths.DefaultEventsPath);
+                    welcome.Show(mainWindow);
+                };
+            }
         }
 
         base.OnFrameworkInitializationCompleted();

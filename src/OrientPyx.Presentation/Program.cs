@@ -19,6 +19,12 @@ internal static class Program
     /// </summary>
     internal static IActivityLog? ActivityLog { get; set; }
 
+    /// <summary>
+    /// Set true by Velopack's first-run hook (the very first launch after an install/update). The UI
+    /// reads this once it is up (see <c>App</c>) to show the one-time <see cref="WelcomeWindow"/>.
+    /// </summary>
+    internal static bool IsFirstRun { get; private set; }
+
     // Avalonia configuration; don't use any Avalonia, third-party APIs or any
     // SynchronizationContext-reliant code before AppMain is called.
     [STAThread]
@@ -26,7 +32,11 @@ internal static class Program
     {
         // Velopack install/update/uninstall hooks. MUST run first: on those code paths it does its work
         // and exits the process before the UI is ever built. On a normal launch it returns immediately.
-        VelopackApp.Build().Run();
+        // OnFirstRun fires on the first launch Velopack triggers right after an install/update — we just
+        // record it here (no UI exists yet) and surface the welcome window once the UI is up.
+        VelopackApp.Build()
+            .OnFirstRun(_ => IsFirstRun = true)
+            .Run();
 
         // Installed builds keep competition data in a stable per-user folder so it survives auto-updates
         // (which replace the application directory wholesale). No-op for an in-place dev/xcopy build.

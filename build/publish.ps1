@@ -35,6 +35,7 @@ $releaseDir = Join-Path $repoRoot 'build/releases'
 $runtime    = 'win-x64'
 $packId     = 'OrientPyx'
 $packTitle  = 'OrientPyx'
+$iconPath   = Join-Path $repoRoot 'src/OrientPyx.Presentation/Assets/orientpyx.ico'
 
 # --- 0. Ensure the vpk tool is available ----------------------------------------------------------
 if (-not (Get-Command vpk -ErrorAction SilentlyContinue)) {
@@ -61,8 +62,9 @@ vpk pack `
     --packId $packId `
     --packVersion $Version `
     --packDir $publishDir `
-    --mainExe 'OrientPyx.Presentation.exe' `
+    --mainExe 'OrientPyx.exe' `
     --packTitle $packTitle `
+    --icon $iconPath `
     --outputDir $releaseDir
 if ($LASTEXITCODE -ne 0) { throw "vpk pack failed." }
 
