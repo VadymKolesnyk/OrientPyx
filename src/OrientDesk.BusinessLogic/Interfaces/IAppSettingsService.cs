@@ -1,3 +1,4 @@
+using OrientDesk.BusinessLogic.Enums;
 using OrientDesk.BusinessLogic.Models;
 
 namespace OrientDesk.BusinessLogic.Interfaces;
@@ -45,4 +46,9 @@ public interface IAppSettingsService
     Task<OnlineApiSettings> GetOnlineApiSettingsAsync(CancellationToken cancellationToken = default);
 
     Task SaveOnlineApiSettingsAsync(OnlineApiSettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the configured timing-system readout format, defaulting to SPORTident when never set.</summary>
+    Task<ReadoutType> GetReadoutTypeAsync(CancellationToken cancellationToken = default);
+
+    Task SaveReadoutTypeAsync(ReadoutType readoutType, CancellationToken cancellationToken = default);
 }

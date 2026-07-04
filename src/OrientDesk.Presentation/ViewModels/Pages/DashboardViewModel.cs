@@ -57,6 +57,13 @@ public sealed partial class DashboardViewModel : PageViewModelBase
     // SetCurrentDayAsync (which would re-raise SessionChanged → LoadAsync in a loop).
     private bool _syncingDay;
 
+    // While the dashboard is the visible page, its live counts (finished / on course / read-outs)
+    // must keep up with read-outs streaming in at the finish. LoadAsync alone only runs on open /
+    // day-switch, so a user sitting on the page would see frozen tiles. This timer re-loads on an
+    // interval; the host (MainWindowViewModel) starts it when the dashboard is shown and stops it
+    // when another page takes over, so it never polls the DB in the background.
+    private readonly DispatcherTimer _refreshTimer;
+
     public DashboardViewModel(
         ILocalizationService localization,
         ICompetitionEditorService editor,
@@ -78,8 +85,29 @@ public sealed partial class DashboardViewModel : PageViewModelBase
             OnPropertyChanged(nameof(DisciplineName));
             OnPropertyChanged(nameof(DayLabel));
         };
+
+        // Ticks only while the dashboard is the shown page (see Start/StopAutoRefresh). A short
+        // interval keeps the "фінішувало / на дистанції" tiles honest during finish read-out without
+        // hammering the event DB — one lightweight recompute a few seconds apart.
+        _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _refreshTimer.Tick += (_, _) => _ = LoadAsync();
+
         _ = LoadAsync();
     }
+
+    /// <summary>
+    /// Begin auto-refreshing the live counts (called by the host when the dashboard becomes the
+    /// visible page). Reloads once immediately so the tiles are current the moment it is shown, then
+    /// on the timer interval.
+    /// </summary>
+    public void StartAutoRefresh()
+    {
+        _ = LoadAsync();
+        _refreshTimer.Start();
+    }
+
+    /// <summary>Stop auto-refreshing (called by the host when another page takes over).</summary>
+    public void StopAutoRefresh() => _refreshTimer.Stop();
 
     public override string NavKey => "Nav.Dashboard";
     public override string TitleKey => "Page.Dashboard.Title";

@@ -47,6 +47,30 @@
             </StackPanel>
         </Border>
 
+        <!-- Readout type (timing system) -->
+        <Border Classes="card" Padding="22">
+            <StackPanel Spacing="14">
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Localization[Settings.Readout.Title]}" Classes="h2"
+                               VerticalAlignment="Center"
+                               FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+                    <Button Classes="help"
+                            Command="{Binding ShowBlockHelpCommand}" CommandParameter="Help.Settings.Readout"
+                            ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                </StackPanel>
+                <TextBlock Text="{Binding Localization[Settings.Readout.Hint]}" Classes="muted"
+                           TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" Spacing="18">
+                    <RadioButton GroupName="ReadoutType"
+                                 Content="{Binding Localization[Settings.Readout.SportIdent]}"
+                                 IsChecked="{Binding IsSportIdent, Mode=TwoWay}" />
+                    <RadioButton GroupName="ReadoutType"
+                                 Content="{Binding Localization[Settings.Readout.SportTime]}"
+                                 IsChecked="{Binding IsSportTime, Mode=TwoWay}" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
         <!-- Data paths -->
         <Border Classes="card" Padding="22">
             <StackPanel Spacing="14">
@@ -101,7 +125,28 @@
 
                 <StackPanel Spacing="6">
                     <TextBlock Text="{Binding Localization[Settings.Online.ServiceKey]}" Classes="label" />
-                    <TextBox Text="{Binding OnlineServiceRoleKey, Mode=TwoWay}" PasswordChar="•" />
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                        <TextBox Grid.Column="0" Text="{Binding OnlineServiceRoleKey, Mode=TwoWay}"
+                                 PasswordChar="{Binding ServiceKeyPasswordChar}" />
+                        <!-- Eye toggle: show / hide the secret key -->
+                        <Button Grid.Column="1" Classes="ghost" Padding="8,4"
+                                Command="{Binding ToggleRevealServiceRoleKeyCommand}"
+                                ToolTip.Tip="{Binding Localization[Settings.Online.ServiceKeyReveal]}">
+                            <Panel>
+                                <PathIcon Width="16" Height="16" IsVisible="{Binding !RevealServiceRoleKey}"
+                                          Data="M8,3 C4,3 1.5,6 1,8 C1.5,10 4,13 8,13 C12,13 14.5,10 15,8 C14.5,6 12,3 8,3 z M8,5.5 A2.5,2.5 0 1 1 8,10.5 A2.5,2.5 0 1 1 8,5.5 z" />
+                                <PathIcon Width="16" Height="16" IsVisible="{Binding RevealServiceRoleKey}"
+                                          Data="M8,3 C4,3 1.5,6 1,8 C1.5,10 4,13 8,13 C12,13 14.5,10 15,8 C14.5,6 12,3 8,3 z M8,5.5 A2.5,2.5 0 1 1 8,10.5 A2.5,2.5 0 1 1 8,5.5 z M3,2 L13,14" />
+                            </Panel>
+                        </Button>
+                        <!-- Copy the key to the clipboard -->
+                        <Button Grid.Column="2" Classes="ghost" Padding="8,4"
+                                Click="OnCopyServiceKeyClick"
+                                ToolTip.Tip="{Binding Localization[Settings.Online.ServiceKeyCopy]}">
+                            <PathIcon Width="14" Height="14"
+                                      Data="M9,2 h7 a1,1 0 0 1 1,1 v10 a1,1 0 0 1 -1,1 h-7 a1,1 0 0 1 -1,-1 v-10 a1,1 0 0 1 1,-1 z M5,6 v10 a1,1 0 0 0 1,1 h7" />
+                        </Button>
+                    </Grid>
                     <TextBlock Text="{Binding Localization[Settings.Online.ServiceKeyHint]}" Classes="muted"
                                TextWrapping="Wrap" />
                 </StackPanel>

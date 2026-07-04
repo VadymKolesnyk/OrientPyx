@@ -57,6 +57,9 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.App
                     b.Property<int>("RankMinRegions")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("ReadoutType")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("ReceiptWidthMm")
                         .HasColumnType("INTEGER");
 

@@ -381,6 +381,11 @@
   "Help.Settings.Online.Why": "Without these keys the «Online results» feature cannot publish (its «Start» button stays disabled). The secret key grants write access to the database, so it is stored only locally on this computer and is never sent anywhere else.",
   "Help.Settings.Online.How": "Paste the Supabase project URL (e.g. https://xxxxx.supabase.co).\nPaste the service-role key — it is masked with dots and stays only on this PC.\nEnter the public spectator-site URL (used to build links) and the refresh interval in seconds (−/+ buttons).\nClick «Save».\nThen go to «Online results» to configure the specific competition and start publishing.",
 
+  "Help.Settings.Readout.Title": "Readout type",
+  "Help.Settings.Readout.What": "The timing system whose readout files the app reads: SportIdent (SPORTident Reader export in «Config+ (card readout)» format, UTF-8) or Sport Time (windows-1251, weekday in parentheses after the time). An application-level setting shared across competitions.",
+  "Help.Settings.Readout.Why": "Different timing systems export CSV in different formats and encodings. The selected type decides which parser the «Chips» and «Finish read-out» pages use.",
+  "Help.Settings.Readout.How": "Pick the system you use at the event.\nThe change applies immediately — no restart.\nIf the read-out shows no rows, check that the right system is selected here and the export format in the timing software itself.",
+
   "Help.OnlineResults.Options.Title": "Publish options",
   "Help.OnlineResults.Options.What": "The settings of this particular competition for the online table: the short page address (slug), title and subtitle, turning on the summary standings and the «Points» column, and the set of columns of the spectator table — separately for the large screen (venue board) and the phone. These are stored in the competition's database and are independent of the connection keys.",
   "Help.OnlineResults.Options.Why": "Determines exactly what spectators see and how. The slug forms the page link; the title/subtitle become the header; the column set controls which data is sent to the site (display_config).",
@@ -754,6 +759,9 @@
   "FinishRead.AutoRead.Interval": "Interval, s",
   "FinishRead.AutoRead.Enabled": "Enabled",
   "FinishRead.AutoRead.AutoPrint": "Auto-print",
+  "FinishRead.AutoRead.Error.NoFile": "The readout file does not exist yet. Check that the SPORTident Reader's list format is set to «Config+ (card readout)» and that it is exporting to this file.",
+  "FinishRead.AutoRead.Error.NoFileSportTime": "The readout file does not exist yet. Check that Sport Time is exporting to this file.",
+  "FinishRead.AutoRead.Error.WrongFormat": "The file is not in the expected format for the selected readout type. Check the readout type in Settings or the export format in the timing software.",
   "FinishRead.Clear": "Clear database",
   "FinishRead.Clear.ConfirmTitle": "Clear finish-read log",
   "FinishRead.Clear.ConfirmMessage": "Delete every finish read-out record for this day? This cannot be undone.",
@@ -1156,9 +1164,16 @@
   "Settings.Online.SupabaseUrl": "Supabase project URL",
   "Settings.Online.ServiceKey": "Service-role key (secret)",
   "Settings.Online.ServiceKeyHint": "Grants write access. Never share it — the spectator site uses only the public anon key.",
+  "Settings.Online.ServiceKeyReveal": "Show / hide key",
+  "Settings.Online.ServiceKeyCopy": "Copy key",
   "Settings.Online.PublicUrl": "Public spectator site URL",
   "Settings.Online.Interval": "Publish interval (s)",
   "Settings.Online.Save": "Save connection",
+
+  "Settings.Readout.Title": "Readout type",
+  "Settings.Readout.Hint": "The timing system whose files the read-out is taken from. Determines the readout file format. Shared across competitions.",
+  "Settings.Readout.SportIdent": "SportIdent",
+  "Settings.Readout.SportTime": "SportTime",
 
   "Header.CurrentEvent": "Competition:",
   "Header.Day": "Day",

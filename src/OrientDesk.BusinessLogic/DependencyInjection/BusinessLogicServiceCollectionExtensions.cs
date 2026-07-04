@@ -41,9 +41,13 @@ public static class BusinessLogicServiceCollectionExtensions
         // Combined course-name splitting (e.g. "ЧЖ55" → "Ч55", "Ж55") for the import splitter dialog.
         services.AddSingleton<ICourseNameSplitter, CourseNameSplitter>();
 
-        // Chip-readout file parsing (shared: rental-chip import today, participant timing later).
-        // One implementation per file format; register the new one here when another format is added.
-        services.AddSingleton<IReadoutParser, SportIdentCsvReadoutParser>();
+        // Chip-readout file parsing (shared: rental-chip import + finish read-out timing). One
+        // implementation per timing-system file format; the selector picks the one matching the app-level
+        // «тип відмітки» (ReadoutType) setting. Register a new format's parser here + add it to the selector.
+        services.AddSingleton<SportIdentCsvReadoutParser>();
+        services.AddSingleton<SportTimeCsvReadoutParser>();
+        services.AddSingleton<IReadoutParser>(sp => sp.GetRequiredService<SportIdentCsvReadoutParser>());
+        services.AddSingleton<IReadoutParserSelector, ReadoutParserSelector>();
 
         // Course-length calculation (shared: group import today, distance display later)
         services.AddSingleton<ICourseDistanceCalculator, CourseDistanceCalculator>();

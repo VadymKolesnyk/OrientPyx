@@ -73,8 +73,9 @@ public sealed class DashboardInfo
     public int FinishedWithProblem { get; init; }
 
     /// <summary>
-    /// Day members still on course: no read-out yet and not pre-withdrawn (not a manual DNS, and not
-    /// поза конкурсом). These are the runners results are still expected for.
+    /// Day members still on course: no actual (chip) start, no finish and a blank status — the same
+    /// three-field test the «На дистанції» participants filter uses, so this count matches that filtered
+    /// list. These are the runners results are still expected for.
     /// </summary>
     public int OnCourse { get; init; }
 }

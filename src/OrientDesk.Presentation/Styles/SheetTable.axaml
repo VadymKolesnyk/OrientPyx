@@ -212,7 +212,12 @@
         <Setter Property="BorderThickness" Value="0,0,0,1" />
     </Style>
 
-    <!-- Cell hosts: vertical gridlines + the focused-cell accent outline (Excel cue) -->
+    <!-- Cell hosts: vertical gridlines + the focused-cell accent outline (Excel cue).
+         Custom template so a selection wash can be painted ABOVE any custom cell Background
+         (payment/age/row-highlight tints). A ContentControl's default template paints Background
+         then Content, leaving no layer for a selection overlay; here PART_SelectionOverlay sits
+         between the (tinted) background border and the content, so a selected row stays visible
+         even under tinted columns. -->
     <Style Selector="controls|SheetTable controls|SheetCell">
         <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtle}" />
         <Setter Property="BorderThickness" Value="0,0,1,0" />
@@ -220,10 +225,34 @@
         <Setter Property="FontSize" Value="13" />
         <!-- Transparent (not null) so the whole cell area is hit-testable; :range overrides it. -->
         <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}">
+                    <Panel>
+                        <!-- Translucent selection/range wash, toggled by the :selected / :range
+                             pseudo-classes below. Transparent by default so it's invisible. -->
+                        <Border Name="PART_SelectionOverlay" Background="Transparent" />
+                        <ContentPresenter Name="PART_ContentPresenter"
+                                          Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          Padding="{TemplateBinding Padding}" />
+                    </Panel>
+                </Border>
+            </ControlTemplate>
+        </Setter>
     </Style>
-    <!-- Cells inside an Excel-style multi-cell selection: a translucent accent wash. The anchor cell
-         keeps the :focus outline below (border vs. background, so they stack rather than conflict). -->
-    <Style Selector="controls|SheetTable controls|SheetCell:range">
+    <!-- Selected row: wash every cell (including tinted ones) so the selection reads across all columns. -->
+    <Style Selector="controls|SheetTable controls|SheetCell:selected /template/ Border#PART_SelectionOverlay">
+        <Setter Property="Background" Value="{DynamicResource AccentSurface}" />
+    </Style>
+    <!-- Cells inside an Excel-style multi-cell selection: a translucent accent wash painted on the
+         overlay (above any custom cell tint), so range selection reads under tinted columns too. The
+         anchor cell keeps the :focus outline below (border vs. overlay, so they stack rather than conflict). -->
+    <Style Selector="controls|SheetTable controls|SheetCell:range /template/ Border#PART_SelectionOverlay">
         <Setter Property="Background" Value="{DynamicResource AccentSurface}" />
     </Style>
     <Style Selector="controls|SheetTable controls|SheetCell:focus">

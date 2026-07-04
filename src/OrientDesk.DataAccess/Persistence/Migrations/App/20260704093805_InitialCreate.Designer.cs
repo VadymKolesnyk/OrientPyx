@@ -11,8 +11,8 @@ using OrientDesk.DataAccess.Persistence;
 namespace OrientDesk.DataAccess.Persistence.Migrations.App
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260622160115_AddRankQualification")]
-    partial class AddRankQualification
+    [Migration("20260704093805_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -32,14 +32,35 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.App
                     b.Property<double>("FontScale")
                         .HasColumnType("REAL");
 
+                    b.Property<int>("OnlineIntervalSeconds")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("OnlinePublicBaseUrl")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OnlineServiceRoleKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OnlineSupabaseUrl")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("PrinterName")
                         .IsRequired()
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("RankCountForRank")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int>("RankMinParticipants")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("RankMinRegions")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ReadoutType")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("ReceiptWidthMm")

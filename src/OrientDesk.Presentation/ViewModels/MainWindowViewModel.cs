@@ -132,6 +132,20 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _create.OnCreatedAsync = async _ => await ShowSelectionAsync();
         _create.Cancelled += async (_, _) => await ShowSelectionAsync();
         _shell.ChangeEventRequested += async (_, _) => await ChangeEventInternalAsync();
+        // The dashboard's live tiles auto-refresh only while it is the shown page — start that when it
+        // becomes the selected page and stop it when anything else takes over. Watched here (not on the
+        // sidebar Navigate command) so it covers every open path, including the top-menu ones that set
+        // SelectedPage directly. A cycle-free wiring: the dashboard can't depend on the shell/navigation
+        // (NavigationService is built from the dashboard), so the host — which holds both — bridges them.
+        _shell.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName != nameof(ShellViewModel.SelectedPage))
+                return;
+            if (ReferenceEquals(_shell.SelectedPage, _dashboard))
+                _dashboard.StartAutoRefresh();
+            else
+                _dashboard.StopAutoRefresh();
+        };
         // "Go to settings" on the chip auto-read activity opens the Chips page.
         _chips.NavigateToSelfRequested += async (_, _) => await OpenChipsAsync();
         // Same for the finish-read auto-read activity.
@@ -209,10 +223,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         if (page is null)
             return;
 
-        // Refresh the dashboard's live counts each time it is opened (data may have changed elsewhere).
-        if (ReferenceEquals(page, _dashboard))
-            _ = _dashboard.LoadAsync();
-
+        // Setting SelectedPage drives the dashboard's auto-refresh start/stop (and its initial reload)
+        // via the _shell.PropertyChanged handler wired in the constructor — no explicit reload here.
         _shell.SelectedPage = page;
     }
 
@@ -469,6 +481,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private async Task ChangeEventInternalAsync()
     {
         IsSettingsOpen = false;
+        // Leaving the shell for the selection screen doesn't change SelectedPage, so stop the
+        // dashboard's auto-refresh explicitly — otherwise it would keep polling a hidden page.
+        _dashboard.StopAutoRefresh();
         _session.Clear();
         await ShowSelectionAsync();
     }
@@ -539,5 +554,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         CurrentView = _create;
     }
 
-    private void ShowShell() => CurrentView = _shell;
+    private void ShowShell()
+    {
+        CurrentView = _shell;
+        // On entering the shell the dashboard is usually the already-selected page, so SelectedPage
+        // won't change and the PropertyChanged handler won't fire — kick off its auto-refresh here.
+        if (ReferenceEquals(_shell.SelectedPage, _dashboard))
+            _dashboard.StartAutoRefresh();
+    }
 }

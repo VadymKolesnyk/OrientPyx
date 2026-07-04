@@ -100,6 +100,25 @@ public sealed class AppStore : IAppStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<int?> GetReadoutTypeAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        return row?.ReadoutType;
+    }
+
+    public async Task SaveReadoutTypeAsync(int readoutType, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+            db.Settings.Add(new AppSettingsRow { Id = 1, ReadoutType = readoutType });
+        else
+            row.ReadoutType = readoutType;
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<string?> GetResultProtocolJsonAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);

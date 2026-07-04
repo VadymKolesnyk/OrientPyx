@@ -23,7 +23,7 @@ public sealed partial class ChipsViewModel : PageViewModelBase
 
     private readonly ICompetitionEditorService _editor;
     private readonly ISessionService _session;
-    private readonly IReadoutParser _readoutParser;
+    private readonly IReadoutParserSelector _readoutParsers;
     private readonly IFileReadoutPoller _poller;
     private readonly IBusyService _busy;
     private readonly IDialogService _dialogs;
@@ -40,7 +40,7 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         ILocalizationService localization,
         ICompetitionEditorService editor,
         ISessionService session,
-        IReadoutParser readoutParser,
+        IReadoutParserSelector readoutParsers,
         IFileReadoutPoller poller,
         IBusyService busy,
         IDialogService dialogs,
@@ -49,7 +49,7 @@ public sealed partial class ChipsViewModel : PageViewModelBase
     {
         _editor = editor;
         _session = session;
-        _readoutParser = readoutParser;
+        _readoutParsers = readoutParsers;
         _poller = poller;
         _busy = busy;
         _dialogs = dialogs;
@@ -318,7 +318,8 @@ public sealed partial class ChipsViewModel : PageViewModelBase
 
         try
         {
-            var data = _readoutParser.Parse(content);
+            var parser = await _readoutParsers.GetCurrentAsync();
+            var data = parser.Parse(content);
             var result = await _editor.ImportRentalChipsAsync(data, note: AutoReadNote);
             if (result.Added > 0)
                 await Dispatcher.UIThread.InvokeAsync(LoadAsync);

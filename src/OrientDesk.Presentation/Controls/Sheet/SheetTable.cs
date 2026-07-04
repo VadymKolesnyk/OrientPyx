@@ -14,6 +14,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Reactive;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using OrientDesk.BusinessLogic.Entities;
@@ -3232,6 +3233,32 @@ internal sealed class SheetCell : ContentControl
     {
         InRangeProperty.Changed.AddClassHandler<SheetCell>((cell, e) =>
             cell.PseudoClasses.Set(":range", e.NewValue is true));
+    }
+
+    private IDisposable? _selectedSub;
+
+    // A tinted cell (payment/age/row highlight) paints its own Background over the ListBoxItem, so the
+    // row-selection highlight is hidden under those columns. To keep selection visible everywhere, the
+    // cell mirrors its containing row's selected state as a :selected pseudo-class and the SheetCell
+    // template paints a translucent wash *above* the tint (see Styles/SheetTable.axaml). We track the
+    // ListBoxItem via the visual tree once attached, since a virtualized cell has no owner at build time.
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        var row = this.FindAncestorOfType<ListBoxItem>();
+        if (row is not null)
+        {
+            _selectedSub = row.GetObservable(ListBoxItem.IsSelectedProperty)
+                .Subscribe(new AnonymousObserver<bool>(sel => PseudoClasses.Set(":selected", sel)));
+        }
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        _selectedSub?.Dispose();
+        _selectedSub = null;
+        PseudoClasses.Set(":selected", false);
+        base.OnDetachedFromVisualTree(e);
     }
 }
 

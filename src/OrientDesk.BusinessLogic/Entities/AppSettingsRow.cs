@@ -71,4 +71,11 @@ public class AppSettingsRow
 
     /// <summary>Seconds between live-results publish ticks. Default 10.</summary>
     public int OnlineIntervalSeconds { get; set; } = 10;
+
+    /// <summary>
+    /// Which timing-system readout format the app reads (0 = SPORTident, 1 = Sport Time). Application-level
+    /// because the whole installation uses one timing system; picks the matching readout parser. Default
+    /// SPORTident (0).
+    /// </summary>
+    public int ReadoutType { get; set; } = 0;
 }

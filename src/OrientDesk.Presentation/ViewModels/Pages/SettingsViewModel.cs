@@ -1,6 +1,7 @@
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using OrientDesk.BusinessLogic.Enums;
 using OrientDesk.BusinessLogic.Interfaces;
 using OrientDesk.BusinessLogic.Models;
 using OrientDesk.Localization;
@@ -28,6 +29,17 @@ public sealed partial class SettingsViewModel : PageViewModelBase
     [ObservableProperty]
     private string _onlineServiceRoleKey = string.Empty;
 
+    // Whether the secret service-role key is shown in clear text (eye toggle). Masked by default.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ServiceKeyPasswordChar))]
+    private bool _revealServiceRoleKey;
+
+    // '\0' shows the key in clear text; '•' masks it.
+    public char ServiceKeyPasswordChar => RevealServiceRoleKey ? '\0' : '•';
+
+    [RelayCommand]
+    private void ToggleRevealServiceRoleKey() => RevealServiceRoleKey = !RevealServiceRoleKey;
+
     [ObservableProperty]
     private string _onlinePublicBaseUrl = string.Empty;
 
@@ -49,6 +61,45 @@ public sealed partial class SettingsViewModel : PageViewModelBase
         _busy = busy;
         _ = LoadPathsAsync();
         _ = LoadOnlineAsync();
+        _ = LoadReadoutTypeAsync();
+    }
+
+    // --- Readout type (timing system) --------------------------------------------------------------
+
+    // Guards the setter while LoadReadoutTypeAsync applies the stored value, so it doesn't persist during load.
+    private bool _loadingReadoutType;
+
+    /// <summary>The selected timing-system readout format; setting it persists immediately.</summary>
+    [ObservableProperty]
+    private ReadoutType _readoutType = ReadoutType.SportIdent;
+
+    /// <summary>Radio-button bindings for the two formats (two-way; the checked one sets ReadoutType).</summary>
+    public bool IsSportIdent
+    {
+        get => ReadoutType == ReadoutType.SportIdent;
+        set { if (value) ReadoutType = ReadoutType.SportIdent; }
+    }
+
+    public bool IsSportTime
+    {
+        get => ReadoutType == ReadoutType.SportTime;
+        set { if (value) ReadoutType = ReadoutType.SportTime; }
+    }
+
+    partial void OnReadoutTypeChanged(ReadoutType value)
+    {
+        OnPropertyChanged(nameof(IsSportIdent));
+        OnPropertyChanged(nameof(IsSportTime));
+        if (!_loadingReadoutType)
+            _ = _settings.SaveReadoutTypeAsync(value);
+    }
+
+    private async Task LoadReadoutTypeAsync()
+    {
+        var stored = await _settings.GetReadoutTypeAsync();
+        _loadingReadoutType = true;
+        try { ReadoutType = stored; }
+        finally { _loadingReadoutType = false; }
     }
 
     public override string NavKey => "Nav.Settings";

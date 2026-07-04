@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientDesk.BusinessLogic.Entities;
+using OrientDesk.BusinessLogic.Enums;
 using OrientDesk.BusinessLogic.Interfaces;
 using OrientDesk.BusinessLogic.Models;
 using OrientDesk.BusinessLogic.Services;
@@ -26,7 +27,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
 
     private readonly ICompetitionEditorService _editor;
     private readonly ISessionService _session;
-    private readonly IReadoutParser _readoutParser;
+    private readonly IReadoutParserSelector _readoutParsers;
     private readonly IFileReadoutPoller _poller;
     private readonly IBusyService _busy;
     private readonly IDialogService _dialogs;
@@ -38,11 +39,14 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     /// <summary>Top-bar activity handle while auto-read runs; null when off.</summary>
     private FinishReadActivity? _activity;
 
+    /// <summary>The app-level readout format, refreshed on load; drives which "no file" hint is shown.</summary>
+    private ReadoutType _readoutType = ReadoutType.SportIdent;
+
     public FinishReadViewModel(
         ILocalizationService localization,
         ICompetitionEditorService editor,
         ISessionService session,
-        IReadoutParser readoutParser,
+        IReadoutParserSelector readoutParsers,
         IFileReadoutPoller poller,
         IBusyService busy,
         IDialogService dialogs,
@@ -55,7 +59,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     {
         _editor = editor;
         _session = session;
-        _readoutParser = readoutParser;
+        _readoutParsers = readoutParsers;
         _poller = poller;
         _busy = busy;
         _dialogs = dialogs;
@@ -137,6 +141,18 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     [ObservableProperty]
     private bool _autoPrintEnabled;
 
+    /// <summary>
+    /// A localized problem shown as a banner on the auto-read panel, set when the watched file is
+    /// missing or is not a Config+ card-readout export; empty when there's nothing to report.
+    /// </summary>
+    [ObservableProperty]
+    private string _autoReadError = string.Empty;
+
+    /// <summary>True when <see cref="AutoReadError"/> has text — drives the banner's visibility.</summary>
+    public bool HasAutoReadError => !string.IsNullOrEmpty(AutoReadError);
+
+    partial void OnAutoReadErrorChanged(string value) => OnPropertyChanged(nameof(HasAutoReadError));
+
     // True while LoadAsync syncs SelectedDay to the session, so the setter does NOT call
     // SetCurrentDayAsync (which would re-raise SessionChanged → LoadAsync in a loop).
     private bool _syncingDay;
@@ -167,16 +183,18 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     public async Task LoadAsync()
     {
         var hasDay = _session.CurrentDay is not null;
-        var (days, rows, chips, usesScore) = await _busy.RunAsync(async () =>
+        var (days, rows, chips, usesScore, readoutType) = await _busy.RunAsync(async () =>
         {
             var d = await _editor.GetDaysAsync();
             var r = hasDay ? await _editor.GetFinishReadoutRowsAsync() : (IReadOnlyList<FinishReadoutRow>)[];
             var c = await _editor.GetRentalChipsAsync();
             var s = hasDay && await _editor.CurrentDayUsesScoreAsync();
-            return (d, r, c, s);
+            var rt = await _appSettings.GetReadoutTypeAsync();
+            return (d, r, c, s, rt);
         });
         RentalChips.Reset(chips.Select(c => c.Number));
         ShowScoreColumn = usesScore;
+        _readoutType = readoutType;
 
         _syncingDay = true;
         try
@@ -470,6 +488,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         {
             _poller.Stop();
             HideActivity();
+            AutoReadError = string.Empty;
         }
     }
 
@@ -505,9 +524,63 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
             return;
         }
 
+        // Validate the file up front so the operator gets an immediate, specific message instead of a
+        // silent no-op: a missing file usually means the timing software isn't exporting here (or the
+        // wrong list format is selected), and an existing file the current parser can't read is the
+        // wrong format. The poller creates the file when absent, so this check runs BEFORE it starts.
+        _ = ValidateReadoutFileAsync();
+
         var interval = TimeSpan.FromSeconds(Math.Max(1, AutoReadIntervalSeconds));
         _poller.Start(AutoReadFilePath, interval, OnPolledContentAsync);
     }
+
+    // Sets AutoReadError to a specific message when the watched file is missing or the current timing
+    // system's parser can't read it, or clears it when the file looks right (or can't be examined yet).
+    // Never throws. The "wrong format" message is per readout type (SPORTident points at the Config+ list
+    // format; Sport Time is a generic mismatch).
+    private async Task ValidateReadoutFileAsync()
+    {
+        var path = AutoReadFilePath;
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            AutoReadError = string.Empty;
+            return;
+        }
+
+        try
+        {
+            if (!File.Exists(path))
+            {
+                // No file at all — the timing software isn't exporting here. Point at the readout setup.
+                AutoReadError = Localization.Get(NoFileErrorKey());
+                return;
+            }
+
+            var bytes = await File.ReadAllBytesAsync(path);
+            var content = CsvEncodingReader.Decode(bytes);
+            var parser = await _readoutParsers.GetCurrentAsync();
+            // An empty file is the correct start state (the reader hasn't written yet) — not an error.
+            if (!string.IsNullOrWhiteSpace(content) && !parser.CanParse(content))
+            {
+                AutoReadError = Localization.Get("FinishRead.AutoRead.Error.WrongFormat");
+                return;
+            }
+
+            AutoReadError = string.Empty;
+        }
+        catch
+        {
+            // Locked/unreadable right now — don't nag; the poll loop will read it when it can.
+            AutoReadError = string.Empty;
+        }
+    }
+
+    // The "no file" message keyed on the selected timing system: SPORTident nudges the operator toward the
+    // Config+ list format; Sport Time gives a generic "not exporting here" note.
+    private string NoFileErrorKey() =>
+        _readoutType == ReadoutType.SportTime
+            ? "FinishRead.AutoRead.Error.NoFileSportTime"
+            : "FinishRead.AutoRead.Error.NoFile";
 
     // Runs on a pool thread (the poller's loop). Parse + import are synchronous SQLite work, so they
     // stay off the UI thread; only the reload hops back. Silent: it just appends new reads.
@@ -518,7 +591,12 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
 
         try
         {
-            var data = _readoutParser.Parse(content);
+            var parser = await _readoutParsers.GetCurrentAsync();
+            var data = parser.Parse(content);
+            // A good parse means the file is in the right format — clear any earlier warning banner.
+            if (HasAutoReadError)
+                await Dispatcher.UIThread.InvokeAsync(() => AutoReadError = string.Empty);
+
             var result = await _editor.ImportFinishReadoutsAsync(data);
             if (result.Added > 0)
             {

@@ -51,6 +51,12 @@ public interface IAppStore
 
     Task SaveOnlineApiSettingsAsync(OnlineApiSettings settings, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the stored readout format (0 = SPORTident, 1 = Sport Time), or null when never set
+    /// (caller applies the default, SPORTident).</summary>
+    Task<int?> GetReadoutTypeAsync(CancellationToken cancellationToken = default);
+
+    Task SaveReadoutTypeAsync(int readoutType, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the last opened competition identifier + day number, if any.</summary>
     Task<(string? Identifier, int? DayNumber)> GetLastSessionAsync(CancellationToken cancellationToken = default);
 

@@ -11,8 +11,8 @@ using OrientDesk.DataAccess.Persistence;
 namespace OrientDesk.DataAccess.Persistence.Migrations.Event
 {
     [DbContext(typeof(EventDbContext))]
-    [Migration("20260617173748_AddFinishReadoutManualStatus")]
-    partial class AddFinishReadoutManualStatus
+    [Migration("20260704093820_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -68,16 +68,47 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ChiefJudge")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ChiefJudgeCategory")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ChiefSecretary")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ChiefSecretaryCategory")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<decimal?>("ChipRentalPricePerDay")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("CourseSetter")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CourseSetterCategory")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("DefaultPointsRuleId")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset?>("EndDate")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Identifier")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Jury")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
@@ -123,10 +154,22 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                     b.Property<Guid>("EventDayId")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsDisabled")
+                        .HasColumnType("INTEGER");
+
                     b.Property<double?>("Latitude")
                         .HasColumnType("REAL");
 
                     b.Property<double?>("Longitude")
+                        .HasColumnType("REAL");
+
+                    b.Property<int?>("MapScale")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double?>("MapX")
+                        .HasColumnType("REAL");
+
+                    b.Property<double?>("MapY")
                         .HasColumnType("REAL");
 
                     b.Property<int>("Order")
@@ -283,6 +326,12 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                     b.Property<decimal?>("EntryFee")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("MaxBirthYear")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("MinBirthYear")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -302,6 +351,14 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("CourseSetter")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CourseSetterCategory")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
 
@@ -317,10 +374,20 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                     b.Property<Guid>("GroupId")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("MasterCount")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Order")
                         .HasColumnType("INTEGER");
 
                     b.Property<decimal?>("PenaltyPerMinute")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("PointsRuleId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RankLevel")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<int?>("RequiredControlCount")
@@ -332,6 +399,36 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                     b.HasKey("Id");
 
                     b.ToTable("GroupDaySettings");
+                });
+
+            modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.MonitorSettingsRow", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Json")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("MonitorSettings");
+                });
+
+            modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.OnlinePublishSettingsRow", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Json")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("OnlinePublishSettings");
                 });
 
             modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.Participant", b =>
@@ -366,6 +463,10 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
 
                     b.Property<bool>("IsFsouMember")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Number")
                         .IsRequired()
@@ -404,6 +505,9 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("Bonus")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Chip")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -425,6 +529,9 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
 
                     b.Property<Guid>("ParticipantId")
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("ResultStatusOverride")
+                        .HasColumnType("INTEGER");
 
                     b.Property<TimeSpan?>("StartTime")
                         .HasColumnType("TEXT");
@@ -506,6 +613,67 @@ namespace OrientDesk.DataAccess.Persistence.Migrations.Event
                         .IsUnique();
 
                     b.ToTable("RentalChips");
+                });
+
+            modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.ResultProtocolSettingsRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EventDayId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Json")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventDayId")
+                        .IsUnique();
+
+                    b.ToTable("ResultProtocolSettings");
+                });
+
+            modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.StartProtocolSettingsRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EventDayId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Json")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventDayId", "Kind")
+                        .IsUnique();
+
+                    b.ToTable("StartProtocolSettings");
+                });
+
+            modelBuilder.Entity("OrientDesk.BusinessLogic.Entities.SummaryProtocolSettingsRow", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Json")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SummaryProtocolSettings");
                 });
 #pragma warning restore 612, 618
         }

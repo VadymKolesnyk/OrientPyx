@@ -103,8 +103,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         }
         var chipsHandedOut = chips.Count(c => heldNumbers.Contains(c.Number.Trim()));
 
-        // Current-day counts.
-        var dayLinks = await _eventStore.GetParticipantDaysAsync(folder, day.Id, cancellationToken);
+        // Current-day counts. Join to existing participants — an orphaned link (participant deleted but
+        // its per-day link left behind) must not inflate the day counts. Every other view already skips
+        // orphans by joining to a participant; the dashboard counts raw links, so filter here too. This
+        // keeps «Учасників на дні» and «На дистанції» honest even if a stale orphan lingers in an old DB.
+        var participantIds = new HashSet<Guid>(participants.Select(p => p.Id));
+        var dayLinks = (await _eventStore.GetParticipantDaysAsync(folder, day.Id, cancellationToken))
+            .Where(l => participantIds.Contains(l.ParticipantId))
+            .ToList();
         var groupsToday = await _eventStore.GetGroupDaySettingsAsync(folder, day.Id, cancellationToken);
         var readouts = await _eventStore.GetFinishReadoutsAsync(folder, day.Id, cancellationToken);
 

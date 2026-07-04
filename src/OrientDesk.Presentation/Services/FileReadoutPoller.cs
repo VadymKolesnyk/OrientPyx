@@ -103,8 +103,12 @@ public sealed class FileReadoutPoller : IFileReadoutPoller
             {
                 await using var stream = new FileStream(
                     filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                using var reader = new StreamReader(stream);
-                return await reader.ReadToEndAsync(token);
+                using var buffer = new MemoryStream();
+                await stream.CopyToAsync(buffer, token);
+                // A readout file has no in-band encoding: SPORTident exports are UTF-8, Sport Time is
+                // windows-1251. Decode via the shared reader so either format reads correctly regardless
+                // of which timing system the operator selected.
+                return CsvEncodingReader.Decode(buffer.ToArray());
             }
             catch (OperationCanceledException)
             {

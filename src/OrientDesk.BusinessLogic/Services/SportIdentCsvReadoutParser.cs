@@ -12,24 +12,20 @@ namespace OrientDesk.BusinessLogic.Services;
 /// The relevant columns are:
 /// <list type="bullet">
 ///   <item><c>SIID</c> — the chip number (the only field rental-chip import needs).</item>
-///   <item><c>Start time</c> / <c>Finish time</c> — times of day; combined with the row's
-///   <c>Read on</c> date when present, otherwise left null.</item>
+///   <item><c>Start time</c> / <c>Finish time</c>, each preceded by its <c>… DOW</c> weekday column —
+///   times of day, dated by the recorded weekday relative to the <c>Read on</c> day so a course that
+///   crosses midnight is timed correctly; left null when absent.</item>
 ///   <item>a variable tail of <c>&lt;n&gt; CN</c> / <c>&lt;n&gt; DOW</c> / <c>&lt;n&gt; time</c>
-///   triplets after <c>No. of records</c> — the controls the chip punched.</item>
+///   triplets after <c>No. of records</c> — the controls the chip punched, each likewise dated by its
+///   own weekday.</item>
 /// </list>
 /// Rows are emitted as-is, including duplicate chip numbers (this is a raw log); de-duplication is
 /// left to the consumer.
 ///
-/// Two real-world shapes of this export exist and both are handled:
-/// <list type="bullet">
-///   <item><b>Header mode</b> — the first line is a header row naming the columns (<c>SIID</c>,
-///   <c>Start time</c>, …). Columns are matched by name, so their order can vary.</item>
-///   <item><b>Positional mode</b> — the export carries <b>no</b> header line; the very first line is
-///   already a data record (<c>&lt;no&gt;;&lt;read on&gt;;&lt;SIID&gt;;…</c>). The fields then sit at
-///   fixed positions. SI-Config and some SI readers produce this headerless layout.</item>
-/// </list>
-/// The parser auto-detects: a first line containing the <c>SIID</c> token is treated as a header,
-/// otherwise every line (including the first) is read positionally.
+/// The file MUST carry a header row naming the columns (<c>SIID</c>, <c>Start time</c>, …); columns
+/// are matched by name, so their order can vary. This is the layout SPORTident Reader produces with
+/// the <b>Config+ (card readout)</b> list format. A file with no such header is rejected as not a
+/// readout — the operator must select that list format in the reader software.
 /// </summary>
 public sealed class SportIdentCsvReadoutParser : IReadoutParser
 {
@@ -42,23 +38,18 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
     private const string StartTimeColumn = "Start time";
     private const string FinishTimeColumn = "Finish time";
 
+    // Each station carries its own day-of-week column right before its time ("Start DOW", "Finish
+    // DOW", and the middle field of every punch triplet). We read them so a control punched after
+    // midnight — a night start, a rogaine spanning days — lands on the correct calendar date, not the
+    // date the chip was read out. DOW is the two-letter English code Mo/Tu/We/Th/Fr/Sa/Su.
+    private const string StartDowColumn = "Start DOW";
+    private const string FinishDowColumn = "Finish DOW";
+
     // The course punches are NOT the named "* CN" columns (Clear / Check / Start / Finish and their
     // "_r" siblings are the unit's housekeeping/station boxes, not controls). They are the headerless
     // tail of "<code> ; <DOW> ; <time>" triplets that each data row appends after this column, whose
     // value is the punch count.
     private const string RecordCountColumn = "No. of records";
-
-    // Fixed field positions (0-based) for the HEADERLESS positional layout. These mirror the SI-Config
-    // CSV export: <no>;<read on>;<SIID>;... with the Clear / Check / Start / Finish station triplets
-    // ("<code>;<DOW>;<time>") and "No. of records" at fixed offsets, followed by the variable tail of
-    // "<code>;<DOW>;<time>" course-punch triplets.
-    private const int PositionalChipIndex = 2;          // SIID
-    private const int PositionalReadOnIndex = 1;         // "Read on" date+time
-    private const int PositionalClearCodeIndex = 4;      // Clear station triplet's code field
-    private const int PositionalStartCodeIndex = 10;     // Start station triplet's code field
-    private const int PositionalStartTimeIndex = 12;     // Start station triplet's time field
-    private const int PositionalFinishTimeIndex = 21;    // Finish station triplet's time field
-    private const int PositionalRecordCountIndex = 44;   // "No. of records"; punch triplets follow it
 
     public bool CanParse(string content)
     {
@@ -69,12 +60,9 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
         if (firstLine is null)
             return false;
 
-        var fields = SplitLine(firstLine);
-
-        // Header mode: a real header names the SIID column. Positional mode: no header, but the line
-        // is a data row whose third field is the chip number — accept when that field is non-empty.
-        return IndexOf(fields, ChipColumn) >= 0
-               || Field(fields, PositionalChipIndex).Trim().Length > 0;
+        // A real readout begins with a header row naming the SIID column (the Config+ card-readout
+        // list format). Anything else is not a file this parser can read.
+        return IndexOf(SplitLine(firstLine), ChipColumn) >= 0;
     }
 
     public ChipReadData Parse(string content)
@@ -90,37 +78,25 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
             throw new ReadoutFormatException("The file has no rows.");
 
         var header = SplitLine(lines[0]);
-        var hasHeader = IndexOf(header, ChipColumn) >= 0;
 
-        var layout = hasHeader
-            ? new ColumnLayout(
-                Chip: IndexOf(header, ChipColumn),
-                ReadOn: IndexOf(header, ReadOnColumn),
-                Start: IndexOf(header, StartTimeColumn),
-                // In header mode the named "Start time" column already isolates the start station, so
-                // there is no clear-vs-start ambiguity to guard against.
-                ClearCode: -1,
-                StartCode: -1,
-                Finish: IndexOf(header, FinishTimeColumn),
-                // The punch triplets begin in the column immediately after "No. of records".
-                FirstPunch: NextOrNone(IndexOf(header, RecordCountColumn)))
-            : new ColumnLayout(
-                Chip: PositionalChipIndex,
-                ReadOn: PositionalReadOnIndex,
-                Start: PositionalStartTimeIndex,
-                ClearCode: PositionalClearCodeIndex,
-                StartCode: PositionalStartCodeIndex,
-                Finish: PositionalFinishTimeIndex,
-                FirstPunch: PositionalRecordCountIndex + 1);
+        var layout = new ColumnLayout(
+            Chip: IndexOf(header, ChipColumn),
+            ReadOn: IndexOf(header, ReadOnColumn),
+            Start: IndexOf(header, StartTimeColumn),
+            StartDow: IndexOf(header, StartDowColumn),
+            Finish: IndexOf(header, FinishTimeColumn),
+            FinishDow: IndexOf(header, FinishDowColumn),
+            // The punch triplets begin in the column immediately after "No. of records".
+            FirstPunch: NextOrNone(IndexOf(header, RecordCountColumn)));
 
         if (layout.Chip < 0)
-            throw new ReadoutFormatException($"The file has no '{ChipColumn}' column; it is not a SPORTident readout.");
-
-        // In header mode the first line is the header; in positional mode it is already a data row.
-        var firstDataLine = hasHeader ? 1 : 0;
+            throw new ReadoutFormatException(
+                $"The file has no '{ChipColumn}' header column; it is not a SPORTident card-readout export. " +
+                "Select the 'Config+ (card readout)' list format in the SPORTident reader software.");
 
         var records = new List<ChipReadRecord>();
-        for (var i = firstDataLine; i < lines.Length; i++)
+        // The first line is the header, so data starts on the second line.
+        for (var i = 1; i < lines.Length; i++)
         {
             var line = lines[i].TrimEnd('\r');
             if (line.Length == 0)
@@ -131,95 +107,114 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
             if (chip.Length == 0)
                 continue;
 
-            var readOn = layout.ReadOn >= 0 ? ParseReadOn(Field(fields, layout.ReadOn)) : null;
-            records.Add(new ChipReadRecord
-            {
-                ChipNumber = chip,
-                StartTime = ReadStartTime(fields, layout, readOn),
-                FinishTime = CombineDateAndTime(readOn, Field(fields, layout.Finish)),
-                Punches = ReadPunches(fields, layout.FirstPunch, readOn)
-            });
+            records.Add(BuildRecord(fields, layout, chip));
         }
 
         return new ChipReadData { SourceFormat = SourceFormat, Records = records };
     }
 
-    // The resolved column positions for a file, whichever mode it is in. -1 means "absent".
-    // ClearCode/StartCode are the station-box code fields used to tell a genuine start punch from a
-    // device that merely copied the clear-box punch into the start slot (positional mode only).
+    // Builds one chip's record, dating every time-of-day by its own day-of-week so a course that
+    // crosses midnight is timed correctly (see <see cref="ReadoutTimeResolver"/>). The "Read on"
+    // date/time is the anchor: it's the moment the chip was read at the finish, so every punch happened
+    // on that day or a day before it. Order matters — the finish anchors the punches, and the earliest of
+    // {first punch, finish} anchors the start — so a station whose DOW is blank still lands right.
+    private static ChipReadRecord BuildRecord(IReadOnlyList<string> fields, ColumnLayout layout, string chip)
+    {
+        var readOn = layout.ReadOn >= 0 ? ParseReadOn(Field(fields, layout.ReadOn)) : null;
+
+        var finish = ReadoutTimeResolver.Resolve(
+            readOn,
+            ReadoutTimeResolver.ParseTimeOfDay(Field(fields, layout.Finish)),
+            ParseDayOfWeek(Field(fields, layout.FinishDow)),
+            laterAnchor: null);
+        // Punches carry their own DOW; the finish is the fallback anchor so a punch with a blank DOW is
+        // still ordered monotonically before the finish.
+        var punches = ReadPunches(fields, layout.FirstPunch, readOn, finish);
+
+        // The start precedes the whole course, so anchor its fallback to the earliest dated event —
+        // the first punch, or the finish when there are no punches — and step back if it reads later.
+        var startAnchor = punches.FirstOrDefault(p => p.Time is not null)?.Time ?? finish;
+        var start = ReadoutTimeResolver.Resolve(
+            readOn,
+            ReadoutTimeResolver.ParseTimeOfDay(Field(fields, layout.Start)),
+            ParseDayOfWeek(Field(fields, layout.StartDow)),
+            startAnchor);
+
+        return new ChipReadRecord
+        {
+            ChipNumber = chip,
+            StartTime = start,
+            FinishTime = finish,
+            Punches = punches
+        };
+    }
+
+    // The resolved column positions for a file. -1 means "absent". StartDow/FinishDow are the
+    // day-of-week columns that sit immediately before the matching time column.
     private readonly record struct ColumnLayout(
-        int Chip, int ReadOn, int Start, int ClearCode, int StartCode, int Finish, int FirstPunch);
+        int Chip, int ReadOn, int Start, int StartDow, int Finish, int FinishDow, int FirstPunch);
 
     // The column after a found one, or -1 when the source column was absent.
     private static int NextOrNone(int index) => index >= 0 ? index + 1 : -1;
 
-    // The start time, but only when the chip carries a genuine start punch. Some SI readers fill the
-    // start station slot with a copy of the clear-box punch when no real start station was used; in that
-    // case the start triplet's station code equals the clear triplet's code, and we report no start
-    // (null) so the existing value is never overwritten with a clear time.
-    private static DateTimeOffset? ReadStartTime(IReadOnlyList<string> fields, ColumnLayout layout, DateTimeOffset? readOn)
-    {
-        if (layout.StartCode >= 0 && layout.ClearCode >= 0)
-        {
-            var startCode = Field(fields, layout.StartCode).Trim();
-            var clearCode = Field(fields, layout.ClearCode).Trim();
-            // No start code at all, or merely the clear punch copied over → no genuine start.
-            if (startCode.Length == 0 ||
-                string.Equals(startCode, clearCode, StringComparison.OrdinalIgnoreCase))
-                return null;
-        }
-
-        return CombineDateAndTime(readOn, Field(fields, layout.Start));
-    }
-
     // --- Punches -------------------------------------------------------------
 
     // Reads the trailing punch triplets — "<code> ; <DOW> ; <time>", repeated — that start at
-    // <paramref name="firstPunchIndex"/> and run to the end of the row. A triplet with a blank code
-    // ends the list (trailing empty fields from the row's final ';'). The middle DOW field is ignored;
-    // the time is combined with the row's "Read on" date into a real timestamp.
+    // <paramref name="firstPunchIndex"/> and run to the end of the row. A blank triplet (all three
+    // fields empty) is a MISSED punch — a reader-station glitch drops one control's record while later
+    // ones survive — so it is skipped, not treated as the end of the list; scanning simply runs to the
+    // last field (the trailing empties from the row's final ';' contribute nothing). Each punch's own
+    // DOW dates its time (a control taken after midnight gets the right calendar day); the finish is the
+    // monotonic fallback anchor for a punch whose DOW is missing/unreadable.
     private static IReadOnlyList<ChipPunch> ReadPunches(
         IReadOnlyList<string> fields,
         int firstPunchIndex,
-        DateTimeOffset? date)
+        DateTimeOffset? readOn,
+        DateTimeOffset? finish)
     {
         if (firstPunchIndex < 0)
             return [];
 
-        var punches = new List<ChipPunch>();
+        // The fallback anchor walks backwards from the finish: a punch with no DOW is assumed to be no
+        // later than the next (already-dated) punch after it, so if its time-of-day is greater we step a
+        // day back. We collect first, then date from the end.
+        var raw = new List<(string Code, TimeSpan? Time, DayOfWeek? Dow)>();
         for (var i = firstPunchIndex; i < fields.Count; i += 3)
         {
-            var code = fields[i].Trim();
-            if (code.Length == 0)
-                break;
-            // The time is the third field of the triplet; tolerate a truncated final triplet.
-            punches.Add(new ChipPunch(code, CombineDateAndTime(date, Field(fields, i + 2))));
+            var code = Field(fields, i).Trim();
+            var time = ReadoutTimeResolver.ParseTimeOfDay(Field(fields, i + 2));
+            // A wholly-empty triplet is either a missed punch (skip, keep scanning) or the row's trailing
+            // blanks (also nothing to add) — both handled by simply not recording it.
+            if (code.Length == 0 && time is null)
+                continue;
+            // Triplet is <code>;<DOW>;<time>; tolerate a truncated final triplet.
+            raw.Add((code, time, ParseDayOfWeek(Field(fields, i + 1))));
         }
+
+        var stamps = ReadoutTimeResolver.ResolvePunches(
+            readOn, raw.ConvertAll(r => (r.Time, r.Dow)), finish);
+
+        var punches = new ChipPunch[raw.Count];
+        for (var i = 0; i < raw.Count; i++)
+            punches[i] = new ChipPunch(raw[i].Code, stamps[i]);
         return punches;
     }
 
     // --- Time parsing --------------------------------------------------------
 
-    // Readout times are a day-of-week + time-of-day (e.g. "Sa; 11:21:23.117"); after SplitLine the
-    // value is just the time part. We combine it with the row's "Read on" date when available so a
-    // bare time of day becomes a real timestamp; otherwise we return null (the date is unknown).
-    private static DateTimeOffset? CombineDateAndTime(DateTimeOffset? date, string? timeValue)
+    // Parses SPORTident's two-letter English weekday code (Mo/Tu/We/Th/Fr/Sa/Su). Anything else → null,
+    // which routes the timestamp through the monotonic fallback instead.
+    private static DayOfWeek? ParseDayOfWeek(string? value) => value?.Trim().ToLowerInvariant() switch
     {
-        var time = ParseTimeOfDay(timeValue);
-        if (time is null)
-            return null;
-        if (date is null)
-            return null;
-        return date.Value.Date + time.Value;
-    }
-
-    private static TimeSpan? ParseTimeOfDay(string? value)
-    {
-        var text = value?.Trim();
-        if (string.IsNullOrEmpty(text))
-            return null;
-        return TimeSpan.TryParse(text, CultureInfo.InvariantCulture, out var t) ? t : null;
-    }
+        "mo" => DayOfWeek.Monday,
+        "tu" => DayOfWeek.Tuesday,
+        "we" => DayOfWeek.Wednesday,
+        "th" => DayOfWeek.Thursday,
+        "fr" => DayOfWeek.Friday,
+        "sa" => DayOfWeek.Saturday,
+        "su" => DayOfWeek.Sunday,
+        _ => null
+    };
 
     private static DateTimeOffset? ParseReadOn(string? value)
     {

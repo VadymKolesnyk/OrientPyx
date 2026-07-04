@@ -101,6 +101,19 @@
                                       OffContent="{Binding Localization[FinishRead.AutoRead.AutoPrint]}" />
                     </StackPanel>
                 </Grid>
+
+                <!-- Warning banner: missing file / wrong list format. Shown while the panel is
+                     expanded and the file couldn't be read as a Config+ card-readout export. -->
+                <Border IsVisible="{Binding HasAutoReadError}"
+                        Background="{DynamicResource DangerSurface}" CornerRadius="8" Padding="12,8">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <PathIcon Data="M12,2 a10,10 0 1 0 0,20 a10,10 0 0 0 0,-20 z M12,7 v6 M12,16 v0.5"
+                                  Width="16" Height="16" Foreground="{DynamicResource DangerBrush}"
+                                  VerticalAlignment="Top" Margin="0,2,0,0" />
+                        <TextBlock Text="{Binding AutoReadError}" Foreground="{DynamicResource DangerBrush}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </Border>
 

@@ -1,3 +1,4 @@
+using OrientDesk.BusinessLogic.Enums;
 using OrientDesk.BusinessLogic.Interfaces;
 using OrientDesk.BusinessLogic.Models;
 
@@ -131,4 +132,14 @@ public sealed class AppSettingsService : IAppSettingsService
         ArgumentNullException.ThrowIfNull(settings);
         return _appStore.SaveOnlineApiSettingsAsync(settings, cancellationToken);
     }
+
+    public async Task<ReadoutType> GetReadoutTypeAsync(CancellationToken cancellationToken = default)
+    {
+        var stored = await _appStore.GetReadoutTypeAsync(cancellationToken);
+        // An out-of-range stored value (future format we don't know) degrades to the safe default.
+        return stored is { } v && Enum.IsDefined(typeof(ReadoutType), v) ? (ReadoutType)v : ReadoutType.SportIdent;
+    }
+
+    public Task SaveReadoutTypeAsync(ReadoutType readoutType, CancellationToken cancellationToken = default)
+        => _appStore.SaveReadoutTypeAsync((int)readoutType, cancellationToken);
 }

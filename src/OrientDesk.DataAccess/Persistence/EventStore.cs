@@ -595,6 +595,19 @@ public sealed class EventStore : IEventStore
         if (existing is null)
             return;
 
+        // ParticipantId is a foreign key by convention only (no navigation / DB cascade), so removing
+        // the participant does NOT clean up its per-day links or discount links — they would be left
+        // orphaned. Orphaned ParticipantDay rows are invisible to the roster/day-grid (which join to an
+        // existing participant) but the dashboard counts raw links, so they inflate «Учасників на дні»
+        // and show up as phantom «На дистанції». Delete them here so the roster delete is a full cascade,
+        // matching the day-grid path (RemoveParticipantFromDayAsync) that removes the link before the person.
+        await db.ParticipantDays
+            .Where(p => p.ParticipantId == participantId)
+            .ExecuteDeleteAsync(cancellationToken);
+        await db.ParticipantDiscounts
+            .Where(p => p.ParticipantId == participantId)
+            .ExecuteDeleteAsync(cancellationToken);
+
         db.Participants.Remove(existing);
         await db.SaveChangesAsync(cancellationToken);
     }
