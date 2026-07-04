@@ -33,6 +33,15 @@ artifacts/
 *.log
 *.tmp
 
+# Local scratch / captured output (not part of the project)
+task.md
+out.html
+.e.txt
+.o.txt
+.runout.txt
+.runerr.txt
+*.local.*
+
 # OS noise
 .DS_Store
 Thumbs.db
