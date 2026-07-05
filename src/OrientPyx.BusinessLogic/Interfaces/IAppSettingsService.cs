@@ -51,4 +51,9 @@ public interface IAppSettingsService
     Task<ReadoutType> GetReadoutTypeAsync(CancellationToken cancellationToken = default);
 
     Task SaveReadoutTypeAsync(ReadoutType readoutType, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the stored UI language culture name, or blank when never set (caller applies the default).</summary>
+    Task<string> GetLanguageAsync(CancellationToken cancellationToken = default);
+
+    Task SaveLanguageAsync(string language, CancellationToken cancellationToken = default);
 }

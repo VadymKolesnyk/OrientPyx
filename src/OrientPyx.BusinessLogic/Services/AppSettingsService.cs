@@ -142,4 +142,10 @@ public sealed class AppSettingsService : IAppSettingsService
 
     public Task SaveReadoutTypeAsync(ReadoutType readoutType, CancellationToken cancellationToken = default)
         => _appStore.SaveReadoutTypeAsync((int)readoutType, cancellationToken);
+
+    public async Task<string> GetLanguageAsync(CancellationToken cancellationToken = default)
+        => await _appStore.GetLanguageAsync(cancellationToken) ?? string.Empty;
+
+    public Task SaveLanguageAsync(string language, CancellationToken cancellationToken = default)
+        => _appStore.SaveLanguageAsync(language, cancellationToken);
 }

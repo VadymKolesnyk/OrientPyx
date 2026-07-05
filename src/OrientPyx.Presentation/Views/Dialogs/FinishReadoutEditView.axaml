@@ -5,6 +5,7 @@
              xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
              xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
              xmlns:controls="using:OrientPyx.Presentation.Controls"
+             xmlns:behaviors="using:OrientPyx.Presentation.Behaviors"
              mc:Ignorable="d" d:DesignWidth="480" d:DesignHeight="560"
              x:Class="OrientPyx.Presentation.Views.Dialogs.FinishReadoutEditView"
              x:DataType="dialogs:FinishReadoutEditViewModel">
@@ -66,11 +67,13 @@
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
                         <StackPanel Grid.Column="0" Spacing="6">
                             <TextBlock Text="{Binding StartLabel}" Classes="label" />
-                            <TextBox Text="{Binding StartTimeText, Mode=TwoWay}" PlaceholderText="—" />
+                            <TextBox Text="{Binding StartTimeText, Mode=TwoWay}"
+                                     behaviors:NumericInput.Time="True" PlaceholderText="—" />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Spacing="6">
                             <TextBlock Text="{Binding FinishLabel}" Classes="label" />
-                            <TextBox Text="{Binding FinishTimeText, Mode=TwoWay}" PlaceholderText="—" />
+                            <TextBox Text="{Binding FinishTimeText, Mode=TwoWay}"
+                                     behaviors:NumericInput.Time="True" PlaceholderText="—" />
                         </StackPanel>
                     </Grid>
 
@@ -105,7 +108,7 @@
                                         <TextBox Grid.Column="0" Text="{Binding Code, Mode=TwoWay}"
                                                  PlaceholderText="{Binding $parent[ItemsControl].((dialogs:FinishReadoutEditViewModel)DataContext).Localization[FinishRead.Splits.Col.Code]}" />
                                         <TextBox Grid.Column="1" Text="{Binding TimeText, Mode=TwoWay}"
-                                                 PlaceholderText="—" />
+                                                 behaviors:NumericInput.Time="True" PlaceholderText="—" />
                                         <Button Grid.Column="2" Classes="ghost small danger"
                                                 VerticalAlignment="Center"
                                                 Command="{Binding $parent[ItemsControl].((dialogs:FinishReadoutEditViewModel)DataContext).RemovePunchCommand}"

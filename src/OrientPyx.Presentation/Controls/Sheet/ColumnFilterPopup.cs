@@ -149,6 +149,18 @@ internal sealed class ColumnFilterPopup
     {
         _valuesSearch = new TextBox { PlaceholderText = _loc.Get("Sheet.Filter.Search") };
         _valuesSearch.GetObservable(TextBox.TextProperty).Subscribe(new AnonymousObserver(FilterValueList));
+        // Escape clears the search text (or, when already empty, closes the flyout) — and must be marked
+        // handled either way, else the TextBox types it as the U+241B (␛) control glyph.
+        _valuesSearch.KeyDown += (_, e) =>
+        {
+            if (e.Key != Avalonia.Input.Key.Escape)
+                return;
+            e.Handled = true;
+            if (string.IsNullOrEmpty(_valuesSearch.Text))
+                _flyout.Hide();
+            else
+                _valuesSearch.Text = string.Empty;
+        };
 
         var selectAll = new Button { Classes = { "ghost", "small" }, Content = _loc.Get("Sheet.Filter.SelectAll") };
         var clearAll = new Button { Classes = { "ghost", "small" }, Content = _loc.Get("Sheet.Filter.ClearValues") };
@@ -214,6 +226,14 @@ internal sealed class ColumnFilterPopup
         {
             PlaceholderText = _loc.Get("Sheet.Filter.Value"),
             Text = _draft.Text
+        };
+        // Escape closes the flyout — swallow it so the box never types the U+241B (␛) control glyph.
+        _conditionText.KeyDown += (_, e) =>
+        {
+            if (e.Key != Avalonia.Input.Key.Escape)
+                return;
+            e.Handled = true;
+            _flyout.Hide();
         };
 
         // The text box is irrelevant for the empty/not-empty conditions; hide it for them.

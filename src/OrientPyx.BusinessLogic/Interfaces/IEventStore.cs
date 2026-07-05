@@ -13,6 +13,14 @@ public interface IEventStore
     /// <summary>Creates the event database and schema for a folder if it does not exist.</summary>
     Task EnsureCreatedAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Merges the write-ahead log back into the main database file so the <c>event.db</c> on disk is
+    /// self-contained (no pending data left only in the <c>-wal</c> sidecar). Used before exporting a
+    /// competition so the archived database includes the latest committed changes even if the live
+    /// connection is still open.
+    /// </summary>
+    Task CheckpointAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
     /// <summary>Reads competition metadata, or null if none is stored.</summary>
     Task<CompetitionInfo?> GetCompetitionInfoAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
@@ -272,6 +280,7 @@ public interface IEventStore
         UofParticipantData data,
         bool clearFirst,
         int daysCreated,
+        ParticipantImportScope scope,
         IProgress<ImportProgress>? progress,
         CancellationToken cancellationToken = default);
 

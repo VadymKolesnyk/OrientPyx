@@ -119,6 +119,25 @@ public sealed class AppStore : IAppStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<string?> GetLanguageAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        return row?.Language;
+    }
+
+    public async Task SaveLanguageAsync(string language, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+            db.Settings.Add(new AppSettingsRow { Id = 1, Language = language });
+        else
+            row.Language = language;
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<string?> GetResultProtocolJsonAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);

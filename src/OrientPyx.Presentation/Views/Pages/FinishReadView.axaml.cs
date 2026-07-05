@@ -8,6 +8,7 @@ using Avalonia.Data.Converters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using OrientPyx.Presentation.Behaviors;
 using OrientPyx.Presentation.Controls;
@@ -214,6 +215,11 @@ public partial class FinishReadView : UserControl
             .Text("FinishRead.Col.Number", nameof(FinishReadRowViewModel.ParticipantNumber), minWidth: 80)
             .Text("FinishRead.Col.FullName", nameof(FinishReadRowViewModel.FullName), minWidth: 220)
             .Text("FinishRead.Col.Group", nameof(FinishReadRowViewModel.GroupName), minWidth: 140)
+            // Place: 1-based rank within the group (blank when none), with a gold/silver/bronze badge on the podium.
+            .Custom("FinishRead.Col.Place", BuildPlaceCell, minWidth: 70,
+                    sortPath: nameof(FinishReadRowViewModel.PlaceText))
+            // Gap: loss to the group leader («Відставання»), blank for the leader / unplaced rows.
+            .Text("FinishRead.Col.Gap", nameof(FinishReadRowViewModel.GapText), minWidth: 100)
             // Status: short code (OK/MP/OVT/DNF) with the MP detail as a tooltip.
             .Custom("FinishRead.Col.Status", BuildStatusCell, minWidth: 80,
                     sortPath: nameof(FinishReadRowViewModel.StatusText))
@@ -292,6 +298,59 @@ public partial class FinishReadView : UserControl
         };
         ChipHighlight.SetLabelRegistry(block, _vm!.RentalChips);
         return block;
+    }
+
+    // Gold/silver/bronze for places 1/2/3; nothing for any other place (and for none). Slightly muted
+    // tones so the dark text stays legible on the badge in both light and dark themes.
+    private static readonly ISolidColorBrush GoldBrush = new SolidColorBrush(Color.FromRgb(0xF2, 0xC4, 0x3D));
+    private static readonly ISolidColorBrush SilverBrush = new SolidColorBrush(Color.FromRgb(0xC7, 0xCD, 0xD4));
+    private static readonly ISolidColorBrush BronzeBrush = new SolidColorBrush(Color.FromRgb(0xD8, 0x9A, 0x5B));
+
+    // The place cell: the rank number, wrapped in a rounded medal badge coloured for a podium place
+    // (1/2/3 → gold/silver/bronze) and left as a plain number otherwise. Recomputed on every rebuild,
+    // which the VM triggers after each read-out, so a changed place re-tints automatically.
+    private static Control BuildPlaceCell()
+    {
+        // Podium places (1/2/3) sit on a coloured badge, so force dark text for contrast; every other place
+        // keeps the theme's default foreground. Binding a null Foreground renders the text invisible rather
+        // than falling back, so non-podium rows must use an explicit brush — not null.
+        var defaultForeground = Application.Current!.Resources.TryGetResource(
+            "TextPrimary", null, out var fg) && fg is IBrush b ? b : Brushes.Black;
+        var text = new TextBlock
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            FontWeight = Avalonia.Media.FontWeight.SemiBold,
+            [!TextBlock.TextProperty] = new Binding(nameof(FinishReadRowViewModel.PlaceText)),
+            [!TextBlock.ForegroundProperty] = new Binding(nameof(FinishReadRowViewModel.PlaceMedal))
+            {
+                Converter = new FuncValueConverter<int, IBrush?>(m => m is 1 or 2 or 3
+                    ? Brushes.Black
+                    : defaultForeground),
+            },
+        };
+
+        var badge = new Border
+        {
+            CornerRadius = new CornerRadius(9),
+            Padding = new Thickness(9, 1),
+            MinWidth = 26,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = text,
+            [!Border.BackgroundProperty] = new Binding(nameof(FinishReadRowViewModel.PlaceMedal))
+            {
+                Converter = new FuncValueConverter<int, IBrush?>(m => m switch
+                {
+                    1 => GoldBrush,
+                    2 => SilverBrush,
+                    3 => BronzeBrush,
+                    _ => null,
+                }),
+            },
+        };
+
+        return badge;
     }
 
     private static Control BuildStatusCell()

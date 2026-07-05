@@ -93,7 +93,9 @@
                         <Border Classes="card" Padding="0" ClipToBounds="True">
                             <controls:SheetTable Name="TableSheet"
                                                  ItemsSource="{Binding TableRows}"
-                                                 Localization="{Binding Localization}" />
+                                                 Localization="{Binding Localization}"
+                                                 LayoutStore="{Binding LayoutStore}"
+                                                 LayoutKey="points.table" />
                         </Border>
                     </DockPanel>
 

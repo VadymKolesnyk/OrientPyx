@@ -44,9 +44,11 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         IFileReadoutPoller poller,
         IBusyService busy,
         IDialogService dialogs,
-        IBackgroundActivityService activities)
+        IBackgroundActivityService activities,
+        ITableLayoutStore layoutStore)
         : base(localization)
     {
+        LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
         _readoutParsers = readoutParsers;
@@ -63,6 +65,9 @@ public sealed partial class ChipsViewModel : PageViewModelBase
             _ = LoadAsync();
         });
     }
+
+    /// <summary>Per-competition table-view store; persists this page's table column order/width/visibility.</summary>
+    public ITableLayoutStore LayoutStore { get; }
 
     public override string NavKey => "Nav.Chips";
     public override string TitleKey => "Page.Chips.Title";

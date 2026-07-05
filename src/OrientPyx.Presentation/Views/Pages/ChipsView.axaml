@@ -24,21 +24,20 @@
                 <Button Command="{Binding ClearChipsCommand}" Classes="ghost danger"
                         ToolTip.Tip="{Binding Localization[Chips.Clear.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <PathIcon Data="M6,7 h12 M9,7 v-2 h6 v2 M8,7 l1,13 h6 l1,-13"
-                                  Width="14" Height="14" />
+                        <controls:Icon Kind="Trash" Size="15" />
                         <TextBlock Text="{Binding Localization[Chips.Clear]}" />
                     </StackPanel>
                 </Button>
                 <Button Command="{Binding BulkAddCommand}" Classes="ghost"
                         ToolTip.Tip="{Binding Localization[Chips.BulkAdd.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <PathIcon Data="M11,5 h2 v6 h6 v2 h-6 v6 h-2 v-6 h-6 v-2 h6 z" Width="14" Height="14" />
+                        <controls:Icon Kind="Plus" Size="15" />
                         <TextBlock Text="{Binding Localization[Chips.BulkAdd]}" />
                     </StackPanel>
                 </Button>
                 <Button Command="{Binding AddChipCommand}" Classes="accent">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <PathIcon Data="M11,5 h2 v6 h6 v2 h-6 v6 h-2 v-6 h-6 v-2 h6 z" Width="14" Height="14" Foreground="White" />
+                        <controls:Icon Kind="Plus" Size="15" Foreground="White" />
                         <TextBlock Text="{Binding Localization[Chips.Add]}" />
                     </StackPanel>
                 </Button>
@@ -55,9 +54,9 @@
                         HorizontalContentAlignment="Left" Background="Transparent">
                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                         <!-- Chevron: points right when collapsed, down when expanded. -->
-                        <PathIcon Data="M8,5 l8,7 l-8,7" Width="12" Height="12"
+                        <controls:Icon Kind="ChevronRight" Size="13"
                                   IsVisible="{Binding !IsAutoReadExpanded}" />
-                        <PathIcon Data="M5,8 l7,8 l7,-8" Width="12" Height="12"
+                        <controls:Icon Kind="ChevronDown" Size="13"
                                   IsVisible="{Binding IsAutoReadExpanded}" />
                         <TextBlock Text="{Binding Localization[Chips.AutoRead]}" Classes="h2"
                                    VerticalAlignment="Center" />
@@ -118,6 +117,8 @@
                                  ItemsSource="{Binding Chips}"
                                  Localization="{Binding Localization}"
                                  SelectedItem="{Binding SelectedChip, Mode=TwoWay}"
+                                 LayoutStore="{Binding LayoutStore}"
+                                 LayoutKey="chips"
                                  DeleteRequested="OnDeleteRequested" />
         </Border>
 

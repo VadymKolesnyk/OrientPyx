@@ -77,8 +77,9 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
     public override string TitleKey => "Page.Protocols.Title";
     public override string TextKey => "Page.Protocols.Text";
 
+    // Lucide "file-text".
     public override string IconData =>
-        "M6,2 h8 l4,4 v14 a1,1 0 0 1 -1,1 h-11 a1,1 0 0 1 -1,-1 v-17 a1,1 0 0 1 1,-1 z M14,2 v4 h4 M8,12 h8 M8,16 h8 M8,8 h3";
+        "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z M14 2v4a2 2 0 0 0 2 2h4 M16 13H8 M16 17H8 M10 9H8";
 
     // ── Day picker (does NOT touch the session) ──────────────────────────────────────────────────────
 

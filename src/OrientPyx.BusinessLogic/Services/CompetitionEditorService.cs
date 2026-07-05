@@ -128,21 +128,37 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var results = await ComputeDayResultsAsync(folder, day, cancellationToken);
 
         int finishedOk = 0, finishedProblem = 0, onCourse = 0;
+        // Per-status finisher tally, kept in enum order so the dashboard badges read OK, MP, OVT, DNF, …
+        var byStatus = new SortedDictionary<FinishStatus, int>();
+        // The latest assigned start among runners still on course — the dashboard shows how long the last
+        // person who is still out has been running.
+        TimeSpan? lastOnCourseStart = null;
         foreach (var link in dayLinks)
         {
             var r = results.TryGetValue(link.Id, out var res) ? res : ParticipantDayResult.Empty;
-            if (r.Status == FinishStatus.Ok)
-                finishedOk++;
-            else if (r.StatusIsProblem)
-                finishedProblem++;
+            if (r.Status != FinishStatus.None)
+            {
+                // A finisher — carries a status (OK or a problem code). Tally by status for the breakdown.
+                byStatus[r.Status] = byStatus.GetValueOrDefault(r.Status) + 1;
+                if (r.Status == FinishStatus.Ok)
+                    finishedOk++;
+                else
+                    finishedProblem++;
+            }
             else if (r.ActualStart is null && r.FinishTime is null)
             {
                 // Still on course: no actual (chip) start, no finish and no (blank) status — the exact same
                 // three-field test the "На дистанції" participants filter uses, so the count matches the
                 // filtered list. (A read that produced no start/finish punch and no status counts here too.)
                 onCourse++;
+                if (link.StartTime is { } st && (lastOnCourseStart is null || st > lastOnCourseStart))
+                    lastOnCourseStart = st;
             }
         }
+
+        var finishedByStatus = byStatus
+            .Select(kv => new DashboardStatusCount(kv.Key, kv.Value))
+            .ToList();
 
         var dateRange = ev.DateRange;
         if (string.IsNullOrEmpty(dateRange))
@@ -183,7 +199,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             ReadoutsToday = readouts.Count,
             FinishedOk = finishedOk,
             FinishedWithProblem = finishedProblem,
+            FinishedTotal = finishedOk + finishedProblem,
+            FinishedByStatus = finishedByStatus,
             OnCourse = onCourse,
+            LastOnCourseStart = lastOnCourseStart,
         };
     }
 
@@ -3007,6 +3026,23 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 holderByChip.TryAdd(key, link);
         }
 
+        // Computed per-group placement (keyed by link id) so each known row can show the runner's place in
+        // their group; the same ranking the participant tables use. A place is only assigned to an OK,
+        // in-competition result — null otherwise.
+        var placeByLink = await ComputeDayResultsAsync(folder, _session.CurrentDay, cancellationToken);
+
+        // Each group's leader time (the place-1 OK result), so a placed runner's «Відставання» is their
+        // result time minus it. Only time-based results carry a ResultTime; a scoring day leaves it null,
+        // so no gap is shown there (the same loss-to-leader convention the protocols use).
+        var groupByLink = links.ToDictionary(l => l.Id, l => l.GroupId);
+        var leaderTimeByGroup = new Dictionary<Guid, TimeSpan>();
+        foreach (var (linkId, res) in placeByLink)
+        {
+            if (res.Place == 1 && res.ResultTime is { } lt
+                && groupByLink.TryGetValue(linkId, out var g) && g is { } gid)
+                leaderTimeByGroup[gid] = lt;
+        }
+
         var rows = new List<FinishReadoutRow>(readouts.Count);
         foreach (var r in readouts)
         {
@@ -3027,8 +3063,16 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 int? score = _strategies.For(discipline).UsesControlPointPoints
                     ? ScoreFor(r, gs, startFinishCodes, disabledCodes, pointsByCode, discipline, resolvedStart)
                     : null;
+                var result = placeByLink.TryGetValue(link.Id, out var pr) ? pr : null;
+                var place = result?.Place;
+                // «Відставання»: loss to the group leader, for a placed OK result whose time exceeds the
+                // leader's (the leader themselves and non-placed rows show none).
+                TimeSpan? gap = place is not null && result?.ResultTime is { } rt
+                    && link.GroupId is { } ggid && leaderTimeByGroup.TryGetValue(ggid, out var lead) && rt > lead
+                    ? rt - lead
+                    : null;
                 rows.Add(new FinishReadoutRow(r.Id, r.Order, r.ChipNumber, r.StartTime, r.FinishTime,
-                    IsKnown: true, p.Number, p.FullName, group, status, detail, resolvedStart, elapsed, score));
+                    IsKnown: true, p.Number, p.FullName, group, status, detail, resolvedStart, elapsed, score, place, gap));
             }
             else
             {
@@ -3850,31 +3894,37 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     public async Task<ParticipantImportResult> ImportParticipantsAsync(
         UofParticipantData data,
         bool clearFirst,
+        ParticipantImportScope scope,
         IProgress<ImportProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(scope);
         if (_session.CurrentEvent is null)
             return default;
 
-        // Ensure every day referenced by a ProgEvent exists; create the missing ones (numbered up to
-        // the highest reference) here, because AddDayAsync also makes each day's files folder (I/O).
-        // The actual roster write then happens in one transaction inside the store (fast for big files).
-        var maxDay = data.Participants
-            .SelectMany(p => p.DayNumbers)
-            .DefaultIfEmpty(0)
-            .Max();
-        var days = await _eventStore.GetDaysAsync(FolderPath, cancellationToken);
+        // Current-day-only import targets a single existing day — never create days from the file's info.
         var daysCreated = 0;
-        var highestExisting = days.Count == 0 ? 0 : days.Max(d => d.Number);
-        for (var n = highestExisting + 1; n <= maxDay; n++)
+        if (scope.Mode == ParticipantImportMode.AllDays)
         {
-            await AddDayAsync(cancellationToken);
-            daysCreated++;
+            // Ensure every day referenced by a ProgEvent exists; create the missing ones (numbered up to
+            // the highest reference) here, because AddDayAsync also makes each day's files folder (I/O).
+            // The actual roster write then happens in one transaction inside the store (fast for big files).
+            var maxDay = data.Participants
+                .SelectMany(p => p.DayNumbers)
+                .DefaultIfEmpty(0)
+                .Max();
+            var days = await _eventStore.GetDaysAsync(FolderPath, cancellationToken);
+            var highestExisting = days.Count == 0 ? 0 : days.Max(d => d.Number);
+            for (var n = highestExisting + 1; n <= maxDay; n++)
+            {
+                await AddDayAsync(cancellationToken);
+                daysCreated++;
+            }
         }
 
         return await _eventStore.ImportParticipantsBatchAsync(
-            FolderPath, data, clearFirst, daysCreated, progress, cancellationToken);
+            FolderPath, data, clearFirst, daysCreated, scope, progress, cancellationToken);
     }
 
     // ── Online live-results publishing ───────────────────────────────────────────────────────────────

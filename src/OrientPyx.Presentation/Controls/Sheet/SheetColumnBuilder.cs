@@ -52,7 +52,7 @@ public sealed class SheetColumnBuilder
         string displayPath,
         string? editPath = null,
         double? width = null,
-        double minWidth = 90,
+        double minWidth = SheetColumn.SortHandleMinWidth,
         string? sortPath = null,
         NumericMask mask = NumericMask.None,
         string? enabledPath = null,
@@ -96,7 +96,7 @@ public sealed class SheetColumnBuilder
         string selectedPath,
         string labelPath,
         double? width = null,
-        double minWidth = 120,
+        double minWidth = SheetColumn.SortHandleMinWidth,
         string? sortPath = null)
     {
         var column = NewColumn(headerKey, width, minWidth, sortPath ?? string.Empty);
@@ -124,7 +124,8 @@ public sealed class SheetColumnBuilder
                 [!SelectingItemsControl.SelectedItemProperty] =
                     new Binding(selectedPath) { Mode = BindingMode.TwoWay }
             },
-            $"{selectedPath}.{labelPath}");
+            $"{selectedPath}.{labelPath}",
+            selectedPath: selectedPath);
         return Add(column);
     }
 
@@ -137,7 +138,7 @@ public sealed class SheetColumnBuilder
         string headerKey,
         string path,
         double? width = 160,
-        double minWidth = 140,
+        double minWidth = SheetColumn.SortHandleMinWidth,
         string? placeholderKey = "Common.DatePlaceholder")
     {
         var column = NewColumn(headerKey, width, minWidth, path);
@@ -152,11 +153,15 @@ public sealed class SheetColumnBuilder
         string headerKey,
         Func<Control> cellBuilder,
         double? width = null,
-        double minWidth = 90,
+        double minWidth = SheetColumn.SortHandleMinWidth,
         string? sortPath = null)
     {
         var column = NewColumn(headerKey, width, minWidth, sortPath ?? string.Empty);
         column.CellBuilder = cellBuilder;
+        // Custom columns share Kind=Custom and (usually) have no sortPath, so the derived key would
+        // collide across all of them on a page. The headerKey is a stable, language-independent id, so
+        // fold it into the key — this keeps per-column width/hidden persistence distinct (LayoutKey pages).
+        column.Key = $"Custom:{headerKey}:{sortPath ?? string.Empty}";
         return Add(column);
     }
 
@@ -170,7 +175,7 @@ public sealed class SheetColumnBuilder
         string headerKey,
         string path,
         double? width = 90,
-        double minWidth = 70)
+        double minWidth = SheetColumn.SortHandleMinWidth)
     {
         var column = NewColumn(headerKey, width, minWidth, path);
         column.CellBuilder = () => new CheckBox
@@ -212,7 +217,10 @@ public sealed class SheetColumnBuilder
             // the header so every data column is hideable and filterable (the roster builder sets its own).
             PickerLabel = header,
             SortPath = sortPath,
-            MinWidth = minWidth,
+            // Every column may be squeezed down to the sort-handle floor regardless of any larger
+            // per-column minWidth hint — so the sort button stays reachable on every column. The
+            // passed minWidth only raises the floor when it is itself below the shared minimum.
+            MinWidth = Math.Min(minWidth, SheetColumn.SortHandleMinWidth),
         };
         if (width is { } w)
         {

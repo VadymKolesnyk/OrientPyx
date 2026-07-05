@@ -21,10 +21,16 @@ public sealed partial class CsvMappingViewModel : ObservableObject
 
     /// <param name="header">The CSV column captions, in file order.</param>
     /// <param name="rowCount">How many data rows the file holds (shown in the modal's message).</param>
-    public CsvMappingViewModel(ILocalizationService localization, IReadOnlyList<string> header, int rowCount)
+    /// <param name="scope">Optional day-scope + link-field chooser (null hides that section).</param>
+    public CsvMappingViewModel(
+        ILocalizationService localization,
+        IReadOnlyList<string> header,
+        int rowCount,
+        ImportScopeChoice? scope = null)
     {
         Localization = localization;
         RowCount = rowCount;
+        Scope = scope;
 
         // The shared column choices: a "(skip)" sentinel at index 0, then one per file column.
         var columns = new List<CsvColumnOption> { CsvColumnOption.Skip(Localization) };
@@ -44,10 +50,19 @@ public sealed partial class CsvMappingViewModel : ObservableObject
             OnPropertyChanged(nameof(ClearFirstLabel));
             foreach (var f in Fields)
                 f.Refresh();
+            Scope?.Refresh(Localization);
         };
+
+        Scope?.Refresh(Localization);
     }
 
     public ILocalizationService Localization { get; }
+
+    /// <summary>Optional day-scope + link-field chooser (participant imports); null hides the section.</summary>
+    public ImportScopeChoice? Scope { get; }
+
+    /// <summary>Whether to render the scope section (bound in XAML).</summary>
+    public bool HasScope => Scope is not null;
 
     public string Title => Localization.Get("CsvImport.Title");
 
@@ -79,7 +94,7 @@ public sealed partial class CsvMappingViewModel : ObservableObject
             if (f.SelectedColumn is { IsSkip: false } col)
                 map[f.Field] = col.Index;
 
-        _completion.TrySetResult(new CsvMappingResult(map, ClearFirst));
+        _completion.TrySetResult(new CsvMappingResult(map, ClearFirst, Scope?.ToScope()));
     }
 
     [RelayCommand]
@@ -218,13 +233,20 @@ public sealed class CsvColumnOption
 /// </summary>
 public sealed class CsvMappingResult
 {
-    public CsvMappingResult(IReadOnlyDictionary<CsvParticipantField, int> map, bool clearFirst)
+    public CsvMappingResult(
+        IReadOnlyDictionary<CsvParticipantField, int> map,
+        bool clearFirst,
+        ParticipantImportScope? scope = null)
     {
         Map = map;
         ClearFirst = clearFirst;
+        Scope = scope;
     }
 
     public IReadOnlyDictionary<CsvParticipantField, int> Map { get; }
 
     public bool ClearFirst { get; }
+
+    /// <summary>The chosen import scope, when the modal showed a scope chooser; otherwise null.</summary>
+    public ParticipantImportScope? Scope { get; }
 }

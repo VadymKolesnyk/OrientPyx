@@ -43,7 +43,7 @@
             <StackPanel Spacing="16" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420">
                 <Border Width="72" Height="72" CornerRadius="36"
                         Background="{DynamicResource AccentSurface}" HorizontalAlignment="Center">
-                    <PathIcon Data="{Binding IconData}" Width="34" Height="34"
+                    <controls:Icon Data="{Binding IconData}" Size="34"
                               Foreground="{DynamicResource AccentBrush}" />
                 </Border>
                 <TextBlock Text="{Binding Localization[Dashboard.Empty.Title]}" Classes="h2"
@@ -53,7 +53,11 @@
             </StackPanel>
         </Border>
 
-        <!-- Live dashboard -->
+        <!-- Live dashboard.
+             Layout note: every card on this page is a fixed-width (232px) tile laid out in one
+             ItemsControl-less set of WrapPanels. Fixed width + VerticalAlignment=Stretch inside each
+             row keeps the cards on a single grid rhythm — same width, and equal height per row — so the
+             page reflows cleanly at any window width without ragged, mismatched-height columns. -->
         <ScrollViewer IsVisible="{Binding Info.HasSelection}"
                       HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
             <StackPanel Spacing="20">
@@ -87,25 +91,35 @@
                                     Command="{Binding QuickActionCommand}"
                                     CommandParameter="{x:Static pages:DashboardQuickAction.Splits}"
                                     Content="{Binding Localization[Dashboard.Action.Splits]}" />
+                            <Button Classes="ghost" Margin="0,0,10,10"
+                                    Command="{Binding QuickActionCommand}"
+                                    CommandParameter="{x:Static pages:DashboardQuickAction.MonitorResults}"
+                                    Content="{Binding Localization[Dashboard.Action.MonitorResults]}" />
+                            <Button Classes="ghost" Margin="0,0,10,10"
+                                    Command="{Binding QuickActionCommand}"
+                                    CommandParameter="{x:Static pages:DashboardQuickAction.OnlineResults}"
+                                    Content="{Binding Localization[Dashboard.Action.OnlineResults]}" />
                         </WrapPanel>
                     </StackPanel>
                 </Border>
 
-                <!-- Top row: competition overview + current day + start -->
-                <Grid ColumnDefinitions="2*,*,*" ColumnSpacing="16">
+                <!-- Info cards: competition overview, current day, start window, finished breakdown.
+                     Same fixed 232px tile width as the stat tiles below (Finished spans two columns);
+                     WrapPanel reflows them and the shared 176px Height keeps every card in a row equal
+                     height, so nothing sits taller than its neighbour. -->
+                <WrapPanel Orientation="Horizontal">
 
                     <!-- Competition overview -->
-                    <Border Grid.Column="0" Classes="card" Padding="20">
-                        <StackPanel Spacing="14">
+                    <Border Classes="card" Width="232" Margin="0,0,14,14" Padding="18" Height="176">
+                        <StackPanel Spacing="12">
                             <TextBlock Text="{Binding Localization[Dashboard.Section.Overview]}" Classes="label" />
-                            <TextBlock Text="{Binding Info.CompetitionName}" Classes="h2"
-                                       FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}"
-                                       TextWrapping="Wrap" />
-                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="16">
+                            <TextBlock Text="{Binding Info.CompetitionName}" Classes="h2" FontSize="16"
+                                       TextWrapping="Wrap" TextTrimming="CharacterEllipsis" MaxLines="2" />
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="5" ColumnSpacing="12">
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Localization[Dashboard.Overview.Venue]}" Classes="subtitle" />
-                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Info.Venue}" TextWrapping="Wrap" />
+                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Info.Venue}" TextTrimming="CharacterEllipsis" />
                                 <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding Localization[Dashboard.Overview.Dates]}" Classes="subtitle" />
-                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Info.DateRange}" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Info.DateRange}" TextTrimming="CharacterEllipsis" />
                                 <TextBlock Grid.Row="2" Grid.Column="0" Text="{Binding Localization[Dashboard.Overview.Days]}" Classes="subtitle" />
                                 <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Info.DayCount}" />
                             </Grid>
@@ -113,8 +127,8 @@
                     </Border>
 
                     <!-- Current day -->
-                    <Border Grid.Column="1" Classes="card" Padding="20">
-                        <StackPanel Spacing="14">
+                    <Border Classes="card" Width="232" Margin="0,0,14,14" Padding="18" Height="176">
+                        <StackPanel Spacing="12">
                             <TextBlock Text="{Binding Localization[Dashboard.Section.Today]}" Classes="label" />
                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                 <Border Classes="badge"><TextBlock Text="{Binding DayLabel}" /></Border>
@@ -128,20 +142,22 @@
                     </Border>
 
                     <!-- Start window → Жеребкування -->
-                    <Button Grid.Column="2" Classes="tile" Padding="20"
+                    <Button Classes="tile" Width="232" Margin="0,0,14,14" Padding="18" Height="176"
+                            VerticalContentAlignment="Top"
                             Command="{Binding QuickActionCommand}"
                             CommandParameter="{x:Static pages:DashboardQuickAction.Draw}">
-                        <StackPanel Spacing="12">
+                        <StackPanel Spacing="10">
                             <TextBlock Text="{Binding Localization[Dashboard.Section.Start]}" Classes="label" />
-                            <StackPanel Spacing="2">
-                                <TextBlock Text="{Binding Localization[Dashboard.Start.First]}" Classes="subtitle" />
-                                <TextBlock Text="{Binding FirstStartText}" Classes="h2"
-                                           FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}"
-                                           Foreground="{DynamicResource AccentBrush}" />
-                            </StackPanel>
-                            <StackPanel Spacing="2">
-                                <TextBlock Text="{Binding Localization[Dashboard.Start.Last]}" Classes="subtitle" />
-                                <TextBlock Text="{Binding LastStartText}" FontWeight="Medium" />
+                            <StackPanel Orientation="Horizontal" Spacing="16">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="{Binding Localization[Dashboard.Start.First]}" Classes="subtitle" FontSize="12" />
+                                    <TextBlock Text="{Binding FirstStartText}" Classes="h2" FontSize="18"
+                                               Foreground="{DynamicResource AccentBrush}" />
+                                </StackPanel>
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="{Binding Localization[Dashboard.Start.Last]}" Classes="subtitle" FontSize="12" />
+                                    <TextBlock Text="{Binding LastStartText}" FontSize="18" FontWeight="Medium" />
+                                </StackPanel>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <TextBlock Text="{Binding Localization[Dashboard.Start.Assigned]}" Classes="muted" FontSize="12" />
@@ -149,32 +165,69 @@
                             </StackPanel>
                         </StackPanel>
                     </Button>
-                </Grid>
 
-                <!-- Stat tiles -->
-                <ItemsControl>
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <WrapPanel Orientation="Horizontal" />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
+                    <!-- Finished: big total + per-status breakdown badges → Зчитка на фініші.
+                         Spans two tile columns so the status badges have room to sit in one tidy row. -->
+                    <Button Classes="tile" Margin="0,0,14,14" Padding="18" Height="176" Width="478"
+                            VerticalContentAlignment="Top"
+                            Command="{Binding QuickActionCommand}"
+                            CommandParameter="{x:Static pages:DashboardQuickAction.FinishRead}">
+                        <StackPanel Spacing="10">
+                            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Localization[Dashboard.Stat.Finished]}" Classes="label"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding Info.FinishedTotal}" Classes="h1" FontSize="30"
+                                           Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <!-- Uniform status badges: same fixed size, one per occurring status (OK/MP/OVT…). -->
+                            <ItemsControl ItemsSource="{Binding FinishedBadges}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="pages:DashboardStatusBadge">
+                                        <Border Width="60" Height="48" Margin="0,0,8,8" CornerRadius="6"
+                                                Background="{DynamicResource SurfaceSubtle}"
+                                                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1">
+                                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="1">
+                                                <TextBlock Text="{Binding Count}" FontSize="18" FontWeight="Bold"
+                                                           HorizontalAlignment="Center" />
+                                                <TextBlock Text="{Binding Code}" FontSize="11" HorizontalAlignment="Center"
+                                                           Foreground="{DynamicResource SuccessBrush}"
+                                                           IsVisible="{Binding IsOk}" />
+                                                <TextBlock Text="{Binding Code}" FontSize="11" HorizontalAlignment="Center"
+                                                           Foreground="{DynamicResource DangerBrush}"
+                                                           IsVisible="{Binding !IsOk}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Button>
+                </WrapPanel>
+
+                <!-- Stat tiles: same 232px rhythm, uniform 120px height so every tile in a row lines up. -->
+                <WrapPanel Orientation="Horizontal">
 
                     <!-- Participants → Учасники -->
-                    <Button Classes="tile" Width="200" Margin="0,0,12,12"
+                    <Button Classes="tile" Width="232" Height="120" Margin="0,0,14,14"
                             Command="{Binding QuickActionCommand}"
                             CommandParameter="{x:Static pages:DashboardQuickAction.Participants}">
                         <StackPanel Spacing="6">
-                            <TextBlock Text="{Binding Localization[Dashboard.Stat.Participants]}" Classes="subtitle" />
-                            <TextBlock Text="{Binding Info.ParticipantTotal}" Classes="h1" FontSize="30" />
+                            <TextBlock Text="{Binding Localization[Dashboard.Stat.ParticipantsToday]}" Classes="subtitle" />
+                            <TextBlock Text="{Binding Info.ParticipantsToday}" Classes="h1" FontSize="30" />
                             <StackPanel Orientation="Horizontal" Spacing="6">
-                                <TextBlock Text="{Binding Localization[Dashboard.Stat.ParticipantsToday]}" Classes="muted" FontSize="12" />
-                                <TextBlock Text="{Binding Info.ParticipantsToday}" FontSize="12" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Localization[Dashboard.Stat.Participants]}" Classes="muted" FontSize="12" />
+                                <TextBlock Text="{Binding Info.ParticipantTotal}" FontSize="12" FontWeight="SemiBold" />
                             </StackPanel>
                         </StackPanel>
                     </Button>
 
                     <!-- Groups today → Групи -->
-                    <Button Classes="tile" Width="200" Margin="0,0,12,12"
+                    <Button Classes="tile" Width="232" Height="120" Margin="0,0,14,14"
                             Command="{Binding QuickActionCommand}"
                             CommandParameter="{x:Static pages:DashboardQuickAction.Groups}">
                         <StackPanel Spacing="6">
@@ -184,7 +237,7 @@
                     </Button>
 
                     <!-- Without chip → Учасники (filtered to chipless) -->
-                    <Button Classes="tile" Width="200" Margin="0,0,12,12"
+                    <Button Classes="tile" Width="232" Height="120" Margin="0,0,14,14"
                             Command="{Binding QuickActionCommand}"
                             CommandParameter="{x:Static pages:DashboardQuickAction.ParticipantsWithoutChip}">
                         <StackPanel Spacing="6">
@@ -195,7 +248,7 @@
                     </Button>
 
                     <!-- Without group → Учасники (filtered to groupless) -->
-                    <Button Classes="tile" Width="200" Margin="0,0,12,12"
+                    <Button Classes="tile" Width="232" Height="120" Margin="0,0,14,14"
                             Command="{Binding QuickActionCommand}"
                             CommandParameter="{x:Static pages:DashboardQuickAction.ParticipantsWithoutGroup}">
                         <StackPanel Spacing="6">
@@ -205,7 +258,7 @@
                     </Button>
 
                     <!-- Chips → Чіпи -->
-                    <Button Classes="tile" Width="200" Margin="0,0,12,12"
+                    <Button Classes="tile" Width="232" Height="120" Margin="0,0,14,14"
                             Command="{Binding QuickActionCommand}"
                             CommandParameter="{x:Static pages:DashboardQuickAction.Chips}">
                         <StackPanel Spacing="6">
@@ -226,7 +279,7 @@
                     </Button>
 
                     <!-- Read-outs → Зчитка на фініші -->
-                    <Button Classes="tile" Width="200" Margin="0,0,12,12"
+                    <Button Classes="tile" Width="232" Height="120" Margin="0,0,14,14"
                             Command="{Binding QuickActionCommand}"
                             CommandParameter="{x:Static pages:DashboardQuickAction.FinishRead}">
                         <StackPanel Spacing="6">
@@ -235,33 +288,25 @@
                         </StackPanel>
                     </Button>
 
-                    <!-- Finished OK / problem → Зчитка на фініші -->
-                    <Button Classes="tile" Width="200" Margin="0,0,12,12"
-                            Command="{Binding QuickActionCommand}"
-                            CommandParameter="{x:Static pages:DashboardQuickAction.FinishRead}">
-                        <StackPanel Spacing="6">
-                            <TextBlock Text="{Binding Localization[Dashboard.Stat.Finished]}" Classes="subtitle" />
-                            <TextBlock Text="{Binding Info.FinishedOk}" Classes="h1" FontSize="30"
-                                       Foreground="{DynamicResource SuccessBrush}" />
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <TextBlock Text="{Binding Localization[Dashboard.Stat.Problem]}" Classes="muted" FontSize="12" />
-                                <TextBlock Text="{Binding Info.FinishedWithProblem}" FontSize="12" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource DangerBrush}" />
-                            </StackPanel>
-                        </StackPanel>
-                    </Button>
-
-                    <!-- On course → Учасники (filtered to still-running: no start/finish/status) -->
-                    <Button Classes="tile" Width="200" Margin="0,0,12,12"
+                    <!-- On course → Учасники (filtered to still-running: no start/finish/status).
+                         MinHeight (not a fixed Height like its siblings) so the two optional caption
+                         lines — last drawn start + elapsed — can grow the tile when both are shown. -->
+                    <Button Classes="tile" Width="232" MinHeight="120" Margin="0,0,14,14"
                             Command="{Binding QuickActionCommand}"
                             CommandParameter="{x:Static pages:DashboardQuickAction.ParticipantsOnCourse}">
-                        <StackPanel Spacing="6">
+                        <StackPanel Spacing="4">
                             <TextBlock Text="{Binding Localization[Dashboard.Stat.OnCourse]}" Classes="subtitle" />
                             <TextBlock Text="{Binding Info.OnCourse}" Classes="h1" FontSize="30"
                                        Foreground="{DynamicResource AccentBrush}" />
+                            <TextBlock Text="{Binding OnCourseLastStartLabel}" Classes="muted" FontSize="12"
+                                       TextWrapping="Wrap"
+                                       IsVisible="{Binding HasOnCourseLastStart}" />
+                            <TextBlock Text="{Binding OnCourseElapsedLabel}" Classes="muted" FontSize="12"
+                                       TextWrapping="Wrap"
+                                       IsVisible="{Binding HasOnCourseElapsed}" />
                         </StackPanel>
                     </Button>
-                </ItemsControl>
+                </WrapPanel>
 
             </StackPanel>
         </ScrollViewer>

@@ -70,14 +70,18 @@
                 MaxHeight="320" Margin="0,16,0,0" IsVisible="{Binding HasResults}">
             <controls:SheetTable Name="ResultsSheet"
                                  ItemsSource="{Binding Results}"
-                                 Localization="{Binding Localization}" />
+                                 Localization="{Binding Localization}"
+                                 LayoutStore="{Binding LayoutStore}"
+                                 LayoutKey="classicdraw.results" />
         </Border>
 
         <!-- Groups table (shared SheetTable) fills the rest. -->
         <Border Classes="card" ClipToBounds="True">
             <controls:SheetTable Name="GroupsSheet"
                                  ItemsSource="{Binding Groups}"
-                                 Localization="{Binding Localization}" />
+                                 Localization="{Binding Localization}"
+                                 LayoutStore="{Binding LayoutStore}"
+                                 LayoutKey="classicdraw.groups" />
         </Border>
 
     </DockPanel>

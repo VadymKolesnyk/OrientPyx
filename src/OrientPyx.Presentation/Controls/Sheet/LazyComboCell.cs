@@ -18,18 +18,30 @@ namespace OrientPyx.Presentation.Controls;
 internal sealed class LazyComboCell : LazyEditCell
 {
     private readonly Func<SearchableComboBox> _comboFactory;
+    private readonly string? _selectedPath;
 
     /// <param name="comboFactory">Builds the real combo, already bound to ItemsSource/SelectedItem.</param>
     /// <param name="selectedLabelPath">Path to the selected option's display text shown on the label.</param>
     /// <param name="restingDangerPath">Optional bool path: when true the resting label is tinted red
     /// (DangerBrush) — used to red-flag a non-OK finish status.</param>
-    public LazyComboCell(Func<SearchableComboBox> comboFactory, string? selectedLabelPath, string? restingDangerPath = null)
+    /// <param name="selectedPath">The combo's SelectedItem two-way binding path — snapshotted so Escape
+    /// can restore the previous selection. Usually <paramref name="selectedLabelPath"/> minus its label
+    /// segment; when null, Escape leaves edit mode without reverting.</param>
+    public LazyComboCell(
+        Func<SearchableComboBox> comboFactory,
+        string? selectedLabelPath,
+        string? restingDangerPath = null,
+        string? selectedPath = null)
         : base(selectedLabelPath)
     {
         _comboFactory = comboFactory;
+        _selectedPath = selectedPath;
         if (restingDangerPath is not null)
             Label[!TextBlock.ForegroundProperty] = new Binding(restingDangerPath) { Converter = DangerBrush };
     }
+
+    // The combo writes its SelectedItem to this path — snapshot it so Escape can revert the selection.
+    protected override string? EditSourcePath => _selectedPath;
 
     private static readonly IValueConverter DangerBrush = new Converters.BoolToDangerBrushConverter();
 

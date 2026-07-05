@@ -3,6 +3,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientPyx.BusinessLogic.Entities;
+using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
@@ -29,6 +30,35 @@ public enum DashboardQuickAction
     ParticipantsWithoutChip,
     ParticipantsWithoutGroup,
     ParticipantsOnCourse,
+    MonitorResults,
+    OnlineResults,
+}
+
+/// <summary>One finish-status badge on the «Фінішувало» tile: a language-neutral status code (OK, MP,
+/// OVT, DNF, DNS, DSQ) and its count. OK is styled green, the problem codes red (see <see cref="IsOk"/>).</summary>
+public sealed class DashboardStatusBadge
+{
+    public DashboardStatusBadge(FinishStatus status, int count)
+    {
+        Code = StatusCode(status);
+        Count = count;
+        IsOk = status == FinishStatus.Ok;
+    }
+
+    public string Code { get; }
+    public int Count { get; }
+    public bool IsOk { get; }
+
+    private static string StatusCode(FinishStatus status) => status switch
+    {
+        FinishStatus.Ok => "OK",
+        FinishStatus.Mp => "MP",
+        FinishStatus.Ovt => "OVT",
+        FinishStatus.Dnf => "DNF",
+        FinishStatus.Dns => "DNS",
+        FinishStatus.Dsq => "DSQ",
+        _ => "—",
+    };
 }
 
 /// <summary>
@@ -46,6 +76,9 @@ public sealed partial class DashboardViewModel : PageViewModelBase
 
     /// <summary>Selectable competition days for the day picker.</summary>
     public ObservableCollection<DayOption> DayOptions { get; } = [];
+
+    /// <summary>Per-status finisher badges shown under the big «Фінішувало» number (OK, MP, OVT, DNF…).</summary>
+    public ObservableCollection<DashboardStatusBadge> FinishedBadges { get; } = [];
 
     [ObservableProperty]
     private DayOption? _selectedDay;
@@ -84,6 +117,8 @@ public sealed partial class DashboardViewModel : PageViewModelBase
         {
             OnPropertyChanged(nameof(DisciplineName));
             OnPropertyChanged(nameof(DayLabel));
+            OnPropertyChanged(nameof(OnCourseElapsedLabel));
+            OnPropertyChanged(nameof(OnCourseLastStartLabel));
         };
 
         // Ticks only while the dashboard is the shown page (see Start/StopAutoRefresh). A short
@@ -113,9 +148,9 @@ public sealed partial class DashboardViewModel : PageViewModelBase
     public override string TitleKey => "Page.Dashboard.Title";
     public override string TextKey => "Page.Dashboard.Text";
 
-    // Dashboard tiles.
+    // Lucide "layout-dashboard".
     public override string IconData =>
-        "M4,4 h7 v7 h-7 z M13,4 h7 v4 h-7 z M13,10 h7 v10 h-7 z M4,13 h7 v7 h-7 z";
+        "M3 3h7v9H3z M14 3h7v5h-7z M14 12h7v9h-7z M3 16h7v5H3z";
 
     /// <summary>
     /// Raised when a quick-action button is pressed. The host opens the matching page (the dashboard
@@ -140,6 +175,65 @@ public sealed partial class DashboardViewModel : PageViewModelBase
         var text = StartTimeFormat.Format(value);
         return text.Length == 0 ? "—" : text;
     }
+
+    /// <summary>The latest drawn start time (per the start protocol) among runners still on course,
+    /// as a "hh:mm:ss" clock value, or empty when nobody on course has a drawn start.</summary>
+    public string OnCourseLastStartText => StartTimeFormat.Format(Info.LastOnCourseStart);
+
+    /// <summary>The «На дистанції» caption "Останній старт: {hh:mm:ss}" for the last still-out runner,
+    /// or empty when nobody on course has a drawn start.</summary>
+    public string OnCourseLastStartLabel
+    {
+        get
+        {
+            var text = OnCourseLastStartText;
+            return text.Length == 0 ? string.Empty
+                : string.Format(Localization.Get("Dashboard.Stat.OnCourseLastStart"), text);
+        }
+    }
+
+    /// <summary>Whether to show the on-course last-start caption.</summary>
+    public bool HasOnCourseLastStart => OnCourseLastStartText.Length != 0;
+
+    /// <summary>
+    /// How long the last runner still on course has been out — elapsed time since the latest assigned
+    /// start among on-course runners, as "h:mm:ss" / "m:ss". Empty when no one is on course or none of
+    /// them has a drawn start (nothing meaningful to count from). Recomputed against the wall clock every
+    /// time <see cref="LoadAsync"/> reloads on the refresh timer, so it advances while the page is shown.
+    /// </summary>
+    public string OnCourseElapsedText
+    {
+        get
+        {
+            if (Info.LastOnCourseStart is not { } start)
+                return string.Empty;
+
+            // Start is a time-of-day; the runner is out today, so compare to the current time-of-day. Guard
+            // a start "in the future" (e.g. a late-drawn start whose minute hasn't arrived) as no elapsed.
+            var elapsed = DateTime.Now.TimeOfDay - start;
+            if (elapsed < TimeSpan.Zero)
+                return string.Empty;
+
+            return elapsed.TotalHours >= 1
+                ? elapsed.ToString("h\\:mm\\:ss")
+                : elapsed.ToString("m\\:ss");
+        }
+    }
+
+    /// <summary>The «На дистанції» caption "Останній стартував {elapsed} тому", or empty when there is no
+    /// elapsed time to show (nobody on course, or no drawn start among them).</summary>
+    public string OnCourseElapsedLabel
+    {
+        get
+        {
+            var text = OnCourseElapsedText;
+            return text.Length == 0 ? string.Empty
+                : string.Format(Localization.Get("Dashboard.Stat.OnCourseElapsed"), text);
+        }
+    }
+
+    /// <summary>Whether to show the on-course elapsed caption.</summary>
+    public bool HasOnCourseElapsed => OnCourseElapsedText.Length != 0;
 
     public async Task LoadAsync()
     {
@@ -205,6 +299,16 @@ public sealed partial class DashboardViewModel : PageViewModelBase
         OnPropertyChanged(nameof(DayLabel));
         OnPropertyChanged(nameof(FirstStartText));
         OnPropertyChanged(nameof(LastStartText));
+        OnPropertyChanged(nameof(OnCourseElapsedText));
+        OnPropertyChanged(nameof(OnCourseElapsedLabel));
+        OnPropertyChanged(nameof(HasOnCourseElapsed));
+        OnPropertyChanged(nameof(OnCourseLastStartText));
+        OnPropertyChanged(nameof(OnCourseLastStartLabel));
+        OnPropertyChanged(nameof(HasOnCourseLastStart));
+
+        FinishedBadges.Clear();
+        foreach (var s in value.FinishedByStatus)
+            FinishedBadges.Add(new DashboardStatusBadge(s.Status, s.Count));
     }
 
     private void OnSessionChanged(object? sender, EventArgs e)

@@ -38,9 +38,11 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
         ISessionService session,
         IStartDrawService draw,
         IBusyService busy,
-        IDialogService dialogs)
+        IDialogService dialogs,
+        ITableLayoutStore layoutStore)
         : base(localization)
     {
+        LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
         _draw = draw;
@@ -60,13 +62,16 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
     }
 
+    /// <summary>Per-competition table-view store; persists this page's table column order/width/visibility.</summary>
+    public ITableLayoutStore LayoutStore { get; }
+
     public override string NavKey => "Nav.ClassicDraw";
     public override string TitleKey => "Page.ClassicDraw.Title";
     public override string TextKey => "Page.ClassicDraw.Text";
 
-    // A simple list/table glyph.
+    // Lucide "list".
     public override string IconData =>
-        "M4,5 h16 M4,10 h16 M4,15 h16 M4,20 h16";
+        "M3 5h18 M3 12h18 M3 19h18";
 
     // ── Day picker (does NOT touch the session) ──────────────────────────────────────────────────────
 

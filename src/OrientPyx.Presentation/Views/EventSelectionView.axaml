@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:OrientPyx.Presentation.ViewModels"
              xmlns:models="using:OrientPyx.BusinessLogic.Models"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
              mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="640"
              x:Class="OrientPyx.Presentation.Views.EventSelectionView"
              x:DataType="vm:EventSelectionViewModel">
@@ -42,8 +43,8 @@
                                 Spacing="10" Margin="0,48" HorizontalAlignment="Center" VerticalAlignment="Center">
                         <Border Width="56" Height="56" CornerRadius="28"
                                 Background="{DynamicResource AccentSurface}" HorizontalAlignment="Center">
-                            <PathIcon Data="M3,7 a1,1 0 0 1 1,-1 h5 l2,2 h8 a1,1 0 0 1 1,1 v8 a1,1 0 0 1 -1,1 h-15 a1,1 0 0 1 -1,-1 z"
-                                      Width="26" Height="26" Foreground="{DynamicResource AccentBrush}" />
+                            <controls:Icon Kind="FolderOpen"
+                                      Size="26" Foreground="{DynamicResource AccentBrush}" />
                         </Border>
                         <TextBlock Text="{Binding Localization[EventSelection.Empty]}" Classes="muted"
                                    HorizontalAlignment="Center" />

@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
              mc:Ignorable="d" d:DesignWidth="640" d:DesignHeight="520"
              x:Class="OrientPyx.Presentation.Views.Pages.SettingsView"
              x:DataType="pages:SettingsViewModel">
@@ -94,7 +95,7 @@
                             Command="{Binding SavePathsCommand}" />
                     <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                                 IsVisible="{Binding PathsSaved}">
-                        <PathIcon Data="M5,12 l4,4 l10,-10" Width="16" Height="16"
+                        <controls:Icon Kind="Check" Size="17"
                                   Foreground="{DynamicResource SuccessBrush}" />
                         <TextBlock Text="{Binding Localization[Settings.PathsSavedHint]}"
                                    Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
@@ -133,18 +134,15 @@
                                 Command="{Binding ToggleRevealServiceRoleKeyCommand}"
                                 ToolTip.Tip="{Binding Localization[Settings.Online.ServiceKeyReveal]}">
                             <Panel>
-                                <PathIcon Width="16" Height="16" IsVisible="{Binding !RevealServiceRoleKey}"
-                                          Data="M8,3 C4,3 1.5,6 1,8 C1.5,10 4,13 8,13 C12,13 14.5,10 15,8 C14.5,6 12,3 8,3 z M8,5.5 A2.5,2.5 0 1 1 8,10.5 A2.5,2.5 0 1 1 8,5.5 z" />
-                                <PathIcon Width="16" Height="16" IsVisible="{Binding RevealServiceRoleKey}"
-                                          Data="M8,3 C4,3 1.5,6 1,8 C1.5,10 4,13 8,13 C12,13 14.5,10 15,8 C14.5,6 12,3 8,3 z M8,5.5 A2.5,2.5 0 1 1 8,10.5 A2.5,2.5 0 1 1 8,5.5 z M3,2 L13,14" />
+                                <controls:Icon Kind="Eye" Size="17" IsVisible="{Binding !RevealServiceRoleKey}" />
+                                <controls:Icon Kind="EyeOff" Size="17" IsVisible="{Binding RevealServiceRoleKey}" />
                             </Panel>
                         </Button>
                         <!-- Copy the key to the clipboard -->
                         <Button Grid.Column="2" Classes="ghost" Padding="8,4"
                                 Click="OnCopyServiceKeyClick"
                                 ToolTip.Tip="{Binding Localization[Settings.Online.ServiceKeyCopy]}">
-                            <PathIcon Width="14" Height="14"
-                                      Data="M9,2 h7 a1,1 0 0 1 1,1 v10 a1,1 0 0 1 -1,1 h-7 a1,1 0 0 1 -1,-1 v-10 a1,1 0 0 1 1,-1 z M5,6 v10 a1,1 0 0 0 1,1 h7" />
+                            <controls:Icon Kind="Copy" Size="15" />
                         </Button>
                     </Grid>
                     <TextBlock Text="{Binding Localization[Settings.Online.ServiceKeyHint]}" Classes="muted"
@@ -175,7 +173,7 @@
                             Command="{Binding SaveOnlineCommand}" />
                     <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                                 IsVisible="{Binding OnlineSaved}">
-                        <PathIcon Data="M5,12 l4,4 l10,-10" Width="16" Height="16"
+                        <controls:Icon Kind="Check" Size="17"
                                   Foreground="{DynamicResource SuccessBrush}" />
                         <TextBlock Text="{Binding Localization[Settings.PathsSavedHint]}"
                                    Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />

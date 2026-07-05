@@ -78,4 +78,10 @@ public class AppSettingsRow
     /// SPORTident (0).
     /// </summary>
     public int ReadoutType { get; set; } = 0;
+
+    /// <summary>
+    /// UI language culture name (e.g. "uk-UA", "en-US") the app restores on startup. Blank until the user
+    /// picks a language on the Settings page; when blank the built-in default (uk-UA) is used.
+    /// </summary>
+    public string Language { get; set; } = string.Empty;
 }

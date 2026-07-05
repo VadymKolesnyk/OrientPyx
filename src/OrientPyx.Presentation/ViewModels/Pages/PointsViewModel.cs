@@ -40,9 +40,11 @@ public sealed partial class PointsViewModel : PageViewModelBase
         ILocalizationService localization,
         IAppStore appStore,
         IBusyService busy,
-        IDialogService dialogs)
+        IDialogService dialogs,
+        ITableLayoutStore layoutStore)
         : base(localization)
     {
+        LayoutStore = layoutStore;
         _appStore = appStore;
         _busy = busy;
         _dialogs = dialogs;
@@ -50,6 +52,9 @@ public sealed partial class PointsViewModel : PageViewModelBase
             .Select(v => new PointsVariableItem(v.Token, Localization.Get(v.DescriptionKey)))
             .ToList();
     }
+
+    /// <summary>Per-competition table-view store; persists this page's tables' column order/width/visibility.</summary>
+    public ITableLayoutStore LayoutStore { get; }
 
     public override string NavKey => "Nav.Points";
     public override string TitleKey => "Page.Points.Title";

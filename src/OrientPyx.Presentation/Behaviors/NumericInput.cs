@@ -76,6 +76,25 @@ public static class NumericInput
         if (sender is not TextBox box || string.IsNullOrEmpty(e.Text))
             return;
 
+        // The time mask auto-inserts ':' the same way the date mask auto-inserts '.', including the
+        // "spill" case (typing a digit into an already-complete group inserts the separator first).
+        var atEnd = e.Text.Length == 1 && char.IsAsciiDigit(e.Text[0]) &&
+                    box.SelectionStart == box.SelectionEnd &&
+                    box.SelectionStart == (box.Text?.Length ?? 0);
+
+        if (GetTime(box) && atEnd && box.Text?.Length is 2 or 5 && !box.Text!.EndsWith(':'))
+        {
+            // "12" + "3" would be an over-long group; spill the missing ':' first → "12:3".
+            var spilled = box.Text + ":" + e.Text;
+            if (IsTimeShape(spilled))
+            {
+                e.Handled = true;
+                box.Text = spilled;
+                box.CaretIndex = box.Text.Length;
+                return;
+            }
+        }
+
         var resulting = Project(box, e.Text);
         if (!IsAllowed(box, resulting))
         {
@@ -83,12 +102,9 @@ public static class NumericInput
             return;
         }
 
-        // Time mask auto-inserts ':' after a completed hour or minute group, mirroring the date mask's
-        // auto-'.', so the user types digits only and the colons appear at hh:mm:ss boundaries.
-        if (GetTime(box) && e.Text.Length == 1 && char.IsAsciiDigit(e.Text[0]) &&
-            box.SelectionStart == box.SelectionEnd &&
-            box.SelectionStart == (box.Text?.Length ?? 0) &&
-            resulting.Length is 2 or 5 && !resulting.EndsWith(':'))
+        // Auto-insert ':' after a completed hour or minute group so the user types digits only and the
+        // colons appear at hh:mm:ss boundaries (mirrors the date mask's auto-'.').
+        if (GetTime(box) && atEnd && resulting.Length is 2 or 5 && !resulting.EndsWith(':'))
         {
             e.Handled = true;
             box.Text = resulting + ":";
@@ -245,6 +261,25 @@ public static class NumericInput
         if (sender is not TextBox box || string.IsNullOrEmpty(e.Text))
             return;
 
+        var atEnd = e.Text.Length == 1 && char.IsAsciiDigit(e.Text[0]) &&
+                    box.SelectionStart == box.SelectionEnd &&
+                    box.SelectionStart == (box.Text?.Length ?? 0);
+
+        // Typing a digit when the current group is already full (day/month has its two digits, or the
+        // year has four) and there's no separator yet: insert the missing '.' first, then the digit, so
+        // an existing "19" + "1" becomes "19.1" instead of being rejected as an over-long group.
+        if (atEnd && (box.Text?.Length is 2 or 5) && !box.Text!.EndsWith('.'))
+        {
+            var spilled = box.Text + "." + e.Text;
+            if (IsDateShape(spilled))
+            {
+                e.Handled = true;
+                box.Text = spilled;
+                box.CaretIndex = box.Text.Length;
+                return;
+            }
+        }
+
         // Only single-character keystrokes are auto-formatted; reject any non-digit that isn't a dot.
         var resulting = Project(box, e.Text);
         if (!IsDateShape(resulting))
@@ -255,16 +290,11 @@ public static class NumericInput
 
         // Auto-insert '.' after a completed day or month when the caret sits at the end of that group
         // and the user just typed the second digit (so "12" becomes "12." ready for the next group).
-        if (e.Text.Length == 1 && char.IsAsciiDigit(e.Text[0]) &&
-            box.SelectionStart == box.SelectionEnd &&
-            box.SelectionStart == (box.Text?.Length ?? 0))
+        if (atEnd && resulting.Length is 2 or 5 && !resulting.EndsWith('.'))
         {
-            if (resulting.Length is 2 or 5 && !resulting.EndsWith('.'))
-            {
-                e.Handled = true;
-                box.Text = resulting + ".";
-                box.CaretIndex = box.Text.Length;
-            }
+            e.Handled = true;
+            box.Text = resulting + ".";
+            box.CaretIndex = box.Text.Length;
         }
     }
 

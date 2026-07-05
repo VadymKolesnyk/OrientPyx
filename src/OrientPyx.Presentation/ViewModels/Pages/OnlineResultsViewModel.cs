@@ -69,9 +69,9 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         Columns = new OnlineColumnsEditorViewModel(localization);
         Columns.Changed += (_, _) =>
         {
-            SettingsSaved = false;
             UpdatePointsColumnVisible();
             RequestPreviewRefresh();
+            ScheduleAutoSave();
         };
 
         // Singleton VM: on a competition/day change, stop publishing (it belongs to the old selection) and
@@ -105,9 +105,6 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
 
     [ObservableProperty]
     private bool _standings;
-
-    [ObservableProperty]
-    private bool _settingsSaved;
 
     /// <summary>True when the «Очки» column is enabled (large or small screen) in the column editor. Gates the
     /// points-rule status/warning below — there's no longer a separate "show points" toggle: the column's own
@@ -197,13 +194,21 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         SupabaseUrl = api.SupabaseUrl;
         IsConnectionConfigured = api.IsReadyToPublish;
 
-        if (publish is not null)
+        _loading = true; // filling the fields must not trigger auto-save
+        try
         {
-            Slug = publish.Slug;
-            Title = publish.Title;
-            Subtitle = publish.Subtitle;
-            Standings = publish.Standings;
-            Columns.Load(publish.EffectiveDisplay);
+            if (publish is not null)
+            {
+                Slug = publish.Slug;
+                Title = publish.Title;
+                Subtitle = publish.Subtitle;
+                Standings = publish.Standings;
+                Columns.Load(publish.EffectiveDisplay);
+            }
+        }
+        finally
+        {
+            _loading = false;
         }
 
         UpdatePointsColumnVisible();
@@ -299,15 +304,72 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
             Links.Add($"{baseUrl}/#/{Slug}/sum");
     }
 
-    partial void OnSlugChanged(string value) => RebuildLinks();
-    partial void OnStandingsChanged(bool value) => RebuildLinks();
+    partial void OnSlugChanged(string value)
+    {
+        RebuildLinks();
+        ScheduleAutoSave();
+    }
+
+    partial void OnStandingsChanged(bool value)
+    {
+        RebuildLinks();
+        ScheduleAutoSave();
+    }
 
     // The preview mirrors the published header; keep it in step as the user edits the title/subtitle.
-    partial void OnTitleChanged(string value) => Preview.Title = value;
-    partial void OnSubtitleChanged(string value) => Preview.Subtitle = value;
+    partial void OnTitleChanged(string value)
+    {
+        Preview.Title = value;
+        ScheduleAutoSave();
+    }
 
-    [RelayCommand]
-    private async Task SaveSettingsAsync()
+    partial void OnSubtitleChanged(string value)
+    {
+        Preview.Subtitle = value;
+        ScheduleAutoSave();
+    }
+
+    // --- Auto-save --------------------------------------------------------------------------------
+    // The publish options persist automatically whenever the user edits them — there's no Save button. A burst
+    // of edits (typing, dragging) is debounced into ONE write, and the write itself runs on a pool thread (no
+    // busy overlay), so the UI never blocks. LoadAsync sets a guard so filling the fields doesn't self-save.
+
+    private const int AutoSaveDebounceMs = 600;
+    private CancellationTokenSource? _autoSaveCts;
+    private bool _loading;
+
+    private void ScheduleAutoSave()
+    {
+        if (_loading || _session.CurrentEvent is null)
+            return;
+
+        _autoSaveCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _autoSaveCts = cts;
+        _ = AutoSaveAsync(cts.Token);
+    }
+
+    private async Task AutoSaveAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(AutoSaveDebounceMs, ct); // collapse a burst of edits into one write
+            await PersistAsync(ct);
+            RebuildLinks();
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer edit — ignore.
+        }
+        catch (Exception ex)
+        {
+            AppendLog(string.Format(Localization.Get("OnlineResults.Log.Error"), ex.Message));
+        }
+    }
+
+    // Persists the current options (with the given enabled flag) off the UI thread and resets the publisher's
+    // metadata cache so the next tick re-uploads events/days/groups.
+    private async Task PersistAsync(CancellationToken ct = default, bool? enabled = null)
     {
         if (_session.CurrentEvent is null)
             return;
@@ -315,14 +377,10 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         var settings = new OnlinePublishSettings(
             // Points is always enabled: whether the «Очки» column appears is now decided purely by its own
             // large/small-screen visibility in the column config (display_config), not a separate toggle.
-            Slug.Trim(), Title.Trim(), Subtitle.Trim(), Standings, Points: true, Enabled: IsPublishing,
+            Slug.Trim(), Title.Trim(), Subtitle.Trim(), Standings, Points: true, Enabled: enabled ?? IsPublishing,
             Columns: null, Display: Columns.BuildConfig());
-        await _busy.RunAsync(() => _editor.SaveOnlinePublishSettingsAsync(settings));
-
-        // The metadata changed — make the next tick re-upload events/days/groups.
+        await Task.Run(() => _editor.SaveOnlinePublishSettingsAsync(settings, ct), ct);
         _publisher.ResetMetadata();
-        SettingsSaved = true;
-        RebuildLinks();
     }
 
     // --- Start / stop publishing ------------------------------------------------------------------
@@ -354,7 +412,9 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         _lastSkippedNoNumber = -1; // a fresh run should warn again about un-numbered participants
 
         // Persist the current options + that publishing is enabled, and reset the publisher's metadata cache.
-        await SaveSettingsAsync();
+        // Drop any pending debounced auto-save so it can't overwrite Enabled with the pre-start value.
+        _autoSaveCts?.Cancel();
+        await PersistAsync(enabled: true);
 
         ShowActivity();
 
@@ -369,6 +429,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         if (!IsPublishing)
             return;
 
+        _autoSaveCts?.Cancel(); // drop any pending auto-save; we write Enabled:false explicitly below
         _publishCts?.Cancel();
         _publishCts = null;
         _publishTask = null;

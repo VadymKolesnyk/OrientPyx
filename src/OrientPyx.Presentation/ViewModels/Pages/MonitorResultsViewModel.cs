@@ -59,9 +59,9 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
         Columns = new ResultColumnsEditorViewModel(localization);
         Columns.Changed += (_, _) =>
         {
-            SettingsSaved = false;
             if (SelectedFile is { } f)
                 RequestPreviewRefresh(f);
+            ScheduleAutoSave();
         };
 
         // Singleton VM: on a competition/day change, stop generating, drop the cached preview snapshot (it's
@@ -119,9 +119,6 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
 
     public bool IsStopped => !IsGenerating;
 
-    [ObservableProperty]
-    private bool _settingsSaved;
-
     /// <summary>True when no day is selected — generation needs the active session day.</summary>
     [ObservableProperty]
     private bool _hasDay;
@@ -167,18 +164,26 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
 
         OnPropertyChanged(nameof(ShowDaySelector));
 
-        AvailableGroups.Clear();
-        foreach (var g in groups.OrderBy(g => g.Name, StringComparer.CurrentCulture))
-            AvailableGroups.Add(g.Name);
+        _loading = true; // populating groups / columns / files must not trigger auto-save
+        try
+        {
+            AvailableGroups.Clear();
+            foreach (var g in groups.OrderBy(g => g.Name, StringComparer.CurrentCulture))
+                AvailableGroups.Add(g.Name);
 
-        // The shared column layout for all files (seeded from the first legacy per-file layout for old configs).
-        Columns.Load((settings ?? MonitorSettings.Empty).EffectiveColumns);
+            // The shared column layout for all files (seeded from the first legacy per-file layout for old configs).
+            Columns.Load((settings ?? MonitorSettings.Empty).EffectiveColumns);
 
-        Files.Clear();
-        foreach (var f in settings?.Files ?? [])
-            Files.Add(CreateFileVm(f));
+            Files.Clear();
+            foreach (var f in settings?.Files ?? [])
+                Files.Add(CreateFileVm(f));
 
-        SelectedFile = Files.FirstOrDefault();
+            SelectedFile = Files.FirstOrDefault();
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
     // True when the current options already represent exactly these days (same count and numbers, in order).
@@ -207,7 +212,7 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
     private MonitorFileViewModel CreateFileVm(MonitorFile file)
     {
         var vm = new MonitorFileViewModel(Localization, file, AvailableGroups, Columns);
-        vm.Changed += (_, _) => SettingsSaved = false;
+        vm.Changed += (_, _) => ScheduleAutoSave();
         // A group toggle on this file re-renders its live preview (only when it's the one on screen — the
         // others rebuild when next selected). Column changes are shared and handled on the Columns editor.
         vm.PreviewRefreshRequested += (s, e) =>
@@ -309,7 +314,7 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
         var vm = CreateFileVm(MonitorFile.New(name, title));
         Files.Add(vm);
         SelectedFile = vm;
-        SettingsSaved = false;
+        ScheduleAutoSave();
     }
 
     /// <summary>Opens a monitor file in the OS default browser. Saves settings first (so the current file name
@@ -331,7 +336,7 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
             return;
 
         // Make sure the file exists: persist the latest names and generate this one if needed.
-        await SaveSettingsAsync();
+        await PersistAsync();
         if (!File.Exists(fullPath))
             await GenerateOneAsync(file, CancellationToken.None);
 
@@ -376,18 +381,55 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
         Files.Remove(file);
         if (SelectedFile == file)
             SelectedFile = Files.FirstOrDefault();
-        SettingsSaved = false;
+        ScheduleAutoSave();
     }
 
-    [RelayCommand]
-    private async Task SaveSettingsAsync()
+    // --- Auto-save --------------------------------------------------------------------------------
+    // The monitor configuration persists automatically on any edit — there's no Save button. Edits are debounced
+    // into ONE write, and the write runs on a pool thread (no busy overlay) so the UI never blocks. LoadAsync
+    // sets a guard so filling the fields on load doesn't self-save.
+
+    private const int AutoSaveDebounceMs = 600;
+    private CancellationTokenSource? _autoSaveCts;
+    private bool _loading;
+
+    private void ScheduleAutoSave()
+    {
+        if (_loading || _session.CurrentEvent is null)
+            return;
+
+        _autoSaveCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _autoSaveCts = cts;
+        _ = AutoSaveAsync(cts.Token);
+    }
+
+    private async Task AutoSaveAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(AutoSaveDebounceMs, ct); // collapse a burst of edits into one write
+            await PersistAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer edit — ignore.
+        }
+        catch (Exception ex)
+        {
+            AppendLog(string.Format(Localization.Get("Monitor.Log.Error"), ex.Message));
+        }
+    }
+
+    // Persists the current configuration off the UI thread (no busy overlay). Callers that need the files on
+    // disk before proceeding (open / start) await this directly.
+    private async Task PersistAsync(CancellationToken ct = default)
     {
         if (_session.CurrentEvent is null)
             return;
 
         var settings = new MonitorSettings(Files.Select(f => f.ToModel()).ToList(), Columns.BuildSelection());
-        await _busy.RunAsync(() => _editor.SaveMonitorSettingsAsync(settings));
-        SettingsSaved = true;
+        await Task.Run(() => _editor.SaveMonitorSettingsAsync(settings, ct), ct);
     }
 
     // --- Start / stop generation -------------------------------------------------------------------
@@ -404,7 +446,7 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
             return;
         }
 
-        await SaveSettingsAsync();
+        await PersistAsync();
 
         if (Files.All(f => !f.Enabled || string.IsNullOrWhiteSpace(f.Path)))
         {

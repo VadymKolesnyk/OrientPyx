@@ -38,7 +38,9 @@
                 <Border Classes="card" ClipToBounds="True">
                     <controls:SheetTable Name="GroupFeesSheet"
                                          ItemsSource="{Binding GroupFees}"
-                                         Localization="{Binding Localization}" />
+                                         Localization="{Binding Localization}"
+                                         LayoutStore="{Binding LayoutStore}"
+                                         LayoutKey="entryfees.groupfees" />
                 </Border>
             </StackPanel>
 
@@ -88,7 +90,7 @@
                     <Button Grid.Column="1" Command="{Binding AddChipPriceCommand}" Classes="ghost"
                             ToolTip.Tip="{Binding Localization[EntryFees.ChipPrice.Add.Hint]}">
                         <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                            <PathIcon Data="M11,5 h2 v6 h6 v2 h-6 v6 h-2 v-6 h-6 v-2 h6 z" Width="14" Height="14" />
+                            <controls:Icon Kind="Plus" Size="15" />
                             <TextBlock Text="{Binding Localization[EntryFees.ChipPrice.Add]}" />
                         </StackPanel>
                     </Button>
@@ -98,6 +100,8 @@
                                          ItemsSource="{Binding ChipPriceOverrides}"
                                          Localization="{Binding Localization}"
                                          SelectedItem="{Binding SelectedChipPrice, Mode=TwoWay}"
+                                         LayoutStore="{Binding LayoutStore}"
+                                         LayoutKey="entryfees.chipprices"
                                          DeleteRequested="OnChipPriceDeleteRequested" />
                 </Border>
             </StackPanel>
@@ -115,7 +119,7 @@
                     <Button Grid.Column="1" Command="{Binding AddDiscountCommand}" Classes="ghost"
                             ToolTip.Tip="{Binding Localization[EntryFees.Discount.Add.Hint]}">
                         <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                            <PathIcon Data="M11,5 h2 v6 h6 v2 h-6 v6 h-2 v-6 h-6 v-2 h6 z" Width="14" Height="14" />
+                            <controls:Icon Kind="Plus" Size="15" />
                             <TextBlock Text="{Binding Localization[EntryFees.Discount.Add]}" />
                         </StackPanel>
                     </Button>
@@ -125,6 +129,8 @@
                                          ItemsSource="{Binding Discounts}"
                                          Localization="{Binding Localization}"
                                          SelectedItem="{Binding SelectedDiscount, Mode=TwoWay}"
+                                         LayoutStore="{Binding LayoutStore}"
+                                         LayoutKey="entryfees.discounts"
                                          DeleteRequested="OnDiscountDeleteRequested" />
                 </Border>
             </StackPanel>

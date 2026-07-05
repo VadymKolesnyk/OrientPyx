@@ -229,7 +229,7 @@ public sealed class SheetSortButton : Button
             combo.Items.Add(new ComboBoxItem { Content = col.PickerLabel, Tag = col.Key });
         }
         // Preselect the current column.
-        foreach (ComboBoxItem item in combo.Items)
+        foreach (var item in combo.Items.OfType<ComboBoxItem>())
             if ((string?)item.Tag == key)
             {
                 combo.SelectedItem = item;

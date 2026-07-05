@@ -337,4 +337,20 @@ public sealed partial class DialogService : ObservableObject, IDialogService
                 Current = null;
         }
     }
+
+    public async Task<ImportEventDecision?> ShowImportEventAsync(ImportEventViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
 }

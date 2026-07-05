@@ -30,9 +30,11 @@ public sealed partial class ClubsViewModel : PageViewModelBase
         ICompetitionEditorService editor,
         ISessionService session,
         IBusyService busy,
-        IDialogService dialogs)
+        IDialogService dialogs,
+        ITableLayoutStore layoutStore)
         : base(localization)
     {
+        LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
         _busy = busy;
@@ -40,6 +42,9 @@ public sealed partial class ClubsViewModel : PageViewModelBase
 
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
     }
+
+    /// <summary>Per-competition table-view store; persists this page's table column order/width/visibility.</summary>
+    public ITableLayoutStore LayoutStore { get; }
 
     public override string NavKey => "Nav.Clubs";
     public override string TitleKey => "Page.Clubs.Title";

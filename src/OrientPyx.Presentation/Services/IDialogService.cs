@@ -141,4 +141,11 @@ public interface IDialogService : INotifyPropertyChanged
     /// it overlaps and what they share) and awaits its close. Only one dialog is shown at a time.
     /// </summary>
     Task ShowDrawClashHelpAsync(DrawClashHelpViewModel dialog);
+
+    /// <summary>
+    /// Shows the import-competition modal (confirm, or resolve an identifier clash by overwriting or
+    /// entering a new unique name) and awaits the user's choice. Returns the decision on confirm, or null
+    /// when cancelled/closed. Only one dialog is shown at a time.
+    /// </summary>
+    Task<ImportEventDecision?> ShowImportEventAsync(ImportEventViewModel dialog);
 }

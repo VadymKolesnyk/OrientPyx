@@ -52,9 +52,9 @@
                         Padding="0" HorizontalAlignment="Stretch"
                         HorizontalContentAlignment="Left" Background="Transparent">
                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                        <PathIcon Data="M8,5 l8,7 l-8,7" Width="12" Height="12"
+                        <controls:Icon Kind="ChevronRight" Size="13"
                                   IsVisible="{Binding !IsAutoReadExpanded}" />
-                        <PathIcon Data="M5,8 l7,8 l7,-8" Width="12" Height="12"
+                        <controls:Icon Kind="ChevronDown" Size="13"
                                   IsVisible="{Binding IsAutoReadExpanded}" />
                         <TextBlock Text="{Binding Localization[FinishRead.AutoRead]}" Classes="h2"
                                    VerticalAlignment="Center" />
@@ -107,8 +107,7 @@
                 <Border IsVisible="{Binding HasAutoReadError}"
                         Background="{DynamicResource DangerSurface}" CornerRadius="8" Padding="12,8">
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <PathIcon Data="M12,2 a10,10 0 1 0 0,20 a10,10 0 0 0 0,-20 z M12,7 v6 M12,16 v0.5"
-                                  Width="16" Height="16" Foreground="{DynamicResource DangerBrush}"
+                        <controls:Icon Kind="CircleAlert" Size="17" Foreground="{DynamicResource DangerBrush}"
                                   VerticalAlignment="Top" Margin="0,2,0,0" />
                         <TextBlock Text="{Binding AutoReadError}" Foreground="{DynamicResource DangerBrush}"
                                    TextWrapping="Wrap" />
@@ -129,7 +128,9 @@
                                      SelectedItem="{Binding SelectedReadout, Mode=TwoWay}"
                                      Localization="{Binding Localization}"
                                      RowHighlightPath="IsUnknown"
-                                     RentalChips="{Binding RentalChips}" />
+                                     RentalChips="{Binding RentalChips}"
+                                     LayoutStore="{Binding LayoutStore}"
+                                     LayoutKey="finishread.log" />
             </Border>
 
             <!-- Drag handle between the table and the panel; shown only when the panel is. -->
@@ -157,8 +158,8 @@
                                 Command="{Binding Splits.ToggleDockCommand}"
                                 VerticalAlignment="Center"
                                 ToolTip.Tip="{Binding Localization[FinishRead.Splits.ToggleDock]}">
-                            <PathIcon Width="13" Height="13"
-                                      Data="{Binding Splits.IsDockedRight, Converter={StaticResource SplitDockIcon}}" />
+                            <controls:Icon Size="14"
+                                      Kind="{Binding Splits.IsDockedRight, Converter={StaticResource SplitDockIcon}}" />
                         </Button>
                     </Grid>
 

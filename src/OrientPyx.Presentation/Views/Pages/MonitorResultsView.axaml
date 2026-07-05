@@ -40,7 +40,7 @@
                 <!-- No-day warning -->
                 <Border Classes="card" Padding="16" IsVisible="{Binding !HasDay}">
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <PathIcon Data="M12,2 L22,20 H2 Z M12,9 v5 M12,17 v0.5" Width="18" Height="18"
+                        <controls:Icon Kind="TriangleAlert" Size="18"
                                   Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Top" />
                         <TextBlock Text="{Binding Localization[Monitor.NoDay]}"
                                    TextWrapping="Wrap" VerticalAlignment="Center" />
@@ -73,8 +73,7 @@
                                                     ToolTip.Tip="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).Localization[Monitor.File.Open]}"
                                                     Command="{Binding $parent[UserControl].((pages:MonitorResultsViewModel)DataContext).OpenFileCommand}"
                                                     CommandParameter="{Binding}">
-                                                <PathIcon Width="13" Height="13"
-                                                          Data="M14,3 h7 v7 M21,3 L10,14 M19,13 v6 a1,1 0 0 1 -1,1 h-13 a1,1 0 0 1 -1,-1 v-13 a1,1 0 0 1 1,-1 h6" />
+                                                <controls:Icon Kind="ExternalLink" Size="14" />
                                             </Button>
                                         </Grid>
                                     </DataTemplate>
@@ -257,19 +256,14 @@
                     </Border>
                 </Grid>
 
-                <!-- Save + start/stop -->
+                <!-- Auto-save hint + start/stop -->
                 <Border Classes="card" Padding="20">
                     <StackPanel Spacing="14">
-                        <StackPanel Orientation="Horizontal" Spacing="12">
-                            <Button Content="{Binding Localization[Monitor.Save]}" Classes="ghost"
-                                    Command="{Binding SaveSettingsCommand}" />
-                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
-                                        IsVisible="{Binding SettingsSaved}">
-                                <PathIcon Data="M5,12 l4,4 l10,-10" Width="16" Height="16"
-                                          Foreground="{DynamicResource SuccessBrush}" />
-                                <TextBlock Text="{Binding Localization[Settings.PathsSavedHint]}"
-                                           Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
-                            </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <controls:Icon Kind="Check" Size="15"
+                                           Foreground="{DynamicResource TextSecondary}" />
+                            <TextBlock Text="{Binding Localization[Monitor.AutoSaved]}"
+                                       Classes="muted" VerticalAlignment="Center" />
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Spacing="12">

@@ -2,6 +2,10 @@ using OrientPyx.BusinessLogic.Enums;
 
 namespace OrientPyx.BusinessLogic.Models;
 
+/// <summary>One finish-status breakdown line for the dashboard «Фінішувало» tile: the status code and how
+/// many of the day's finishers carry it. Only statuses with a non-zero count are produced.</summary>
+public sealed record DashboardStatusCount(FinishStatus Status, int Count);
+
 /// <summary>
 /// Snapshot shown on the dashboard («Панель»): an overview of the selected competition and the
 /// current day, with live counts (participants, groups, rental chips, finish read-outs and run
@@ -72,10 +76,23 @@ public sealed class DashboardInfo
     /// <summary>Day members with a result but a problem status (MP / OVT / DNF / DSQ …).</summary>
     public int FinishedWithProblem { get; init; }
 
+    /// <summary>Total day members who finished — anyone with a non-blank status (OK plus every problem
+    /// status). The big number on the «Фінішувало» tile; <see cref="FinishedByStatus"/> breaks it down.</summary>
+    public int FinishedTotal { get; init; }
+
+    /// <summary>Per-status breakdown of the day's finishers (OK, MP, OVT, DNF, DNS, DSQ …), only statuses
+    /// with a non-zero count, in enum order. Sums to <see cref="FinishedTotal"/>.</summary>
+    public IReadOnlyList<DashboardStatusCount> FinishedByStatus { get; init; } = [];
+
     /// <summary>
     /// Day members still on course: no actual (chip) start, no finish and a blank status — the same
     /// three-field test the «На дистанції» participants filter uses, so this count matches that filtered
     /// list. These are the runners results are still expected for.
     /// </summary>
     public int OnCourse { get; init; }
+
+    /// <summary>The latest assigned start time-of-day among runners still on course, or null when none are
+    /// on course (or none of them has a drawn start). The VM shows the elapsed time since this — how long the
+    /// last person who is still out has been running.</summary>
+    public TimeSpan? LastOnCourseStart { get; init; }
 }

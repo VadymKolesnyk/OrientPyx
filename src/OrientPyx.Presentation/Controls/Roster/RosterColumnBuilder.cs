@@ -164,6 +164,11 @@ public sealed class RosterColumnBuilder
                     // the displayed label). On-screen rows copy their rendered cell, so the "різні" /
                     // "<group> (n днів)" states are exact there; off-screen falls back to this value.
                     CopyPath = CollapsedCopyPath(block.Field),
+                    // Filter by the merged DISPLAY value, not the sort key. Without this, FilterPath falls
+                    // back to SortPath — and a sort key like CollapsedGroupSortKey packs a tier + index
+                    // (with a control-char separator) after the label, so the filter's value list showed
+                    // garbage like "Ж14␛00000" instead of the group name the user sees.
+                    FilterPath = CollapsedFilterPath(block.Field),
                     // Key by the field only (not collapse state / day) so hiding the block survives a
                     // collapse/expand toggle. The merged column hidden ⇒ all its day columns hidden.
                     Key = $"block:{block.Field}",
@@ -342,6 +347,17 @@ public sealed class RosterColumnBuilder
         RosterField.StartTimes => nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText),
         RosterField.OutOfCompetition => nameof(ParticipantRosterRowViewModel.CollapsedOutOfCompetition),
         _ => CollapsedResultPath(field),
+    };
+
+    // The value the collapsed column FILTERS by. Same as the copy value for most fields, but groups use a
+    // dedicated plain-label property — CollapsedCopyPath's "CollapsedGroupValue.Label" is null unless every
+    // day shares one group, so it would drop single/"різні" rows from the filter; CollapsedGroupFilterText
+    // returns the first real group's name in every state. Never the sort key (which packs a control-char
+    // separator + tier/index and shows as "Ж14␛00000").
+    private static string CollapsedFilterPath(RosterField field) => field switch
+    {
+        RosterField.Groups => nameof(ParticipantRosterRowViewModel.CollapsedGroupFilterText),
+        _ => CollapsedCopyPath(field),
     };
 
     // The two-way text property a per-day leaf cell edits, for fill-down paste. Only the plain text

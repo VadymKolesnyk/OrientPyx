@@ -68,9 +68,9 @@ public sealed partial class DrawViewModel : PageViewModelBase
     public override string TitleKey => "Page.Draw.Title";
     public override string TextKey => "Page.Draw.Text";
 
-    // A clock/stopwatch glyph.
+    // Lucide "clock".
     public override string IconData =>
-        "M12,3 a9,9 0 1 1 0,18 a9,9 0 0 1 0,-18 z M12,7 v5 l3,3";
+        "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 6v6l4 2";
 
     // ── Day picker (does NOT touch the session) ──────────────────────────────────────────────────────
 

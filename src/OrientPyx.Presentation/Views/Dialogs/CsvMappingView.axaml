@@ -47,6 +47,52 @@
                           Content="{Binding ClearFirstLabel}"
                           IsChecked="{Binding ClearFirst, Mode=TwoWay}" />
 
+                <!-- Day scope (participant imports only): all days vs current day + link field. -->
+                <StackPanel DockPanel.Dock="Bottom" Spacing="8" Margin="0,12,0,0"
+                            IsVisible="{Binding HasScope}">
+                    <RadioButton GroupName="CsvImportScope"
+                                 Content="{Binding Scope.AllDaysLabel}"
+                                 IsChecked="{Binding !Scope.CurrentDayOnly, Mode=TwoWay}" />
+                    <RadioButton GroupName="CsvImportScope"
+                                 Content="{Binding Scope.CurrentDayLabel}"
+                                 IsChecked="{Binding Scope.CurrentDayOnly, Mode=TwoWay}" />
+                    <StackPanel Margin="26,0,0,0" Spacing="8"
+                                IsEnabled="{Binding Scope.CurrentDayOnly}"
+                                IsVisible="{Binding Scope.CurrentDayOnly}">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="{Binding Scope.LinkPrompt}" Classes="muted" />
+                            <ComboBox ItemsSource="{Binding Scope.LinkFields}"
+                                      SelectedItem="{Binding Scope.SelectedLinkField, Mode=TwoWay}"
+                                      HorizontalAlignment="Stretch">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="dialogs:LinkFieldOption">
+                                        <TextBlock Text="{Binding Label}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <!-- Which global participant columns to overwrite on already-existing athletes. -->
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="{Binding Scope.UpdatePrompt}" Classes="muted" TextWrapping="Wrap" />
+                            <ItemsControl ItemsSource="{Binding Scope.UpdateFields}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="dialogs:UpdateFieldOption">
+                                        <CheckBox Content="{Binding Label}"
+                                                  IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                                  Margin="0,0,14,0" MinWidth="120" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                               VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding Fields}">

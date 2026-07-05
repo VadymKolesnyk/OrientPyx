@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
              mc:Ignorable="d" d:DesignWidth="700" d:DesignHeight="460"
              x:Class="OrientPyx.Presentation.Views.Pages.PageView"
              x:DataType="pages:PageViewModelBase">
@@ -23,7 +24,7 @@
                 <Border Width="72" Height="72" CornerRadius="36"
                         Background="{DynamicResource AccentSurface}"
                         HorizontalAlignment="Center">
-                    <PathIcon Data="{Binding IconData}" Width="34" Height="34"
+                    <controls:Icon Data="{Binding IconData}" Size="34"
                               Foreground="{DynamicResource AccentBrush}" />
                 </Border>
                 <TextBlock Text="{Binding Title}" Classes="h2" HorizontalAlignment="Center"

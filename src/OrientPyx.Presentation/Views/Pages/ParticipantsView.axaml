@@ -48,9 +48,9 @@
                 <!-- Import group: UOF XML file + CSV/Excel. -->
                 <Button Classes="ghost">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <PathIcon Data="M12,3 v10 m0,0 l-4,-4 m4,4 l4,-4 M5,17 v2 h14 v-2" Width="14" Height="14" />
+                        <controls:Icon Kind="Upload" Size="15" />
                         <TextBlock Text="{Binding Localization[Participants.ImportMenu]}" />
-                        <PathIcon Data="M7,10 l5,5 l5,-5 z" Width="10" Height="10" />
+                        <controls:Icon Kind="ChevronDown" Size="12" />
                     </StackPanel>
                     <Button.Flyout>
                         <Flyout Placement="BottomEdgeAlignedRight">
@@ -67,7 +67,7 @@
                                         <DockPanel>
                                             <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="Ctrl+I" />
                                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <PathIcon Data="M12,3 v10 m0,0 l-4,-4 m4,4 l4,-4 M5,17 v2 h14 v-2" Width="14" Height="14" />
+                                                <controls:Icon Kind="Upload" Size="16" />
                                                 <TextBlock Text="{Binding Localization[Participants.Import]}" />
                                             </StackPanel>
                                         </DockPanel>
@@ -79,7 +79,7 @@
                                         <DockPanel>
                                             <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="Ctrl+Shift+I" />
                                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <PathIcon Data="M5,3 h9 l5,5 v13 h-14 z M14,3 v5 h5 M8,13 h7 M8,16 h7" Width="14" Height="14" />
+                                                <controls:Icon Kind="FileSpreadsheet" Size="16" />
                                                 <TextBlock Text="{Binding Localization[Participants.ImportCsv]}" />
                                             </StackPanel>
                                         </DockPanel>
@@ -96,7 +96,7 @@
                 <Button Click="OnExportClick" Classes="ghost"
                         ToolTip.Tip="Ctrl+E">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <PathIcon Data="M12,21 v-10 m0,0 l-4,4 m4,-4 l4,4 M5,5 v-2 h14 v2" Width="14" Height="14" />
+                        <controls:Icon Kind="Download" Size="15" />
                         <TextBlock Text="{Binding Localization[Participants.Export]}" />
                     </StackPanel>
                 </Button>
@@ -106,9 +106,9 @@
                      VisibleItems and hands them to the matching command. -->
                 <Button Classes="ghost">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <PathIcon Data="M4,6 h10 v2 h-10 z M4,11 h10 v2 h-10 z M4,16 h6 v2 h-6 z M17,13 l3,3 l-6,6 h-3 v-3 z" Width="14" Height="14" />
+                        <controls:Icon Kind="SquarePen" Size="15" />
                         <TextBlock Text="{Binding Localization[Participants.ActionsMenu]}" />
-                        <PathIcon Data="M7,10 l5,5 l5,-5 z" Width="10" Height="10" />
+                        <controls:Icon Kind="ChevronDown" Size="12" />
                     </StackPanel>
                     <Button.Flyout>
                         <Flyout Placement="BottomEdgeAlignedRight">
@@ -123,7 +123,7 @@
                                         <DockPanel>
                                             <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="Ctrl+B" />
                                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <PathIcon Data="M4,7 h16 v2 h-16 z M4,15 h16 v2 h-16 z M7,3 v18 M13,3 v18" Width="14" Height="14" />
+                                                <controls:Icon Kind="ListOrdered" Size="16" />
                                                 <TextBlock Text="{Binding Localization[Participants.AssignNumbers]}" />
                                             </StackPanel>
                                         </DockPanel>
@@ -133,7 +133,7 @@
                                         <DockPanel>
                                             <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="Ctrl+K" />
                                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <PathIcon Data="M5,8 h14 a2,2 0 0 1 2,2 v4 a2,2 0 0 1 -2,2 h-14 a2,2 0 0 1 -2,-2 v-4 a2,2 0 0 1 2,-2 z M8,11 v2 M12,11 v2 M16,11 v2" Width="14" Height="14" />
+                                                <controls:Icon Kind="CreditCard" Size="16" />
                                                 <TextBlock Text="{Binding Localization[Participants.AssignChips]}" />
                                             </StackPanel>
                                         </DockPanel>
@@ -144,7 +144,7 @@
                                     <Button Click="OnEditStartOrderClick" Classes="menu" HorizontalAlignment="Stretch"
                                             IsVisible="{Binding CanEditStartOrder}">
                                         <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <PathIcon Data="M4,5 h16 v2 h-16 z M4,11 h16 v2 h-16 z M4,17 h16 v2 h-16 z M9,3 l3,3 l3,-3 M9,21 l3,-3 l3,3" Width="14" Height="14" />
+                                            <controls:Icon Kind="ArrowUpDown" Size="16" />
                                             <TextBlock Text="{Binding Localization[Participants.StartOrder]}" />
                                         </StackPanel>
                                     </Button>
@@ -154,7 +154,7 @@
                                         <DockPanel>
                                             <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="F6" />
                                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <PathIcon Data="M4,6 h10 v2 h-10 z M4,11 h10 v2 h-10 z M4,16 h6 v2 h-6 z M17,13 l3,3 l-6,6 h-3 v-3 z" Width="14" Height="14" />
+                                                <controls:Icon Kind="SquarePen" Size="16" />
                                                 <TextBlock Text="{Binding Localization[Participants.BulkEdit]}" />
                                             </StackPanel>
                                         </DockPanel>
@@ -167,7 +167,7 @@
                                         <DockPanel>
                                             <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="Ctrl+G" />
                                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <PathIcon Data="M12,2 l10,18 h-20 z M12,9 v5 M12,17 v0.5" Width="14" Height="14" />
+                                                <controls:Icon Kind="TriangleAlert" Size="16" />
                                                 <TextBlock Text="{Binding Localization[Participants.MarkAgeViolators]}" />
                                             </StackPanel>
                                         </DockPanel>
@@ -182,7 +182,7 @@
                      the new participant to every day that has a group. -->
                 <Button Command="{Binding AddParticipantCommand}" Classes="accent">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <PathIcon Data="M11,5 h2 v6 h6 v2 h-6 v6 h-2 v-6 h-6 v-2 h6 z" Width="14" Height="14" Foreground="White" />
+                        <controls:Icon Kind="Plus" Size="15" Foreground="White" />
                         <TextBlock Text="{Binding Localization[Participants.Add]}" />
                     </StackPanel>
                 </Button>

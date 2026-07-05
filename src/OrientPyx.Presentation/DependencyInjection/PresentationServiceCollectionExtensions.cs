@@ -29,6 +29,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<IParticipantImportFlow, ParticipantImportFlow>();
         services.AddSingleton<ICsvImportFlow, CsvImportFlow>();
         services.AddSingleton<IParticipantExportFlow, ParticipantExportFlow>();
+        services.AddSingleton<IEventArchiveFlow, EventArchiveFlow>();
         services.AddSingleton<IFileReadoutPoller, FileReadoutPoller>();
         services.AddSingleton<IBackgroundActivityService, BackgroundActivityService>();
         services.AddSingleton<ITableLayoutStore, TableLayoutStore>();
@@ -46,6 +47,8 @@ public static class PresentationServiceCollectionExtensions
         // refreshes it on session change) must share one instance.
         services.AddSingleton<DashboardViewModel>();
         services.AddTransient<SettingsViewModel>();
+        // «Про програму» — static info screen shown in a global overlay like Settings.
+        services.AddSingleton<AboutViewModel>();
 
         // Competition info/days pages (opened from the "Competition" top menu)
         services.AddSingleton<CompetitionInfoViewModel>();

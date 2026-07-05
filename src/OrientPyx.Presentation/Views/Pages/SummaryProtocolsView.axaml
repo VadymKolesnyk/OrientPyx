@@ -184,7 +184,7 @@
 
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                                     IsVisible="{Binding SettingsSaved}">
-                            <PathIcon Data="M5,12 l4,4 l10,-10" Width="16" Height="16"
+                            <controls:Icon Kind="Check" Size="17"
                                       Foreground="{DynamicResource SuccessBrush}" />
                             <TextBlock Text="{Binding Localization[SummaryProtocol.SavedHint]}"
                                        Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />

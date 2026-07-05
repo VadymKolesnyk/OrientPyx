@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
              xmlns:controls="using:OrientPyx.Presentation.Controls"
+             xmlns:behaviors="using:OrientPyx.Presentation.Behaviors"
              mc:Ignorable="d" d:DesignWidth="980" d:DesignHeight="720"
              x:Class="OrientPyx.Presentation.Views.Pages.DrawView"
              x:Name="Root"
@@ -91,11 +92,13 @@
                         <StackPanel Spacing="6" Width="150">
                             <TextBlock Text="{Binding Localization[Draw.GlobalStart]}" Classes="label" />
                             <TextBox Text="{Binding GlobalStart, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     behaviors:NumericInput.Time="True"
                                      PlaceholderText="hh:mm:ss" />
                         </StackPanel>
                         <StackPanel Spacing="6" Width="150">
                             <TextBlock Text="{Binding Localization[Draw.Interval]}" Classes="label" />
                             <TextBox Text="{Binding Interval, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     behaviors:NumericInput.Time="True"
                                      PlaceholderText="hh:mm:ss" />
                         </StackPanel>
                         <StackPanel Spacing="6" Width="200">

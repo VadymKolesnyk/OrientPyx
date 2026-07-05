@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -7,6 +8,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace OrientPyx.Presentation.Controls;
 
@@ -33,6 +35,12 @@ internal abstract class LazyEditCell : Decorator
 {
     private readonly TextBlock _label;
     private Control? _editor;
+
+    // The row-VM value at the moment the editor was materialised, so Escape can restore it (see
+    // CancelEdit). Captured via the subclass's EditSourcePath against the current DataContext; null
+    // EditSourcePath (or an unreadable path) opts a cell out of revert — Escape just retires it.
+    private bool _hasOriginal;
+    private object? _originalValue;
 
     /// <param name="selectedLabelPath">
     /// Binding path to the text shown on the resting label (e.g. <c>SelectedRegion.Label</c> or a plain
@@ -79,6 +87,13 @@ internal abstract class LazyEditCell : Decorator
     // ── Subclass contract ─────────────────────────────────────────────────────────────────────────
     /// <summary>Builds the real editor, already bound to its value path(s) on the row.</summary>
     protected abstract Control CreateEditor();
+
+    /// <summary>
+    /// The single row-VM property path the editor writes back to (the two-way binding's source). Used to
+    /// snapshot the value when editing begins so Escape can restore it (see <see cref="CancelEdit"/>).
+    /// Return null to opt out of revert — then Escape just leaves edit mode without restoring.
+    /// </summary>
+    protected abstract string? EditSourcePath { get; }
 
     /// <summary>
     /// True if entering the cell with this key should also "open" the editor (vs. just focus it):
@@ -178,6 +193,8 @@ internal abstract class LazyEditCell : Decorator
             editor.LostFocus += OnEditorLostFocus;
             _editor = editor;
             Child = editor;
+            CaptureOriginal();
+            SetHostEditing(true);
         }
         else if (!open)
         {
@@ -196,6 +213,72 @@ internal abstract class LazyEditCell : Decorator
             if (caretAt is { } point)
                 PlaceCaret(_editor, point);
         }, DispatcherPriority.Input);
+    }
+
+    /// <summary>
+    /// Cancel the current edit: restore the row-VM value to the snapshot taken when editing began and
+    /// drop back to the resting label. The table calls this on Escape. No-op when nothing is being edited
+    /// or when the cell opted out of revert (null <see cref="EditSourcePath"/> / unreadable snapshot).
+    /// </summary>
+    public void CancelEdit()
+    {
+        if (_editor is null)
+            return;
+        RestoreOriginal();
+        Retire();
+    }
+
+    // Snapshot the row-VM value the editor is bound to, so Escape can put it back. Best-effort: an
+    // unresolvable path (or no DataContext) simply leaves the cell without a revert snapshot.
+    private void CaptureOriginal()
+    {
+        _hasOriginal = false;
+        _originalValue = null;
+        if (EditSourcePath is not { } path)
+            return;
+        var (target, property) = ResolveSourceProperty(path);
+        if (property is null)
+            return;
+        _originalValue = property.GetValue(target);
+        _hasOriginal = true;
+    }
+
+    // Write the snapshot back onto the row VM, reverting whatever the editor changed. The two-way
+    // binding pushes the restored value onto the resting label as usual.
+    private void RestoreOriginal()
+    {
+        if (!_hasOriginal || EditSourcePath is not { } path)
+            return;
+        var (target, property) = ResolveSourceProperty(path);
+        if (property is null || !property.CanWrite)
+            return;
+        try
+        {
+            property.SetValue(target, _originalValue);
+        }
+        catch
+        {
+            // A type-mismatched revert should never crash editing; leave the current value in place.
+        }
+    }
+
+    // Resolve a (possibly dotted) property path against the current DataContext to its owning object and
+    // the leaf PropertyInfo, so the value can be read (capture) or written (restore). Returns a null
+    // property when any segment can't be resolved.
+    private (object? Target, PropertyInfo? Property) ResolveSourceProperty(string path)
+    {
+        object? target = DataContext;
+        var segments = path.Split('.');
+        for (var i = 0; i < segments.Length && target is not null; i++)
+        {
+            var property = target.GetType().GetProperty(segments[i]);
+            if (property is null)
+                return (null, null);
+            if (i == segments.Length - 1)
+                return (target, property);
+            target = property.GetValue(target);
+        }
+        return (null, null);
     }
 
     /// <summary>Subclasses call this when the editor's own "open" state closes (e.g. dropdown closed).</summary>
@@ -227,6 +310,15 @@ internal abstract class LazyEditCell : Decorator
         DetachEditor(_editor);
         _editor.DataContext = null;
         _editor = null;
+        _hasOriginal = false;
+        _originalValue = null;
         Child = _label;
+        SetHostEditing(false);
     }
+
+    // Reflect the live-editor state onto the hosting SheetCell's :editing pseudo-class so it keeps its
+    // accent outline for the whole edit — including while a combo's dropdown popup (which lives outside
+    // this cell's visual tree, so keyboard-focus-within can't see it) holds the focus.
+    private void SetHostEditing(bool editing)
+        => this.FindAncestorOfType<SheetCell>()?.SetEditing(editing);
 }

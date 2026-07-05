@@ -90,9 +90,7 @@
                                                 PointerPressed="OnRowPointerPressed">
                                             <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto">
                                                 <!-- Drag handle -->
-                                                <PathIcon Grid.Column="0" VerticalAlignment="Center" Margin="0,0,10,0"
-                                                          Width="11" Height="11" Foreground="{DynamicResource TextSecondary}"
-                                                          Data="M4,6 h12 M4,10 h12 M4,14 h12" />
+                                                <controls:Icon Grid.Column="0" VerticalAlignment="Center" Margin="0,0,10,0" Kind="GripVertical" Size="13" Foreground="{DynamicResource TextSecondary}" />
                                                 <!-- Start time — bound to the SLOT (position), so it stays put -->
                                                 <TextBlock Grid.Column="1" Text="{Binding SlotTimeText}"
                                                            FontFamily="Consolas,Menlo,monospace"

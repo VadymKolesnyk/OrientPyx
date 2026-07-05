@@ -36,9 +36,11 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
         IXmlImportFlow importFlow,
         IBusyService busy,
         IDisciplineStrategyProvider strategies,
-        IDialogService dialogs)
+        IDialogService dialogs,
+        ITableLayoutStore layoutStore)
         : base(localization)
     {
+        LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
         _importFlow = importFlow;
@@ -50,6 +52,9 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
         // thread (session writes run inside RunAsync), so marshal LoadAsync onto the UI thread.
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
     }
+
+    /// <summary>Per-competition table-view store; persists this page's table column order/width/visibility.</summary>
+    public ITableLayoutStore LayoutStore { get; }
 
     public override string NavKey => "Nav.ControlPoints";
     public override string TitleKey => "Page.ControlPoints.Title";

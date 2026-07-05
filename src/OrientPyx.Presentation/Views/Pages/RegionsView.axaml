@@ -23,7 +23,7 @@
                         ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
                 <Button Command="{Binding AddRegionCommand}" Classes="accent">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <PathIcon Data="M11,5 h2 v6 h6 v2 h-6 v6 h-2 v-6 h-6 v-2 h6 z" Width="14" Height="14" Foreground="White" />
+                        <controls:Icon Kind="Plus" Size="15" Foreground="White" />
                         <TextBlock Text="{Binding Localization[Regions.Add]}" />
                     </StackPanel>
                 </Button>
@@ -37,6 +37,8 @@
                                  ItemsSource="{Binding Regions}"
                                  Localization="{Binding Localization}"
                                  SelectedItem="{Binding SelectedRegion, Mode=TwoWay}"
+                                 LayoutStore="{Binding LayoutStore}"
+                                 LayoutKey="regions"
                                  DeleteRequested="OnDeleteRequested" />
         </Border>
 

@@ -1,0 +1,98 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             mc:Ignorable="d" d:DesignWidth="640" d:DesignHeight="640"
+             x:Class="OrientPyx.Presentation.Views.Pages.AboutView"
+             x:DataType="pages:AboutViewModel">
+
+    <UserControl.Styles>
+        <!-- Inline link button: no chrome, accent underlined text, opens in browser via OnLinkClick. -->
+        <Style Selector="Button.textlink">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="Button.textlink /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.textlink TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="TextDecorations" Value="Underline" />
+        </Style>
+    </UserControl.Styles>
+
+    <StackPanel Spacing="16" MaxWidth="560">
+
+        <!-- App identity: name, version, description -->
+        <Border Classes="card" Padding="22">
+            <StackPanel Spacing="10">
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Localization[App.Title]}" Classes="h2"
+                               VerticalAlignment="Center"
+                               FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+                    <Border Classes="badge" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding AppVersion}" />
+                    </Border>
+                </StackPanel>
+                <TextBlock Text="{Binding Localization[About.Subtitle]}" Classes="muted"
+                           TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <!-- Author, license, source link -->
+        <Border Classes="card" Padding="22">
+            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto"
+                  RowSpacing="10" ColumnSpacing="16">
+                <TextBlock Grid.Row="0" Grid.Column="0" Classes="label"
+                           Text="{Binding Localization[About.Author]}" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="0" Grid.Column="1"
+                           Text="{Binding Localization[About.AuthorName]}" VerticalAlignment="Center" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Classes="label"
+                           Text="{Binding Localization[About.License]}" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="1" Grid.Column="1"
+                           Text="{Binding Localization[About.LicenseValue]}" VerticalAlignment="Center" />
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Classes="label"
+                           Text="{Binding Localization[About.Source]}" VerticalAlignment="Center" />
+                <Button Grid.Row="2" Grid.Column="1" Classes="textlink"
+                        HorizontalAlignment="Left"
+                        Click="OnLinkClick" Tag="{Binding GitHubUrl}"
+                        ToolTip.Tip="{Binding GitHubUrl}">
+                    <TextBlock Text="{Binding GitHubUrl}" />
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- Tribute to Sergiy Sukharev & the original «Orientir» program -->
+        <Border Classes="card" Padding="22">
+            <StackPanel Spacing="12">
+                <TextBlock Text="{Binding Localization[About.Tribute.Title]}" Classes="h2"
+                           FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+                <!-- Body with the author's name inline as a link to his memorial page. Inlines are
+                     (re)built in code-behind (BuildTributeBody) so they survive a language switch;
+                     clicking the name run is handled in OnBodyPointerPressed. -->
+                <TextBlock x:Name="TributeBody" Classes="muted" TextWrapping="Wrap" LineHeight="20"
+                           PointerMoved="OnBodyPointerMoved"
+                           PointerPressed="OnBodyPointerPressed" />
+                <Grid ColumnDefinitions="150,*" ColumnSpacing="16">
+                    <TextBlock Grid.Column="0" Classes="label"
+                               Text="{Binding Localization[About.Tribute.OrientirLink]}"
+                               VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Classes="textlink"
+                            HorizontalAlignment="Left" VerticalAlignment="Center"
+                            Click="OnLinkClick" Tag="{Binding OrientirUrl}"
+                            ToolTip.Tip="{Binding OrientirUrl}">
+                        <TextBlock Text="{Binding OrientirUrl}" />
+                    </Button>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+    </StackPanel>
+</UserControl>

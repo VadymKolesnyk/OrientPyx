@@ -51,9 +51,11 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         IBusyService busy,
         IDisciplineStrategyProvider strategies,
         IDialogService dialogs,
-        IAppStore appStore)
+        IAppStore appStore,
+        ITableLayoutStore layoutStore)
         : base(localization)
     {
+        LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
         _importFlow = importFlow;
@@ -71,6 +73,9 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         // thread (session writes run inside RunAsync), so marshal LoadAsync onto the UI thread.
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
     }
+
+    /// <summary>Per-competition table-view store; persists this page's table column order/width/visibility.</summary>
+    public ITableLayoutStore LayoutStore { get; }
 
     public override string NavKey => "Nav.Groups";
     public override string TitleKey => "Page.Groups.Title";

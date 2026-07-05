@@ -13,6 +13,11 @@ namespace OrientPyx.BusinessLogic.Models;
 /// start paired with the finish's date); <see cref="Elapsed"/> is the resulting finish − start duration,
 /// both null when no participant/finish/start is known. <see cref="Score"/> is the collected «Бали»
 /// (rogaine and other point-scoring formats); null when the discipline does not score points.
+/// <see cref="Place"/> is the participant's 1-based rank within their group on the day (rogaine ranks by
+/// score then time, others by time), only assignable for an OK result; null when it cannot be assigned
+/// (unknown chip, non-OK status, out-of-competition runner). <see cref="Gap"/> is the loss to the group
+/// leader (this OK, placed runner's result time minus the group's place-1 time); null for the leader
+/// themselves and for anyone without a place.
 /// </summary>
 public sealed record FinishReadoutRow(
     Guid Id,
@@ -28,4 +33,6 @@ public sealed record FinishReadoutRow(
     string StatusDetail,
     DateTimeOffset? ResolvedStartTime,
     TimeSpan? Elapsed,
-    int? Score = null);
+    int? Score = null,
+    int? Place = null,
+    TimeSpan? Gap = null);
