@@ -30,6 +30,9 @@ public static class DataAccessServiceCollectionExtensions
         services.AddSingleton<IEventStore, EventStore>();
         services.AddSingleton<IEventFolderScanner, EventFolderScanner>();
 
+        // Zips/unzips a whole competition folder for the File → Export/Import Competition commands.
+        services.AddSingleton<IEventArchiveService, EventArchiveService>();
+
         // Reads .xlsx workbooks for the participant import (column mapping reuses the CSV path).
         services.AddSingleton<ISpreadsheetParser, XlsxParser>();
 

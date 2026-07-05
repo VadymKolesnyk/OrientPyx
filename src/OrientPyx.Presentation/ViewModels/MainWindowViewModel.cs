@@ -28,10 +28,15 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isSettingsOpen;
 
+    [ObservableProperty]
+    private bool _isAboutOpen;
+
     private readonly IUiScaleService _uiScale;
+    private readonly IAppSettingsService _appSettings;
     private readonly IBusyService _busy;
     private readonly IDialogService _dialogs;
     private readonly IBackgroundActivityService _activities;
+    private readonly Services.IEventArchiveFlow _archiveFlow;
 
     private readonly DashboardViewModel _dashboard;
     private readonly CompetitionInfoViewModel _competitionInfo;
@@ -63,6 +68,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         CreateEventViewModel create,
         ShellViewModel shell,
         SettingsViewModel settings,
+        AboutViewModel about,
         DashboardViewModel dashboard,
         CompetitionInfoViewModel competitionInfo,
         CompetitionDaysViewModel competitionDays,
@@ -87,9 +93,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         ClassicDrawViewModel classicDraw,
         ILocalizationService localization,
         IUiScaleService uiScale,
+        IAppSettingsService appSettings,
         IBusyService busy,
         IDialogService dialogs,
-        IBackgroundActivityService activities)
+        IBackgroundActivityService activities,
+        Services.IEventArchiveFlow archiveFlow)
     {
         _session = session;
         _navigation = navigation;
@@ -97,6 +105,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _create = create;
         _shell = shell;
         Settings = settings;
+        About = about;
         _dashboard = dashboard;
         _competitionInfo = competitionInfo;
         _competitionDays = competitionDays;
@@ -121,9 +130,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _classicDraw = classicDraw;
         Localization = localization;
         _uiScale = uiScale;
+        _appSettings = appSettings;
         _busy = busy;
         _dialogs = dialogs;
         _activities = activities;
+        _archiveFlow = archiveFlow;
 
         Pages = navigation.Pages;
 
@@ -193,6 +204,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Settings content shown in the global overlay.</summary>
     public SettingsViewModel Settings { get; }
+
+    /// <summary>«Про програму» content shown in the global overlay.</summary>
+    public AboutViewModel About { get; }
 
     /// <summary>True while the working shell is active (enables the "change competition" item).</summary>
     public bool IsEventSelected => _session.HasSelection && !IsSettingsOpen;
@@ -433,6 +447,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 _participants.RequestQuickFilter(ParticipantQuickFilter.OnCourse);
                 await OpenParticipantsAsync();
                 break;
+            case DashboardQuickAction.MonitorResults:
+                await OpenMonitorResultsAsync();
+                break;
+            case DashboardQuickAction.OnlineResults:
+                await OpenOnlineResultsAsync();
+                break;
         }
     }
 
@@ -455,16 +475,34 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public async Task InitializeAsync()
     {
         // BD work runs off the UI thread inside RunAsync; UI-state writes happen after the await.
+        string savedLanguage = string.Empty;
         var restored = await _busy.RunAsync(async () =>
         {
             await _uiScale.InitializeAsync();
+            savedLanguage = await _appSettings.GetLanguageAsync();
             return await _session.TryRestoreLastAsync();
         });
+
+        // Restore the saved UI language (SetLanguage touches culture/UI, so apply after the await).
+        ApplySavedLanguage(savedLanguage);
 
         if (restored)
             ShowShell();
         else
             await ShowSelectionAsync();
+    }
+
+    // Applies a persisted language culture name at startup, if one was saved and is available.
+    // SetLanguage itself no-ops when the culture is already active or not loaded.
+    private void ApplySavedLanguage(string cultureName)
+    {
+        if (string.IsNullOrWhiteSpace(cultureName))
+            return;
+
+        var culture = Localization.AvailableCultures
+            .FirstOrDefault(c => string.Equals(c.Name, cultureName, StringComparison.OrdinalIgnoreCase));
+        if (culture is not null)
+            Localization.SetLanguage(culture);
     }
 
     [RelayCommand]
@@ -473,10 +511,47 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void CloseSettings() => IsSettingsOpen = false;
 
+    [RelayCommand]
+    private void OpenAbout() => IsAboutOpen = true;
+
+    [RelayCommand]
+    private void CloseAbout() => IsAboutOpen = false;
+
     private bool CanChangeEvent() => _session.HasSelection;
+
+    /// <summary>Exposed so the main window can hand the flow its file picker (needs the window's StorageProvider).</summary>
+    public Services.IEventArchiveFlow ArchiveFlow => _archiveFlow;
 
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]
     private Task ChangeEventAsync() => ChangeEventInternalAsync();
+
+    // Exports the currently-open competition to a single archive file (File → Export competition).
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task ExportCompetitionAsync()
+    {
+        var current = _session.CurrentEvent;
+        if (current is null)
+            return;
+
+        await _archiveFlow.ExportAsync(current);
+    }
+
+    // Imports a competition archive as a new competition (File → Import competition). Available even
+    // with no competition open; on success we land on the selection screen with the list refreshed.
+    [RelayCommand]
+    private async Task ImportCompetitionAsync()
+    {
+        IsSettingsOpen = false;
+        var imported = await _archiveFlow.ImportAsync();
+        if (imported is null)
+            return;
+
+        // Refresh the picker so the new competition shows; if we're already on it, this repopulates it.
+        // We don't auto-open the imported competition — the user returns to the list and picks it.
+        _dashboard.StopAutoRefresh();
+        _session.Clear();
+        await ShowSelectionAsync();
+    }
 
     private async Task ChangeEventInternalAsync()
     {
@@ -509,6 +584,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         ChangeEventCommand.NotifyCanExecuteChanged();
+        ExportCompetitionCommand.NotifyCanExecuteChanged();
         OpenCompetitionInfoCommand.NotifyCanExecuteChanged();
         OpenCompetitionDaysCommand.NotifyCanExecuteChanged();
         OpenControlPointsCommand.NotifyCanExecuteChanged();

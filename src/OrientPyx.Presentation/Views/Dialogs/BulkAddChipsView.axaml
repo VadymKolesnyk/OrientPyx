@@ -48,19 +48,12 @@
                              PlaceholderText="9007400" />
                 </StackPanel>
 
-                <!-- Count: a custom +/- stepper, not NumericUpDown (its Windows automation peer
-                     crashes on spin). Same shape as the day-count stepper in CreateEventView. -->
+                <!-- Count: a plain digit-only text box so the quantity can be typed directly. -->
                 <StackPanel Spacing="6">
                     <TextBlock Text="{Binding Localization[Chips.BulkAdd.Count]}" Classes="label" />
-                    <StackPanel Orientation="Horizontal" Spacing="2">
-                        <Button Content="−" Command="{Binding DecrementCommand}"
-                                Classes="ghost stepper" />
-                        <TextBlock Text="{Binding Count}" MinWidth="44"
-                                   VerticalAlignment="Center"
-                                   TextAlignment="Center" FontWeight="Medium" />
-                        <Button Content="+" Command="{Binding IncrementCommand}"
-                                Classes="ghost stepper" />
-                    </StackPanel>
+                    <TextBox Text="{Binding Count, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             behaviors:NumericInput.Digits="True"
+                             PlaceholderText="100" />
                 </StackPanel>
 
                 <StackPanel Spacing="6">

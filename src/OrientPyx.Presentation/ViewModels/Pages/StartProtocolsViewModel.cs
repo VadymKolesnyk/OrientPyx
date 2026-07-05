@@ -85,8 +85,9 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
     /// </summary>
     public string PageTitle => Localization.Get(TitleKey);
 
+    // Lucide "clock".
     public override string IconData =>
-        "M12,2 a10,10 0 1 0 0.001,0 z M12,7 v5 l4,2 M12,2 v3 M22,12 h-3 M12,22 v-3 M2,12 h3";
+        "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 6v6l4 2";
 
     // ── Day picker (does NOT touch the session) ──────────────────────────────────────────────────────
 

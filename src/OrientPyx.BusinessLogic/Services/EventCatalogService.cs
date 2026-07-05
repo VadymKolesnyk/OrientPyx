@@ -113,17 +113,19 @@ public sealed class EventCatalogService : IEventCatalogService
         };
     }
 
-    private static bool IsValidIdentifier(string identifier)
+    public async Task<bool> IsIdentifierAvailableAsync(string identifier, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(identifier))
+        identifier = (identifier ?? string.Empty).Trim();
+        if (!EventIdentifier.IsValid(identifier))
             return false;
 
-        if (identifier.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
-            return false;
-
-        // Disallow path navigation tokens.
-        return identifier is not "." and not ".."
-            && !identifier.Contains(Path.DirectorySeparatorChar)
-            && !identifier.Contains(Path.AltDirectorySeparatorChar);
+        // Available only when no folder with this name already exists under the events path. Check the
+        // folder directly (not the scan, which requires a valid event.db) so a half-written folder from a
+        // failed create/import still counts as taken.
+        var paths = await _settings.GetPathsAsync(cancellationToken);
+        var folderPath = Path.Combine(paths.EventsPath, identifier);
+        return !Directory.Exists(folderPath);
     }
+
+    private static bool IsValidIdentifier(string identifier) => EventIdentifier.IsValid(identifier);
 }

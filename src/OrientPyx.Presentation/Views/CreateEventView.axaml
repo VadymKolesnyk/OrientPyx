@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:OrientPyx.Presentation.ViewModels"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
              mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="640"
              x:Class="OrientPyx.Presentation.Views.CreateEventView"
              x:DataType="vm:CreateEventViewModel">
@@ -27,8 +28,12 @@
 
                 <StackPanel Spacing="6">
                     <TextBlock Text="{Binding Localization[CreateEvent.Identifier]}" Classes="label" />
-                    <TextBox Text="{Binding Identifier, Mode=TwoWay}"
+                    <TextBox Text="{Binding Identifier, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                              PlaceholderText="{Binding Localization[CreateEvent.Identifier.Hint]}" />
+                    <TextBlock Text="{Binding IdentifierError}"
+                               IsVisible="{Binding IdentifierError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                               Foreground="{DynamicResource DangerBrush}"
+                               FontSize="12" TextWrapping="Wrap" />
                 </StackPanel>
 
                 <StackPanel Spacing="6">
@@ -134,8 +139,8 @@
                 <Border IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                         Background="{DynamicResource DangerSurface}" CornerRadius="8" Padding="12,8">
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <PathIcon Data="M12,2 a10,10 0 1 0 0,20 a10,10 0 0 0 0,-20 z M12,7 v6 M12,16 v0.5"
-                                  Width="16" Height="16" Foreground="{DynamicResource DangerBrush}"
+                        <controls:Icon Kind="CircleAlert"
+                                  Size="17" Foreground="{DynamicResource DangerBrush}"
                                   VerticalAlignment="Top" Margin="0,2,0,0" />
                         <TextBlock Text="{Binding ErrorMessage}" Foreground="{DynamicResource DangerBrush}"
                                    TextWrapping="Wrap" />

@@ -35,30 +35,27 @@
                 <Button Name="ImportButton" Classes="ghost" Click="OnImportClick"
                         ToolTip.Tip="{Binding Localization[Import.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <PathIcon Data="M12,3 v10 M8,9 l4,4 l4,-4 M5,15 v3 a1,1 0 0 0 1,1 h12 a1,1 0 0 0 1,-1 v-3"
-                                  Width="14" Height="14" />
+                        <controls:Icon Kind="Upload" Size="15" />
                         <TextBlock Text="{Binding Localization[Import]}" />
                     </StackPanel>
                 </Button>
                 <Button Command="{Binding RecalculateAgeWindowsCommand}" Classes="ghost"
                         ToolTip.Tip="{Binding Localization[Groups.RecalcAge.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <PathIcon Data="M12,4 a8,8 0 1 1 -7.5,5.3 M12,4 V1 M12,4 l3,2 M8,12 h8 M10,15 h4"
-                                  Width="14" Height="14" />
+                        <controls:Icon Kind="RefreshCw" Size="15" />
                         <TextBlock Text="{Binding Localization[Groups.RecalcAge]}" />
                     </StackPanel>
                 </Button>
                 <Button Command="{Binding PullAllGroupsCommand}" Classes="ghost"
                         ToolTip.Tip="{Binding Localization[Groups.PullAll.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <PathIcon Data="M12,3 v10 M8,9 l4,4 l4,-4 M5,15 v3 a1,1 0 0 0 1,1 h12 a1,1 0 0 0 1,-1 v-3"
-                                  Width="14" Height="14" />
+                        <controls:Icon Kind="Upload" Size="15" />
                         <TextBlock Text="{Binding Localization[Groups.PullAll]}" />
                     </StackPanel>
                 </Button>
                 <Button Command="{Binding AddGroupCommand}" Classes="accent">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <PathIcon Data="M11,5 h2 v6 h6 v2 h-6 v6 h-2 v-6 h-6 v-2 h6 z" Width="14" Height="14" Foreground="White" />
+                        <controls:Icon Kind="Plus" Size="15" Foreground="White" />
                         <TextBlock Text="{Binding Localization[Groups.Add]}" />
                     </StackPanel>
                 </Button>
@@ -76,9 +73,9 @@
                         Padding="0" HorizontalAlignment="Stretch"
                         HorizontalContentAlignment="Left" Background="Transparent">
                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                        <PathIcon Data="M8,5 l8,7 l-8,7" Width="12" Height="12"
+                        <controls:Icon Kind="ChevronRight" Size="13"
                                   IsVisible="{Binding !IsGlobalSettingsExpanded}" />
-                        <PathIcon Data="M5,8 l7,8 l7,-8" Width="12" Height="12"
+                        <controls:Icon Kind="ChevronDown" Size="13"
                                   IsVisible="{Binding IsGlobalSettingsExpanded}" />
                         <TextBlock Text="{Binding Localization[Groups.GlobalSettings]}" Classes="h2"
                                    VerticalAlignment="Center" />
@@ -161,8 +158,7 @@
                             Command="{Binding ShowCoursePatternHelpCommand}"
                             ToolTip.Tip="{Binding Localization[CoursePattern.Help.Title]}">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <PathIcon Data="M12,4 a8,8 0 1 1 0,16 a8,8 0 0 1 0,-16 M9.5,9 a2.5,2.5 0 0 1 3.6,-2 a2.2,2.2 0 0 1 0.4,3.4 c-0.9,0.8 -1.5,1.2 -1.5,2.3 M12,16.5 v0.2"
-                                      Width="14" Height="14" />
+                            <controls:Icon Kind="CircleHelp" Size="15" />
                             <TextBlock Text="{Binding Localization[CoursePattern.Help.Button]}" />
                         </StackPanel>
                     </Button>

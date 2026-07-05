@@ -18,6 +18,21 @@ public sealed class EventStore : IEventStore
         await db.Database.MigrateAsync(cancellationToken);
     }
 
+    public async Task CheckpointAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        // No database file yet → nothing to checkpoint (and opening one would create an empty DB).
+        var dbPath = Path.Combine(eventFolderPath, AppDatabasePaths.EventDatabaseFileName);
+        if (!File.Exists(dbPath))
+            return;
+
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        // TRUNCATE checkpoints all committed frames into event.db and then shrinks the -wal file to zero,
+        // so the exported event.db holds every committed change on its own. Other open connections in this
+        // process may write new WAL frames afterwards, but the zip loop still archives any -wal/-shm files,
+        // so nothing is lost either way — this just makes the common case a self-contained event.db.
+        await db.Database.ExecuteSqlRawAsync("PRAGMA wal_checkpoint(TRUNCATE);", cancellationToken);
+    }
+
     public async Task<CompetitionInfo?> GetCompetitionInfoAsync(string eventFolderPath, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
@@ -1187,10 +1202,14 @@ public sealed class EventStore : IEventStore
         UofParticipantData data,
         bool clearFirst,
         int daysCreated,
+        ParticipantImportScope scope,
         IProgress<ImportProgress>? progress,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(scope);
+
+        var currentDayOnly = scope.Mode == ParticipantImportMode.CurrentDayOnly;
 
         await using var db = EventDbContextFactory.Create(eventFolderPath);
 
@@ -1204,11 +1223,25 @@ public sealed class EventStore : IEventStore
                 info.Organisation = data.Organisation.Trim();
         }
 
-        // 2. Optional wipe: clear the whole participant database so the file becomes the full roster.
+        // 2. Optional wipe. All-days mode clears the whole participant database so the file becomes the
+        //    full roster. Current-day-only mode clears just the target day's links (the participants and
+        //    their other days stay), so the file becomes that day's roster without touching other days.
         if (clearFirst)
         {
-            await db.ParticipantDays.ExecuteDeleteAsync(cancellationToken);
-            await db.Participants.ExecuteDeleteAsync(cancellationToken);
+            if (currentDayOnly)
+            {
+                var targetDay = await db.Days
+                    .Where(d => d.Number == scope.TargetDayNumber)
+                    .Select(d => (Guid?)d.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (targetDay is { } id)
+                    await db.ParticipantDays.Where(l => l.EventDayId == id).ExecuteDeleteAsync(cancellationToken);
+            }
+            else
+            {
+                await db.ParticipantDays.ExecuteDeleteAsync(cancellationToken);
+                await db.Participants.ExecuteDeleteAsync(cancellationToken);
+            }
             progress?.Report(ImportProgress.Of(ImportStage.Cleared));
         }
 
@@ -1275,10 +1308,25 @@ public sealed class EventStore : IEventStore
             }
         }
 
-        // Existing participants for FOU-code matching (keep mode); none after a clear.
-        var byFsouCode = (clearFirst ? [] : await db.Participants.ToListAsync(cancellationToken))
+        // Existing participants to match imported rows against, so a re-import updates in place rather
+        // than duplicating. All-days mode matches by FOU code (and finds nothing after a full wipe);
+        // current-day-only mode never wipes participants and matches by the chosen link field so the
+        // new day's link attaches to the same person already imported from another day.
+        var matchByName = scope.LinkField == ParticipantLinkField.FullName;
+        var existingParticipants = (!currentDayOnly && clearFirst)
+            ? new List<Participant>()
+            : await db.Participants.ToListAsync(cancellationToken);
+
+        static string NameKey(string name) => string.Join(' ',
+            name.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        var byFsouCode = existingParticipants
             .Where(p => !string.IsNullOrWhiteSpace(p.FsouCode))
             .GroupBy(p => p.FsouCode.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var byName = existingParticipants
+            .Where(p => !string.IsNullOrWhiteSpace(p.FullName))
+            .GroupBy(p => NameKey(p.FullName), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
         var linksByParticipant = existingLinks
             .GroupBy(l => l.ParticipantId)
@@ -1299,8 +1347,16 @@ public sealed class EventStore : IEventStore
 
             var code = src.FsouCode.Trim();
             Participant? participant = null;
-            if (code.Length > 0 && byFsouCode.TryGetValue(code, out var matched))
+            if (matchByName)
+            {
+                var nameKey = NameKey(src.FullName);
+                if (nameKey.Length > 0 && byName.TryGetValue(nameKey, out var matchedByName))
+                    participant = matchedByName;
+            }
+            else if (code.Length > 0 && byFsouCode.TryGetValue(code, out var matched))
+            {
                 participant = matched;
+            }
 
             if (participant is null)
             {
@@ -1322,32 +1378,63 @@ public sealed class EventStore : IEventStore
                 };
                 db.Participants.Add(participant);
                 added++;
+
+                // Register the new participant so a later row with the same key (a second file line for
+                // the same athlete) updates it rather than adding a duplicate.
+                var newNameKey = NameKey(participant.FullName);
+                if (newNameKey.Length > 0)
+                    byName.TryAdd(newNameKey, participant);
+                if (code.Length > 0)
+                    byFsouCode.TryAdd(code, participant);
             }
             else
             {
-                participant.FullName = src.FullName;
+                // All-days mode overwrites every participant field (legacy behaviour). Current-day-only mode
+                // only touches the fields the caller ticked (default: none — a day-scoped import shouldn't
+                // silently rewrite an athlete's shared details across their other days).
+                bool Update(ParticipantUpdateFields field) =>
+                    !currentDayOnly || scope.UpdateFields.HasFlag(field);
+
+                if (Update(ParticipantUpdateFields.FullName))
+                    participant.FullName = src.FullName;
                 // Number and Team are absent in UOF files; only overwrite when the source supplies one,
                 // so re-importing UOF data over a CSV-set number/team doesn't wipe it.
-                if (src.Number.Length > 0)
+                if (Update(ParticipantUpdateFields.Number) && src.Number.Length > 0)
                     participant.Number = src.Number;
-                if (src.Team.Length > 0)
+                if (Update(ParticipantUpdateFields.Team) && src.Team.Length > 0)
                     participant.Team = src.Team;
-                participant.Rank = src.Rank;
-                participant.Coach = src.Coach;
-                participant.BirthDate = src.BirthDate;
-                participant.RegionId = regionId;
-                participant.ClubId = clubId;
-                participant.DusshId = dusshId;
-                participant.Representative = src.Representative;
-                participant.IsFsouMember = src.IsFsouMember;
-                participant.Payment = src.Payment;
+                if (Update(ParticipantUpdateFields.Rank))
+                    participant.Rank = src.Rank;
+                if (Update(ParticipantUpdateFields.Coach))
+                    participant.Coach = src.Coach;
+                if (Update(ParticipantUpdateFields.BirthDate))
+                    participant.BirthDate = src.BirthDate;
+                if (Update(ParticipantUpdateFields.Region))
+                    participant.RegionId = regionId;
+                if (Update(ParticipantUpdateFields.Club))
+                    participant.ClubId = clubId;
+                if (Update(ParticipantUpdateFields.Dussh))
+                    participant.DusshId = dusshId;
+                if (Update(ParticipantUpdateFields.Representative))
+                    participant.Representative = src.Representative;
+                if (Update(ParticipantUpdateFields.IsFsouMember))
+                    participant.IsFsouMember = src.IsFsouMember;
+                if (Update(ParticipantUpdateFields.Payment))
+                    participant.Payment = src.Payment;
                 updated++;
             }
 
             var group = ResolveGroup(src.Group);
             var priorLinks = linksByParticipant.TryGetValue(participant.Id, out var l) ? l : [];
 
-            foreach (var dayNumber in src.DayNumbers)
+            // Current-day-only mode ignores the file's day info and enters the athlete on the target day.
+            // Otherwise: a participant the file lists for no day (empty/blank ProgEvent) is entered on
+            // every day, rather than being imported with no day membership at all.
+            var dayNumbers = currentDayOnly
+                ? [scope.TargetDayNumber]
+                : src.DayNumbers.Count > 0 ? src.DayNumbers : days.Select(d => d.Number).ToList();
+
+            foreach (var dayNumber in dayNumbers)
             {
                 if (!dayByNumber.TryGetValue(dayNumber, out var day))
                     continue; // a number with no matching day (shouldn't happen — caller created them)

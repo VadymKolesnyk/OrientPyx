@@ -55,7 +55,9 @@ public sealed class ParticipantImportFlow : IParticipantImportFlow
             return false;
         }
 
-        // Ask whether to wipe the participant database first (default off — keep + FOU-code merge).
+        // Ask whether to wipe the participant database first (default off — keep + FOU-code merge), and
+        // whether to import onto every day per the file or only the active day (with a link field).
+        var scope = _session.CurrentDay is { } day ? new ImportScopeChoice(day.Number) : null;
         var dialog = new ImportOptionsViewModel(
             _localization,
             titleKey: "ParticipantsImport.Title",
@@ -63,17 +65,19 @@ public sealed class ParticipantImportFlow : IParticipantImportFlow
             options:
             [
                 new ImportOption(ClearParticipantsKey, "ParticipantsImport.ClearFirst", isChecked: false)
-            ]);
+            ],
+            scope: scope);
 
         var result = await _dialogs.ShowImportOptionsAsync(dialog);
         if (result is null)
             return false; // cancelled
 
         var clearFirst = result.Get(ClearParticipantsKey, fallback: false);
+        var importScope = result.Scope ?? ParticipantImportScope.AllDays;
         var data = outcome.Data!;
 
         await _busy.RunAsync(reporter =>
-            _editor.ImportParticipantsAsync(data, clearFirst, new ProgressRelay(this, reporter)));
+            _editor.ImportParticipantsAsync(data, clearFirst, importScope, new ProgressRelay(this, reporter)));
         return true;
     }
 

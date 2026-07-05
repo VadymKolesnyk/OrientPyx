@@ -81,8 +81,9 @@ public sealed class CsvImportFlow : ICsvImportFlow
         }
 
         var file = outcome.Data!;
+        var scope = _session.CurrentDay is { } day ? new ImportScopeChoice(day.Number) : null;
         var mapping = await _dialogs.ShowCsvMappingAsync(
-            new CsvMappingViewModel(_localization, file.Header, file.Rows.Count));
+            new CsvMappingViewModel(_localization, file.Header, file.Rows.Count, scope));
         if (mapping is null)
             return false; // cancelled
 
@@ -100,8 +101,9 @@ public sealed class CsvImportFlow : ICsvImportFlow
             return false;
         }
 
+        var importScope = mapping.Scope ?? ParticipantImportScope.AllDays;
         await _busy.RunAsync(reporter =>
-            _editor.ImportParticipantsAsync(data, mapping.ClearFirst, new ProgressRelay(this, reporter)));
+            _editor.ImportParticipantsAsync(data, mapping.ClearFirst, importScope, new ProgressRelay(this, reporter)));
         return true;
     }
 

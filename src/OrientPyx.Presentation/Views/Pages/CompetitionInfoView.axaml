@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
              mc:Ignorable="d" d:DesignWidth="760" d:DesignHeight="560"
              x:Class="OrientPyx.Presentation.Views.Pages.CompetitionInfoView"
              x:DataType="pages:CompetitionInfoViewModel">
@@ -118,7 +119,7 @@
                     Classes="accent" />
             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                         IsVisible="{Binding Saved}">
-                <PathIcon Data="M5,12 l4,4 l10,-10" Width="16" Height="16"
+                <controls:Icon Kind="Check" Size="17"
                           Foreground="{DynamicResource SuccessBrush}" />
                 <TextBlock Text="{Binding Localization[CompetitionInfo.Saved]}"
                            Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />

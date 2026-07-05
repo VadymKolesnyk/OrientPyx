@@ -1,11 +1,14 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.ViewModels;
 
 namespace OrientPyx.Presentation.Views;
 
-public partial class MainWindow : Window
+public partial class MainWindow : Window, IArchiveFilePicker
 {
     // The element that had keyboard focus when Alt went down, captured so we can put focus back if the
     // menu grabs it during a Shift+Alt keyboard-layout switch. Cleared once the Alt chord ends.
@@ -31,6 +34,40 @@ public partial class MainWindow : Window
         _topMenu = this.FindControl<Menu>("TopMenu");
         if (_topMenu is not null)
             _topMenu.Opened += OnTopMenuOpened;
+
+        // The competition export/import flow needs this window's StorageProvider for its file dialogs, so
+        // the window plays the picker. Hand it to the flow once the DataContext (the root VM) is set.
+        DataContextChanged += (_, _) =>
+        {
+            if (DataContext is MainWindowViewModel vm)
+                vm.ArchiveFlow.Picker = this;
+        };
+    }
+
+    private static readonly FilePickerFileType ArchiveFileType = new("OrientPyx")
+    {
+        Patterns = [$"*.{EventArchiveConstants.Extension}"],
+    };
+
+    public async Task<string?> PickSaveArchiveAsync(string suggestedFileName)
+    {
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            SuggestedFileName = suggestedFileName,
+            DefaultExtension = EventArchiveConstants.Extension,
+            FileTypeChoices = [ArchiveFileType],
+        });
+        return file?.TryGetLocalPath();
+    }
+
+    public async Task<string?> PickOpenArchiveAsync()
+    {
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            AllowMultiple = false,
+            FileTypeFilter = [ArchiveFileType],
+        });
+        return files.Count > 0 ? files[0].TryGetLocalPath() : null;
     }
 
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)

@@ -181,6 +181,8 @@ public sealed partial class SettingsViewModel : PageViewModelBase
     private void SetLanguage(string cultureName)
     {
         Localization.SetLanguage(CultureInfo.GetCultureInfo(cultureName));
+        // Persist so the choice is restored on the next launch.
+        _ = _settings.SaveLanguageAsync(cultureName);
     }
 
     [RelayCommand]

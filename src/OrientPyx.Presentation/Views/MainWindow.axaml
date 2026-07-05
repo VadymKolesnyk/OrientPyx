@@ -5,6 +5,7 @@
         xmlns:vm="using:OrientPyx.Presentation.ViewModels"
         xmlns:views="using:OrientPyx.Presentation.Views"
         xmlns:pageViews="using:OrientPyx.Presentation.Views.Pages"
+        xmlns:controls="using:OrientPyx.Presentation.Controls"
         xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
         xmlns:dialogViews="using:OrientPyx.Presentation.Views.Dialogs"
         xmlns:services="using:OrientPyx.Presentation.Services"
@@ -87,6 +88,9 @@
         <DataTemplate DataType="dialogs:DrawClashHelpViewModel">
             <dialogViews:DrawClashHelpView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:ImportEventViewModel">
+            <dialogViews:ImportEventView />
+        </DataTemplate>
     </Window.DataTemplates>
 
     <!-- One transform scales the WHOLE interface — fonts, inputs, paddings, spacing,
@@ -113,9 +117,8 @@
                 IsVisible="{Binding Activities.IsAnyActive}"
                 ToolTip.Tip="{Binding Localization[Activity.Title]}">
             <Panel>
-                <!-- Gear-ish activity glyph -->
-                <PathIcon Data="M12,4 a8,8 0 1 1 -8,8 M12,4 v4 M4,12 h4"
-                          Width="18" Height="18"
+                <!-- Activity (running background processes) glyph -->
+                <controls:Icon Kind="Activity" Size="18"
                           Foreground="{DynamicResource AccentBrush}" />
                 <!-- Count badge -->
                 <Border Background="{DynamicResource AccentBrush}"
@@ -211,6 +214,12 @@
                 <MenuItem Header="{Binding Localization[Menu.File.ChangeEvent]}"
                           Command="{Binding ChangeEventCommand}" />
                 <Separator />
+                <MenuItem Header="{Binding Localization[Menu.File.ExportEvent]}"
+                          IsVisible="{Binding IsEventSelected}"
+                          Command="{Binding ExportCompetitionCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.File.ImportEvent]}"
+                          Command="{Binding ImportCompetitionCommand}" />
+                <Separator />
                 <MenuItem Header="{Binding Localization[Menu.File.Exit]}"
                           Command="{Binding ExitCommand}" />
             </MenuItem>
@@ -301,7 +310,8 @@
                       Command="{Binding OpenDashboardCommand}" />
 
             <MenuItem Header="{Binding Localization[Menu.Help]}">
-                <MenuItem Header="{Binding Localization[Menu.Help.About]}" />
+                <MenuItem Header="{Binding Localization[Menu.Help.About]}"
+                          Command="{Binding OpenAboutCommand}" />
             </MenuItem>
         </Menu>
 
@@ -355,6 +365,43 @@
                 </Border>
             </Border>
 
+            <!-- About overlay: same structure as the Settings overlay above, opened from Help → About. -->
+            <Border x:Name="AboutBackdrop"
+                    IsVisible="{Binding IsAboutOpen}"
+                    Background="#80000000">
+                <Border Background="{DynamicResource SurfacePage}"
+                        CornerRadius="12"
+                        Margin="60"
+                        MaxWidth="720"
+                        VerticalAlignment="Stretch"
+                        BoxShadow="0 10 40 0 #40000000"
+                        Padding="0"
+                        ClipToBounds="True">
+                    <DockPanel LastChildFill="True">
+                        <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
+                                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
+                                Padding="22,16">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding Localization[About.Title]}"
+                                           Classes="h2"
+                                           FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}"
+                                           VerticalAlignment="Center" />
+                                <Button Grid.Column="1"
+                                        Content="{Binding Localization[Settings.Close]}"
+                                        Classes="ghost"
+                                        Command="{Binding CloseAboutCommand}" />
+                            </Grid>
+                        </Border>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <pageViews:AboutView DataContext="{Binding About}"
+                                                 Margin="24" />
+                        </ScrollViewer>
+                    </DockPanel>
+                </Border>
+            </Border>
+
             <!-- Global loading overlay: shown during any async operation, blocks input. Declared BEFORE
                  the dialog overlay so a background operation that starts while a dialog is open (e.g. a
                  debounced autosave or fee refresh) renders BEHIND the dialog rather than covering its
@@ -369,11 +416,11 @@
                         VerticalAlignment="Center">
                     <StackPanel Spacing="12" MaxWidth="460">
                         <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
-                            <PathIcon Data="M12,4 a8,8 0 1 1 -8,8"
-                                      Width="22" Height="22"
-                                      Foreground="{DynamicResource AccentBrush}">
-                                <PathIcon.Styles>
-                                    <Style Selector="PathIcon">
+                            <controls:Icon Kind="LoaderCircle" Size="22"
+                                      Foreground="{DynamicResource AccentBrush}"
+                                      RenderTransformOrigin="50%,50%">
+                                <controls:Icon.Styles>
+                                    <Style Selector="controls|Icon">
                                         <Style.Animations>
                                             <Animation Duration="0:0:0.9" IterationCount="INFINITE">
                                                 <KeyFrame Cue="0%">
@@ -385,8 +432,8 @@
                                             </Animation>
                                         </Style.Animations>
                                     </Style>
-                                </PathIcon.Styles>
-                            </PathIcon>
+                                </controls:Icon.Styles>
+                            </controls:Icon>
                             <TextBlock Text="{Binding Localization[Common.Loading]}"
                                        Foreground="{DynamicResource TextPrimary}"
                                        VerticalAlignment="Center" />

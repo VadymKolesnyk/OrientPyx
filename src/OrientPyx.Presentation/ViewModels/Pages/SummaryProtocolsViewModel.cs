@@ -68,8 +68,9 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
     public override string TitleKey => "Page.SummaryProtocol.Title";
     public override string TextKey => "Page.SummaryProtocol.Text";
 
+    // Lucide "table".
     public override string IconData =>
-        "M4,4 h16 v16 h-16 z M4,9 h16 M9,9 v11 M4,14 h16";
+        "M3 3h18v18H3z M3 9h18 M9 9v12 M3 15h18";
 
     // ── The live preview document (built by RefreshPreview) ───────────────────────────────────────────
 

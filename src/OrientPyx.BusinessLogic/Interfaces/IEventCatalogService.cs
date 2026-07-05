@@ -12,6 +12,12 @@ public interface IEventCatalogService
     Task<EventSummary?> FindByIdentifierAsync(string identifier, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// True when <paramref name="identifier"/> is a valid folder name and no competition folder with that
+    /// name already exists under the events path. Used to validate the identifier before creating.
+    /// </summary>
+    Task<bool> IsIdentifierAvailableAsync(string identifier, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Creates a competition: a folder named <paramref name="identifier"/> under the events
     /// path, its event database, the metadata row, and <paramref name="dayCount"/> days. Throws
     /// if the identifier is invalid or already exists.

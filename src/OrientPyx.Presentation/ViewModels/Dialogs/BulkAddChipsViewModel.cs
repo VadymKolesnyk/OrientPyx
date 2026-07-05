@@ -29,7 +29,7 @@ public sealed partial class BulkAddChipsViewModel : ObservableObject
     [ObservableProperty]
     private string _startNumber = string.Empty;
 
-    /// <summary>How many chips to add. Bound to a +/- stepper.</summary>
+    /// <summary>How many chips to add. Typed directly into a digit-only text box.</summary>
     [ObservableProperty]
     private int _count = 100;
 
@@ -39,16 +39,6 @@ public sealed partial class BulkAddChipsViewModel : ObservableObject
 
     /// <summary>Completes with the entered values on confirm, or null on cancel/close.</summary>
     public Task<BulkAddChipsResult?> Completion => _completion.Task;
-
-    [RelayCommand]
-    private void Increment() => Count++;
-
-    [RelayCommand]
-    private void Decrement()
-    {
-        if (Count > 1)
-            Count--;
-    }
 
     [RelayCommand]
     private void Confirm() =>

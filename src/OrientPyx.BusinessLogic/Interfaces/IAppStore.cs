@@ -57,6 +57,12 @@ public interface IAppStore
 
     Task SaveReadoutTypeAsync(int readoutType, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the stored UI language culture name (e.g. "uk-UA"), or null/blank when never set
+    /// (caller applies the default).</summary>
+    Task<string?> GetLanguageAsync(CancellationToken cancellationToken = default);
+
+    Task SaveLanguageAsync(string language, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the last opened competition identifier + day number, if any.</summary>
     Task<(string? Identifier, int? DayNumber)> GetLastSessionAsync(CancellationToken cancellationToken = default);
 

@@ -64,9 +64,9 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
     public override string TitleKey => "Page.ClassicDraw.Title";
     public override string TextKey => "Page.ClassicDraw.Text";
 
-    // A simple list/table glyph.
+    // Lucide "list".
     public override string IconData =>
-        "M4,5 h16 M4,10 h16 M4,15 h16 M4,20 h16";
+        "M3 5h18 M3 12h18 M3 19h18";
 
     // ── Day picker (does NOT touch the session) ──────────────────────────────────────────────────────
 

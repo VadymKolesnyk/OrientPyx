@@ -296,4 +296,15 @@
         </Style>
     </Style>
 
+    <!-- ============================================================
+         Menu separators. A default separator is 1px tall; the whole menu
+         popup is rendered inside a LayoutTransformControl scaled by UiScale,
+         which can be as low as 0.8 — 1px * 0.8 snaps to 0 and the line
+         vanishes. Give it a MinHeight that survives the smallest scale
+         (1 / 0.8 = 1.25) so the divider is always drawn.
+         ============================================================ -->
+    <Style Selector="Menu Separator, MenuFlyoutPresenter Separator">
+        <Setter Property="MinHeight" Value="1.5" />
+    </Style>
+
 </Styles>

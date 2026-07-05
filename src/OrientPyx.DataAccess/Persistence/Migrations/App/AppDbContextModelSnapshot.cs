@@ -29,6 +29,10 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.App
                     b.Property<double>("FontScale")
                         .HasColumnType("REAL");
 
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("OnlineIntervalSeconds")
                         .HasColumnType("INTEGER");
 

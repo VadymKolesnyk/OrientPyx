@@ -19,6 +19,13 @@ public sealed partial class CreateEventViewModel : ViewModelBase
     [ObservableProperty]
     private string _identifier = string.Empty;
 
+    // Live feedback for the identifier field: null while valid/unknown, a localized reason otherwise.
+    [ObservableProperty]
+    private string? _identifierError;
+
+    // Guards against a stale async availability result overwriting a newer one (last edit wins).
+    private int _identifierToken;
+
     [ObservableProperty]
     private string _venue = string.Empty;
 
@@ -86,10 +93,34 @@ public sealed partial class CreateEventViewModel : ViewModelBase
     /// <summary>Raised when the user cancels creation.</summary>
     public event EventHandler? Cancelled;
 
+    // Re-check availability whenever the identifier changes: blank clears the message, an invalid or
+    // already-used name shows a reason. The check hits the events folder, so it's async and debounced by
+    // the last-write-wins token rather than a timer (typing a folder name is short).
+    partial void OnIdentifierChanged(string value) => _ = ValidateIdentifierAsync(value);
+
+    private async Task ValidateIdentifierAsync(string value)
+    {
+        var trimmed = (value ?? string.Empty).Trim();
+        var token = ++_identifierToken;
+
+        if (trimmed.Length == 0)
+        {
+            IdentifierError = null;
+            return;
+        }
+
+        var available = await _catalog.IsIdentifierAvailableAsync(trimmed);
+        if (token != _identifierToken)
+            return; // superseded by a newer edit
+
+        IdentifierError = available ? null : Localization.Get("CreateEvent.Error.Duplicate");
+    }
+
     public void Reset()
     {
         Name = string.Empty;
         Identifier = string.Empty;
+        IdentifierError = null;
         Venue = string.Empty;
         DayCount = 1;
         StartDate = null;
@@ -148,6 +179,17 @@ public sealed partial class CreateEventViewModel : ViewModelBase
         if (string.IsNullOrWhiteSpace(Name) || string.IsNullOrWhiteSpace(Identifier))
         {
             ErrorMessage = Localization.Get("CreateEvent.Error.Required");
+            return;
+        }
+
+        // Reject a taken/invalid identifier before touching the file system (the create call would also
+        // throw, but this gives the specific message and avoids a half-created folder on a race).
+        if (!await _catalog.IsIdentifierAvailableAsync(Identifier))
+        {
+            // Distinguish invalid-format from already-exists for a clearer message.
+            ErrorMessage = BusinessLogic.Models.EventIdentifier.IsValid(Identifier.Trim())
+                ? Localization.Get("CreateEvent.Error.Duplicate")
+                : Localization.Get("CreateEvent.Error.Invalid");
             return;
         }
 

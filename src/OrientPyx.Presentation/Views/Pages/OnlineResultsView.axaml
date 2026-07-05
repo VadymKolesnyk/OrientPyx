@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
              xmlns:shared="using:OrientPyx.Presentation.ViewModels.Shared"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
              mc:Ignorable="d" d:DesignWidth="720" d:DesignHeight="640"
              x:Class="OrientPyx.Presentation.Views.Pages.OnlineResultsView"
              x:DataType="pages:OnlineResultsViewModel">
@@ -27,7 +28,7 @@
                 <!-- Connection-not-configured warning -->
                 <Border Classes="card" Padding="16" IsVisible="{Binding !IsConnectionConfigured}">
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <PathIcon Data="M12,2 L22,20 H2 Z M12,9 v5 M12,17 v0.5" Width="18" Height="18"
+                        <controls:Icon Kind="TriangleAlert" Size="18"
                                   Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Top" />
                         <TextBlock Text="{Binding Localization[OnlineResults.NotConfigured]}"
                                    TextWrapping="Wrap" VerticalAlignment="Center" />
@@ -72,7 +73,7 @@
                             <!-- Not configured → warning -->
                             <StackPanel Orientation="Horizontal" Spacing="8"
                                         IsVisible="{Binding !HasPointsRule}">
-                                <PathIcon Data="M12,2 L22,20 H2 Z M12,9 v5 M12,17 v0.5" Width="15" Height="15"
+                                <controls:Icon Kind="TriangleAlert" Size="15"
                                           Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Top" />
                                 <TextBlock Text="{Binding PointsWarning}" Classes="muted"
                                            TextWrapping="Wrap" VerticalAlignment="Center" />
@@ -161,7 +162,7 @@
                                     Command="{Binding SaveSettingsCommand}" />
                             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                                         IsVisible="{Binding SettingsSaved}">
-                                <PathIcon Data="M5,12 l4,4 l10,-10" Width="16" Height="16"
+                                <controls:Icon Kind="Check" Size="17"
                                           Foreground="{DynamicResource SuccessBrush}" />
                                 <TextBlock Text="{Binding Localization[Settings.PathsSavedHint]}"
                                            Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
@@ -223,8 +224,7 @@
                                             <Button Grid.Column="1" Classes="ghost" Padding="8,4"
                                                     Click="OnCopyLinkClick" Tag="{Binding}"
                                                     ToolTip.Tip="{Binding $parent[ItemsControl].((pages:OnlineResultsViewModel)DataContext).Localization[OnlineResults.Copy]}">
-                                                <PathIcon Width="14" Height="14"
-                                                          Data="M9,2 h7 a1,1 0 0 1 1,1 v10 a1,1 0 0 1 -1,1 h-7 a1,1 0 0 1 -1,-1 v-10 a1,1 0 0 1 1,-1 z M5,6 v10 a1,1 0 0 0 1,1 h7" />
+                                                <controls:Icon Kind="Copy" Size="15" />
                                             </Button>
                                         </Grid>
                                     </DataTemplate>

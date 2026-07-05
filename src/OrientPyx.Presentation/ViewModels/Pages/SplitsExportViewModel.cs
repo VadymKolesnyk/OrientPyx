@@ -51,8 +51,9 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
     public override string TitleKey => "Page.Splits.Title";
     public override string TextKey => "Page.Splits.Text";
 
+    // Lucide "chart-column" (bars).
     public override string IconData =>
-        "M4,18 h4 v-6 h-4 z M10,18 h4 v-12 h-4 z M16,18 h4 v-9 h-4 z";
+        "M4 20V10 M10 20V4 M16 20v-6 M4 20h18";
 
     // ── Day picker (does NOT touch the session) ──────────────────────────────────────────────────────
 

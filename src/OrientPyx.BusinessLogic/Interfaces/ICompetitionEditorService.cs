@@ -590,10 +590,18 @@ public interface ICompetitionEditorService
     /// links) is wiped before importing, so the file becomes the full roster. When false, an athlete
     /// matching an existing one by non-blank FOU code is updated in place (idempotent re-import);
     /// others are added.
+    ///
+    /// <paramref name="scope"/> selects how rows map to days. The default
+    /// (<see cref="ParticipantImportScope.AllDays"/>) uses the file's day info. In
+    /// <see cref="ParticipantImportMode.CurrentDayOnly"/> the file's day info is ignored and every
+    /// athlete is entered on the active session day, matched to existing participants by the scope's
+    /// link field, and <paramref name="clearFirst"/> then clears only that day's links (not the whole
+    /// roster).
     /// </summary>
     Task<ParticipantImportResult> ImportParticipantsAsync(
         UofParticipantData data,
         bool clearFirst,
+        ParticipantImportScope scope,
         IProgress<ImportProgress>? progress = null,
         CancellationToken cancellationToken = default);
 
