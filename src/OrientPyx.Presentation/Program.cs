@@ -79,7 +79,11 @@ internal static class Program
     {
         try
         {
-            var appDir = AppContext.BaseDirectory;
+            // AppContext.BaseDirectory ends with a trailing separator (...\current\). Directory.GetParent
+            // on a trailing-slash path returns that same directory (...\current), NOT its parent, so we must
+            // trim the separator first to reach ...\OrientPyx where Velopack's Update.exe lives. Missing this
+            // made the "installed" check always fail, leaving data in the update-volatile install folder.
+            var appDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             var updateExe = Path.Combine(Directory.GetParent(appDir)?.FullName ?? appDir, "Update.exe");
             if (!File.Exists(updateExe))
                 return;
