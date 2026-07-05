@@ -31,7 +31,14 @@ public sealed class AppStore : IAppStore
         if (row is null)
             return null;
 
-        return new AppPaths { EventsPath = row.EventsPath };
+        // A path stored inside the install directory (an earlier build baked in the absolute
+        // ...\current\events) is a data-loss trap: auto-updates wipe that folder. Drop it so the caller
+        // falls back to the default, which resolves to the update-safe data-root.
+        var eventsPath = AppDatabasePaths.IsInsideApplicationDirectory(row.EventsPath)
+            ? string.Empty
+            : row.EventsPath;
+
+        return new AppPaths { EventsPath = eventsPath };
     }
 
     public async Task SavePathsAsync(AppPaths paths, CancellationToken cancellationToken = default)

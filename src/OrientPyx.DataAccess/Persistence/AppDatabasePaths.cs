@@ -74,4 +74,31 @@ public static class AppDatabasePaths
             ? configuredPath
             : Path.GetFullPath(Path.Combine(BaseDirectory, configuredPath));
     }
+
+    /// <summary>
+    /// True if <paramref name="path"/> lives inside the application (install) directory. On an installed
+    /// build that directory is Velopack's <c>...\current</c>, which every auto-update replaces wholesale —
+    /// so a stored path pointing there is a data-loss trap and must be rejected in favour of the default
+    /// (which resolves to the update-safe data-root). Best-effort: a malformed path is treated as unsafe.
+    /// </summary>
+    public static bool IsInsideApplicationDirectory(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+
+        try
+        {
+            var appDir = Path.GetFullPath(AppContext.BaseDirectory)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var candidate = Path.GetFullPath(path)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            return candidate.Equals(appDir, StringComparison.OrdinalIgnoreCase)
+                || candidate.StartsWith(appDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return true;
+        }
+    }
 }

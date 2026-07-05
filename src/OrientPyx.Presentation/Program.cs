@@ -69,6 +69,11 @@ internal static class Program
     /// so they survive updates. Velopack lays the app out as <c>&lt;root&gt;\current\OrientPyx.exe</c> with
     /// <c>&lt;root&gt;\Update.exe</c> one level up; the presence of that sibling is our "installed" signal.
     /// A plain build (no sibling Update.exe) is left untouched so <c>dotnet run</c> writes next to the exe.
+    ///
+    /// CRITICAL: every auto-update replaces the whole <c>current</c> folder, so anything written under it
+    /// (competition data, the app DB, logs) is destroyed on the next update. Early installed builds wrote
+    /// their <c>events</c>/<c>data</c> straight into <c>current</c>; if that data is still there we rescue
+    /// it into <c>data-root</c> before anything opens the databases (see <see cref="RescueDataFromInstallDir"/>).
     /// </summary>
     private static void RedirectDataRootIfInstalled()
     {
@@ -82,12 +87,75 @@ internal static class Program
             var root = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "OrientPyx", "data-root");
+
+            // Rescue any data an earlier build left inside the (update-volatile) install folder BEFORE we
+            // point the app at data-root — otherwise the next update wipes it, as happened for existing users.
+            RescueDataFromInstallDir(appDir, root);
+
             AppDatabasePaths.UseDataRoot(root);
         }
         catch
         {
             // Best-effort: if detection fails, fall back to the default (next to the exe).
         }
+    }
+
+    /// <summary>
+    /// One-time rescue: moves <c>events</c>/<c>data</c> that an earlier installed build wrote inside the
+    /// install folder (<paramref name="appDir"/>, i.e. <c>...\current</c>) into the stable
+    /// <paramref name="dataRoot"/>. Only runs when data-root does not already have that folder, so it never
+    /// clobbers newer data. Best-effort and copy-based (a cross-folder move can fail if a file is locked);
+    /// the source is left in place — the next update removes it anyway.
+    /// </summary>
+    private static void RescueDataFromInstallDir(string appDir, string dataRoot)
+    {
+        foreach (var folder in new[] { AppDatabasePaths.DefaultEventsFolderName, AppDatabasePaths.DefaultDataFolderName })
+        {
+            try
+            {
+                var source = Path.Combine(appDir, folder);
+                var destination = Path.Combine(dataRoot, folder);
+
+                // Nothing to rescue, or the destination already exists (data-root wins) — skip.
+                if (!Directory.Exists(source) || Directory.Exists(destination))
+                    continue;
+
+                // An empty leftover folder (just a stray "logs" subdir, no real data) isn't worth rescuing.
+                if (!DirectoryHasFiles(source))
+                    continue;
+
+                CopyDirectory(source, destination);
+            }
+            catch
+            {
+                // Best-effort per folder: a failure to rescue one must not block startup.
+            }
+        }
+    }
+
+    /// <summary>True if the directory tree contains at least one file (not just empty sub-folders).</summary>
+    private static bool DirectoryHasFiles(string path)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).Any();
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Recursively copies a directory tree. Creates <paramref name="destination"/> if missing.</summary>
+    private static void CopyDirectory(string source, string destination)
+    {
+        Directory.CreateDirectory(destination);
+
+        foreach (var file in Directory.EnumerateFiles(source))
+            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), overwrite: false);
+
+        foreach (var dir in Directory.EnumerateDirectories(source))
+            CopyDirectory(dir, Path.Combine(destination, Path.GetFileName(dir)));
     }
 
     public static AppBuilder BuildAvaloniaApp()
