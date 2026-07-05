@@ -3026,6 +3026,23 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 holderByChip.TryAdd(key, link);
         }
 
+        // Computed per-group placement (keyed by link id) so each known row can show the runner's place in
+        // their group; the same ranking the participant tables use. A place is only assigned to an OK,
+        // in-competition result — null otherwise.
+        var placeByLink = await ComputeDayResultsAsync(folder, _session.CurrentDay, cancellationToken);
+
+        // Each group's leader time (the place-1 OK result), so a placed runner's «Відставання» is their
+        // result time minus it. Only time-based results carry a ResultTime; a scoring day leaves it null,
+        // so no gap is shown there (the same loss-to-leader convention the protocols use).
+        var groupByLink = links.ToDictionary(l => l.Id, l => l.GroupId);
+        var leaderTimeByGroup = new Dictionary<Guid, TimeSpan>();
+        foreach (var (linkId, res) in placeByLink)
+        {
+            if (res.Place == 1 && res.ResultTime is { } lt
+                && groupByLink.TryGetValue(linkId, out var g) && g is { } gid)
+                leaderTimeByGroup[gid] = lt;
+        }
+
         var rows = new List<FinishReadoutRow>(readouts.Count);
         foreach (var r in readouts)
         {
@@ -3046,8 +3063,16 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 int? score = _strategies.For(discipline).UsesControlPointPoints
                     ? ScoreFor(r, gs, startFinishCodes, disabledCodes, pointsByCode, discipline, resolvedStart)
                     : null;
+                var result = placeByLink.TryGetValue(link.Id, out var pr) ? pr : null;
+                var place = result?.Place;
+                // «Відставання»: loss to the group leader, for a placed OK result whose time exceeds the
+                // leader's (the leader themselves and non-placed rows show none).
+                TimeSpan? gap = place is not null && result?.ResultTime is { } rt
+                    && link.GroupId is { } ggid && leaderTimeByGroup.TryGetValue(ggid, out var lead) && rt > lead
+                    ? rt - lead
+                    : null;
                 rows.Add(new FinishReadoutRow(r.Id, r.Order, r.ChipNumber, r.StartTime, r.FinishTime,
-                    IsKnown: true, p.Number, p.FullName, group, status, detail, resolvedStart, elapsed, score));
+                    IsKnown: true, p.Number, p.FullName, group, status, detail, resolvedStart, elapsed, score, place, gap));
             }
             else
             {

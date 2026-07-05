@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
+using Avalonia.Layout;
 using Avalonia.Media;
 
 namespace OrientPyx.Presentation.Controls;
@@ -54,6 +55,11 @@ public sealed class Icon : Control
     {
         AffectsRender<Icon>(KindProperty, DataProperty, SizeProperty, ForegroundProperty);
         AffectsMeasure<Icon>(SizeProperty);
+
+        // Don't let a stretching parent (Panel, or a Grid cell without alignment) blow the glyph up to fill
+        // its cell — keep it centred at its intrinsic Size. Render also re-centres defensively.
+        HorizontalAlignmentProperty.OverrideDefaultValue<Icon>(HorizontalAlignment.Center);
+        VerticalAlignmentProperty.OverrideDefaultValue<Icon>(VerticalAlignment.Center);
     }
 
     public string? Kind
@@ -114,7 +120,14 @@ public sealed class Icon : Control
             LineJoin = PenLineJoin.Round,
         };
 
-        using (context.PushTransform(Matrix.CreateScale(scale, scale)))
+        // A layout parent (e.g. a Panel) may stretch this control to a size larger than the requested
+        // glyph. Always draw the glyph at its intrinsic Size, centred in whatever bounds we were given,
+        // so the icon never "slips" to the top-left corner when stretched.
+        var bounds = Bounds.Size;
+        var offsetX = (bounds.Width - Size) / 2;
+        var offsetY = (bounds.Height - Size) / 2;
+
+        using (context.PushTransform(Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(offsetX, offsetY)))
         {
             context.DrawGeometry(null, pen, geometry);
         }

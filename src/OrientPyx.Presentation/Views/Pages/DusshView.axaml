@@ -37,6 +37,8 @@
                                  ItemsSource="{Binding Dusshes}"
                                  Localization="{Binding Localization}"
                                  SelectedItem="{Binding SelectedDussh, Mode=TwoWay}"
+                                 LayoutStore="{Binding LayoutStore}"
+                                 LayoutKey="dussh"
                                  DeleteRequested="OnDeleteRequested" />
         </Border>
 

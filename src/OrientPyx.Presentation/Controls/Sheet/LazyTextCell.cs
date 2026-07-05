@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Data;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.VisualTree;
@@ -106,7 +107,50 @@ internal sealed class LazyTextCell : LazyEditCell
             box[!OpacityProperty] = new Binding(opacity) { Converter = DimConverter };
         if (_options.RentalChips is { } registry)
             ChipHighlight.SetRegistry(box, registry);
+        // Flatten the box's own border as a LOCAL value once its template runs — a local value beats the
+        // theme's :focus / :pointerover style setters (which a plain style selector couldn't reliably
+        // override), so the editor shows no ring of its own; the cell's :editing outline is the only one.
+        box.TemplateApplied += OnBoxTemplateApplied;
+        // Hard block on control characters reaching the text: the Escape key raises a separate TextInput
+        // event carrying U+001B, which a handled KeyDown does NOT suppress — so without this the box could
+        // still type the ␛ glyph. Runs in tunnel so it beats the TextBox's own TextInput handling.
+        box.AddHandler(InputElement.TextInputEvent, OnBoxTextInput, RoutingStrategies.Tunnel);
         return box;
+    }
+
+    protected override void DetachEditor(Control editor)
+    {
+        if (editor is TextBox box)
+        {
+            box.TemplateApplied -= OnBoxTemplateApplied;
+            box.RemoveHandler(InputElement.TextInputEvent, OnBoxTextInput);
+        }
+    }
+
+    // Reject any input string containing a C0 control character (except tab/newline/carriage return),
+    // notably the U+001B ESC that the Escape key emits. Keeps stray control glyphs out of every text cell.
+    private static void OnBoxTextInput(object? sender, TextInputEventArgs e)
+    {
+        var text = e.Text;
+        if (string.IsNullOrEmpty(text))
+            return;
+        foreach (var c in text)
+        {
+            if (c < 0x20 && c is not ('\t' or '\n' or '\r'))
+            {
+                e.Handled = true;
+                return;
+            }
+        }
+    }
+
+    private static void OnBoxTemplateApplied(object? sender, Avalonia.Controls.Primitives.TemplateAppliedEventArgs e)
+    {
+        if (e.NameScope.Find<Border>("PART_BorderElement") is { } border)
+        {
+            border.BorderThickness = new Thickness(0);
+            border.BorderBrush = Brushes.Transparent;
+        }
     }
 
     // Resolves a themed brush by resource key from the application resources, for the placeholder
@@ -121,6 +165,9 @@ internal sealed class LazyTextCell : LazyEditCell
 
     // A text editor takes focus and the caret on entry; it never "opens" anything.
     protected override bool ShouldOpenOnActivate(Key key) => false;
+
+    // The two-way TextBox binding writes to this path — snapshot it so Escape can revert.
+    protected override string? EditSourcePath => _editPath;
 
     // Land the caret where the user clicked rather than at the start. Hit-test the click point against
     // the editor's text layout: translate it into the TextPresenter, then ask the laid-out line which

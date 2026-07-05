@@ -63,6 +63,20 @@ public sealed class FinishReadRowViewModel
     /// <summary>Collected «Бали» for a point-scoring day; blank when the discipline doesn't score points.</summary>
     public string ScoreText => _row.Score is { } s ? s.ToString() : string.Empty;
 
+    /// <summary>The participant's 1-based place within their group on the day; blank when no place could be
+    /// assigned (unknown chip, non-OK status, out-of-competition runner).</summary>
+    public string PlaceText => _row.Place is { } p ? p.ToString() : string.Empty;
+
+    /// <summary>The medal rank of a podium place — 1/2/3 → gold/silver/bronze — or 0 for any other place
+    /// (or none). Drives the place cell's highlight badge.</summary>
+    public int PlaceMedal => _row.Place is 1 or 2 or 3 ? _row.Place.Value : 0;
+
+    /// <summary>Loss to the group leader as "+H:mm:ss" for a placed runner behind the leader; blank for the
+    /// leader themselves, a non-placed row, or a scoring day (no result time).</summary>
+    public string GapText => _row.Gap is { } g && g > TimeSpan.Zero
+        ? "+" + g.ToString("h\\:mm\\:ss")
+        : string.Empty;
+
     /// <summary>
     /// Short status code shown in the status column (OK / MP / OVT / DNF / DNS / DSQ). Blank when there
     /// is no status (unknown chip, or a discipline that doesn't evaluate finishes yet).

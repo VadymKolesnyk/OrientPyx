@@ -563,6 +563,21 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     }
 
     /// <summary>
+    /// The value the collapsed Groups column FILTERS by: the participant's group name (the first real
+    /// group across days), or empty when they run no group anywhere. Unlike <see cref="CollapsedGroupSortKey"/>
+    /// this is a plain label with no tier/index/control-char packing, so the filter's value list shows real
+    /// group names ("Ж14") rather than sort-key garbage ("Ж14␛00000"). Used as the column's FilterPath.
+    /// </summary>
+    public string CollapsedGroupFilterText
+    {
+        get
+        {
+            var real = RealGroupDays;
+            return real.Count == 0 ? string.Empty : real[0].SelectedGroup.Label;
+        }
+    }
+
+    /// <summary>
     /// Sort key for the collapsed Groups column. Rows are grouped by their FIRST real group — the group
     /// on the earliest day the participant runs — so a person who runs one group sorts under it whether
     /// they run it every day, one day, or alongside others. Within one such group the order is, in turn:

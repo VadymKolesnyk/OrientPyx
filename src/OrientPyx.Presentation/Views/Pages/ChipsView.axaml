@@ -117,6 +117,8 @@
                                  ItemsSource="{Binding Chips}"
                                  Localization="{Binding Localization}"
                                  SelectedItem="{Binding SelectedChip, Mode=TwoWay}"
+                                 LayoutStore="{Binding LayoutStore}"
+                                 LayoutKey="chips"
                                  DeleteRequested="OnDeleteRequested" />
         </Border>
 

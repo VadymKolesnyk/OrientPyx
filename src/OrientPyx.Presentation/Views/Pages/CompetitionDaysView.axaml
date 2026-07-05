@@ -37,6 +37,8 @@
                                  ItemsSource="{Binding Days}"
                                  Localization="{Binding Localization}"
                                  SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
+                                 LayoutStore="{Binding LayoutStore}"
+                                 LayoutKey="competitiondays"
                                  DeleteRequested="OnDeleteRequested" />
         </Border>
 

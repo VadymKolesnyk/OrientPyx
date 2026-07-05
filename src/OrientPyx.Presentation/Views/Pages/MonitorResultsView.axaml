@@ -256,19 +256,14 @@
                     </Border>
                 </Grid>
 
-                <!-- Save + start/stop -->
+                <!-- Auto-save hint + start/stop -->
                 <Border Classes="card" Padding="20">
                     <StackPanel Spacing="14">
-                        <StackPanel Orientation="Horizontal" Spacing="12">
-                            <Button Content="{Binding Localization[Monitor.Save]}" Classes="ghost"
-                                    Command="{Binding SaveSettingsCommand}" />
-                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
-                                        IsVisible="{Binding SettingsSaved}">
-                                <controls:Icon Kind="Check" Size="17"
-                                          Foreground="{DynamicResource SuccessBrush}" />
-                                <TextBlock Text="{Binding Localization[Settings.PathsSavedHint]}"
-                                           Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
-                            </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <controls:Icon Kind="Check" Size="15"
+                                           Foreground="{DynamicResource TextSecondary}" />
+                            <TextBlock Text="{Binding Localization[Monitor.AutoSaved]}"
+                                       Classes="muted" VerticalAlignment="Center" />
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" Spacing="12">

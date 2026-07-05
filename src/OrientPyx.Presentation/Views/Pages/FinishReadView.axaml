@@ -128,7 +128,9 @@
                                      SelectedItem="{Binding SelectedReadout, Mode=TwoWay}"
                                      Localization="{Binding Localization}"
                                      RowHighlightPath="IsUnknown"
-                                     RentalChips="{Binding RentalChips}" />
+                                     RentalChips="{Binding RentalChips}"
+                                     LayoutStore="{Binding LayoutStore}"
+                                     LayoutKey="finishread.log" />
             </Border>
 
             <!-- Drag handle between the table and the panel; shown only when the panel is. -->

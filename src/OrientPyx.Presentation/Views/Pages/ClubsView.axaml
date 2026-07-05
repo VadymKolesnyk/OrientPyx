@@ -34,6 +34,8 @@
                                  ItemsSource="{Binding Clubs}"
                                  Localization="{Binding Localization}"
                                  SelectedItem="{Binding SelectedClub, Mode=TwoWay}"
+                                 LayoutStore="{Binding LayoutStore}"
+                                 LayoutKey="clubs"
                                  DeleteRequested="OnDeleteRequested" />
         </Border>
 

@@ -63,7 +63,7 @@
                 <!-- Single day: one full-width "Date" field (saved as both start and end). -->
                 <StackPanel Spacing="6" IsVisible="{Binding !IsMultiDay}">
                     <TextBlock Text="{Binding Localization[CreateEvent.Date]}" Classes="label" />
-                    <CalendarDatePicker SelectedDate="{Binding StartDate, Mode=TwoWay,
+                    <controls:DatePickerBox SelectedDate="{Binding StartDate, Mode=TwoWay,
                                             Converter={StaticResource DateTimeOffsetToDateTime}}"
                                         SelectedDateFormat="Custom"
                                         CustomDateFormatString="dd.MM.yyyy"
@@ -75,7 +75,7 @@
                 <Grid ColumnDefinitions="*,20,*" IsVisible="{Binding IsMultiDay}">
                     <StackPanel Grid.Column="0" Spacing="6">
                         <TextBlock Text="{Binding Localization[CreateEvent.StartDate]}" Classes="label" />
-                        <CalendarDatePicker SelectedDate="{Binding StartDate, Mode=TwoWay,
+                        <controls:DatePickerBox SelectedDate="{Binding StartDate, Mode=TwoWay,
                                                 Converter={StaticResource DateTimeOffsetToDateTime}}"
                                             SelectedDateFormat="Custom"
                                             CustomDateFormatString="dd.MM.yyyy"
@@ -84,7 +84,7 @@
                     </StackPanel>
                     <StackPanel Grid.Column="2" Spacing="6">
                         <TextBlock Text="{Binding Localization[CreateEvent.EndDate]}" Classes="label" />
-                        <CalendarDatePicker SelectedDate="{Binding EndDate, Mode=TwoWay,
+                        <controls:DatePickerBox SelectedDate="{Binding EndDate, Mode=TwoWay,
                                                 Converter={StaticResource DateTimeOffsetToDateTime}}"
                                             SelectedDateFormat="Custom"
                                             CustomDateFormatString="dd.MM.yyyy"

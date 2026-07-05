@@ -59,6 +59,7 @@ public sealed class SearchableComboBox : ComboBox
     // preserved exactly as the caller set up.
     private IList? _source;
     private TextBox? _searchBox;
+    private Border? _searchHost;
     private INotifyCollectionChanged? _sourceIncc;
     private bool _suppressItemsChanged;
 
@@ -79,6 +80,46 @@ public sealed class SearchableComboBox : ComboBox
         var popup = e.NameScope.Find<Popup>("PART_Popup");
         if (popup is not null)
             InjectSearchBox(popup);
+    }
+
+    /// <summary>
+    /// Opens the dropdown (if not already) and seeds its search box with <paramref name="text"/>, as if
+    /// the user had typed it into the search row — the list filters immediately and the caret sits after
+    /// the text. Used by the sheet table so that typing a letter on a resting combo cell begins editing
+    /// AND starts the search with that letter, instead of dropping the keystroke. No-op below the search
+    /// threshold (the search row is hidden), where the seed has nowhere to go.
+    /// </summary>
+    public void SeedSearch(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+        if (!IsDropDownOpen)
+            IsDropDownOpen = true;
+
+        // The search box lives in the popup, which templates/opens asynchronously; defer until it exists
+        // and is visible (i.e. the list is long enough to show the search row), then type into it. On the
+        // very first open the popup may not be templated yet when this first fires, so retry a couple of
+        // background cycles before giving up.
+        TrySeed(text, attemptsLeft: 5);
+    }
+
+    private void TrySeed(string text, int attemptsLeft)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_searchBox is { IsVisible: true } box)
+            {
+                box.Text = text;
+                box.CaretIndex = text.Length;
+                box.Focus();
+                return;
+            }
+            // Search row hidden (list at/below threshold) ⇒ nothing to seed; stop retrying.
+            if (_searchBox is { IsVisible: false })
+                return;
+            if (attemptsLeft > 0)
+                TrySeed(text, attemptsLeft - 1);
+        }, DispatcherPriority.Background);
     }
 
     // Track the caller's ItemsSource. Avalonia raises ItemsSourceProperty changes; we capture the new
@@ -134,16 +175,27 @@ public sealed class SearchableComboBox : ComboBox
 
         _searchBox = new TextBox
         {
-            Margin = new Thickness(6, 6, 6, 0),
+            Margin = new Thickness(6, 6, 6, 6),
             MinHeight = 32,
-            [DockPanel.DockProperty] = Dock.Top
         };
         // Keep the watermark in sync with the (possibly bound) SearchWatermark property.
         _searchBox.Bind(TextBox.PlaceholderTextProperty, this.GetObservable(SearchWatermarkProperty));
         _searchBox.TextChanged += (_, _) => ApplyFilter();
 
+        // Give the search row its own opaque background (the popup surface colour) so it doesn't show
+        // the underlying cells through the docked strip; a hairline bottom border separates it from
+        // the list. Docked at the top of the dropdown.
+        _searchHost = new Border
+        {
+            Background = ResolveBrush("SurfaceCard") ?? Brushes.White,
+            BorderBrush = ResolveBrush("BorderSubtle"),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = _searchBox,
+            [DockPanel.DockProperty] = Dock.Top
+        };
+
         var dock = new DockPanel { LastChildFill = true };
-        dock.Children.Add(_searchBox);
+        dock.Children.Add(_searchHost);
         dock.Children.Add(surface);
         popup.Child = dock;
 
@@ -156,7 +208,6 @@ public sealed class SearchableComboBox : ComboBox
 
     private void OnPopupKeyDown(object? sender, KeyEventArgs e)
     {
-        Program.ActivityLog?.Info($"[combo] popup keydown: {e.Key}, searchFocused={_searchBox?.IsFocused}, items={ItemCount}, hl={_highlightIndex}");
         switch (e.Key)
         {
             case Key.Down:
@@ -172,12 +223,14 @@ public sealed class SearchableComboBox : ComboBox
                 e.Handled = true;
                 break;
             case Key.Escape:
+                // First Esc clears the query; a second Esc (empty query) closes the dropdown. Either way
+                // mark it handled so the key never reaches the search TextBox — an unhandled Escape is
+                // typed there as the U+241B (␛) control glyph.
                 if (!string.IsNullOrEmpty(_searchBox?.Text))
-                {
-                    _searchBox!.Text = string.Empty; // first Esc clears the query
-                    e.Handled = true;
-                }
-                // a second Esc (empty query) is left for the combo to close the dropdown
+                    _searchBox!.Text = string.Empty;
+                else
+                    IsDropDownOpen = false;
+                e.Handled = true;
                 break;
         }
     }
@@ -268,8 +321,21 @@ public sealed class SearchableComboBox : ComboBox
 
     private void UpdateSearchVisibility()
     {
+        // Toggle the whole host strip (background + border) so it disappears together with the box when
+        // the list is short enough to not warrant a search row.
+        if (_searchHost is not null)
+            _searchHost.IsVisible = (_source?.Count ?? 0) > SearchThreshold;
         if (_searchBox is not null)
             _searchBox.IsVisible = (_source?.Count ?? 0) > SearchThreshold;
+    }
+
+    // Resolves a themed brush by resource key from the application resources; null when absent.
+    private static IBrush? ResolveBrush(string key)
+    {
+        var app = Application.Current;
+        if (app is not null && app.TryGetResource(key, app.ActualThemeVariant, out var value) && value is IBrush brush)
+            return brush;
+        return null;
     }
 
     private void ApplyFilter()

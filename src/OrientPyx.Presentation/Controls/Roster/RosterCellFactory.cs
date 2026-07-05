@@ -343,7 +343,8 @@ internal sealed class RosterCellFactory
         var selected = selectedPath ?? $"{pathPrefix}{nameof(RosterDayCellViewModel.SelectedGroup)}";
         return new LazyComboCell(
             () => BuildComboCore<GroupOption>(itemsPath, selected, nameof(GroupOption.Label)),
-            $"{selected}.{nameof(GroupOption.Label)}");
+            $"{selected}.{nameof(GroupOption.Label)}",
+            selectedPath: selected);
     }
 
     // A region combo cell bound on the row. Both ParticipantDayRowViewModel and
@@ -353,7 +354,8 @@ internal sealed class RosterCellFactory
             nameof(ParticipantRosterRowViewModel.RegionOptions),
             nameof(ParticipantRosterRowViewModel.SelectedRegion),
             nameof(RegionOption.Label)),
-        $"{nameof(ParticipantRosterRowViewModel.SelectedRegion)}.{nameof(RegionOption.Label)}");
+        $"{nameof(ParticipantRosterRowViewModel.SelectedRegion)}.{nameof(RegionOption.Label)}",
+        selectedPath: nameof(ParticipantRosterRowViewModel.SelectedRegion));
 
     // A club combo cell bound on the row. Both row VMs expose ClubOptions/SelectedClub with these names.
     private LazyComboCell BuildClubCombo() => new(
@@ -361,7 +363,8 @@ internal sealed class RosterCellFactory
             nameof(ParticipantRosterRowViewModel.ClubOptions),
             nameof(ParticipantRosterRowViewModel.SelectedClub),
             nameof(ClubOption.Label)),
-        $"{nameof(ParticipantRosterRowViewModel.SelectedClub)}.{nameof(ClubOption.Label)}");
+        $"{nameof(ParticipantRosterRowViewModel.SelectedClub)}.{nameof(ClubOption.Label)}",
+        selectedPath: nameof(ParticipantRosterRowViewModel.SelectedClub));
 
     // A ДЮСШ combo cell bound on the row. Both row VMs expose DusshOptions/SelectedDussh with these names.
     private LazyComboCell BuildDusshCombo() => new(
@@ -369,7 +372,8 @@ internal sealed class RosterCellFactory
             nameof(ParticipantRosterRowViewModel.DusshOptions),
             nameof(ParticipantRosterRowViewModel.SelectedDussh),
             nameof(DusshOption.Label)),
-        $"{nameof(ParticipantRosterRowViewModel.SelectedDussh)}.{nameof(DusshOption.Label)}");
+        $"{nameof(ParticipantRosterRowViewModel.SelectedDussh)}.{nameof(DusshOption.Label)}",
+        selectedPath: nameof(ParticipantRosterRowViewModel.SelectedDussh));
 
     // A rank combo cell bound on the row. Both row VMs expose RankOptions/SelectedRank with these names.
     // Rank stores text, so the dropdown has no "+ new" option (ranks are managed on the Ranks page).
@@ -378,7 +382,8 @@ internal sealed class RosterCellFactory
             nameof(ParticipantRosterRowViewModel.RankOptions),
             nameof(ParticipantRosterRowViewModel.SelectedRank),
             nameof(RankOption.Label)),
-        $"{nameof(ParticipantRosterRowViewModel.SelectedRank)}.{nameof(RankOption.Label)}");
+        $"{nameof(ParticipantRosterRowViewModel.SelectedRank)}.{nameof(RankOption.Label)}",
+        selectedPath: nameof(ParticipantRosterRowViewModel.SelectedRank));
 
     // Builds the real SearchableComboBox for a combo cell, bound to the given items/selected paths and
     // rendering each option's <paramref name="labelPath"/>. Created on demand by LazyComboCell.
@@ -512,7 +517,8 @@ internal sealed class RosterCellFactory
     public LazyComboCell BuildStatusCombo(string optionsPath, string selectedPath, string restingTextPath, string restingDangerPath) => new(
         () => BuildComboCore<FinishStatusOption>(optionsPath, selectedPath, nameof(FinishStatusOption.Label)),
         restingTextPath,
-        restingDangerPath);
+        restingDangerPath,
+        selectedPath: selectedPath);
 
     private Button BuildDeleteButton()
     {

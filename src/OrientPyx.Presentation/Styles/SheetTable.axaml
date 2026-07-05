@@ -248,7 +248,13 @@
     <Style Selector="controls|SheetTable controls|SheetCell:range /template/ Border#PART_SelectionOverlay">
         <Setter Property="Background" Value="{DynamicResource AccentSurface}" />
     </Style>
+    <!-- The focused cell (keyboard-selected) OR a cell whose editor is live (:editing) keeps the accent
+         outline, so entering edit mode — which moves focus onto the editor inside — doesn't drop it. -->
     <Style Selector="controls|SheetTable controls|SheetCell:focus">
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="BorderThickness" Value="1.5" />
+    </Style>
+    <Style Selector="controls|SheetTable controls|SheetCell:editing">
         <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
         <Setter Property="BorderThickness" Value="1.5" />
     </Style>
@@ -261,6 +267,27 @@
         <Setter Property="Padding" Value="10,0" />
         <Setter Property="VerticalAlignment" Value="Stretch" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- The editor's OWN focus adorner (the default TextBox theme repaints PART_BorderElement's brush on
+         :focus/:pointerover) would draw a second ring inside the cell's accent outline. Suppress it in
+         EVERY state — the theme's :focus/:pointerover selectors are more specific than a plain one, so we
+         must qualify with the same states to win. Covers both a plain in-cell TextBox and the date
+         picker's inner PART_TextBox (a descendant of the SheetCell, so this selector reaches it). The
+         SheetCell's :editing outline is the only edit indicator. -->
+    <Style Selector="controls|SheetTable controls|SheetCell TextBox /template/ Border#PART_BorderElement">
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="controls|SheetTable controls|SheetCell TextBox:focus /template/ Border#PART_BorderElement">
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="controls|SheetTable controls|SheetCell TextBox:pointerover /template/ Border#PART_BorderElement">
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="Background" Value="Transparent" />
     </Style>
     <Style Selector="controls|SheetTable controls|SheetCell ComboBox">
@@ -279,6 +306,14 @@
         <Setter Property="VerticalAlignment" Value="Stretch" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
+    <!-- Kill the combo's own focus/hover chrome (the Fluent theme retargets its Border#Background brush &
+         fill on :focus/:pointerover). Keep it flat and transparent so only the cell's :editing outline
+         shows — no double ring, no box lighting up when the cell is entered. -->
+    <Style Selector="controls|SheetTable controls|SheetCell ComboBox /template/ Border#Background">
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
     <!-- A date cell edits 1:1 like a text cell (flat, borderless input, no height jump). The picker's
          templated parts (inner PART_TextBox, its PART_BorderElement, and the PART_Button glyph) each
          carry the app-wide MinHeight=38, which grows the row. Those parts live two template levels deep
@@ -293,6 +328,26 @@
         <Setter Property="VerticalAlignment" Value="Stretch" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- The picker's own outer chrome is a Border named "Background" (verified in the live visual tree);
+         it carries the focus/pointerover ring & fill. Flatten it so only the cell's :editing outline
+         shows. (Belt-and-suspenders alongside the local-value flatten in LazyDateCell.OnPickerTemplateApplied,
+         which wins over these anyway; kept for any date picker not built through that cell.) The inner
+         PART_TextBox's border is handled by the TextBox rules above. -->
+    <Style Selector="controls|SheetTable controls|SheetCell CalendarDatePicker /template/ Border#Background">
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="controls|SheetTable controls|SheetCell CalendarDatePicker:focus /template/ Border#Background">
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="controls|SheetTable controls|SheetCell CalendarDatePicker:pointerover /template/ Border#Background">
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="Background" Value="Transparent" />
     </Style>
 

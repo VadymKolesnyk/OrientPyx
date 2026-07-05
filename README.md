@@ -28,7 +28,7 @@
 
 ## Стек
 
-- [.NET 9](https://dotnet.microsoft.com/) / C#
+- [.NET 10](https://dotnet.microsoft.com/) / C#
 - [Avalonia 12](https://avaloniaui.net/) — кросплатформний UI (MVVM, CommunityToolkit.Mvvm)
 - [Entity Framework Core](https://learn.microsoft.com/ef/core/) + SQLite — зберігання
 - [Velopack](https://velopack.io/) — інсталятор та авто-оновлення (Windows)

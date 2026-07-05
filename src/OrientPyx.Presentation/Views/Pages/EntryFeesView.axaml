@@ -38,7 +38,9 @@
                 <Border Classes="card" ClipToBounds="True">
                     <controls:SheetTable Name="GroupFeesSheet"
                                          ItemsSource="{Binding GroupFees}"
-                                         Localization="{Binding Localization}" />
+                                         Localization="{Binding Localization}"
+                                         LayoutStore="{Binding LayoutStore}"
+                                         LayoutKey="entryfees.groupfees" />
                 </Border>
             </StackPanel>
 
@@ -98,6 +100,8 @@
                                          ItemsSource="{Binding ChipPriceOverrides}"
                                          Localization="{Binding Localization}"
                                          SelectedItem="{Binding SelectedChipPrice, Mode=TwoWay}"
+                                         LayoutStore="{Binding LayoutStore}"
+                                         LayoutKey="entryfees.chipprices"
                                          DeleteRequested="OnChipPriceDeleteRequested" />
                 </Border>
             </StackPanel>
@@ -125,6 +129,8 @@
                                          ItemsSource="{Binding Discounts}"
                                          Localization="{Binding Localization}"
                                          SelectedItem="{Binding SelectedDiscount, Mode=TwoWay}"
+                                         LayoutStore="{Binding LayoutStore}"
+                                         LayoutKey="entryfees.discounts"
                                          DeleteRequested="OnDiscountDeleteRequested" />
                 </Border>
             </StackPanel>

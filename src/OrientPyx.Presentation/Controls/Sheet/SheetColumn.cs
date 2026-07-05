@@ -271,8 +271,15 @@ public sealed partial class SheetColumn : ObservableObject
     /// <summary>Default starting width for content columns the builder doesn't fix explicitly.</summary>
     public const double DefaultWidth = 130;
 
+    /// <summary>
+    /// Smallest width the resize grip allows for any column — narrow enough that only the header's
+    /// sort button stays visible (the label trims to nothing), so every column can be squeezed down
+    /// to reveal/keep its sort handle. 10px left pad + the ~21px sort button + its right margin.
+    /// </summary>
+    public const double SortHandleMinWidth = 40;
+
     /// <summary>Smallest width the resize grip allows.</summary>
-    public double MinWidth { get; set; } = 48;
+    public double MinWidth { get; set; } = SortHandleMinWidth;
 
     /// <summary>True when the builder set an explicit width (vs. the default), used when carrying widths.</summary>
     public bool WidthCapped { get; set; }

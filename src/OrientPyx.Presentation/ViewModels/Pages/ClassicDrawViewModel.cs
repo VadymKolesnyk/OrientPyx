@@ -38,9 +38,11 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
         ISessionService session,
         IStartDrawService draw,
         IBusyService busy,
-        IDialogService dialogs)
+        IDialogService dialogs,
+        ITableLayoutStore layoutStore)
         : base(localization)
     {
+        LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
         _draw = draw;
@@ -59,6 +61,9 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
         // Singleton VM: reload the day list + groups on a competition/day change (marshal to UI).
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
     }
+
+    /// <summary>Per-competition table-view store; persists this page's table column order/width/visibility.</summary>
+    public ITableLayoutStore LayoutStore { get; }
 
     public override string NavKey => "Nav.ClassicDraw";
     public override string TitleKey => "Page.ClassicDraw.Title";

@@ -60,6 +60,8 @@
                                  ItemsSource="{Binding Points}"
                                  Localization="{Binding Localization}"
                                  SelectedItem="{Binding SelectedPoint, Mode=TwoWay}"
+                                 LayoutStore="{Binding LayoutStore}"
+                                 LayoutKey="controlpoints"
                                  DeleteRequested="OnDeleteRequested" />
         </Border>
 

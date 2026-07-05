@@ -10,19 +10,23 @@
 
     <DockPanel LastChildFill="True">
 
-        <!-- Heading + actions on one line -->
-        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
-            <StackPanel Grid.Column="0" Spacing="4">
+        <!-- Heading + actions. The actions live in a WrapPanel so, when the window is too narrow to
+             fit them all on one line, they reflow onto the next row instead of being clipped. -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" Margin="0,0,0,16">
+            <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center"
+                        Margin="0,0,16,0">
                 <TextBlock Text="{Binding Title}" Classes="h1"
                            FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
                 <TextBlock Text="{Binding Text}" Classes="subtitle" />
             </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
-                        VerticalAlignment="Center">
+            <WrapPanel Grid.Column="1" Orientation="Horizontal"
+                       HorizontalAlignment="Right"
+                       VerticalAlignment="Center">
                 <Button Classes="help" Command="{Binding ShowHelpCommand}"
+                        Margin="0,0,8,8"
                         ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
                 <controls:SearchableComboBox IsVisible="{Binding ShowDaySelector}"
-                          MinWidth="120" VerticalAlignment="Center"
+                          MinWidth="120" VerticalAlignment="Center" Margin="0,0,8,8"
                           SearchWatermark="{Binding Localization[Common.Search]}"
                           ItemsSource="{Binding DayOptions}"
                           SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
@@ -33,6 +37,7 @@
                     </ComboBox.ItemTemplate>
                 </controls:SearchableComboBox>
                 <Button Name="ImportButton" Classes="ghost" Click="OnImportClick"
+                        Margin="0,0,8,8"
                         ToolTip.Tip="{Binding Localization[Import.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <controls:Icon Kind="Upload" Size="15" />
@@ -40,6 +45,7 @@
                     </StackPanel>
                 </Button>
                 <Button Command="{Binding RecalculateAgeWindowsCommand}" Classes="ghost"
+                        Margin="0,0,8,8"
                         ToolTip.Tip="{Binding Localization[Groups.RecalcAge.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <controls:Icon Kind="RefreshCw" Size="15" />
@@ -47,19 +53,21 @@
                     </StackPanel>
                 </Button>
                 <Button Command="{Binding PullAllGroupsCommand}" Classes="ghost"
+                        Margin="0,0,8,8"
                         ToolTip.Tip="{Binding Localization[Groups.PullAll.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <controls:Icon Kind="Upload" Size="15" />
                         <TextBlock Text="{Binding Localization[Groups.PullAll]}" />
                     </StackPanel>
                 </Button>
-                <Button Command="{Binding AddGroupCommand}" Classes="accent">
+                <Button Command="{Binding AddGroupCommand}" Classes="accent"
+                        Margin="0,0,0,8">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <controls:Icon Kind="Plus" Size="15" Foreground="White" />
                         <TextBlock Text="{Binding Localization[Groups.Add]}" />
                     </StackPanel>
                 </Button>
-            </StackPanel>
+            </WrapPanel>
         </Grid>
 
         <!-- Competition-wide defaults, editable above the table (collapsible card — same pattern as the
@@ -129,6 +137,8 @@
                                  ItemsSource="{Binding Groups}"
                                  Localization="{Binding Localization}"
                                  SelectedItem="{Binding SelectedGroup, Mode=TwoWay}"
+                                 LayoutStore="{Binding LayoutStore}"
+                                 LayoutKey="groups"
                                  DeleteRequested="OnDeleteRequested" />
         </Border>
 

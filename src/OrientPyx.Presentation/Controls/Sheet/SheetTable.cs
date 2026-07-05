@@ -1858,6 +1858,12 @@ public sealed class SheetTable : TemplatedControl
 
         _focusedColumn = cell.ColumnIndex;
 
+        // Two-click-to-edit: the first click on a cell only selects it; a second click on the SAME,
+        // already-selected cell enters edit mode. Decide that here, BEFORE CollapseRange below moves the
+        // active cell onto the clicked one — compare the click against the currently active cell.
+        var clickedRowIndex = RowItemFromCell(cell) is { } clickedRow ? RowIndexOf(clickedRow) : -1;
+        var wasActiveCell = clickedRowIndex >= 0 && clickedRowIndex == _activeRow && cell.ColumnIndex == _activeCol;
+
         // Select the clicked cell's row. The ListBox would normally do this itself on bubble, but a
         // click that lands in an editor (and focuses it / begins editing) never reaches that path, so
         // the row would stay unselected. Set it explicitly from the row's data context.
@@ -1881,14 +1887,25 @@ public sealed class SheetTable : TemplatedControl
             _dragExtended = false;
         }
 
-        // A resting lazy cell: focus the SheetCell for the outline now, but DEFER opening the editor to
-        // pointer release. That way a press-and-drag selects a range without ever entering edit mode;
-        // a plain click (press with no drag) opens the editor on release (see OnTunnelPointerReleased).
+        // A resting lazy cell: focus the SheetCell for the outline now. Only ARM the deferred edit when
+        // this is a second click on the already-selected cell — the first click on a cell just selects it
+        // (Excel-like single-click-select, double-click-edit). The edit is deferred to pointer release so a
+        // press-and-drag selects a range without ever entering edit mode (see OnTunnelPointerReleased).
         if (FindLazyCell(cell.Content as Control) is { } lazy)
         {
             cell.Focus();
-            _pendingEditCell = lazy;
-            _pendingEditPoint = e.GetPosition(lazy);
+            if (wasActiveCell)
+            {
+                _pendingEditCell = lazy;
+                _pendingEditPoint = e.GetPosition(lazy);
+            }
+            else
+            {
+                // First click: select only. Swallow the press in the tunnel phase so it never reaches the
+                // lazy cell's own OnPointerPressed, which would otherwise materialise and open its editor
+                // immediately — defeating the single-click-select behaviour.
+                e.Handled = true;
+            }
             return;
         }
 
@@ -2084,9 +2101,11 @@ public sealed class SheetTable : TemplatedControl
             _openCombo.IsDropDownOpen = false;
     }
 
-    // Select and enter a cell as if it had just been clicked: select its row, collapse the range onto it,
-    // focus it, and (for a lazy cell) open its editor. Used to complete a click that we had to intercept
-    // because an open combo dropdown would otherwise have swallowed it (see OnTunnelPointerPressed).
+    // Select a cell as if it had just been clicked: select its row, collapse the range onto it, and focus
+    // it. Used to complete a click that we had to intercept because an open combo dropdown would otherwise
+    // have swallowed it (see OnTunnelPointerPressed). This is a FIRST click on the clicked cell (the open
+    // combo was in a different cell), so it only selects — a second click enters edit, per the table's
+    // single-click-select / double-click-edit rule.
     private void EnterCellFromClick(SheetCell cell)
     {
         _focusedColumn = cell.ColumnIndex;
@@ -2096,11 +2115,6 @@ public sealed class SheetTable : TemplatedControl
             CollapseRange(RowIndexOf(row), cell.ColumnIndex);
         }
         cell.Focus();
-        if (FindLazyCell(cell.Content as Control) is { } lazy)
-        {
-            _editingLazy = lazy;
-            lazy.BeginEdit(open: true);
-        }
     }
 
     // Right-click on a body cell offers "filter by this value" (a Values filter pinned to that cell's
@@ -2360,6 +2374,26 @@ public sealed class SheetTable : TemplatedControl
 
         _editing = focused is TextBox;
 
+        // Escape cancels the current cell edit and must be intercepted UNCONDITIONALLY here — before the
+        // _editing branch and before it can reach the focused TextBox. Two reasons it kept leaking through
+        // (typing the U+241B ␛ glyph) when handled only inside the _editing branch:
+        //   • a KeyDown handled here does NOT suppress the separate TextInput event the Escape key raises,
+        //     so the control char still arrived at the box — we now also block that in LazyTextCell, but
+        //   • the branch is gated on `focused is TextBox`, which flips between presses (first Esc moves
+        //     focus to the cell host, so a second Esc saw _editing=false and fell straight through).
+        // Handling it up here for any focus state stops both the alternation and the stray glyph.
+        if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            if (FindFocusedCell() is { } cancelCell)
+            {
+                if (FindLazyCell(cancelCell.Content as Control) is { } lazy)
+                    lazy.CancelEdit();
+                cancelCell.Focus();
+            }
+            return;
+        }
+
         // Context-menu action shortcuts must work even while a cell is in edit mode (focus is on the
         // cell's TextBox). They're F-keys / Ctrl+H — keys a text editor never needs — so intercept them
         // before the editing branch: commit the open edit first (so e.g. "filter by value" sees what was
@@ -2395,14 +2429,15 @@ public sealed class SheetTable : TemplatedControl
                 return;
             }
 
-            // Enter/Escape leave edit mode by returning focus to the cell host (the TextBox commits on
-            // LostFocus); Enter then advances down a row like a spreadsheet.
-            if (e.Key is Key.Enter or Key.Escape && FindFocusedCell() is { } editingCell)
+            // (Escape is handled unconditionally above, before this branch.)
+
+            // Enter leaves edit mode by returning focus to the cell host (the TextBox commits on
+            // LostFocus), then advances down a row like a spreadsheet.
+            if (e.Key == Key.Enter && FindFocusedCell() is { } editingCell)
             {
                 editingCell.Focus();
                 e.Handled = true;
-                if (e.Key == Key.Enter)
-                    Dispatcher.UIThread.Post(() => MoveRow(+1), DispatcherPriority.Background);
+                Dispatcher.UIThread.Post(() => MoveRow(+1), DispatcherPriority.Background);
                 return;
             }
 
@@ -2777,6 +2812,15 @@ public sealed class SheetTable : TemplatedControl
 
     private void SeedEditor(string text)
     {
+        // A combo cell: route the keystroke into the dropdown's search box so typing a letter both opens
+        // the combo and starts filtering by that letter (the editor is the SearchableComboBox, not a
+        // TextBox, so FocusedEditor() below wouldn't see it).
+        if (_editingLazy?.Editor is SearchableComboBox combo)
+        {
+            combo.SeedSearch(text);
+            return;
+        }
+
         if (FocusedEditor() is { } box)
         {
             box.Text = text;
@@ -3234,6 +3278,14 @@ internal sealed class SheetCell : ContentControl
         InRangeProperty.Changed.AddClassHandler<SheetCell>((cell, e) =>
             cell.PseudoClasses.Set(":range", e.NewValue is true));
     }
+
+    /// <summary>
+    /// Driven by the hosted <see cref="LazyEditCell"/> while it has a live editor. The built-in :focus
+    /// pseudo-class is true only when the SheetCell ITSELF has focus, so it drops the instant the editor
+    /// (or, for a combo, its popup) takes focus — which would lose the cell outline mid-edit. This
+    /// explicit flag keeps the accent outline for the whole edit, popup included.
+    /// </summary>
+    public void SetEditing(bool editing) => PseudoClasses.Set(":editing", editing);
 
     private IDisposable? _selectedSub;
 

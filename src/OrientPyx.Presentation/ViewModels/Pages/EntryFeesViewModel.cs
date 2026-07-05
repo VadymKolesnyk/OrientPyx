@@ -48,9 +48,11 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
         ICompetitionEditorService editor,
         ISessionService session,
         IBusyService busy,
-        IDialogService dialogs)
+        IDialogService dialogs,
+        ITableLayoutStore layoutStore)
         : base(localization)
     {
+        LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
         _busy = busy;
@@ -59,6 +61,9 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
         // Singleton VM: reload when the competition changes (the event can be raised on a pool thread).
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
     }
+
+    /// <summary>Per-competition table-view store; persists this page's tables' column order/width/visibility.</summary>
+    public ITableLayoutStore LayoutStore { get; }
 
     public override string NavKey => "Nav.EntryFees";
     public override string TitleKey => "Page.EntryFees.Title";

@@ -54,9 +54,11 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         IAppSettingsService appSettings,
         ISplitPrintService printer,
         IActivityLog log,
-        IUiPreferencesService preferences)
+        IUiPreferencesService preferences,
+        ITableLayoutStore layoutStore)
         : base(localization)
     {
+        LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
         _readoutParsers = readoutParsers;
@@ -85,6 +87,10 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
 
     /// <summary>Raised when the user clicks "go to settings" on the top-bar activity — asks the shell to show this page.</summary>
     public event EventHandler? NavigateToSelfRequested;
+
+    /// <summary>The per-competition table-view store, bound by the log table so its column
+    /// order/width/visibility persist to <c>events/&lt;id&gt;/views.json</c>.</summary>
+    public ITableLayoutStore LayoutStore { get; }
 
     /// <summary>The day's read log, newest at the bottom (ordered by sequence). Read-only rows.</summary>
     public ObservableCollection<FinishReadRowViewModel> Readouts { get; } = [];

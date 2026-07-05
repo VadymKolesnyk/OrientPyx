@@ -37,6 +37,8 @@
                                  ItemsSource="{Binding Regions}"
                                  Localization="{Binding Localization}"
                                  SelectedItem="{Binding SelectedRegion, Mode=TwoWay}"
+                                 LayoutStore="{Binding LayoutStore}"
+                                 LayoutKey="regions"
                                  DeleteRequested="OnDeleteRequested" />
         </Border>
 
