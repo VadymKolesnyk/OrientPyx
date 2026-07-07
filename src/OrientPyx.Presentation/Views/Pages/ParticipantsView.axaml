@@ -148,6 +148,18 @@
                                             <TextBlock Text="{Binding Localization[Participants.StartOrder]}" />
                                         </StackPanel>
                                     </Button>
+                                    <!-- Quick withdrawal: type a number, set a status. Only when a single
+                                         day is in view (same gate as start-order editing). Hotkey Ctrl+W. -->
+                                    <Button Click="OnQuickWithdrawalClick" Classes="menu" HorizontalAlignment="Stretch"
+                                            IsVisible="{Binding CanEditStartOrder}">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="Ctrl+W" />
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <controls:Icon Kind="UserMinus" Size="16" />
+                                                <TextBlock Text="{Binding Localization[Participants.QuickWithdrawal]}" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Button>
                                     <!-- Bulk-edit one field across the shown rows. Hotkey F6 (also the table's
                                          in-cell bulk-edit chord). -->
                                     <Button Click="OnBulkEditClick" Classes="menu" HorizontalAlignment="Stretch">

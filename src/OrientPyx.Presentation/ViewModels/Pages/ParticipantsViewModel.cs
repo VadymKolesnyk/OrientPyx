@@ -1203,6 +1203,48 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         await LoadAsync();
     }
 
+    // ── Quick withdrawal ("Швидке зняття") ──────────────────────────────────────────────────────
+    // Opens a small spreadsheet modal to quickly set a manual finish status on several competitors at once
+    // on the day currently in view (a real day in day mode, or the sole day of a single-day competition on
+    // the roster). Each row is «number → status» with the surname auto-filled from the number; DNS is
+    // rejected for a competitor already read (they clearly started). On save each entered status is written
+    // as the participant's manual override (the same path the status cell uses) and the page reloads so the
+    // result columns / places refresh.
+    [RelayCommand]
+    private async Task QuickWithdrawalAsync()
+    {
+        if (EffectiveDayId is not { } dayId)
+            return;
+
+        var data = await _busy.RunAsync(() => _editor.GetQuickWithdrawalDataAsync(dayId));
+        if (data.Members.Count == 0)
+        {
+            await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+                Localization,
+                titleKey: "Participants.QuickWithdrawal.Title",
+                messageKey: "Participants.QuickWithdrawal.NoMembers",
+                confirmKey: "Common.Ok",
+                cancelKey: "Common.Ok"));
+            return;
+        }
+
+        var assignments = await _dialogs.ShowQuickWithdrawalAsync(new QuickWithdrawalViewModel(Localization, data));
+        if (assignments is null || assignments.Count == 0)
+            return;
+
+        await _busy.RunAsync(async () =>
+        {
+            foreach (var a in assignments)
+                await _editor.SetParticipantDayResultStatusAsync(a.ParticipantId, dayId, a.Status);
+        });
+        _log.Action(string.Format(
+            CultureInfo.CurrentCulture,
+            Localization.Get("Participants.QuickWithdrawal.Log.Saved"),
+            assignments.Count));
+
+        await LoadAsync();
+    }
+
     // ── Bulk assign rental chips ──────────────────────────────────────────────────────────────
     // Hands out unused rental chips, in ascending number order, to every shown participant (or member
     // day) that has no chip yet — in the table's on-screen order (passed in as VisibleItems). A dropdown

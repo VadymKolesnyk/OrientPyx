@@ -46,6 +46,9 @@
         <DataTemplate DataType="dialogs:StartOrderViewModel">
             <dialogViews:StartOrderView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:QuickWithdrawalViewModel">
+            <dialogViews:QuickWithdrawalView />
+        </DataTemplate>
         <DataTemplate DataType="dialogs:SplitGroupsViewModel">
             <dialogViews:SplitGroupsView />
         </DataTemplate>

@@ -31,6 +31,9 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </controls:SearchableComboBox>
+                <Button VerticalAlignment="Center"
+                        Command="{Binding PrintWinnersCommand}"
+                        Content="{Binding Localization[Winners.Print]}" />
                 <Button Classes="accent" VerticalAlignment="Center"
                         Click="OnGenerateClick"
                         Content="{Binding Localization[Protocols.Generate]}" />

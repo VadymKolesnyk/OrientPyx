@@ -2946,6 +2946,45 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return new StartOrderData(orderGroups);
     }
 
+    public async Task<QuickWithdrawalData> GetQuickWithdrawalDataAsync(Guid dayId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return new QuickWithdrawalData([]);
+
+        var folder = FolderPath;
+        var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        var day = days.FirstOrDefault(d => d.Id == dayId);
+        if (day is null)
+            return new QuickWithdrawalData([]);
+
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var byParticipant = participants.ToDictionary(p => p.Id);
+
+        // Compute the day's results (keyed by link) so each member carries whether their chip was already
+        // read — the flag that forbids marking DNS on someone who clearly started.
+        var byLink = await ComputeDayResultsAsync(folder, day, cancellationToken);
+
+        var members = new List<QuickWithdrawalMember>(links.Count);
+        foreach (var link in links)
+        {
+            if (!byParticipant.TryGetValue(link.ParticipantId, out var p))
+                continue;
+            var hasReadout = byLink.TryGetValue(link.Id, out var r) && r.HasReadout;
+            members.Add(new QuickWithdrawalMember(
+                link.ParticipantId, p.Number, p.FullName, hasReadout, link.ResultStatusOverride));
+        }
+
+        // Order by numeric start number (unnumbered last), then by name — the natural search order.
+        var ordered = members
+            .OrderBy(m => !int.TryParse(m.Number, out _))
+            .ThenBy(m => int.TryParse(m.Number, out var n) ? n : int.MaxValue)
+            .ThenBy(m => m.FullName, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        return new QuickWithdrawalData(ordered);
+    }
+
     /// <summary>
     /// Parses the ordered control-point codes out of a free-text course order such as "S1 31 32 33 F". Start
     /// and finish markers (pure-letter tokens like "S"/"Start"/"F"/"Фініш") are dropped; every token that

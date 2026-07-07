@@ -487,6 +487,14 @@ public interface ICompetitionEditorService
     Task<StartOrderData> GetStartOrderDataAsync(Guid dayId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gathers the data for the «Швидке зняття» (quick withdrawal) editor on one day: every participant on
+    /// the day keyed by start number, carrying whether their chip has already been read (which forbids DNS)
+    /// and their current manual status override. The editor resolves a typed number to a competitor and sets
+    /// a status override on each. Empty when no competition is selected.
+    /// </summary>
+    Task<QuickWithdrawalData> GetQuickWithdrawalDataAsync(Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Loads the current day's finish-read log (ordered by sequence), each row resolved against the
     /// day's participants so a known chip carries its holder's number, full name and group. Returns an
     /// empty list when no day is selected.

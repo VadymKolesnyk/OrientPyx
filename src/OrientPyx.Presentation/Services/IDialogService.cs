@@ -55,6 +55,13 @@ public interface IDialogService : INotifyPropertyChanged
     Task<IReadOnlyList<BusinessLogic.Models.DrawStartAssignment>?> ShowStartOrderAsync(StartOrderViewModel dialog);
 
     /// <summary>
+    /// Shows the «Швидке зняття» (quick withdrawal) modal (type a number → set a status, surname auto-filled)
+    /// and awaits the user's input. Returns the «participant → status» assignments on save (empty when
+    /// nothing was entered), or null when cancelled/closed. Only one dialog is shown at a time.
+    /// </summary>
+    Task<IReadOnlyList<QuickWithdrawalAssignment>?> ShowQuickWithdrawalAsync(QuickWithdrawalViewModel dialog);
+
+    /// <summary>
     /// Shows the group-splitting preprocessing modal and awaits the user's choice. Returns the
     /// rewritten course data (one course per split group) on confirm, or null when cancelled/closed.
     /// Only one dialog is shown at a time.

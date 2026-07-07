@@ -29,15 +29,22 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private readonly Guid _id;
+    // The header title key — the default "edit read-out" heading, or a distinct one for the unknown-chip
+    // assignment prompt that pops up when a read doesn't resolve to a day member.
+    private readonly string _titleKey;
     // The read's local date — the day an edited time-of-day is spliced onto (read times are a time of day
     // on one date). Taken from the finish (else start) read time, in local time; today's local date when
     // the read carried no time at all.
     private readonly DateTime _anchorDate;
 
-    public FinishReadoutEditViewModel(ILocalizationService localization, FinishReadoutEditData data)
+    public FinishReadoutEditViewModel(
+        ILocalizationService localization,
+        FinishReadoutEditData data,
+        string titleKey = "FinishRead.Edit.Title")
     {
         Localization = localization;
         _id = data.Id;
+        _titleKey = titleKey;
 
         var anchor = data.FinishTime ?? data.StartTime;
         _anchorDate = (anchor?.ToLocalTime() ?? DateTimeOffset.Now).Date;
@@ -82,7 +89,7 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
 
     public ILocalizationService Localization { get; }
 
-    public string Title => Localization.Get("FinishRead.Edit.Title");
+    public string Title => Localization.Get(_titleKey);
 
     /// <summary>The read-only chip line shown above the editable fields, e.g. "Чіп №9007400".</summary>
     public string ChipLine => string.Format(Localization.Get("FinishRead.Edit.ChipLine"), ChipNumber);

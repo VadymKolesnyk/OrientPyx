@@ -47,6 +47,44 @@ public sealed class SplitPrintService : ISplitPrintService
         }, cancellationToken);
     }
 
+    public Task PrintWinnersAsync(
+        WinnersPrintDocument document,
+        WinnersPrintPrintLabels labels,
+        PrintSettings settings,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(labels);
+        ArgumentNullException.ThrowIfNull(settings);
+
+        if (!OperatingSystem.IsWindows())
+            throw new PrintNotSupportedException();
+
+        return Task.Run(() =>
+        {
+            if (OperatingSystem.IsWindows())
+                PrintWinnersWindows(document, labels, settings);
+        }, cancellationToken);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void PrintWinnersWindows(WinnersPrintDocument document, WinnersPrintPrintLabels labels, PrintSettings settings)
+    {
+        using var doc = new System.Drawing.Printing.PrintDocument();
+        if (settings.HasPrinter)
+            doc.PrinterSettings.PrinterName = settings.PrinterName;
+
+        var widthHundredths = settings.WidthMm <= 56 ? 215 : 302;
+        var paper = new System.Drawing.Printing.PaperSize("Receipt", widthHundredths, 3276);
+        doc.DefaultPageSettings.PaperSize = paper;
+        doc.DefaultPageSettings.Margins = new System.Drawing.Printing.Margins(0, 0, 0, 0);
+        doc.OriginAtMargins = false;
+
+        var renderer = new WinnersRenderer(document, labels, settings.WidthMm);
+        doc.PrintPage += renderer.OnPrintPage;
+        doc.Print();
+    }
+
     [SupportedOSPlatform("windows")]
     private static IReadOnlyList<string> GetInstalledPrintersWindows()
     {
@@ -401,4 +439,160 @@ internal sealed class ReceiptRenderer
     private static string PadRight(string s, int width) => (s ?? string.Empty).Length >= width
         ? s![..width]
         : (s ?? string.Empty).PadRight(width);
+}
+
+/// <summary>
+/// Draws the winners («призери») printout onto a thermal-roll page: a centred header (title, competition, date),
+/// then each group — a bold, centred group name, then its prize places, each a bold place heading ("1 місце" /
+/// "2 третіх місця") over one line per winner ("ПІБ … результат"). A shared place lists all its runners under the
+/// one heading. Holds a paint cursor across <see cref="OnPrintPage"/> calls so a long list flows onto more pages.
+/// </summary>
+[SupportedOSPlatform("windows")]
+internal sealed class WinnersRenderer
+{
+    private const float SideInset = 8f;
+    private const float RightInset = 16f;
+
+    private readonly WinnersPrintDocument _doc;
+    private readonly WinnersPrintPrintLabels _labels;
+    private readonly int _widthMm;
+
+    // Flattened work list so a long printout can resume on a continuation page: each item is either a group
+    // caption, a place heading, or a winner line. Built once, consumed by index across pages.
+    private readonly List<Line> _lines = [];
+    private int _nextLine;
+    private bool _built;
+
+    public WinnersRenderer(WinnersPrintDocument doc, WinnersPrintPrintLabels labels, int widthMm)
+    {
+        _doc = doc;
+        _labels = labels;
+        _widthMm = widthMm;
+    }
+
+    public void OnPrintPage(object? sender, System.Drawing.Printing.PrintPageEventArgs e)
+    {
+        var g = e.Graphics!;
+
+        var rollWidth = _widthMm > 56 ? 302f : 215f;
+        float left = SideInset;
+        float right = rollWidth - RightInset;
+        var centreX = (left + right) / 2f;
+        float y = SideInset + 4f;
+
+        // Font sized so the widest winner line still fits the roll (mono keeps columns aligned).
+        var fontSize = FitFontSize(g, right - left);
+        using var titleFont = new System.Drawing.Font("Consolas", fontSize + 1f, System.Drawing.FontStyle.Bold);
+        using var boldFont = new System.Drawing.Font("Consolas", fontSize, System.Drawing.FontStyle.Bold);
+        using var font = new System.Drawing.Font("Consolas", fontSize);
+
+        if (!_built)
+        {
+            BuildLines();
+            _built = true;
+        }
+
+        // The header block prints once, on the first page.
+        if (_nextLine == 0)
+        {
+            if (_labels.HeaderTitle.Length > 0)
+                y = DrawCentred(g, _labels.HeaderTitle, titleFont, centreX, y);
+            if (_doc.CompetitionName.Length > 0)
+                y = DrawCentred(g, _doc.CompetitionName, boldFont, centreX, y);
+            if (_doc.Title.Length > 0)
+                y = DrawCentred(g, _doc.Title, font, centreX, y);
+            if (_doc.DateText.Length > 0)
+                y = DrawCentred(g, _doc.DateText, font, centreX, y);
+            y += 4f;
+        }
+
+        var lineHeight = font.GetHeight(g) + 1.5f;
+        float bottom = e.PageBounds.Height - SideInset;
+        for (; _nextLine < _lines.Count; _nextLine++)
+        {
+            if (y + lineHeight > bottom)
+            {
+                e.HasMorePages = true;
+                return;
+            }
+
+            var line = _lines[_nextLine];
+            switch (line.Kind)
+            {
+                case LineKind.Group:
+                    y += 2f;
+                    y = DrawCentred(g, line.Text, boldFont, centreX, y);
+                    break;
+                case LineKind.PlaceHeading:
+                    y = DrawMono(g, line.Text, boldFont, left, y);
+                    break;
+                default:
+                    y = DrawMono(g, line.Text, font, left, y);
+                    break;
+            }
+        }
+
+        e.HasMorePages = false;
+    }
+
+    // Flattens the document into printable lines. Each winner line is "  <name> … <result>" right-padded so the
+    // result hugs the right edge; the place heading sits above its winners.
+    private void BuildLines()
+    {
+        foreach (var group in _doc.Groups)
+        {
+            if (group.Places.Count == 0)
+                continue;
+            _lines.Add(new Line(LineKind.Group, group.GroupName));
+            foreach (var place in group.Places)
+            {
+                _lines.Add(new Line(LineKind.PlaceHeading, place.Heading));
+                foreach (var w in place.Winners)
+                {
+                    var text = w.ResultText.Length > 0 ? $"  {w.FullName}  —  {w.ResultText}" : $"  {w.FullName}";
+                    _lines.Add(new Line(LineKind.Winner, text));
+                }
+            }
+        }
+    }
+
+    // Largest Consolas size (≤ 12 pt, ≥ 6 pt) at which the widest winner/heading line still fits the roll width.
+    private float FitFontSize(System.Drawing.Graphics g, float available)
+    {
+        var widest = _doc.Groups
+            .SelectMany(gr => gr.Places.SelectMany(p =>
+                new[] { p.Heading }.Concat(p.Winners.Select(w =>
+                    w.ResultText.Length > 0 ? $"  {w.FullName}  —  {w.ResultText}" : $"  {w.FullName}"))))
+            .DefaultIfEmpty(string.Empty)
+            .OrderByDescending(s => s.Length)
+            .First();
+
+        var best = 6f;
+        for (var size = 6f; size <= 12f; size += 0.25f)
+        {
+            using var f = new System.Drawing.Font("Consolas", size);
+            if (g.MeasureString(widest, f).Width <= available)
+                best = size;
+            else
+                break;
+        }
+        return best;
+    }
+
+    private static float DrawMono(System.Drawing.Graphics g, string text, System.Drawing.Font font, float x, float y)
+    {
+        g.DrawString(text, font, System.Drawing.Brushes.Black, x, y);
+        return y + font.GetHeight(g) + 1.5f;
+    }
+
+    private static float DrawCentred(System.Drawing.Graphics g, string text, System.Drawing.Font font, float centreX, float y)
+    {
+        var fmt = new System.Drawing.StringFormat { Alignment = System.Drawing.StringAlignment.Center };
+        g.DrawString(text, font, System.Drawing.Brushes.Black, centreX, y, fmt);
+        return y + font.GetHeight(g) + 1.5f;
+    }
+
+    private enum LineKind { Group, PlaceHeading, Winner }
+
+    private sealed record Line(LineKind Kind, string Text);
 }

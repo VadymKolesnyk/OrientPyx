@@ -11,4 +11,12 @@ namespace OrientPyx.BusinessLogic.Interfaces;
 public interface ISummaryProtocolBuilder
 {
     SummaryProtocolDocument Build(SummaryProtocolData data, SummaryProtocolSettings settings, SummaryProtocolLabels labels);
+
+    /// <summary>
+    /// Runs only the cross-day aggregation + ranking (no header/column formatting) and returns each group's ranked
+    /// entries in printed order (placed members first by place, ties sharing a place; then поза конкурсом). Lets
+    /// the winners printout reuse the exact «Підсумковий залік» ranking. The «Сума» text is formatted per the
+    /// chosen mode (total points or total time).
+    /// </summary>
+    IReadOnlyList<SummaryRankedGroup> RankGroups(SummaryProtocolData data, SummaryProtocolSettings settings);
 }

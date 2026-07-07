@@ -1,0 +1,77 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="560" d:DesignHeight="560"
+             x:Class="OrientPyx.Presentation.Views.Dialogs.QuickWithdrawalView"
+             x:DataType="dialogs:QuickWithdrawalViewModel">
+
+    <!-- Centered card; the backdrop is supplied by the host overlay. -->
+    <Border Background="{DynamicResource SurfaceCard}"
+            CornerRadius="12"
+            MinWidth="520" MaxWidth="620" MaxHeight="640"
+            BoxShadow="0 10 40 0 #40000000"
+            HorizontalAlignment="Center" VerticalAlignment="Center"
+            ClipToBounds="True">
+        <DockPanel LastChildFill="True">
+
+            <!-- Header -->
+            <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
+                    Padding="22,16">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding Title}" Classes="h2" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Localization[Participants.QuickWithdrawal.Hint]}"
+                               Classes="subtitle" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <!-- Footer actions -->
+            <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
+                    Padding="22,14">
+                <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+                    <Button Content="{Binding Localization[Common.Cancel]}"
+                            Classes="ghost"
+                            Command="{Binding CancelCommand}" />
+                    <Button Content="{Binding Localization[Common.Save]}"
+                            Classes="accent"
+                            Command="{Binding ConfirmCommand}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Body -->
+            <DockPanel Margin="22,16" LastChildFill="True">
+
+                <!-- Validation warning (e.g. DNS blocked because already read), shown below the table. -->
+                <Border DockPanel.Dock="Bottom" IsVisible="{Binding HasWarning}"
+                        Background="{DynamicResource DangerSurface}"
+                        CornerRadius="6" Padding="10,8" Margin="0,10,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <controls:Icon Kind="TriangleAlert" Size="15"
+                                       Foreground="{DynamicResource DangerBrush}"
+                                       VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding Warning}" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource DangerBrush}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Our standard spreadsheet table; columns are built in code-behind (SheetColumnBuilder).
+                     Bounded height so it scrolls internally like every other SheetTable host. -->
+                <Border Classes="card" ClipToBounds="True" MinHeight="240">
+                    <controls:SheetTable Name="Sheet"
+                                         ItemsSource="{Binding Rows}"
+                                         Localization="{Binding Localization}"
+                                         SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
+                                         DeleteRequested="OnDeleteRequested" />
+                </Border>
+
+            </DockPanel>
+
+        </DockPanel>
+    </Border>
+
+</UserControl>

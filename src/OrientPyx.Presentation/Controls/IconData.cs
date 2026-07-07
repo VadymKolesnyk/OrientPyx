@@ -73,6 +73,8 @@ public static class IconData
         ["BarChart"] = "M4 20V10 M10 20V4 M16 20v-6 M4 20h18",
         // users (participants)
         ["Users"] = "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75",
+        // user-minus (withdraw a participant)
+        ["UserMinus"] = "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M22 11h-6",
         // flag (control points / КП)
         ["Flag"] = "M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z M4 22v-7",
         // map-pin (control point / region)

@@ -25,6 +25,18 @@ public sealed record SummaryProtocolDay(Guid Id, int Number, DateTimeOffset? Dat
 public sealed record SummaryProtocolGroup(string Name, int Order, IReadOnlyList<SummaryProtocolParticipant> Members);
 
 /// <summary>
+/// The ranked outcome of one group's summary, exposed by the builder so other consumers (the winners printout)
+/// can reuse the exact cross-day aggregation/ranking without re-implementing it. Entries are in printed order:
+/// the ranked members first (ascending place, ties sharing a place), then the поза конкурсом members (place null).
+/// <see cref="TotalText"/> is the group's formatted «Сума» for the entry (total points or total time per mode).
+/// </summary>
+public sealed record SummaryRankedGroup(string GroupName, int Order, IReadOnlyList<SummaryRankedEntry> Entries);
+
+/// <summary>One ranked member of a summary group: the member, their place (null when поза конкурсом), and the
+/// formatted total shown in the «Сума» column.</summary>
+public sealed record SummaryRankedEntry(SummaryProtocolParticipant Member, int? Place, string TotalText);
+
+/// <summary>
 /// One participant in a group's summary: their identity fields plus the per-day computed result keyed by day id.
 /// A day the participant did not run (no membership / no result) is simply absent from <see cref="ResultsByDay"/>.
 /// </summary>

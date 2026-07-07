@@ -33,7 +33,12 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
     private readonly IAppSettingsService _appSettings;
     private readonly IResultProtocolBuilder _builder;
     private readonly IResultProtocolWriter _writer;
+    private readonly IWinnersPrintBuilder _winnersBuilder;
+    private readonly IWinnersPrintFlow _winnersPrint;
     private readonly IBusyService _busy;
+
+    /// <summary>How many prize places the winners printout includes per group (a standard podium).</summary>
+    private const int WinnersTopPlaces = 3;
 
     /// <summary>How many participant rows the preview shows — enough to fill an A4 page; the page clips the rest.</summary>
     private const int PreviewRowCap = 40;
@@ -56,6 +61,8 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         IAppSettingsService appSettings,
         IResultProtocolBuilder builder,
         IResultProtocolWriter writer,
+        IWinnersPrintBuilder winnersBuilder,
+        IWinnersPrintFlow winnersPrint,
         IBusyService busy)
         : base(localization)
     {
@@ -64,6 +71,8 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         _appSettings = appSettings;
         _builder = builder;
         _writer = writer;
+        _winnersBuilder = winnersBuilder;
+        _winnersPrint = winnersPrint;
         _busy = busy;
 
         // Singleton VM: reload the day list + header defaults on a competition/day change (marshal to UI).
@@ -528,6 +537,40 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         SettingsSaved = true;
 
         return new ProtocolExportResult(bytes, SuggestedFileName(day));
+    }
+
+    /// <summary>
+    /// «Друк переможців»: prints the top-3 prize places of each group for the selected day to the read-out
+    /// thermal printer (ties kept whole — "2 третіх" prints both). Reuses the same computed day results the
+    /// protocol shows; a no-op when no competition/day is selected.
+    /// </summary>
+    [RelayCommand]
+    private async Task PrintWinnersAsync()
+    {
+        if (_session.CurrentEvent is null || SelectedDay?.Day is not { } day)
+            return;
+
+        var header = BuildWinnersHeader(day);
+        var labels = WinnersPrintLabelsFactory.Create(Localization);
+
+        var document = await _busy.RunAsync(async () =>
+        {
+            var data = await _editor.GetResultProtocolDataAsync(day.Id);
+            return _winnersBuilder.BuildForDay(data, header, labels, WinnersTopPlaces);
+        });
+
+        await _winnersPrint.PrintAsync(document);
+    }
+
+    // The winners-printout header: the resolved competition name + protocol title, and a "День N — date" line.
+    private WinnersPrintHeader BuildWinnersHeader(EventDay day)
+    {
+        var settings = BuildDocumentSettings();
+        var name = settings.CompetitionName.Length > 0 ? settings.CompetitionName : CompetitionNamePlaceholder;
+        var title = settings.Title.Length > 0 ? settings.Title : Localization.Get("Protocols.DefaultTitle");
+        var dateParts = new[] { $"{Localization.Get("Header.Day")} {day.Number}", settings.DateText }
+            .Where(s => !string.IsNullOrWhiteSpace(s));
+        return new WinnersPrintHeader(name, title, string.Join(" — ", dateParts));
     }
 
     private ProtocolLabels BuildLabels()

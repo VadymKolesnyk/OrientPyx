@@ -28,7 +28,12 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
     private readonly ISessionService _session;
     private readonly ISummaryProtocolBuilder _builder;
     private readonly ISummaryProtocolWriter _writer;
+    private readonly IWinnersPrintBuilder _winnersBuilder;
+    private readonly IWinnersPrintFlow _winnersPrint;
     private readonly IBusyService _busy;
+
+    /// <summary>How many prize places the winners printout includes per group (a standard podium).</summary>
+    private const int WinnersTopPlaces = 3;
 
     /// <summary>How many participant rows the preview shows per page mock-up.</summary>
     private const int PreviewRowCap = 40;
@@ -46,6 +51,8 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
         ISessionService session,
         ISummaryProtocolBuilder builder,
         ISummaryProtocolWriter writer,
+        IWinnersPrintBuilder winnersBuilder,
+        IWinnersPrintFlow winnersPrint,
         IBusyService busy)
         : base(localization)
     {
@@ -53,6 +60,8 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
         _session = session;
         _builder = builder;
         _writer = writer;
+        _winnersBuilder = winnersBuilder;
+        _winnersPrint = winnersPrint;
         _busy = busy;
 
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
@@ -510,6 +519,38 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
         SettingsSaved = true;
 
         return new ProtocolExportResult(bytes, SuggestedFileName());
+    }
+
+    /// <summary>
+    /// «Друк переможців»: prints the top-3 prize places of each group in the multi-day summary to the read-out
+    /// thermal printer, using the summary's own cross-day ranking (ties kept whole). A no-op with no competition.
+    /// </summary>
+    [RelayCommand]
+    private async Task PrintWinnersAsync()
+    {
+        if (_session.CurrentEvent is null)
+            return;
+
+        var settings = BuildDocumentSettings();
+        var header = BuildWinnersHeader(settings);
+        var labels = WinnersPrintLabelsFactory.Create(Localization);
+
+        var document = await _busy.RunAsync(async () =>
+        {
+            var data = await _editor.GetSummaryProtocolDataAsync();
+            return _winnersBuilder.BuildForSummary(data, settings, header, labels, WinnersTopPlaces);
+        });
+
+        await _winnersPrint.PrintAsync(document);
+    }
+
+    // The winners-printout header for the summary: the resolved competition name, the summary title, and the
+    // resolved date span line.
+    private WinnersPrintHeader BuildWinnersHeader(SummaryProtocolSettings settings)
+    {
+        var name = settings.CompetitionName.Length > 0 ? settings.CompetitionName : CompetitionNamePlaceholder;
+        var title = settings.Title.Length > 0 ? settings.Title : Localization.Get("SummaryProtocol.DefaultTitle");
+        return new WinnersPrintHeader(name, title, settings.DateText);
     }
 
     private SummaryProtocolLabels BuildLabels() => new(

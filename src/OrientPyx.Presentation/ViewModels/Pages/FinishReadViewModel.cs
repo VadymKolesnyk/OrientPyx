@@ -606,13 +606,68 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
             var result = await _editor.ImportFinishReadoutsAsync(data);
             if (result.Added > 0)
             {
-                await AutoPrintNewReadsAsync(result.AddedIds);
+                await HandleNewReadsAsync(result.AddedIds);
                 await Dispatcher.UIThread.InvokeAsync(LoadAsync);
             }
         }
         catch (ReadoutFormatException)
         {
             // Not a readable readout right now (e.g. half-written) — skip this tick.
+        }
+    }
+
+    // Splits the freshly-logged reads into those that resolved to a day member and those that did not.
+    // Recognised reads follow the plain auto-print path (print silently when auto-print is on). An
+    // UNRECOGNISED read never auto-prints on its own: instead it pops the assignment modal (the same
+    // modal the «edit» pencil opens, titled for the unknown-chip case) so the operator can find and
+    // assign the participant — even while they're on another page. Then, only when auto-print is on:
+    //   • Save   → the chip is now assigned; print the printout for that participant.
+    //   • Cancel → print the printout for the unknown read as-is.
+    // Reads are handled one at a time so the modals don't stack. Runs on the poller's thread.
+    private async Task HandleNewReadsAsync(IReadOnlyList<Guid> readoutIds)
+    {
+        if (readoutIds.Count == 0)
+            return;
+
+        // Classify each new id as known / unknown from the freshly-computed rows.
+        var rows = await _editor.GetFinishReadoutRowsAsync();
+        var byId = rows.ToDictionary(r => r.Id);
+
+        foreach (var id in readoutIds)
+        {
+            if (byId.TryGetValue(id, out var row) && !row.IsKnown)
+                await PromptUnknownReadAsync(id);
+            else
+                await AutoPrintNewReadsAsync([id]);
+        }
+    }
+
+    // Opens the unknown-chip assignment modal for one read on the UI thread and prints per its outcome.
+    // The modal is the edit modal reused with an unknown-chip title. Reassignment is persisted by
+    // UpdateFinishReadoutAsync (via the edit result). Printing is gated on auto-print being on; a Save
+    // prints the (now-assigned) read, a Cancel prints the still-unknown read. Never throws out of the poll.
+    private async Task PromptUnknownReadAsync(Guid readoutId)
+    {
+        var data = await _editor.GetFinishReadoutEditAsync(readoutId);
+        if (data is null)
+            return;
+
+        var edit = await Dispatcher.UIThread.InvokeAsync(() =>
+            _dialogs.ShowFinishReadoutEditAsync(new FinishReadoutEditViewModel(
+                Localization, data, titleKey: "FinishRead.Unknown.Title")));
+
+        if (edit is not null)
+        {
+            // Save: persist the edit + reassignment, then (if auto-print on) print for the assigned runner.
+            await _editor.UpdateFinishReadoutAsync(edit);
+            _log.Action(string.Format(Localization.Get("FinishRead.Unknown.AssignedLog"), edit.ChipNumber));
+            await AutoPrintNewReadsAsync([readoutId]);
+        }
+        else
+        {
+            // Cancel: leave the read unknown; if auto-print is on, print the unknown printout as-is.
+            _log.Action(string.Format(Localization.Get("FinishRead.Unknown.LeftLog"), data.ChipNumber));
+            await AutoPrintNewReadsAsync([readoutId]);
         }
     }
 

@@ -67,6 +67,11 @@ public static class BusinessLogicServiceCollectionExtensions
         // days and ranks the group per the chosen mode. The two-tier .docx writer is in DataAccess.
         services.AddSingleton<ISummaryProtocolBuilder, SummaryProtocolBuilder>();
 
+        // Winners («Друк переможців») printout builder: collects the top prize places per group (ties kept whole)
+        // from the same computed results, for both a single day and the multi-day summary (reusing the summary
+        // ranking). The thermal printer that renders it is in DataAccess (ISplitPrintService).
+        services.AddSingleton<IWinnersPrintBuilder, WinnersPrintBuilder>();
+
         // Split (splits) export builder (layer-neutral: raw day splits → renderable document). The HTML
         // writer that renders the document is registered in DataAccess.
         services.AddSingleton<ISplitExportBuilder, SplitExportBuilder>();

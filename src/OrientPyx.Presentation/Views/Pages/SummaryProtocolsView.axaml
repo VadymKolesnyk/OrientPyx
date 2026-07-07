@@ -20,6 +20,8 @@
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                 <Button Classes="help" Command="{Binding ShowHelpCommand}"
                         ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                <Button Command="{Binding PrintWinnersCommand}"
+                        Content="{Binding Localization[Winners.Print]}" />
                 <Button Classes="accent"
                         Click="OnGenerateClick"
                         Content="{Binding Localization[SummaryProtocol.Generate]}" />

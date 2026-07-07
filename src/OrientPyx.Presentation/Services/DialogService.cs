@@ -114,6 +114,22 @@ public sealed partial class DialogService : ObservableObject, IDialogService
         }
     }
 
+    public async Task<IReadOnlyList<QuickWithdrawalAssignment>?> ShowQuickWithdrawalAsync(QuickWithdrawalViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
+
     public async Task<IofCourseData?> ShowSplitGroupsAsync(SplitGroupsViewModel dialog)
     {
         ArgumentNullException.ThrowIfNull(dialog);

@@ -195,6 +195,11 @@ public partial class ParticipantsView : UserControl
                 case Avalonia.Input.Key.B: _ = AssignNumbersAsync(); e.Handled = true; return;
                 case Avalonia.Input.Key.K: _ = AssignChipsAsync(); e.Handled = true; return;
                 case Avalonia.Input.Key.G: _ = MarkAgeViolatorsAsync(); e.Handled = true; return;
+                case Avalonia.Input.Key.W:
+                    if (_vm?.CanEditStartOrder == true)
+                        _ = _vm.QuickWithdrawalCommand.ExecuteAsync(null);
+                    e.Handled = true;
+                    return;
             }
         }
 
@@ -239,10 +244,29 @@ public partial class ParticipantsView : UserControl
         return false;
     }
 
+    // A Button hosted inside a Button.Flyout doesn't dismiss the flyout when clicked (unlike a real
+    // MenuItem). So every menu-item handler below closes the containing flyout first: we walk up from the
+    // clicked control to its hosting PopupRoot and close whichever Popup opened it. Without this the «Імпорт»
+    // / «Дії» dropdowns stay open after a pick.
+    private static void CloseContainingFlyout(object? sender)
+    {
+        if (sender is not Avalonia.Visual visual)
+            return;
+
+        // The flyout content lives in a PopupRoot whose hosting control is the Popup; closing it dismisses
+        // the flyout. GetTopLevel on anything inside the popup returns that PopupRoot.
+        if (TopLevel.GetTopLevel(visual) is Avalonia.Controls.Primitives.PopupRoot { Parent: Avalonia.Controls.Primitives.Popup popup })
+            popup.IsOpen = false;
+    }
+
     // File picking is a view concern (it needs the window's StorageProvider). We read the chosen
     // file's bytes and decode them honouring the encoding declared in the XML prolog (UOF files are
     // windows-1251), then hand the text to the VM, which owns the import flow. Mirrors GroupsView.
-    private void OnImportClick(object? sender, RoutedEventArgs e) => _ = ImportXmlAsync();
+    private void OnImportClick(object? sender, RoutedEventArgs e)
+    {
+        CloseContainingFlyout(sender);
+        _ = ImportXmlAsync();
+    }
 
     private async System.Threading.Tasks.Task ImportXmlAsync()
     {
@@ -291,7 +315,11 @@ public partial class ParticipantsView : UserControl
     // CSV / Excel import: pick the file (needs the window's StorageProvider), read its bytes, then route
     // by extension — an .xlsx workbook goes through the VM's xlsx entry point, anything else is decoded
     // as CSV text. Both share the same column-mapping modal + import. Mirrors OnImportClick.
-    private void OnImportCsvClick(object? sender, RoutedEventArgs e) => _ = ImportCsvAsync();
+    private void OnImportCsvClick(object? sender, RoutedEventArgs e)
+    {
+        CloseContainingFlyout(sender);
+        _ = ImportCsvAsync();
+    }
 
     private async System.Threading.Tasks.Task ImportCsvAsync()
     {
@@ -401,7 +429,11 @@ public partial class ParticipantsView : UserControl
     // Bulk-assign start numbers. The on-screen (filtered + sorted) row order lives in the SheetTable,
     // so we read the active table's VisibleItems here — the VM never references the table directly —
     // and hand that ordered list to the command, which prompts for the start number and applies them.
-    private void OnAssignNumbersClick(object? sender, RoutedEventArgs e) => _ = AssignNumbersAsync();
+    private void OnAssignNumbersClick(object? sender, RoutedEventArgs e)
+    {
+        CloseContainingFlyout(sender);
+        _ = AssignNumbersAsync();
+    }
 
     private async System.Threading.Tasks.Task AssignNumbersAsync()
     {
@@ -414,7 +446,11 @@ public partial class ParticipantsView : UserControl
 
     // Bulk-assign rental chips. Same shape as OnAssignNumbersClick: read the active table's on-screen
     // (filtered + sorted) rows and hand them to the command, which prompts for the note filter.
-    private void OnAssignChipsClick(object? sender, RoutedEventArgs e) => _ = AssignChipsAsync();
+    private void OnAssignChipsClick(object? sender, RoutedEventArgs e)
+    {
+        CloseContainingFlyout(sender);
+        _ = AssignChipsAsync();
+    }
 
     private async System.Threading.Tasks.Task AssignChipsAsync()
     {
@@ -428,7 +464,11 @@ public partial class ParticipantsView : UserControl
     // Mark every shown participant who breaches their group's age window "поза конкурсом". Same shape as
     // OnAssignChipsClick: read the active table's on-screen (filtered + sorted) rows and hand them to the
     // command, which confirms before applying.
-    private void OnMarkAgeViolatorsClick(object? sender, RoutedEventArgs e) => _ = MarkAgeViolatorsAsync();
+    private void OnMarkAgeViolatorsClick(object? sender, RoutedEventArgs e)
+    {
+        CloseContainingFlyout(sender);
+        _ = MarkAgeViolatorsAsync();
+    }
 
     private async System.Threading.Tasks.Task MarkAgeViolatorsAsync()
     {
@@ -441,13 +481,29 @@ public partial class ParticipantsView : UserControl
 
     // Manually re-order the start sequence within a group. Works off the day currently in view (resolved
     // by the VM), not the visible rows, so it just runs the command.
-    private void OnEditStartOrderClick(object? sender, RoutedEventArgs e) => _ = _vm?.EditStartOrderCommand.ExecuteAsync(null);
+    private void OnEditStartOrderClick(object? sender, RoutedEventArgs e)
+    {
+        CloseContainingFlyout(sender);
+        _ = _vm?.EditStartOrderCommand.ExecuteAsync(null);
+    }
+
+    // Quick withdrawal ("Швидке зняття"): type a number, set a status. Works off the day currently in view
+    // (resolved by the VM), not the visible rows, so it just runs the command.
+    private void OnQuickWithdrawalClick(object? sender, RoutedEventArgs e)
+    {
+        CloseContainingFlyout(sender);
+        _ = _vm?.QuickWithdrawalCommand.ExecuteAsync(null);
+    }
 
     // Bulk-edit one field across the shown rows. Same shape as OnAssignNumbersClick: read the active
     // table's on-screen (filtered + sorted) rows and hand them to the command, which prompts for the
     // field + value and applies it to each. The dialog opens preselected on the column the user was last
     // focused in, when that column is bulk-editable (otherwise on the first field).
-    private void OnBulkEditClick(object? sender, RoutedEventArgs e) => _ = BulkEditAsync();
+    private void OnBulkEditClick(object? sender, RoutedEventArgs e)
+    {
+        CloseContainingFlyout(sender);
+        _ = BulkEditAsync();
+    }
 
     private async System.Threading.Tasks.Task BulkEditAsync()
     {

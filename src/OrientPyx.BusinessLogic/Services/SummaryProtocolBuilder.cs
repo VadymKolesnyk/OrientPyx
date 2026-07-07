@@ -33,20 +33,7 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
 
         var byPoints = settings.Mode == SummaryMode.ByPoints;
 
-        // The counted days, in the configured on-page order, resolved against the data's day list (a saved day
-        // that no longer exists is dropped). Fall back to all days when no selection is stored.
-        var dayById = data.Days.ToDictionary(d => d.Id);
-        var countedDays = new List<SummaryProtocolDay>();
-        if (settings.Days.Count > 0)
-        {
-            foreach (var sel in settings.Days)
-                if (sel.Counted && dayById.TryGetValue(sel.DayId, out var day))
-                    countedDays.Add(day);
-        }
-        else
-        {
-            countedDays.AddRange(data.Days.OrderBy(d => d.Number));
-        }
+        var countedDays = ResolveCountedDays(data, settings);
 
         // The tie-break priority day: the configured one (if still counted), else the first counted day.
         var priorityDay = countedDays.FirstOrDefault(d => d.Id == settings.PriorityDayId) ?? countedDays.FirstOrDefault();
@@ -118,6 +105,54 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         };
     }
 
+    public IReadOnlyList<SummaryRankedGroup> RankGroups(SummaryProtocolData data, SummaryProtocolSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(settings);
+
+        var byPoints = settings.Mode == SummaryMode.ByPoints;
+        var countedDays = ResolveCountedDays(data, settings);
+        var priorityDay = countedDays.FirstOrDefault(d => d.Id == settings.PriorityDayId) ?? countedDays.FirstOrDefault();
+
+        var result = new List<SummaryRankedGroup>(data.Groups.Count);
+        foreach (var group in data.Groups.OrderBy(g => g.Order))
+        {
+            var (ranked, places, outOfRanking) = RankGroup(group, countedDays, priorityDay, settings, byPoints);
+
+            var entries = new List<SummaryRankedEntry>(ranked.Count + outOfRanking.Count);
+            for (var i = 0; i < ranked.Count; i++)
+                entries.Add(new SummaryRankedEntry(ranked[i].Member, places[i], TotalText(ranked[i], byPoints)));
+            foreach (var a in outOfRanking.OrderBy(a => a.Member.FullName, StringComparer.CurrentCultureIgnoreCase))
+                entries.Add(new SummaryRankedEntry(a.Member, null, TotalText(a, byPoints)));
+
+            result.Add(new SummaryRankedGroup(group.Name, group.Order, entries));
+        }
+        return result;
+    }
+
+    // The «Сума» text for an aggregate under the chosen mode: total points (2dp) or total time (hh:mm:ss).
+    private static string TotalText(Aggregate a, bool byPoints) =>
+        byPoints ? PointsTable.Format(a.TotalPoints) : FormatTime(a.TotalTimeSeconds);
+
+    // The counted days, in the configured on-page order, resolved against the data's day list (a saved day that
+    // no longer exists is dropped). Fall back to all days when no selection is stored.
+    private static List<SummaryProtocolDay> ResolveCountedDays(SummaryProtocolData data, SummaryProtocolSettings settings)
+    {
+        var dayById = data.Days.ToDictionary(d => d.Id);
+        var countedDays = new List<SummaryProtocolDay>();
+        if (settings.Days.Count > 0)
+        {
+            foreach (var sel in settings.Days)
+                if (sel.Counted && dayById.TryGetValue(sel.DayId, out var day))
+                    countedDays.Add(day);
+        }
+        else
+        {
+            countedDays.AddRange(data.Days.OrderBy(d => d.Number));
+        }
+        return countedDays;
+    }
+
     // The visible leading columns in the saved order. A summary saved before this feature (no leading-column
     // list) falls back to the default layout; an empty visible set always keeps the full-name column.
     private static List<SummaryColumn> ResolveLeadingColumns(SummaryProtocolSettings settings)
@@ -171,6 +206,27 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         IReadOnlyList<SummaryProtocolDay> countedDays, SummaryProtocolDay? priorityDay,
         SummaryProtocolSettings settings, bool byPoints, int subCount)
     {
+        var (ranked, places, outOfRanking) = RankGroup(group, countedDays, priorityDay, settings, byPoints);
+
+        var rows = new List<IReadOnlyList<string>>(ranked.Count + outOfRanking.Count);
+        for (var i = 0; i < ranked.Count; i++)
+            rows.Add(FormatRow(ranked[i], leadingColumns, countedDays, byPoints, place: places[i]));
+
+        // поза конкурсом — by name, no place (shown «П/К»).
+        foreach (var a in outOfRanking.OrderBy(a => a.Member.FullName, StringComparer.CurrentCultureIgnoreCase))
+            rows.Add(FormatRow(a, leadingColumns, countedDays, byPoints, place: null));
+
+        return rows;
+    }
+
+    // Aggregates one group's members, splits into the ranked set and the поза конкурсом set (per the mode +
+    // require-all option), sorts the ranked set, and assigns shared-on-tie 1-based places. Returns the ranked
+    // aggregates (parallel to their places) and the leftover поза конкурсом aggregates (unordered). Shared by the
+    // document row-builder and the winners printout so both use the exact same ranking.
+    private static (List<Aggregate> Ranked, int[] Places, List<Aggregate> OutOfRanking) RankGroup(
+        SummaryProtocolGroup group, IReadOnlyList<SummaryProtocolDay> countedDays,
+        SummaryProtocolDay? priorityDay, SummaryProtocolSettings settings, bool byPoints)
+    {
         var aggregates = group.Members
             .Select(m => BuildAggregate(m, countedDays, priorityDay, byPoints))
             .ToList();
@@ -200,15 +256,7 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         // Assign 1-based places, sharing a place on a genuine tie (equal on every comparison key).
         var places = AssignPlaces(ranked, byPoints);
 
-        var rows = new List<IReadOnlyList<string>>(aggregates.Count);
-        for (var i = 0; i < ranked.Count; i++)
-            rows.Add(FormatRow(ranked[i], leadingColumns, countedDays, byPoints, place: places[i]));
-
-        // поза конкурсом — by name, no place (shown «П/К»).
-        foreach (var a in outOfRanking.OrderBy(a => a.Member.FullName, StringComparer.CurrentCultureIgnoreCase))
-            rows.Add(FormatRow(a, leadingColumns, countedDays, byPoints, place: null));
-
-        return rows;
+        return (ranked, places, outOfRanking);
     }
 
     // Sorts the ranked set in place: by points desc / time asc, then result-count (points mode without
