@@ -423,6 +423,26 @@ public interface ICompetitionEditorService
     Task SaveResultProtocolSettingsAsync(Guid dayId, ResultProtocolSettings settings, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gathers the participant-statement («відомість») data for the given participants: their identity fields
+    /// plus the per-day membership fields (group, chip). When <paramref name="dayId"/> is set, the per-day
+    /// fields come from that day; when it is null (roster scope), the distinct across-days values are joined
+    /// with " / " (matching the roster's collapsed cells). Own vs rental chip and the chip sort key are
+    /// resolved against the competition's rental-chip pool. Only the requested participants are returned (in no
+    /// particular order — the builder sorts by chip). Empty when no competition is selected.
+    /// </summary>
+    Task<StatementData> GetStatementDataAsync(Guid? dayId, IReadOnlyList<Guid> participantIds, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Loads the competition-level saved participant-statement template (orientation, ordered/visible columns,
+    /// header text), or null when the competition has no template yet — the caller then seeds it from the
+    /// app-level default. Returns null when no competition is selected.
+    /// </summary>
+    Task<StatementSettings?> GetStatementSettingsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Saves the competition-level participant-statement template. A no-op when no competition is selected.</summary>
+    Task SaveStatementSettingsAsync(StatementSettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gathers the start-protocol data for one day: every group that runs on the day with its members, each
     /// carrying its drawn start time (<see cref="ParticipantDay.StartTime"/>) and identity fields. Groups
     /// follow the day grid order; rows are unsorted (the start-protocol builder orders/groups them by kind).

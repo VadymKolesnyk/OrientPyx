@@ -29,6 +29,11 @@ public sealed class ResultProtocolDocument
     /// <summary>Competition type — printed centred on the date/venue row. Blank ⇒ nothing in the centre.</summary>
     public string CompetitionType { get; init; } = string.Empty;
 
+    /// <summary>A single line printed left-aligned just under the header, summarising the filters that produced
+    /// this document ("Представник: Колесник Вадим · Регіон: Івано-Франківська"). Used by the participant
+    /// statement («відомість»); blank for the protocols, which then print nothing there.</summary>
+    public string FilterSummary { get; init; } = string.Empty;
+
     /// <summary>The column captions, in on-page order — one per <see cref="ResultProtocolSection.Rows"/> cell.</summary>
     public IReadOnlyList<string> ColumnHeaders { get; init; } = [];
 
@@ -141,4 +146,8 @@ public sealed class ResultProtocolSection
 public sealed record ResultProtocolBodyRow(
     IReadOnlyList<string> Cells,
     bool IsTeamHeader = false,
-    string TeamName = "");
+    string TeamName = "",
+    /// <summary>Optional per-cell bold mask parallel to <see cref="Cells"/>: a <c>true</c> at an index ⇒ that
+    /// cell's text is drawn bold. Used by the participant statement to bold own (non-rental) chip cells; the
+    /// protocols leave it null (no per-cell bolding). Missing/short ⇒ the cell is normal weight.</summary>
+    IReadOnlyList<bool>? BoldCells = null);

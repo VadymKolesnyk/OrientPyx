@@ -38,6 +38,15 @@ public sealed partial class ProtocolPreviewViewModel : ObservableObject
     [ObservableProperty]
     private bool _isEmpty = true;
 
+    /// <summary>A single line summarising the applied filters, shown just under the header (participant
+    /// statement only). Blank for the protocols.</summary>
+    [ObservableProperty]
+    private string _filterSummary = string.Empty;
+
+    /// <summary>True when <see cref="FilterSummary"/> is non-blank (drives the line's visibility on the page).</summary>
+    [ObservableProperty]
+    private bool _hasFilterSummary;
+
     /// <summary>The visible columns, in on-page order. Header cells (repeated per section) drive the drag-reorder.</summary>
     public ObservableCollection<ProtocolPreviewColumn> Columns { get; } = [];
 
@@ -133,13 +142,19 @@ public sealed class ProtocolPreviewSection
 /// row (rendered bold for a rogaine section), aligned to <see cref="ProtocolPreviewViewModel.Columns"/>.</summary>
 public sealed class ProtocolPreviewRow
 {
-    public ProtocolPreviewRow(IReadOnlyList<string> cells, bool isTeamHeader)
+    public ProtocolPreviewRow(IReadOnlyList<string> cells, bool isTeamHeader,
+        IReadOnlyList<bool>? boldCells = null)
     {
         Cells = cells;
         IsTeamHeader = isTeamHeader;
+        BoldCells = boldCells;
     }
 
     public IReadOnlyList<string> Cells { get; }
 
     public bool IsTeamHeader { get; }
+
+    /// <summary>Optional per-cell bold mask parallel to <see cref="Cells"/>: a <c>true</c> at an index ⇒ that
+    /// cell is drawn bold (the statement's own-chip cells). Null ⇒ no per-cell bolding.</summary>
+    public IReadOnlyList<bool>? BoldCells { get; }
 }

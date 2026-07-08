@@ -59,6 +59,11 @@ public static class BusinessLogicServiceCollectionExtensions
         // writer that renders the document needs a library and is registered in DataAccess.
         services.AddSingleton<IResultProtocolBuilder, ResultProtocolBuilder>();
 
+        // Participant-statement («відомість») builder: a flat participant list (sorted by chip, own chips bold)
+        // → renderable document, reusing the results-protocol .docx writer + preview (same ResultProtocolDocument
+        // model). The .docx writer + the A4 printer that render it are registered in DataAccess.
+        services.AddSingleton<IStatementBuilder, StatementBuilder>();
+
         // Start-protocol builder (layer-neutral: raw day start data → renderable document, by-group or
         // by-minute). Reuses the results-protocol .docx writer (same ResultProtocolDocument model).
         services.AddSingleton<IStartProtocolBuilder, StartProtocolBuilder>();

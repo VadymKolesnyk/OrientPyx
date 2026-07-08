@@ -112,6 +112,11 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
             body.Append(p);
         }
 
+        // The applied-filters summary (participant statement only): a centred bold heading line just under the
+        // title, listing the filter values that produced this document. Blank for the protocols.
+        if (doc.FilterSummary.Length > 0)
+            body.Append(CentredParagraph(doc.FilterSummary, bold: true, sizeHalfPoints: 24));
+
         // A little breathing room before the first group.
         body.Append(new Paragraph());
     }
@@ -603,13 +608,15 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
         {
             var tr = new TableRow();
             // A team caption row reads as one team: its cells are bold (the team place/score stand out).
-            var bold = row.IsTeamHeader;
+            var rowBold = row.IsTeamHeader;
             // Pad/truncate to the header width so a malformed row can't shift the columns. A non-wrapping
             // (short-code) column forces its data onto one line; free-text columns wrap.
             for (var i = 0; i < headers.Count; i++)
             {
                 var noWrap = !(i < bodyWrap.Count && bodyWrap[i]);
-                tr.Append(Cell(i < row.Cells.Count ? row.Cells[i] : string.Empty, bold, boxed: false,
+                // Per-cell bold (the statement's own-chip cells) OR'd with the whole-row team-caption bold.
+                var cellBold = rowBold || (row.BoldCells is { } mask && i < mask.Count && mask[i]);
+                tr.Append(Cell(i < row.Cells.Count ? row.Cells[i] : string.Empty, cellBold, boxed: false,
                     columnWidths[i], noWrap));
             }
             table.Append(tr);

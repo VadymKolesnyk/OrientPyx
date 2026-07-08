@@ -112,6 +112,20 @@ public interface IDialogService : INotifyPropertyChanged
     Task<bool> ShowPrintSettingsAsync(PrintSettingsViewModel dialog);
 
     /// <summary>
+    /// Shows the participant-statement («відомість») modal — a live preview of the flat, chip-sorted list with
+    /// configurable columns and header, plus buttons to export to Word / print on A4. Returns when the modal is
+    /// closed (export/print happen inside via the VM's commands). Only one dialog is shown at a time.
+    /// </summary>
+    Task ShowStatementAsync(StatementViewModel dialog);
+
+    /// <summary>
+    /// Shows the A4 print-settings modal (printer only; paper is always A4) and awaits the user's choice.
+    /// Returns true when the printer was saved, false when cancelled/closed. May open on top of the statement
+    /// modal (the previous overlay is restored when it closes).
+    /// </summary>
+    Task<bool> ShowA4PrintSettingsAsync(A4PrintSettingsViewModel dialog);
+
+    /// <summary>
     /// Shows the export-format modal (CSV vs Excel) and awaits the user's choice. Returns the chosen
     /// format on confirm, or null when cancelled/closed. Only one dialog is shown at a time.
     /// </summary>

@@ -54,6 +54,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private readonly IParticipantImportFlow _importFlow;
     private readonly ICsvImportFlow _csvImportFlow;
     private readonly IParticipantExportFlow _exportFlow;
+    private readonly IStatementFlow _statementFlow;
     private readonly IEntryFeeCalculator _entryFeeCalculator;
     private readonly IActivityLog _log;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
@@ -72,6 +73,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         IParticipantImportFlow importFlow,
         ICsvImportFlow csvImportFlow,
         IParticipantExportFlow exportFlow,
+        IStatementFlow statementFlow,
         IEntryFeeCalculator entryFeeCalculator,
         IActivityLog log,
         ITableLayoutStore layoutStore)
@@ -87,6 +89,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _importFlow = importFlow;
         _csvImportFlow = csvImportFlow;
         _exportFlow = exportFlow;
+        _statementFlow = statementFlow;
         _entryFeeCalculator = entryFeeCalculator;
         _log = log;
         // Singleton VM: reload when the competition/day changes. SessionChanged may be raised on a
@@ -447,6 +450,16 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     /// is nothing to export or the user cancelled.
     /// </summary>
     public Task<ParticipantExportResult?> ExportAsync(CsvParticipantData view) => _exportFlow.RunAsync(view);
+
+    /// <summary>Opens the participant-statement («відомість») modal for the given table's current view (the
+    /// page hands in the active table). Scopes per-day fields to the day in view (day mode / a single-day
+    /// roster), or gathers them across all days when the roster spans several days.</summary>
+    public Task OpenStatementAsync(Controls.SheetTable table) => _statementFlow.OpenAsync(table, EffectiveDayId);
+
+    /// <summary>Prints the statement for the given table's current view straight to the configured A4 printer,
+    /// with no preview/settings modal (the Ctrl+Shift+P «швидкий друк» path). Scopes per-day fields like
+    /// <see cref="OpenStatementAsync"/>.</summary>
+    public Task PrintStatementDirectAsync(Controls.SheetTable table) => _statementFlow.PrintDirectAsync(table, EffectiveDayId);
 
     // Rebuilds the day options only when the day set changed, so the ComboBox keeps a valid
     // SelectedItem reference across reloads. The roster sentinel is always first.

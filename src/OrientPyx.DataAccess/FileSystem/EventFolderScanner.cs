@@ -53,7 +53,8 @@ public sealed class EventFolderScanner : IEventFolderScanner
                 CreatedAt = info.CreatedAt,
                 DayCount = days.Count,
                 StartDate = info.StartDate,
-                EndDate = info.EndDate
+                EndDate = info.EndDate,
+                IsHidden = info.IsHidden
             });
         }
 

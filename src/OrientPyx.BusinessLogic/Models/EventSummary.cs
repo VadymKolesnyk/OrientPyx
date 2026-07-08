@@ -19,6 +19,9 @@ public class EventSummary
     /// <summary>Last day of the competition, if known.</summary>
     public DateTimeOffset? EndDate { get; set; }
 
+    /// <summary>Whether the competition is hidden from the selection list by default.</summary>
+    public bool IsHidden { get; set; }
+
     /// <summary>
     /// Human-readable date span for the selection list: a single date when the
     /// competition spans one day (or both ends coincide), a "start – end" range

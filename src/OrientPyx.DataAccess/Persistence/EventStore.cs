@@ -56,6 +56,7 @@ public sealed class EventStore : IEventStore
             existing.Organisation = info.Organisation;
             existing.StartDate = info.StartDate;
             existing.EndDate = info.EndDate;
+            existing.IsHidden = info.IsHidden;
             existing.RaisedFeeEnabled = info.RaisedFeeEnabled;
             existing.RaisedFeeAmount = info.RaisedFeeAmount;
             existing.ChipRentalPricePerDay = info.ChipRentalPricePerDay;
@@ -69,6 +70,18 @@ public sealed class EventStore : IEventStore
             existing.DefaultPointsRuleId = info.DefaultPointsRuleId;
         }
 
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SetHiddenAsync(string eventFolderPath, bool hidden, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.Competition.FirstOrDefaultAsync(cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.IsHidden = hidden;
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -1109,6 +1122,35 @@ public sealed class EventStore : IEventStore
             {
                 row = new SummaryProtocolSettingsRow { Id = 1, Json = json };
                 db.SummaryProtocolSettings.Add(row);
+            }
+            else
+            {
+                row.Json = json;
+            }
+            await db.SaveChangesAsync(cancellationToken);
+        });
+    }
+
+    public async Task<string?> GetStatementJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var row = await db.StatementSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(cancellationToken);
+        return row?.Json;
+    }
+
+    public async Task SaveStatementJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default)
+    {
+        // Single competition-level row (Id = 1). Concurrent auto-saves race on the primary key, so use the same
+        // read-then-insert-or-update retry the summary-protocol template uses.
+        await UpsertWithUniqueRetryAsync(eventFolderPath, async db =>
+        {
+            var row = await db.StatementSettings.FirstOrDefaultAsync(cancellationToken);
+            if (row is null)
+            {
+                row = new StatementSettingsRow { Id = 1, Json = json };
+                db.StatementSettings.Add(row);
             }
             else
             {

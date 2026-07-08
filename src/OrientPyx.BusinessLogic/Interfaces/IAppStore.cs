@@ -27,10 +27,22 @@ public interface IAppStore
 
     Task SavePrintSettingsAsync(string printerName, int widthMm, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the stored A4 print target (the participant-statement printer name), or null/blank when
+    /// never set.</summary>
+    Task<string?> GetA4PrinterNameAsync(CancellationToken cancellationToken = default);
+
+    Task SaveA4PrinterNameAsync(string printerName, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the stored results-protocol settings JSON, or null/blank when never saved.</summary>
     Task<string?> GetResultProtocolJsonAsync(CancellationToken cancellationToken = default);
 
     Task SaveResultProtocolJsonAsync(string json, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the app-level default participant-statement («відомість») settings JSON, or null/blank
+    /// when never saved.</summary>
+    Task<string?> GetStatementJsonAsync(CancellationToken cancellationToken = default);
+
+    Task SaveStatementJsonAsync(string json, CancellationToken cancellationToken = default);
 
     /// <summary>Returns the app-level default start-protocol settings JSON for the given kind, or null/blank
     /// when never saved.</summary>

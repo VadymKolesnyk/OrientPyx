@@ -15,12 +15,16 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.App
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "9.0.8");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.9");
 
             modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.AppSettingsRow", b =>
                 {
                     b.Property<int>("Id")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("A4PrinterName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("EventsPath")
                         .IsRequired()
@@ -76,6 +80,10 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.App
                         .HasColumnType("TEXT");
 
                     b.Property<string>("StartProtocolRegularJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StatementJson")
                         .IsRequired()
                         .HasColumnType("TEXT");
 

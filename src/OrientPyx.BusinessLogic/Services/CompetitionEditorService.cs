@@ -1758,6 +1758,161 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return _eventStore.SaveResultProtocolJsonAsync(FolderPath, dayId, json, cancellationToken);
     }
 
+    public async Task<StatementData> GetStatementDataAsync(
+        Guid? dayId, IReadOnlyList<Guid> participantIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(participantIds);
+        if (_session.CurrentEvent is null || participantIds.Count == 0)
+            return StatementData.Empty;
+
+        var folder = FolderPath;
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
+        var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
+        var dusshes = await _eventStore.GetDusshesAsync(folder, cancellationToken);
+        var rentalChips = await _eventStore.GetRentalChipsAsync(folder, cancellationToken);
+
+        var byParticipant = participants.ToDictionary(p => p.Id);
+        var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
+        var regionName = regions.ToDictionary(r => r.Id, r => r.Name);
+        var clubName = clubs.ToDictionary(c => c.Id, c => c.Name);
+        var dusshName = dusshes.ToDictionary(d => d.Id, d => d.Name);
+        // The rental-chip pool as trimmed numbers, so a chip counts as "own" (bold) only when it's NOT rented.
+        var rentalNumbers = new HashSet<string>(
+            rentalChips.Select(c => c.Number.Trim()).Where(n => n.Length > 0), StringComparer.OrdinalIgnoreCase);
+
+        // The per-day membership links for the requested scope: one day (day mode) or every day (roster mode).
+        // In roster mode the distinct across-days group/chip values are joined with " / ", matching the roster.
+        var links = dayId is { } id
+            ? await _eventStore.GetParticipantDaysAsync(folder, id, cancellationToken)
+            : await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
+
+        // Index the links by participant so each row gathers its own membership(s), preserving day order.
+        var dayOrder = days.OrderBy(d => d.Number).Select(d => d.Id).ToList();
+        var linksByParticipant = links
+            .GroupBy(l => l.ParticipantId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(l => dayOrder.IndexOf(l.EventDayId)).ToList());
+
+        // The days in the «Старт» block, in day order: just the scoped day (day mode) or every day (roster mode).
+        // Each row's StartTimes list is aligned to this so column i = day scopeDays[i]. Labels are "Д{number}".
+        var orderedDays = days.OrderBy(d => d.Number).ToList();
+        var scopeDays = dayId is { } scopedId
+            ? orderedDays.Where(d => d.Id == scopedId).ToList()
+            : orderedDays;
+        var dayLabels = scopeDays
+            .Select(d => string.Format(CultureInfo.InvariantCulture, "Д{0}", d.Number))
+            .ToList();
+
+        var rows = new List<StatementRow>(participantIds.Count);
+        foreach (var pid in participantIds)
+        {
+            if (!byParticipant.TryGetValue(pid, out var p))
+                continue;
+
+            var region = p.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
+            var club = p.ClubId is { } cid && clubName.TryGetValue(cid, out var cn) ? cn : string.Empty;
+            var dussh = p.DusshId is { } did && dusshName.TryGetValue(did, out var dn) ? dn : string.Empty;
+
+            // Gather the per-day group/chip values (already in day order); distinct, non-blank, " / "-joined.
+            var groupValues = new List<string>();
+            var chipValues = new List<string>();
+            // The per-day start time, keyed by day id, so the «Старт» block can align to scopeDays below.
+            var startByDay = new Dictionary<Guid, string>();
+            if (linksByParticipant.TryGetValue(pid, out var plinks))
+            {
+                foreach (var link in plinks)
+                {
+                    var gname = link.GroupId is { } gid && groupName.TryGetValue(gid, out var gn) ? gn : string.Empty;
+                    if (gname.Length > 0)
+                        groupValues.Add(gname);
+                    var chip = link.Chip.Trim();
+                    if (chip.Length > 0)
+                        chipValues.Add(chip);
+                    if (link.StartTime is { } st)
+                        startByDay[link.EventDayId] = st.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
+                }
+            }
+
+            // One start-time cell per day in the block, in scope-day order; blank when the participant doesn't
+            // run that day or has no start time set.
+            var startTimes = scopeDays
+                .Select(d => startByDay.TryGetValue(d.Id, out var s) ? s : string.Empty)
+                .ToList();
+
+            var distinctChips = chipValues.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            // Own (bold) when the participant holds any chip that is NOT in the rental pool. Sort key = the
+            // smallest chip number they hold (numeric so "9" < "80"; a non-numeric chip sorts just before the
+            // chip-less rows). Null when they hold no chip at all.
+            var hasOwnChip = distinctChips.Any(c => !rentalNumbers.Contains(c));
+            int? chipSortKey = distinctChips.Count == 0
+                ? null
+                : distinctChips
+                    .Select(c => int.TryParse(c, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : int.MaxValue - 1)
+                    .Min();
+
+            rows.Add(new StatementRow
+            {
+                ParticipantId = p.Id,
+                Number = p.Number,
+                FullName = p.FullName,
+                BirthDate = p.BirthDate,
+                Group = string.Join(" / ", groupValues.Distinct(StringComparer.CurrentCultureIgnoreCase)),
+                Chip = string.Join(" / ", distinctChips),
+                StartTimes = startTimes,
+                Region = region,
+                Club = club,
+                Dussh = dussh,
+                Coach = p.Coach,
+                Rank = p.Rank,
+                Team = p.Team.Trim(),
+                Representative = p.Representative,
+                FsouCode = p.FsouCode,
+                Note = p.Note,
+                HasChip = distinctChips.Count > 0,
+                HasOwnChip = hasOwnChip,
+                ChipSortKey = chipSortKey
+            });
+        }
+
+        return new StatementData(rows, dayLabels);
+    }
+
+    public async Task<StatementSettings?> GetStatementSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return null;
+
+        var json = await _eventStore.GetStatementJsonAsync(FolderPath, cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+            return null; // the caller seeds from the app-level default when the competition has no template yet
+
+        try
+        {
+            var settings = System.Text.Json.JsonSerializer.Deserialize<StatementSettings>(json);
+            if (settings is null)
+                return null;
+            if (settings.Columns.Count == 0)
+                settings.Columns = StatementSettings.DefaultColumns();
+            return settings;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null; // corrupt JSON ⇒ treat as "no template" and seed from the default
+        }
+    }
+
+    public Task SaveStatementSettingsAsync(StatementSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (_session.CurrentEvent is null)
+            return Task.CompletedTask;
+
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        return _eventStore.SaveStatementJsonAsync(FolderPath, json, cancellationToken);
+    }
+
     public async Task<SummaryProtocolData> GetSummaryProtocolDataAsync(CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null)
@@ -3065,6 +3220,32 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 holderByChip.TryAdd(key, link);
         }
 
+        // Rental-chip "collect now" flag: a rental chip should be handed back on the last day its holder
+        // uses it. For each (participant, chip) we find the highest day number they run with that chip; on
+        // that day the chip is collected. So a chip on the current day is collectable iff (a) it's a rental
+        // chip and (b) the holder holds no *later* day (higher day number) with the same chip. This makes
+        // the highlight always fire on the runner's final day with the chip, and earlier only when they
+        // don't reappear with it. Non-rental (own) chips are never collected.
+        var rentalChipSet = new HashSet<string>(
+            (await _eventStore.GetRentalChipsAsync(folder, cancellationToken)).Select(c => c.Number.Trim()),
+            StringComparer.OrdinalIgnoreCase);
+        var currentDayNumber = _session.CurrentDay.Number;
+        var allDays = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        var dayNumberById = allDays.ToDictionary(d => d.Id, d => d.Number);
+        var allLinks = await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
+        // The highest day number on which each (participant, chip) pair appears, so we know the last day
+        // the runner uses that chip.
+        var lastDayForHolderChip = new Dictionary<(Guid, string), int>();
+        foreach (var link in allLinks)
+        {
+            var chip = link.Chip.Trim();
+            if (chip.Length == 0 || !dayNumberById.TryGetValue(link.EventDayId, out var num))
+                continue;
+            var key = (link.ParticipantId, chip.ToUpperInvariant());
+            if (!lastDayForHolderChip.TryGetValue(key, out var existing) || num > existing)
+                lastDayForHolderChip[key] = num;
+        }
+
         // Computed per-group placement (keyed by link id) so each known row can show the runner's place in
         // their group; the same ranking the participant tables use. A place is only assigned to an OK,
         // in-competition result — null otherwise.
@@ -3110,8 +3291,16 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     && link.GroupId is { } ggid && leaderTimeByGroup.TryGetValue(ggid, out var lead) && rt > lead
                     ? rt - lead
                     : null;
+                // Collect the rental chip on the holder's last day with it: rental chip, and no later day
+                // (higher number) has this participant running with the same chip.
+                var chipKey = r.ChipNumber.Trim();
+                var isRental = rentalChipSet.Contains(chipKey);
+                var collect = isRental
+                    && lastDayForHolderChip.TryGetValue((link.ParticipantId, chipKey.ToUpperInvariant()), out var lastNum)
+                    && currentDayNumber >= lastNum;
                 rows.Add(new FinishReadoutRow(r.Id, r.Order, r.ChipNumber, r.StartTime, r.FinishTime,
-                    IsKnown: true, p.Number, p.FullName, group, status, detail, resolvedStart, elapsed, score, place, gap));
+                    IsKnown: true, p.Number, p.FullName, group, status, detail, resolvedStart, elapsed, score, place, gap,
+                    CollectRentalChip: collect, IsManualStatus: r.ManualStatus is not null));
             }
             else
             {
@@ -3119,7 +3308,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 // manual override still shows (a judge may rule on an unknown chip).
                 rows.Add(new FinishReadoutRow(r.Id, r.Order, r.ChipNumber, r.StartTime, r.FinishTime,
                     IsKnown: false, ParticipantNumber: string.Empty, FullName: string.Empty, GroupName: string.Empty,
-                    Status: r.ManualStatus ?? FinishStatus.None, StatusDetail: string.Empty, ResolvedStartTime: null, Elapsed: null));
+                    Status: r.ManualStatus ?? FinishStatus.None, StatusDetail: string.Empty, ResolvedStartTime: null, Elapsed: null,
+                    IsManualStatus: r.ManualStatus is not null));
             }
         }
         return rows;
@@ -3647,6 +3837,27 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         }
 
         await _eventStore.AddFinishReadoutsAsync(folder, toAdd, cancellationToken);
+
+        // A participant physically finished (their chip was read at the finish), so a DNS ("did not
+        // start") judge override on them for this day is now contradicted by reality — clear it and let
+        // automatic evaluation take over. Any other manual status (DSQ, OVT, a forced OK, …) is left
+        // untouched; only DNS is undone by the act of finishing. Keyed on the chips actually added this
+        // pass, resolved to the day's members the same way the log resolution does.
+        if (toAdd.Count > 0)
+        {
+            var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+            var addedChips = new HashSet<string>(
+                toAdd.Select(r => r.ChipNumber.Trim()), StringComparer.OrdinalIgnoreCase);
+            foreach (var link in links)
+            {
+                if (link.ResultStatusOverride != FinishStatus.Dns)
+                    continue;
+                if (link.Chip.Trim().Length == 0 || !addedChips.Contains(link.Chip.Trim()))
+                    continue;
+                await _eventStore.SetParticipantDayResultStatusAsync(folder, link.Id, null, cancellationToken);
+            }
+        }
+
         return new FinishReadoutImportResult(
             Added: toAdd.Count,
             Skipped: skipped,
@@ -3741,6 +3952,17 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // holder so the chip stays unique per day. The caller has already confirmed the reassignment.
         if (edit.ReassignToParticipantId is { } targetId)
             await ReassignParticipantDayChipAsync(targetId, dayId, readout.ChipNumber, cancellationToken);
+
+        // Propagate the chosen status onto the participant who now holds this chip on the day, so the manual
+        // status overrides that runner's day result — not just the log row. Going through
+        // SetParticipantDayResultStatusAsync means an "OK" recomputes their place and gap (via
+        // ComputeDayResultsAsync' ResultStatusOverride) immediately, and a null clears the override back to
+        // the computed status. Resolved AFTER any reassignment so it lands on the final holder.
+        var holders = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var holder = holders.FirstOrDefault(l =>
+            string.Equals(l.Chip.Trim(), readout.ChipNumber, StringComparison.OrdinalIgnoreCase));
+        if (holder is not null)
+            await SetParticipantDayResultStatusAsync(holder.ParticipantId, dayId, edit.ManualStatus, cancellationToken);
     }
 
     // Stable signature of a read-out record's content, so re-reading the same physical row is detected

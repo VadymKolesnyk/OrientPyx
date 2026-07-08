@@ -26,6 +26,13 @@ public class CompetitionInfo
     /// <summary>Optional last day of the competition.</summary>
     public DateTimeOffset? EndDate { get; set; }
 
+    /// <summary>
+    /// Whether this competition is hidden from the selection list by default. A per-competition
+    /// convenience toggle (kept in the event database so it travels with an export); the selection
+    /// page has a switch to reveal hidden competitions and unhide them.
+    /// </summary>
+    public bool IsHidden { get; set; }
+
     // --- Entry-fee settings (edited on the «Стартові внески» page; used by the participant fee total) ---
 
     /// <summary>Whether a raised (late) start-entry fee applies.</summary>

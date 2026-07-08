@@ -16,7 +16,9 @@ public sealed class RowHighlight : IValueConverter
 {
     public static readonly RowHighlight Instance = new();
 
-    private static readonly IBrush FlagBrush = new SolidColorBrush(Color.FromRgb(0xF6, 0xCB, 0xC8));
+    /// <summary>The red tint painted on a flagged row. Shared with <see cref="CellHighlight"/> so a
+    /// per-column tint that composes with the row tint uses the same red.</summary>
+    internal static readonly IBrush FlagBrush = new SolidColorBrush(Color.FromRgb(0xF6, 0xCB, 0xC8));
 
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         => value is true ? FlagBrush : Brushes.Transparent;

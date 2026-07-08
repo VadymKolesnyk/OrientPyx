@@ -42,6 +42,9 @@ public static class DataAccessServiceCollectionExtensions
         // Split printouts to an installed system printer (GDI; Windows-only at runtime).
         services.AddSingleton<ISplitPrintService, SplitPrintService>();
 
+        // Participant statement («відомість») printed on A4 to an installed system printer (GDI; Windows-only).
+        services.AddSingleton<IStatementPrintService, StatementPrintService>();
+
         // Renders a results protocol to a Word (.docx) document (Open XML; the builder is in BusinessLogic).
         services.AddSingleton<IResultProtocolWriter, DocxResultProtocolWriter>();
 

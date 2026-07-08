@@ -12,6 +12,18 @@ public sealed record PrintSettings(string PrinterName, int WidthMm)
 }
 
 /// <summary>
+/// The chosen A4 print target (for the participant statement / «відомість»): which installed printer to print
+/// to. Paper is always A4, so no size is stored — only the printer name (an installed Windows printer). Blank
+/// printer = not configured yet. Kept separate from the thermal <see cref="PrintSettings"/> so the two targets
+/// don't share a printer choice.
+/// </summary>
+public sealed record A4PrintSettings(string PrinterName)
+{
+    /// <summary>True once an A4 printer has actually been chosen.</summary>
+    public bool HasPrinter => !string.IsNullOrWhiteSpace(PrinterName);
+}
+
+/// <summary>
 /// A ready-to-render split printout for one finish read-out: a header identifying the runner and the
 /// course passage in order. Built in the BusinessLogic layer (layer-neutral, no printer/UI refs) from a
 /// <see cref="SplitsView"/> + the resolved row metadata; the DataAccess printer renders it to paper.

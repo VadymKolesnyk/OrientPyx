@@ -32,6 +32,9 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     // The header title key — the default "edit read-out" heading, or a distinct one for the unknown-chip
     // assignment prompt that pops up when a read doesn't resolve to a day member.
     private readonly string _titleKey;
+    // Whether to offer the "cancel for the whole batch" action. Set only when this modal is the unknown-chip
+    // prompt and there may be more unknown reads queued behind it — lets the operator skip them all at once.
+    private readonly bool _showCancelAll;
     // The read's local date — the day an edited time-of-day is spliced onto (read times are a time of day
     // on one date). Taken from the finish (else start) read time, in local time; today's local date when
     // the read carried no time at all.
@@ -40,11 +43,13 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     public FinishReadoutEditViewModel(
         ILocalizationService localization,
         FinishReadoutEditData data,
-        string titleKey = "FinishRead.Edit.Title")
+        string titleKey = "FinishRead.Edit.Title",
+        bool showCancelAll = false)
     {
         Localization = localization;
         _id = data.Id;
         _titleKey = titleKey;
+        _showCancelAll = showCancelAll;
 
         var anchor = data.FinishTime ?? data.StartTime;
         _anchorDate = (anchor?.ToLocalTime() ?? DateTimeOffset.Now).Date;
@@ -84,6 +89,7 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
             OnPropertyChanged(nameof(PunchesLabel));
             OnPropertyChanged(nameof(StatusLabel));
             OnPropertyChanged(nameof(TimeHint));
+            OnPropertyChanged(nameof(CancelAllLabel));
         };
     }
 
@@ -163,6 +169,21 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     /// <summary>Completes with the confirmed edit on OK, or null on cancel/close.</summary>
     public Task<FinishReadoutEdit?> Completion => _completion.Task;
 
+    /// <summary>
+    /// Whether the "cancel for the whole batch" action is offered — true only for the unknown-chip prompt
+    /// when more unknown reads may be queued behind this one. Drives the button's visibility in the view.
+    /// </summary>
+    public bool ShowCancelAll => _showCancelAll;
+
+    /// <summary>The label for the "cancel for the whole batch" action.</summary>
+    public string CancelAllLabel => Localization.Get("FinishRead.Unknown.CancelAll");
+
+    /// <summary>
+    /// Set when the operator chose "cancel for all": the caller reads this after <see cref="Completion"/>
+    /// returns null to know it should stop prompting the remaining unknown reads in the current batch.
+    /// </summary>
+    public bool CancelledAll { get; private set; }
+
     /// <summary>Appends a blank punch row for the user to fill in.</summary>
     [RelayCommand]
     private void AddPunch() => Punches.Add(MakePunch(new ChipPunch(string.Empty, null)));
@@ -231,6 +252,15 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
 
     [RelayCommand]
     private void Cancel() => _completion.TrySetResult(null);
+
+    // "Cancel for all": close this modal like a plain Cancel, but flag CancelledAll so the caller skips the
+    // rest of the unknown reads in the current batch (they still print as-is when auto-print is on).
+    [RelayCommand]
+    private void CancelAll()
+    {
+        CancelledAll = true;
+        _completion.TrySetResult(null);
+    }
 
     // A stored time → its local time of day (null when unset). Converting to local first is what fixes the
     // timezone shift: punch times are stored as UTC ticks (offset 0), so they must be shown in local time,

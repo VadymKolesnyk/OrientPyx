@@ -30,6 +30,12 @@ public sealed class EventCatalogService : IEventCatalogService
         return events.FirstOrDefault(e => string.Equals(e.Identifier, identifier, StringComparison.OrdinalIgnoreCase));
     }
 
+    public async Task SetHiddenAsync(EventSummary summary, bool hidden, CancellationToken cancellationToken = default)
+    {
+        await _eventStore.SetHiddenAsync(summary.FolderPath, hidden, cancellationToken);
+        summary.IsHidden = hidden;
+    }
+
     public async Task<EventSummary> CreateEventAsync(
         string name,
         string identifier,

@@ -168,6 +168,44 @@ public sealed class AppStore : IAppStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<string?> GetA4PrinterNameAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        return row?.A4PrinterName;
+    }
+
+    public async Task SaveA4PrinterNameAsync(string printerName, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+            db.Settings.Add(new AppSettingsRow { Id = 1, A4PrinterName = printerName });
+        else
+            row.A4PrinterName = printerName;
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<string?> GetStatementJsonAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        return row?.StatementJson;
+    }
+
+    public async Task SaveStatementJsonAsync(string json, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+            db.Settings.Add(new AppSettingsRow { Id = 1, StatementJson = json });
+        else
+            row.StatementJson = json;
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<string?> GetStartProtocolJsonAsync(StartProtocolKind kind, CancellationToken cancellationToken = default)
     {
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);

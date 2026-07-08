@@ -203,6 +203,10 @@ public partial class FinishReadView : UserControl
             .Text("FinishRead.Col.Id", nameof(FinishReadRowViewModel.Order), minWidth: 60)
             .Custom("FinishRead.Col.Chip", BuildChipCell, minWidth: 120,
                     sortPath: nameof(FinishReadRowViewModel.ChipNumber))
+            // Tint the whole chip cell amber when it's a rental chip due for collection (the holder's last
+            // day with it), with a tooltip explaining why.
+            .CellTint(nameof(FinishReadRowViewModel.CollectRentalChip), CollectRentalBrush,
+                      nameof(FinishReadRowViewModel.CollectRentalChipTooltip))
             .Text("FinishRead.Col.StartTime", nameof(FinishReadRowViewModel.StartTimeText), minWidth: 110)
             .Text("FinishRead.Col.FinishTime", nameof(FinishReadRowViewModel.FinishTimeText), minWidth: 110)
             .Text("FinishRead.Col.ResultTime", nameof(FinishReadRowViewModel.ElapsedText), minWidth: 110);
@@ -285,9 +289,14 @@ public partial class FinishReadView : UserControl
         };
     }
 
-    // Read-only chip label, bold-red when the number is not in the rental-chip database — same
-    // highlight as the participants table, just on a read-only cell (Text() only wires it on editable
-    // columns), so it's built here via ChipHighlight.SetLabelRegistry directly.
+    // Amber tint painted over a whole chip cell whose rental chip is due for collection (the holder's last
+    // day with it). Light enough that the theme's chip text stays legible over it in both themes.
+    private static readonly ISolidColorBrush CollectRentalBrush = new SolidColorBrush(Color.FromRgb(0xF6, 0xC3, 0x43));
+
+    // Read-only chip label, bold-red when the number is NOT a rental chip (same highlight as the
+    // participants table; Text() only wires it on editable columns, so it's set here directly). The amber
+    // "collect this rental chip" tint + tooltip are painted on the whole cell by the column's
+    // CellBackgroundPath (see BuildBands), not here — so the tint covers the cell, not just the text.
     private Control BuildChipCell()
     {
         var block = new TextBlock
@@ -353,21 +362,50 @@ public partial class FinishReadView : UserControl
         return badge;
     }
 
+    // Status-cell brushes, resolved once from the theme: green for a manual "cleared to OK" ruling, red for
+    // any bad status (computed or manual). Fall back to fixed hexes if a resource is somehow missing.
+    private static readonly IBrush SuccessBrush =
+        Application.Current!.Resources.TryGetResource("SuccessBrush", null, out var s) && s is IBrush sb
+            ? sb : new SolidColorBrush(Color.Parse("#059669"));
+    private static readonly IBrush DangerBrush =
+        Application.Current!.Resources.TryGetResource("DangerBrush", null, out var d) && d is IBrush db
+            ? db : new SolidColorBrush(Color.Parse("#DC2626"));
+
     private static Control BuildStatusCell()
     {
         var block = new TextBlock
         {
             VerticalAlignment = VerticalAlignment.Center,
             Padding = new Thickness(10, 0),
-            FontWeight = Avalonia.Media.FontWeight.Medium,
-            [!TextBlock.TextProperty] = new Binding(nameof(FinishReadRowViewModel.StatusText)),
             [!ToolTip.TipProperty] = new Binding(nameof(FinishReadRowViewModel.StatusDetail)),
-            // Red foreground when the status is not OK (MP / OVT / DNF / DNS / DSQ).
-            [!TextBlock.ForegroundProperty] = new Binding(nameof(FinishReadRowViewModel.StatusIsBad))
+            [!TextBlock.TextProperty] = new Binding(nameof(FinishReadRowViewModel.StatusText)),
+            // Bold when the status is a manual override (judge's ruling), so it stands out from a computed
+            // one; a computed status keeps the medium weight.
+            [!TextBlock.FontWeightProperty] = new Binding(nameof(FinishReadRowViewModel.StatusIsManual))
             {
-                Converter = (IValueConverter)Application.Current!.Resources["BoolToDangerBrush"]!,
+                Converter = new FuncValueConverter<bool, FontWeight>(
+                    manual => manual ? FontWeight.Bold : FontWeight.Medium),
             },
         };
+
+        // Foreground: a manual override to OK is green (a "cleared to OK" ruling); any bad status is red;
+        // everything else inherits the default. Combines both flags so manual-OK beats the bad-tint.
+        block[!TextBlock.ForegroundProperty] = new MultiBinding
+        {
+            Bindings =
+            {
+                new Binding(nameof(FinishReadRowViewModel.StatusIsManualOk)),
+                new Binding(nameof(FinishReadRowViewModel.StatusIsBad)),
+            },
+            Converter = new FuncMultiValueConverter<bool, IBrush?>(flags =>
+            {
+                var list = flags.ToArray();
+                var manualOk = list.Length > 0 && list[0];
+                var bad = list.Length > 1 && list[1];
+                return manualOk ? SuccessBrush : bad ? DangerBrush : null;
+            }),
+        };
+
         return block;
     }
 

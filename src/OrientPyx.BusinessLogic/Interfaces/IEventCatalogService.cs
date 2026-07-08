@@ -12,6 +12,12 @@ public interface IEventCatalogService
     Task<EventSummary?> FindByIdentifierAsync(string identifier, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Hides or reveals a competition on the selection list. The flag is stored in the competition's
+    /// own database; hidden competitions are shown only when the picker's "show hidden" switch is on.
+    /// </summary>
+    Task SetHiddenAsync(EventSummary summary, bool hidden, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// True when <paramref name="identifier"/> is a valid folder name and no competition folder with that
     /// name already exists under the events path. Used to validate the identifier before creating.
     /// </summary>

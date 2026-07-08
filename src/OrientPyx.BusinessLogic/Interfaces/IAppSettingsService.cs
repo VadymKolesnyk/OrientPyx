@@ -30,10 +30,21 @@ public interface IAppSettingsService
 
     Task SavePrintSettingsAsync(PrintSettings settings, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the stored A4 print target (the participant-statement printer name, blank if unset).</summary>
+    Task<A4PrintSettings> GetA4PrintSettingsAsync(CancellationToken cancellationToken = default);
+
+    Task SaveA4PrintSettingsAsync(A4PrintSettings settings, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the stored results-protocol settings, applying defaults when never saved or unreadable.</summary>
     Task<ResultProtocolSettings> GetResultProtocolSettingsAsync(CancellationToken cancellationToken = default);
 
     Task SaveResultProtocolSettingsAsync(ResultProtocolSettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the app-level default participant-statement («відомість») settings, applying defaults
+    /// when never saved or unreadable.</summary>
+    Task<StatementSettings> GetStatementSettingsAsync(CancellationToken cancellationToken = default);
+
+    Task SaveStatementSettingsAsync(StatementSettings settings, CancellationToken cancellationToken = default);
 
     /// <summary>Returns the app-level default start-protocol settings for the kind, applying the kind's
     /// built-in default when never saved or unreadable.</summary>

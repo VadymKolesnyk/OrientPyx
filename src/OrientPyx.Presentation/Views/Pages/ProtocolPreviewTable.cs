@@ -205,7 +205,10 @@ public sealed class ProtocolPreviewTable
                 for (var c = 0; c < columns.Count; c++)
                 {
                     var text = c < bodyRow.Cells.Count ? bodyRow.Cells[c] : string.Empty;
-                    var cell = BuildBodyCell(text, bodyRow.IsTeamHeader, columns[c], boxed: banded);
+                    // Per-cell bold (the statement's own-chip cells) OR'd with the whole-row team-caption bold.
+                    var cellBold = bodyRow.IsTeamHeader
+                        || (bodyRow.BoldCells is { } mask && c < mask.Count && mask[c]);
+                    var cell = BuildBodyCell(text, cellBold, columns[c], boxed: banded);
                     WireDrag(cell); // drag anywhere in a column, not just its header
                     Grid.SetColumn(cell, c);
                     Grid.SetRow(cell, row);
@@ -606,7 +609,7 @@ public sealed class ProtocolPreviewTable
     // reordered by dragging anywhere in the column, not just its header. Free-text columns wrap long values to
     // the next line (no ellipsis), matching the printed protocol; short-code columns (рік, № з/п, результат,
     // місце, кваліфікація, номер) never wrap — their column is always sized for the longest value.
-    private static Border BuildBodyCell(string text, bool teamHeader, ProtocolPreviewColumn col, bool boxed) => new()
+    private static Border BuildBodyCell(string text, bool bold, ProtocolPreviewColumn col, bool boxed) => new()
     {
         // Boxed (banded judges' protocol): a full cell grid, like the printed sheet — adjacent borders overlap to
         // a single rule. Otherwise just a hairline under each row (no inner grid), so normal sections read clean.
@@ -624,7 +627,7 @@ public sealed class ProtocolPreviewTable
             FontFamily = Serif,
             Foreground = Brushes.Black,
             FontSize = BodyFontSize,
-            FontWeight = teamHeader ? FontWeight.Bold : FontWeight.Normal,
+            FontWeight = bold ? FontWeight.Bold : FontWeight.Normal,
             VerticalAlignment = VerticalAlignment.Center,
             TextWrapping = col.BodyWraps ? TextWrapping.Wrap : TextWrapping.NoWrap
         }

@@ -32,6 +32,7 @@ public class EventDbContext : DbContext
     public DbSet<ResultProtocolSettingsRow> ResultProtocolSettings => Set<ResultProtocolSettingsRow>();
     public DbSet<StartProtocolSettingsRow> StartProtocolSettings => Set<StartProtocolSettingsRow>();
     public DbSet<SummaryProtocolSettingsRow> SummaryProtocolSettings => Set<SummaryProtocolSettingsRow>();
+    public DbSet<StatementSettingsRow> StatementSettings => Set<StatementSettingsRow>();
     public DbSet<OnlinePublishSettingsRow> OnlinePublishSettings => Set<OnlinePublishSettingsRow>();
     public DbSet<MonitorSettingsRow> MonitorSettings => Set<MonitorSettingsRow>();
 

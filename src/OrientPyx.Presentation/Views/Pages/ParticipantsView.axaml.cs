@@ -187,6 +187,28 @@ public partial class ParticipantsView : UserControl
             e.Handled = true;
             return;
         }
+        // Ctrl+Shift+E = export the statement to Word (checked before Ctrl+E so it isn't shadowed).
+        if (ctrl && shift && e.Key == Avalonia.Input.Key.E)
+        {
+            _ = OpenStatementAsync();
+            e.Handled = true;
+            return;
+        }
+        // Ctrl+Shift+P = quick print: print the statement straight to the configured A4 printer, no modal
+        // (checked before Ctrl+P so it isn't shadowed).
+        if (ctrl && shift && e.Key == Avalonia.Input.Key.P)
+        {
+            _ = PrintStatementDirectAsync();
+            e.Handled = true;
+            return;
+        }
+        // Ctrl+P = print the statement on A4 (opens the same modal).
+        if (ctrl && !shift && e.Key == Avalonia.Input.Key.P)
+        {
+            _ = OpenStatementAsync();
+            e.Handled = true;
+            return;
+        }
         if (ctrl && !shift)
         {
             switch (e.Key)
@@ -378,7 +400,51 @@ public partial class ParticipantsView : UserControl
     // SheetTable, so we capture them here (the VM never references the table directly) and hand the
     // snapshot to the VM's export flow, which shows the format modal and serialises the bytes. When the
     // user confirmed, we run the save dialog (it needs the window's StorageProvider) and write the file.
-    private void OnExportClick(object? sender, RoutedEventArgs e) => _ = ExportAsync();
+    private void OnExportTableClick(object? sender, RoutedEventArgs e)
+    {
+        CloseContainingFlyout(sender);
+        _ = ExportAsync();
+    }
+
+    // Export the participant statement («відомість») to Word: open the configurable preview modal off the
+    // active table's current view (visible rows + applied filters). The VM/flow owns the rest.
+    private void OnExportStatementClick(object? sender, RoutedEventArgs e)
+    {
+        CloseContainingFlyout(sender);
+        _ = OpenStatementAsync();
+    }
+
+    // Print the statement on A4: same modal, from which the user prints.
+    private void OnPrintStatementClick(object? sender, RoutedEventArgs e)
+    {
+        CloseContainingFlyout(sender);
+        _ = OpenStatementAsync();
+    }
+
+    // Quick print: print the statement straight to the configured A4 printer, no preview/settings modal.
+    private void OnPrintStatementDirectClick(object? sender, RoutedEventArgs e)
+    {
+        CloseContainingFlyout(sender);
+        _ = PrintStatementDirectAsync();
+    }
+
+    private async System.Threading.Tasks.Task OpenStatementAsync()
+    {
+        if (_vm is null)
+            return;
+        var table = _vm.IsRosterMode ? RosterTable : DayTable;
+        await _vm.OpenStatementAsync(table);
+    }
+
+    // Quick print (Ctrl+Shift+P + «Швидкий друк відомості» menu item): print the statement straight to the
+    // configured A4 printer with no preview/settings modal.
+    private async System.Threading.Tasks.Task PrintStatementDirectAsync()
+    {
+        if (_vm is null)
+            return;
+        var table = _vm.IsRosterMode ? RosterTable : DayTable;
+        await _vm.PrintStatementDirectAsync(table);
+    }
 
     private async System.Threading.Tasks.Task ExportAsync()
     {

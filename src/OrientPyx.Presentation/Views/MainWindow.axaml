@@ -73,6 +73,12 @@
         <DataTemplate DataType="dialogs:PrintSettingsViewModel">
             <dialogViews:PrintSettingsView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:A4PrintSettingsViewModel">
+            <dialogViews:A4PrintSettingsView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:StatementViewModel">
+            <dialogViews:StatementView />
+        </DataTemplate>
         <DataTemplate DataType="dialogs:FinishReadoutEditViewModel">
             <dialogViews:FinishReadoutEditView />
         </DataTemplate>

@@ -27,6 +27,12 @@ public interface IEventStore
     /// <summary>Stores (inserts/updates) the single competition metadata row.</summary>
     Task SaveCompetitionInfoAsync(string eventFolderPath, CompetitionInfo info, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Sets only the "hidden from the selection list" flag on the competition metadata row, without
+    /// touching any other field (so it is safe to toggle from the picker without a full round-trip).
+    /// </summary>
+    Task SetHiddenAsync(string eventFolderPath, bool hidden, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the competition days ordered by number.</summary>
     Task<IReadOnlyList<EventDay>> GetDaysAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
@@ -347,6 +353,13 @@ public interface IEventStore
 
     /// <summary>Stores (inserts/updates) the competition-level summary-protocol template JSON.</summary>
     Task SaveSummaryProtocolJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the competition-level participant-statement («відомість») template JSON, or null when
+    /// none is stored (the caller then seeds from the app-level default).</summary>
+    Task<string?> GetStatementJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>Stores (inserts/updates) the competition-level participant-statement template JSON.</summary>
+    Task SaveStatementJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default);
 
     /// <summary>Returns the competition-level online-publish settings JSON, or null when none is stored (the
     /// caller then seeds defaults from the competition metadata).</summary>

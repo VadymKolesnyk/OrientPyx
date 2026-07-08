@@ -61,7 +61,24 @@ instead of pushing a half-finished release. Do not skip the build.
 
 - Create an annotated tag: `git tag -a v<version> -m "OrientPyx <version>"`.
 
-## Step 5 — Build + upload the Velopack release
+## Step 5 — Push the branch and tag (BEFORE the upload)
+
+Push **before** building/uploading. This ordering matters: `vpk upload` creates the
+`v<version>` tag/release on GitHub against whatever commit `origin/main` currently points
+at. If you upload before pushing, `vpk` tags the *previous* commit and the release ends up
+pointing one commit behind the real release. Push first so the remote tip is already the
+release commit:
+
+```bash
+git push origin main
+git push origin v<version>
+```
+
+- If either push is rejected (e.g. the remote has commits you don't have), **stop** and
+  report — do not force-push over someone else's work. A rejected *tag* push only happens
+  if the tag already exists remotely, which at this point it should not.
+
+## Step 6 — Build + upload the Velopack release
 
 `build/releases/` already holds the previous `.nupkg` packages, so Velopack can build a
 delta. Run the existing publish script, which builds, packs, and uploads in one shot:
@@ -74,23 +91,16 @@ $env:GITHUB_TOKEN = (gh auth token)
 - Run it with the Bash tool via `powershell -NoProfile -File build/publish.ps1 ...`
   **or** the PowerShell tool — either is fine; set `GITHUB_TOKEN` from `gh auth token`
   first so the script's GitHub upload works without asking for a token.
-- This publishes a GitHub Release tagged `v<version>` named `OrientPyx <version>` with
-  the installer, full/delta packages, and the `RELEASES`/`releases.win.json` update feed.
-- If the script fails, **stop** and report the error. Do not push the branch/tag pointing
-  at a release that was never built, and do not hand-fake the assets.
-
-## Step 6 — Push the branch and tag
-
-Only after the publish succeeded:
-
-```bash
-git push origin main
-git push origin v<version>
-```
-
-(`vpk upload` already created the GitHub Release; pushing the tag just makes the local and
-remote tags agree. If the tag already exists remotely from the upload, that push is a
-no-op — that's fine.)
+- Because `main` and the tag are already pushed (Step 5), `vpk` attaches the release to
+  the correct existing `v<version>` tag. It publishes a GitHub Release named
+  `OrientPyx <version>` with the installer, full/delta packages, and the
+  `RELEASES`/`releases.win.json` update feed.
+- After it finishes, verify the remote tag points at the release commit — the annotated
+  tag dereferences with `^{}`:
+  `git ls-remote origin 'refs/tags/v<version>^{}'` should equal `git rev-parse HEAD`.
+  If it does **not** match, tell the user the tag is off and ask before force-updating it.
+- If the script fails, **stop** and report the error. The branch/tag are already pushed,
+  but do not hand-fake the release assets — re-run the publish once the cause is fixed.
 
 ## Step 7 — Improve the release notes
 

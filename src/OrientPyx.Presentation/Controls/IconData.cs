@@ -44,6 +44,9 @@ public static class IconData
         // triangle-alert: warning triangle (mark age violators / out of competition)
         ["TriangleAlert"] = "m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3 M12 9v4 M12 17h.01",
 
+        // printer (print the participant statement on A4)
+        ["Printer"] = "M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2 M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6 M6 14h12v7a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1z",
+
         // ---- Add / delete / confirm ------------------------------------------------------------------
         // plus (add)
         ["Plus"] = "M5 12h14 M12 5v14",

@@ -1695,6 +1695,36 @@ public sealed class SheetTable : TemplatedControl
                     cell[!ToolTip.TipProperty] =
                         new Avalonia.Data.Binding(nameof(ParticipantRosterRowViewModel.AgeViolationTooltip));
                 }
+                else if (column.CellBackgroundPath is { Length: > 0 } cellTintPath)
+                {
+                    // Per-column cell tint (e.g. the amber "collect this rental chip" cell on the finish-read
+                    // log): this column's cell paints its chosen brush when its bool path reads true. When the
+                    // table also has a whole-row tint, the two compose via a MultiBinding — the row tint wins
+                    // so a flagged row (e.g. an unknown chip's red) stays uniform, and the cell brush only
+                    // fills in where the row isn't flagged. The brush is the converter parameter so each
+                    // column picks its own colour.
+                    if (RowHighlightPath is { Length: > 0 } rowPath)
+                    {
+                        var multi = new Avalonia.Data.MultiBinding
+                        {
+                            Converter = Behaviors.CellHighlight.Instance,
+                            ConverterParameter = column.CellBackgroundBrush
+                        };
+                        multi.Bindings.Add(new Avalonia.Data.Binding(rowPath));
+                        multi.Bindings.Add(new Avalonia.Data.Binding(cellTintPath));
+                        cell[!TemplatedControl.BackgroundProperty] = multi;
+                    }
+                    else
+                    {
+                        cell[!TemplatedControl.BackgroundProperty] = new Avalonia.Data.Binding(cellTintPath)
+                        {
+                            Converter = Behaviors.CellHighlight.Instance,
+                            ConverterParameter = column.CellBackgroundBrush
+                        };
+                    }
+                    if (column.CellBackgroundTooltipPath is { Length: > 0 } tipPath)
+                        cell[!ToolTip.TipProperty] = new Avalonia.Data.Binding(tipPath);
+                }
                 else if (RowHighlightPath is { Length: > 0 } highlightPath)
                 {
                     // Whole-row tint (e.g. an unrecognised chip on the finish-read log): every cell in the

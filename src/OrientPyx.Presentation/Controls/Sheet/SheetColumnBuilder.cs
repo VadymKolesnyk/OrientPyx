@@ -236,6 +236,21 @@ public sealed class SheetColumnBuilder
         return this;
     }
 
+    /// <summary>
+    /// Tints the whole cell of the column just added: when the row's <paramref name="flagPath"/> bool reads
+    /// true the cell is painted <paramref name="brush"/> (else transparent), optionally with a tooltip from
+    /// <paramref name="tooltipPath"/>. Fluent — chain it right after the column it decorates (e.g. after a
+    /// Custom chip column to flag a rental chip due for collection). See <see cref="SheetColumn.CellBackgroundPath"/>.
+    /// </summary>
+    public SheetColumnBuilder CellTint(string flagPath, Avalonia.Media.IBrush brush, string? tooltipPath = null)
+    {
+        var column = _bands[^1].Columns[^1];
+        column.CellBackgroundPath = flagPath;
+        column.CellBackgroundBrush = brush;
+        column.CellBackgroundTooltipPath = tooltipPath;
+        return this;
+    }
+
     private static Control ReadOnlyText(string displayPath, string? opacityPath)
     {
         var block = new TextBlock

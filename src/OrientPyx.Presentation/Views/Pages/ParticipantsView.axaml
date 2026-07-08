@@ -90,15 +90,70 @@
                     </Button.Flyout>
                 </Button>
 
-                <!-- Export the current view (visible columns + displayed rows) to CSV or Excel. A modal
-                     picks the format; the file is then chosen via a save dialog in code-behind (it needs
-                     the window's StorageProvider). Kept inline — it's a single, frequently-used action. -->
-                <Button Click="OnExportClick" Classes="ghost"
-                        ToolTip.Tip="Ctrl+E">
+                <!-- Export group: the table view (CSV/Excel), the participant statement («відомість») to Word,
+                     and printing the statement on A4. Each menu handler closes the flyout then runs its task. -->
+                <Button Classes="ghost">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <controls:Icon Kind="Download" Size="15" />
-                        <TextBlock Text="{Binding Localization[Participants.Export]}" />
+                        <TextBlock Text="{Binding Localization[Participants.ExportMenu]}" />
+                        <controls:Icon Kind="ChevronDown" Size="12" />
                     </StackPanel>
+                    <Button.Flyout>
+                        <Flyout Placement="BottomEdgeAlignedRight">
+                            <LayoutTransformControl>
+                                <LayoutTransformControl.LayoutTransform>
+                                    <ScaleTransform ScaleX="{ReflectionBinding Scale, Source={StaticResource UiScale}}"
+                                                    ScaleY="{ReflectionBinding Scale, Source={StaticResource UiScale}}" />
+                                </LayoutTransformControl.LayoutTransform>
+                                <StackPanel Spacing="2" Margin="4" MinWidth="280">
+                                    <!-- Export the current table view (visible columns + displayed rows) to
+                                         CSV / Excel. A modal picks the format; the file is chosen via a save
+                                         dialog in code-behind. Hotkey Ctrl+E. -->
+                                    <Button Click="OnExportTableClick" Classes="menu" HorizontalAlignment="Stretch">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="Ctrl+E" />
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <controls:Icon Kind="FileSpreadsheet" Size="16" />
+                                                <TextBlock Text="{Binding Localization[Participants.ExportTable]}" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Button>
+                                    <Separator Margin="4,2" />
+                                    <!-- Export the participant statement («відомість») to Word (.docx) — a
+                                         configurable, chip-sorted flat list with a live preview. Ctrl+Shift+E. -->
+                                    <Button Click="OnExportStatementClick" Classes="menu" HorizontalAlignment="Stretch">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="Ctrl+Shift+E" />
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <controls:Icon Kind="FileText" Size="16" />
+                                                <TextBlock Text="{Binding Localization[Participants.ExportStatement]}" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Button>
+                                    <!-- Print the statement on A4: opens the preview/settings modal. Ctrl+P. -->
+                                    <Button Click="OnPrintStatementClick" Classes="menu" HorizontalAlignment="Stretch">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="Ctrl+P" />
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <controls:Icon Kind="Printer" Size="16" />
+                                                <TextBlock Text="{Binding Localization[Participants.PrintStatement]}" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Button>
+                                    <!-- Quick print: straight to the configured A4 printer, no modal. Ctrl+Shift+P. -->
+                                    <Button Click="OnPrintStatementDirectClick" Classes="menu" HorizontalAlignment="Stretch">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="Ctrl+Shift+P" />
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <controls:Icon Kind="Printer" Size="16" />
+                                                <TextBlock Text="{Binding Localization[Participants.PrintStatementDirect]}" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Button>
+                                </StackPanel>
+                            </LayoutTransformControl>
+                        </Flyout>
+                    </Button.Flyout>
                 </Button>
 
                 <!-- Bulk-action group: assign numbers / chips, bulk-edit, mark out-of-competition by age.

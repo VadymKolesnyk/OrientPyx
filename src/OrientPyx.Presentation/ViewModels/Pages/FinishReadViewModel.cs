@@ -598,6 +598,18 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         try
         {
             var parser = await _readoutParsers.GetCurrentAsync();
+
+            // The file has content but this parser can't read it. That's almost always the wrong timing
+            // system selected in Settings (or the wrong list format exported) — NOT a half-written file,
+            // because CanParse keys on the header row, which is written whole and first. Surface it as a
+            // banner instead of silently skipping every tick, so the operator learns why nothing appears.
+            if (!parser.CanParse(content))
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                    AutoReadError = Localization.Get("FinishRead.AutoRead.Error.WrongFormat"));
+                return;
+            }
+
             var data = parser.Parse(content);
             // A good parse means the file is in the right format — clear any earlier warning banner.
             if (HasAutoReadError)
@@ -612,7 +624,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         }
         catch (ReadoutFormatException)
         {
-            // Not a readable readout right now (e.g. half-written) — skip this tick.
+            // Passed CanParse but still failed mid-parse — likely a half-written row; skip this tick.
         }
     }
 
@@ -633,10 +645,25 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         var rows = await _editor.GetFinishReadoutRowsAsync();
         var byId = rows.ToDictionary(r => r.Id);
 
+        // Once the operator picks "cancel for all" on any unknown read, we stop prompting for the rest of
+        // this batch — the remaining unknown reads are left unassigned and just printed as-is (if auto-print
+        // is on), exactly like a per-read Cancel.
+        var cancelledAllUnknowns = false;
         foreach (var id in readoutIds)
         {
             if (byId.TryGetValue(id, out var row) && !row.IsKnown)
-                await PromptUnknownReadAsync(id);
+            {
+                if (cancelledAllUnknowns)
+                {
+                    // Skipped by an earlier "cancel for all": leave unknown, print as-is.
+                    _log.Action(string.Format(Localization.Get("FinishRead.Unknown.LeftLog"), row.ChipNumber));
+                    await AutoPrintNewReadsAsync([id]);
+                }
+                else if (await PromptUnknownReadAsync(id))
+                {
+                    cancelledAllUnknowns = true;
+                }
+            }
             else
                 await AutoPrintNewReadsAsync([id]);
         }
@@ -646,15 +673,17 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     // The modal is the edit modal reused with an unknown-chip title. Reassignment is persisted by
     // UpdateFinishReadoutAsync (via the edit result). Printing is gated on auto-print being on; a Save
     // prints the (now-assigned) read, a Cancel prints the still-unknown read. Never throws out of the poll.
-    private async Task PromptUnknownReadAsync(Guid readoutId)
+    // Returns true when the operator chose "cancel for all" so the caller skips the rest of the batch.
+    private async Task<bool> PromptUnknownReadAsync(Guid readoutId)
     {
         var data = await _editor.GetFinishReadoutEditAsync(readoutId);
         if (data is null)
-            return;
+            return false;
 
+        var vm = new FinishReadoutEditViewModel(
+            Localization, data, titleKey: "FinishRead.Unknown.Title", showCancelAll: true);
         var edit = await Dispatcher.UIThread.InvokeAsync(() =>
-            _dialogs.ShowFinishReadoutEditAsync(new FinishReadoutEditViewModel(
-                Localization, data, titleKey: "FinishRead.Unknown.Title")));
+            _dialogs.ShowFinishReadoutEditAsync(vm));
 
         if (edit is not null)
         {
@@ -665,10 +694,12 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         }
         else
         {
-            // Cancel: leave the read unknown; if auto-print is on, print the unknown printout as-is.
+            // Cancel (or cancel-for-all): leave the read unknown; if auto-print is on, print it as-is.
             _log.Action(string.Format(Localization.Get("FinishRead.Unknown.LeftLog"), data.ChipNumber));
             await AutoPrintNewReadsAsync([readoutId]);
         }
+
+        return vm.CancelledAll;
     }
 
     // Silently prints each newly-read row when auto-print is on and a printer is configured. No-op when the

@@ -29,6 +29,16 @@ public sealed class FinishReadRowViewModel
     public string ChipNumber => _row.ChipNumber;
 
     /// <summary>
+    /// True when this row's chip is a rental chip the runner should hand back now — it's the last day
+    /// they use it. Drives the chip cell's "collect the rental chip" highlight + tooltip.
+    /// </summary>
+    public bool CollectRentalChip => _row.CollectRentalChip;
+
+    /// <summary>Tooltip for a highlighted rental-chip cell (blank unless flagged, which suppresses the tip).</summary>
+    public string CollectRentalChipTooltip =>
+        _row.CollectRentalChip ? _localization.Get("FinishRead.Chip.CollectRental") : string.Empty;
+
+    /// <summary>
     /// Start time as "HH:mm:ss", or blank when none is known. For a recognised chip this is the resolved
     /// start used for evaluation (chip read-out start, else the assigned start); for an unrecognised chip
     /// — which has no resolved start — it falls back to the raw start the readout file carried, so an
@@ -78,12 +88,14 @@ public sealed class FinishReadRowViewModel
         : string.Empty;
 
     /// <summary>
-    /// Short status code shown in the status column (OK / MP / OVT / DNF / DNS / DSQ). Blank when there
-    /// is no status (unknown chip, or a discipline that doesn't evaluate finishes yet).
+    /// Short status code shown in the status column (OK / MP / OVT / DNF / DNS / DSQ). "OK" shows ONLY for a
+    /// manual "cleared to OK" ruling — a computed (automatic) OK stays blank, since the plain result already
+    /// conveys a clean finish. Blank too when there is no status (unknown chip, or a discipline that doesn't
+    /// evaluate finishes yet).
     /// </summary>
     public string StatusText => _row.Status switch
     {
-        FinishStatus.Ok => "OK",
+        FinishStatus.Ok => _row.IsManualStatus ? "OK" : string.Empty,
         FinishStatus.Mp => "MP",
         FinishStatus.Ovt => "OVT",
         FinishStatus.Dnf => "DNF",
@@ -104,4 +116,16 @@ public sealed class FinishReadRowViewModel
     /// the status cell. A missing status (<see cref="FinishStatus.None"/>) and OK both read false.
     /// </summary>
     public bool StatusIsBad => _row.Status is not (FinishStatus.None or FinishStatus.Ok);
+
+    /// <summary>
+    /// True when the shown status is a judge's manual override rather than the discipline's computed value —
+    /// drives the status cell's bold weight so a hand-set status stands out.
+    /// </summary>
+    public bool StatusIsManual => _row.IsManualStatus;
+
+    /// <summary>
+    /// True when the status is a manual override to OK — drives the status cell's green colour (a manual
+    /// "cleared to OK" ruling), while any other manual status stays red like the computed bad statuses.
+    /// </summary>
+    public bool StatusIsManualOk => _row.IsManualStatus && _row.Status == FinishStatus.Ok;
 }

@@ -258,6 +258,41 @@ public sealed partial class DialogService : ObservableObject, IDialogService
         }
     }
 
+    public async Task ShowStatementAsync(StatementViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
+
+    public async Task<bool> ShowA4PrintSettingsAsync(A4PrintSettingsViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        // The A4 settings modal may open on TOP of the statement modal. Save the current overlay and restore it
+        // when this one closes, so the statement modal reappears instead of being cleared.
+        var previous = Current;
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = previous;
+        }
+    }
+
     public async Task<FinishReadoutEdit?> ShowFinishReadoutEditAsync(FinishReadoutEditViewModel dialog)
     {
         ArgumentNullException.ThrowIfNull(dialog);

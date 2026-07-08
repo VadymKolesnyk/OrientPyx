@@ -30,14 +30,22 @@
             <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
                     BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
                     Padding="22,14">
-                <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
-                    <Button Content="{Binding Localization[Common.Cancel]}"
+                <DockPanel LastChildFill="False">
+                    <!-- Batch-only: skip this and every remaining unknown read in the current file batch. -->
+                    <Button DockPanel.Dock="Left"
+                            Content="{Binding CancelAllLabel}"
                             Classes="ghost"
-                            Command="{Binding CancelCommand}" />
-                    <Button Content="{Binding Localization[Common.Save]}"
-                            Classes="accent"
-                            Command="{Binding ConfirmCommand}" />
-                </StackPanel>
+                            IsVisible="{Binding ShowCancelAll}"
+                            Command="{Binding CancelAllCommand}" />
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="10">
+                        <Button Content="{Binding Localization[Common.Cancel]}"
+                                Classes="ghost"
+                                Command="{Binding CancelCommand}" />
+                        <Button Content="{Binding Localization[Common.Save]}"
+                                Classes="accent"
+                                Command="{Binding ConfirmCommand}" />
+                    </StackPanel>
+                </DockPanel>
             </Border>
 
             <!-- Body: scrollable so the punch list never pushes the footer off-screen. -->

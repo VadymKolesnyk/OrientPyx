@@ -64,6 +64,45 @@ public sealed class AppSettingsService : IAppSettingsService
     // Snaps any stored/incoming width to the nearest allowed roll width so a bad value can't leak through.
     private int ClampWidth(int width) => ReceiptWidths.Contains(width) ? width : DefaultReceiptWidth;
 
+    public async Task<A4PrintSettings> GetA4PrintSettingsAsync(CancellationToken cancellationToken = default)
+        => new(await _appStore.GetA4PrinterNameAsync(cancellationToken) ?? string.Empty);
+
+    public Task SaveA4PrintSettingsAsync(A4PrintSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        return _appStore.SaveA4PrinterNameAsync(settings.PrinterName ?? string.Empty, cancellationToken);
+    }
+
+    public async Task<StatementSettings> GetStatementSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        var json = await _appStore.GetStatementJsonAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+            return new StatementSettings();
+
+        try
+        {
+            var settings = System.Text.Json.JsonSerializer.Deserialize<StatementSettings>(json);
+            if (settings is null)
+                return new StatementSettings();
+            // A column list that lost its way (empty after a bad round-trip) falls back to the default set.
+            if (settings.Columns.Count == 0)
+                settings.Columns = StatementSettings.DefaultColumns();
+            return settings;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Corrupt JSON — start from defaults rather than crashing the statement modal.
+            return new StatementSettings();
+        }
+    }
+
+    public Task SaveStatementSettingsAsync(StatementSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        return _appStore.SaveStatementJsonAsync(json, cancellationToken);
+    }
+
     public async Task<ResultProtocolSettings> GetResultProtocolSettingsAsync(CancellationToken cancellationToken = default)
     {
         var json = await _appStore.GetResultProtocolJsonAsync(cancellationToken);

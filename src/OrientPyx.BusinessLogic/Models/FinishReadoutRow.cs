@@ -18,6 +18,12 @@ namespace OrientPyx.BusinessLogic.Models;
 /// (unknown chip, non-OK status, out-of-competition runner). <see cref="Gap"/> is the loss to the group
 /// leader (this OK, placed runner's result time minus the group's place-1 time); null for the leader
 /// themselves and for anyone without a place.
+/// <see cref="CollectRentalChip"/> is true when the read chip is a rental chip that should be collected
+/// from the runner now — i.e. this is the last day the holder uses that rental chip (they hold it on no
+/// later day). It drives the chip cell's "collect the rental chip" highlight on the finish read-out.
+/// <see cref="IsManualStatus"/> is true when <see cref="Status"/> is a judge's manual override (not the
+/// discipline's computed status); it drives the status cell's emphasis — bold, and bold-green when the
+/// override is <see cref="FinishStatus.Ok"/>.
 /// </summary>
 public sealed record FinishReadoutRow(
     Guid Id,
@@ -35,4 +41,6 @@ public sealed record FinishReadoutRow(
     TimeSpan? Elapsed,
     int? Score = null,
     int? Place = null,
-    TimeSpan? Gap = null);
+    TimeSpan? Gap = null,
+    bool CollectRentalChip = false,
+    bool IsManualStatus = false);

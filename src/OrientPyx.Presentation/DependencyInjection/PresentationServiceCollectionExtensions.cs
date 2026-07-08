@@ -29,6 +29,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<IParticipantImportFlow, ParticipantImportFlow>();
         services.AddSingleton<ICsvImportFlow, CsvImportFlow>();
         services.AddSingleton<IParticipantExportFlow, ParticipantExportFlow>();
+        services.AddSingleton<IStatementFlow, StatementFlow>();
         services.AddSingleton<IWinnersPrintFlow, WinnersPrintFlow>();
         services.AddSingleton<IEventArchiveFlow, EventArchiveFlow>();
         services.AddSingleton<IFileReadoutPoller, FileReadoutPoller>();

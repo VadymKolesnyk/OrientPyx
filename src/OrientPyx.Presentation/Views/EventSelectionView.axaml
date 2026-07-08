@@ -3,7 +3,6 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:OrientPyx.Presentation.ViewModels"
-             xmlns:models="using:OrientPyx.BusinessLogic.Models"
              xmlns:controls="using:OrientPyx.Presentation.Controls"
              mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="640"
              x:Class="OrientPyx.Presentation.Views.EventSelectionView"
@@ -13,34 +12,39 @@
         <Grid RowDefinitions="Auto,*,Auto" Width="860" HorizontalAlignment="Center">
 
             <!-- Brand + title -->
-            <StackPanel Grid.Row="0" Spacing="6" Margin="0,8,0,20">
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                    <Image Source="/Assets/orientpyx.png" Width="40" Height="40" />
-                    <TextBlock Text="{Binding Localization[EventSelection.Title]}" Classes="h1"
-                               VerticalAlignment="Center"
-                               FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,8,0,20">
+                <StackPanel Grid.Column="0" Spacing="6">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Image Source="/Assets/orientpyx.png" Width="40" Height="40" />
+                        <TextBlock Text="{Binding Localization[EventSelection.Title]}" Classes="h1"
+                                   VerticalAlignment="Center"
+                                   FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding Localization[EventSelection.Subtitle]}" Classes="subtitle" />
                 </StackPanel>
-                <TextBlock Text="{Binding Localization[EventSelection.Subtitle]}" Classes="subtitle" />
-            </StackPanel>
 
-            <!-- Table card -->
+                <!-- Reveal hidden competitions. Only shown when at least one is hidden. -->
+                <ToggleSwitch Grid.Column="1" VerticalAlignment="Bottom"
+                              IsVisible="{Binding HasHidden}"
+                              IsChecked="{Binding ShowHidden, Mode=TwoWay}"
+                              OnContent="{Binding Localization[EventSelection.ShowHidden]}"
+                              OffContent="{Binding Localization[EventSelection.ShowHidden]}" />
+            </Grid>
+
+            <!-- Spreadsheet-style table; the card border supplies the rounded frame. Columns are built
+                 in code-behind (SheetColumnBuilder) and handed to the shared SheetTable via Bands. -->
             <Border Grid.Row="1" Classes="card" ClipToBounds="True">
-                <DockPanel LastChildFill="True">
-                    <!-- Column header -->
-                    <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceHeader}"
-                            BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1" Padding="16,11">
-                        <Grid ColumnDefinitions="2*,2*,3*,2*,Auto">
-                            <TextBlock Grid.Column="0" Text="{Binding Localization[EventSelection.Col.Identifier]}" Classes="label" />
-                            <TextBlock Grid.Column="1" Text="{Binding Localization[EventSelection.Col.Name]}" Classes="label" />
-                            <TextBlock Grid.Column="2" Text="{Binding Localization[EventSelection.Col.Venue]}" Classes="label" />
-                            <TextBlock Grid.Column="3" Text="{Binding Localization[EventSelection.Col.Dates]}" Classes="label" />
-                            <TextBlock Grid.Column="4" Text="{Binding Localization[EventSelection.Col.Days]}" Classes="label" MinWidth="60" />
-                        </Grid>
-                    </Border>
+                <Panel>
+                    <controls:SheetTable Name="Sheet"
+                                         ItemsSource="{Binding Events}"
+                                         Localization="{Binding Localization}"
+                                         SelectedItem="{Binding SelectedEvent, Mode=TwoWay}"
+                                         DoubleTapped="OnRowDoubleTapped" />
 
-                    <!-- Empty state -->
-                    <StackPanel DockPanel.Dock="Bottom" IsVisible="{Binding !Events.Count}"
-                                Spacing="10" Margin="0,48" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <!-- Empty state, shown over the (empty) table -->
+                    <StackPanel IsVisible="{Binding !Events.Count}"
+                                Spacing="10" Margin="0,48" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                IsHitTestVisible="False">
                         <Border Width="56" Height="56" CornerRadius="28"
                                 Background="{DynamicResource AccentSurface}" HorizontalAlignment="Center">
                             <controls:Icon Kind="FolderOpen"
@@ -49,34 +53,7 @@
                         <TextBlock Text="{Binding Localization[EventSelection.Empty]}" Classes="muted"
                                    HorizontalAlignment="Center" />
                     </StackPanel>
-
-                    <ListBox ItemsSource="{Binding Events}"
-                             SelectedItem="{Binding SelectedEvent, Mode=TwoWay}"
-                             Background="Transparent"
-                             BorderThickness="0"
-                             DoubleTapped="OnRowDoubleTapped">
-                        <ListBox.Styles>
-                            <Style Selector="ListBoxItem">
-                                <Setter Property="Padding" Value="0" />
-                                <Setter Property="CornerRadius" Value="6" />
-                                <Setter Property="Margin" Value="4,2" />
-                            </Style>
-                        </ListBox.Styles>
-                        <ListBox.ItemTemplate>
-                            <DataTemplate x:DataType="models:EventSummary">
-                                <Grid ColumnDefinitions="2*,2*,3*,2*,Auto" Margin="12,10">
-                                    <TextBlock Grid.Column="0" Text="{Binding Identifier}" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="1" Text="{Binding Name}" Foreground="{DynamicResource TextPrimary}" FontWeight="Medium" VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="2" Text="{Binding Venue}" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="3" Text="{Binding DateRange}" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" />
-                                    <Border Grid.Column="4" Classes="badge" MinWidth="60" HorizontalAlignment="Left">
-                                        <TextBlock Text="{Binding DayCount}" HorizontalAlignment="Center" />
-                                    </Border>
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </DockPanel>
+                </Panel>
             </Border>
 
             <!-- Actions -->

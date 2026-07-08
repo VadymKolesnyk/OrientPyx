@@ -1,6 +1,8 @@
 using System;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using OrientPyx.Localization;
@@ -124,7 +126,7 @@ public sealed class SheetFilterBar : ContentControl
         content.Children.Add(label);
         content.Children.Add(close);
 
-        return new Border
+        var chip = new Border
         {
             Classes = { "filterChip" },
             Background = new SolidColorBrush(Color.FromArgb(0x22, 0x3B, 0x82, 0xF6)),
@@ -133,6 +135,18 @@ public sealed class SheetFilterBar : ContentControl
             Margin = new Thickness(0, 0, 6, 0),
             Child = content
         };
+
+        // Middle-click (mouse-wheel button) anywhere on the chip clears it, same as pressing the ✕.
+        chip.AddHandler(PointerPressedEvent, (_, e) =>
+        {
+            if (e.GetCurrentPoint(chip).Properties.IsMiddleButtonPressed)
+            {
+                e.Handled = true;
+                onRemove();
+            }
+        }, RoutingStrategies.Tunnel);
+
+        return chip;
     }
 
     private static Button BuildClearAll(string text, Action onClear)

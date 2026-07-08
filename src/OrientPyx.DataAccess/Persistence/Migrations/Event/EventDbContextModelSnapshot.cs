@@ -15,7 +15,7 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "9.0.8");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.9");
 
             modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.ChipPriceOverride", b =>
                 {
@@ -104,6 +104,9 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.Property<string>("Identifier")
                         .IsRequired()
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsHidden")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Jury")
                         .IsRequired()
@@ -656,6 +659,21 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                         .IsUnique();
 
                     b.ToTable("StartProtocolSettings");
+                });
+
+            modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.StatementSettingsRow", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Json")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("StatementSettings");
                 });
 
             modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.SummaryProtocolSettingsRow", b =>

@@ -20,6 +20,16 @@ public class AppSettingsRow
     /// <summary>Thermal-roll width in millimetres for split printouts (56 or 80; default 80).</summary>
     public int ReceiptWidthMm { get; set; } = 80;
 
+    /// <summary>Installed Windows printer used for A4 printing (the participant statement / «відомість»); blank
+    /// until the user picks one. Kept separate from <see cref="PrinterName"/> so the thermal and A4 targets
+    /// don't share a printer choice.</summary>
+    public string A4PrinterName { get; set; } = string.Empty;
+
+    /// <summary>The app-level default participant-statement («відомість») settings (orientation, column set +
+    /// order, header text) serialised as JSON. Blank until the user saves one via "save for next competitions";
+    /// a fresh competition seeds from this. Stored at the application level so one layout is shared.</summary>
+    public string StatementJson { get; set; } = string.Empty;
+
     /// <summary>
     /// The results-protocol settings (orientation, column set + order, header text) serialised as JSON.
     /// Blank until the user saves a configuration; the caller then applies the defaults. Stored at the

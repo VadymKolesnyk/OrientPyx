@@ -292,6 +292,21 @@ public sealed partial class SheetColumn : ObservableObject
     public System.Func<Avalonia.Controls.Control>? CellBuilder { get; set; }
 
     /// <summary>
+    /// Optional per-cell background tint: a bool property on the bound row that, when true, paints the
+    /// whole cell in <see cref="CellBackgroundBrush"/> (false / not set ⇒ transparent, hit-testable).
+    /// Tints the whole cell area — including empty space — the same way the payment/age columns do, but
+    /// generically for any column. Null ⇒ no tint. Pair with <see cref="CellBackgroundTooltipPath"/> to
+    /// explain the tint on hover.
+    /// </summary>
+    public string? CellBackgroundPath { get; set; }
+
+    /// <summary>The brush painted over a cell whose <see cref="CellBackgroundPath"/> reads true.</summary>
+    public Avalonia.Media.IBrush? CellBackgroundBrush { get; set; }
+
+    /// <summary>Optional string property read for the tinted cell's tooltip (empty ⇒ no tooltip). See <see cref="CellBackgroundPath"/>.</summary>
+    public string? CellBackgroundTooltipPath { get; set; }
+
+    /// <summary>
     /// The two-way bindable string property on the bound row this column edits, when the column is a
     /// plain editable text cell. Set, it enables multi-row "fill down" paste: a clipboard with several
     /// newline-separated lines pasted onto a cell writes one line per successive row straight to this
