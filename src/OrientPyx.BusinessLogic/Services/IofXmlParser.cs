@@ -49,12 +49,22 @@ public sealed class IofXmlParser : IIofXmlParser
             ? Child(root, "RaceCourseData") ?? root
             : root;
 
+        var controls = isV3 ? ReadControlsV3(data) : ReadControlsV2(data);
+
+        // Start/finish codes, so scatter de-duplication compares only the running order (two variants that
+        // differ solely by whether they list the finish box are the same order, not distinct petals).
+        var startFinishCodes = new HashSet<string>(
+            controls
+                .Where(c => c.Type is ControlPointType.Start or ControlPointType.Finish)
+                .Select(c => c.Code),
+            StringComparer.OrdinalIgnoreCase);
+
         return new IofCourseData
         {
             Version = version,
             MapScale = ReadScale(data),
-            Controls = isV3 ? ReadControlsV3(data) : ReadControlsV2(data),
-            Courses = isV3 ? ReadCoursesV3(data) : ReadCoursesV2(data)
+            Controls = controls,
+            Courses = isV3 ? ReadCoursesV3(data, startFinishCodes) : ReadCoursesV2(data, startFinishCodes)
         };
     }
 
@@ -117,29 +127,37 @@ public sealed class IofXmlParser : IIofXmlParser
         return controls;
     }
 
-    private static IReadOnlyList<IofCourse> ReadCoursesV2(XElement data)
+    private static IReadOnlyList<IofCourse> ReadCoursesV2(XElement data, IReadOnlySet<string> startFinishCodes)
     {
         var courses = new List<IofCourse>();
 
         foreach (var course in data.Elements().Where(e => LocalNameIs(e, "Course")))
         {
             var name = Trim(ChildValue(course, "CourseName"));
-            // 2.0.3 nests the running order inside a <CourseVariation>; fall back to the course itself.
-            var variation = Child(course, "CourseVariation") ?? course;
 
-            var codes = new List<string>();
-            AddCode(codes, Trim(ChildValue(variation, "StartPointCode")));
-            foreach (var cc in variation.Elements().Where(e => LocalNameIs(e, "CourseControl")))
-                AddCode(codes, Trim(ChildValue(cc, "ControlCode")));
-            AddCode(codes, Trim(ChildValue(variation, "FinishPointCode")));
+            // 2.0.3 nests each running order inside a <CourseVariation>; a scatter course carries several
+            // (with an optional <Name> per variation). Read them all, de-duplicating identical sequences, and
+            // fall back to the course itself when there is no <CourseVariation> at all.
+            var variations = course.Elements().Where(e => LocalNameIs(e, "CourseVariation")).ToList();
+            var sources = variations.Count > 0 ? variations : [course];
 
-            courses.Add(new IofCourse
+            var raw = new List<ParsedVariation>();
+            foreach (var variation in sources)
             {
-                Name = name,
-                Length = ParseInt(ChildValue(variation, "CourseLength")),
-                Climb = ParseInt(ChildValue(variation, "CourseClimb")),
-                ControlCodes = codes
-            });
+                var codes = new List<string>();
+                AddCode(codes, Trim(ChildValue(variation, "StartPointCode")));
+                foreach (var cc in variation.Elements().Where(e => LocalNameIs(e, "CourseControl")))
+                    AddCode(codes, Trim(ChildValue(cc, "ControlCode")));
+                AddCode(codes, Trim(ChildValue(variation, "FinishPointCode")));
+
+                raw.Add(new ParsedVariation(
+                    Trim(ChildValue(variation, "Name")),
+                    codes,
+                    ParseInt(ChildValue(variation, "CourseLength")),
+                    ParseInt(ChildValue(variation, "CourseClimb"))));
+            }
+
+            courses.Add(BuildCourse(name, raw, startFinishCodes));
         }
 
         return courses;
@@ -246,26 +264,163 @@ public sealed class IofXmlParser : IIofXmlParser
         return types;
     }
 
-    private static IReadOnlyList<IofCourse> ReadCoursesV3(XElement data)
+    private static IReadOnlyList<IofCourse> ReadCoursesV3(XElement data, IReadOnlySet<string> startFinishCodes)
     {
         var courses = new List<IofCourse>();
 
+        // 3.0 gives each variant its own <Course>, linking them by a shared <CourseFamily>. Group the courses
+        // by family (in first-seen order) so a scatter family's variants stay together; a course with no family
+        // is its own single-course group. The family name (not the per-variant "…_A" name) is the group name,
+        // so it matches the participants' group, while each variant keeps its own suffix as its code.
+        var families = new List<(string Key, string DisplayName, List<XElement> Courses)>();
+        var byKey = new Dictionary<string, int>(StringComparer.Ordinal); // family key → index in `families`
+
         foreach (var course in data.Elements().Where(e => LocalNameIs(e, "Course")))
         {
-            var codes = new List<string>();
-            foreach (var cc in course.Elements().Where(e => LocalNameIs(e, "CourseControl")))
-                AddCode(codes, Trim(ChildValue(cc, "Control")));
+            var courseName = Trim(ChildValue(course, "Name"));
+            var family = Trim(ChildValue(course, "CourseFamily"));
 
-            courses.Add(new IofCourse
+            if (family.Length == 0)
             {
-                Name = Trim(ChildValue(course, "Name")),
-                Length = ParseInt(ChildValue(course, "Length")),
-                Climb = ParseInt(ChildValue(course, "Climb")),
-                ControlCodes = codes
-            });
+                // Standalone course: its own group, keyed uniquely so it never merges with another.
+                families.Add(($"\0course:{families.Count}", courseName, [course]));
+                continue;
+            }
+
+            if (byKey.TryGetValue(family, out var idx))
+                families[idx].Courses.Add(course);
+            else
+            {
+                byKey[family] = families.Count;
+                families.Add((family, family, [course]));
+            }
+        }
+
+        foreach (var (_, displayName, familyCourses) in families)
+        {
+            var raw = new List<ParsedVariation>();
+            foreach (var course in familyCourses)
+            {
+                var codes = new List<string>();
+                foreach (var cc in course.Elements().Where(e => LocalNameIs(e, "CourseControl")))
+                    AddCode(codes, Trim(ChildValue(cc, "Control")));
+
+                // The variant code is the course-name suffix past the family name (e.g. "…_розсіювання_A" → "A");
+                // BuildCourse falls back to A/B/… by order when the suffix is blank or duplicated.
+                raw.Add(new ParsedVariation(
+                    VariantSuffix(Trim(ChildValue(course, "Name")), displayName),
+                    codes,
+                    ParseInt(ChildValue(course, "Length")),
+                    ParseInt(ChildValue(course, "Climb"))));
+            }
+
+            courses.Add(BuildCourse(displayName, raw, startFinishCodes));
         }
 
         return courses;
+    }
+
+    // The trailing part of a variant's course name past the family name and a separating '_' — e.g.
+    // ("Ж18_естафета_розсіювання_A", "Ж18_естафета_розсіювання") → "A". Blank when the name doesn't extend the
+    // family (then BuildCourse assigns A/B/… by order).
+    private static string VariantSuffix(string courseName, string familyName)
+    {
+        if (familyName.Length > 0
+            && courseName.Length > familyName.Length
+            && courseName.StartsWith(familyName, StringComparison.OrdinalIgnoreCase))
+        {
+            var rest = courseName[familyName.Length..].TrimStart('_', ' ', '-');
+            return rest;
+        }
+        return string.Empty;
+    }
+
+    // --- Course / variant assembly (shared by both standards) ----------------
+
+    // A single running order read from the file, before de-duplication: its file-supplied name (may be blank),
+    // its control codes in order, and its stated length/climb.
+    private readonly record struct ParsedVariation(string Name, IReadOnlyList<string> Codes, int? Length, int? Climb);
+
+    /// <summary>
+    /// Turns the raw variations read for one course/family into an <see cref="IofCourse"/>. Variations with an
+    /// <b>identical</b> control-code sequence (trimmed, case-insensitive) are collapsed to one — OCAD exports
+    /// repeat identical relay/estafette legs, and only genuinely distinct orders count as scatter variants. A
+    /// course left with a single distinct order is an ordinary course (empty <c>Variants</c>); more than one
+    /// makes it a scatter course whose <c>Variants</c> carry every distinct order, coded from the file's variant
+    /// name when present and unique, else A/B/C… by order. The course's own codes/length/climb mirror the first
+    /// (representative) variant.
+    /// </summary>
+    private static IofCourse BuildCourse(
+        string name, IReadOnlyList<ParsedVariation> variations, IReadOnlySet<string> startFinishCodes)
+    {
+        // De-duplicate by the ordered RUNNING sequence (start/finish markers excluded), keeping first-seen
+        // order: two variations that differ only by whether they list the start/finish box are the same
+        // running order, not distinct petals, and must not read as a scatter course.
+        var distinct = new List<ParsedVariation>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var v in variations)
+        {
+            var running = v.Codes.Where(c => !startFinishCodes.Contains(c));
+            var key = string.Join(" ", running).ToUpperInvariant();
+            if (seen.Add(key))
+                distinct.Add(v);
+        }
+
+        if (distinct.Count == 0)
+            return new IofCourse { Name = name, ControlCodes = [] };
+
+        var first = distinct[0];
+
+        // Single distinct order → ordinary course, no variants.
+        if (distinct.Count == 1)
+            return new IofCourse
+            {
+                Name = name,
+                Length = first.Length,
+                Climb = first.Climb,
+                ControlCodes = first.Codes
+            };
+
+        // Several distinct orders → a scatter course. Assign each variant a code: its file name when non-blank
+        // and not already used, else the next letter A, B, C… (skipping any letter a file name already took).
+        var usedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var variants = new List<IofCourseVariant>(distinct.Count);
+        var letter = 0;
+        foreach (var v in distinct)
+        {
+            string code;
+            if (v.Name.Length > 0 && usedCodes.Add(v.Name))
+                code = v.Name;
+            else
+            {
+                do { code = NextLetter(letter++); } while (!usedCodes.Add(code));
+            }
+
+            variants.Add(new IofCourseVariant(code, v.Codes, v.Length, v.Climb));
+        }
+
+        return new IofCourse
+        {
+            Name = name,
+            Length = first.Length,
+            Climb = first.Climb,
+            ControlCodes = first.Codes,
+            Variants = variants
+        };
+    }
+
+    // A, B, …, Z, AA, AB, … for the given 0-based index (fallback variant code when the file names none).
+    private static string NextLetter(int index)
+    {
+        var sb = new System.Text.StringBuilder();
+        index++;
+        while (index > 0)
+        {
+            index--;
+            sb.Insert(0, (char)('A' + index % 26));
+            index /= 26;
+        }
+        return sb.ToString();
     }
 
     private static ControlPointType MapV3Type(string? type) => type switch

@@ -79,6 +79,14 @@ public interface ICompetitionEditorService
     /// <summary>Loads the current day's groups (one row per group on the day), ordered for display.</summary>
     Task<IReadOnlyList<GroupDayRow>> GetGroupDayRowsAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Loads a group's scatter («розсіювання») variants for the current day, in order (Code + raw
+    /// course order). Empty when the group has none.</summary>
+    Task<IReadOnlyList<ScatterVariantRow>> GetScatterVariantsAsync(Guid groupId, CancellationToken cancellationToken = default);
+
+    /// <summary>Replaces a group's scatter variants for the current day with <paramref name="variants"/>
+    /// (order = list order). An empty list clears them. Blank-code/blank-order rows are dropped by the service.</summary>
+    Task SaveScatterVariantsAsync(Guid groupId, IReadOnlyList<ScatterVariantRow> variants, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Loads every competition group (ordered by name), regardless of day. Used by the «Стартові внески»
     /// page, which sets a per-group entry fee shared across all days.

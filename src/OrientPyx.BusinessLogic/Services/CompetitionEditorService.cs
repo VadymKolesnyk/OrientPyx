@@ -470,14 +470,59 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             .GroupBy(l => l.GroupId!.Value)
             .ToDictionary(g => g.Key, g => g.Count());
 
+        // Scatter («розсіювання») variant count per group, so the grid's course-order cell can read
+        // «N варіантів дистанції» instead of a single order for a scatter group.
+        var scatterVariants = await _eventStore.GetScatterVariantsAsync(FolderPath, CurrentDayId, cancellationToken);
+        var scatterCountByGroup = scatterVariants
+            .GroupBy(v => v.GroupId)
+            .ToDictionary(g => g.Key, g => g.Count());
+
         var rows = new List<GroupDayRow>(settings.Count);
         foreach (var s in settings)
         {
             // Defensive: skip a settings row whose group was removed out from under it.
             if (byId.TryGetValue(s.GroupId, out var group))
-                rows.Add(ToRow(s, group, countByGroup.GetValueOrDefault(s.GroupId)));
+                rows.Add(ToRow(s, group,
+                    countByGroup.GetValueOrDefault(s.GroupId),
+                    scatterCountByGroup.GetValueOrDefault(s.GroupId)));
         }
         return rows;
+    }
+
+    public async Task<IReadOnlyList<ScatterVariantRow>> GetScatterVariantsAsync(Guid groupId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+            return [];
+
+        var rows = await _eventStore.GetScatterVariantsAsync(FolderPath, CurrentDayId, cancellationToken);
+        return rows
+            .Where(v => v.GroupId == groupId)
+            .OrderBy(v => v.Order)
+            .Select(v => new ScatterVariantRow(v.Code, v.CourseOrder))
+            .ToList();
+    }
+
+    public Task SaveScatterVariantsAsync(Guid groupId, IReadOnlyList<ScatterVariantRow> variants, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+            return Task.CompletedTask;
+
+        var dayId = CurrentDayId;
+        var order = 0;
+        var rows = variants
+            .Select(v => new ScatterVariant
+            {
+                EventDayId = dayId,
+                GroupId = groupId,
+                Code = (v.Code ?? string.Empty).Trim(),
+                CourseOrder = (v.CourseOrder ?? string.Empty).Trim(),
+                Order = order++
+            })
+            // Drop fully-blank rows so an empty editor line never persists.
+            .Where(v => v.Code.Length > 0 || v.CourseOrder.Length > 0)
+            .ToList();
+
+        return _eventStore.ReplaceScatterVariantsForGroupAsync(FolderPath, dayId, groupId, rows, cancellationToken);
     }
 
     public Task<IReadOnlyList<Group>> GetGroupsAsync(CancellationToken cancellationToken = default)
@@ -683,6 +728,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             if (name.Length == 0 || !seenNames.Add(name))
                 continue;
 
+            // A scatter («розсіювання») course carries more than one distinct running order. The group's own
+            // course order/distance mirror the first (representative) variant; the full set of orders is stored
+            // separately per (day, group) and the group's discipline is overridden to Scatter.
+            var isScatter = course.Variants.Count > 1;
             var courseOrder = string.Join(' ', course.ControlCodes.Select(c => c.Trim()).Where(c => c.Length > 0));
             var distanceKm = ComputeDistance(course.ControlCodes, coordsByCode, mapByCode, data.MapScale);
 
@@ -698,14 +747,16 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             if (settingsByGroupId.TryGetValue(group.Id, out var existing))
             {
                 // Already on the day. In add-only mode leave it as-is; otherwise overwrite the course
-                // order/distance and reset the discipline override to the day default (null).
+                // order/distance and set the discipline override to Scatter for a scatter course, else reset it
+                // to the day default (null).
                 if (!updateExisting)
                     continue;
 
                 existing.CourseOrder = courseOrder;
                 existing.DistanceKm = distanceKm;
-                existing.DisciplineOverride = null;
+                existing.DisciplineOverride = isScatter ? DisciplineType.Scatter : null;
                 await _eventStore.UpdateGroupDaySettingsAsync(folder, existing, cancellationToken);
+                await SaveScatterVariantsAsync(folder, dayId, group.Id, course, cancellationToken);
                 updated++;
             }
             else
@@ -716,15 +767,42 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     GroupId = group.Id,
                     Order = nextOrder++,
                     CourseOrder = courseOrder,
-                    DistanceKm = distanceKm
+                    DistanceKm = distanceKm,
+                    DisciplineOverride = isScatter ? DisciplineType.Scatter : null
                 };
                 await _eventStore.AddGroupDaySettingsAsync(folder, row, cancellationToken);
                 settingsByGroupId[group.Id] = row;
+                await SaveScatterVariantsAsync(folder, dayId, group.Id, course, cancellationToken);
                 added++;
             }
         }
 
         return new GroupImportResult(Added: added, Updated: updated);
+    }
+
+    // Persists a course's scatter («розсіювання») variants for a group on a day, replacing any existing set.
+    // A scatter course (more than one variant) writes one row per variant, coded and ordered as parsed; a
+    // non-scatter course clears the group's variants (so re-importing a formerly-scatter group as a normal
+    // course leaves no stale orders behind).
+    private Task SaveScatterVariantsAsync(
+        string folder, Guid dayId, Guid groupId, IofCourse course, CancellationToken cancellationToken)
+    {
+        var rows = new List<ScatterVariant>();
+        if (course.Variants.Count > 1)
+        {
+            var order = 0;
+            foreach (var v in course.Variants)
+                rows.Add(new ScatterVariant
+                {
+                    EventDayId = dayId,
+                    GroupId = groupId,
+                    Code = v.Code,
+                    CourseOrder = string.Join(' ', v.ControlCodes.Select(c => c.Trim()).Where(c => c.Length > 0)),
+                    Order = order++
+                });
+        }
+
+        return _eventStore.ReplaceScatterVariantsForGroupAsync(folder, dayId, groupId, rows, cancellationToken);
     }
 
     // Maps a course's running control codes to their positions and sums the straight-line distance.
@@ -2147,6 +2225,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // Shared per-day geometry/points/codes used to build every member's splits (mirrors the inputs the
         // single-readout GetFinishSplitsAsync assembles, but loaded once for the whole day).
         var inputs = BuildDaySplitInputs(controlPoints);
+        var variantsByGroup = await LoadScatterVariantsAsync(
+            folder, dayId, settingsByGroup, dayDefault, inputs.StartFinishCodes, inputs.DisabledCodes, cancellationToken);
 
         // Latest read-out per chip (the "last read-out" rule), so a re-read chip uses its newest punches.
         var latestByChip = new Dictionary<string, FinishReadout>(StringComparer.OrdinalIgnoreCase);
@@ -2196,7 +2276,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 }
             }
 
-            var splits = BuildSplitsForLink(inputs, gs, discipline, link, readout, teamCommon);
+            var scatterVariants = variantsByGroup.TryGetValue(gid, out var gv) ? gv : NoScatterVariants;
+            var splits = BuildSplitsForLink(inputs, gs, discipline, link, readout, teamCommon, scatterVariants);
             var result = results.TryGetValue(link.Id, out var rr) ? rr : ParticipantDayResult.Empty;
 
             if (!rowsByGroup.TryGetValue(gid, out var bucket))
@@ -2222,7 +2303,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             var discipline = setting.DisciplineOverride ?? dayDefault;
             var strategy = _strategies.For(discipline);
             var isScored = strategy.UsesControlPointPoints;
-            var layout = isScored ? SplitsLayout.Scored : SplitsLayout.Ordered;
+            // Scatter («розсіювання») has no single prescribed column set — every runner runs a different order —
+            // so it uses the per-runner passage shape (the same rogaine-style «Scored» table, without points),
+            // where each runner writes their own passing order into positional КП columns.
+            var isScatter = strategy.Type == DisciplineType.Scatter;
+            var layout = isScored || isScatter ? SplitsLayout.Scored : SplitsLayout.Ordered;
 
             // Disabled («проблемні») controls are dropped from the export's column header / count too, so the
             // table matches what was actually required and scored.
@@ -2287,7 +2372,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     // GetFinishSplitsAsync assembles for a single readout, factored to run per member without re-querying).
     private SplitsView BuildSplitsForLink(
         DaySplitInputs inputs, GroupDaySettings? gs, DisciplineType discipline,
-        ParticipantDay link, FinishReadout readout, IReadOnlySet<string>? teamCommon)
+        ParticipantDay link, FinishReadout readout, IReadOnlySet<string>? teamCommon,
+        IReadOnlyList<ScatterVariantData> scatterVariants)
     {
         var expected = CourseControls(gs?.CourseOrder, inputs.StartFinishCodes, inputs.DisabledCodes);
         var disabledInCourse = DisabledInCourse(gs?.CourseOrder, inputs.StartFinishCodes, inputs.DisabledCodes);
@@ -2314,7 +2400,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             FinishTime = readout.FinishTime,
             TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
             PenaltyPerMinute = gs?.PenaltyPerMinute,
-            TeamCommonControls = teamCommon
+            TeamCommonControls = teamCommon,
+            ScatterVariants = scatterVariants
         };
 
         return _strategies.For(discipline).BuildSplits(context);
@@ -2397,6 +2484,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             StringComparer.OrdinalIgnoreCase);
         var disabledCodes = DisabledCodesOf(controlPoints);
         var dayDefault = day.DefaultDiscipline;
+        var variantsByGroup = await LoadScatterVariantsAsync(
+            folder, dayId, settingsByGroup, dayDefault, startFinishCodes, disabledCodes, cancellationToken);
 
         // Per-control point values, positions and map scale — needed only to tally rogaine «Бали».
         var pointsByCode = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -2452,7 +2541,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 continue;
             }
 
-            var (computed, _, resolvedStart) = EvaluateFinish(readout, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault);
+            var (computed, _, resolvedStart) = EvaluateFinish(readout, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup);
             var status = link.ResultStatusOverride ?? computed;
 
             var resultTime = status == FinishStatus.Ok && resolvedStart is { } rs && readout.FinishTime is { } f
@@ -3204,6 +3293,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             StringComparer.OrdinalIgnoreCase);
         var disabledCodes = DisabledCodesOf(controlPoints);
         var dayDefault = CurrentDayDefaultDiscipline;
+        var variantsByGroup = await LoadScatterVariantsAsync(
+            folder, dayId, settingsByGroup, dayDefault, startFinishCodes, disabledCodes, cancellationToken);
 
         // Per-control point values — needed only to tally the «Бали» column on point-scoring days.
         var pointsByCode = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -3269,7 +3360,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             if (holderByChip.TryGetValue(r.ChipNumber.Trim(), out var link) && byId.TryGetValue(link.ParticipantId, out var p))
             {
                 var group = link.GroupId is { } gid && groupName.TryGetValue(gid, out var gn) ? gn : string.Empty;
-                var (status, detail, resolvedStart) = EvaluateFinish(r, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault);
+                var (status, detail, resolvedStart) = EvaluateFinish(r, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup);
                 // A judge's manual status override wins over the computed one (and clears its detail).
                 if (r.ManualStatus is { } manual)
                 {
@@ -3460,6 +3551,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             teamCommon = await TeamCommonControlsAsync(
                 folder, dayId, link, links, settingsByGroup, startFinishCodes, disabledCodes, cancellationToken);
 
+        // Scatter variants for the runner's group, so the strategy can auto-detect which order they ran.
+        // Empty for a non-scatter group or an unknown chip (no group).
+        var variantsByGroup = await LoadScatterVariantsAsync(
+            folder, dayId, settingsByGroup, CurrentDayDefaultDiscipline, startFinishCodes, disabledCodes, cancellationToken);
+        var scatterVariants = link?.GroupId is { } svgid && variantsByGroup.TryGetValue(svgid, out var svs)
+            ? svs
+            : NoScatterVariants;
+
         // Expected = course controls minus start/finish; punches = read punches (with times) minus the
         // same. An unknown chip (no link) has no prescribed course, so the expected list is empty and
         // every punch reads off-course. Start = chip start when present, else the assigned start (only
@@ -3491,7 +3590,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             // the strategy apply its default (rogaine = 1 бал/min); an unknown chip (no group) has neither.
             TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
             PenaltyPerMinute = gs?.PenaltyPerMinute,
-            TeamCommonControls = teamCommon
+            TeamCommonControls = teamCommon,
+            ScatterVariants = scatterVariants
         };
 
         // A known holder gets their group's discipline shape. An unknown chip has no group/course, so we
@@ -3583,6 +3683,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             ChipNumber = row.ChipNumber,
             IsRentalChip = isRental,
             GroupName = row.GroupName,
+            VariantCode = view.VariantCode,
             ResultText = resultElapsed is { } re ? re.ToString("h\\:mm\\:ss") : string.Empty,
             StatusText = status,
             StatusDetail = row.StatusDetail,
@@ -3719,7 +3820,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup,
         HashSet<string> startFinishCodes,
         HashSet<string> disabledCodes,
-        DisciplineType dayDefault)
+        DisciplineType dayDefault,
+        IReadOnlyDictionary<Guid, IReadOnlyList<ScatterVariantData>> variantsByGroup)
     {
         GroupDaySettings? gs = link.GroupId is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
         var discipline = gs?.DisciplineOverride ?? dayDefault;
@@ -3742,7 +3844,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             PunchedControls = punched,
             StartTime = start,
             FinishTime = readout.FinishTime,
-            TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null
+            TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
+            ScatterVariants = link.GroupId is { } vgid && variantsByGroup.TryGetValue(vgid, out var vs)
+                ? vs
+                : NoScatterVariants
         };
 
         var result = _strategies.For(discipline).EvaluateFinish(context);
@@ -3791,6 +3896,44 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         string? courseOrder, IReadOnlySet<string> startFinishCodes, IReadOnlySet<string> disabledCodes) =>
         new(CourseOrderCodes(courseOrder).Where(c => !startFinishCodes.Contains(c) && disabledCodes.Contains(c)),
             StringComparer.OrdinalIgnoreCase);
+
+    // Loads the day's scatter («розсіювання») variants, keyed by group id, ready for the discipline strategy:
+    // only groups whose effective discipline is Scatter are included, and each variant's order is reduced to
+    // its required controls the same way ExpectedControls is (start/finish + disabled dropped), preserving the
+    // A-before-B order. Empty for a day with no scatter group, so the non-scatter paths pay a single query.
+    private async Task<Dictionary<Guid, IReadOnlyList<ScatterVariantData>>> LoadScatterVariantsAsync(
+        string folder, Guid dayId,
+        IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup,
+        DisciplineType dayDefault,
+        IReadOnlySet<string> startFinishCodes,
+        IReadOnlySet<string> disabledCodes,
+        CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<Guid, IReadOnlyList<ScatterVariantData>>();
+
+        // Skip the query entirely when no group on the day runs scatter.
+        var anyScatter = settingsByGroup.Values.Any(s => (s.DisciplineOverride ?? dayDefault) == DisciplineType.Scatter);
+        if (!anyScatter)
+            return result;
+
+        var rows = await _eventStore.GetScatterVariantsAsync(folder, dayId, cancellationToken);
+        foreach (var byGroup in rows.GroupBy(v => v.GroupId))
+        {
+            if (!settingsByGroup.TryGetValue(byGroup.Key, out var gs)
+                || (gs.DisciplineOverride ?? dayDefault) != DisciplineType.Scatter)
+                continue;
+
+            result[byGroup.Key] = byGroup
+                .OrderBy(v => v.Order)
+                .Select(v => new ScatterVariantData(
+                    v.Code, CourseControls(v.CourseOrder, startFinishCodes, disabledCodes)))
+                .ToList();
+        }
+
+        return result;
+    }
+
+    private static readonly IReadOnlyList<ScatterVariantData> NoScatterVariants = [];
 
     public async Task<FinishReadoutImportResult> ImportFinishReadoutsAsync(ChipReadData data, CancellationToken cancellationToken = default)
     {
@@ -4711,7 +4854,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Result: result ?? ParticipantDayResult.Empty);
     }
 
-    private GroupDayRow ToRow(GroupDaySettings s, Group group, int participantCount = 0) => new(
+    private GroupDayRow ToRow(GroupDaySettings s, Group group, int participantCount = 0, int scatterVariantCount = 0) => new(
         SettingsId: s.Id,
         GroupId: s.GroupId,
         Order: s.Order,
@@ -4732,5 +4875,6 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // per-day settings.
         MinBirthYear: group.MinBirthYear,
         MaxBirthYear: group.MaxBirthYear,
-        ParticipantCount: participantCount);
+        ParticipantCount: participantCount,
+        ScatterVariantCount: scatterVariantCount);
 }

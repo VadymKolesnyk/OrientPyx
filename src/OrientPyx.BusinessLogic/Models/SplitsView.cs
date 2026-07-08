@@ -89,6 +89,14 @@ public sealed class SplitsContext
     /// non-team discipline, or an unknown chip — in which case no team annotation is shown.
     /// </summary>
     public IReadOnlySet<string>? TeamCommonControls { get; init; }
+
+    /// <summary>
+    /// The scatter («розсіювання») course variants for the runner's group — each a valid order reduced to its
+    /// required controls (start/finish and disabled controls already removed, like <see cref="ExpectedControls"/>).
+    /// Populated only for a scatter group; empty otherwise. The scatter strategy picks the best-matching variant
+    /// and builds the ordered passage against it.
+    /// </summary>
+    public IReadOnlyList<ScatterVariantData> ScatterVariants { get; init; } = [];
 }
 
 /// <summary>How the splits panel should render — chosen by the discipline.</summary>
@@ -161,6 +169,13 @@ public sealed class SplitsView
 
     /// <summary>Total controls expected/allowed by the course (both layouts).</summary>
     public int ExpectedCount { get; init; }
+
+    /// <summary>
+    /// For a scatter («розсіювання») course, the display code of the variant the runner was judged against
+    /// (auto-detected as the best match — the closest one when nothing fully matched), e.g. "A". Empty for
+    /// every non-scatter discipline. Shown in the splits panel and printed on the slip/HTML export.
+    /// </summary>
+    public string VariantCode { get; init; } = string.Empty;
 }
 
 /// <summary>What a passage row represents — a real control punch, or the start/finish markers.</summary>

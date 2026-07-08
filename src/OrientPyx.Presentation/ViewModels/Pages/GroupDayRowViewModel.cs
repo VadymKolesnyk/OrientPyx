@@ -33,7 +33,16 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     private string _name;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CourseOrderDisplay))]
     private string _courseOrder;
+
+    // How many scatter («розсіювання») variants this group has (0 = not a scatter course). Kept live by the
+    // page's bottom variants editor so the grid cell's «N варіантів дистанції» updates as variants are edited.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CourseOrderDisplay))]
+    [NotifyPropertyChangedFor(nameof(IsScatter))]
+    [NotifyPropertyChangedFor(nameof(CanEditCourseOrderInline))]
+    private int _scatterVariantCount;
 
     [ObservableProperty]
     private string _distanceText;
@@ -125,6 +134,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
 
         _name = row.Name;
         _courseOrder = row.CourseOrder;
+        _scatterVariantCount = row.ScatterVariantCount;
         _distanceText = FormatDecimal(row.DistanceKm);
         _requiredCountText = FormatInt(row.RequiredControlCount);
         _penaltyText = FormatDecimal(row.PenaltyPerMinute);
@@ -192,6 +202,23 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     public DisciplineType EffectiveDiscipline => SelectedDiscipline.Value ?? _dayDefaultDiscipline;
 
     private IDisciplineStrategy Strategy => _strategies.For(EffectiveDiscipline);
+
+    /// <summary>True when this is a scatter («розсіювання») group — its discipline is Scatter.</summary>
+    public bool IsScatter => EffectiveDiscipline == DisciplineType.Scatter;
+
+    /// <summary>
+    /// What the grid's course-order cell shows: for a scatter group, «N варіантів дистанції» (there is no
+    /// single order — variants are edited in the bottom panel); otherwise the plain course-order string.
+    /// </summary>
+    public string CourseOrderDisplay => IsScatter
+        ? string.Format(Localization.Get("Groups.Col.CourseOrder.Variants"), ScatterVariantCount)
+        : CourseOrder;
+
+    /// <summary>
+    /// Whether the course-order cell is editable inline in the grid. A scatter group edits its several orders
+    /// in the bottom variants table instead, so its cell is read-only (and shows the variant count).
+    /// </summary>
+    public bool CanEditCourseOrderInline => UsesCourseOrder && !IsScatter;
 
     /// <summary>
     /// Read-only count of control points, auto-computed from the course/control list for every
@@ -269,6 +296,9 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         OnPropertyChanged(nameof(UsesRequiredCount));
         OnPropertyChanged(nameof(UsesPenalty));
         OnPropertyChanged(nameof(UsesTimeLimit));
+        OnPropertyChanged(nameof(IsScatter));
+        OnPropertyChanged(nameof(CourseOrderDisplay));
+        OnPropertyChanged(nameof(CanEditCourseOrderInline));
 
         // Switching to a discipline with a default penalty (rogaine) shows that default when the cell is
         // empty, mirroring the constructor — so a freshly-switched rogaine group reads "1" rather than blank.

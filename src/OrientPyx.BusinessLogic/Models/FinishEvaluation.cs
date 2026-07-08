@@ -32,6 +32,14 @@ public sealed class FinishContext
 
     /// <summary>The group's time limit (контрольний час) for the day, when set; null = no limit.</summary>
     public TimeSpan? TimeLimit { get; init; }
+
+    /// <summary>
+    /// The scatter («розсіювання») course variants for the runner's group — each a valid order reduced to
+    /// its required controls (start/finish and disabled controls already removed, like
+    /// <see cref="ExpectedControls"/>). Populated only for a scatter group; empty otherwise. The scatter
+    /// strategy picks the best-matching variant from these and judges the runner against it.
+    /// </summary>
+    public IReadOnlyList<ScatterVariantData> ScatterVariants { get; init; } = [];
 }
 
 /// <summary>

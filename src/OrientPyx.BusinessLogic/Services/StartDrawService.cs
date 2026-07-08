@@ -15,19 +15,23 @@ public sealed class StartDrawService : IStartDrawService
         TimeSpan globalStart,
         TimeSpan interval,
         DrawSeparationField separation,
+        int groupGap = 0,
         int? seed = null)
     {
         ArgumentNullException.ThrowIfNull(startGroups);
 
+        var gap = Math.Max(0, groupGap);
         var random = seed is { } s ? new Random(s) : new Random();
         var result = new List<DrawStartAssignment>();
 
         foreach (var startGroup in startGroups)
         {
-            // Each start lane begins at the global start; members of its groups follow in sequence.
+            // Each start lane begins at the global start; members of its groups follow in sequence, with an
+            // optional run of empty start slots (groupGap) inserted after each group before the next begins.
             var offset = 0;
-            foreach (var group in startGroup)
+            for (var gi = 0; gi < startGroup.Count; gi++)
             {
+                var group = startGroup[gi];
                 var ordered = DrawGroupOrder(group.Members, separation, random);
                 foreach (var member in ordered)
                 {
@@ -35,6 +39,10 @@ public sealed class StartDrawService : IStartDrawService
                     result.Add(new DrawStartAssignment(member.LinkId, startTime));
                     offset++;
                 }
+
+                // Leave the gap only between groups, not after the last one in the lane.
+                if (ordered.Count > 0 && gi < startGroup.Count - 1)
+                    offset += gap;
             }
         }
 

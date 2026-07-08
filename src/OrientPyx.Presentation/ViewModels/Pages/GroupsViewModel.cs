@@ -67,6 +67,8 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         {
             OnPropertyChanged(nameof(SelectedCourseHeader));
             RefreshPatternPreview();
+            if (SelectedGroup is { } sg && sg.EffectiveDiscipline == DisciplineType.Scatter)
+                ScatterHeader = string.Format(Localization.Get("Groups.Scatter.Header"), sg.ScatterVariantCount);
         };
         // Singleton VM: when the competition/day changes, drop the previous event's rows so the
         // page never shows stale data before it is next opened. The event can be raised on a pool
@@ -162,6 +164,142 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     /// <summary>The normalized order ("S … F") when valid, or the localized error message when invalid.</summary>
     [ObservableProperty]
     private string _patternPreviewText = string.Empty;
+
+    // ── Scatter («розсіювання») variants editor (bottom panel) ───────────────────────────────────────
+    // Shown only when the selected group's effective discipline is Scatter: the group has several valid
+    // orders (variants), edited here as a Код / Дистанція table. Each edit debounces a background save that
+    // replaces the group's variant set; the grid's «N варіантів дистанції» cell is kept live off the count.
+
+    private CancellationTokenSource? _scatterSaveCts;
+    // Guards the save trigger while LoadScatterVariants seeds the rows.
+    private bool _suppressScatterSave;
+    // The group whose variants are currently loaded into the editor (so a save targets the right group even
+    // after the selection changed).
+    private Guid? _scatterGroupId;
+
+    /// <summary>True when the selected group runs the scatter discipline, so the variants editor shows.</summary>
+    [ObservableProperty]
+    private bool _isScatterEditorVisible;
+
+    /// <summary>Caption above the scatter variants editor, e.g. «Варіанти розсіювання — 2».</summary>
+    [ObservableProperty]
+    private string _scatterHeader = string.Empty;
+
+    /// <summary>The editable scatter variant rows for the selected group (Код + Дистанція).</summary>
+    public ObservableCollection<ScatterVariantRowViewModel> ScatterVariants { get; } = [];
+
+    /// <summary>True when the selected scatter group has no variants yet (shows the empty hint).</summary>
+    public bool HasNoScatterVariants => ScatterVariants.Count == 0;
+
+    // Rebuilds the scatter editor from the selected group. Hidden (and cleared) unless the selected group is
+    // a scatter-discipline group; otherwise loads its variants off the DB into editable rows.
+    private async Task RefreshScatterEditorAsync()
+    {
+        // Detach the old rows' change handlers before clearing.
+        foreach (var v in ScatterVariants)
+            v.Changed -= OnScatterRowChanged;
+        ScatterVariants.Clear();
+
+        var row = SelectedGroup;
+        if (row is null || row.EffectiveDiscipline != DisciplineType.Scatter)
+        {
+            _scatterGroupId = null;
+            IsScatterEditorVisible = false;
+            OnPropertyChanged(nameof(HasNoScatterVariants));
+            return;
+        }
+
+        IsScatterEditorVisible = true;
+        _scatterGroupId = row.GroupId;
+        ScatterHeader = string.Format(Localization.Get("Groups.Scatter.Header"), row.ScatterVariantCount);
+
+        var variants = await _editor.GetScatterVariantsAsync(row.GroupId);
+
+        _suppressScatterSave = true;
+        try
+        {
+            foreach (var v in variants)
+            {
+                var vm = new ScatterVariantRowViewModel(v.Code, v.CourseOrder);
+                vm.Changed += OnScatterRowChanged;
+                ScatterVariants.Add(vm);
+            }
+        }
+        finally
+        {
+            _suppressScatterSave = false;
+        }
+
+        OnPropertyChanged(nameof(HasNoScatterVariants));
+    }
+
+    [RelayCommand]
+    private void AddScatterVariant()
+    {
+        var vm = new ScatterVariantRowViewModel(string.Empty, string.Empty);
+        vm.Changed += OnScatterRowChanged;
+        ScatterVariants.Add(vm);
+        OnPropertyChanged(nameof(HasNoScatterVariants));
+        QueueScatterSave();
+    }
+
+    [RelayCommand]
+    private void RemoveScatterVariant(ScatterVariantRowViewModel? row)
+    {
+        if (row is null)
+            return;
+        row.Changed -= OnScatterRowChanged;
+        ScatterVariants.Remove(row);
+        OnPropertyChanged(nameof(HasNoScatterVariants));
+        QueueScatterSave();
+    }
+
+    private void OnScatterRowChanged() => QueueScatterSave();
+
+    private void QueueScatterSave()
+    {
+        if (_suppressScatterSave || _scatterGroupId is null)
+            return;
+
+        _scatterSaveCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _scatterSaveCts = cts;
+        _ = SaveScatterDebouncedAsync(_scatterGroupId.Value, cts.Token);
+    }
+
+    private async Task SaveScatterDebouncedAsync(Guid groupId, CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(SaveDebounce, token);
+
+            // Snapshot the editor rows (UI thread) before the SQLite write.
+            var rows = ScatterVariants
+                .Select(v => new ScatterVariantRow(v.Code, v.CourseOrder))
+                .ToList();
+
+            await Task.Run(() => _editor.SaveScatterVariantsAsync(groupId, rows, token), token);
+
+            // Keep the grid's «N варіантів дистанції» cell in sync with the saved (non-blank) count.
+            var count = rows.Count(r =>
+                !string.IsNullOrWhiteSpace(r.Code) || !string.IsNullOrWhiteSpace(r.CourseOrder));
+            var target = Groups.FirstOrDefault(g => g.GroupId == groupId);
+            if (target is not null)
+            {
+                target.ScatterVariantCount = count;
+                if (ReferenceEquals(target, SelectedGroup))
+                    ScatterHeader = string.Format(Localization.Get("Groups.Scatter.Header"), count);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer edit (or the page reloaded) — ignore.
+        }
+        catch
+        {
+            // Background save failed; never crash the UI over an autosave.
+        }
+    }
 
     // Recomputes the pattern preview from the selected group's course order. No-op (hidden) unless the
     // selected group is a mixed-discipline group.
@@ -360,10 +498,19 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             && e.PropertyName is nameof(GroupDayRowViewModel.CourseOrder)
                 or nameof(GroupDayRowViewModel.EffectiveDiscipline))
             RefreshPatternPreview();
+
+        // Show/hide the scatter variants editor when the selected group's discipline switches to/from Scatter.
+        if (ReferenceEquals(sender, SelectedGroup)
+            && e.PropertyName == nameof(GroupDayRowViewModel.EffectiveDiscipline))
+            _ = RefreshScatterEditorAsync();
     }
 
-    // Refresh the pattern preview whenever the selected group changes.
-    partial void OnSelectedGroupChanged(GroupDayRowViewModel? value) => RefreshPatternPreview();
+    // Refresh the previews/editors whenever the selected group changes.
+    partial void OnSelectedGroupChanged(GroupDayRowViewModel? value)
+    {
+        RefreshPatternPreview();
+        _ = RefreshScatterEditorAsync();
+    }
 
     private void RaiseColumnVisibility()
     {
@@ -604,5 +751,32 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         foreach (var cts in _saveTimers.Values)
             cts.Cancel();
         _saveTimers.Clear();
+        _scatterSaveCts?.Cancel();
     }
+}
+
+/// <summary>
+/// One editable row in the bottom scatter («розсіювання») variants table: a display <see cref="Code"/> (e.g.
+/// "A") and the variant's <see cref="CourseOrder"/> string. Raises <see cref="Changed"/> on any edit so the
+/// page can debounce-save the whole set.
+/// </summary>
+public sealed partial class ScatterVariantRowViewModel : ObservableObject
+{
+    public ScatterVariantRowViewModel(string code, string courseOrder)
+    {
+        _code = code;
+        _courseOrder = courseOrder;
+    }
+
+    /// <summary>Raised whenever the code or course order is edited.</summary>
+    public event Action? Changed;
+
+    [ObservableProperty]
+    private string _code;
+
+    [ObservableProperty]
+    private string _courseOrder;
+
+    partial void OnCodeChanged(string value) => Changed?.Invoke();
+    partial void OnCourseOrderChanged(string value) => Changed?.Invoke();
 }

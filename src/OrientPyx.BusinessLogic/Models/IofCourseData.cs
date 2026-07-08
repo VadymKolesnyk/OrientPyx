@@ -64,4 +64,18 @@ public sealed class IofCourse
 
     /// <summary>Control codes in running order (start and finish included when present).</summary>
     public IReadOnlyList<string> ControlCodes { get; init; } = [];
+
+    /// <summary>
+    /// Distinct scatter («розсіювання») variants of this course, when the file defined more than one valid
+    /// running order for the same course/family (2.0.3 multiple &lt;CourseVariation&gt;, 3.0 &lt;Course&gt;s
+    /// sharing a &lt;CourseFamily&gt;). Empty for an ordinary single-order course. When populated the course's
+    /// own <see cref="ControlCodes"/>/<see cref="Length"/>/<see cref="Climb"/> mirror the <b>first</b> variant
+    /// (representative for display/distance); the importer detects a scatter course by <c>Variants.Count &gt; 1</c>.
+    /// </summary>
+    public IReadOnlyList<IofCourseVariant> Variants { get; init; } = [];
 }
+
+/// <summary>One valid running order of a scatter course parsed from an IOF file: a display <see cref="Code"/>
+/// (from the file's variant name, or A/B/… assigned by order) and the ordered control codes (start/finish
+/// included when present, exactly like <see cref="IofCourse.ControlCodes"/>).</summary>
+public sealed record IofCourseVariant(string Code, IReadOnlyList<string> ControlCodes, int? Length, int? Climb);

@@ -74,6 +74,9 @@ public sealed partial class SplitGroupsViewModel : ObservableObject
                     Length = row.Source.Length,
                     Climb = row.Source.Climb,
                     ControlCodes = row.Source.ControlCodes,
+                    // Carry the scatter variants through so a split group keeps its розсіювання orders; each
+                    // group produced from a scatter course inherits the same variant set.
+                    Variants = row.Source.Variants,
                 });
             }
         }
@@ -110,6 +113,14 @@ public sealed partial class SplitCourseRow : ObservableObject
     /// <summary>Original course name as written in the file (shown as the row heading).</summary>
     public string OriginalName => Source.Name;
 
+    /// <summary>True when this course is a scatter («розсіювання») course — it carries more than one variant.</summary>
+    public bool HasVariants => Source.Variants.Count > 1;
+
+    /// <summary>Localized note that the course imports as N розсіювань (only shown when <see cref="HasVariants"/>).</summary>
+    public string VariantsLabel => HasVariants
+        ? string.Format(_localization.Get("Split.Scatter"), Source.Variants.Count)
+        : string.Empty;
+
     /// <summary>The split group names; edited, added to, and removed from in the dialog.</summary>
     public ObservableCollection<SplitGroupEntry> Groups { get; }
 
@@ -117,7 +128,11 @@ public sealed partial class SplitCourseRow : ObservableObject
     [ObservableProperty]
     private string _addGroupLabel = string.Empty;
 
-    public void RefreshLabel() => AddGroupLabel = _localization.Get("Split.AddGroup");
+    public void RefreshLabel()
+    {
+        AddGroupLabel = _localization.Get("Split.AddGroup");
+        OnPropertyChanged(nameof(VariantsLabel));
+    }
 
     [RelayCommand]
     private void AddGroup() => Groups.Add(new SplitGroupEntry(string.Empty));

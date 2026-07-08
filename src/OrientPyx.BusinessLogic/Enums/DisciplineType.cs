@@ -29,5 +29,14 @@ public enum DisciplineType
     /// sections — an ordered run <c>&lt;41 42&gt;</c>, an "any N of" block <c>[2 45 46 47]</c>, and nesting.
     /// Judged like a set course but against the pattern (see the «змішаний» course-pattern help).
     /// </summary>
-    Mixed
+    Mixed,
+
+    /// <summary>
+    /// Scatter / butterfly (розсіювання): the course is defined by <b>several</b> valid orders (variants),
+    /// each a prescribed sequence of controls; every runner runs one of them. The variant a runner took is
+    /// auto-detected from their read-out (the best-matching order), then judged like a set course against
+    /// that variant — MP against the closest one when none fully matches. Variants are stored per (day,
+    /// group) in a dedicated event-database table, not in the group's course-order string.
+    /// </summary>
+    Scatter
 }

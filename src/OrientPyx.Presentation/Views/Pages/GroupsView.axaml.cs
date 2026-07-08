@@ -60,11 +60,12 @@ public partial class GroupsView : UserControl
             .Text("Groups.Col.Name", nameof(GroupDayRowViewModel.Name),
                   editPath: nameof(GroupDayRowViewModel.Name), minWidth: 140)
             // Course order (set course) / list of allowed control points (score formats). Dimmed and
-            // disabled for disciplines that don't use it.
-            .Text("Groups.Col.CourseOrder", nameof(GroupDayRowViewModel.CourseOrder),
+            // disabled for disciplines that don't use it. A scatter («розсіювання») group shows «N варіантів
+            // дистанції» here (read-only) and edits its several orders in the bottom variants table instead.
+            .Text("Groups.Col.CourseOrder", nameof(GroupDayRowViewModel.CourseOrderDisplay),
                   editPath: nameof(GroupDayRowViewModel.CourseOrder), minWidth: 160,
                   placeholder: "S1 31 32 33 F",
-                  enabledPath: nameof(GroupDayRowViewModel.UsesCourseOrder),
+                  enabledPath: nameof(GroupDayRowViewModel.CanEditCourseOrderInline),
                   opacityPath: nameof(GroupDayRowViewModel.UsesCourseOrder))
             // Control count: auto-computed from the course/control list, read-only.
             .Text("Groups.Col.ControlCount", nameof(GroupDayRowViewModel.ControlCountText), minWidth: 90)
@@ -136,6 +137,26 @@ public partial class GroupsView : UserControl
             .DeleteAction(OnDeleteButton, "Groups.Delete");
 
         Sheet.Bands = builder.Bands;
+
+        BuildScatterBands();
+    }
+
+    // Builds the bottom scatter («розсіювання») variants table's columns: an editable Код and Дистанція,
+    // plus the trailing delete column. Rebuilt alongside the main grid on a language change.
+    private void BuildScatterBands()
+    {
+        if (_vm is null)
+            return;
+
+        ScatterSheet.Bands = new SheetColumnBuilder(_vm.Localization)
+            .Text("Groups.Scatter.Col.Code", nameof(ScatterVariantRowViewModel.Code),
+                  editPath: nameof(ScatterVariantRowViewModel.Code), width: 120,
+                  placeholder: "A")
+            .Text("Groups.Scatter.Col.Order", nameof(ScatterVariantRowViewModel.CourseOrder),
+                  editPath: nameof(ScatterVariantRowViewModel.CourseOrder), minWidth: 240,
+                  placeholder: "S1 31 32 33 F")
+            .DeleteAction(OnScatterDeleteButton, "Groups.Scatter.Remove")
+            .Bands;
     }
 
     // The table raises this on a keyboard Delete (Ctrl+Delete ⇒ skip the prompt).
@@ -144,6 +165,23 @@ public partial class GroupsView : UserControl
         if (_vm is null || e.Row is not GroupDayRowViewModel row)
             return;
         DeleteRow(row, e.SkipConfirm);
+    }
+
+    // Scatter variants table: keyboard Delete removes the selected variant row (no confirm — the whole
+    // set autosaves, so a mistaken delete is trivially undone by re-adding).
+    private void OnScatterDeleteRequested(object? sender, SheetDeleteEventArgs e)
+    {
+        if (_vm is null || e.Row is not ScatterVariantRowViewModel row)
+            return;
+        _vm.RemoveScatterVariantCommand.Execute(row);
+    }
+
+    // Scatter variants table: the per-row delete button.
+    private void OnScatterDeleteButton(object row)
+    {
+        if (_vm is null || row is not ScatterVariantRowViewModel variant)
+            return;
+        _vm.RemoveScatterVariantCommand.Execute(variant);
     }
 
     // The per-row delete button. Button.Click doesn't carry key modifiers, and the button marks its

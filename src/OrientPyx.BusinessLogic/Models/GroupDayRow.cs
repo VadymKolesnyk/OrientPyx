@@ -40,4 +40,7 @@ public sealed record GroupDayRow(
     /// upper bound. Group-level, editable from any day.</summary>
     int? MaxBirthYear = null,
     /// <summary>How many participants are in this group on this day (read-only, auto-counted).</summary>
-    int ParticipantCount = 0);
+    int ParticipantCount = 0,
+    /// <summary>How many scatter («розсіювання») variants this group has on this day. 0 for a non-scatter
+    /// group. Drives the grid's «N варіантів дистанції» course-order cell and the bottom variants editor.</summary>
+    int ScatterVariantCount = 0);

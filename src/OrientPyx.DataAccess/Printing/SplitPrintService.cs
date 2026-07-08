@@ -261,6 +261,10 @@ internal sealed class ReceiptRenderer
         if (who.Length > 0)
             y = DrawCentred(g, who, font, centreX, y);
 
+        // 3a) Scatter («розсіювання») variant the runner was judged against: "Розсіювання: A". Blank otherwise.
+        if (_doc.VariantCode.Length > 0)
+            y = DrawCentred(g, $"{_labels.VariantLabel} {_doc.VariantCode}", font, centreX, y);
+
         // 4) СТАРТ <hh:mm:ss> ФІНІШ <hh:mm:ss.f>.
         var times = new List<string>(2);
         if (_doc.StartClock.Length > 0)

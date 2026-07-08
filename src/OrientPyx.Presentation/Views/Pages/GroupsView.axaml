@@ -194,9 +194,39 @@
                                    FontFamily="Consolas, 'Courier New', monospace" />
                     </StackPanel>
                 </Border>
+                <!-- Scatter («розсіювання») variants editor: the shared SheetTable (Код / Дистанція) shown
+                     only for a scatter group (instead of the single course-order box). Each row is one valid
+                     order; edits debounce-save the whole set. Columns are built in code-behind. -->
+                <DockPanel LastChildFill="True"
+                           IsVisible="{Binding IsScatterEditorVisible}">
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="{Binding Localization[Groups.Scatter.Hint]}"
+                               Classes="muted" TextWrapping="Wrap" Margin="2,0,0,8" />
+                    <Button DockPanel.Dock="Bottom"
+                            Classes="ghost"
+                            HorizontalAlignment="Left"
+                            Margin="0,8,0,0"
+                            Content="{Binding Localization[Groups.Scatter.Add]}"
+                            Command="{Binding AddScatterVariantCommand}" />
+                    <TextBlock DockPanel.Dock="Bottom"
+                               Classes="muted"
+                               Margin="2,8,0,0"
+                               TextWrapping="Wrap"
+                               IsVisible="{Binding HasNoScatterVariants}"
+                               Text="{Binding Localization[Groups.Scatter.Empty]}" />
+                    <Border Classes="card" ClipToBounds="True">
+                        <controls:SheetTable Name="ScatterSheet"
+                                             ItemsSource="{Binding ScatterVariants}"
+                                             Localization="{Binding Localization}"
+                                             DeleteRequested="OnScatterDeleteRequested" />
+                    </Border>
+                </DockPanel>
+
+                <!-- Single course-order box for every non-scatter discipline. -->
                 <TextBox AcceptsReturn="True"
                          TextWrapping="Wrap"
                          VerticalContentAlignment="Top"
+                         IsVisible="{Binding !IsScatterEditorVisible}"
                          IsEnabled="{Binding HasSelectedGroup}"
                          PlaceholderText="{Binding Localization[Groups.SelectedCourse.Placeholder]}"
                          Text="{Binding SelectedGroup.CourseOrder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}" />

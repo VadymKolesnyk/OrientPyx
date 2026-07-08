@@ -23,6 +23,7 @@ public static class BusinessLogicServiceCollectionExtensions
         services.AddSingleton<IDisciplineStrategy, ScoreByTimeStrategy>();
         services.AddSingleton<IDisciplineStrategy, RogaineStrategy>();
         services.AddSingleton<IDisciplineStrategy, MixedStrategy>();
+        services.AddSingleton<IDisciplineStrategy, ScatterStrategy>();
         services.AddSingleton<IDisciplineStrategyProvider, DisciplineStrategyProvider>();
 
         // IOF XML import (shared by control-point and course/group imports)

@@ -112,6 +112,15 @@ public interface IEventStore
     /// <summary>Removes a group-day settings row by id (detaches a group from a day). Does nothing if it is missing.</summary>
     Task DeleteGroupDaySettingsAsync(string eventFolderPath, Guid settingsId, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns all scatter («розсіювання») variant rows for a day (across every group), ordered by
+    /// their sort order. Empty when the day has no scatter groups.</summary>
+    Task<IReadOnlyList<ScatterVariant>> GetScatterVariantsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>Replaces a group's scatter variants for a day: deletes the existing (day, group) rows and
+    /// inserts <paramref name="variants"/> in one transaction. An empty list just clears them (e.g. when the
+    /// group stops being a scatter course).</summary>
+    Task ReplaceScatterVariantsForGroupAsync(string eventFolderPath, Guid dayId, Guid groupId, IReadOnlyList<ScatterVariant> variants, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the competition's rental chips, ordered by number.</summary>
     Task<IReadOnlyList<RentalChip>> GetRentalChipsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 

@@ -373,6 +373,34 @@ public sealed class EventStore : IEventStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ScatterVariant>> GetScatterVariantsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.ScatterVariants
+            .AsNoTracking()
+            .Where(v => v.EventDayId == dayId)
+            .OrderBy(v => v.Order)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task ReplaceScatterVariantsForGroupAsync(string eventFolderPath, Guid dayId, Guid groupId, IReadOnlyList<ScatterVariant> variants, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        // Clear the group's existing variants for the day, then insert the new set — one transaction so a
+        // re-import never leaves a mix of old and new orders. An empty list simply clears them.
+        var existing = await db.ScatterVariants
+            .Where(v => v.EventDayId == dayId && v.GroupId == groupId)
+            .ToListAsync(cancellationToken);
+        if (existing.Count > 0)
+            db.ScatterVariants.RemoveRange(existing);
+
+        if (variants.Count > 0)
+            db.ScatterVariants.AddRange(variants);
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<RentalChip>> GetRentalChipsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);

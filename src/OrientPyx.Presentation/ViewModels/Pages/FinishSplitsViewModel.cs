@@ -74,6 +74,15 @@ public sealed partial class FinishSplitsViewModel : ObservableObject
     [ObservableProperty]
     private string _summary = string.Empty;
 
+    /// <summary>Detected scatter variant line («Розсіювання: A»), shown only for a scatter course; blank
+    /// otherwise (drives its own visibility via <see cref="HasVariant"/>).</summary>
+    [ObservableProperty]
+    private string _variantText = string.Empty;
+
+    /// <summary>True when a scatter variant was detected (the panel then shows <see cref="VariantText"/>).</summary>
+    [ObservableProperty]
+    private bool _hasVariant;
+
     // --- Dock side + size (persisted app-wide as preferences.json) ---------------------------------
 
     /// <summary>True when the panel is docked to the right of the table; false = below it.</summary>
@@ -112,6 +121,8 @@ public sealed partial class FinishSplitsViewModel : ObservableObject
         Entries.Clear();
         Heading = string.Empty;
         Summary = string.Empty;
+        VariantText = string.Empty;
+        HasVariant = false;
         IsOrdered = false;
         IsScored = false;
         ShowPoints = false;
@@ -129,6 +140,11 @@ public sealed partial class FinishSplitsViewModel : ObservableObject
         IsOrdered = view.Layout == SplitsLayout.Ordered;
         IsScored = view.Layout == SplitsLayout.Scored;
         ShowPoints = view.HasPoints;
+
+        HasVariant = view.VariantCode.Length > 0;
+        VariantText = HasVariant
+            ? $"{_localization.Get("Splits.VariantCode")} {view.VariantCode}"
+            : string.Empty;
 
         if (IsOrdered)
         {

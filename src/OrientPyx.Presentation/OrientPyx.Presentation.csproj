@@ -42,7 +42,7 @@
   <!-- Release identity. Bump <Version> for each release; the publish script passes the same value to
        Velopack so the installed app can tell it is out of date. See build/publish.ps1. -->
   <PropertyGroup>
-    <Version>0.1.7</Version>
+    <Version>0.2.0</Version>
     <Product>OrientPyx</Product>
     <Company>OrientPyx</Company>
     <Authors>OrientPyx</Authors>

@@ -42,6 +42,10 @@ public sealed class SplitPrintDocument
 
     public string GroupName { get; init; } = string.Empty;
 
+    /// <summary>For a scatter («розсіювання») course, the auto-detected variant code the runner was judged
+    /// against (e.g. "A"); blank for every non-scatter discipline. Printed on its own header line.</summary>
+    public string VariantCode { get; init; } = string.Empty;
+
     /// <summary>Result time (finish − start) as "H:mm:ss", or blank when not resolvable.</summary>
     public string ResultText { get; init; } = string.Empty;
 
@@ -125,6 +129,7 @@ public sealed record SplitPrintLabels(
     string StatusLabel,
     string MpDetailLabel,
     string TotalPointsLabel,
+    string VariantLabel,
     string ColSeq,
     string ColCode,
     string ColElapsed,

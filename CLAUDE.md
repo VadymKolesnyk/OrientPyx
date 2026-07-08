@@ -1,9 +1,13 @@
 # OrientPyx
 
-Cross-platform desktop application for managing orienteering competitions.
-Currently this is a **starter architecture only**: a working UI shell, localization
-structure, placeholder services, and data-access infrastructure. Real competition
-features are intentionally not implemented yet.
+Cross-platform desktop application (Avalonia, .NET) for managing orienteering competitions.
+It is a working product, not a starter: participant management, groups/courses/chips, chip
+read-out, per-discipline result computation, and Word/HTML/thermal-printer protocol export are
+all implemented. New work continues on this base — respect the layering and conventions below.
+
+Result computation (`ComputeDayResultsAsync`), thermal-printer split/winner printouts, HTML
+splits/monitor export, start draw, online publishing, and the Word `.docx` protocols are all
+built and documented in the subsystem notes at the bottom of this file.
 
 ## Solution structure
 
@@ -11,7 +15,7 @@ features are intentionally not implemented yet.
 OrientPyx.sln
 src/
   OrientPyx.Presentation/    Avalonia UI (Views, ViewModels, navigation, app startup, DI composition)
-  OrientPyx.BusinessLogic/   Entities, models, enums, service interfaces + placeholder implementations
+  OrientPyx.BusinessLogic/   Entities, models, enums, discipline strategies, service interfaces + implementations
   OrientPyx.DataAccess/      EF Core + SQLite: app & event DbContexts, stores, events-folder scanner
   OrientPyx.Localization/    ILocalizationService + JSON resource dictionaries (uk-UA default, en-US)
 ```
@@ -22,9 +26,10 @@ Three layers plus a shared localization library.
 
 - **Presentation** — Avalonia views, ViewModels, navigation, startup, DI wiring.
   No business rules, no file/database logic.
-- **BusinessLogic** — domain entities, models, and service abstractions with simple
-  placeholder implementations. Must NOT reference Avalonia, EF Core, SQLite, files,
-  printers, or DOCX/report libraries.
+- **BusinessLogic** — domain entities, models, discipline strategies, and service
+  abstractions with their implementations. Must NOT reference Avalonia, EF Core, SQLite,
+  files, printers, or DOCX/report libraries (infra like that lives in DataAccess and is
+  reached through interfaces defined here).
 - **DataAccess** — persistence and infrastructure. EF Core and SQLite live here and
   nowhere else. References BusinessLogic.
 - **Localization** — pure .NET, no UI dependency, usable from any layer.
@@ -53,7 +58,9 @@ the UI shows only the selection / creation screens (gating in `MainWindowViewMod
   courses, chips). Opened dynamically per path via `EventDbContextFactory` (internal to
   DataAccess); BusinessLogic talks to it only through `IEventStore`.
 - Paths `./data` and `./events` default to the application directory and are editable on
-  the Settings page (`IAppSettingsService`).
+  the Settings page (`IAppSettingsService`). **Installed (Velopack) builds redirect the data
+  root** to `%LocalAppData%\OrientDesk\data-root` (see `AppDatabasePaths` / `Program.cs`) so
+  data survives auto-updates — the app-dir default is for local dev only.
 - The competition list is built by **scanning** `./events` (`IEventFolderScanner`).
 
 **Session rule (important):** the active competition/day is held **in-memory** by
@@ -82,6 +89,22 @@ instances over the same `./data`, and runtime state must not be shared through i
 - MVVM via CommunityToolkit.Mvvm source generators: `ObservableObject`,
   `[ObservableProperty]`, `[RelayCommand]`.
 - DI via plain `Microsoft.Extensions.DependencyInjection` (no Generic Host).
+
+## Disciplines (strategy, not switch)
+
+Everything that varies by competition type lives behind `IDisciplineStrategy`
+(`BusinessLogic/Disciplines/`), one implementation per `DisciplineType`
+(`SetCourse`, `ScoreByCount`, `ScoreByTime`, `Rogaine`, `Mixed`, `Scatter`), resolved
+through `IDisciplineStrategyProvider`. Shared code asks the strategy — which grid columns
+apply, control count, over-time penalty, `EvaluateFinish`, `BuildSplits` — instead of
+switching on the enum. **Adding a format = one new strategy class + one DI registration**
+(`BusinessLogicServiceCollectionExtensions`); do not reintroduce `switch (type)` in shared code.
+
+Notable formats: **Mixed** (змішаний) judges against a course *pattern* (`<seq>` ordered runs,
+`[N …]` any-of blocks, nesting) like a set course. **Scatter** (розсіювання) has several valid
+orders (variants) per (day, group) stored in the dedicated `ScatterVariant` event-DB table;
+each runner's variant is auto-detected from their read-out (best-matching order) and then judged
+like a set course against it.
 
 ## Editable tables (SheetTable)
 
@@ -131,9 +154,9 @@ dotnet build
 dotnet run --project src/OrientPyx.Presentation
 ```
 
-The window opens with a Ukrainian sidebar and Ukrainian placeholder pages; the default
-page is Панель (Dashboard). A SQLite file is created under the user's local app-data on
-first run.
+The window opens with a Ukrainian sidebar; the default page is Панель (Dashboard). Until a
+competition + day is selected the UI shows only the selection/creation screens. SQLite files
+are created on first run (`app.db` in the data root; per-competition `event.db` under `events/`).
 
 ## Schema management
 
@@ -154,10 +177,12 @@ dotnet ef migrations add <Name> --context EventDbContext \
 Each context has an `IDesignTimeDbContextFactory` so the EF tools can run without the app.
 Do not reintroduce `EnsureCreated` — it is incompatible with migrations.
 
-## What NOT to do yet
+## What NOT to do
 
-Do not add: test projects, Clean Architecture / CQRS / MediatR, Docker, authentication, or
-cloud sync. Keep this a lightweight starter.
+Do not add: test projects, Clean Architecture / CQRS / MediatR, Docker, or authentication.
+Keep the app lightweight and the four-layer structure above intact. (The Supabase online-results
+publisher below is the one exception to "no cloud sync" — it is publish-only and stays confined to
+DataAccess.)
 
 (The result protocol — «Протоколи результатів» — now exports a per-group results protocol to a
 Word .docx via `IResultProtocolBuilder` (BusinessLogic) + `DocxResultProtocolWriter` (DataAccess,

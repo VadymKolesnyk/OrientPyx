@@ -32,12 +32,17 @@ public interface IStartDrawService
     /// <param name="globalStart">Time of day the first competitor in each start group starts.</param>
     /// <param name="interval">Gap between consecutive start slots.</param>
     /// <param name="separation">Which attribute to keep off consecutive slots (or none).</param>
+    /// <param name="groupGap">
+    /// Number of empty start slots (minutes, at the interval) left after each group before the next group on
+    /// the same start lane begins. 0 packs groups back-to-back; no gap is left after the last group in a lane.
+    /// </param>
     /// <param name="seed">Optional fixed seed for a reproducible draw; null uses a random seed.</param>
     IReadOnlyList<DrawStartAssignment> Draw(
         IReadOnlyList<IReadOnlyList<DrawGroup>> startGroups,
         TimeSpan globalStart,
         TimeSpan interval,
         DrawSeparationField separation,
+        int groupGap = 0,
         int? seed = null);
 
     /// <summary>

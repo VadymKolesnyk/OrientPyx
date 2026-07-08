@@ -98,6 +98,34 @@ public sealed partial class DrawViewModel : PageViewModelBase
     private int _autoGroupCount = 1;
 
     /// <summary>
+    /// Empty time left after each group before the next group starts on the same lane, entered in the same
+    /// hh:mm:ss format as <see cref="Interval"/> ("00:00:00" = groups packed back-to-back). Rounded to a whole
+    /// number of interval slots (see <see cref="GapSlots"/>) and applied to the drawn start times, the
+    /// per-column time preview / clash detection, and — in proportional mode — as blank vertical space after
+    /// each chip so lanes still line up on the timeline.
+    /// </summary>
+    [ObservableProperty]
+    private string _groupGap = "00:00:00";
+
+    /// <summary>
+    /// The gap expressed as a whole number of interval slots (empty start minutes), the unit the draw and the
+    /// layout work in. The gap duration is divided by the interval and floored; a zero/invalid interval or gap
+    /// yields 0. This is what actually spaces the groups apart.
+    /// </summary>
+    private int GapSlots
+    {
+        get
+        {
+            if (!StartTimeFormat.TryParse(GroupGap, out var gapOpt) || gapOpt is not { } gap || gap <= TimeSpan.Zero)
+                return 0;
+            if (!StartTimeFormat.TryParse(Interval, out var intOpt) || intOpt is not { } interval ||
+                interval <= TimeSpan.Zero)
+                return 0;
+            return (int)(gap.Ticks / interval.Ticks);
+        }
+    }
+
+    /// <summary>
     /// When on, each group chip's height is made proportional to its member count so a start group reads like
     /// a timeline: groups in different columns that overlap in time line up vertically, making the cross-column
     /// clashes visible by eye. Off = normal content-sized chips.
@@ -189,6 +217,8 @@ public sealed partial class DrawViewModel : PageViewModelBase
 
     partial void OnIntervalChanged(string value) => RecomputeColumnTimes();
 
+    partial void OnGroupGapChanged(string value) => RecomputeColumnTimes();
+
     partial void OnProportionalHeightsChanged(bool value) => ApplyChipHeights();
 
     // Sizes every chip according to the current mode: proportional to the member count (timeline view) or
@@ -199,10 +229,19 @@ public sealed partial class DrawViewModel : PageViewModelBase
     // when that floor kicks in for a short group the detail row is folded onto the name line (Compact).
     private void ApplyChipHeights()
     {
+        var gap = GapSlots;
         foreach (var column in StartGroups)
         {
-            foreach (var item in column.Groups)
+            // The trailing gap after the last non-empty group in a lane is not laid out (mirrors the draw), so
+            // find that group and skip adding its gap space.
+            var lastWithMembers = -1;
+            for (var i = 0; i < column.Groups.Count; i++)
+                if (column.Groups[i].MemberCount > 0)
+                    lastWithMembers = i;
+
+            for (var i = 0; i < column.Groups.Count; i++)
             {
+                var item = column.Groups[i];
                 if (!ProportionalHeights)
                 {
                     item.ProportionalHeight = double.NaN;
@@ -212,6 +251,10 @@ public sealed partial class DrawViewModel : PageViewModelBase
                 }
 
                 var footprint = Math.Max(MinProportionalHeight, item.MemberCount * PixelsPerMember);
+                // Add the empty-minute gap as blank space at the bottom of the chip so the next group on this
+                // lane sits lower and lanes still line up on the timeline. No gap after the last real group.
+                if (item.MemberCount > 0 && i != lastWithMembers)
+                    footprint += gap * PixelsPerMember;
                 item.ProportionalHeight = footprint - ChipGap;
                 item.Compact = footprint < TwoRowMinHeight;
                 // Small groups clip in proportional mode — give them a hover tooltip with the full info.
@@ -245,18 +288,27 @@ public sealed partial class DrawViewModel : PageViewModelBase
         // Slot-based layout: each group's members occupy a half-open run of integer start slots [start, end)
         // within its column, the next group following on. Tracking slots (not formatted times) lets us detect
         // collisions across columns regardless of the interval.
+        var gap = GapSlots;
         foreach (var column in StartGroups)
         {
             var offset = 0;
+            // Track the last slot actually occupied by a competitor so a trailing gap doesn't inflate the
+            // footer's "last start" time.
+            var lastOccupied = -1;
             foreach (var item in column.Groups)
             {
                 var time = start + TimeSpan.FromTicks(interval.Ticks * offset);
                 item.StartLabel = StartTimeFormat.Format(time);
                 item.FirstSlot = offset;
-                offset += item.MemberCount;
+                if (item.MemberCount > 0)
+                {
+                    offset += item.MemberCount;
+                    lastOccupied = offset - 1;
+                    offset += gap; // empty minutes before the next group on this lane
+                }
             }
-            column.FooterText = offset > 0
-                ? StartTimeFormat.Format(start + TimeSpan.FromTicks(interval.Ticks * (offset - 1)))
+            column.FooterText = lastOccupied >= 0
+                ? StartTimeFormat.Format(start + TimeSpan.FromTicks(interval.Ticks * lastOccupied))
                 : string.Empty;
             column.RaiseTotalsChanged();
         }
@@ -647,7 +699,7 @@ public sealed partial class DrawViewModel : PageViewModelBase
             .Select(c => (IReadOnlyList<DrawGroup>)c.Groups.Select(g => g.Group).ToList())
             .ToList();
 
-        var assignments = _draw.Draw(startGroups, start, interval, separation);
+        var assignments = _draw.Draw(startGroups, start, interval, separation, GapSlots);
 
         // Map each assignment back to the participant for display (group name, number, name, sep value).
         var memberByLink = _loadedGroups

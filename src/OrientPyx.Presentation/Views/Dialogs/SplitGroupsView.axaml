@@ -55,13 +55,17 @@
                                     BorderThickness="0,0,0,1" Padding="0,12">
                                 <Grid ColumnDefinitions="180,*">
 
-                                    <!-- Original course name (heading for the row) -->
-                                    <TextBlock Grid.Column="0"
-                                               Text="{Binding OriginalName}"
-                                               Classes="label" FontWeight="SemiBold"
-                                               TextWrapping="Wrap"
-                                               VerticalAlignment="Center"
-                                               Margin="0,0,16,0" />
+                                    <!-- Original course name (heading for the row) + scatter note -->
+                                    <StackPanel Grid.Column="0" Spacing="4"
+                                                VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="{Binding OriginalName}"
+                                                   Classes="label" FontWeight="SemiBold"
+                                                   TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding VariantsLabel}"
+                                                   Classes="muted" FontSize="12"
+                                                   TextWrapping="Wrap"
+                                                   IsVisible="{Binding HasVariants}" />
+                                    </StackPanel>
 
                                     <!-- Split groups: each a compact chip; add button trails inline. -->
                                     <StackPanel Grid.Column="1" Spacing="8">

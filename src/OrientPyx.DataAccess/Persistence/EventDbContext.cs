@@ -19,6 +19,7 @@ public class EventDbContext : DbContext
     public DbSet<ControlPoint> ControlPoints => Set<ControlPoint>();
     public DbSet<Group> Groups => Set<Group>();
     public DbSet<GroupDaySettings> GroupDaySettings => Set<GroupDaySettings>();
+    public DbSet<ScatterVariant> ScatterVariants => Set<ScatterVariant>();
     public DbSet<RentalChip> RentalChips => Set<RentalChip>();
     public DbSet<Region> Regions => Set<Region>();
     public DbSet<Club> Clubs => Set<Club>();
@@ -123,5 +124,10 @@ public class EventDbContext : DbContext
         modelBuilder.Entity<StartProtocolSettingsRow>()
             .HasIndex(r => new { r.EventDayId, r.Kind })
             .IsUnique();
+
+        // Scatter («розсіювання») variants: several per (day, group). Non-unique index speeds the per-day
+        // load and the per-group replace; Order sorts them (A before B).
+        modelBuilder.Entity<ScatterVariant>()
+            .HasIndex(v => new { v.EventDayId, v.GroupId });
     }
 }
