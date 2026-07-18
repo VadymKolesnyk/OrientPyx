@@ -471,20 +471,29 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             .ToDictionary(g => g.Key, g => g.Count());
 
         // Scatter («розсіювання») variant count per group, so the grid's course-order cell can read
-        // «N варіантів дистанції» instead of a single order for a scatter group.
+        // «N варіантів дистанції» instead of a single order for a scatter group. Also fold each group's
+        // variants down to the control-count of its LONGEST variant — the grid's control-count cell
+        // reports that for a scatter group (the single-order field is unused for scatter).
         var scatterVariants = await _eventStore.GetScatterVariantsAsync(FolderPath, CurrentDayId, cancellationToken);
-        var scatterCountByGroup = scatterVariants
+        var counter = _strategies.For(DisciplineType.Scatter);
+        var scatterByGroup = scatterVariants
             .GroupBy(v => v.GroupId)
-            .ToDictionary(g => g.Key, g => g.Count());
+            .ToDictionary(
+                g => g.Key,
+                g => (Count: g.Count(), MaxControls: g.Max(v => counter.ControlCount(v.CourseOrder))));
 
         var rows = new List<GroupDayRow>(settings.Count);
         foreach (var s in settings)
         {
             // Defensive: skip a settings row whose group was removed out from under it.
             if (byId.TryGetValue(s.GroupId, out var group))
+            {
+                var scatter = scatterByGroup.GetValueOrDefault(s.GroupId);
                 rows.Add(ToRow(s, group,
                     countByGroup.GetValueOrDefault(s.GroupId),
-                    scatterCountByGroup.GetValueOrDefault(s.GroupId)));
+                    scatter.Count,
+                    scatter.MaxControls));
+            }
         }
         return rows;
     }
@@ -717,6 +726,13 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         var added = 0;
         var updated = 0;
+        var scatterFallback = new List<string>();
+
+        // On a Scatter («розсіювання») day, a course that turns out to have only one valid running order is not a
+        // scatter course at all, so it must not inherit the day's Scatter default — it is forced to «Заданий
+        // напрямок» (SetCourse) and reported. On a non-Scatter day a single-order course simply clears its
+        // override (day default applies).
+        var dayIsScatter = CurrentDayDefaultDiscipline == DisciplineType.Scatter;
 
         // Collapse duplicate course names within the file (keep the first), so a repeated course
         // does not create a second group or fight itself for the same day row.
@@ -732,6 +748,15 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             // course order/distance mirror the first (representative) variant; the full set of orders is stored
             // separately per (day, group) and the group's discipline is overridden to Scatter.
             var isScatter = course.Variants.Count > 1;
+
+            // The discipline override to store: Scatter for a genuine multi-order course; on a Scatter day a
+            // single-order course is pinned to SetCourse so it doesn't wrongly inherit Scatter; otherwise no
+            // override (the day default applies).
+            var scatterFallbackHere = !isScatter && dayIsScatter;
+            var disciplineOverride =
+                isScatter ? DisciplineType.Scatter
+                : scatterFallbackHere ? DisciplineType.SetCourse
+                : (DisciplineType?)null;
             var courseOrder = string.Join(' ', course.ControlCodes.Select(c => c.Trim()).Where(c => c.Length > 0));
             var distanceKm = ComputeDistance(course.ControlCodes, coordsByCode, mapByCode, data.MapScale);
 
@@ -754,9 +779,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
                 existing.CourseOrder = courseOrder;
                 existing.DistanceKm = distanceKm;
-                existing.DisciplineOverride = isScatter ? DisciplineType.Scatter : null;
+                existing.DisciplineOverride = disciplineOverride;
                 await _eventStore.UpdateGroupDaySettingsAsync(folder, existing, cancellationToken);
                 await SaveScatterVariantsAsync(folder, dayId, group.Id, course, cancellationToken);
+                if (scatterFallbackHere)
+                    scatterFallback.Add(name);
                 updated++;
             }
             else
@@ -768,16 +795,18 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     Order = nextOrder++,
                     CourseOrder = courseOrder,
                     DistanceKm = distanceKm,
-                    DisciplineOverride = isScatter ? DisciplineType.Scatter : null
+                    DisciplineOverride = disciplineOverride
                 };
                 await _eventStore.AddGroupDaySettingsAsync(folder, row, cancellationToken);
                 settingsByGroupId[group.Id] = row;
                 await SaveScatterVariantsAsync(folder, dayId, group.Id, course, cancellationToken);
+                if (scatterFallbackHere)
+                    scatterFallback.Add(name);
                 added++;
             }
         }
 
-        return new GroupImportResult(Added: added, Updated: updated);
+        return new GroupImportResult(Added: added, Updated: updated, ScatterFallbackGroups: scatterFallback);
     }
 
     // Persists a course's scatter («розсіювання») variants for a group on a day, replacing any existing set.
@@ -3093,12 +3122,32 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             return new DrawPrepData([]);
 
         var folder = FolderPath;
+        var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        var day = days.FirstOrDefault(d => d.Id == dayId);
+        if (day is null)
+            return new DrawPrepData([]);
+
         var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
+        var settingsByGroup = settings.ToDictionary(s => s.GroupId);
         var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
         var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
         var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
         var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
         var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
+
+        // Start/finish and disabled controls are dropped from every parsed course so the "first control" is a
+        // real distance control — an OCAD-style opening marker like "S1" (which carries a digit) is not mistaken
+        // for КП 1. Same set used to load the scatter variants, reduced to their required controls.
+        var controlPoints = await _eventStore.GetControlPointsAsync(folder, dayId, cancellationToken);
+        var startFinishCodes = new HashSet<string>(
+            controlPoints
+                .Where(c => c.Type is ControlPointType.Start or ControlPointType.Finish)
+                .Select(c => c.Code.Trim()),
+            StringComparer.OrdinalIgnoreCase);
+        var disabledCodes = DisabledCodesOf(controlPoints);
+        var dayDefault = day.DefaultDiscipline;
+        var variantsByGroup = await LoadScatterVariantsAsync(
+            folder, dayId, settingsByGroup, dayDefault, startFinishCodes, disabledCodes, cancellationToken);
 
         var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
         var byParticipant = participants.ToDictionary(p => p.Id);
@@ -3122,16 +3171,59 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             list.Add(new DrawParticipant(link.Id, p.Id, p.FullName, p.Number, region, club, p.Team));
         }
 
-        // One DrawGroup per group on the day, in the day grid order, carrying its first control point.
+        // One DrawGroup per group on the day, in the day grid order, carrying the clash-check data the draw
+        // page needs: whether the discipline runs a prescribed order at all (free-order formats opt out), the
+        // set of opening controls to test for a shared-first-control clash, and — for scatter — every variant's
+        // full order (so two scatter groups running the identical variant set flag as a same-course clash).
         var drawGroups = new List<DrawGroup>(settings.Count);
         foreach (var s in settings)
         {
             if (!groupName.TryGetValue(s.GroupId, out var name))
                 continue;
             var members = membersByGroup.TryGetValue(s.GroupId, out var m) ? m : [];
-            var controls = CourseControlsOf(s.CourseOrder);
+
+            var discipline = s.DisciplineOverride ?? dayDefault;
+            var checksClash = _strategies.For(discipline).ChecksStartControlClash;
+
+            if (!checksClash)
+            {
+                // Free-order format (за вибором / рогейн / score-by-time): no prescribed order, so no clash
+                // check. Keep the raw controls only for the display label.
+                var raw = CourseControls(s.CourseOrder, startFinishCodes, disabledCodes);
+                drawGroups.Add(new DrawGroup(
+                    s.GroupId, name, raw.Count > 0 ? raw[0] : string.Empty, [], members));
+                continue;
+            }
+
+            if (discipline == DisciplineType.Scatter
+                && variantsByGroup.TryGetValue(s.GroupId, out var variants) && variants.Count > 0)
+            {
+                // Scatter: several valid orders. The opening controls are the first control of each variant
+                // (deduplicated); the whole variant set is carried for the same-course comparison. The
+                // representative first control (for lane clustering / the label) is the first variant's first.
+                var variantOrders = variants.Select(v => v.Controls).Where(c => c.Count > 0).ToList();
+                var firstControls = variantOrders
+                    .Select(c => c[0])
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                drawGroups.Add(new DrawGroup(
+                    s.GroupId, name,
+                    firstControls.Count > 0 ? firstControls[0] : string.Empty,
+                    [], members,
+                    ChecksClash: true,
+                    FirstControls: firstControls,
+                    Variants: variantOrders));
+                continue;
+            }
+
+            // Fixed order (set course / mixed, or a scatter group with no variants configured): one course,
+            // one opening control.
+            var controls = CourseControls(s.CourseOrder, startFinishCodes, disabledCodes);
+            var first = controls.Count > 0 ? controls[0] : string.Empty;
             drawGroups.Add(new DrawGroup(
-                s.GroupId, name, controls.Count > 0 ? controls[0] : string.Empty, controls, members));
+                s.GroupId, name, first, controls, members,
+                ChecksClash: true,
+                FirstControls: first.Length > 0 ? [first] : []));
         }
 
         return new DrawPrepData(drawGroups);
@@ -3227,30 +3319,6 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             .ToList();
 
         return new QuickWithdrawalData(ordered);
-    }
-
-    /// <summary>
-    /// Parses the ordered control-point codes out of a free-text course order such as "S1 31 32 33 F". Start
-    /// and finish markers (pure-letter tokens like "S"/"Start"/"F"/"Фініш") are dropped; every token that
-    /// carries a digit is kept, in order. Returns an empty list when the order is blank or has no controls.
-    /// The first element is the opening control used to cluster start groups; the whole list is used to detect
-    /// groups that run an identical distance.
-    /// </summary>
-    private static IReadOnlyList<string> CourseControlsOf(string? courseOrder)
-    {
-        if (string.IsNullOrWhiteSpace(courseOrder))
-            return [];
-
-        // A «mixed» order pattern (with <…>/[N …] blocks) flattens to its leaf controls; a plain order is
-        // split on the usual separators. Either way, keep only digit-bearing tokens (drop S/Start/F markers).
-        IEnumerable<string> tokens = courseOrder.IndexOfAny(['<', '[']) >= 0
-            ? CourseOrderCodes(courseOrder)
-            : courseOrder.Split(
-                [' ', ',', ';', '\t', '-', '>'],
-                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        // Any token that contains a digit is a real control (skips pure-letter S/Start/F markers); keep order.
-        return tokens.Where(t => t.Any(char.IsDigit)).ToList();
     }
 
     public Task<int> SaveDrawStartTimesAsync(
@@ -4854,7 +4922,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Result: result ?? ParticipantDayResult.Empty);
     }
 
-    private GroupDayRow ToRow(GroupDaySettings s, Group group, int participantCount = 0, int scatterVariantCount = 0) => new(
+    private GroupDayRow ToRow(GroupDaySettings s, Group group, int participantCount = 0, int scatterVariantCount = 0, int scatterMaxControlCount = 0) => new(
         SettingsId: s.Id,
         GroupId: s.GroupId,
         Order: s.Order,
@@ -4876,5 +4944,6 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         MinBirthYear: group.MinBirthYear,
         MaxBirthYear: group.MaxBirthYear,
         ParticipantCount: participantCount,
-        ScatterVariantCount: scatterVariantCount);
+        ScatterVariantCount: scatterVariantCount,
+        ScatterMaxControlCount: scatterMaxControlCount);
 }

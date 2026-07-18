@@ -125,7 +125,7 @@ public sealed class SplitPrintService : ISplitPrintService
 /// Draws one split-printout receipt onto a <see cref="System.Drawing.Printing.PrintDocument"/> page,
 /// laid out to match the classic SportIdent split slip: a centred header block (printed-at, number+chip,
 /// group+name, start/finish, result/length/pace) over a monospace passage table whose columns are
-/// №ПП · КП · ЧАС (cumulative) · ЧАС (leg) · П.ДОВЖ (km) · ШВИДК (pace). Off-course punches keep a "*" in
+/// №ПП · КП · ЧАС (cumulative) · ЧАС П.(leg) · ДОВЖ (km) · ШВИДК (pace). Off-course punches keep a "*" in
 /// the leftmost column. Holds the paint cursor across <see cref="OnPrintPage"/> calls so a long passage can
 /// flow onto a second page (rare). Everything is centred within the printer's <b>printable</b> area, so the
 /// non-printable hardware margins on the left/right of a thermal roll don't push the layout off-centre.

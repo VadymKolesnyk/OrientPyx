@@ -37,6 +37,15 @@ public interface IDisciplineStrategy
     bool UsesControlPointPoints { get; }
 
     /// <summary>
+    /// True when this discipline runs a prescribed control order (set course, mixed, scatter), so the start
+    /// draw should warn when a group starts on the same minute as another group sharing its opening control —
+    /// two runners would punch the same first control at once. False for the free-order formats (за вибором,
+    /// score-by-time, rogaine), where each runner chooses their own route: there is no meaningful "first
+    /// control", so the draw skips the shared-first-control / identical-course clash checks for them entirely.
+    /// </summary>
+    bool ChecksStartControlClash { get; }
+
+    /// <summary>
     /// Default points deducted per (started) minute over the time limit when the group leaves the penalty
     /// blank, or null when the discipline applies no automatic over-time penalty. Rogaine returns 1; the
     /// other formats return null. Used both to fill the default in the groups grid and in the scoring math.

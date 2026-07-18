@@ -21,6 +21,9 @@ public sealed class MixedStrategy : DisciplineStrategyBase
 
     public override DisciplineType Type => DisciplineType.Mixed;
 
+    /// <summary>Judged against a prescribed pattern — the draw warns on a shared opening control.</summary>
+    public override bool ChecksStartControlClash => true;
+
     public override bool UsesColumn(GroupColumn column) => column switch
     {
         GroupColumn.CourseOrder => true,           // the order pattern

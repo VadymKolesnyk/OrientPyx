@@ -43,4 +43,8 @@ public sealed record GroupDayRow(
     int ParticipantCount = 0,
     /// <summary>How many scatter («розсіювання») variants this group has on this day. 0 for a non-scatter
     /// group. Drives the grid's «N варіантів дистанції» course-order cell and the bottom variants editor.</summary>
-    int ScatterVariantCount = 0);
+    int ScatterVariantCount = 0,
+    /// <summary>Control-point count of the <b>longest</b> scatter variant (розсіювання) on this day — the
+    /// grid's control-count cell reports this for a scatter group instead of counting the unused
+    /// single-order field. 0 for a non-scatter group or one with no variants.</summary>
+    int ScatterMaxControlCount = 0);

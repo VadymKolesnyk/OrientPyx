@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using OrientPyx.Presentation.Controls;
 using OrientPyx.Presentation.ViewModels.Pages;
@@ -13,6 +14,10 @@ namespace OrientPyx.Presentation.Views.Pages;
 public partial class ChipsView : UserControl
 {
     private ChipsViewModel? _vm;
+
+    // Semi-transparent red painted over a chip-number cell that duplicates another chip (numbers must
+    // be unique); the collision is never saved, so this tint is the signal the number can't be used.
+    private static readonly ISolidColorBrush DuplicateBrush = new SolidColorBrush(Color.FromArgb(0x55, 0xDC, 0x26, 0x26));
 
     public ChipsView()
     {
@@ -122,6 +127,10 @@ public partial class ChipsView : UserControl
             .Text("Chips.Col.Number", nameof(RentalChipRowViewModel.Number),
                   editPath: nameof(RentalChipRowViewModel.Number), minWidth: 140,
                   mask: SheetColumnBuilder.NumericMask.Digits)
+            // Tint the number cell red when it duplicates another chip (numbers must be unique): the
+            // duplicate is never saved, so the tint + tooltip is the only signal it can't be used.
+            .CellTint(nameof(RentalChipRowViewModel.IsDuplicate), DuplicateBrush,
+                      tooltipPath: nameof(RentalChipRowViewModel.DuplicateTooltip))
             .Text("Chips.Col.Note", nameof(RentalChipRowViewModel.Note),
                   editPath: nameof(RentalChipRowViewModel.Note), minWidth: 240)
             // Read-only: who holds this chip (full names across all days, comma-separated). No editPath.

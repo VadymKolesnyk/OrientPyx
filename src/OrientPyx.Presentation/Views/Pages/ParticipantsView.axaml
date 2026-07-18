@@ -48,7 +48,7 @@
                 <!-- Import group: UOF XML file + CSV/Excel. -->
                 <Button Classes="ghost">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <controls:Icon Kind="Upload" Size="15" />
+                        <controls:Icon Kind="Download" Size="15" />
                         <TextBlock Text="{Binding Localization[Participants.ImportMenu]}" />
                         <controls:Icon Kind="ChevronDown" Size="12" />
                     </StackPanel>
@@ -67,7 +67,7 @@
                                         <DockPanel>
                                             <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="Ctrl+I" />
                                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <controls:Icon Kind="Upload" Size="16" />
+                                                <controls:Icon Kind="Download" Size="16" />
                                                 <TextBlock Text="{Binding Localization[Participants.Import]}" />
                                             </StackPanel>
                                         </DockPanel>
@@ -94,7 +94,7 @@
                      and printing the statement on A4. Each menu handler closes the flyout then runs its task. -->
                 <Button Classes="ghost">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <controls:Icon Kind="Download" Size="15" />
+                        <controls:Icon Kind="Upload" Size="15" />
                         <TextBlock Text="{Binding Localization[Participants.ExportMenu]}" />
                         <controls:Icon Kind="ChevronDown" Size="12" />
                     </StackPanel>

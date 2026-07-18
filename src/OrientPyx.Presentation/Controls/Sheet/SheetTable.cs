@@ -1695,6 +1695,35 @@ public sealed class SheetTable : TemplatedControl
                     cell[!ToolTip.TipProperty] =
                         new Avalonia.Data.Binding(nameof(ParticipantRosterRowViewModel.AgeViolationTooltip));
                 }
+                else if (column.CellBackgroundBrushPath is { Length: > 0 } cellBrushPath)
+                {
+                    // Per-column cell tint where the row picks the brush (e.g. the finish-read «Id» cell:
+                    // red for a missing punch, yellow for any other bad status). Composes with a whole-row
+                    // tint the same way the bool cell-tint does — the row tint wins so a flagged row (e.g.
+                    // an unknown chip's red) stays uniform, and the row-chosen brush only fills in otherwise.
+                    if (RowHighlightPath is { Length: > 0 } rowPath)
+                    {
+                        var multi = new Avalonia.Data.MultiBinding
+                        {
+                            Converter = Behaviors.CellBrushOrRowHighlight.Instance
+                        };
+                        multi.Bindings.Add(new Avalonia.Data.Binding(rowPath));
+                        multi.Bindings.Add(new Avalonia.Data.Binding(cellBrushPath)
+                        {
+                            Converter = column.CellBackgroundBrushConverter
+                        });
+                        cell[!TemplatedControl.BackgroundProperty] = multi;
+                    }
+                    else
+                    {
+                        cell[!TemplatedControl.BackgroundProperty] = new Avalonia.Data.Binding(cellBrushPath)
+                        {
+                            Converter = column.CellBackgroundBrushConverter
+                        };
+                    }
+                    if (column.CellBackgroundTooltipPath is { Length: > 0 } brushTipPath)
+                        cell[!ToolTip.TipProperty] = new Avalonia.Data.Binding(brushTipPath);
+                }
                 else if (column.CellBackgroundPath is { Length: > 0 } cellTintPath)
                 {
                     // Per-column cell tint (e.g. the amber "collect this rental chip" cell on the finish-read

@@ -19,6 +19,9 @@ namespace OrientPyx.BusinessLogic.Services;
 ///   correct by the weekday-in-parentheses plus the monotonic fallback (see <see cref="ReadoutTimeResolver"/>).</item>
 ///   <item>A wholly-empty punch triplet is a MISSED punch (reader-station glitch) — skipped, not treated as
 ///   the end of the list — so later punches are still read.</item>
+///   <item>Sport Time sometimes exports the <b>same layout with no header row</b> (the first line is already
+///   a data row). We detect that — the SI-Card position holds a number, not the column name — and fall back
+///   to the fixed column positions of this format, reading every line as data.</item>
 /// </list>
 /// The bytes are windows-1251 in practice; decoding to text is the caller's job (this parses text only).
 /// </summary>
@@ -32,6 +35,12 @@ public sealed class SportTimeCsvReadoutParser : IReadoutParser
     private const string StartTimeColumn = "start time";
     private const string FinishTimeColumn = "Finish time";
     private const string PunchCountColumn = "No. of punches";
+
+    // The fixed column positions of the Sport Time export, used when the file carries NO header row (the
+    // reader occasionally omits it). They match the named layout exactly:
+    //   No.;read at;SI-Card;St no;cat.;…;start time;FI_CN;FI_DOW;Finish time;No. of punches;1.CN;1.DOW;1.Time;…
+    // so "No. of punches" is at index 28 and the first punch triplet begins at 29.
+    private static readonly ColumnLayout HeaderlessLayout = new(Chip: 2, Start: 24, Finish: 27, FirstPunch: 29);
 
     // A synthetic base date the file itself doesn't carry. Its weekday is shifted to match the finish's
     // parenthesised DOW when there is one, so weekday-relative dating works; otherwise it's arbitrary and
@@ -48,8 +57,19 @@ public sealed class SportTimeCsvReadoutParser : IReadoutParser
         if (firstLine is null)
             return false;
 
-        // A real Sport Time readout names the SI-Card column in its header.
-        return IndexOf(SplitLine(firstLine), ChipColumn) >= 0;
+        var fields = SplitLine(firstLine);
+        // A real Sport Time readout either names the SI-Card column in its header, or — when the reader
+        // omitted the header — begins straight with a data row whose fixed SI-Card position holds a chip
+        // number. Accept both.
+        return IndexOf(fields, ChipColumn) >= 0 || IsHeaderlessDataRow(fields);
+    }
+
+    // True when the first line is a Sport Time DATA row rather than a header: the chip-number position holds
+    // an all-digit value. A header row has the text "SI-Card" there instead, so this cleanly tells them apart.
+    private static bool IsHeaderlessDataRow(IReadOnlyList<string> fields)
+    {
+        var chip = Field(fields, HeaderlessLayout.Chip).Trim();
+        return chip.Length > 0 && chip.All(char.IsDigit);
     }
 
     public ChipReadData Parse(string content)
@@ -62,20 +82,30 @@ public sealed class SportTimeCsvReadoutParser : IReadoutParser
         if (lines.Length == 0)
             throw new ReadoutFormatException("The file has no rows.");
 
-        var header = SplitLine(lines[0]);
-        var layout = new ColumnLayout(
-            Chip: IndexOf(header, ChipColumn),
-            Start: IndexOf(header, StartTimeColumn),
-            Finish: IndexOf(header, FinishTimeColumn),
-            FirstPunch: NextOrNone(IndexOf(header, PunchCountColumn)));
+        // The header (or, headerless, the first data row) is the first non-blank line — Sport Time sometimes
+        // prefixes the file with an empty line, so we can't assume it's lines[0].
+        var headerIndex = FirstNonBlankIndex(lines);
+        var header = headerIndex >= 0 ? SplitLine(lines[headerIndex]) : [];
+        var hasHeader = IndexOf(header, ChipColumn) >= 0;
 
-        if (layout.Chip < 0)
+        // With a header, columns are matched by name (order can vary); without one, the reader dropped the
+        // header row and we fall back to this format's fixed positions and read that first line as data too.
+        var layout = hasHeader
+            ? new ColumnLayout(
+                Chip: IndexOf(header, ChipColumn),
+                Start: IndexOf(header, StartTimeColumn),
+                Finish: IndexOf(header, FinishTimeColumn),
+                FirstPunch: NextOrNone(IndexOf(header, PunchCountColumn)))
+            : HeaderlessLayout;
+
+        if (hasHeader && layout.Chip < 0)
             throw new ReadoutFormatException(
                 $"The file has no '{ChipColumn}' header column; it is not a Sport Time readout export.");
 
         var records = new List<ChipReadRecord>();
-        // The first line is the header, so data starts on the second line.
-        for (var i = 1; i < lines.Length; i++)
+        // With a header, data starts after the header line; a headerless file is all data (blank lines below
+        // are skipped in the loop). Either way, start at the header line and skip it only when it's a header.
+        for (var i = hasHeader ? headerIndex + 1 : 0; i < lines.Length; i++)
         {
             var line = lines[i].TrimEnd('\r');
             if (line.Length == 0)
@@ -200,11 +230,27 @@ public sealed class SportTimeCsvReadoutParser : IReadoutParser
 
     // --- CSV helpers ---------------------------------------------------------
 
+    // The first non-blank line — the header (or, for a headerless export, the first data row). Sport Time
+    // sometimes prefixes the file with an empty line, so leading blanks are skipped rather than treated as
+    // "no content".
     private static string? FirstLine(string content)
     {
-        var newline = content.IndexOf('\n');
-        var line = (newline < 0 ? content : content[..newline]).TrimStart('﻿').TrimEnd('\r');
-        return line.Length == 0 ? null : line;
+        foreach (var raw in content.TrimStart('﻿').Split('\n'))
+        {
+            var line = raw.TrimEnd('\r');
+            if (line.Length != 0)
+                return line;
+        }
+        return null;
+    }
+
+    // Index of the first line that isn't empty (ignoring a trailing '\r'), or -1 if every line is blank.
+    private static int FirstNonBlankIndex(IReadOnlyList<string> lines)
+    {
+        for (var i = 0; i < lines.Count; i++)
+            if (lines[i].TrimEnd('\r').Length != 0)
+                return i;
+        return -1;
     }
 
     private static string[] SplitLine(string line) => line.TrimEnd('\r').Split(Delimiter);

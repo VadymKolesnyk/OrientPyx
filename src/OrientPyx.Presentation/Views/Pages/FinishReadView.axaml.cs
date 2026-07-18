@@ -1,5 +1,7 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -37,6 +39,38 @@ public partial class FinishReadView : UserControl
         var path = await PickCsvAsync();
         if (path is not null)
             _vm.AutoReadFilePath = path;
+    }
+
+    // Opens the watched file's location in the OS file manager: on Windows, Explorer with the file
+    // pre-selected. If the file doesn't exist yet (the poller creates it on first read) we open its parent
+    // folder instead; if that's missing too, nothing happens. Best-effort — never throws at the operator.
+    private void OnRevealFileClick(object? sender, RoutedEventArgs e)
+    {
+        var path = _vm?.AutoReadFilePath;
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        try
+        {
+            // File present: highlight it in Explorer (Windows). Otherwise (or on other OSes) just open the
+            // parent folder so the operator can see where the reader is expected to write.
+            if (File.Exists(path) && OperatingSystem.IsWindows())
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"")
+                {
+                    UseShellExecute = true
+                });
+                return;
+            }
+
+            var folder = Path.GetDirectoryName(path);
+            if (!string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder))
+                Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true });
+        }
+        catch
+        {
+            // Reveal is a convenience; a launch failure must not disrupt readout.
+        }
     }
 
     private async Task<string?> PickCsvAsync()
@@ -201,6 +235,11 @@ public partial class FinishReadView : UserControl
 
         var builder = new SheetColumnBuilder(_vm.Localization)
             .Text("FinishRead.Col.Id", nameof(FinishReadRowViewModel.Order), minWidth: 60)
+            // Tint the sequence-number («Id») cell from the finish status: red for a missing punch (MP),
+            // yellow for any other non-OK status (OVT/DNF/DNS/DSQ), with a tooltip explaining why — so a
+            // problem read is spotted at a glance at the finish desk.
+            .CellTintByBrush(nameof(FinishReadRowViewModel.Highlight), StatusHighlightToBrush,
+                             nameof(FinishReadRowViewModel.StatusHighlightTooltip))
             .Custom("FinishRead.Col.Chip", BuildChipCell, minWidth: 120,
                     sortPath: nameof(FinishReadRowViewModel.ChipNumber))
             // Tint the whole chip cell amber when it's a rental chip due for collection (the holder's last
@@ -292,6 +331,21 @@ public partial class FinishReadView : UserControl
     // Amber tint painted over a whole chip cell whose rental chip is due for collection (the holder's last
     // day with it). Light enough that the theme's chip text stays legible over it in both themes.
     private static readonly ISolidColorBrush CollectRentalBrush = new SolidColorBrush(Color.FromRgb(0xF6, 0xC3, 0x43));
+
+    // Fills painted over the whole «Id» cell by finish status: red for a missing punch (MP), amber-yellow
+    // for any other bad status. Muted enough that the dark sequence number stays legible in both themes.
+    private static readonly ISolidColorBrush MissingPunchBrush = new SolidColorBrush(Color.FromRgb(0xE5, 0x7A, 0x7A));
+    private static readonly ISolidColorBrush OtherIssueBrush = new SolidColorBrush(Color.FromRgb(0xF2, 0xD4, 0x6B));
+
+    // Maps the row's status-highlight kind to the «Id» cell fill (null ⇒ no tint). Kept in the view so
+    // brushes stay out of the row VM (which exposes only the StatusHighlight enum).
+    private static readonly IValueConverter StatusHighlightToBrush =
+        new FuncValueConverter<StatusHighlight, IBrush?>(h => h switch
+        {
+            StatusHighlight.MissingPunch => MissingPunchBrush,
+            StatusHighlight.OtherIssue => OtherIssueBrush,
+            _ => null,
+        });
 
     // Read-only chip label, bold-red when the number is NOT a rental chip (same highlight as the
     // participants table; Text() only wires it on editable columns, so it's set here directly). The amber

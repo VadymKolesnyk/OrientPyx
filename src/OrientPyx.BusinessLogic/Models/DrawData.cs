@@ -31,16 +31,32 @@ public sealed record DrawPrepData(IReadOnlyList<DrawGroup> Groups);
 /// <summary>One group on the day, with its members and the first control point of its course.</summary>
 /// <param name="GroupId">The competition-level group id.</param>
 /// <param name="Name">The group's display name (e.g. "Ч21").</param>
-/// <param name="FirstControl">First control-point code parsed from the course order, "" when none.</param>
+/// <param name="FirstControl">First control-point code parsed from the course order, "" when none. The
+/// representative opening control used to cluster start groups into lanes; for scatter it is the first
+/// control of the first variant. Clash detection uses <see cref="FirstControls"/> instead.</param>
 /// <param name="CourseControls">The full ordered control sequence parsed from the course order (start/finish
-/// markers stripped), used to detect groups that run an identical distance. Empty when the order is blank.</param>
-/// <param name="Members">The group's competitors on this day, draw order is decided by the page.</param>
+/// and disabled markers stripped), used to detect groups that run an identical distance. Empty when the order
+/// is blank. For scatter this is empty — a scatter group has several valid orders, so "identical full course"
+/// is judged variant-set to variant-set on the page, not on one flat sequence.</param>
+/// <param name="ChecksClash">True when this group's course is a fixed order (set course / mixed / scatter) so
+/// the draw should warn when it starts on the same minute as another group sharing an opening control. False
+/// for the free-order formats (за вибором / рогейн / score-by-time), where runners pick their own route and
+/// there is no meaningful "first control" — the draw ignores clash checks for them entirely.</param>
+/// <param name="FirstControls">The set of opening controls to test for a shared-first-control clash: one entry
+/// for a fixed course, one per variant for scatter (deduplicated). Empty when <see cref="ChecksClash"/> is
+/// false or the course order is blank.</param>
+/// <param name="Variants">For a scatter group, each variant's full ordered control sequence (start/finish and
+/// disabled markers stripped), used to flag two scatter groups that run the identical set of variants as a
+/// same-course clash. Empty for non-scatter groups.</param>
 public sealed record DrawGroup(
     Guid GroupId,
     string Name,
     string FirstControl,
     IReadOnlyList<string> CourseControls,
-    IReadOnlyList<DrawParticipant> Members);
+    IReadOnlyList<DrawParticipant> Members,
+    bool ChecksClash = false,
+    IReadOnlyList<string>? FirstControls = null,
+    IReadOnlyList<IReadOnlyList<string>>? Variants = null);
 
 /// <summary>
 /// One competitor in the draw, carrying just what the algorithm needs: the participant-day link id (so the

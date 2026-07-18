@@ -40,3 +40,23 @@ public sealed class CellHighlight : IValueConverter, IMultiValueConverter
         return cellFlag && parameter is IBrush brush ? brush : Brushes.Transparent;
     }
 }
+
+/// <summary>
+/// Composes a whole-row tint with a per-cell brush the row itself chose. Given <c>[rowFlag, cellBrush]</c>:
+/// the row flag wins (the row's red <see cref="RowHighlight"/> brush) so a flagged row stays uniform, and
+/// otherwise the cell paints the row-supplied brush (or transparent when the row supplied none). Used by a
+/// column with a <see cref="OrientPyx.Presentation.Controls.SheetColumn.CellBackgroundBrushPath"/> — where
+/// the cell needs more than one colour (e.g. red for MP, yellow for any other bad finish status).
+/// </summary>
+public sealed class CellBrushOrRowHighlight : IMultiValueConverter
+{
+    public static readonly CellBrushOrRowHighlight Instance = new();
+
+    public object Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var rowFlag = values.Count > 0 && values[0] is true;
+        if (rowFlag)
+            return RowHighlight.FlagBrush;
+        return values.Count > 1 && values[1] is IBrush brush ? brush : Brushes.Transparent;
+    }
+}

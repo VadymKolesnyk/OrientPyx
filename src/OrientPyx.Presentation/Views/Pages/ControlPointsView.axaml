@@ -40,7 +40,7 @@
                 <Button Name="ImportButton" Classes="ghost" Click="OnImportClick"
                         ToolTip.Tip="{Binding Localization[Import.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <controls:Icon Kind="Upload" Size="15" />
+                        <controls:Icon Kind="Download" Size="15" />
                         <TextBlock Text="{Binding Localization[Import]}" />
                     </StackPanel>
                 </Button>

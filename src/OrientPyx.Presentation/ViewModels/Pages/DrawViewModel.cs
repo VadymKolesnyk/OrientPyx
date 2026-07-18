@@ -340,24 +340,28 @@ public sealed partial class DrawViewModel : PageViewModelBase
         for (var a = 0; a < all.Count; a++)
         {
             var (ca, ia) = all[a];
-            if (ia.MemberCount == 0)
+            // A group with no members occupies no slots; a free-order format (за вибором / рогейн /
+            // score-by-time) has no meaningful opening control — neither takes part in clash checks.
+            if (ia.MemberCount == 0 || !ia.ChecksClash)
                 continue;
             for (var b = a + 1; b < all.Count; b++)
             {
                 var (cb, ib) = all[b];
-                if (cb == ca || ib.MemberCount == 0)
+                if (cb == ca || ib.MemberCount == 0 || !ib.ChecksClash)
                     continue; // same column never collides — its groups are sequential
                 if (!SlotsOverlap(ia, ib))
                     continue;
 
                 var sameCourse = SameCourse(ia, ib);
+                // The opening controls the two groups share: one code for a fixed course, possibly several
+                // across scatter variants. What lights the «КП N» warning red (and is named in the dialog).
+                var sharedFirst = SharedFirstControls(ia, ib);
                 if (sameCourse)
                 {
                     ia.CourseClash = true;
                     ib.CourseClash = true;
                 }
-                else if (!string.IsNullOrEmpty(ia.FirstControl) &&
-                         string.Equals(ia.FirstControl, ib.FirstControl, StringComparison.OrdinalIgnoreCase))
+                else if (sharedFirst.Count > 0)
                 {
                     ia.FirstControlClash = true;
                     ib.FirstControlClash = true;
@@ -367,15 +371,30 @@ public sealed partial class DrawViewModel : PageViewModelBase
                     continue; // overlapping in time but nothing shared — not a clash
                 }
 
+                var sharedLabel = string.Join(", ", sharedFirst);
                 var (from, to) = OverlapWindow(ia, ib, start, interval);
                 // Each is the other's peer, recorded in the other's lane.
-                peers[ia].Add(new DrawClashPeer(ib, cb + 1, sameCourse, from, to));
-                peers[ib].Add(new DrawClashPeer(ia, ca + 1, sameCourse, from, to));
+                peers[ia].Add(new DrawClashPeer(ib, cb + 1, sameCourse, sharedLabel, from, to));
+                peers[ib].Add(new DrawClashPeer(ia, ca + 1, sameCourse, sharedLabel, from, to));
             }
         }
 
         foreach (var (_, item) in all)
             item.ClashPeers = peers[item];
+    }
+
+    // The opening controls two groups share, case-insensitive and deduplicated in the first group's order. For
+    // a fixed course this is at most one code; for scatter it is every first-of-variant control they have in
+    // common (option "спільне будь-яке перше КП варіантів"). Empty when they open on entirely different controls.
+    private static IReadOnlyList<string> SharedFirstControls(DrawGroupItemViewModel a, DrawGroupItemViewModel b)
+    {
+        if (a.FirstControls.Count == 0 || b.FirstControls.Count == 0)
+            return [];
+        var bSet = new HashSet<string>(b.FirstControls, StringComparer.OrdinalIgnoreCase);
+        return a.FirstControls
+            .Where(bSet.Contains)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     // Formats the inclusive window of start times two overlapping groups share, from their overlapping slot
@@ -399,8 +418,14 @@ public sealed partial class DrawViewModel : PageViewModelBase
         return a.FirstSlot < bEnd && b.FirstSlot < aEnd;
     }
 
+    // True when the two groups run the identical distance — the strong clash (whole chip red). For scatter that
+    // means the identical SET of variant orders (a runner on either could be sent down the same order); for a
+    // fixed course it means the identical control sequence.
     private static bool SameCourse(DrawGroupItemViewModel a, DrawGroupItemViewModel b)
     {
+        if (a.Variants.Count > 0 || b.Variants.Count > 0)
+            return SameVariantSet(a.Variants, b.Variants);
+
         var ca = a.CourseControls;
         var cb = b.CourseControls;
         if (ca.Count == 0 || ca.Count != cb.Count)
@@ -410,6 +435,26 @@ public sealed partial class DrawViewModel : PageViewModelBase
                 return false;
         return true;
     }
+
+    // True when two scatter groups have the identical set of variant orders (order of the variants in the list
+    // ignored; each variant compared as an ordered control sequence). False if either side has no variants.
+    private static bool SameVariantSet(
+        IReadOnlyList<IReadOnlyList<string>> a, IReadOnlyList<IReadOnlyList<string>> b)
+    {
+        if (a.Count == 0 || a.Count != b.Count)
+            return false;
+        var keys = a.Select(VariantKey).ToList();
+        var otherKeys = b.Select(VariantKey).ToList();
+        keys.Sort(StringComparer.OrdinalIgnoreCase);
+        otherKeys.Sort(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < keys.Count; i++)
+            if (!string.Equals(keys[i], otherKeys[i], StringComparison.OrdinalIgnoreCase))
+                return false;
+        return true;
+    }
+
+    private static string VariantKey(IReadOnlyList<string> controls) =>
+        string.Join("→", controls.Select(c => c.Trim()));
 
     // ── Commands ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -464,15 +509,18 @@ public sealed partial class DrawViewModel : PageViewModelBase
         string L(string key) => Localization.Get(key);
 
         // Title + intro: strongest clash type wins (identical course is stronger than a shared first control).
+        // The shared opening controls named in the intro are the union of what every first-control peer shares.
         var anySameCourse = item.CourseClash;
+        var sharedFirst = string.Join(", ", item.ClashPeers
+            .Where(p => !p.SameCourse && p.SharedControls.Length > 0)
+            .SelectMany(p => p.SharedControls.Split(", ", StringSplitOptions.RemoveEmptyEntries))
+            .Distinct(StringComparer.OrdinalIgnoreCase));
         var title = string.Format(L("Draw.Clash.Title"), item.Name);
         var intro = anySameCourse
             ? string.Format(L("Draw.Clash.Intro.Course"), item.Name)
-            : string.Format(L("Draw.Clash.Intro.FirstControl"), item.Name, item.FirstControl);
+            : string.Format(L("Draw.Clash.Intro.FirstControl"), item.Name, sharedFirst);
 
-        var courseLabel = item.CourseControls.Count > 0
-            ? $"{L("Draw.Clash.CoursePrefix")} {string.Join(" → ", item.CourseControls)}"
-            : string.Empty;
+        var courseLabel = CourseLabel(item, L);
 
         var entries = new List<DrawClashEntry>();
         foreach (var peer in item.ClashPeers)
@@ -483,18 +531,36 @@ public sealed partial class DrawViewModel : PageViewModelBase
             {
                 peer.SameCourse
                     ? L("Draw.Clash.Peer.SameCourse")
-                    : string.Format(L("Draw.Clash.Peer.SameFirst"), item.FirstControl),
+                    : string.Format(L("Draw.Clash.Peer.SameFirst"), peer.SharedControls),
             };
             if (!string.IsNullOrEmpty(peer.OverlapFrom))
                 details.Add(string.Format(L("Draw.Clash.Peer.Window"), peer.OverlapFrom, peer.OverlapTo));
-            if (peer.Group.CourseControls.Count > 0)
-                details.Add($"{L("Draw.Clash.CoursePrefix")} {string.Join(" → ", peer.Group.CourseControls)}");
+            var peerCourse = CourseLabel(peer.Group, L);
+            if (peerCourse.Length > 0)
+                details.Add(peerCourse);
 
             entries.Add(new DrawClashEntry(heading, details));
         }
 
         await _dialogs.ShowDrawClashHelpAsync(
             new DrawClashHelpViewModel(Localization, title, intro, courseLabel, entries));
+    }
+
+    // The "Дистанція: …" line for a group in the clash dialog. A fixed course lists its control sequence; a
+    // scatter group lists each variant order on its own line (so the several valid orders are all visible).
+    private static string CourseLabel(DrawGroupItemViewModel item, Func<string, string> L)
+    {
+        if (item.Variants.Count > 0)
+        {
+            var orders = item.Variants
+                .Where(v => v.Count > 0)
+                .Select(v => string.Join(" → ", v));
+            return $"{L("Draw.Clash.CoursePrefix")} {string.Join(" | ", orders)}";
+        }
+
+        return item.CourseControls.Count > 0
+            ? $"{L("Draw.Clash.CoursePrefix")} {string.Join(" → ", item.CourseControls)}"
+            : string.Empty;
     }
 
     /// <summary>

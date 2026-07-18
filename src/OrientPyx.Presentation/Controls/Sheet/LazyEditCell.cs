@@ -125,6 +125,14 @@ internal abstract class LazyEditCell : Decorator
     protected virtual void DetachEditor(Control editor) { }
 
     /// <summary>
+    /// Whether the cell may enter edit mode for the current row. Default: always. A subclass with a
+    /// per-row "enabled" binding overrides this so a disabled cell (e.g. a scatter group's read-only
+    /// course-order cell) stays a resting label on click/focus/typing rather than materialising a
+    /// disabled editor.
+    /// </summary>
+    protected virtual bool CanActivate() => true;
+
+    /// <summary>
     /// Called after a click-activated editor has been focused, with the click point in this cell's
     /// coordinate space. A text editor moves its caret to the nearest character; other editors no-op.
     /// </summary>
@@ -179,6 +187,10 @@ internal abstract class LazyEditCell : Decorator
     // caretAt is the click point (cell space) so a text editor can land its caret there.
     private void Activate(bool open, Point? caretAt = null)
     {
+        // A cell whose per-row "enabled" binding is false never edits — stay the resting label.
+        if (_editor is null && !CanActivate())
+            return;
+
         var editor = _editor;
         if (editor is null)
         {

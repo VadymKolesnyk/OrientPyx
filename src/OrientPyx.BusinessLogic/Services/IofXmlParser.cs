@@ -353,6 +353,13 @@ public sealed class IofXmlParser : IIofXmlParser
     private static IofCourse BuildCourse(
         string name, IReadOnlyList<ParsedVariation> variations, IReadOnlySet<string> startFinishCodes)
     {
+        // Normalise each running order first: drop any start/finish box that isn't the very first or last
+        // code (some exports scatter S/F markers mid-course), then collapse consecutive duplicate codes.
+        // So "31 32 S1 F1 32 33" → "31 32 33".
+        variations = variations
+            .Select(v => v with { Codes = CleanCourseCodes(v.Codes, startFinishCodes) })
+            .ToList();
+
         // De-duplicate by the ordered RUNNING sequence (start/finish markers excluded), keeping first-seen
         // order: two variations that differ only by whether they list the start/finish box are the same
         // running order, not distinct petals, and must not read as a scatter course.
@@ -407,6 +414,31 @@ public sealed class IofXmlParser : IIofXmlParser
             ControlCodes = first.Codes,
             Variants = variants
         };
+    }
+
+    /// <summary>
+    /// Cleans one running order for storage: removes every start/finish code that is <b>not</b> the first or
+    /// last code (interior S/F markers some exports emit between real controls), then collapses runs of the
+    /// same code left behind. Example: <c>31 32 S1 F1 32 33</c> → <c>31 32 33</c>. A leading start / trailing
+    /// finish box is preserved (downstream scoring filters those out by day start/finish code anyway).
+    /// </summary>
+    private static IReadOnlyList<string> CleanCourseCodes(
+        IReadOnlyList<string> codes, IReadOnlySet<string> startFinishCodes)
+    {
+        var kept = new List<string>(codes.Count);
+        for (var i = 0; i < codes.Count; i++)
+        {
+            var isEdge = i == 0 || i == codes.Count - 1;
+            if (!isEdge && startFinishCodes.Contains(codes[i]))
+                continue; // drop an interior start/finish marker
+
+            // Collapse consecutive duplicates (they arise once the interior S/F between two equal codes is gone).
+            if (kept.Count > 0 && string.Equals(kept[^1], codes[i], StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            kept.Add(codes[i]);
+        }
+        return kept;
     }
 
     // A, B, …, Z, AA, AB, … for the given 0-based index (fallback variant code when the file names none).

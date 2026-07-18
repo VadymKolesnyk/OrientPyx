@@ -280,13 +280,19 @@ public sealed partial class GroupsViewModel : PageViewModelBase
 
             await Task.Run(() => _editor.SaveScatterVariantsAsync(groupId, rows, token), token);
 
-            // Keep the grid's «N варіантів дистанції» cell in sync with the saved (non-blank) count.
-            var count = rows.Count(r =>
-                !string.IsNullOrWhiteSpace(r.Code) || !string.IsNullOrWhiteSpace(r.CourseOrder));
+            // Keep the grid's «N варіантів дистанції» cell in sync with the saved (non-blank) count, and its
+            // control-count cell with the LONGEST variant (that's what a scatter group reports there).
+            var kept = rows
+                .Where(r => !string.IsNullOrWhiteSpace(r.Code) || !string.IsNullOrWhiteSpace(r.CourseOrder))
+                .ToList();
+            var count = kept.Count;
+            var counter = _strategies.For(DisciplineType.Scatter);
+            var maxControls = kept.Count > 0 ? kept.Max(r => counter.ControlCount(r.CourseOrder)) : 0;
             var target = Groups.FirstOrDefault(g => g.GroupId == groupId);
             if (target is not null)
             {
                 target.ScatterVariantCount = count;
+                target.ScatterMaxControlCount = maxControls;
                 if (ReferenceEquals(target, SelectedGroup))
                     ScatterHeader = string.Format(Localization.Get("Groups.Scatter.Header"), count);
             }

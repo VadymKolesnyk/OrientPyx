@@ -32,6 +32,18 @@ public sealed partial class RentalChipRowViewModel : ObservableObject
     [ObservableProperty]
     private string _assignedTo = string.Empty;
 
+    /// <summary>
+    /// True when this row's number is a duplicate of another chip in the same competition (numbers must
+    /// be unique). Set by the page after every number edit; drives the red cell tint so the user sees the
+    /// collision — a duplicate is never persisted (the save reverts it). Never triggers a save itself.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DuplicateTooltip))]
+    private bool _isDuplicate;
+
+    /// <summary>Hover text for the red duplicate tint; empty (no tooltip) unless the number is a duplicate.</summary>
+    public string DuplicateTooltip => IsDuplicate ? Localization.Get("Chips.Duplicate.Tooltip") : string.Empty;
+
     public RentalChipRowViewModel(
         RentalChip chip,
         ILocalizationService localization,

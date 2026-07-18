@@ -65,17 +65,26 @@
                       ColumnSpacing="10" RowSpacing="10"
                       IsVisible="{Binding IsAutoReadExpanded}">
 
-                    <!-- File path + picker -->
+                    <!-- File path + picker. The TextBox takes the remaining width and the buttons dock to
+                         its right, so the row stays inside column 0 instead of overflowing into the stepper. -->
                     <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Bottom">
                         <TextBlock Text="{Binding Localization[FinishRead.AutoRead.File]}" Classes="label" />
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBox MinWidth="320"
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                            <TextBox Grid.Column="0" MinWidth="160"
                                      Text="{Binding AutoReadFilePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      PlaceholderText="—" />
-                            <Button Classes="ghost" Click="OnPickFileClick"
+                            <Button Grid.Column="1" Classes="ghost"
+                                    Click="OnPickFileClick"
                                     VerticalAlignment="Bottom"
                                     Content="{Binding Localization[FinishRead.AutoRead.Pick]}" />
-                        </StackPanel>
+                            <Button Grid.Column="2" Classes="ghost"
+                                    Click="OnRevealFileClick"
+                                    VerticalAlignment="Bottom"
+                                    Padding="8,0"
+                                    ToolTip.Tip="{Binding Localization[FinishRead.AutoRead.Reveal.Tooltip]}">
+                                <controls:Icon Kind="FolderOpen" Size="16" />
+                            </Button>
+                        </Grid>
                     </StackPanel>
 
                     <!-- Interval stepper -->

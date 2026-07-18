@@ -17,6 +17,12 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
 
     public virtual bool UsesControlPointPoints => false;
 
+    /// <summary>
+    /// Free-order formats don't check start-control clashes by default; the fixed-order disciplines
+    /// (set course, mixed, scatter) override this to opt in.
+    /// </summary>
+    public virtual bool ChecksStartControlClash => false;
+
     /// <summary>No automatic over-time penalty by default; rogaine overrides this with 1 бал/min.</summary>
     public virtual decimal? DefaultPenaltyPerMinute => null;
 

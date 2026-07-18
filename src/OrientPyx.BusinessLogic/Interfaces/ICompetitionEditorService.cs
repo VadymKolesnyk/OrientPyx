@@ -780,7 +780,16 @@ public readonly record struct FinishReadoutImportResult(int Added, int Skipped, 
 /// <summary>Outcome of a group import, for reporting back to the user.</summary>
 /// <param name="Added">How many groups were newly attached to the day.</param>
 /// <param name="Updated">How many existing groups on the day were updated (update mode only).</param>
-public readonly record struct GroupImportResult(int Added, int Updated);
+/// <param name="ScatterFallbackGroups">
+/// Names of groups that, on a Scatter («розсіювання») day, imported a course with only a single valid
+/// running order and so were forced to «Заданий напрямок» (SetCourse) instead of inheriting the day's
+/// Scatter default. Empty when the day is not Scatter or every group had genuine variants.
+/// </param>
+public readonly record struct GroupImportResult(
+    int Added, int Updated, IReadOnlyList<string> ScatterFallbackGroups)
+{
+    public GroupImportResult(int Added, int Updated) : this(Added, Updated, []) { }
+}
 
 /// <summary>Outcome of a control-point import, for reporting back to the user.</summary>
 /// <param name="Imported">How many control points ended up in the day after the import.</param>

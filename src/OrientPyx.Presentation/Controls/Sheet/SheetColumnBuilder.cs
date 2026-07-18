@@ -251,6 +251,25 @@ public sealed class SheetColumnBuilder
         return this;
     }
 
+    /// <summary>
+    /// Tints the whole cell of the column just added with a brush the row chooses: <paramref name="brushPath"/>
+    /// is an <see cref="Avalonia.Media.IBrush"/> (or null ⇒ no tint) property on the bound row, optionally with
+    /// a tooltip from <paramref name="tooltipPath"/>. Use when the cell needs more than one colour (e.g. the
+    /// finish-read «Id» cell: red for a missing punch, yellow for any other bad status). Fluent — chain it
+    /// right after the column it decorates. See <see cref="SheetColumn.CellBackgroundBrushPath"/>.
+    /// </summary>
+    public SheetColumnBuilder CellTintByBrush(
+        string brushPath,
+        Avalonia.Data.Converters.IValueConverter? brushConverter = null,
+        string? tooltipPath = null)
+    {
+        var column = _bands[^1].Columns[^1];
+        column.CellBackgroundBrushPath = brushPath;
+        column.CellBackgroundBrushConverter = brushConverter;
+        column.CellBackgroundTooltipPath = tooltipPath;
+        return this;
+    }
+
     private static Control ReadOnlyText(string displayPath, string? opacityPath)
     {
         var block = new TextBlock

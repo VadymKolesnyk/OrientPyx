@@ -17,6 +17,9 @@ public sealed class SetCourseStrategy : DisciplineStrategyBase
 
     public override DisciplineType Type => DisciplineType.SetCourse;
 
+    /// <summary>A prescribed order — the draw warns on a shared opening control.</summary>
+    public override bool ChecksStartControlClash => true;
+
     public override bool UsesColumn(GroupColumn column) => column switch
     {
         GroupColumn.CourseOrder => true,

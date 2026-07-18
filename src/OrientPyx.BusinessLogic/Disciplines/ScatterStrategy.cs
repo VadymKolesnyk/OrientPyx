@@ -25,6 +25,9 @@ public sealed class ScatterStrategy : DisciplineStrategyBase
 
     public override DisciplineType Type => DisciplineType.Scatter;
 
+    /// <summary>Each variant is a prescribed order — the draw warns on a shared opening control across variants.</summary>
+    public override bool ChecksStartControlClash => true;
+
     public override bool UsesColumn(GroupColumn column) => column switch
     {
         GroupColumn.CourseOrder => true,           // the representative (first) variant order

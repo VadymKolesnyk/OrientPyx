@@ -3,7 +3,8 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
-             mc:Ignorable="d" d:DesignWidth="420" d:DesignHeight="260"
+             xmlns:behaviors="using:OrientPyx.Presentation.Behaviors"
+             mc:Ignorable="d" d:DesignWidth="420" d:DesignHeight="360"
              x:Class="OrientPyx.Presentation.Views.Dialogs.AssignChipsView"
              x:DataType="dialogs:AssignChipsViewModel">
 
@@ -40,7 +41,19 @@
             <!-- Body -->
             <StackPanel Margin="22,18" Spacing="14">
 
-                <StackPanel Spacing="6">
+                <!-- Source mode: draw from the existing rental base, or add-and-assign a new range. -->
+                <StackPanel Spacing="8">
+                    <TextBlock Text="{Binding Localization[Participants.AssignChips.Source]}" Classes="label" />
+                    <RadioButton GroupName="ChipSource"
+                                 Content="{Binding Localization[Participants.AssignChips.Source.FromBase]}"
+                                 IsChecked="{Binding FromBase, Mode=TwoWay}" />
+                    <RadioButton GroupName="ChipSource"
+                                 Content="{Binding Localization[Participants.AssignChips.Source.Range]}"
+                                 IsChecked="{Binding IsRangeMode, Mode=TwoWay}" />
+                </StackPanel>
+
+                <!-- "From the rental base" body: the note filter dropdown. -->
+                <StackPanel Spacing="6" IsVisible="{Binding FromBase}">
                     <TextBlock Text="{Binding Localization[Participants.AssignChips.NoteFilter]}" Classes="label" />
                     <ComboBox ItemsSource="{Binding Notes}"
                               SelectedItem="{Binding SelectedNote, Mode=TwoWay}"
@@ -51,10 +64,36 @@
                             </DataTemplate>
                         </ComboBox.ItemTemplate>
                     </ComboBox>
+                    <TextBlock Text="{Binding Localization[Participants.AssignChips.Hint]}"
+                               Classes="subtitle" TextWrapping="Wrap" />
                 </StackPanel>
 
-                <TextBlock Text="{Binding Localization[Participants.AssignChips.Hint]}"
-                           Classes="subtitle" TextWrapping="Wrap" />
+                <!-- "Starting from a number" body: start number + count + optional note. The range is
+                     added to the rental base and then assigned in one step. -->
+                <StackPanel Spacing="14" IsVisible="{Binding IsRangeMode}">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="{Binding Localization[Chips.BulkAdd.Start]}" Classes="label" />
+                        <TextBox Text="{Binding StartNumber, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 behaviors:NumericInput.Digits="True"
+                                 PlaceholderText="9007400" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="{Binding Localization[Chips.BulkAdd.Count]}" Classes="label" />
+                        <TextBox Text="{Binding Count, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 behaviors:NumericInput.Digits="True"
+                                 PlaceholderText="100" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="{Binding Localization[Chips.BulkAdd.Note]}" Classes="label" />
+                        <TextBox Text="{Binding RangeNote, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 PlaceholderText="—" />
+                    </StackPanel>
+
+                    <TextBlock Text="{Binding Localization[Participants.AssignChips.RangeHint]}"
+                               Classes="subtitle" TextWrapping="Wrap" />
+                </StackPanel>
 
             </StackPanel>
 

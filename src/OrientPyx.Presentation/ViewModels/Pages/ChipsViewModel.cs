@@ -148,6 +148,30 @@ public sealed partial class ChipsViewModel : PageViewModelBase
                 row.AssignedTo = names;
             Chips.Add(row);
         }
+
+        RefreshDuplicates();
+    }
+
+    // Flags every row whose number collides with another chip (numbers must be unique per competition).
+    // Duplicates are never saved — UpdateRentalChipAsync reverts a colliding edit — but the DB revert is
+    // silent, so this drives a red cell tint that tells the user the number can't be used. Recomputed on
+    // load and after each number edit; blank numbers never count as duplicates.
+    private void RefreshDuplicates()
+    {
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in Chips)
+        {
+            var number = (row.Number ?? string.Empty).Trim();
+            if (number.Length == 0)
+                continue;
+            counts[number] = counts.TryGetValue(number, out var n) ? n + 1 : 1;
+        }
+
+        foreach (var row in Chips)
+        {
+            var number = (row.Number ?? string.Empty).Trim();
+            row.IsDuplicate = number.Length > 0 && counts.TryGetValue(number, out var n) && n > 1;
+        }
     }
 
     private RentalChipRowViewModel CreateRow(RentalChip chip)
@@ -158,9 +182,13 @@ public sealed partial class ChipsViewModel : PageViewModelBase
     }
 
     // Number edits can change row order (the store sorts by number), but reordering live would be
-    // jarring mid-edit; the page simply re-sorts on its next reload. Nothing to do here for now.
+    // jarring mid-edit; the page simply re-sorts on its next reload. A number change can, however, create
+    // or clear a duplicate, so re-flag collisions live for the red cell tint. (Ignore our own IsDuplicate
+    // write to avoid re-entering.)
     private void OnRowPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(RentalChipRowViewModel.Number))
+            RefreshDuplicates();
     }
 
     [RelayCommand]
@@ -250,6 +278,10 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         if (ReferenceEquals(SelectedChip, row))
             SelectedChip = GridSelection.NeighbourAfterRemoval(Chips, row);
         Chips.Remove(row);
+
+        // Removing one of a duplicate pair may leave the other as the sole holder of that number —
+        // re-flag collisions so the freed row loses its red tint without waiting for a reload.
+        RefreshDuplicates();
 
         var id = row.Id;
         _ = Task.Run(() => _editor.DeleteRentalChipAsync(id));

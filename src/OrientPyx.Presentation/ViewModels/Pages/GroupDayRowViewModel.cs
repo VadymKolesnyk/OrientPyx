@@ -44,6 +44,12 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanEditCourseOrderInline))]
     private int _scatterVariantCount;
 
+    // Control-point count of the LONGEST scatter variant. For a scatter group the grid's control-count cell
+    // reports this (the single-order field is unused), so it's kept live by the page's variants editor too.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ControlCountText))]
+    private int _scatterMaxControlCount;
+
     [ObservableProperty]
     private string _distanceText;
 
@@ -135,6 +141,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         _name = row.Name;
         _courseOrder = row.CourseOrder;
         _scatterVariantCount = row.ScatterVariantCount;
+        _scatterMaxControlCount = row.ScatterMaxControlCount;
         _distanceText = FormatDecimal(row.DistanceKm);
         _requiredCountText = FormatInt(row.RequiredControlCount);
         _penaltyText = FormatDecimal(row.PenaltyPerMinute);
@@ -222,10 +229,12 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
 
     /// <summary>
     /// Read-only count of control points, auto-computed from the course/control list for every
-    /// discipline.
+    /// discipline. A scatter («розсіювання») group has no single order — it reports the control count of
+    /// its longest variant instead (the single-order field is unused for scatter).
     /// </summary>
     public string ControlCountText =>
-        Strategy.ControlCount(CourseOrder).ToString(CultureInfo.InvariantCulture);
+        (IsScatter ? ScatterMaxControlCount : Strategy.ControlCount(CourseOrder))
+            .ToString(CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Read-only count of participants in this group on this day, computed by the editor service from

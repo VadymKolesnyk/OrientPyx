@@ -20,16 +20,39 @@ public sealed partial class ImportOptionsViewModel : ObservableObject
     private readonly TaskCompletionSource<ImportOptionsResult?> _completion =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+    // A pre-resolved, already-formatted message (e.g. one carrying an interpolated list); when set it is shown
+    // verbatim instead of resolving MessageKey. Used by callers that need a dynamic message.
+    private readonly string? _literalMessage;
+
     public ImportOptionsViewModel(
         ILocalizationService localization,
         string titleKey,
         string messageKey,
         IReadOnlyList<ImportOption> options,
         ImportScopeChoice? scope = null)
+        : this(localization, titleKey, options, scope, messageKey: messageKey, message: null)
+    {
+    }
+
+    /// <summary>Builds a plain message modal (no toggles) whose body is an already-resolved literal string —
+    /// for dynamic text that cannot be a static localization key. Title still resolves from
+    /// <paramref name="titleKey"/>.</summary>
+    public static ImportOptionsViewModel Plain(
+        ILocalizationService localization, string titleKey, string message) =>
+        new(localization, titleKey, options: [], scope: null, messageKey: string.Empty, message: message);
+
+    private ImportOptionsViewModel(
+        ILocalizationService localization,
+        string titleKey,
+        IReadOnlyList<ImportOption> options,
+        ImportScopeChoice? scope,
+        string messageKey,
+        string? message)
     {
         Localization = localization;
         TitleKey = titleKey;
         MessageKey = messageKey;
+        _literalMessage = message;
         Options = new ObservableCollection<ImportOption>(options);
         Scope = scope;
 
@@ -66,7 +89,7 @@ public sealed partial class ImportOptionsViewModel : ObservableObject
 
     public string Title => Localization.Get(TitleKey);
 
-    public string Message => Localization.Get(MessageKey);
+    public string Message => _literalMessage ?? Localization.Get(MessageKey);
 
     /// <summary>The toggles shown in the modal, in order. Bound to a checkbox list.</summary>
     public ObservableCollection<ImportOption> Options { get; }

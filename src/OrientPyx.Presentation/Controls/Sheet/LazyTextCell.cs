@@ -166,6 +166,18 @@ internal sealed class LazyTextCell : LazyEditCell
     // A text editor takes focus and the caret on entry; it never "opens" anything.
     protected override bool ShouldOpenOnActivate(Key key) => false;
 
+    // Honour a per-row enabled binding: a disabled cell (e.g. a scatter group's read-only course-order
+    // cell, which shows «N варіантів дистанції») must not enter edit mode at all — otherwise the click
+    // would materialise a disabled TextBox that steals focus. Read the bound bool off the row VM; a
+    // missing/unreadable path leaves the cell editable.
+    protected override bool CanActivate()
+    {
+        if (_options.EnabledPath is not { } path)
+            return true;
+        var property = DataContext?.GetType().GetProperty(path);
+        return property?.GetValue(DataContext) is not bool enabled || enabled;
+    }
+
     // The two-way TextBox binding writes to this path — snapshot it so Escape can revert.
     protected override string? EditSourcePath => _editPath;
 

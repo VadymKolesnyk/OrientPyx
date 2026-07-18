@@ -303,6 +303,21 @@ public sealed partial class SheetColumn : ObservableObject
     /// <summary>The brush painted over a cell whose <see cref="CellBackgroundPath"/> reads true.</summary>
     public Avalonia.Media.IBrush? CellBackgroundBrush { get; set; }
 
+    /// <summary>
+    /// Optional per-cell background tint chosen by the row itself: an <see cref="Avalonia.Media.IBrush"/>
+    /// (or null) property on the bound row painted over the whole cell — for a column that needs more than
+    /// one colour (e.g. red for MP, yellow for any other bad finish status). Takes precedence over
+    /// <see cref="CellBackgroundPath"/> when both are set. Pair with <see cref="CellBackgroundTooltipPath"/>.
+    /// </summary>
+    public string? CellBackgroundBrushPath { get; set; }
+
+    /// <summary>
+    /// Optional converter applied to <see cref="CellBackgroundBrushPath"/> so the bound property can be a
+    /// non-brush value (e.g. a status enum) the view maps to a brush — keeping brushes out of the row VM.
+    /// Null ⇒ the bound property is already an <see cref="Avalonia.Media.IBrush"/>.
+    /// </summary>
+    public Avalonia.Data.Converters.IValueConverter? CellBackgroundBrushConverter { get; set; }
+
     /// <summary>Optional string property read for the tinted cell's tooltip (empty ⇒ no tooltip). See <see cref="CellBackgroundPath"/>.</summary>
     public string? CellBackgroundTooltipPath { get; set; }
 

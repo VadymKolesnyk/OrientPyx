@@ -25,6 +25,18 @@ public sealed partial class DrawGroupItemViewModel : ObservableObject
     public IReadOnlyList<string> CourseControls => Group.CourseControls;
     public int MemberCount => Group.Members.Count;
 
+    /// <summary>True when this group's discipline runs a prescribed order, so it takes part in the draw's
+    /// shared-first-control / identical-course clash checks. False for the free-order formats (за вибором /
+    /// рогейн / score-by-time), which the page skips entirely.</summary>
+    public bool ChecksClash => Group.ChecksClash;
+
+    /// <summary>The opening controls to test for a shared-first-control clash: one for a fixed course, one per
+    /// variant for scatter (deduplicated). Empty when the group opts out of clash checks or has no course.</summary>
+    public IReadOnlyList<string> FirstControls => Group.FirstControls ?? [];
+
+    /// <summary>For a scatter group, every variant's full ordered controls; empty for non-scatter groups.</summary>
+    public IReadOnlyList<IReadOnlyList<string>> Variants => Group.Variants ?? [];
+
     /// <summary>"КП 31"-style first-control label, blank when the course order had no control.</summary>
     public string FirstControlLabel => string.IsNullOrEmpty(FirstControl) ? string.Empty : $"КП {FirstControl}";
 
@@ -131,11 +143,14 @@ public sealed partial class DrawGroupItemViewModel : ObservableObject
 /// <param name="Group">The overlapping group.</param>
 /// <param name="LaneNumber">1-based start-group (lane) number the overlapping group sits in.</param>
 /// <param name="SameCourse">True when the two run an identical full course; false when only the first КП matches.</param>
+/// <param name="SharedControls">The opening control(s) the two groups share, comma-separated — one code for a
+/// fixed course, possibly several across scatter variants. What the «?» dialog names as the shared control.</param>
 /// <param name="OverlapFrom">First overlapping start time (formatted), or "" when times are unavailable.</param>
 /// <param name="OverlapTo">Last overlapping start time (formatted), or "" when times are unavailable.</param>
 public sealed record DrawClashPeer(
     DrawGroupItemViewModel Group,
     int LaneNumber,
     bool SameCourse,
+    string SharedControls,
     string OverlapFrom,
     string OverlapTo);

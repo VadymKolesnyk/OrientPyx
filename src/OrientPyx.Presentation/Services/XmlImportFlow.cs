@@ -87,14 +87,28 @@ public sealed class XmlImportFlow : IXmlImportFlow
         // One file, one action: import control points first (so groups can compute distances from the
         // freshly saved points), then groups. Finally archive the original file into the day's folder
         // (skipped when no file was supplied, e.g. a non-file source).
-        await _busy.RunAsync(async () =>
+        var groupResult = await _busy.RunAsync(async () =>
         {
             await _editor.ImportControlPointsAsync(data, replaceControlPoints);
-            await _editor.ImportGroupsAsync(data, updateGroups);
+            var groups = await _editor.ImportGroupsAsync(data, updateGroups);
 
             if (!string.IsNullOrEmpty(fileName) && content is not null)
                 await _editor.SaveDayFileAsync(fileName, content);
+
+            return groups;
         });
+
+        // On a Scatter day, groups whose imported course had only one running order were forced to
+        // «Заданий напрямок» — tell the user which ones, so the discipline change is not silent.
+        if (groupResult.ScatterFallbackGroups.Count > 0)
+        {
+            var names = string.Join(", ", groupResult.ScatterFallbackGroups);
+            await _dialogs.ShowImportOptionsAsync(ImportOptionsViewModel.Plain(
+                _localization,
+                titleKey: "Import.Title",
+                message: string.Format(_localization.Get("Import.ScatterFallbackMessage"), names)));
+        }
+
         return true;
     }
 

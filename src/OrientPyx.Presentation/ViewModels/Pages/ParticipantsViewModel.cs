@@ -1273,13 +1273,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (visibleRows is null || visibleRows.Count == 0)
             return;
 
-        // The rental pool (ordered by number) and the set of chip numbers already held on any day.
+        // The rental pool (ordered by number) and the set of chip numbers already held on any day. An empty
+        // pool is fine here — the "starting from a number" mode adds its own chips — so we don't bail yet;
+        // an empty base only blocks the "from the base" mode, checked after the dialog returns.
         var pool = await _busy.RunAsync(() => _editor.GetRentalChipsAsync());
-        if (pool.Count == 0)
-        {
-            _log.Action(Localization.Get("Participants.AssignChips.Log.NoChips"));
-            return;
-        }
         var used = await _busy.RunAsync(() => _editor.GetRentalChipHoldersAsync());
 
         // The note dropdown: a leading "all" option, then each distinct note present in the pool.
@@ -1296,13 +1293,46 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (result is null)
             return;
 
-        // The free chips for this run: unused (held by nobody on any day), matching the note filter,
-        // by ascending number — drawn from the front as we assign.
+        // "From the base" mode with an empty rental base: nothing to draw from — say so and stop.
+        if (!result.IsRange && pool.Count == 0)
+        {
+            _log.Action(Localization.Get("Participants.AssignChips.Log.NoChips"));
+            return;
+        }
+
+        // "Starting from a number" mode: first add the contiguous range to the rental base (skipping any
+        // number that already exists), then reload the pool so the newly added chips are in it — the rest
+        // of the flow (build the free queue, confirm, assign) is identical to the "from the base" mode.
+        if (result.IsRange)
+        {
+            var start = (result.StartNumber ?? string.Empty).Trim();
+            if (start.Length == 0 || result.Count <= 0)
+                return;
+
+            await _busy.RunAsync(() =>
+                _editor.AddRentalChipRangeAsync(start, result.Count, result.RangeNote ?? string.Empty));
+            pool = await _busy.RunAsync(() => _editor.GetRentalChipsAsync());
+
+            // The range's chips are now in the rental database, so refresh the shared registry the chip
+            // cells consult for their "own chip" (non-rental) red highlight. Without this the just-added
+            // numbers would flag red until a full page reload rebuilt the registry.
+            RentalChips.Reset(pool.Select(c => c.Number));
+        }
+
+        // The free chips for this run: unused (held by nobody on any day), by ascending number — drawn
+        // from the front as we assign. In "from the base" mode narrowed by the note filter; in range mode
+        // narrowed to exactly the numbers of the range just added.
+        var rangeNumbers = result.IsRange
+            ? RangeChipNumbers((result.StartNumber ?? string.Empty).Trim(), result.Count)
+            : null;
         var free = new Queue<string>(pool
-            .Where(c => result.Note is null
-                || string.Equals((c.Note ?? string.Empty).Trim(), result.Note, StringComparison.OrdinalIgnoreCase))
+            .Where(c => result.IsRange
+                ? rangeNumbers!.Contains((c.Number ?? string.Empty).Trim())
+                : result.Note is null
+                    || string.Equals((c.Note ?? string.Empty).Trim(), result.Note, StringComparison.OrdinalIgnoreCase))
             .Select(c => (c.Number ?? string.Empty).Trim())
-            .Where(number => number.Length > 0 && !used.ContainsKey(number)));
+            .Where(number => number.Length > 0 && !used.ContainsKey(number))
+            .OrderBy(number => number, StringComparer.Ordinal));
 
         // Confirm before touching anything (this is a sweeping change). Count the recipients WITHOUT
         // mutating any cell — chip-less shown rows, capped by the number of free chips — so the prompt
@@ -1355,6 +1385,21 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         }
 
         LogChipAssignment(assignments, free.Count);
+    }
+
+    // The exact chip numbers a "starting from a number" range would produce — the same width-preserving
+    // sequence AddRentalChipRangeAsync generates (e.g. "0042" → "0042","0043",…). Used to narrow the free
+    // pool to just this range after it has been added. Returns empty for an unparsable start / count ≤ 0.
+    private static HashSet<string> RangeChipNumbers(string startNumber, int count)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (count <= 0 || startNumber.Length == 0 || !ulong.TryParse(startNumber, out var first))
+            return set;
+
+        var width = startNumber.Length;
+        for (var i = 0; i < count; i++)
+            set.Add((first + (ulong)i).ToString(CultureInfo.InvariantCulture).PadLeft(width, '0'));
+        return set;
     }
 
     // How many participants would actually be handed a chip, WITHOUT mutating anything — used by the

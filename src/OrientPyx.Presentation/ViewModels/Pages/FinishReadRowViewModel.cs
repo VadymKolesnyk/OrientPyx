@@ -5,6 +5,18 @@ using OrientPyx.Localization;
 namespace OrientPyx.Presentation.ViewModels.Pages;
 
 /// <summary>
+/// How a finish-read row's «Id» cell is highlighted, chosen from the finish status:
+/// <see cref="MissingPunch"/> (red) for MP, <see cref="OtherIssue"/> (yellow) for any other non-OK
+/// status, and <see cref="None"/> for a clean / no-status read.
+/// </summary>
+public enum StatusHighlight
+{
+    None,
+    MissingPunch,
+    OtherIssue,
+}
+
+/// <summary>
 /// One read-only row in the finish-read log: the log sequence id, the chip number, and — when a
 /// participant on the current day holds that chip — their number, full name and group. An unrecognised
 /// chip (held by nobody on the day) shows a localized "невідомий" marker instead.
@@ -116,6 +128,35 @@ public sealed class FinishReadRowViewModel
     /// the status cell. A missing status (<see cref="FinishStatus.None"/>) and OK both read false.
     /// </summary>
     public bool StatusIsBad => _row.Status is not (FinishStatus.None or FinishStatus.Ok);
+
+    /// <summary>
+    /// The highlight kind for the row's «Id» cell, driven by the finish status: red for a missing punch
+    /// (MP), yellow for any other non-OK status (OVT / DNF / DNS / DSQ), and none for OK / no status —
+    /// so a problem read is spotted at a glance at the finish desk. See <see cref="StatusHighlightTooltip"/>.
+    /// </summary>
+    public StatusHighlight Highlight => _row.Status switch
+    {
+        FinishStatus.Mp => StatusHighlight.MissingPunch,
+        FinishStatus.None or FinishStatus.Ok => StatusHighlight.None,
+        _ => StatusHighlight.OtherIssue,
+    };
+
+    /// <summary>
+    /// Tooltip explaining why the «Id» cell is highlighted: the localized status name (and, for MP, the
+    /// missing-control detail). Blank when the cell isn't highlighted (OK / no status), which suppresses
+    /// the tooltip.
+    /// </summary>
+    public string StatusHighlightTooltip => _row.Status switch
+    {
+        FinishStatus.Mp => _row.StatusDetail.Length > 0
+            ? string.Format(_localization.Get("FinishRead.Status.MpDetail"), _row.StatusDetail)
+            : _localization.Get("FinishRead.Status.Full.Mp"),
+        FinishStatus.Ovt => _localization.Get("FinishRead.Status.Full.Ovt"),
+        FinishStatus.Dnf => _localization.Get("FinishRead.Status.Full.Dnf"),
+        FinishStatus.Dns => _localization.Get("FinishRead.Status.Full.Dns"),
+        FinishStatus.Dsq => _localization.Get("FinishRead.Status.Full.Dsq"),
+        _ => string.Empty,
+    };
 
     /// <summary>
     /// True when the shown status is a judge's manual override rather than the discipline's computed value —
