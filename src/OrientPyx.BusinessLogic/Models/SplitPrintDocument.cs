@@ -56,6 +56,10 @@ public sealed class SplitPrintDocument
     /// The renderer appends the localized explanation after the status code.</summary>
     public string StatusDetail { get; init; } = string.Empty;
 
+    /// <summary>How <see cref="StatusDetail"/> should be worded — which of the renderer's two MP labels
+    /// (<see cref="SplitPrintLabels.MpDetailLabel"/> / <see cref="SplitPrintLabels.CountDetailLabel"/>) applies.</summary>
+    public FinishDetailKind StatusDetailKind { get; init; } = FinishDetailKind.MissingControl;
+
     /// <summary>Final result points scored (rogaine), as plain digits — the net after any over-time penalty
     /// <b>and</b> the manual bonus; blank for a non-scoring discipline. Printed on its own header line
     /// ("Сума балів: 12"), mirroring the status line. When <see cref="PenaltyText"/> or <see cref="BonusText"/>
@@ -128,6 +132,7 @@ public sealed record SplitPrintLabels(
     string AvgPaceLabel,
     string StatusLabel,
     string MpDetailLabel,
+    string CountDetailLabel,
     string TotalPointsLabel,
     string VariantLabel,
     string ColSeq,

@@ -2570,7 +2570,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 continue;
             }
 
-            var (computed, _, resolvedStart) = EvaluateFinish(readout, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup);
+            var (computed, _, _, resolvedStart) = EvaluateFinish(readout, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup);
             var status = link.ResultStatusOverride ?? computed;
 
             var resultTime = status == FinishStatus.Ok && resolvedStart is { } rs && readout.FinishTime is { } f
@@ -3428,12 +3428,13 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             if (holderByChip.TryGetValue(r.ChipNumber.Trim(), out var link) && byId.TryGetValue(link.ParticipantId, out var p))
             {
                 var group = link.GroupId is { } gid && groupName.TryGetValue(gid, out var gn) ? gn : string.Empty;
-                var (status, detail, resolvedStart) = EvaluateFinish(r, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup);
+                var (status, detail, detailKind, resolvedStart) = EvaluateFinish(r, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup);
                 // A judge's manual status override wins over the computed one (and clears its detail).
                 if (r.ManualStatus is { } manual)
                 {
                     status = manual;
                     detail = string.Empty;
+                    detailKind = FinishDetailKind.MissingControl;
                 }
                 var elapsed = resolvedStart is { } s && r.FinishTime is { } f ? f - s : (TimeSpan?)null;
                 // «Бали»: tally the scored splits when this row's discipline scores points (rogaine); null otherwise.
@@ -3459,7 +3460,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     && currentDayNumber >= lastNum;
                 rows.Add(new FinishReadoutRow(r.Id, r.Order, r.ChipNumber, r.StartTime, r.FinishTime,
                     IsKnown: true, p.Number, p.FullName, group, status, detail, resolvedStart, elapsed, score, place, gap,
-                    CollectRentalChip: collect, IsManualStatus: r.ManualStatus is not null));
+                    CollectRentalChip: collect, IsManualStatus: r.ManualStatus is not null,
+                    StatusDetailKind: detailKind));
             }
             else
             {
@@ -3707,7 +3709,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         var rows = view.Layout == SplitsLayout.Ordered
             ? BuildPassageRows(view.Passage, view.HasPoints)
-            : BuildScoredRows(view.Entries);
+            : BuildScoredRows(view.Entries, view.HasPoints);
 
         // Start/finish wall-clock and course length come from the ordered passage (start marker → finish
         // marker). The average pace is the result time over the total straight-line distance.
@@ -3736,8 +3738,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             : [];
 
         // The result columns add the manual bonus on top of the discipline's net points; the slip mirrors that
-        // so the printed «Сума балів» matches the protocol. A bonus only applies to a point-scoring view.
-        var isScored = view.HasPoints || view.Layout == SplitsLayout.Scored;
+        // so the printed «Сума балів» matches the protocol. A bonus only applies to a point-scoring view —
+        // and only a discipline that values its controls is one: «за вибором по кількості КП» is a Scored
+        // layout that scores nothing, so it prints no points line at all.
+        var isScored = view.HasPoints;
         var appliedBonus = isScored ? (bonus ?? 0) : 0;
         var finalPoints = view.TotalPoints + appliedBonus;
         // A breakdown ("X − Y + B = Z") is spelled out whenever there is a penalty OR a bonus to account for;
@@ -3755,6 +3759,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             ResultText = resultElapsed is { } re ? re.ToString("h\\:mm\\:ss") : string.Empty,
             StatusText = status,
             StatusDetail = row.StatusDetail,
+            StatusDetailKind = row.StatusDetailKind,
             // Points line for any point-scoring view (rogaine is Ordered+HasPoints, score is Scored). The final
             // result (net + bonus) prints as "Сума балів: Z"; when a penalty or bonus applies the renderer
             // instead spells out the breakdown "X − Y + B = Z" from the gross/penalty/bonus values below.
@@ -3828,9 +3833,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return list;
     }
 
-    // Maps the scored layout (score/choice/rogaine) to printable rows. The passage order is preserved and a
-    // points value is carried (non-null), so the renderer adds the бал column.
-    private static IReadOnlyList<SplitPrintRow> BuildScoredRows(IReadOnlyList<ScoreEntry> entries)
+    // Maps the scored layout (score/choice/rogaine) to printable rows. The passage order is preserved. A
+    // points value is carried (non-null) only when the discipline actually values its controls, since a
+    // non-null PointsText is what turns the renderer's бал column on: «за вибором по кількості КП» scores
+    // nothing, so its slip keeps the plain №ПП КП ЧАС layout.
+    private static IReadOnlyList<SplitPrintRow> BuildScoredRows(IReadOnlyList<ScoreEntry> entries, bool hasPoints)
     {
         var list = new List<SplitPrintRow>(entries.Count);
         var index = 0;
@@ -3846,7 +3853,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 PaceText: string.Empty,
                 // Points earned at this control print in the БАЛ column ("+3"); only a visited control earns
                 // them, so an unvisited allowed control shows blank (it didn't add to the total).
-                PointsText: entry.Visited && entry.Points != 0 ? $"+{entry.Points}" : string.Empty,
+                PointsText: hasPoints
+                    ? (entry.Visited && entry.Points != 0 ? $"+{entry.Points}" : string.Empty)
+                    : null,
                 OnCourse: entry.Visited));
         }
         return list;
@@ -3882,7 +3891,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     // Builds the FinishContext for one read-out + its holder and asks the group's discipline strategy
     // for the status. Start time is the chip's read-out start when present, else the assigned start.
     // Also returns the resolved start so the caller can derive the finish − start elapsed duration.
-    private (FinishStatus Status, string Detail, DateTimeOffset? ResolvedStartTime) EvaluateFinish(
+    private (FinishStatus Status, string Detail, FinishDetailKind DetailKind, DateTimeOffset? ResolvedStartTime) EvaluateFinish(
         FinishReadout readout,
         ParticipantDay link,
         IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup,
@@ -3913,13 +3922,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             StartTime = start,
             FinishTime = readout.FinishTime,
             TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
+            RequiredControlCount = gs?.RequiredControlCount,
             ScatterVariants = link.GroupId is { } vgid && variantsByGroup.TryGetValue(vgid, out var vs)
                 ? vs
                 : NoScatterVariants
         };
 
         var result = _strategies.For(discipline).EvaluateFinish(context);
-        return (result.Status, result.Detail, start);
+        return (result.Status, result.Detail, result.DetailKind, start);
     }
 
     // Pairs an assigned start time-of-day with the read-out finish's date, so the time-limit check

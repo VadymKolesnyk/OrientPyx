@@ -113,6 +113,29 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     private Task ShowCoursePatternHelpAsync() =>
         _dialogs.ShowCoursePatternHelpAsync(new CoursePatternHelpViewModel(Localization));
 
+    /// <summary>
+    /// Opens the «перевірити порядок» modal for the selected group's pattern: the operator types a passage
+    /// (the КП a runner would punch, in order) and sees whether the pattern accepts it — judged by the same
+    /// walk the read-out uses.
+    /// </summary>
+    [RelayCommand]
+    private Task ShowCoursePatternCheckAsync() =>
+        SelectedGroup is { } row
+            ? _dialogs.ShowCoursePatternCheckAsync(
+                new CoursePatternCheckViewModel(Localization, row.CourseOrder, _startCode, _finishCode))
+            : Task.CompletedTask;
+
+    /// <summary>
+    /// Opens the «всі варіанти» modal: every concrete passage order the selected group's pattern allows,
+    /// with each free-choice block expanded to all its choices and orders.
+    /// </summary>
+    [RelayCommand]
+    private Task ShowCoursePatternVariantsAsync() =>
+        SelectedGroup is { } row
+            ? _dialogs.ShowCoursePatternVariantsAsync(
+                new CoursePatternVariantsViewModel(Localization, row.CourseOrder, _startCode, _finishCode))
+            : Task.CompletedTask;
+
     /// <summary>Competition-wide course-setter name (начальник дистанції). A group may override it per day.</summary>
     [ObservableProperty]
     private string _defaultCourseSetter = string.Empty;

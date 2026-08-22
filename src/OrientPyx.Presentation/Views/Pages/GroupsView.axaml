@@ -160,18 +160,41 @@
                                Text="{Binding SelectedCourseHeader}"
                                Classes="subtitle"
                                VerticalAlignment="Center" />
-                    <!-- Help: how to write the «mixed» order pattern (< >, [N: …], nesting). Shown only
-                         for a mixed-discipline group (same condition as the pattern preview below). -->
-                    <Button Grid.Column="1" Classes="ghost"
-                            Padding="8,2"
-                            IsVisible="{Binding IsPatternPreviewVisible}"
-                            Command="{Binding ShowCoursePatternHelpCommand}"
-                            ToolTip.Tip="{Binding Localization[CoursePattern.Help.Title]}">
-                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <controls:Icon Kind="CircleHelp" Size="15" />
-                            <TextBlock Text="{Binding Localization[CoursePattern.Help.Button]}" />
-                        </StackPanel>
-                    </Button>
+                    <!-- Pattern tools, all shown only for a mixed-discipline group (same condition as the
+                         pattern preview below): test one passage, list every allowed order, and the help. -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
+                                IsVisible="{Binding IsPatternPreviewVisible}">
+                        <!-- Check: type a passage and see whether the pattern accepts it. -->
+                        <Button Classes="ghost"
+                                Padding="8,2"
+                                Command="{Binding ShowCoursePatternCheckCommand}"
+                                ToolTip.Tip="{Binding Localization[CoursePattern.Check.Title]}">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <controls:Icon Kind="Check" Size="15" />
+                                <TextBlock Text="{Binding Localization[CoursePattern.Check.Button]}" />
+                            </StackPanel>
+                        </Button>
+                        <!-- Variants: every concrete order the pattern allows. -->
+                        <Button Classes="ghost"
+                                Padding="8,2"
+                                Command="{Binding ShowCoursePatternVariantsCommand}"
+                                ToolTip.Tip="{Binding Localization[CoursePattern.Variants.Title]}">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <controls:Icon Kind="List" Size="15" />
+                                <TextBlock Text="{Binding Localization[CoursePattern.Variants.Button]}" />
+                            </StackPanel>
+                        </Button>
+                        <!-- Help: how to write the «mixed» order pattern (< >, [N: …], nesting). -->
+                        <Button Classes="ghost"
+                                Padding="8,2"
+                                Command="{Binding ShowCoursePatternHelpCommand}"
+                                ToolTip.Tip="{Binding Localization[CoursePattern.Help.Title]}">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <controls:Icon Kind="CircleHelp" Size="15" />
+                                <TextBlock Text="{Binding Localization[CoursePattern.Help.Button]}" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
                 </Grid>
                 <!-- Live validation of the «mixed» order pattern: a ✔ with the normalized "S … F" order
                      when valid, or a ✖ with the first structural error when not. Shown only for a

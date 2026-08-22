@@ -91,7 +91,7 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
     /// if punched twice (the first punch scores); only controls in the allowed set count toward points.
     /// No over-time penalty by default; rogaine passes a non-null rate (see <see cref="BuildScoredSplits(SplitsContext, decimal?)"/>).
     /// </summary>
-    protected static SplitsView BuildScoredSplits(SplitsContext context) => BuildScoredSplits(context, defaultPenaltyRate: null);
+    protected SplitsView BuildScoredSplits(SplitsContext context) => BuildScoredSplits(context, defaultPenaltyRate: null);
 
     /// <summary>
     /// Shared scored-layout builder, with an optional over-time penalty. <paramref name="defaultPenaltyRate"/>
@@ -100,7 +100,7 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
     /// is then subtracted (see <see cref="PenaltyFor"/>) into <see cref="SplitsView.TotalPoints"/> (the net),
     /// while <see cref="SplitsView.GrossPoints"/>/<see cref="SplitsView.Penalty"/> keep the "X − Y = Z" parts.
     /// </summary>
-    protected static SplitsView BuildScoredSplits(SplitsContext context, decimal? defaultPenaltyRate)
+    protected SplitsView BuildScoredSplits(SplitsContext context, decimal? defaultPenaltyRate)
     {
         var allowed = new HashSet<string>(
             context.ExpectedControls.Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);
@@ -141,6 +141,9 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
             GrossPoints = total,
             Penalty = penalty,
             TotalPoints = total - penalty,
+            // Only a format that actually values its controls reports a points total; «за вибором по
+            // кількості КП» scores none, so its summary stays a plain "taken / of".
+            HasPoints = UsesControlPointPoints,
             VisitedCount = counted.Count,
             ExpectedCount = allowed.Count
         };

@@ -117,11 +117,21 @@ public sealed class FinishReadRowViewModel
     };
 
     /// <summary>
-    /// Tooltip detail for the status: for MP, the localized "missing control N"; otherwise blank.
+    /// Tooltip detail for the status: for MP, the localized wording of the strategy's detail — «бракує КП N»
+    /// for an order-judged course, «взято КП менше за мінімум: N/M» for за вибором по кількості КП;
+    /// otherwise blank.
     /// </summary>
     public string StatusDetail => _row.Status == FinishStatus.Mp && _row.StatusDetail.Length > 0
-        ? string.Format(_localization.Get("FinishRead.Status.MpDetail"), _row.StatusDetail)
+        ? FormattedDetail()
         : string.Empty;
+
+    // The MP detail worded per the strategy's detail kind (the count format never says "wrong order",
+    // since a free-choice course judges no order).
+    private string FormattedDetail() => string.Format(
+        _localization.Get(_row.StatusDetailKind == FinishDetailKind.ControlCount
+            ? "FinishRead.Status.CountDetail"
+            : "FinishRead.Status.MpDetail"),
+        _row.StatusDetail);
 
     /// <summary>
     /// True when the row carries a non-OK status (MP / OVT / DNF / DNS / DSQ) — drives the red tint on
@@ -149,7 +159,7 @@ public sealed class FinishReadRowViewModel
     public string StatusHighlightTooltip => _row.Status switch
     {
         FinishStatus.Mp => _row.StatusDetail.Length > 0
-            ? string.Format(_localization.Get("FinishRead.Status.MpDetail"), _row.StatusDetail)
+            ? FormattedDetail()
             : _localization.Get("FinishRead.Status.Full.Mp"),
         FinishStatus.Ovt => _localization.Get("FinishRead.Status.Full.Ovt"),
         FinishStatus.Dnf => _localization.Get("FinishRead.Status.Full.Dnf"),

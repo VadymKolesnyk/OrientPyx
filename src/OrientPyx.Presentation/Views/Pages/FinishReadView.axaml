@@ -293,6 +293,15 @@
                         <DockPanel Name="PrescribedPane" Grid.Column="2" LastChildFill="True" Margin="7,0,0,0">
                             <TextBlock DockPanel.Dock="Top" Classes="label" Margin="0,0,0,6"
                                        Text="{Binding Splits.PrescribedTitle}" />
+                            <!-- «Mixed» only: the group's order pattern as written, above the one concrete
+                                 variant below it — so the operator sees which choices the rule allowed. -->
+                            <TextBlock DockPanel.Dock="Top" Margin="0,0,0,8"
+                                       IsVisible="{Binding Splits.HasPattern}"
+                                       Text="{Binding Splits.PatternText}"
+                                       FontFamily="Consolas, Menlo, monospace"
+                                       TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextSecondary}"
+                                       ToolTip.Tip="{Binding Localization[FinishRead.Splits.Pattern]}" />
                             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                                 <ItemsControl ItemsSource="{Binding Splits.Expected}">
                                     <ItemsControl.ItemTemplate>
@@ -336,12 +345,14 @@
                                 <TextBlock Grid.Column="0" Classes="label"
                                            Text="{Binding Localization[FinishRead.Splits.Col.Code]}" />
                                 <TextBlock Grid.Column="2" Classes="label" HorizontalAlignment="Right"
+                                           IsVisible="{Binding #Root.DataContext.Splits.ShowPoints}"
                                            Text="{Binding Localization[FinishRead.Splits.Col.Points]}" />
                                 <TextBlock Grid.Column="3" Classes="label" HorizontalAlignment="Right"
                                            Text="{Binding Localization[FinishRead.Splits.Col.Time]}" />
                                 <TextBlock Grid.Column="4" Classes="label" HorizontalAlignment="Right"
                                            Text="{Binding Localization[FinishRead.Splits.Col.Elapsed]}" />
                                 <TextBlock Grid.Column="5" Classes="label" HorizontalAlignment="Right"
+                                           IsVisible="{Binding #Root.DataContext.Splits.ShowPoints}"
                                            Text="{Binding Localization[FinishRead.Splits.Col.Total]}" />
                             </Grid>
                             <ItemsControl ItemsSource="{Binding Splits.Entries}">
@@ -354,6 +365,7 @@
                                                    HorizontalAlignment="Center"
                                                    Foreground="{Binding Glyph, Converter={StaticResource SplitGlyphBrush}}" />
                                         <TextBlock Grid.Column="2" Text="{Binding PointsText}"
+                                                   IsVisible="{Binding #Root.DataContext.Splits.ShowPoints}"
                                                    HorizontalAlignment="Right" />
                                         <TextBlock Grid.Column="3" Text="{Binding TimeText}"
                                                    Foreground="{DynamicResource TextSecondary}"
@@ -362,6 +374,7 @@
                                                    Foreground="{DynamicResource TextSecondary}"
                                                    HorizontalAlignment="Right" />
                                         <TextBlock Grid.Column="5" Text="{Binding RunningTotalText}"
+                                                   IsVisible="{Binding #Root.DataContext.Splits.ShowPoints}"
                                                    FontWeight="Medium" HorizontalAlignment="Right" />
                                     </Grid>
                                 </DataTemplate>

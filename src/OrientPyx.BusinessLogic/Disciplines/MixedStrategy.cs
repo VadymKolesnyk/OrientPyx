@@ -83,7 +83,7 @@ public sealed class MixedStrategy : DisciplineStrategyBase
         // Punch codes (trimmed, non-empty) in chip order, mapped back to their original punch for times/coords.
         var punches = context.Punches.Where(p => p.ControlCode.Trim().Length > 0).ToList();
         var codes = punches.Select(p => p.ControlCode.Trim()).ToList();
-        pattern.Match(codes, ignored, out var onCourse, out _);
+        pattern.Match(codes, ignored, out var onCourse, out _, out var resolved);
 
         DateTimeOffset? prevAny = context.StartTime;
         var prevAnyPoint = context.StartCoord;
@@ -129,20 +129,18 @@ public sealed class MixedStrategy : DisciplineStrategyBase
             context.FinishTime, Leg: null, finishElapsed, PassageKind.Finish, LegKm: null, PaceSecondsPerKm: null,
             DisplayLeg: finishDisplayLeg, DisplayLegKm: finishDisplayKm, DisplayPace: finishDisplayPace));
 
-        // Expected = the pattern's controls (in reading order, de-duplicated), each flagged taken when the
-        // chip punched it (an ignored/disabled control is listed «вимкнено»). This is the catalogue of the
-        // pattern's controls beside the passage; the ordering itself is judged by EvaluateFinish.
-        var punchedSet = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
-        var expected = new List<ExpectedControl>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Expected = the run resolved to ONE concrete order. A pattern with free-choice blocks allows many
+        // valid orders, so listing every alternative (the pattern's whole code list) would show controls the
+        // runner never had to take and number them meaninglessly. Instead the match collapses each block to
+        // the options this runner actually took — and, past where the run broke down, to the block's leading
+        // options — giving the variant they were on, in order, each flagged taken or missing.
+        var expected = new List<ExpectedControl>(resolved.Count);
         var seq = 0;
-        foreach (var code in pattern.ControlCodes)
+        foreach (var control in resolved)
         {
-            if (!seen.Add(code))
-                continue;
-            var isIgnored = ignored.Contains(code);
+            var isIgnored = ignored.Contains(control.Code);
             expected.Add(new ExpectedControl(
-                isIgnored ? 0 : ++seq, code, Taken: punchedSet.Contains(code), Ignored: isIgnored));
+                isIgnored ? 0 : ++seq, control.Code, Taken: control.Taken, Ignored: isIgnored));
         }
 
         return new SplitsView
@@ -150,9 +148,13 @@ public sealed class MixedStrategy : DisciplineStrategyBase
             Layout = SplitsLayout.Ordered,
             Passage = passage,
             Expected = expected,
+            PrescribedPattern = pattern.NormalizedOrder(),
             DisabledControls = context.DisabledControls,
-            VisitedCount = onCourse.Count(x => x),
-            ExpectedCount = pattern.RequiredCount
+            // Counted over the resolved variant, not the consumed punches: the passage can carry more
+            // on-course marks than the course has positions (a block re-offering options, a repeat), which
+            // is what made the summary read an impossible "взято 15 з 5".
+            VisitedCount = expected.Count(c => c.Taken),
+            ExpectedCount = expected.Count
         };
     }
 

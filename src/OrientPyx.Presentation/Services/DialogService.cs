@@ -357,6 +357,38 @@ public sealed partial class DialogService : ObservableObject, IDialogService
         }
     }
 
+    public async Task ShowCoursePatternCheckAsync(CoursePatternCheckViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
+
+    public async Task ShowCoursePatternVariantsAsync(CoursePatternVariantsViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
+
     public async Task ShowScreenHelpAsync(ScreenHelpViewModel dialog)
     {
         ArgumentNullException.ThrowIfNull(dialog);

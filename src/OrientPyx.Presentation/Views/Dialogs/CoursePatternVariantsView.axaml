@@ -1,0 +1,110 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
+             mc:Ignorable="d" d:DesignWidth="560" d:DesignHeight="520"
+             x:Class="OrientPyx.Presentation.Views.Dialogs.CoursePatternVariantsView"
+             x:DataType="dialogs:CoursePatternVariantsViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock.code">
+            <Setter Property="FontFamily" Value="Consolas, 'Courier New', monospace" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="Border.codebox">
+            <Setter Property="Background" Value="{DynamicResource SurfaceSubtle}" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="10,8" />
+        </Style>
+    </UserControl.Styles>
+
+    <!-- Centered card; the backdrop is supplied by the host overlay. -->
+    <Border Background="{DynamicResource SurfaceCard}"
+            CornerRadius="12"
+            MinWidth="520" MaxWidth="700"
+            BoxShadow="0 10 40 0 #40000000"
+            HorizontalAlignment="Center" VerticalAlignment="Center"
+            ClipToBounds="True"
+            KeyboardNavigation.TabNavigation="Cycle">
+        <DockPanel LastChildFill="True">
+
+            <!-- Header -->
+            <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
+                    Padding="22,16">
+                <TextBlock Text="{Binding Localization[CoursePattern.Variants.Title]}" Classes="h2"
+                           VerticalAlignment="Center" />
+            </Border>
+
+            <!-- Footer -->
+            <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
+                    Padding="22,14">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <Button Grid.Column="0" Classes="ghost"
+                            IsEnabled="{Binding HasVariants}"
+                            Content="{Binding Localization[CoursePattern.Variants.Copy]}"
+                            Click="OnCopyClick" />
+                    <Button Grid.Column="2"
+                            Content="{Binding Localization[CoursePattern.Variants.Close]}"
+                            Classes="accent"
+                            IsDefault="True" IsCancel="True"
+                            Command="{Binding CloseCommand}" />
+                </Grid>
+            </Border>
+
+            <!-- The pattern + counts stay pinned above the (potentially long) list. -->
+            <StackPanel DockPanel.Dock="Top" Margin="22,18,22,10" Spacing="10">
+
+                <TextBlock Text="{Binding Localization[CoursePattern.Variants.Intro]}"
+                           TextWrapping="Wrap" Classes="muted" />
+
+                <Border Classes="codebox">
+                    <TextBlock Classes="code" Text="{Binding PatternText}" />
+                </Border>
+
+                <!-- A structurally broken pattern can't be expanded meaningfully — say so outright. -->
+                <TextBlock IsVisible="{Binding !IsPatternValid}"
+                           Text="{Binding Localization[CoursePattern.Variants.PatternInvalid]}"
+                           TextWrapping="Wrap"
+                           Foreground="#DC2626" />
+
+                <TextBlock Text="{Binding Summary}" FontWeight="SemiBold" />
+
+                <TextBlock IsVisible="{Binding IsTruncated}"
+                           Text="{Binding TruncatedNote}"
+                           TextWrapping="Wrap" Classes="muted" />
+
+                <TextBlock IsVisible="{Binding !HasVariants}"
+                           Text="{Binding Localization[CoursePattern.Variants.Empty]}"
+                           TextWrapping="Wrap" Classes="muted" />
+            </StackPanel>
+
+            <!-- The orders themselves: virtualized, since a wide pattern lists hundreds. -->
+            <Border Margin="22,0,22,16" MaxHeight="360"
+                    Background="{DynamicResource SurfaceSubtle}"
+                    CornerRadius="6" ClipToBounds="True"
+                    IsVisible="{Binding HasVariants}">
+                <ListBox ItemsSource="{Binding Variants}"
+                         Background="Transparent"
+                         BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="dialogs:CourseVariantViewModel">
+                            <Grid ColumnDefinitions="46,*">
+                                <TextBlock Grid.Column="0" Text="{Binding Index}"
+                                           Classes="muted"
+                                           HorizontalAlignment="Right" Margin="0,0,12,0" />
+                                <TextBlock Grid.Column="1" Text="{Binding Order}"
+                                           FontFamily="Consolas, 'Courier New', monospace"
+                                           TextWrapping="Wrap" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+
+        </DockPanel>
+    </Border>
+
+</UserControl>

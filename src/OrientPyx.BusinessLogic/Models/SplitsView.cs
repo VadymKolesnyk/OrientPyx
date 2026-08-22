@@ -141,6 +141,14 @@ public sealed class SplitsView
     public IReadOnlySet<string> DisabledControls { get; init; } =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// For a «mixed» (змішаний) course, the group's order <b>pattern</b> as written, normalized with explicit
+    /// start/finish markers (e.g. <c>"S &lt;41 42&gt; [2: 45 46 47] F"</c>). <see cref="Expected"/> shows the
+    /// one concrete variant this runner was on; this is the whole rule it was resolved from, shown beside it
+    /// so the operator can see which choices the pattern actually allowed. Empty for every other discipline.
+    /// </summary>
+    public string PrescribedPattern { get; init; } = string.Empty;
+
     /// <summary>Scored-layout rows: allowed controls in passage order, then unvisited ones.</summary>
     public IReadOnlyList<ScoreEntry> Entries { get; init; } = [];
 

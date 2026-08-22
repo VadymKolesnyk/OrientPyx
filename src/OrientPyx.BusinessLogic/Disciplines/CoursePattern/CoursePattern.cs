@@ -107,13 +107,89 @@ public sealed class CoursePattern
     /// </summary>
     public bool Match(
         IReadOnlyList<string> punches, IReadOnlySet<string>? ignoredCodes,
-        out bool[] onCourse, out string firstMissing)
+        out bool[] onCourse, out string firstMissing) =>
+        Match(punches, ignoredCodes, out onCourse, out firstMissing, out _);
+
+    /// <summary>
+    /// As <see cref="Match(IReadOnlyList{string}, IReadOnlySet{string}, out bool[], out string)"/>, but also
+    /// yields <paramref name="resolved"/>: the <b>concrete</b> control order this run resolves to — one
+    /// linear sequence with every free-choice block collapsed to the options the runner actually took, and
+    /// (past the point the run broke down) to the block's leading options. This is what the splits panel and
+    /// the printed slip show as «правильний порядок», instead of listing every alternative the pattern
+    /// allows: the variant the runner was on, with the controls they never took flagged not taken.
+    /// </summary>
+    public bool Match(
+        IReadOnlyList<string> punches, IReadOnlySet<string>? ignoredCodes,
+        out bool[] onCourse, out string firstMissing, out IReadOnlyList<ResolvedControl> resolved)
     {
         onCourse = new bool[punches.Count];
         var state = new MatchState(punches, onCourse, ignoredCodes);
         var ok = _root.Match(state);
         firstMissing = ok ? string.Empty : state.FirstMissing ?? string.Empty;
+        resolved = state.Resolved;
         return ok;
+    }
+
+    // ── Order check & variant listing (editor tools) ────────────────────────────────────────────────
+
+    /// <summary>The most orders <see cref="EnumerateOrders"/> will list before reporting the rest as
+    /// truncated — a wide free-choice block grows factorially, and nobody reads past a few hundred.</summary>
+    public const int VariantLimit = 500;
+
+    // What separates the codes of a typed order: whitespace of any kind, plus the punctuation an
+    // operator is likely to reach for (comma, semicolon, dash) and the pattern's own brackets.
+    private static readonly char[] Separators =
+        [' ', '\t', '\r', '\n', ',', ';', '-', '>', '<'];
+
+    /// <summary>
+    /// Checks one concrete passage order against the pattern — the same walk the read-out uses, so what the
+    /// modal says matches how a runner with those punches would be judged. <paramref name="order"/> is the
+    /// codes in punching order; an optional leading start / trailing finish marker is dropped.
+    /// </summary>
+    /// <returns>An empty string when the order is valid; otherwise the first control the pattern could not
+    /// satisfy (the MP detail).</returns>
+    public bool CheckOrder(IReadOnlyList<string> order, out string firstMissing, out bool[] onCourse) =>
+        Match(order, ignoredCodes: null, out onCourse, out firstMissing);
+
+    /// <summary>
+    /// Splits a typed order into control codes: whitespace, commas, semicolons and dashes all separate, and
+    /// a leading start / trailing finish marker is dropped (so «S 41 42 F» reads as «41 42»).
+    /// </summary>
+    public static IReadOnlyList<string> SplitOrder(string? text)
+    {
+        var codes = (text ?? string.Empty)
+            .Split(Separators, StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Trim())
+            .Where(x => x.Length > 0)
+            .ToList();
+
+        if (codes.Count > 0 && IsStartMarker(codes[0]))
+            codes.RemoveAt(0);
+        if (codes.Count > 0 && IsFinishMarker(codes[^1]))
+            codes.RemoveAt(codes.Count - 1);
+        return codes;
+    }
+
+    /// <summary>
+    /// Every concrete passage order this pattern allows (each a flat control list), capped at
+    /// <see cref="VariantLimit"/>. The returned set also carries the true total, so the UI can say how many
+    /// were left out. A pattern with no free-choice block yields exactly one order.
+    /// </summary>
+    public CourseVariantSet EnumerateOrders(int limit = VariantLimit)
+    {
+        var total = _root.CountOrders();
+        var budget = new ExpandBudget(limit);
+        var variants = new List<CourseVariant>();
+
+        foreach (var order in _root.Expand(budget))
+        {
+            if (budget.Exhausted)
+                break;
+            budget.Take();
+            variants.Add(new CourseVariant(order));
+        }
+
+        return new CourseVariantSet(variants, total, total > variants.Count);
     }
 
     // ── Parsing ──────────────────────────────────────────────────────────────────────────────────────

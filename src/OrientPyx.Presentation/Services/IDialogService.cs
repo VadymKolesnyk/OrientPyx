@@ -152,6 +152,18 @@ public interface IDialogService : INotifyPropertyChanged
     Task ShowCoursePatternHelpAsync(CoursePatternHelpViewModel dialog);
 
     /// <summary>
+    /// Shows the «перевірити порядок» modal — type a passage and see whether the group's pattern accepts
+    /// it — and awaits its close. Only one dialog is shown at a time.
+    /// </summary>
+    Task ShowCoursePatternCheckAsync(CoursePatternCheckViewModel dialog);
+
+    /// <summary>
+    /// Shows the «всі варіанти» modal — every concrete passage order the group's pattern allows — and
+    /// awaits its close. Only one dialog is shown at a time.
+    /// </summary>
+    Task ShowCoursePatternVariantsAsync(CoursePatternVariantsViewModel dialog);
+
+    /// <summary>
     /// Shows the read-only per-screen help modal («що це / для чого / як користуватися») and awaits its
     /// close. Opened from the «?» button in each page header. Only one dialog is shown at a time.
     /// </summary>

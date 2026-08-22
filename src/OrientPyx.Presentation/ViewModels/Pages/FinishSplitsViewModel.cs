@@ -83,6 +83,16 @@ public sealed partial class FinishSplitsViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasVariant;
 
+    /// <summary>The «mixed» course's order pattern as written (e.g. "S &lt;41 42&gt; [2: 45 46 47] F"), shown
+    /// above the prescribed list so the operator sees the whole rule the concrete variant came from. Blank
+    /// for every other discipline (drives its own visibility via <see cref="HasPattern"/>).</summary>
+    [ObservableProperty]
+    private string _patternText = string.Empty;
+
+    /// <summary>True for a «mixed» course — the panel then shows <see cref="PatternText"/>.</summary>
+    [ObservableProperty]
+    private bool _hasPattern;
+
     // --- Dock side + size (persisted app-wide as preferences.json) ---------------------------------
 
     /// <summary>True when the panel is docked to the right of the table; false = below it.</summary>
@@ -123,6 +133,8 @@ public sealed partial class FinishSplitsViewModel : ObservableObject
         Summary = string.Empty;
         VariantText = string.Empty;
         HasVariant = false;
+        PatternText = string.Empty;
+        HasPattern = false;
         IsOrdered = false;
         IsScored = false;
         ShowPoints = false;
@@ -146,6 +158,9 @@ public sealed partial class FinishSplitsViewModel : ObservableObject
             ? $"{_localization.Get("Splits.VariantCode")} {view.VariantCode}"
             : string.Empty;
 
+        HasPattern = view.PrescribedPattern.Length > 0;
+        PatternText = view.PrescribedPattern;
+
         if (IsOrdered)
         {
             foreach (var punch in view.Passage)
@@ -162,7 +177,12 @@ public sealed partial class FinishSplitsViewModel : ObservableObject
         {
             foreach (var entry in view.Entries)
                 Entries.Add(new ScoreEntryViewModel(entry, _localization));
-            Summary = ScoredSummary(view);
+            // Same rule as the ordered branch: only a genuinely point-scoring view states «Балів».
+            // A free-choice-by-count day has no control values, so it reads as a plain "taken / of".
+            Summary = view.HasPoints
+                ? ScoredSummary(view)
+                : string.Format(_localization.Get("FinishRead.Splits.Visited"),
+                    view.VisitedCount, view.ExpectedCount);
         }
 
         HasData = true;

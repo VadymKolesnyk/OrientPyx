@@ -463,6 +463,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         AvgPaceLabel: Localization.Get("FinishRead.Print.AvgPace"),
         StatusLabel: Localization.Get("FinishRead.Col.Status"),
         MpDetailLabel: Localization.Get("FinishRead.Print.MpDetail"),
+        CountDetailLabel: Localization.Get("FinishRead.Print.CountDetail"),
         TotalPointsLabel: Localization.Get("FinishRead.Print.TotalPoints"),
         VariantLabel: Localization.Get("Splits.VariantCode"),
         ColSeq: Localization.Get("FinishRead.Print.ColSeq"),

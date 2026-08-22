@@ -291,7 +291,12 @@ internal sealed class ReceiptRenderer
         {
             var status = $"{_labels.StatusLabel}: {_doc.StatusText}";
             if (_doc.StatusDetail.Length > 0)
-                status += $" - {string.Format(_labels.MpDetailLabel, _doc.StatusDetail)}";
+            {
+                var label = _doc.StatusDetailKind == FinishDetailKind.ControlCount
+                    ? _labels.CountDetailLabel
+                    : _labels.MpDetailLabel;
+                status += $" - {string.Format(label, _doc.StatusDetail)}";
+            }
             y = DrawCentred(g, status, font, centreX, y);
         }
 

@@ -91,6 +91,12 @@
         <DataTemplate DataType="dialogs:CoursePatternHelpViewModel">
             <dialogViews:CoursePatternHelpView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:CoursePatternCheckViewModel">
+            <dialogViews:CoursePatternCheckView />
+        </DataTemplate>
+        <DataTemplate DataType="dialogs:CoursePatternVariantsViewModel">
+            <dialogViews:CoursePatternVariantsView />
+        </DataTemplate>
         <DataTemplate DataType="dialogs:ScreenHelpViewModel">
             <dialogViews:ScreenHelpView />
         </DataTemplate>

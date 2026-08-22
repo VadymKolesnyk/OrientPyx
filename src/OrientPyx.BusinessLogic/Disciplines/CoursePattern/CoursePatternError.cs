@@ -28,3 +28,11 @@ public enum CoursePatternErrorKind
     /// <summary>An ordered block <c>&lt;&gt;</c> with nothing inside.</summary>
     EmptyOrderedBlock
 }
+
+/// <summary>
+/// One control of a «mixed» pattern resolved against a runner's actual passage: the code in prescribed
+/// order, and whether a punch satisfied it. A pattern with free-choice blocks has many valid orders — this
+/// is the single one the runner was on (the closest to their passage), so the splits panel can show a
+/// concrete «правильний порядок» rather than every alternative.
+/// </summary>
+public sealed record ResolvedControl(string Code, bool Taken);

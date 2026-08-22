@@ -8,7 +8,7 @@ namespace OrientPyx.BusinessLogic.Models;
 /// <see cref="IsKnown"/> is false when no participant on the day carries the chip (an unrecognised read).
 /// <see cref="Status"/> is the derived finish status (only for a known participant on a discipline that
 /// evaluates it; <see cref="FinishStatus.None"/> otherwise), with <see cref="StatusDetail"/> a short
-/// explanation (e.g. the first missing control) for the tooltip. <see cref="ResolvedStartTime"/> is the
+/// explanation (e.g. the first missing control) for the tooltip, worded per <see cref="StatusDetailKind"/>. <see cref="ResolvedStartTime"/> is the
 /// effective start used for evaluation (the chip's own read-out start, else the participant's assigned
 /// start paired with the finish's date); <see cref="Elapsed"/> is the resulting finish − start duration,
 /// both null when no participant/finish/start is known. <see cref="Score"/> is the collected «Бали»
@@ -43,4 +43,5 @@ public sealed record FinishReadoutRow(
     int? Place = null,
     TimeSpan? Gap = null,
     bool CollectRentalChip = false,
-    bool IsManualStatus = false);
+    bool IsManualStatus = false,
+    FinishDetailKind StatusDetailKind = FinishDetailKind.MissingControl);
