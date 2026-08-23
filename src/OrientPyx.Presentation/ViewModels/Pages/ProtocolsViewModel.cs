@@ -167,6 +167,7 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         ProtocolColumn.Rank => "Protocols.Col.Rank",
         ProtocolColumn.Result => "Protocols.Col.Result",
         ProtocolColumn.Place => "Protocols.Col.Place",
+        ProtocolColumn.Gap => "Protocols.Col.Gap",
         ProtocolColumn.Score => "Protocols.Col.Score",
         ProtocolColumn.Points => "Protocols.Col.Points",
         ProtocolColumn.AwardedRank => "Protocols.Col.AwardedRank",
@@ -251,12 +252,19 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         }
 
         // Reconcile against the full column set: a template saved before a column existed (e.g. «Очки»
-        // added later) is missing it, so append any absent column (visible) in enum order. Keeps old
-        // per-day templates current without a manual reset.
+        // added later) is missing it, so append any absent column in enum order. Keeps old per-day templates
+        // current without a manual reset. An appended column takes the visibility the default layout gives it,
+        // so a column that is off by default («Відставання») does not silently appear on existing protocols.
+        var defaultVisible = ResultProtocolSettings.DefaultColumns()
+            .ToDictionary(c => c.Column, c => c.Visible);
         var present = settings.Columns.Select(c => c.Column).ToHashSet();
         foreach (ProtocolColumn column in Enum.GetValues<ProtocolColumn>())
             if (present.Add(column))
-                settings.Columns.Add(new ProtocolColumnSetting { Column = column, Visible = true });
+                settings.Columns.Add(new ProtocolColumnSetting
+                {
+                    Column = column,
+                    Visible = !defaultVisible.TryGetValue(column, out var vis) || vis
+                });
 
         Columns.Clear();
         foreach (var c in settings.Columns)
@@ -613,6 +621,7 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         ProtocolColumn.Rank => "Protocols.Col.Short.Rank",
         ProtocolColumn.Result => "Protocols.Col.Short.Result",
         ProtocolColumn.Place => "Protocols.Col.Short.Place",
+        ProtocolColumn.Gap => "Protocols.Col.Short.Gap",
         ProtocolColumn.AwardedRank => "Protocols.Col.Short.AwardedRank",
         _ => null
     };

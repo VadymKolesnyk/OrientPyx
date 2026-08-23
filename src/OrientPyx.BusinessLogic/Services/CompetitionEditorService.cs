@@ -2573,6 +2573,13 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             var (computed, _, _, resolvedStart) = EvaluateFinish(readout, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup);
             var status = link.ResultStatusOverride ?? computed;
 
+            // Did this runner actually go out on course? A start box, a finish box, or at least one control
+            // punch all say yes; only a wholly empty read-out says no. The start/finish marker codes are
+            // dropped from the punch list so a chip carrying nothing but those isn't mistaken for a КП.
+            var wasOnCourse = readout.StartTime is not null
+                || readout.FinishTime is not null
+                || SplitCodes(readout.Punches).Any(c => !startFinishCodes.Contains(c));
+
             var resultTime = status == FinishStatus.Ok && resolvedStart is { } rs && readout.FinishTime is { } f
                 ? f - rs
                 : (TimeSpan?)null;
@@ -2598,6 +2605,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 // pass replaces this with the team's common controls so the tooltip matches the team Бали.
                 ScoreBreakdown = punchedAllowed is { } pa ? ScoreLines(pa, pointsByCode) : [],
                 Bonus = link.Bonus,
+                WasOnCourse = wasOnCourse,
                 // Personal-discipline поза конкурсом ⇒ marked «П/К», never placed (and excluded from `ranking`
                 // below so it doesn't shift the others). Rogaine поза конкурсом is the team pass's job.
                 OutOfCompetition = !isRogaine && link.OutOfCompetition
@@ -2707,15 +2715,17 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 continue;
 
             // Group context the formula references: the leader (place 1) time/score and the three group
-            // counts — N (everyone registered in the group), N_с (those who actually started, i.e. have an
-            // actual start time) and N_ф (those who finished with a valid result: status OK). NONE of the
-            // three counts a поза конкурсом runner: such a runner is not part of the group's standings, so
-            // they inflate neither the entry list nor the started/finished counts. A table rule ignores all
-            // of this and keys off place only.
+            // counts — N (everyone registered in the group), N_с (those who actually ran, i.e. whose chip
+            // read-out shows a start box, a finish box or at least one control punch) and N_ф (those who
+            // finished with a valid result: status OK). N_с deliberately does NOT key off ActualStart: on a
+            // mass or assigned start there is no start punch at all, which would leave it at 0 for the whole
+            // group. NONE of the three counts a поза конкурсом runner: such a runner is not part of the
+            // group's standings, so they inflate neither the entry list nor the started/finished counts. A
+            // table rule ignores all of this and keys off place only.
             var inCompetition = members.Where(m => !m.Result.OutOfCompetition).ToList();
             var placed = members.Where(m => m.Result.Place is not null).ToList();
             var groupSize = inCompetition.Count;
-            var startedCount = inCompetition.Count(m => m.Result.ActualStart is not null);
+            var startedCount = inCompetition.Count(m => m.Result.WasOnCourse);
             var finishedCount = inCompetition.Count(m => m.Result.Status == FinishStatus.Ok);
             var leader = placed.FirstOrDefault(m => m.Result.Place == 1).Result;
             var leaderTime = leader?.ResultTime?.TotalSeconds;

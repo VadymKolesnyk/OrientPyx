@@ -9,9 +9,10 @@ namespace OrientPyx.BusinessLogic.Models;
 /// (treated as 0 by the formula, and as "no time" by a table rule, which only needs the place).
 ///
 /// The three counts are distinct on purpose: <paramref name="GroupSize"/> (N) is everyone registered
-/// in the group, <paramref name="StartedCount"/> (N_с) only those who actually started, and
-/// <paramref name="FinishedCount"/> (N_ф) only those who finished with a valid result. None of the
-/// three counts a «поза конкурсом» runner — they are outside the group's standings entirely.
+/// in the group, <paramref name="StartedCount"/> (N_с) only those who actually ran (their chip read out
+/// with a start box, a finish box or at least one control punch), and <paramref name="FinishedCount"/>
+/// (N_ф) only those who finished with a valid result. None of the three counts a «поза конкурсом»
+/// runner — they are outside the group's standings entirely.
 /// </summary>
 public sealed record PointsRuleInput(
     int? Place,

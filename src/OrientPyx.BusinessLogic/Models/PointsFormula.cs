@@ -30,8 +30,8 @@ public sealed record PointsFormulaContext
     /// Excludes «поза конкурсом» runners, as do <see cref="StartedCount"/> and <see cref="FinishedCount"/>.</summary>
     public double GroupSize { get; init; }
 
-    /// <summary>N_с — the number of runners in the group who actually started (have an actual start time),
-    /// «поза конкурсом» runners excluded.</summary>
+    /// <summary>N_с — the number of runners in the group who actually ran: their chip read-out recorded a
+    /// start box, a finish box or at least one control punch. «поза конкурсом» runners excluded.</summary>
     public double StartedCount { get; init; }
 
     /// <summary>N_ф — the number of runners in the group who finished with a valid result (status OK),

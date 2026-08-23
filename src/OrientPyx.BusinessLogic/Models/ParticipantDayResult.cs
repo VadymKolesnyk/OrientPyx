@@ -60,6 +60,15 @@ public sealed record ParticipantDayResult(
     public const string OutOfCompetitionMark = "П/К";
 
     /// <summary>
+    /// True when this participant's chip read-out shows they actually ran: it recorded a start box, a
+    /// finish box, or at least one control punch. Broader than <see cref="ActualStart"/> on purpose — on a
+    /// mass/assigned start there is no start box, so «did they run» cannot be answered by the start punch
+    /// alone. This is what the points formula's <c>N_с</c> counts. False for a member whose chip was never
+    /// read, and for an empty read-out that recorded nothing at all.
+    /// </summary>
+    public bool WasOnCourse { get; init; }
+
+    /// <summary>
     /// The controls that make up <see cref="Score"/> (rogaine only), each with its point value, in
     /// ascending control order — for a per-control breakdown tooltip on the «Бали» column. For a teamed
     /// runner these are the team's common controls (the ones that scored for the team), so it matches the

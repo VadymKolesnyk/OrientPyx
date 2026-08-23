@@ -41,6 +41,9 @@ public enum ProtocolColumn
     /// <summary>Place within the group («Місце»).</summary>
     Place,
 
+    /// <summary>Loss to the group leader («Відставання») — the runner's result time minus the place-1 time.</summary>
+    Gap,
+
     /// <summary>Score / points for a point-scoring discipline («Бали»).</summary>
     Score,
 

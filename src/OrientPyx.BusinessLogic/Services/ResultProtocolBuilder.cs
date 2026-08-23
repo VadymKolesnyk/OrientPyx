@@ -54,9 +54,12 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
             if (group.Rows.Count == 0)
                 continue;
 
+            // The group leader's clean time — the reference the «Відставання» column is measured against.
+            var leader = LeaderTime(group.Rows);
+
             var rows = group.IsTeam
-                ? BuildTeamRows(group.Rows, columns)
-                : BuildPersonalRows(group.Rows, columns);
+                ? BuildTeamRows(group.Rows, columns, leader)
+                : BuildPersonalRows(group.Rows, columns, leader);
 
             sections.Add(new ResultProtocolSection
             {
@@ -127,6 +130,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         ProtocolColumn.Result => 1,
         ProtocolColumn.Place => 1,
         ProtocolColumn.Points => 1,
+        ProtocolColumn.Gap => 1,
         ProtocolColumn.Sequence => 2,
         ProtocolColumn.Number => 2,
         ProtocolColumn.FullName => 2,
@@ -189,10 +193,18 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         return label.Length > 0 ? $"{label}: {who}" : who;
     }
 
+    // The group leader's result time: the fastest clean, placed result in the group. Null when nobody is
+    // placed yet or the discipline carries no time (a point-scoring day) — then no gap is shown at all.
+    private static TimeSpan? LeaderTime(IReadOnlyList<ResultProtocolRow> rows) =>
+        rows.Where(r => r.Result.Place is not null && r.Result.ResultTime is not null)
+            .Select(r => r.Result.ResultTime)
+            .DefaultIfEmpty(null)
+            .Min();
+
     // A personal (non-team) section: placed finishers first by ascending place, then everyone else by name
     // (the classic protocol order), each as one numbered participant row.
     private static List<ResultProtocolBodyRow> BuildPersonalRows(
-        IReadOnlyList<ResultProtocolRow> rows, IReadOnlyList<ProtocolColumn> columns)
+        IReadOnlyList<ResultProtocolRow> rows, IReadOnlyList<ProtocolColumn> columns, TimeSpan? leader)
     {
         var ordered = rows
             .OrderBy(r => r.Result.Place is { } p ? p : int.MaxValue)
@@ -204,7 +216,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         foreach (var row in ordered)
         {
             seq++;
-            body.Add(new ResultProtocolBodyRow(columns.Select(c => Cell(c, row, seq)).ToList()));
+            body.Add(new ResultProtocolBodyRow(columns.Select(c => Cell(c, row, seq, leader)).ToList()));
         }
         return body;
     }
@@ -213,7 +225,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
     // team name), and emit a bold team-caption row (carrying the team place/score) above each team's member
     // rows. Teamless runners (поза конкурсом) are listed last, each as their own caption-less row.
     private static List<ResultProtocolBodyRow> BuildTeamRows(
-        IReadOnlyList<ResultProtocolRow> rows, IReadOnlyList<ProtocolColumn> columns)
+        IReadOnlyList<ResultProtocolRow> rows, IReadOnlyList<ProtocolColumn> columns, TimeSpan? leader)
     {
         var body = new List<ResultProtocolBodyRow>();
 
@@ -234,26 +246,27 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
             // row shows the team name (in the name column), its place and score, and the team sequence no.
             var lead = team.First();
             body.Add(new ResultProtocolBodyRow(
-                columns.Select(c => TeamCell(c, lead, team.Key, teamSeq)).ToList(),
+                columns.Select(c => TeamCell(c, lead, team.Key, teamSeq, leader)).ToList(),
                 IsTeamHeader: true,
                 TeamName: team.Key));
 
             // Members under the team, by name — each as a plain row with no per-person place (the team has it).
             foreach (var member in team.OrderBy(r => r.FullName, StringComparer.CurrentCultureIgnoreCase))
-                body.Add(new ResultProtocolBodyRow(columns.Select(c => MemberCell(c, member)).ToList()));
+                body.Add(new ResultProtocolBodyRow(columns.Select(c => MemberCell(c, member, leader)).ToList()));
         }
 
         // Teamless runners (поза конкурсом): one row each, after the teams, by name.
         foreach (var row in rows.Where(r => r.Team.Length == 0)
                      .OrderBy(r => r.FullName, StringComparer.CurrentCultureIgnoreCase))
-            body.Add(new ResultProtocolBodyRow(columns.Select(c => MemberCell(c, row)).ToList()));
+            body.Add(new ResultProtocolBodyRow(columns.Select(c => MemberCell(c, row, leader)).ToList()));
 
         return body;
     }
 
     // A team caption row's cell: the team name in the name column, the team place/score/result in theirs,
     // the team sequence in the №-column; the per-person columns (birth, club, coach…) are blank on the caption.
-    private static string TeamCell(ProtocolColumn column, ResultProtocolRow lead, string teamName, int teamSeq) => column switch
+    private static string TeamCell(
+        ProtocolColumn column, ResultProtocolRow lead, string teamName, int teamSeq, TimeSpan? leader) => column switch
     {
         ProtocolColumn.Sequence => teamSeq.ToString(CultureInfo.InvariantCulture),
         ProtocolColumn.FullName => teamName,
@@ -261,21 +274,25 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         ProtocolColumn.Place => lead.Result.Place is { } p ? p.ToString(CultureInfo.InvariantCulture) : string.Empty,
         ProtocolColumn.Score => lead.Result.Score is { } s ? s.ToString(CultureInfo.InvariantCulture) : string.Empty,
         ProtocolColumn.Points => lead.Result.Points is { } pts ? PointsTable.Format(pts) : string.Empty,
+        ProtocolColumn.Gap => GapCell(lead.Result, leader),
         _ => string.Empty
     };
 
     // A team member's cell: the per-person identity columns, but no place/score/sequence (those belong to the
     // team caption above). The member still shows their own result time/status for reference.
-    private static string MemberCell(ProtocolColumn column, ResultProtocolRow row) => column switch
+    private static string MemberCell(ProtocolColumn column, ResultProtocolRow row, TimeSpan? leader) => column switch
     {
         ProtocolColumn.Sequence => string.Empty,
         ProtocolColumn.Place => string.Empty,
         ProtocolColumn.Score => string.Empty,
         ProtocolColumn.Points => string.Empty,
-        _ => Cell(column, row, 0)
+        // The gap belongs to the team caption above, like the place/score it is derived from.
+        ProtocolColumn.Gap => string.Empty,
+        _ => Cell(column, row, 0, leader)
     };
 
-    private static string Cell(ProtocolColumn column, ResultProtocolRow row, int sequence) => column switch
+    private static string Cell(
+        ProtocolColumn column, ResultProtocolRow row, int sequence, TimeSpan? leader) => column switch
     {
         ProtocolColumn.Sequence => sequence.ToString(CultureInfo.InvariantCulture),
         ProtocolColumn.Number => row.Number,
@@ -291,8 +308,18 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         ProtocolColumn.Score => row.Result.Score is { } s ? s.ToString(CultureInfo.InvariantCulture) : string.Empty,
         ProtocolColumn.Points => row.Result.Points is { } pts ? PointsTable.Format(pts) : string.Empty,
         ProtocolColumn.AwardedRank => row.Result.AwardedRank ?? string.Empty,
+        ProtocolColumn.Gap => GapCell(row.Result, leader),
         _ => string.Empty
     };
+
+    // The «Відставання» column: the loss to the group leader as "+h:mm:ss", shown only for a placed result
+    // whose time exceeds the leader's. The leader themselves, an unplaced run (DNS/MP/поза конкурсом) and a
+    // point-scoring day with no times all show nothing — the same loss-to-leader convention the finish
+    // read-out and the monitor screens use.
+    private static string GapCell(ParticipantDayResult r, TimeSpan? leader) =>
+        r.Place is not null && leader is { } lead && r.ResultTime is { } rt && rt > lead
+            ? "+" + (rt - lead).ToString(@"h\:mm\:ss")
+            : string.Empty;
 
     // The place column: the 1-based rank, «П/К» for a personal-discipline out-of-competition runner (not
     // placed but still listed), blank otherwise.
