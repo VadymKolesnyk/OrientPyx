@@ -51,17 +51,18 @@ public sealed class FinishReadRowViewModel
         _row.CollectRentalChip ? _localization.Get("FinishRead.Chip.CollectRental") : string.Empty;
 
     /// <summary>
-    /// Start time as "HH:mm:ss", or blank when none is known. For a recognised chip this is the resolved
-    /// start used for evaluation (chip read-out start, else the assigned start); for an unrecognised chip
-    /// — which has no resolved start — it falls back to the raw start the readout file carried, so an
-    /// unknown chip still shows the start it was read with.
+    /// Start time as "HH:mm:ss" in local time, or blank when none is known. For a recognised chip this is
+    /// the resolved start used for evaluation (chip read-out start, else the assigned start); for an
+    /// unrecognised chip — which has no resolved start — it falls back to the raw start the readout file
+    /// carried, so an unknown chip still shows the start it was read with.
     /// </summary>
     public string StartTimeText => (_row.ResolvedStartTime ?? _row.StartTime) is { } t
-        ? t.ToString("HH:mm:ss")
+        ? t.ToLocalTime().ToString("HH:mm:ss")
         : string.Empty;
 
-    /// <summary>Finish time as "HH:mm:ss", or blank when the readout carried none.</summary>
-    public string FinishTimeText => _row.FinishTime is { } t ? t.ToString("HH:mm:ss") : string.Empty;
+    /// <summary>Finish time as "HH:mm:ss" in local time, or blank when the readout carried none.</summary>
+    public string FinishTimeText =>
+        _row.FinishTime is { } t ? t.ToLocalTime().ToString("HH:mm:ss") : string.Empty;
 
     /// <summary>Result (finish − start) as "H:mm:ss", or blank when either time is unknown.</summary>
     public string ElapsedText => _row.Elapsed is { } e && e >= TimeSpan.Zero

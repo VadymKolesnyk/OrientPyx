@@ -45,8 +45,19 @@ public sealed class SportTimeCsvReadoutParser : IReadoutParser
     // A synthetic base date the file itself doesn't carry. Its weekday is shifted to match the finish's
     // parenthesised DOW when there is one, so weekday-relative dating works; otherwise it's arbitrary and
     // only the monotonic fallback orders the course. Absolute dates are meaningless here — only diffs are.
-    private static readonly DateTimeOffset SyntheticBase =
-        new(2001, 1, 1, 0, 0, 0, TimeSpan.Zero); // 2001-01-01 is a Monday.
+    //
+    // The offset, however, is NOT meaningless: every consumer renders these stamps with ToLocalTime(), so a
+    // UTC-zero offset would shift the displayed time of day by the local UTC offset (e.g. 11:17 read as
+    // 14:17 at UTC+3). The base therefore carries the LOCAL offset, so a bare "11:17:16" in the file stays
+    // 11:17:16 on screen.
+    private static DateTimeOffset SyntheticBase
+    {
+        get
+        {
+            var date = new DateTime(2001, 1, 1); // 2001-01-01 is a Monday.
+            return new DateTimeOffset(date, TimeZoneInfo.Local.GetUtcOffset(date));
+        }
+    }
 
     public bool CanParse(string content)
     {

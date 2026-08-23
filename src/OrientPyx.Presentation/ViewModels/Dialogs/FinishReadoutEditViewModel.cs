@@ -36,8 +36,8 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     // prompt and there may be more unknown reads queued behind it — lets the operator skip them all at once.
     private readonly bool _showCancelAll;
     // The read's local date — the day an edited time-of-day is spliced onto (read times are a time of day
-    // on one date). Taken from the finish (else start) read time, in local time; today's local date when
-    // the read carried no time at all.
+    // on one date). Taken from the finish, else the start, else the first timed punch, in local time;
+    // today's local date when the read carried no time at all.
     private readonly DateTime _anchorDate;
 
     public FinishReadoutEditViewModel(
@@ -51,7 +51,10 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
         _titleKey = titleKey;
         _showCancelAll = showCancelAll;
 
-        var anchor = data.FinishTime ?? data.StartTime;
+        // Anchor on the read's own local date, preferring the finish, then the start, then the first timed
+        // punch — a read with only punch times (no finish) must not fall back to today, or every edited
+        // punch would be re-dated onto the wrong day.
+        var anchor = data.FinishTime ?? data.StartTime ?? data.Punches.FirstOrDefault(p => p.Time is not null)?.Time;
         _anchorDate = (anchor?.ToLocalTime() ?? DateTimeOffset.Now).Date;
 
         ChipNumber = data.ChipNumber;

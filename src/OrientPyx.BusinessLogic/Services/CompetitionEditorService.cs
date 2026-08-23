@@ -3729,10 +3729,12 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         {
             foreach (var p in view.Passage)
             {
+                // Rendered in local time — punch stamps round-trip through UTC ticks, so formatting
+                // them raw would print the wall clock shifted by the local UTC offset.
                 if (p.Kind == PassageKind.Start && p.Time is { } st)
-                    startClock = st.ToString("HH\\:mm\\:ss", CultureInfo.InvariantCulture);
+                    startClock = st.ToLocalTime().ToString("HH\\:mm\\:ss", CultureInfo.InvariantCulture);
                 else if (p.Kind == PassageKind.Finish && p.Time is { } ft)
-                    finishClock = ft.ToString("HH\\:mm\\:ss\\.f", CultureInfo.InvariantCulture);
+                    finishClock = ft.ToLocalTime().ToString("HH\\:mm\\:ss\\.f", CultureInfo.InvariantCulture);
                 if (p.LegKm is { } km && km > 0m)
                     totalKm += km;
             }
@@ -4229,7 +4231,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             var timePart = token[(at + 1)..];
             DateTimeOffset? time = timePart != "-" && long.TryParse(timePart, NumberStyles.Integer,
                 CultureInfo.InvariantCulture, out var ticks)
-                ? new DateTimeOffset(ticks, TimeSpan.Zero)
+                // Ticks are UTC, so the reconstructed stamp must be converted back to local time rather
+                // than left at offset 0 — otherwise it renders shifted by the local UTC offset wherever it
+                // is shown as a bare time of day, and the edit modal would then save that shifted value.
+                ? new DateTimeOffset(ticks, TimeSpan.Zero).ToLocalTime()
                 : null;
             list.Add(new ChipPunch(code, time));
         }
@@ -4544,8 +4549,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     Qual: r.Rank,
                     Place: res.Place,
                     ResultTime: res.ResultTime,
-                    StartTime: res.ActualStart?.TimeOfDay,
-                    FinishTime: res.FinishTime?.TimeOfDay,
+                    StartTime: res.ActualStart?.ToLocalTime().TimeOfDay,
+                    FinishTime: res.FinishTime?.ToLocalTime().TimeOfDay,
                     Score: res.Score,
                     Points: res.Points,
                     Status: res.Status,
@@ -4766,7 +4771,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 ResultColumn.Team => r.Team,
                 ResultColumn.Club => r.ClubName,
                 ResultColumn.Region => r.RegionName,
-                ResultColumn.StartTime => FormatClock(res.ActualStart?.TimeOfDay),
+                ResultColumn.StartTime => FormatClock(res.ActualStart?.ToLocalTime().TimeOfDay),
                 ResultColumn.ResultTime => res.Status == FinishStatus.Ok ? FormatSpan(res.ResultTime) : string.Empty,
                 ResultColumn.Gap => placed && leader is { } l && res.ResultTime is { } rt && rt > l
                     ? "+" + FormatSpan(rt - l)
