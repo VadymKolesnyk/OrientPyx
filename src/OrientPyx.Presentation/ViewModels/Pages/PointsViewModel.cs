@@ -13,6 +13,9 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 /// <summary>A formula variable shown in the insert palette: the token to insert + a localized description.</summary>
 public sealed record PointsVariableItem(string Token, string Description);
 
+/// <summary>A formula helper function shown in the reference list: its signature + a localized description.</summary>
+public sealed record PointsFunctionItem(string Signature, string Description);
+
 /// <summary>
 /// The application-level points ("Очки") settings page: a master-detail editor for the rules that award
 /// ranking points. The left list holds every rule; the right pane edits the selected one. A rule is
@@ -50,6 +53,9 @@ public sealed partial class PointsViewModel : PageViewModelBase
         _dialogs = dialogs;
         Variables = PointsFormula.Variables
             .Select(v => new PointsVariableItem(v.Token, Localization.Get(v.DescriptionKey)))
+            .ToList();
+        Functions = PointsFormula.Functions
+            .Select(f => new PointsFunctionItem(f.Signature, Localization.Get(f.DescriptionKey)))
             .ToList();
     }
 
@@ -98,6 +104,9 @@ public sealed partial class PointsViewModel : PageViewModelBase
 
     /// <summary>The variables a formula may reference (for the insert palette), with localized descriptions.</summary>
     public IReadOnlyList<PointsVariableItem> Variables { get; }
+
+    /// <summary>The helper functions a formula may call (reference list), with localized descriptions.</summary>
+    public IReadOnlyList<PointsFunctionItem> Functions { get; }
 
     /// <summary>
     /// Where the formula caret currently sits, so a palette insert lands at the cursor. Bound to the

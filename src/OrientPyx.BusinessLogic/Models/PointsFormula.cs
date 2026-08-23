@@ -9,6 +9,12 @@ namespace OrientPyx.BusinessLogic.Models;
 public sealed record PointsVariable(string Token, string DescriptionKey);
 
 /// <summary>
+/// One helper function available inside a points formula. The signature is the text shown in the editor's
+/// function list; the description key names the localized explanation next to it.
+/// </summary>
+public sealed record PointsFunction(string Signature, string DescriptionKey);
+
+/// <summary>
 /// The set of values a points formula is evaluated against for a single participant. All members are
 /// optional inputs to <see cref="PointsFormula.Evaluate"/>; an unknown/zero value is treated as 0.
 /// </summary>
@@ -52,6 +58,15 @@ public static class PointsFormula
         new("Місце", "Points.Var.Place"),
         new("Бали", "Points.Var.Score"),
         new("Бали_л", "Points.Var.LeaderScore"),
+    ];
+
+    /// <summary>The helper functions a formula may call (signature + description key for the editor's list).</summary>
+    public static readonly IReadOnlyList<PointsFunction> Functions =
+    [
+        new("min(a; b; …)", "Points.Fn.Min.Desc"),
+        new("max(a; b; …)", "Points.Fn.Max.Desc"),
+        new("round(x)", "Points.Fn.Round1.Desc"),
+        new("round(x; n)", "Points.Fn.Round2.Desc"),
     ];
 
     /// <summary>

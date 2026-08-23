@@ -21,6 +21,9 @@ public interface IBackgroundActivityService : INotifyPropertyChanged
     /// <summary>True when at least one process is active, so the block can show/hide itself.</summary>
     bool IsAnyActive { get; }
 
+    /// <summary>True when at least one running activity is currently failing — turns the top-bar block red.</summary>
+    bool HasAnyProblem { get; }
+
     /// <summary>
     /// Adds an activity to the list (idempotent). Safe to call from a pool thread — the service
     /// marshals the collection change onto the UI thread.

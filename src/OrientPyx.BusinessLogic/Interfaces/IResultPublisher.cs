@@ -14,8 +14,9 @@ public interface IResultPublisher
     /// Pushes one snapshot to the service for the given competition slug, using the app-level connection
     /// settings. On the first call for a slug it also uploads the competition + day metadata and the
     /// published day's group metadata; later calls upload only the result rows (unless
-    /// <see cref="ResetMetadata"/> was called). Throws on a transport / server error so the caller can
-    /// surface it in the publish log.
+    /// <see cref="ResetMetadata"/> was called). Throws <see cref="PublishException"/> on a transport / server
+    /// error — classified so the caller can surface a plain-language reason in the publish log. A failed call
+    /// also forgets the metadata it had recorded, so the next successful call re-sends it.
     /// </summary>
     Task PublishAsync(
         OnlinePublishSettings publish,

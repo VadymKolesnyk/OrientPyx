@@ -38,6 +38,19 @@ public partial class OnlineResultsView : UserControl
         _ = launcher.LaunchUriAsync(uri);
     }
 
+    // Copies the entire publish log — the common case, and it needs no hand-selection at all.
+    private void OnCopyLogClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not OnlineResultsViewModel vm)
+            return;
+
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null || string.IsNullOrEmpty(vm.LogText))
+            return;
+
+        _ = clipboard.SetTextAsync(vm.LogText);
+    }
+
     // Copies a spectator link to the clipboard.
     private void OnCopyLinkClick(object? sender, RoutedEventArgs e)
     {

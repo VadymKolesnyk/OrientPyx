@@ -81,6 +81,34 @@
             <Setter Property="Background" Value="#0F6D4AFF" />
             <Setter Property="BorderThickness" Value="0" />
         </Style>
+        <!-- Read-only log view: a TextBox rather than a SelectableTextBlock, because a TextBox's whole
+             client area is a text-hit surface — a drag can start left of a line or below the last one, and
+             Ctrl+A / Ctrl+C work. Chrome is stripped so it still reads as a plain log panel. -->
+        <Style Selector="TextBox.log">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <!-- The inset is the TextBox's OWN padding, never the hosting card's. Padding here is laid out
+                 inside the control, so a press in that strip still belongs to the TextBox and starts a
+                 selection; padding on the surrounding Border is dead space and silently swallowed
+                 left-edge drags. -->
+            <Setter Property="Padding" Value="10" />
+            <Setter Property="FontFamily" Value="Consolas,monospace" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="TextBox.log /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="TextBox.log:pointerover /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="TextBox.log:focus /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+
         <Style Selector="DatePicker">
             <Setter Property="CornerRadius" Value="8" />
             <Setter Property="MinHeight" Value="38" />

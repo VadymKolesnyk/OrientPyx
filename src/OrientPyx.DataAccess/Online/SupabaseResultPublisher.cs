@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using OrientPyx.BusinessLogic.Enums;
@@ -27,8 +28,21 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
     // Tracks what metadata has already been uploaded: the slug (events + event_days) and "slug:day" (groups).
     private readonly HashSet<string> _metaSent = new();
 
-    public SupabaseResultPublisher() : this(new HttpClient { Timeout = TimeSpan.FromSeconds(30) }, ownsHttp: true)
+    public SupabaseResultPublisher() : this(CreateHttpClient(), ownsHttp: true)
     {
+    }
+
+    // A field-day network drops in and out. SocketsHttpHandler caches DNS results for the lifetime of a
+    // pooled connection, so after the Wi-Fi comes back a stale/failed resolution could otherwise be reused
+    // for a long time; recycling connections every two minutes bounds how long a bad DNS answer sticks.
+    private static HttpClient CreateHttpClient()
+    {
+        var handler = new SocketsHttpHandler
+        {
+            PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+            ConnectTimeout = TimeSpan.FromSeconds(15),
+        };
+        return new HttpClient(handler, disposeHandler: true) { Timeout = TimeSpan.FromSeconds(30) };
     }
 
     public SupabaseResultPublisher(HttpClient http, bool ownsHttp = false)
@@ -53,30 +67,48 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
             throw new InvalidOperationException("Online publish settings are incomplete (URL or service-role key missing).");
 
         var slug = publish.Slug;
-
-        // 1) Competition + days metadata, once per slug.
-        if (!_metaSent.Contains(slug))
-        {
-            await PushAsync(api, "events", "id", [BuildEventRow(publish, snapshot.Days.Count)], cancellationToken);
-            if (snapshot.Days.Count > 0)
-                await PushAsync(api, "event_days", "event,day", BuildDayRows(slug, snapshot.Days), cancellationToken);
-            _metaSent.Add(slug);
-        }
-
-        // 2) Group metadata for the published day, once per (slug, day).
         var dayKey = $"{slug}:{snapshot.PublishedDayNumber}";
-        if (snapshot.Groups.Count > 0 && !_metaSent.Contains(dayKey))
-        {
-            await PushAsync(api, "groups", "event,name,day",
-                BuildGroupRows(slug, snapshot.PublishedDayNumber, snapshot.Groups), cancellationToken);
-            _metaSent.Add(dayKey);
-        }
 
-        // 3) Result rows — every tick.
-        if (snapshot.Rows.Count > 0)
+        // A failed tick must not leave metadata half-uploaded and remembered as done: the frontend would then
+        // never learn about a day or group added right when the network dropped, and the run would look healthy
+        // ("results 25" every tick) while the site stayed stale until publishing was restarted. So each key is
+        // recorded only after its own push succeeded, and any failure below un-remembers both keys so the next
+        // successful tick re-sends the whole metadata set.
+        try
         {
-            await PushAsync(api, "results", "event,bib,day",
-                BuildResultRows(publish, snapshot), cancellationToken);
+            // 1) Competition + days metadata, once per slug.
+            if (!_metaSent.Contains(slug))
+            {
+                await PushAsync(api, "events", "id", [BuildEventRow(publish, snapshot.Days.Count)], cancellationToken);
+                if (snapshot.Days.Count > 0)
+                    await PushAsync(api, "event_days", "event,day", BuildDayRows(slug, snapshot.Days), cancellationToken);
+                _metaSent.Add(slug);
+            }
+
+            // 2) Group metadata for the published day, once per (slug, day).
+            if (snapshot.Groups.Count > 0 && !_metaSent.Contains(dayKey))
+            {
+                await PushAsync(api, "groups", "event,name,day",
+                    BuildGroupRows(slug, snapshot.PublishedDayNumber, snapshot.Groups), cancellationToken);
+                _metaSent.Add(dayKey);
+            }
+
+            // 3) Result rows — every tick.
+            if (snapshot.Rows.Count > 0)
+            {
+                await PushAsync(api, "results", "event,bib,day",
+                    BuildResultRows(publish, snapshot), cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // a stop/pause, not a failure — leave the metadata memory alone
+        }
+        catch
+        {
+            _metaSent.Remove(slug);
+            _metaSent.Remove(dayKey);
+            throw;
         }
     }
 
@@ -225,13 +257,84 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
         req.Headers.TryAddWithoutValidation("Prefer", "resolution=merge-duplicates,return=minimal");
         req.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        using var resp = await _http.SendAsync(req, cancellationToken);
-        if (!resp.IsSuccessStatusCode)
+        HttpResponseMessage resp;
+        try
         {
+            resp = await _http.SendAsync(req, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw; // the user stopped publishing — not a network failure
+        }
+        catch (TaskCanceledException ex)
+        {
+            // HttpClient surfaces its own timeout as a cancellation that the token didn't ask for.
+            throw new PublishException(PublishFailureKind.Timeout, Describe(ex), ex);
+        }
+        catch (HttpRequestException ex)
+        {
+            cancellationToken.ThrowIfCancellationRequested(); // a stop mid-request isn't a network failure
+            throw new PublishException(Classify(ex), Describe(ex), ex);
+        }
+
+        using (resp)
+        {
+            if (resp.IsSuccessStatusCode)
+                return;
+
             var body = await resp.Content.ReadAsStringAsync(cancellationToken);
-            throw new HttpRequestException($"Supabase {(int)resp.StatusCode} [{table}]: {body}");
+            var code = (int)resp.StatusCode;
+            var kind = code switch
+            {
+                401 or 403 => PublishFailureKind.Unauthorized,
+                >= 500 => PublishFailureKind.ServerError,
+                >= 400 => PublishFailureKind.BadRequest,
+                _ => PublishFailureKind.Unknown,
+            };
+            throw new PublishException(kind, $"HTTP {code} [{table}]: {Trim(body)}");
         }
     }
+
+    // Maps a transport failure onto the coarse reason the UI explains in plain language. The useful signal is
+    // in the SocketException nested inside HttpRequestException — the outer Message is the useless
+    // "An error occurred while sending the request."
+    private static PublishFailureKind Classify(HttpRequestException ex)
+    {
+        for (Exception? e = ex; e is not null; e = e.InnerException)
+        {
+            if (e is SocketException socket)
+            {
+                return socket.SocketErrorCode switch
+                {
+                    SocketError.HostNotFound or SocketError.NoData or SocketError.TryAgain
+                        => PublishFailureKind.NoDns,
+                    SocketError.TimedOut => PublishFailureKind.Timeout,
+                    _ => PublishFailureKind.NoConnection,
+                };
+            }
+
+            if (e is System.Security.Authentication.AuthenticationException)
+                return PublishFailureKind.NoConnection;
+        }
+
+        return PublishFailureKind.NoConnection;
+    }
+
+    // Flattens the exception chain into one line — the inner messages are where the real cause lives.
+    private static string Describe(Exception ex)
+    {
+        var parts = new List<string>();
+        for (Exception? e = ex; e is not null; e = e.InnerException)
+        {
+            var m = e.Message.Trim();
+            if (m.Length > 0 && !parts.Contains(m))
+                parts.Add(m);
+        }
+        return string.Join(" → ", parts);
+    }
+
+    private static string Trim(string body) =>
+        body.Length <= 300 ? body.Trim() : body[..300].Trim() + "…";
 
     private static string? FormatTime(TimeSpan? t) =>
         t is { } v ? v.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture) : null;

@@ -11,6 +11,13 @@ public enum BackgroundActivityState
 
     /// <summary>Temporarily suspended by the user; can be resumed without losing its settings.</summary>
     Paused,
+
+    /// <summary>
+    /// Still running and retrying, but its work is currently failing (e.g. the online publisher can't reach
+    /// the server). Distinct from Paused: the user didn't ask for it, and it needs attention — the top-bar
+    /// block turns red so a stalled process can't sit there looking healthy.
+    /// </summary>
+    Failing,
 }
 
 /// <summary>
@@ -38,6 +45,14 @@ public interface IBackgroundActivity : INotifyPropertyChanged
 
     /// <summary>True while paused — lets the popup swap the pause button for a resume one.</summary>
     bool IsPaused { get; }
+
+    /// <summary>True while the activity is running but failing — drives the red state chip and the red
+    /// top-bar glyph/badge, so a stalled process is visible without opening the popup.</summary>
+    bool HasProblem { get; }
+
+    /// <summary>True only in the plain healthy Running state (neither paused nor failing) — the condition
+    /// for the green/accent "Running" chip, which must yield to both other states.</summary>
+    bool IsRunningNormally { get; }
 
     /// <summary>Whether this activity supports pause/resume (hides the button when false).</summary>
     bool CanPause { get; }

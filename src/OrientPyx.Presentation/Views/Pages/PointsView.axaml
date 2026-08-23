@@ -57,7 +57,7 @@
             </Border>
 
             <!-- ── Detail: editor for the selected rule ───────────────────────────────────── -->
-            <Border Grid.Column="2" Classes="card" ClipToBounds="True">
+            <Border Grid.Column="2" Classes="card" Padding="18" ClipToBounds="True">
               <Grid>
 
                 <!-- Empty state -->
@@ -100,46 +100,89 @@
                     </DockPanel>
 
                     <!-- Formula editor -->
-                    <StackPanel IsVisible="{Binding IsFormulaEditor}" Spacing="10">
-                        <TextBlock Text="{Binding Localization[Points.Formula.Label]}" Classes="subtitle" FontSize="11" />
-                        <TextBox Name="FormulaBox"
-                                 Text="{Binding FormulaText, Mode=TwoWay}"
-                                 FontFamily="Consolas, monospace"
-                                 PlaceholderText="{Binding Localization[Points.Formula.Watermark]}" />
+                    <ScrollViewer IsVisible="{Binding IsFormulaEditor}"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="18" Margin="0,0,6,4">
 
-                        <!-- Validity badge -->
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock Text="✓" Foreground="#2E7D32" FontWeight="Bold"
-                                       IsVisible="{Binding FormulaValid}" />
-                            <TextBlock Text="{Binding Localization[Points.Formula.Valid]}" Foreground="#2E7D32"
-                                       IsVisible="{Binding FormulaValid}" />
-                            <TextBlock Text="⚠" Foreground="#C62828" FontWeight="Bold"
-                                       IsVisible="{Binding !FormulaValid}" />
-                            <TextBlock Text="{Binding Localization[Points.Formula.Invalid]}" Foreground="#C62828"
-                                       IsVisible="{Binding !FormulaValid}" />
+                            <!-- Expression input -->
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="{Binding Localization[Points.Formula.Label]}"
+                                           Classes="subtitle" FontSize="11" />
+                                <TextBox Name="FormulaBox"
+                                         Text="{Binding FormulaText, Mode=TwoWay}"
+                                         FontFamily="Consolas, monospace"
+                                         Padding="10,8"
+                                         PlaceholderText="{Binding Localization[Points.Formula.Watermark]}" />
+
+                                <!-- Validity badge -->
+                                <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,0,0">
+                                    <TextBlock Text="✓" Foreground="#2E7D32" FontWeight="Bold"
+                                               IsVisible="{Binding FormulaValid}" />
+                                    <TextBlock Text="{Binding Localization[Points.Formula.Valid]}" Foreground="#2E7D32"
+                                               IsVisible="{Binding FormulaValid}" />
+                                    <TextBlock Text="⚠" Foreground="#C62828" FontWeight="Bold"
+                                               IsVisible="{Binding !FormulaValid}" />
+                                    <TextBlock Text="{Binding Localization[Points.Formula.Invalid]}" Foreground="#C62828"
+                                               IsVisible="{Binding !FormulaValid}" />
+                                </StackPanel>
+
+                                <TextBlock Text="{Binding Localization[Points.Formula.Hint]}"
+                                           Classes="subtitle" FontSize="11"
+                                           TextWrapping="Wrap" Margin="0,4,0,0" />
+                            </StackPanel>
+
+                            <!-- Variable insert palette: token button + what it means -->
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="{Binding Localization[Points.Formula.Variables]}"
+                                           Classes="subtitle" FontSize="11" />
+                                <ItemsControl ItemsSource="{Binding Variables}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="pages:PointsVariableItem">
+                                            <Grid ColumnDefinitions="130,*" Margin="0,0,0,8">
+                                                <Button Grid.Column="0"
+                                                        HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Center"
+                                                        Padding="10,5"
+                                                        Command="{Binding $parent[ItemsControl].((pages:PointsViewModel)DataContext).InsertVariableCommand}"
+                                                        CommandParameter="{Binding Token}"
+                                                        ToolTip.Tip="{Binding Description}">
+                                                    <TextBlock Text="{Binding Token}" FontFamily="Consolas, monospace" />
+                                                </Button>
+                                                <TextBlock Grid.Column="1" Text="{Binding Description}"
+                                                           Classes="subtitle" TextWrapping="Wrap"
+                                                           VerticalAlignment="Center" Margin="12,0,0,0" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <!-- Function reference -->
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="{Binding Localization[Points.Formula.Functions]}"
+                                           Classes="subtitle" FontSize="11" />
+                                <ItemsControl ItemsSource="{Binding Functions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="pages:PointsFunctionItem">
+                                            <Grid ColumnDefinitions="130,*" Margin="0,0,0,6">
+                                                <TextBlock Grid.Column="0" Text="{Binding Signature}"
+                                                           FontFamily="Consolas, monospace"
+                                                           VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Description}"
+                                                           Classes="subtitle" TextWrapping="Wrap"
+                                                           VerticalAlignment="Center" Margin="12,0,0,0" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <TextBlock Text="{Binding Localization[Points.Formula.Note]}"
+                                       Classes="subtitle" FontSize="11" TextWrapping="Wrap" />
+
                         </StackPanel>
-
-                        <!-- Variable insert palette -->
-                        <TextBlock Text="{Binding Localization[Points.Formula.Variables]}" Classes="subtitle" FontSize="11" />
-                        <ItemsControl ItemsSource="{Binding Variables}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <WrapPanel />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="pages:PointsVariableItem">
-                                    <Button Margin="0,0,6,6"
-                                            Command="{Binding $parent[ItemsControl].((pages:PointsViewModel)DataContext).InsertVariableCommand}"
-                                            CommandParameter="{Binding Token}"
-                                            ToolTip.Tip="{Binding Description}">
-                                        <TextBlock Text="{Binding Token}" FontFamily="Consolas, monospace" />
-                                    </Button>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-
+                    </ScrollViewer>
                 </DockPanel>
               </Grid>
             </Border>

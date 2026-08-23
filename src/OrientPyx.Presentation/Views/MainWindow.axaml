@@ -132,11 +132,27 @@
                 IsVisible="{Binding Activities.IsAnyActive}"
                 ToolTip.Tip="{Binding Localization[Activity.Title]}">
             <Panel>
-                <!-- Activity (running background processes) glyph -->
+                <!-- Activity (running background processes) glyph. Two copies swapped by HasAnyProblem:
+                     accent while everything is healthy, red the moment a process starts failing, so a
+                     stalled publish is visible in the top bar without opening the flyout. -->
                 <controls:Icon Kind="Activity" Size="18"
+                          IsVisible="{Binding !Activities.HasAnyProblem}"
                           Foreground="{DynamicResource AccentBrush}" />
+                <controls:Icon Kind="TriangleAlert" Size="18"
+                          IsVisible="{Binding Activities.HasAnyProblem}"
+                          Foreground="{DynamicResource DangerBrush}" />
                 <!-- Count badge -->
                 <Border Background="{DynamicResource AccentBrush}"
+                        IsVisible="{Binding !Activities.HasAnyProblem}"
+                        CornerRadius="8" MinWidth="16" Height="16"
+                        Padding="4,0" Margin="0,-8,-10,0"
+                        HorizontalAlignment="Right" VerticalAlignment="Top">
+                    <TextBlock Text="{Binding Activities.ActiveCount}"
+                               Foreground="White" FontSize="10" FontWeight="Bold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <Border Background="{DynamicResource DangerBrush}"
+                        IsVisible="{Binding Activities.HasAnyProblem}"
                         CornerRadius="8" MinWidth="16" Height="16"
                         Padding="4,0" Margin="0,-8,-10,0"
                         HorizontalAlignment="Right" VerticalAlignment="Top">
@@ -176,9 +192,15 @@
                                                 <TextBlock Grid.Row="0" Grid.Column="1"
                                                            VerticalAlignment="Top"
                                                            FontSize="11" FontWeight="Bold"
-                                                           IsVisible="{Binding !IsPaused}"
+                                                           IsVisible="{Binding IsRunningNormally}"
                                                            Foreground="{DynamicResource AccentBrush}"
                                                            Text="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).Localization[Activity.State.Running]}" />
+                                                <TextBlock Grid.Row="0" Grid.Column="1"
+                                                           VerticalAlignment="Top"
+                                                           FontSize="11" FontWeight="Bold"
+                                                           IsVisible="{Binding HasProblem}"
+                                                           Foreground="{DynamicResource DangerBrush}"
+                                                           Text="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).Localization[Activity.State.Failing]}" />
                                                 <TextBlock Grid.Row="0" Grid.Column="1"
                                                            VerticalAlignment="Top"
                                                            FontSize="11" FontWeight="Bold"

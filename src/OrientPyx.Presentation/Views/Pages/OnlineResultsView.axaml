@@ -231,14 +231,39 @@
                 <!-- Publish log -->
                 <Border Classes="card" Padding="22">
                     <StackPanel Spacing="10">
-                        <TextBlock Text="{Binding Localization[OnlineResults.Log]}" Classes="h2" />
-                        <Border Classes="card" Padding="10" MinHeight="160" MaxHeight="260"
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0" Text="{Binding Localization[OnlineResults.Log]}"
+                                       Classes="h2" VerticalAlignment="Center" />
+                            <!-- Copying the whole log shouldn't require selecting it by hand at all. -->
+                            <Button Grid.Column="1" Classes="ghost" Padding="8,4"
+                                    Click="OnCopyLogClick"
+                                    ToolTip.Tip="{Binding Localization[OnlineResults.Log.CopyAll]}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <controls:Icon Kind="Copy" Size="15" />
+                                    <TextBlock Text="{Binding Localization[OnlineResults.Log.CopyAll]}"
+                                               FontSize="12" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        <!-- No Padding on the card: any padding here belongs to the Border, not the TextBox,
+                             so a press in that strip misses the text and starts no selection — which is why
+                             selecting from the LEFT edge of a line used to fail while the right side worked.
+                             The inset is the TextBox's own Padding (see the TextBox.log style) instead, so the
+                             full width of the card is a live text-hit surface. -->
+                        <Border Classes="card" MinHeight="160" MaxHeight="260"
                                 ClipToBounds="True">
-                            <ScrollViewer>
-                                <SelectableTextBlock Text="{Binding LogText}"
-                                                     FontFamily="Consolas,monospace" FontSize="12"
-                                                     TextWrapping="Wrap" />
-                            </ScrollViewer>
+                            <!-- A read-only TextBox, not a SelectableTextBlock: the latter is sized to its
+                                 glyphs, so a press starting left of a line or below the last one misses the
+                                 text entirely and no selection begins. A TextBox's whole client area is a
+                                 text-hit surface, and it brings Ctrl+A / Ctrl+C and its own scrolling. -->
+                            <TextBox x:Name="LogTextBox" Classes="log"
+                                     Text="{Binding LogText, Mode=OneWay}"
+                                     IsReadOnly="True"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     VerticalContentAlignment="Top"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto" />
                         </Border>
                     </StackPanel>
                 </Border>

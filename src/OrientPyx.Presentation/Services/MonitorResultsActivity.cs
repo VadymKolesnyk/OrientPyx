@@ -23,6 +23,8 @@ public sealed partial class MonitorResultsActivity : ObservableObject, IBackgrou
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsPaused))]
+    [NotifyPropertyChangedFor(nameof(HasProblem))]
+    [NotifyPropertyChangedFor(nameof(IsRunningNormally))]
     private BackgroundActivityState _state = BackgroundActivityState.Running;
 
     public MonitorResultsActivity(
@@ -45,6 +47,10 @@ public sealed partial class MonitorResultsActivity : ObservableObject, IBackgrou
 
     public bool IsPaused => State == BackgroundActivityState.Paused;
 
+    public bool HasProblem => State == BackgroundActivityState.Failing;
+
+    public bool IsRunningNormally => State == BackgroundActivityState.Running;
+
     public bool CanPause => true;
     public bool CanStop => true;
     public bool CanOpenSettings => true;
@@ -52,7 +58,9 @@ public sealed partial class MonitorResultsActivity : ObservableObject, IBackgrou
     [RelayCommand]
     private void TogglePause()
     {
-        if (State == BackgroundActivityState.Running)
+        // Anything that isn't Paused (Running OR Failing) pauses; only a paused activity resumes. Keyed on
+        // Paused rather than Running so the pause button still pauses while the activity is in trouble.
+        if (State != BackgroundActivityState.Paused)
         {
             _pause();
             State = BackgroundActivityState.Paused;

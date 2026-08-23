@@ -363,7 +363,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         }
         catch (Exception ex)
         {
-            AppendLog(string.Format(Localization.Get("OnlineResults.Log.Error"), ex.Message));
+            AppendLog(string.Format(Localization.Get("OnlineResults.Log.Error"), Flatten(ex)));
         }
     }
 
@@ -410,6 +410,8 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         IsPublishing = true;
         IsPaused = false;
         _lastSkippedNoNumber = -1; // a fresh run should warn again about un-numbered participants
+        _consecutiveFailures = 0;
+        _lastFailureKey = null;
 
         // Persist the current options + that publishing is enabled, and reset the publisher's metadata cache.
         // Drop any pending debounced auto-save so it can't overwrite Enabled with the pre-start value.
@@ -465,7 +467,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
                 }
                 catch (Exception ex)
                 {
-                    AppendLog(string.Format(Localization.Get("OnlineResults.Log.Error"), ex.Message));
+                    ReportFailure(ex);
                 }
             }
 
@@ -492,6 +494,8 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
 
         var snapshot = await _editor.GetOnlineResultsSnapshotAsync(day.Id, ct);
         await _publisher.PublishAsync(publish, _api, snapshot, ct);
+
+        ReportSuccess();
 
         var finished = snapshot.Rows.Count(r => r.Place is not null);
         AppendLog(string.Format(
@@ -555,11 +559,102 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         UpdateActivityStatus();
     }
 
+    // --- Failure reporting ------------------------------------------------------------------------
+
+    // How many ticks in a row have failed. Drives both the log wording (the reason is spelled out once, then
+    // only a compact "attempt N" line, so a long outage doesn't flood the log) and the top-bar status.
+    private int _consecutiveFailures;
+
+    // The failure reason currently being reported, so a repeat of the SAME problem stays quiet.
+    private string? _lastFailureKey;
+
+    private void ReportFailure(Exception ex)
+    {
+        _consecutiveFailures++;
+
+        var (key, detail) = ex is PublishException pe
+            ? (FailureKeyOf(pe.Kind), pe.Detail)
+            : ("OnlineResults.Log.Error.Unknown", Flatten(ex));
+
+        if (key != _lastFailureKey)
+        {
+            // First time we hit this particular problem — spell it out, with the technical detail after it.
+            _lastFailureKey = key;
+            AppendLog(string.Format(
+                Localization.Get("OnlineResults.Log.Error"),
+                $"{Localization.Get(key)} ({detail})"));
+        }
+        else
+        {
+            AppendLog(string.Format(
+                Localization.Get("OnlineResults.Log.Error.Repeat"), _consecutiveFailures));
+        }
+
+        UpdateActivityStatus();
+    }
+
+    private void ReportSuccess()
+    {
+        if (_consecutiveFailures > 0)
+        {
+            var failed = _consecutiveFailures;
+            _consecutiveFailures = 0;
+            _lastFailureKey = null;
+            AppendLog(string.Format(Localization.Get("OnlineResults.Log.Recovered"), failed));
+        }
+
+        UpdateActivityStatus();
+    }
+
+    private static string FailureKeyOf(PublishFailureKind kind) => kind switch
+    {
+        PublishFailureKind.NoDns => "OnlineResults.Log.Error.NoDns",
+        PublishFailureKind.NoConnection => "OnlineResults.Log.Error.NoConnection",
+        PublishFailureKind.Timeout => "OnlineResults.Log.Error.Timeout",
+        PublishFailureKind.Unauthorized => "OnlineResults.Log.Error.Unauthorized",
+        PublishFailureKind.ServerError => "OnlineResults.Log.Error.ServerError",
+        PublishFailureKind.BadRequest => "OnlineResults.Log.Error.BadRequest",
+        _ => "OnlineResults.Log.Error.Unknown",
+    };
+
+    // Non-publish exceptions (e.g. a snapshot read) still deserve their inner cause, not just the outer message.
+    private static string Flatten(Exception ex)
+    {
+        var parts = new List<string>();
+        for (Exception? e = ex; e is not null; e = e.InnerException)
+        {
+            var m = e.Message.Trim();
+            if (m.Length > 0 && !parts.Contains(m))
+                parts.Add(m);
+        }
+        return string.Join(" → ", parts);
+    }
+
+    // Called from the publish loop's pool thread as well as the UI thread; the activity's State/StatusText
+    // back top-bar visuals, so always apply them on the UI thread (AppendLog does the same).
     private void UpdateActivityStatus()
     {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(UpdateActivityStatus);
+            return;
+        }
+
         if (_activity is null)
             return;
 
+        // A stalled publish must not look healthy in the top bar: while ticks are failing, both the status
+        // line AND the activity's state say so — Failing turns the top-bar glyph and badge red, so the
+        // problem is visible without opening the flyout. A paused activity keeps Paused (the user's choice).
+        if (_consecutiveFailures > 0 && !IsPaused)
+        {
+            _activity.State = BackgroundActivityState.Failing;
+            _activity.StatusText = string.Format(
+                Localization.Get("Activity.OnlineResults.StatusFailing"), Slug, _consecutiveFailures);
+            return;
+        }
+
+        _activity.State = IsPaused ? BackgroundActivityState.Paused : BackgroundActivityState.Running;
         var key = IsPaused ? "Activity.OnlineResults.StatusPaused" : "Activity.OnlineResults.Status";
         _activity.StatusText = string.Format(Localization.Get(key), Slug, _api.IntervalSeconds);
     }
@@ -625,7 +720,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         }
         catch (Exception ex)
         {
-            AppendLog(string.Format(Localization.Get("OnlineResults.Log.Error"), ex.Message));
+            AppendLog(string.Format(Localization.Get("OnlineResults.Log.Error"), Flatten(ex)));
         }
     }
 
