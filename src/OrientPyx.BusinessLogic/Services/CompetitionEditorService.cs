@@ -2664,8 +2664,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     /// onto each result. A group with no effective rule, and any non-rankable member, is left blank.
     ///
     /// A <see cref="PointsRuleKind.Table"/> rule keys off the member's place; a formula rule additionally
-    /// references the group leader's time/score (the placed runner whose place is 1) and the group size,
-    /// so those are resolved once per group. Points rules live in the app database (shared across
+    /// references the group leader's time/score (the placed runner whose place is 1) and the group counts
+    /// (registered / started / finished), so those are resolved once per group. Points rules live in the app database (shared across
     /// competitions); the per-group / competition-default assignment lives in the event database.
     /// </summary>
     private async Task AwardPointsAsync(
@@ -2706,10 +2706,17 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             if (ruleId is not { } id || id == Guid.Empty || !ruleById.TryGetValue(id, out var rule))
                 continue;
 
-            // Group context the formula references: the leader (place 1) time/score and the group size
-            // (the number of placed finishers). A table rule ignores all of this and keys off place only.
+            // Group context the formula references: the leader (place 1) time/score and the three group
+            // counts — N (everyone registered in the group), N_с (those who actually started, i.e. have an
+            // actual start time) and N_ф (those who finished with a valid result: status OK). NONE of the
+            // three counts a поза конкурсом runner: such a runner is not part of the group's standings, so
+            // they inflate neither the entry list nor the started/finished counts. A table rule ignores all
+            // of this and keys off place only.
+            var inCompetition = members.Where(m => !m.Result.OutOfCompetition).ToList();
             var placed = members.Where(m => m.Result.Place is not null).ToList();
-            var groupSize = placed.Count;
+            var groupSize = inCompetition.Count;
+            var startedCount = inCompetition.Count(m => m.Result.ActualStart is not null);
+            var finishedCount = inCompetition.Count(m => m.Result.Status == FinishStatus.Ok);
             var leader = placed.FirstOrDefault(m => m.Result.Place == 1).Result;
             var leaderTime = leader?.ResultTime?.TotalSeconds;
             var leaderScore = leader?.Score;
@@ -2727,7 +2734,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     Score: result.Score,
                     LeaderTimeSeconds: leaderTime,
                     LeaderScore: leaderScore,
-                    GroupSize: groupSize);
+                    GroupSize: groupSize,
+                    StartedCount: startedCount,
+                    FinishedCount: finishedCount);
                 var points = PointsRuleEvaluator.Evaluate(rule, input);
                 if (points is not null)
                     results[linkId] = results[linkId] with { Points = points };

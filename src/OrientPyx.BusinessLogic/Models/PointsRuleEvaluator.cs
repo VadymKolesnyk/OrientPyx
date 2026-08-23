@@ -5,8 +5,13 @@ namespace OrientPyx.BusinessLogic.Models;
 /// <summary>
 /// The inputs a <see cref="PointsRule"/> needs to award «Очки» (ranking points) to one runner: the
 /// runner's place and (rogaine) score, their result time, and the group context (leader time/score,
-/// group size) the formula variables reference. Times are in seconds; null ⇒ unknown (treated as 0
-/// by the formula, and as "no time" by a table rule, which only needs the place).
+/// the three group counts) the formula variables reference. Times are in seconds; null ⇒ unknown
+/// (treated as 0 by the formula, and as "no time" by a table rule, which only needs the place).
+///
+/// The three counts are distinct on purpose: <paramref name="GroupSize"/> (N) is everyone registered
+/// in the group, <paramref name="StartedCount"/> (N_с) only those who actually started, and
+/// <paramref name="FinishedCount"/> (N_ф) only those who finished with a valid result. None of the
+/// three counts a «поза конкурсом» runner — they are outside the group's standings entirely.
 /// </summary>
 public sealed record PointsRuleInput(
     int? Place,
@@ -14,7 +19,9 @@ public sealed record PointsRuleInput(
     int? Score,
     double? LeaderTimeSeconds,
     int? LeaderScore,
-    int GroupSize);
+    int GroupSize,
+    int StartedCount,
+    int FinishedCount);
 
 /// <summary>
 /// Awards «Очки» (ranking points) for one runner from a <see cref="PointsRule"/>. A
@@ -73,6 +80,8 @@ public static class PointsRuleEvaluator
             ParticipantTime = input.ResultTimeSeconds ?? 0,
             LeaderTime = input.LeaderTimeSeconds ?? 0,
             GroupSize = input.GroupSize,
+            StartedCount = input.StartedCount,
+            FinishedCount = input.FinishedCount,
             Place = input.Place ?? 0,
             Score = input.Score ?? 0,
             LeaderScore = input.LeaderScore ?? 0

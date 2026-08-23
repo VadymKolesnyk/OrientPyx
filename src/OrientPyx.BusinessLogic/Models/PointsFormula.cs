@@ -26,8 +26,17 @@ public sealed record PointsFormulaContext
     /// <summary>T_л — the leader's (winner's) result time, in seconds.</summary>
     public double LeaderTime { get; init; }
 
-    /// <summary>N — the number of runners in the group.</summary>
+    /// <summary>N — the number of runners REGISTERED in the group (everyone entered for the day).
+    /// Excludes «поза конкурсом» runners, as do <see cref="StartedCount"/> and <see cref="FinishedCount"/>.</summary>
     public double GroupSize { get; init; }
+
+    /// <summary>N_с — the number of runners in the group who actually started (have an actual start time),
+    /// «поза конкурсом» runners excluded.</summary>
+    public double StartedCount { get; init; }
+
+    /// <summary>N_ф — the number of runners in the group who finished with a valid result (status OK),
+    /// withdrawn and «поза конкурсом» runners excluded.</summary>
+    public double FinishedCount { get; init; }
 
     /// <summary>Місце — the participant's place (1 = winner).</summary>
     public double Place { get; init; }
@@ -55,6 +64,8 @@ public static class PointsFormula
         new("T_у", "Points.Var.ParticipantTime"),
         new("T_л", "Points.Var.LeaderTime"),
         new("N", "Points.Var.GroupSize"),
+        new("N_с", "Points.Var.StartedCount"),
+        new("N_ф", "Points.Var.FinishedCount"),
         new("Місце", "Points.Var.Place"),
         new("Бали", "Points.Var.Score"),
         new("Бали_л", "Points.Var.LeaderScore"),
@@ -229,6 +240,8 @@ public static class PointsFormula
                 "T_у" => _ctx.ParticipantTime,
                 "T_л" => _ctx.LeaderTime,
                 "N" => _ctx.GroupSize,
+                "N_с" => _ctx.StartedCount,
+                "N_ф" => _ctx.FinishedCount,
                 "Місце" => _ctx.Place,
                 "Бали" => _ctx.Score,
                 "Бали_л" => _ctx.LeaderScore,
@@ -273,7 +286,7 @@ public static class PointsFormula
                 _pos++;
         }
 
-        // Variable names include Cyrillic letters and underscores (T_у, Місце, Бали_л).
+        // Variable names include Cyrillic letters and underscores (T_у, Місце, Бали_л, N_ф).
         private static bool IsIdentifierStart(char c) => char.IsLetter(c) || c == '_';
         private static bool IsIdentifierPart(char c) => char.IsLetterOrDigit(c) || c == '_';
     }
