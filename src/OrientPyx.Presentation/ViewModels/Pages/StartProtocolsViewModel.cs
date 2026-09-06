@@ -103,7 +103,7 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
     public override string IconData =>
         "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 6v6l4 2";
 
-    // ── Day picker (does NOT touch the session) ──────────────────────────────────────────────────────
+    // ── Day picker (does NOT touch the session)
 
     public ObservableCollection<DayOption> DayOptions { get; } = [];
 
@@ -112,7 +112,7 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
 
     public bool ShowDaySelector => DayOptions.Count > 1;
 
-    // ── Settings ─────────────────────────────────────────────────────────────────────────────────────
+    // ── Settings
 
     public ObservableCollection<StartProtocolColumnItemViewModel> Columns { get; } = [];
 
@@ -147,7 +147,7 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
     [ObservableProperty]
     private string _dateText = string.Empty;
 
-    // ── Header placeholders (watermarks) ───────────────────────────────────────────────────────────────
+    // ── Header placeholders (watermarks)
     // The resolved competition/day default for each header field, shown as the TextBox watermark when the
     // user typed nothing and used as the build-time fallback for a blank field; an empty placeholder leaves
     // the field blank everywhere. See ResolveHeaderPlaceholders / BuildDocumentSettings.
@@ -338,7 +338,6 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         CompetitionNamePlaceholder = name?.Trim() ?? string.Empty;
         SubtitlePlaceholder = info?.Organisation?.Trim() ?? string.Empty;
 
-        // Venue: the day's own venue, else the competition venue.
         VenuePlaceholder = FirstNonBlank(day?.Venue, info?.Venue);
 
         // Date: the day's date, else the competition's start date.

@@ -129,7 +129,7 @@ public sealed class DocxSummaryProtocolWriter : ISummaryProtocolWriter
 
         var leadCount = doc.LeadingColumns.Count;
 
-        // ── Tier 1 (band row) ──────────────────────────────────────────────────────────────────────────
+        // ── Tier 1 (band row)
         var tier1 = new TableRow();
         // Leading columns: a header cell spanning both tiers (vertical-merge restart).
         for (var c = 0; c < leadCount; c++)
@@ -153,7 +153,7 @@ public sealed class DocxSummaryProtocolWriter : ISummaryProtocolWriter
             centred: true, boxed: boxHeader));
         table.Append(tier1);
 
-        // ── Tier 2 (sub-column row) ─────────────────────────────────────────────────────────────────────
+        // ── Tier 2 (sub-column row)
         var tier2 = new TableRow();
         // Leading columns: vertical-merge continuation (empty).
         for (var c = 0; c < leadCount; c++)
@@ -174,7 +174,7 @@ public sealed class DocxSummaryProtocolWriter : ISummaryProtocolWriter
             boxed: boxHeader));
         table.Append(tier2);
 
-        // ── Data rows ───────────────────────────────────────────────────────────────────────────────────
+        // ── Data rows
         foreach (var row in section.Rows)
         {
             var tr = new TableRow();
@@ -192,7 +192,6 @@ public sealed class DocxSummaryProtocolWriter : ISummaryProtocolWriter
         return table;
     }
 
-    // ── Column widths ───────────────────────────────────────────────────────────────────────────────────
 
     // Leaf-column widths in twips. Mirrors DocxResultProtocolWriter.ComputeColumnWidths: each column is sized to
     // its content (the longest value for short-code columns; a typical value for wrapping free-text columns),
@@ -200,6 +199,8 @@ public sealed class DocxSummaryProtocolWriter : ISummaryProtocolWriter
     // squeezing the shrinkable columns by shrink priority when they overflow; raise toward the header-word
     // floors; hand the rest out by natural want so the name column grows). So the summary sizes columns the same
     // way the per-day protocol does.
+
+// ── Column widths
     private static int[] ComputeColumnWidths(SummaryProtocolDocument doc)
     {
         var count = doc.LeafColumnCount;
@@ -425,7 +426,7 @@ public sealed class DocxSummaryProtocolWriter : ISummaryProtocolWriter
         return Math.Min(longestWord, HeaderWordCap) + HeaderSafetyChars;
     }
 
-    // ── Cells ───────────────────────────────────────────────────────────────────────────────────────────
+    // ── Cells
 
     // A single-line box on all four sides of one cell — used for the header tiers when the table itself carries
     // no borders, so the header still reads as a header above border-less data rows.
@@ -489,7 +490,7 @@ public sealed class DocxSummaryProtocolWriter : ISummaryProtocolWriter
         return new TableCell(props, para);
     }
 
-    // ── Header / footer / officials (mirrors DocxResultProtocolWriter) ────────────────────────────────────
+    // ── Header / footer / officials (mirrors DocxResultProtocolWriter)
 
     private static Paragraph CentredParagraph(string text, bool bold, int sizeHalfPoints)
     {

@@ -93,7 +93,7 @@ public sealed partial class FinishSplitsViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasPattern;
 
-    // --- Dock side + size (persisted app-wide as preferences.json) ---------------------------------
+    // --- Dock side + size (persisted app-wide as preferences.json)
 
     /// <summary>True when the panel is docked to the right of the table; false = below it.</summary>
     [ObservableProperty]

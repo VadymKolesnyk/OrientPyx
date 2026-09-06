@@ -68,7 +68,7 @@ public sealed class IofXmlParser : IIofXmlParser
         };
     }
 
-    // --- Version detection ---------------------------------------------------
+    // --- Version detection
 
     private static string DetectVersion(XElement root)
     {
@@ -87,7 +87,7 @@ public sealed class IofXmlParser : IIofXmlParser
         return Child(root, "RaceCourseData") is not null ? "3.0" : "2.0.3";
     }
 
-    // --- 2.0.3 ---------------------------------------------------------------
+    // --- 2.0.3
 
     private static IReadOnlyList<IofControl> ReadControlsV2(XElement data)
     {
@@ -198,7 +198,7 @@ public sealed class IofXmlParser : IIofXmlParser
         return (ParseDouble(position.Attribute("x")?.Value), ParseDouble(position.Attribute("y")?.Value));
     }
 
-    // --- 3.0 -----------------------------------------------------------------
+    // --- 3.0
 
     private static IReadOnlyList<IofControl> ReadControlsV3(XElement data)
     {
@@ -335,7 +335,7 @@ public sealed class IofXmlParser : IIofXmlParser
         return string.Empty;
     }
 
-    // --- Course / variant assembly (shared by both standards) ----------------
+    // --- Course / variant assembly (shared by both standards)
 
     // A single running order read from the file, before de-duplication: its file-supplied name (may be blank),
     // its control codes in order, and its stated length/climb.
@@ -462,7 +462,7 @@ public sealed class IofXmlParser : IIofXmlParser
         _ => ControlPointType.Regular
     };
 
-    // --- Shared helpers ------------------------------------------------------
+    // --- Shared helpers
 
     private static int? ReadScale(XElement data)
     {

@@ -40,7 +40,7 @@ namespace OrientPyx.Presentation.Controls;
 /// </summary>
 public sealed class SheetTable : TemplatedControl
 {
-    // ── Bindable properties ───────────────────────────────────────────────────────────────────────
+    // ── Bindable properties
     public static readonly StyledProperty<IEnumerable?> ItemsSourceProperty =
         AvaloniaProperty.Register<SheetTable, IEnumerable?>(nameof(ItemsSource));
 
@@ -91,15 +91,15 @@ public sealed class SheetTable : TemplatedControl
     public static readonly StyledProperty<IReadOnlyList<EntryFeeDiscount>?> DiscountsProperty =
         AvaloniaProperty.Register<SheetTable, IReadOnlyList<EntryFeeDiscount>?>(nameof(Discounts));
 
-    /// <summary>Whether the raised-fee flag column is shown (roster auto-build only).</summary>
+    /// <summary>Roster auto-build only.</summary>
     public static readonly StyledProperty<bool> RaisedFeeEnabledProperty =
         AvaloniaProperty.Register<SheetTable, bool>(nameof(RaisedFeeEnabled));
 
-    /// <summary>Whether the team column is shown (roster auto-build only; team disciplines).</summary>
+    /// <summary>Roster auto-build only; team disciplines.</summary>
     public static readonly StyledProperty<bool> ShowTeamProperty =
         AvaloniaProperty.Register<SheetTable, bool>(nameof(ShowTeam));
 
-    /// <summary>Whether the «Бали» (score) result column is shown (roster auto-build only; point-scoring days).</summary>
+    /// <summary>Roster auto-build only; point-scoring days.</summary>
     public static readonly StyledProperty<bool> ShowScoreProperty =
         AvaloniaProperty.Register<SheetTable, bool>(nameof(ShowScore));
 
@@ -111,7 +111,7 @@ public sealed class SheetTable : TemplatedControl
     public static readonly StyledProperty<string?> LayoutKeyProperty =
         AvaloniaProperty.Register<SheetTable, string?>(nameof(LayoutKey));
 
-    /// <summary>The store that loads/saves this table's view (per-competition <c>views.json</c>).</summary>
+    /// <summary>Per-competition <c>views.json</c>.</summary>
     public static readonly StyledProperty<ITableLayoutStore?> LayoutStoreProperty =
         AvaloniaProperty.Register<SheetTable, ITableLayoutStore?>(nameof(LayoutStore));
 
@@ -130,7 +130,7 @@ public sealed class SheetTable : TemplatedControl
         set => SetValue(StatusInfoProperty, value);
     }
 
-    /// <summary>Raised when the user asks to delete a row via the keyboard; arg = skip-confirm.</summary>
+    /// <summary>Keyboard delete; arg = skip-confirm.</summary>
     public event EventHandler<SheetDeleteEventArgs>? DeleteRequested;
 
     /// <summary>
@@ -188,14 +188,14 @@ public sealed class SheetTable : TemplatedControl
         set => SetValue(SelectedItemProperty, value);
     }
 
-    /// <summary>Delete the row passed as command parameter (confirm flow lives in the VM command).</summary>
+    /// <summary>The confirm flow lives in the VM command.</summary>
     public ICommand? DeleteCommand
     {
         get => GetValue(DeleteCommandProperty);
         set => SetValue(DeleteCommandProperty, value);
     }
 
-    /// <summary>Caller-supplied bands; when set, used instead of building from Days/Blocks.</summary>
+    /// <summary>When set, used instead of building from Days/Blocks.</summary>
     public IReadOnlyList<SheetBand>? Bands
     {
         get => GetValue(BandsProperty);
@@ -256,7 +256,7 @@ public sealed class SheetTable : TemplatedControl
         set => SetValue(RowHighlightPathProperty, value);
     }
 
-    // ── Template parts ────────────────────────────────────────────────────────────────────────────
+    // ── Template parts
     private SheetHeaderPanel? _header;
     private ListBox? _body;
     private ScrollViewer? _headerScroll;
@@ -306,7 +306,6 @@ public sealed class SheetTable : TemplatedControl
         if (combo is null || combo.IsDropDownOpen)
             return;
 
-        // Mirror the ListBox's normal wheel step (vertical; Shift = horizontal) onto the body scroller.
         const double step = 50;
         var delta = e.Delta.Y != 0 ? e.Delta.Y : e.Delta.X;
         var offset = _bodyScroll.Offset;
@@ -320,7 +319,6 @@ public sealed class SheetTable : TemplatedControl
     {
         base.OnPropertyChanged(change);
 
-        // Inputs that shape the columns ⇒ rebuild; the items source/selection are pushed to the body.
         if (change.Property == DaysProperty || change.Property == BlocksProperty ||
             change.Property == LocalizationProperty || change.Property == ToggleBlockCommandProperty ||
             change.Property == BandsProperty || change.Property == RentalChipsProperty ||
@@ -415,8 +413,9 @@ public sealed class SheetTable : TemplatedControl
         Rebuild();
     }
 
-    // ── Column rebuild ────────────────────────────────────────────────────────────────────────────
-    /// <summary>Forces a column rebuild — call after a collapse/expand toggle (RosterColumnsChanged).</summary>
+    // ── Column rebuild
+
+    /// <summary>Call after a collapse/expand toggle (RosterColumnsChanged).</summary>
     public void Rebuild()
     {
         if (Localization is null)
@@ -428,7 +427,6 @@ public sealed class SheetTable : TemplatedControl
 
         _cellFactory = new RosterCellFactory(Localization, RequestDelete, RentalChips);
 
-        // Caller-supplied bands (flat day-mode table) take precedence over roster auto-building.
         if (Bands is not null)
         {
             _bands = Bands;
@@ -460,7 +458,6 @@ public sealed class SheetTable : TemplatedControl
                     filter.Header = string.IsNullOrEmpty(col.PickerLabel) ? col.Header : col.PickerLabel;
             }
 
-        // What the header and rows render: the bands with hidden leaves dropped.
         _visibleBands = ComputeVisibleBands(_bands);
 
         if (_header is not null)
@@ -481,7 +478,6 @@ public sealed class SheetTable : TemplatedControl
             _header.Rebuild(_visibleBands);
         }
 
-        // The status bar's per-column sums grid mirrors the same visible leaf columns as the header.
         _statusPanel?.Rebuild(_visibleBands);
 
         // (Re)stamp rows so their cell hosts pick up the current column set. The row grid's structure
@@ -497,12 +493,12 @@ public sealed class SheetTable : TemplatedControl
         ColumnsChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    // ── Column visibility ─────────────────────────────────────────────────────────────────────────
+    // ── Column visibility
     // Keys of the columns the user has hidden. Persisted at the table level (not on a column instance)
     // because every Rebuild() makes fresh SheetColumn instances — the set is re-applied by key there.
     private readonly HashSet<string> _hiddenKeys = new();
 
-    // ── Column filters ────────────────────────────────────────────────────────────────────────────
+    // ── Column filters
     // Active filters keyed by SheetColumn.Key (parallel to _hiddenKeys, and for the same reason: fresh
     // column instances on every Rebuild are matched back by key). Filtering is display-only — it shapes
     // the body's item list in ApplySortedView and never touches the bound source collection.
@@ -512,7 +508,7 @@ public sealed class SheetTable : TemplatedControl
     // filtered column is in focus. Re-applying an existing column's filter keeps its original position.
     private readonly List<string> _filterOrder = new();
 
-    // ── Global search ─────────────────────────────────────────────────────────────────────────────
+    // ── Global search
     // A free-text "search every column" term, additive to the per-column filters: a row is shown only
     // when each whitespace-separated token appears (case-insensitively) in at least one of its visible
     // columns' displayed text. Display-only, like the column filters — it never touches the source
@@ -523,17 +519,16 @@ public sealed class SheetTable : TemplatedControl
     // term changes so PassesGlobalSearch only does substring checks per row. Empty when no search.
     private IReadOnlyList<string> _searchVariants = Array.Empty<string>();
 
-    /// <summary>Raised after the active-filter set changes, so a filter-chips bar can refresh.</summary>
+    /// <summary>So a filter-chips bar can refresh.</summary>
     public event EventHandler? FiltersChanged;
 
-    /// <summary>The filters currently applied, in no particular order (for the chips bar).</summary>
+    /// <summary>In no particular order; for the chips bar.</summary>
     public IReadOnlyCollection<SheetFilter> ActiveFilters => _filters.Values;
 
-    /// <summary>The filter on the given column key, or null if none.</summary>
     public SheetFilter? GetColumnFilter(string key)
         => _filters.TryGetValue(key, out var f) ? f : null;
 
-    /// <summary>Applies (or replaces) a column's filter; an inactive filter clears it instead.</summary>
+    /// <summary>An inactive filter clears it instead.</summary>
     public void SetColumnFilter(string key, SheetFilter filter)
     {
         if (!filter.IsActive)
@@ -548,7 +543,7 @@ public sealed class SheetTable : TemplatedControl
         FiltersChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    /// <summary>Removes a column's filter (no-op if none). Rebuilds the body view.</summary>
+    /// <summary>Rebuilds the body view.</summary>
     public void ClearColumnFilter(string key)
     {
         if (_filters.Remove(key))
@@ -559,8 +554,7 @@ public sealed class SheetTable : TemplatedControl
         }
     }
 
-    /// <summary>Removes the most recently added filter (no-op if none). Used by Shift+F3 when the focused
-    /// column has no filter to clear.</summary>
+    /// <summary>Shift+F3 when the focused column has no filter to clear.</summary>
     public void ClearLastFilter()
     {
         if (_filterOrder.Count == 0)
@@ -568,7 +562,6 @@ public sealed class SheetTable : TemplatedControl
         ClearColumnFilter(_filterOrder[^1]);
     }
 
-    /// <summary>Removes every active filter.</summary>
     public void ClearAllFilters()
     {
         if (_filters.Count == 0)
@@ -602,7 +595,7 @@ public sealed class SheetTable : TemplatedControl
         }
     }
 
-    // ── Debounced search filtering ──────────────────────────────────────────────────────────────────
+    // ── Debounced search filtering
     // A timer that fires the actual re-filter a short moment after the last keystroke. Each keystroke
     // restarts it, so we filter once when typing pauses rather than on every character.
     private DispatcherTimer? _searchDebounce;
@@ -682,7 +675,7 @@ public sealed class SheetTable : TemplatedControl
         UpdateStatusBar();
     }
 
-    /// <summary>Moves keyboard focus to the toolbar's global-search box (Ctrl+F). No-op until templated.</summary>
+    /// <summary>Ctrl+F. No-op until templated.</summary>
     public void FocusSearch()
     {
         if (_search is null)
@@ -691,7 +684,6 @@ public sealed class SheetTable : TemplatedControl
         _search.SelectAll();
     }
 
-    // The search box's text changed: push it to the search term (re-filters) and toggle the ✕ button.
     private void OnSearchTextChanged(string? text)
     {
         GlobalSearch = text ?? string.Empty;
@@ -711,7 +703,6 @@ public sealed class SheetTable : TemplatedControl
         _body?.Focus();
     }
 
-    /// <summary>Forwards the search box's Text changes to <see cref="OnSearchTextChanged"/>.</summary>
     private sealed class SearchTextSync(SheetTable owner) : IObserver<string?>
     {
         public void OnCompleted() { }
@@ -726,7 +717,7 @@ public sealed class SheetTable : TemplatedControl
     /// </summary>
     public IReadOnlyList<object?> VisibleItems => _sortedItems;
 
-    /// <summary>The distinct displayed values currently in a column, naturally sorted, for the values picker.</summary>
+    /// <summary>Naturally sorted, for the values picker.</summary>
     public IReadOnlyList<string> DistinctValues(SheetColumn column)
     {
         var set = new HashSet<string>();
@@ -738,7 +729,6 @@ public sealed class SheetTable : TemplatedControl
         return list;
     }
 
-    /// <summary>The leaf column with the given key in the current band set, or null if absent.</summary>
     public SheetColumn? FindColumnByKey(string key)
     {
         foreach (var band in _bands)
@@ -761,7 +751,6 @@ public sealed class SheetTable : TemplatedControl
     private static string CopyText(SheetColumn column, object row)
         => FormatValue(ReadPath(row, column.CopyPath));
 
-    // Shared value→display formatter for the readers above.
     private static string FormatValue(object? value)
         => value switch
         {
@@ -772,8 +761,7 @@ public sealed class SheetTable : TemplatedControl
             // invariant) so copy/filter agree with what's on screen, no stray ",0".
             decimal dec => FormatSum(dec),
             double dbl => FormatSum((decimal)dbl),
-            // A bool flag copies as the same compact mark a realized checkbox does.
-            bool b => b ? CheckedMark : string.Empty,
+                bool b => b ? CheckedMark : string.Empty,
             _ => value.ToString() ?? string.Empty
         };
 
@@ -902,7 +890,7 @@ public sealed class SheetTable : TemplatedControl
         return result;
     }
 
-    // ── Band reorder (drag) ─────────────────────────────────────────────────────────────────────
+    // ── Band reorder (drag)
     // The desired top-level band order, as stable signatures. Null until the user reorders.
     private List<string>? _bandOrder;
 
@@ -916,7 +904,7 @@ public sealed class SheetTable : TemplatedControl
     private SheetColumn? _sortColumn => _sortLevels.Count > 0 ? _sortLevels[0].Column : null;
     private bool _sortDescending => _sortLevels.Count > 0 && _sortLevels[0].Descending;
 
-    // ── Persisted view (per-competition views.json) ─────────────────────────────────────────────
+    // ── Persisted view (per-competition views.json)
     // Saved widths by column key, applied onto freshly built columns (the first build has no previous
     // bands for CarryWidths to copy from). Loaded once per (LayoutKey + competition).
     private Dictionary<string, double>? _savedWidths;
@@ -1065,7 +1053,7 @@ public sealed class SheetTable : TemplatedControl
     private void OnSourceCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
         => ApplySortedView();
 
-    // ── Sorting ─────────────────────────────────────────────────────────────────────────────────
+    // ── Sorting
     // One level of a multi-column sort: the column and its direction. The sort is an ordered list of
     // these — rows are ordered by the first, ties broken by the second, and so on.
     public sealed class SortLevel(SheetColumn column, bool descending)
@@ -1258,7 +1246,7 @@ public sealed class SheetTable : TemplatedControl
         return items;
     }
 
-    // ── Status bar ────────────────────────────────────────────────────────────────────────────────
+    // ── Status bar
     // Recomputes the bar from the current displayed (filtered/sorted) view: total + shown row counts,
     // each summary column's sum, and the page-supplied system-info text. The whole bar collapses when
     // there is nothing to show (no summary columns, no info text). Called on every view change
@@ -1364,7 +1352,7 @@ public sealed class SheetTable : TemplatedControl
             + loc.Get("Sheet.Status.OwedLine").Replace("{0}", owedText);
     }
 
-    // ── Live sums on inline edits ───────────────────────────────────────────────────────────────────
+    // ── Live sums on inline edits
     // A summed value (the fee total, the typed payment) changes as the user edits; to keep the footer
     // sums live we subscribe to the displayed rows' PropertyChanged. A change to a property that feeds a
     // sum schedules one coalesced recompute (Background priority) so a burst of edits costs one pass.
@@ -1376,8 +1364,7 @@ public sealed class SheetTable : TemplatedControl
 
     private void HookRowsForSums()
     {
-        // Rebuild the watched-property set from the current summary columns.
-        _summedProps = new HashSet<string>(StringComparer.Ordinal);
+            _summedProps = new HashSet<string>(StringComparer.Ordinal);
         foreach (var col in _summaryColumns)
         {
             var first = col.SummaryPath.Split('.', '[')[0];
@@ -1392,7 +1379,6 @@ public sealed class SheetTable : TemplatedControl
             }
         }
 
-        // Reconcile subscriptions to the current displayed rows: drop rows no longer shown, add new ones.
         var current = new HashSet<INotifyPropertyChanged>();
         foreach (var row in _sortedItems)
             if (row is INotifyPropertyChanged inpc)
@@ -1427,7 +1413,6 @@ public sealed class SheetTable : TemplatedControl
         }, DispatcherPriority.Background);
     }
 
-    // True when a visible leaf column asks for the row count to be shown under it.
     private bool HasCountColumn()
     {
         foreach (var band in _visibleBands)
@@ -1454,7 +1439,6 @@ public sealed class SheetTable : TemplatedControl
         return (text, tip);
     }
 
-    // The visible leaf columns that contribute a status-bar sum, in display order.
     private List<SheetColumn> SummaryColumns()
     {
         var list = new List<SheetColumn>();
@@ -1465,8 +1449,7 @@ public sealed class SheetTable : TemplatedControl
         return list;
     }
 
-    // Sums a column's numeric value over the currently displayed rows. The value may be a real number
-    // or a numeric string (the free-text «Оплата» field); non-numeric / blank cells contribute 0.
+    // A real number or a numeric string (the free-text «Оплата»); non-numeric / blank contributes 0.
     private decimal SumColumn(SheetColumn column)
     {
         decimal sum = 0m;
@@ -1521,7 +1504,6 @@ public sealed class SheetTable : TemplatedControl
         return decimal.TryParse(text, styles, System.Globalization.CultureInfo.CurrentCulture, out result);
     }
 
-    // Formats a column sum like the fee cells: no currency symbol, trim trailing zeros.
     private static string FormatSum(decimal value)
         => value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
 
@@ -1649,7 +1631,7 @@ public sealed class SheetTable : TemplatedControl
         return list;
     }
 
-    // ── Row assembly ──────────────────────────────────────────────────────────────────────────────
+    // ── Row assembly
     // One body row: a horizontal Grid mirroring the header's leaf columns, each cell width bound to
     // the same SheetColumn.Width so header and rows stay aligned.
     private Control BuildRow()
@@ -1800,13 +1782,13 @@ public sealed class SheetTable : TemplatedControl
             ToggleRentalChipCommand.Execute(chip);
     }
 
-    // ── Excel-style edit + delete keyboard handling ───────────────────────────────────────────────
+    // ── Excel-style edit + delete keyboard handling
     private bool _ctrlDown;
     // The leaf-column index of the currently selected cell, carried across rows during up/down nav.
     // This is also the anchor column of any multi-cell selection (anchor = the first cell selected).
     private int _focusedColumn;
 
-    // ── Multi-cell range selection (Excel-style) ──────────────────────────────────────────────────
+    // ── Multi-cell range selection (Excel-style)
     // The rectangle is the inclusive min/max of the anchor and active corners, in (_sortedItems row
     // index, leaf-column index) coordinates. The anchor is also the focus/edit cell and never moves
     // while extending; a plain (non-Shift) click/arrow collapses the range back to a single cell.
@@ -1822,7 +1804,7 @@ public sealed class SheetTable : TemplatedControl
     private LazyEditCell? _pendingEditCell;
     private Point _pendingEditPoint;
 
-    // ── Edge autoscroll (Excel/Google-Sheets style) ──────────────────────────────────────────────────
+    // ── Edge autoscroll (Excel/Google-Sheets style)
     // While drag-selecting, holding the pointer near (or past) the body's viewport edge scrolls the body
     // toward that edge on a timer and keeps extending the selection to the cell now under the cursor, so
     // a range can grow beyond what's on screen without releasing the button.
@@ -2729,7 +2711,7 @@ public sealed class SheetTable : TemplatedControl
         return null;
     }
 
-    // ── Cell navigation ───────────────────────────────────────────────────────────────────────────
+    // ── Cell navigation
     // Move the focused cell left/right within its own row (delta = ±1). Returns false at the edges.
     private bool MoveColumn(int delta)
     {
@@ -2804,7 +2786,7 @@ public sealed class SheetTable : TemplatedControl
         return null;
     }
 
-    // ── Multi-cell range selection ──────────────────────────────────────────────────────────────────
+    // ── Multi-cell range selection
     // Grow/shrink the selection rectangle by (dRow, dCol) from its current active corner; the anchor
     // (and focus/edit cell) stays put. Scrolls a newly-reached row into view. Returns false at edges.
     private bool ExtendRange(int dRow, int dCol)

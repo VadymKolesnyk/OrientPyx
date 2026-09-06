@@ -60,7 +60,7 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
     public override string IconData =>
         "M4 20V10 M10 20V4 M16 20v-6 M4 20h18";
 
-    // ── Day picker (does NOT touch the session) ──────────────────────────────────────────────────────
+    // ── Day picker (does NOT touch the session)
 
     public ObservableCollection<DayOption> DayOptions { get; } = [];
 
@@ -69,7 +69,7 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
 
     public bool ShowDaySelector => DayOptions.Count > 1;
 
-    // ── Header text ──────────────────────────────────────────────────────────────────────────────────
+    // ── Header text
 
     [ObservableProperty]
     private string _title = string.Empty;
@@ -86,7 +86,7 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
     [ObservableProperty]
     private string _dateText = string.Empty;
 
-    // ── Header placeholders (watermarks) ───────────────────────────────────────────────────────────────
+    // ── Header placeholders (watermarks)
     // The resolved competition/day default for each header field, shown as the TextBox watermark when the
     // user has typed nothing. A blank field falls back to this value at build/export time (so the exported
     // split sheet carries the competition's own metadata); when the placeholder is itself empty (the DB has
@@ -154,7 +154,6 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
         TitlePlaceholder = name?.Trim() ?? Localization.Get("Splits.DefaultTitle");
         SubtitlePlaceholder = info?.Organisation?.Trim() ?? string.Empty;
 
-        // Venue: the day's own venue, else the competition venue.
         VenuePlaceholder = FirstNonBlank(day?.Venue, info?.Venue);
 
         // Date: the day's date, else the competition's start date.

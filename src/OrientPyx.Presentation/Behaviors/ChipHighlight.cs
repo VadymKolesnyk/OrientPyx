@@ -47,7 +47,7 @@ public static class ChipHighlight
         LabelRegistryProperty.Changed.AddClassHandler<TextBlock>((block, e) => AttachLabel(block, e.NewValue as RentalChipRegistry));
     }
 
-    // ── Resting label ───────────────────────────────────────────────────────────────────────────────
+    // ── Resting label
     private static void AttachLabel(TextBlock block, RentalChipRegistry? registry)
     {
         block.PropertyChanged -= OnLabelTextChanged;
@@ -90,7 +90,7 @@ public static class ChipHighlight
     private static readonly AttachedProperty<Subscription?> LabelSubscriptionProperty =
         AvaloniaProperty.RegisterAttached<TextBlock, Subscription?>("LabelSubscription", typeof(ChipHighlight));
 
-    // ── Editing TextBox ─────────────────────────────────────────────────────────────────────────────
+    // ── Editing TextBox
     private static void Attach(TextBox box, RentalChipRegistry? registry)
     {
         // Detach first so a re-template / re-bind stays idempotent (cells are recycled on rebuild).

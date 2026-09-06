@@ -136,7 +136,6 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
     [RelayCommand]
     private Task DeleteDayAsync(DayRowViewModel? row) => RemoveDayAsync(row, skipConfirm: false);
 
-    /// <summary>Deletes a row without the confirmation prompt (Ctrl+Click / Ctrl+Delete).</summary>
     public Task DeleteDayNoConfirmAsync(DayRowViewModel? row) => RemoveDayAsync(row, skipConfirm: true);
 
     /// <summary>Deletes the currently selected day (Delete key); confirms unless skipConfirm.</summary>

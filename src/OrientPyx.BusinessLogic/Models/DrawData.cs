@@ -10,10 +10,8 @@ public enum DrawSeparationField
     /// <summary>No separation — participants are drawn in a purely random order.</summary>
     None = 0,
 
-    /// <summary>Keep participants from the same region (Region) off consecutive start slots.</summary>
     Region = 1,
 
-    /// <summary>Keep participants from the same club (Club) off consecutive start slots.</summary>
     Club = 2,
 
     /// <summary>Keep participants from the same team (Team) off consecutive start slots.</summary>

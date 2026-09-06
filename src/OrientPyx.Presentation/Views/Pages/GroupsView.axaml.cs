@@ -159,7 +159,6 @@ public partial class GroupsView : UserControl
             .Bands;
     }
 
-    // The table raises this on a keyboard Delete (Ctrl+Delete ⇒ skip the prompt).
     private void OnDeleteRequested(object? sender, SheetDeleteEventArgs e)
     {
         if (_vm is null || e.Row is not GroupDayRowViewModel row)

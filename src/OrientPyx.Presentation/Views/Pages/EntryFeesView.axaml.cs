@@ -31,7 +31,7 @@ public partial class EntryFeesView : UserControl
     private void OnTunnelPointerPressed(object? sender, PointerPressedEventArgs e)
         => _deleteCtrlDown = e.KeyModifiers.HasFlag(KeyModifiers.Control);
 
-    // --- Chip-price table delete -------------------------------------------------------------------
+    // --- Chip-price table delete
 
     private void OnChipPriceDeleteRequested(object? sender, SheetDeleteEventArgs e)
     {
@@ -57,7 +57,7 @@ public partial class EntryFeesView : UserControl
             _ = _vm!.DeleteChipPriceCommand.ExecuteAsync(row);
     }
 
-    // --- Discount table delete ---------------------------------------------------------------------
+    // --- Discount table delete
 
     private void OnDiscountDeleteRequested(object? sender, SheetDeleteEventArgs e)
     {
@@ -83,7 +83,7 @@ public partial class EntryFeesView : UserControl
             _ = _vm!.DeleteDiscountCommand.ExecuteAsync(row);
     }
 
-    // --- Lifecycle ---------------------------------------------------------------------------------
+    // --- Lifecycle
 
     private void OnDataContextChanged(object? sender, EventArgs e)
     {

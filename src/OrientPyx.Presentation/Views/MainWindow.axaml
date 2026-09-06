@@ -211,7 +211,6 @@
                                                            Foreground="{DynamicResource TextSecondary}"
                                                            Text="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).Localization[Activity.State.Paused]}" />
 
-                                                <!-- Actions -->
                                                 <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
                                                             Orientation="Horizontal" Spacing="6" Margin="0,10,0,0">
                                                     <!-- Pause / Resume (single toggling button) -->

@@ -19,7 +19,6 @@ public partial class QuickWithdrawalView : UserControl
         DetachedFromVisualTree += (_, _) => Unsubscribe();
     }
 
-    // Escape cancels, matching the other dialogs.
     protected override void OnKeyDown(KeyEventArgs e)
     {
         if (e.Key == Key.Escape && DataContext is QuickWithdrawalViewModel vm)

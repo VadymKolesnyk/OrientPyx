@@ -202,7 +202,6 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>Exposed for the top-bar running-processes block.</summary>
     public IBackgroundActivityService Activities => _activities;
 
-    /// <summary>Settings content shown in the global overlay.</summary>
     public SettingsViewModel Settings { get; }
 
     /// <summary>«Про програму» content shown in the global overlay.</summary>

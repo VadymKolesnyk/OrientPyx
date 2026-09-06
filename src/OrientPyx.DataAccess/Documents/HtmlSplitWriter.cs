@@ -85,7 +85,7 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
         return new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(sb.ToString());
     }
 
-    // ── Header / nav / footer ────────────────────────────────────────────────────────────────────────
+    // ── Header / nav / footer
 
     private static void WriteHeader(StringBuilder sb, SplitExportDocument d)
     {
@@ -163,7 +163,7 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
         sb.Append("</div>\n");
     }
 
-    // ── Set-course (ordered) split table ─────────────────────────────────────────────────────────────
+    // ── Set-course (ordered) split table
 
     private static void WriteOrderedTable(StringBuilder sb, SplitExportGroup g, SplitExportLabels labels)
     {
@@ -358,7 +358,7 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
         _ => string.Empty
     };
 
-    // ── Scored (rogaine / free order) split table ────────────────────────────────────────────────────
+    // ── Scored (rogaine / free order) split table
 
     // Unlike a set course, every runner visits their own controls in their own order, so there is no shared
     // КП column header. Instead the table has КП-1…КП-N positional columns (N = the longest passage in the
@@ -504,7 +504,7 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
     private static PassagePunch? FinishPunch(SplitsView splits) =>
         splits.Passage.LastOrDefault(p => p.Kind == PassageKind.Finish);
 
-    // ── Helpers ──────────────────────────────────────────────────────────────────────────────────────
+    // ── Helpers
 
     // The scored (rogaine) result cell: the «Бали» total, with the penalty/bonus detail spelled out under it
     // and the full per-control breakdown carried as the cell title (the same tooltip the participant tables
@@ -921,7 +921,7 @@ table.ordered tr.leg-row td.detail.picked {
     cell.title = lines.length ? lines.join('\n') : ' ';
   });
 
-  // ── Pinch to resize the text ──────────────────────────────────────────────────────────────────────
+  // ── Pinch to resize the text
   // Two fingers change the ROOT FONT SIZE rather than the browser's page zoom. Every size in the CSS is
   // in rem, so pinching out shrinks the whole table and fits more controls on screen, while the layout
   // stays a layout: the sticky name column keeps working, the dialog stays a properly centred card, and

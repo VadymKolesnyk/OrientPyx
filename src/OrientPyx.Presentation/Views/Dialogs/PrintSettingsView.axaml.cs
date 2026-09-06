@@ -11,7 +11,6 @@ public partial class PrintSettingsView : UserControl
         InitializeComponent();
     }
 
-    // Escape cancels, matching the other dialogs.
     protected override void OnKeyDown(KeyEventArgs e)
     {
         if (e.Key == Key.Escape && DataContext is PrintSettingsViewModel vm)

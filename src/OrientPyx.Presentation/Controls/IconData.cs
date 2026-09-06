@@ -16,7 +16,7 @@ public static class IconData
 {
     public static readonly IReadOnlyDictionary<string, string> Paths = new Dictionary<string, string>
     {
-        // ---- Import / export / files -----------------------------------------------------------------
+        // ---- Import / export / files
         // upload: tray with an up-arrow (used for the UOF-file and generic import actions)
         ["Upload"] = "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12",
         // download: tray with a down-arrow (export)
@@ -30,7 +30,7 @@ public static class IconData
         // folder-open: an opened folder (competition list / open)
         ["FolderOpen"] = "m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2",
 
-        // ---- Bulk / list actions ---------------------------------------------------------------------
+        // ---- Bulk / list actions
         // list-ordered: numbered rows (assign start numbers)
         ["ListOrdered"] = "M10 12h11 M10 6h11 M10 18h11 M4 10V6l-2 1 M4 18a1.5 1.5 0 0 0 0-3 1.5 1.5 0 0 0-1.3.8 M2.5 18h1.5",
         // credit-card: chip card (assign chips)
@@ -47,7 +47,7 @@ public static class IconData
         // printer (print the participant statement on A4)
         ["Printer"] = "M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2 M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6 M6 14h12v7a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1z",
 
-        // ---- Add / delete / confirm ------------------------------------------------------------------
+        // ---- Add / delete / confirm
         // plus (add)
         ["Plus"] = "M5 12h14 M12 5v14",
         // trash-2 (delete row)
@@ -57,13 +57,13 @@ public static class IconData
         // x (invalid / clear)
         ["X"] = "M18 6 6 18 M6 6l12 12",
 
-        // ---- Navigation chevrons ---------------------------------------------------------------------
+        // ---- Navigation chevrons
         ["ChevronDown"] = "m6 9 6 6 6-6",
         ["ChevronUp"] = "m18 15-6-6-6 6",
         ["ChevronRight"] = "m9 18 6-6-6-6",
         ["ChevronLeft"] = "m15 18-6-6 6-6",
 
-        // ---- Page-nav / dashboard glyphs -------------------------------------------------------------
+        // ---- Page-nav / dashboard glyphs
         // layout-dashboard (dashboard tiles)
         ["LayoutDashboard"] = "M3 3h7v9H3z M14 3h7v5h-7z M14 12h7v9h-7z M3 16h7v5H3z",
         // clock (start / draw)
@@ -83,10 +83,11 @@ public static class IconData
         // map-pin (control point / region)
         ["MapPin"] = "M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z M12 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4z",
 
-        // ---- Misc UI ---------------------------------------------------------------------------------
+        // ---- Misc UI
         // refresh-cw (auto-update / republish)
         ["RefreshCw"] = "M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8 M3 3v5h5 M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16 M21 21v-5h-5",
-        // circle-help (help "?")
+
+// circle-help (help "?")
         ["CircleHelp"] = "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3 M12 17h.01",
         // info
         ["Info"] = "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 16v-4 M12 8h.01",

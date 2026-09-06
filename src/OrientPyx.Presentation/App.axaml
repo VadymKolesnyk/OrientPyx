@@ -16,10 +16,8 @@
         <!-- Shared editable sheet table; supports a true two-tier banded header (controls:SheetTable) -->
         <StyleInclude Source="avares://OrientPyx/Styles/SheetTable.axaml" />
 
-        <!-- ============================================================
-             OrientPyx design system: shared control styling so screens
-             stay consistent without per-View hex codes.
-             ============================================================ -->
+        <!-- OrientPyx design system: shared control styling so screens
+             stay consistent without per-View hex codes. -->
 
         <!-- Card-like bordered container -->
         <Style Selector="Border.card">

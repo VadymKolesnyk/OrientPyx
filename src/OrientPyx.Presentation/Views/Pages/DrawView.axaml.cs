@@ -20,7 +20,7 @@ public partial class DrawView : UserControl
 
     private DrawViewModel? Vm => DataContext as DrawViewModel;
 
-    // ── Drag start ───────────────────────────────────────────────────────────────────────────────────
+    // ── Drag start
 
     private async void OnChipPointerPressed(object? sender, PointerPressedEventArgs e)
     {
@@ -48,7 +48,7 @@ public partial class DrawView : UserControl
         }
     }
 
-    // ── Drag over (effect + insertion indicator) ───────────────────────────────────────────────────────
+    // ── Drag over (effect + insertion indicator)
 
     private static bool TryGetDragged(DragEventArgs e, out DrawGroupItemViewModel item)
     {
@@ -89,7 +89,7 @@ public partial class DrawView : UserControl
             Vm?.SetDropIndicator(null, -1);
     }
 
-    // ── Drop ─────────────────────────────────────────────────────────────────────────────────────────
+    // ── Drop
 
     private void OnColumnDrop(object? sender, DragEventArgs e)
     {
@@ -101,7 +101,7 @@ public partial class DrawView : UserControl
         e.Handled = true;
     }
 
-    // ── Shared insertion-index math ────────────────────────────────────────────────────────────────────
+    // ── Shared insertion-index math
 
     // Returns where a drop at the current pointer position would insert into the column: the index of the
     // first chip whose vertical midpoint is below the pointer, or Groups.Count when the pointer is below

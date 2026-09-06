@@ -64,7 +64,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return info?.StartDate?.Year ?? DateTimeOffset.Now.Year;
     }
 
-    /// <summary>Derives the default age window for a newly created group from its name and the competition year.</summary>
+    /// <summary>From the group name and the competition year.</summary>
     private async Task<(int? MinBirthYear, int? MaxBirthYear)> DeriveAgeWindowAsync(
         string name, CancellationToken cancellationToken)
     {
@@ -87,7 +87,6 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         var folder = ev.FolderPath;
 
-        // Competition-wide counts.
         var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
         var chips = await _eventStore.GetRentalChipsAsync(folder, cancellationToken);
         var allLinks = await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
@@ -124,7 +123,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var withoutChip = dayLinks.Count(l => string.IsNullOrWhiteSpace(l.Chip));
         var withoutGroup = dayLinks.Count(l => l.GroupId is null);
 
-        // Run results for the current day, computed exactly as the participant tables do.
+        // Computed exactly as the participant tables do.
         var results = await ComputeDayResultsAsync(folder, day, cancellationToken);
 
         int finishedOk = 0, finishedProblem = 0, onCourse = 0;
@@ -138,7 +137,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             var r = results.TryGetValue(link.Id, out var res) ? res : ParticipantDayResult.Empty;
             if (r.Status != FinishStatus.None)
             {
-                // A finisher — carries a status (OK or a problem code). Tally by status for the breakdown.
+                // A finisher carries a status (OK or a problem code).
                 byStatus[r.Status] = byStatus.GetValueOrDefault(r.Status) + 1;
                 if (r.Status == FinishStatus.Ok)
                     finishedOk++;
@@ -222,7 +221,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var day = new EventDay { Number = nextNumber };
         await _eventStore.AddDayAsync(FolderPath, day, cancellationToken);
 
-        // Give the new day its files folder (where imported XML for the day is stored).
+        // Where imported XML for the day is stored.
         Directory.CreateDirectory(DayFolders.PathFor(FolderPath, nextNumber));
         return day;
     }
@@ -299,11 +298,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         var target = Path.Combine(folder, safeName);
 
-        // If the exact name already holds identical bytes, reuse it — don't write a duplicate.
+        // Identical bytes already there — reuse, don't duplicate.
         if (File.Exists(target) && SameContent(target, content))
             return target;
 
-        // Name free → write it as-is.
         if (!File.Exists(target))
         {
             await File.WriteAllBytesAsync(target, content, cancellationToken);
@@ -550,7 +548,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var dayId = CurrentDayId;
         var trimmed = (name ?? string.Empty).Trim();
 
-        // Reuse an existing group with the same name (case-insensitive), or create a new one.
+        // Match on name, case-insensitively.
         var groups = await _eventStore.GetGroupsAsync(FolderPath, cancellationToken);
         var group = groups.FirstOrDefault(g => string.Equals(g.Name, trimmed, StringComparison.OrdinalIgnoreCase));
         if (group is null)
@@ -560,7 +558,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             await _eventStore.AddGroupAsync(FolderPath, group, cancellationToken);
         }
 
-        // If the group is already on this day, return its existing row instead of duplicating.
+        // Already on this day ⇒ return the existing row.
         var settings = await _eventStore.GetGroupDaySettingsAsync(FolderPath, dayId, cancellationToken);
         var existing = settings.FirstOrDefault(s => s.GroupId == group.Id);
         if (existing is not null)
@@ -972,7 +970,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             existing.Select(c => c.Number.Trim()),
             StringComparer.OrdinalIgnoreCase);
 
-        // Preserve the start's digit width so e.g. "0042" yields "0042", "0043", … not "42".
+        // Keep the digit width: "0042" ⇒ "0043", not "43".
         var width = start.Length;
         var trimmedNote = (note ?? string.Empty).Trim();
 
@@ -1052,7 +1050,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         if (trimmed.Length == 0)
             return null;
 
-        // Reuse an existing region with the same name (case-insensitive), or create a new one.
+        // Match on name, case-insensitively.
         var regions = await _eventStore.GetRegionsAsync(FolderPath, cancellationToken);
         var region = regions.FirstOrDefault(r => string.Equals(r.Name, trimmed, StringComparison.OrdinalIgnoreCase));
         if (region is null)
@@ -1082,7 +1080,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     public async Task DeleteRegionAsync(Guid regionId, CancellationToken cancellationToken = default)
     {
         var folder = FolderPath;
-        // Region is optional on a participant; clear it from anyone using it, then delete the region.
+        // Optional on a participant — clear it from anyone using it first.
         await _eventStore.ClearParticipantsRegionAsync(folder, regionId, cancellationToken);
         await _eventStore.DeleteRegionAsync(folder, regionId, cancellationToken);
     }
@@ -1114,7 +1112,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         if (participant is null)
             return;
 
-        // Region is competition-level: update the participant identity row, preserving its other fields.
+        // Competition-level, so it lives on the participant identity row.
         participant.RegionId = regionId;
         await _eventStore.UpdateParticipantAsync(folder, participant, cancellationToken);
     }
@@ -1315,7 +1313,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             .GroupBy(l => l.ParticipantId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
-        // Computed run results for this day, keyed by participant-day link id.
+        // Keyed by participant-day link id.
         var results = await ComputeDayResultsAsync(folder, _session.CurrentDay, cancellationToken);
 
         var rows = new List<ParticipantDayRow>(links.Count);
@@ -1360,12 +1358,12 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         var fees = await LoadFeeContextAsync(folder, cancellationToken);
 
-        // Computed run results, per day, keyed by participant-day link id (the roster spans all days).
+        // Per day, keyed by link id — the roster spans all days.
         var resultsByDay = new Dictionary<Guid, IReadOnlyDictionary<Guid, ParticipantDayResult>>(days.Count);
         foreach (var day in days)
             resultsByDay[day.Id] = await ComputeDayResultsAsync(folder, day, cancellationToken);
 
-        // Index links by (participant, day) so each roster cell is a quick lookup.
+        // Keyed for per-cell lookup.
         var linkByKey = links.ToDictionary(l => (l.ParticipantId, l.EventDayId));
 
         var rows = new List<ParticipantRosterRow>(participants.Count);
@@ -1463,7 +1461,6 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var participant = new Participant();
         await _eventStore.AddParticipantAsync(folder, participant, cancellationToken);
 
-        // Re-read the roster and return this participant's row so the UI can append it.
         var roster = await GetParticipantRosterAsync(cancellationToken);
         return roster.FirstOrDefault(r => r.ParticipantId == participant.Id);
     }
@@ -4538,7 +4535,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             FolderPath, data, clearFirst, daysCreated, scope, progress, cancellationToken);
     }
 
-    // ── Online live-results publishing ───────────────────────────────────────────────────────────────
+    // ── Online live-results publishing
 
     public async Task<OnlinePublishSettings?> GetOnlinePublishSettingsAsync(CancellationToken cancellationToken = default)
     {
@@ -4976,7 +4973,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     public Task SetParticipantDiscountAsync(Guid participantId, Guid discountId, bool on, CancellationToken cancellationToken = default) =>
         _eventStore.SetParticipantDiscountAsync(FolderPath, participantId, discountId, on, cancellationToken);
 
-    // ── Fee computation ─────────────────────────────────────────────────────────────────────────
+    // ── Fee computation
     // Loads the competition-level fee inputs once (info, group fees, chip-price overrides, discounts,
     // per-participant discount links) so the roster/day-row builders can compute each participant's
     // total in a single pass without re-querying. Returns a reusable resolver bound to that snapshot.

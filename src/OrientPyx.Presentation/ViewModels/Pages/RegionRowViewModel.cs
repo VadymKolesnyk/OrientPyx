@@ -15,7 +15,6 @@ public sealed partial class RegionRowViewModel : ObservableObject
     private readonly DateTimeOffset _createdAt;
     private readonly Action<RegionRowViewModel> _requestSave;
 
-    // Suppresses save requests while the constructor seeds initial values.
     private readonly bool _initialized;
 
     [ObservableProperty]

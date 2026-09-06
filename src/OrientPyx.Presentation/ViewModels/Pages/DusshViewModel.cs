@@ -99,7 +99,6 @@ public sealed partial class DusshViewModel : PageViewModelBase
     [RelayCommand]
     private Task DeleteDusshAsync(DusshRowViewModel? row) => RemoveDusshAsync(row, skipConfirm: false);
 
-    /// <summary>Deletes a row without the confirmation prompt (Ctrl+Click / Ctrl+Delete).</summary>
     public Task DeleteDusshNoConfirmAsync(DusshRowViewModel? row) => RemoveDusshAsync(row, skipConfirm: true);
 
     /// <summary>Deletes the currently selected school (Delete key); confirms unless skipConfirm.</summary>
@@ -140,7 +139,7 @@ public sealed partial class DusshViewModel : PageViewModelBase
             RequestGridFocus();
     }
 
-    // --- Debounced save ----------------------------------------------------------------------------
+    // --- Debounced save
 
     private void RequestRowSave(DusshRowViewModel row)
     {
@@ -162,11 +161,9 @@ public sealed partial class DusshViewModel : PageViewModelBase
         }
         catch (OperationCanceledException)
         {
-            // Superseded by a newer edit (or the page reloaded) — ignore.
         }
         catch
         {
-            // Background save failed; never crash the UI over an autosave.
         }
     }
 

@@ -6,7 +6,6 @@ public enum ControlPointType
     /// <summary>An ordinary control point on the course.</summary>
     Regular,
 
-    /// <summary>A start point (the start itself).</summary>
     Start,
 
     /// <summary>A finish point (the finish itself).</summary>

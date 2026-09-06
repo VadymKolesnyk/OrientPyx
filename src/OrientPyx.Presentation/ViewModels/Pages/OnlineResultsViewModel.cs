@@ -92,7 +92,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
     /// <summary>Raised when the user clicks "go to settings" on the top-bar activity — asks the shell to show this page.</summary>
     public event EventHandler? NavigateToSelfRequested;
 
-    // --- Per-competition publish options (editable) ------------------------------------------------
+    // --- Per-competition publish options (editable)
 
     [ObservableProperty]
     private string _slug = string.Empty;
@@ -120,7 +120,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
     /// large-screen set + a per-column phone-hidden badge; its header cells are the drag-reorder surface.</summary>
     public OnlinePreviewViewModel Preview { get; } = new();
 
-    // --- «Очки» rule status (shown next to the "show points column" checkbox) ----------------------
+    // --- «Очки» rule status (shown next to the "show points column" checkbox)
 
     /// <summary>True when at least one points rule applies to the active day (a competition default or a
     /// per-group override). When false, the published «Очки» column will be empty — surfaced as a warning.</summary>
@@ -140,7 +140,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
     [ObservableProperty]
     private string _pointsExceptionsInfo = string.Empty;
 
-    // --- Connection state (read-only here; edited in Settings) -------------------------------------
+    // --- Connection state (read-only here; edited in Settings)
 
     /// <summary>True when the app-level Supabase URL + service-role key are configured.</summary>
     [ObservableProperty]
@@ -150,7 +150,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
     [ObservableProperty]
     private string _supabaseUrl = string.Empty;
 
-    // --- Publish loop state ------------------------------------------------------------------------
+    // --- Publish loop state
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsStopped))]
@@ -329,7 +329,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         ScheduleAutoSave();
     }
 
-    // --- Auto-save --------------------------------------------------------------------------------
+    // --- Auto-save
     // The publish options persist automatically whenever the user edits them — there's no Save button. A burst
     // of edits (typing, dragging) is debounced into ONE write, and the write itself runs on a pool thread (no
     // busy overlay), so the UI never blocks. LoadAsync sets a guard so filling the fields doesn't self-save.
@@ -359,7 +359,6 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         }
         catch (OperationCanceledException)
         {
-            // Superseded by a newer edit — ignore.
         }
         catch (Exception ex)
         {
@@ -383,7 +382,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         _publisher.ResetMetadata();
     }
 
-    // --- Start / stop publishing ------------------------------------------------------------------
+    // --- Start / stop publishing
 
     [RelayCommand]
     private async Task StartPublishingAsync()
@@ -519,7 +518,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
     // (not on every tick). Reset when publishing (re)starts so a fresh run warns again.
     private int _lastSkippedNoNumber = -1;
 
-    // --- Top-bar background activity ---------------------------------------------------------------
+    // --- Top-bar background activity
 
     private void ShowActivity()
     {
@@ -559,7 +558,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         UpdateActivityStatus();
     }
 
-    // --- Failure reporting ------------------------------------------------------------------------
+    // --- Failure reporting
 
     // How many ticks in a row have failed. Drives both the log wording (the reason is spelled out once, then
     // only a compact "attempt N" line, so a long outage doesn't flood the log) and the top-bar status.
@@ -659,7 +658,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         _activity.StatusText = string.Format(Localization.Get(key), Slug, _api.IntervalSeconds);
     }
 
-    // --- Live spectator preview -------------------------------------------------------------------
+    // --- Live spectator preview
 
     // The active day's computed snapshot the preview builds from (the SAME data the publisher sends), loaded
     // ONCE per day and cached so a column/toggle change re-renders the preview without a DB read. Cleared on a
@@ -716,7 +715,6 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         }
         catch (OperationCanceledException)
         {
-            // Superseded by a newer request — ignore.
         }
         catch (Exception ex)
         {

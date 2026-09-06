@@ -377,7 +377,6 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
                 cells.Add(DayPointsCell(r));
         }
 
-        // Total.
         cells.Add(byPoints ? PointsTable.Format(a.TotalPoints) : FormatTime(a.TotalTimeSeconds));
         return cells;
     }

@@ -306,7 +306,7 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
         };
     }
 
-    // --- Shared leg geometry (used by the ordered set-course and rogaine layouts) ------------------
+    // --- Shared leg geometry (used by the ordered set-course and rogaine layouts)
 
     /// <summary>The geographic coordinate of a control code, or a coordinate-less point when unknown.</summary>
     protected static GeoPoint ResolveCoord(SplitsContext context, string code) =>

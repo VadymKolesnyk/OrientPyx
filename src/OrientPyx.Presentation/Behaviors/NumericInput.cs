@@ -220,7 +220,7 @@ public static class NumericInput
         return true;
     }
 
-    // ── Date mask (dd.MM.yyyy) on a CalendarDatePicker ────────────────────────────────────────────
+    // ── Date mask (dd.MM.yyyy) on a CalendarDatePicker
     /// <summary>
     /// Attached to a <see cref="CalendarDatePicker"/>: constrains its inner <c>PART_TextBox</c> to a
     /// valid <c>dd.MM.yyyy</c> shape while typing and auto-inserts the '.' separator after a complete

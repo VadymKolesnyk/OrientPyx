@@ -29,7 +29,6 @@
             KeyboardNavigation.TabNavigation="Cycle">
         <DockPanel LastChildFill="True">
 
-            <!-- Header -->
             <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
                     BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
                     Padding="22,16">
@@ -45,7 +44,6 @@
                 </StackPanel>
             </Border>
 
-            <!-- Footer -->
             <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
                     BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
                     Padding="22,14">
@@ -57,7 +55,6 @@
                 </StackPanel>
             </Border>
 
-            <!-- Body -->
             <ScrollViewer MaxHeight="480" HorizontalScrollBarVisibility="Disabled"
                           VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="22,18" Spacing="16">

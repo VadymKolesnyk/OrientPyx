@@ -265,7 +265,7 @@ public sealed partial class MonitorFileViewModel : ObservableObject
             PreviewRefreshRequested?.Invoke(this, EventArgs.Empty);
     }
 
-    // ── Live preview (mirrors the generated monitor HTML) ────────────────────────────────────────────────
+    // ── Live preview (mirrors the generated monitor HTML)
 
     /// <summary>
     /// Fills <see cref="Preview"/> from a freshly-built monitor document for this file (its visible columns +

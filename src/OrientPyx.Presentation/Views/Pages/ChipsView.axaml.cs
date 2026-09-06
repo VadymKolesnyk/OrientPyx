@@ -30,7 +30,6 @@ public partial class ChipsView : UserControl
         AddHandler(PointerPressedEvent, OnTunnelPointerPressed, RoutingStrategies.Tunnel);
     }
 
-    // The table raises this on a keyboard Delete (Ctrl+Delete ⇒ skip the prompt).
     private void OnDeleteRequested(object? sender, SheetDeleteEventArgs e)
     {
         if (_vm is null || e.Row is not RentalChipRowViewModel row)

@@ -408,7 +408,6 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     /// via the row's delete button instead).</summary>
     public IReadOnlyList<GroupOption> GroupOptions { get; }
 
-    /// <summary>True when this day's discipline uses the team column (rogaine).</summary>
     public bool UsesTeam => _strategies.For(_dayDefaultDiscipline).UsesParticipantColumn(ParticipantColumn.Team);
 
     /// <summary>True when this day's discipline scores points (rogaine) — drives the «Бали» column.</summary>
@@ -430,7 +429,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     /// isn't (picking OK then leaves it blank).</summary>
     public bool CanEditStatus => true;
 
-    // ── Read-only computed result columns ─────────────────────────────────────────────────────
+    // ── Read-only computed result columns
     /// <summary>Actual start (from the chip read-out only) as "HH:mm:ss"; blank when none.</summary>
     public string ActualStartText => ResultText.ActualStart(_result);
     /// <summary>Finish time as "HH:mm:ss"; blank when none.</summary>
@@ -449,7 +448,6 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     public string AwardedRankText => ResultText.AwardedRank(_result);
     /// <summary>Raw place for sorting (max when unplaced, so OK results sort to the top).</summary>
     public int PlaceSort => _result.Place ?? int.MaxValue;
-    /// <summary>Raw score for sorting.</summary>
     public int ScoreSort => _result.Score ?? -1;
     /// <summary>Raw points for sorting (min when none, so awarded points sort together).</summary>
     public decimal PointsSort => _result.Points ?? decimal.MinValue;

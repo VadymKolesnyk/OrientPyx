@@ -135,7 +135,6 @@ public sealed partial class RanksViewModel : PageViewModelBase
     /// <summary>Deletes the selected qualification row (Delete key); confirms unless skipConfirm.</summary>
     public Task DeleteSelectedQualRowAsync(bool skipConfirm) => RemoveQualRowAsync(SelectedQual, skipConfirm);
 
-    /// <summary>Deletes a row without the confirmation prompt (Ctrl+Click / Ctrl+Delete).</summary>
     public Task DeleteRankNoConfirmAsync(RankRowViewModel? row) => RemoveRankAsync(row, skipConfirm: true);
 
     /// <summary>Deletes the currently selected rank (Delete key); confirms unless skipConfirm.</summary>
@@ -204,7 +203,7 @@ public sealed partial class RanksViewModel : PageViewModelBase
         _ = Task.Run(() => _appStore.DeleteRankQualificationRowAsync(id));
     }
 
-    // --- Conditions (debounced) --------------------------------------------------------------------
+    // --- Conditions (debounced)
 
     partial void OnMinParticipantsTextChanged(string value) => QueueConditionsSave();
     partial void OnMinRegionsTextChanged(string value) => QueueConditionsSave();
@@ -243,7 +242,7 @@ public sealed partial class RanksViewModel : PageViewModelBase
         return 1;
     }
 
-    // --- Debounced save ----------------------------------------------------------------------------
+    // --- Debounced save
 
     private void RequestRowSave(RankRowViewModel row)
     {
@@ -265,11 +264,9 @@ public sealed partial class RanksViewModel : PageViewModelBase
         }
         catch (OperationCanceledException)
         {
-            // Superseded by a newer edit (or the page reloaded) — ignore.
         }
         catch
         {
-            // Background save failed; never crash the UI over an autosave.
         }
     }
 

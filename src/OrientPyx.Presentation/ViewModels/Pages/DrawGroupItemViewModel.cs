@@ -66,7 +66,6 @@ public sealed partial class DrawGroupItemViewModel : ObservableObject
     /// </summary>
     public IReadOnlyList<DrawClashPeer> ClashPeers { get; set; } = [];
 
-    /// <summary>"×12" member-count badge.</summary>
     public string CountLabel => $"×{MemberCount}";
 
     /// <summary>The computed time the group's first competitor starts within its column.</summary>

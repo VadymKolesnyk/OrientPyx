@@ -7,7 +7,7 @@ public class EventSummary
     public string Name { get; set; } = string.Empty;
     public string Venue { get; set; } = string.Empty;
 
-    /// <summary>Absolute path to the competition's folder.</summary>
+    /// <summary>Absolute.</summary>
     public string FolderPath { get; set; } = string.Empty;
 
     public DateTimeOffset CreatedAt { get; set; }

@@ -2,12 +2,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="using:OrientPyx.Presentation.Controls">
 
-    <!-- ============================================================
-         Skin + template for the shared editable sheet table (controls:SheetTable).
+    <!-- Skin + template for the shared editable sheet table (controls:SheetTable).
          A true two-tier banded header the DataGrid cannot do. The body is a
          virtualized ListBox; the header is built in code into PART_HeaderSlot.
-         Wrap in Border.card for the rounded frame, like the sheet grids.
-         ============================================================ -->
+         Wrap in Border.card for the rounded frame, like the sheet grids. -->
 
     <!-- The multi-column sort editor's flyout: lift the FlyoutPresenter's default MaxWidth (288) and drop
          its padding so the fixed-width, aligned editor panel is neither clipped nor forced to scroll

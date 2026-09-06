@@ -24,7 +24,6 @@ public enum BulkEditFieldKind
     /// <summary>The competition-level region dropdown (shares the row dropdowns, incl. "+ new").</summary>
     Region,
 
-    /// <summary>The competition-level club dropdown.</summary>
     Club,
 
     /// <summary>The competition-level ДЮСШ dropdown.</summary>

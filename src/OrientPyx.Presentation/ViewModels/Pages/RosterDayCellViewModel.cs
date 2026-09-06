@@ -104,7 +104,7 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     /// read-out) or mark DNS/DNF/… without one (picking OK then leaves it blank). Non-members can't.</summary>
     public bool CanEditStatus => IsMember;
 
-    // ── Read-only computed result columns ─────────────────────────────────────────────────────
+    // ── Read-only computed result columns
     public string ActualStartText => ResultText.ActualStart(_result);
     public string FinishText => ResultText.Finish(_result);
     public string ResultText_ => ResultText.Result(_result);

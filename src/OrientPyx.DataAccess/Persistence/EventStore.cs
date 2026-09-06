@@ -6,7 +6,11 @@ using OrientPyx.BusinessLogic.Models;
 
 namespace OrientPyx.DataAccess.Persistence;
 
-/// <summary>EF Core implementation of <see cref="IEventStore"/> over per-competition databases.</summary>
+/// <summary>
+/// EF Core implementation of <see cref="IEventStore"/> over per-competition databases.
+/// Ordered reads sort by <c>Order</c> alone — a stable, unique-per-day key (each add is max+1);
+/// there is deliberately no CreatedAt tie-break, since SQLite cannot ORDER BY a DateTimeOffset column.
+/// </summary>
 public sealed class EventStore : IEventStore
 {
     public async Task EnsureCreatedAsync(string eventFolderPath, CancellationToken cancellationToken = default)
@@ -142,8 +146,6 @@ public sealed class EventStore : IEventStore
     public async Task<IReadOnlyList<ControlPoint>> GetControlPointsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
-        // Order alone is a stable, unique-per-day sort key (each add is max+1). We avoid a
-        // CreatedAt tie-break because SQLite can't ORDER BY a DateTimeOffset column.
         return await db.ControlPoints
             .AsNoTracking()
             .Where(cp => cp.EventDayId == dayId)
@@ -307,8 +309,6 @@ public sealed class EventStore : IEventStore
     public async Task<IReadOnlyList<GroupDaySettings>> GetGroupDaySettingsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
-        // Order alone is a stable, unique-per-day sort key (each add is max+1). We avoid a
-        // CreatedAt tie-break because SQLite can't ORDER BY a DateTimeOffset column.
         return await db.GroupDaySettings
             .AsNoTracking()
             .Where(s => s.EventDayId == dayId)
@@ -719,8 +719,6 @@ public sealed class EventStore : IEventStore
     public async Task<IReadOnlyList<ParticipantDay>> GetParticipantDaysAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
-        // Order alone is a stable, unique-per-day sort key (each add is max+1). We avoid a
-        // CreatedAt tie-break because SQLite can't ORDER BY a DateTimeOffset column.
         return await db.ParticipantDays
             .AsNoTracking()
             .Where(p => p.EventDayId == dayId)

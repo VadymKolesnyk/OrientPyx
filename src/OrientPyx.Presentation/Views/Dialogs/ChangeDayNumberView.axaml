@@ -16,14 +16,12 @@
             ClipToBounds="True">
         <DockPanel LastChildFill="True">
 
-            <!-- Header -->
             <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
                     BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
                     Padding="22,16">
                 <TextBlock Text="{Binding Title}" Classes="h2" VerticalAlignment="Center" />
             </Border>
 
-            <!-- Footer actions -->
             <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
                     BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
                     Padding="22,14">
@@ -38,7 +36,6 @@
                 </StackPanel>
             </Border>
 
-            <!-- Body -->
             <StackPanel Margin="22,18" Spacing="14">
 
                 <TextBlock Text="{Binding Message}" Classes="muted" TextWrapping="Wrap" />

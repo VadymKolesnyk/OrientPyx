@@ -22,7 +22,6 @@ public class Participant
     /// <summary>Coach(es); free text in a single field.</summary>
     public string Coach { get; set; } = string.Empty;
 
-    /// <summary>Date of birth; optional.</summary>
     public DateTimeOffset? BirthDate { get; set; }
 
     /// <summary>The region (place) this participant comes from; optional, null = none.

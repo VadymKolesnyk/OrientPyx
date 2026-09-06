@@ -34,7 +34,7 @@ public sealed class StartProtocolSettings
     /// printed at the bottom of every page. Default <c>true</c>.</summary>
     public bool PageFooter { get; set; } = true;
 
-    // ── Header text. Blank ⇒ fall back to the competition's own value at build time. ────────────────
+    // ── Header text. Blank ⇒ fall back to the competition's own value at build time.
 
     /// <summary>Competition-name line, printed centred above the title. Blank ⇒ the current competition's name.</summary>
     public string CompetitionName { get; set; } = string.Empty;

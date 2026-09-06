@@ -117,7 +117,6 @@ internal sealed class ColumnFilterPopup
         stack.Children.Add(_conditionPanel);
         stack.Children.Add(_statusPanel);
 
-        // Action buttons.
         var clear = new Button { Classes = { "ghost" }, Content = _loc.Get("Sheet.Filter.Clear") };
         var apply = new Button { Classes = { "accent" }, Content = _loc.Get("Sheet.Filter.Apply") };
         clear.Click += (_, _) => { _flyout.Hide(); _table.ClearColumnFilter(_column.Key); };
@@ -144,7 +143,7 @@ internal sealed class ColumnFilterPopup
         _statusPanel.IsVisible = mode == SheetFilterMode.Status;
     }
 
-    // ── Values mode ──
+    // ── Values mode
     private void BuildValuesPanel()
     {
         _valuesSearch = new TextBox { PlaceholderText = _loc.Get("Sheet.Filter.Search") };
@@ -211,7 +210,7 @@ internal sealed class ColumnFilterPopup
                 check.IsChecked = isChecked;
     }
 
-    // ── Condition mode ──
+    // ── Condition mode
     private void BuildConditionPanel()
     {
         _conditionCombo = new ComboBox
@@ -249,7 +248,7 @@ internal sealed class ColumnFilterPopup
         SyncTextVisibility();
     }
 
-    // ── Status mode (payment column) ──
+    // ── Status mode (payment column)
     private void BuildStatusPanel()
     {
         // One checkbox per payment-status category; checked = kept. A null AllowedStatuses (no filter

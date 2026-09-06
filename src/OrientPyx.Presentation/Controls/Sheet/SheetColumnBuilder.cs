@@ -42,7 +42,7 @@ public sealed class SheetColumnBuilder
     /// <summary>The accumulated bands, ready to assign to <see cref="SheetTable.Bands"/>.</summary>
     public IReadOnlyList<SheetBand> Bands => _bands;
 
-    // ── Display / editable text ───────────────────────────────────────────────────────────────────
+    // ── Display / editable text
     /// <summary>
     /// A text column: a read-only <see cref="TextBlock"/> in normal state, a <see cref="TextBox"/>
     /// once the cell enters edit. Pass <paramref name="editPath"/> = null for a read-only column.
@@ -85,7 +85,7 @@ public sealed class SheetColumnBuilder
         return Add(column);
     }
 
-    // ── ComboBox ──────────────────────────────────────────────────────────────────────────────────
+    // ── ComboBox
     /// <summary>
     /// A combo column bound to <paramref name="itemsPath"/>/<paramref name="selectedPath"/> on the
     /// row, rendering each item's <paramref name="labelPath"/>.
@@ -129,7 +129,7 @@ public sealed class SheetColumnBuilder
         return Add(column);
     }
 
-    // ── CalendarDatePicker (DateTimeOffset) ───────────────────────────────────────────────────────
+    // ── CalendarDatePicker (DateTimeOffset)
     /// <summary>
     /// A date column bound to a <c>DateTimeOffset?</c> property via the app's DateTimeOffset↔DateTime
     /// converter, formatted dd.MM.yyyy.
@@ -147,7 +147,7 @@ public sealed class SheetColumnBuilder
         return Add(column);
     }
 
-    // ── Fully custom cell ─────────────────────────────────────────────────────────────────────────
+    // ── Fully custom cell
     /// <summary>A column whose cell is built entirely by the caller (e.g. a multi-button action cell).</summary>
     public SheetColumnBuilder Custom(
         string headerKey,
@@ -165,7 +165,7 @@ public sealed class SheetColumnBuilder
         return Add(column);
     }
 
-    // ── CheckBox (bool) ───────────────────────────────────────────────────────────────────────────
+    // ── CheckBox (bool)
     /// <summary>
     /// A boolean column rendered as a centred <see cref="CheckBox"/> two-way bound to <paramref name="path"/>
     /// on the row. Sorts and filters on the same bool. Use for opt-in flags edited inline (e.g. a КП's
@@ -187,7 +187,7 @@ public sealed class SheetColumnBuilder
         return Add(column);
     }
 
-    // ── Trailing delete action ────────────────────────────────────────────────────────────────────
+    // ── Trailing delete action
     /// <summary>
     /// The trailing single-icon delete column. Clicking invokes <paramref name="onDelete"/> with the
     /// row; the table's keyboard Delete is wired separately via <c>DeleteCommand</c>/<c>DeleteRequested</c>.
@@ -206,7 +206,7 @@ public sealed class SheetColumnBuilder
         return this;
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
+    // ── Helpers
     private SheetColumn NewColumn(string headerKey, double? width, double minWidth, string sortPath)
     {
         var header = _loc.Get(headerKey);

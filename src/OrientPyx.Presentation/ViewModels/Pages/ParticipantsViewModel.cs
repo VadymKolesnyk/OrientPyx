@@ -783,7 +783,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             RequestGridFocus();
     }
 
-    // ── Roster ("Мандатка") delete ────────────────────────────────────────────────────────────
+    // ── Roster ("Мандатка") delete
     // The roster table binds this command (the trailing delete button) and raises a keyboard delete
     // request. A roster participant may run on zero days, so we hard-delete the participant entirely
     // rather than removing a day link.
@@ -824,7 +824,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _ = Task.Run(() => _editor.DeleteParticipantAsync(participantId));
     }
 
-    // ── Day-row chip change (conflict-resolved, not part of the debounced save) ─────────────────
+    // ── Day-row chip change (conflict-resolved, not part of the debounced save)
     // A chip edit on the day grid may collide with another competitor on the same day. Confirm the
     // reassignment; on yes, the editor moves the chip (clearing the previous holder); on no, the cell
     // reverts to the last committed value. Resolved off the debounced row save so the prompt is shown
@@ -907,7 +907,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         return await _dialogs.ConfirmAsync(dialog);
     }
 
-    // ── Day-row autosave (debounced per row) ──────────────────────────────────────────────────
+    // ── Day-row autosave (debounced per row)
     private void RequestRowSave(ParticipantDayRowViewModel row)
     {
         if (_saveTimers.TryGetValue(row.Id, out var existing))
@@ -930,7 +930,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         catch { /* never crash the UI over an autosave */ }
     }
 
-    // ── Roster identity autosave (debounced per row) ──────────────────────────────────────────
+    // ── Roster identity autosave (debounced per row)
     private void RequestRosterRowSave(ParticipantRosterRowViewModel row)
     {
         if (_saveTimers.TryGetValue(row.ParticipantId, out var existing))
@@ -977,7 +977,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         catch { }
     }
 
-    // ── Bulk assign start numbers ─────────────────────────────────────────────────────────────
+    // ── Bulk assign start numbers
     // Assigns sequential start numbers to the rows the user currently sees, in on-screen order. The
     // visible (filtered + sorted) order lives in the SheetTable, so the view passes its VisibleItems in.
     // When "reassign existing" is off: already-numbered rows are skipped and numbers already taken by
@@ -1188,7 +1188,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         }
     }
 
-    // ── Manual start-order editing ────────────────────────────────────────────────────────────
+    // ── Manual start-order editing
     // Opens a modal to re-order the start sequence within a group on the day currently in view (a real day
     // in day mode, or the sole day of a single-day competition when on the roster). The dialog lists a
     // group's members ordered by their start time (from the start protocol) and lets the user drag them into
@@ -1225,7 +1225,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         await LoadAsync();
     }
 
-    // ── Quick withdrawal ("Швидке зняття") ──────────────────────────────────────────────────────
+    // ── Quick withdrawal ("Швидке зняття")
     // Opens a small spreadsheet modal to quickly set a manual finish status on several competitors at once
     // on the day currently in view (a real day in day mode, or the sole day of a single-day competition on
     // the roster). Each row is «number → status» with the surname auto-filled from the number; DNS is
@@ -1267,7 +1267,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         await LoadAsync();
     }
 
-    // ── Bulk assign rental chips ──────────────────────────────────────────────────────────────
+    // ── Bulk assign rental chips
     // Hands out unused rental chips, in ascending number order, to every shown participant (or member
     // day) that has no chip yet — in the table's on-screen order (passed in as VisibleItems). A dropdown
     // narrows the pool to chips carrying a given note ("type"), or all of them. Chips are per-day, so in
@@ -1519,7 +1519,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 string.IsNullOrWhiteSpace(name) ? Localization.Get("Participants.Chip.UnnamedHolder") : name));
     }
 
-    // ── Mark age-window violators "поза конкурсом" ─────────────────────────────────────────────
+    // ── Mark age-window violators "поза конкурсом"
     // Sets «поза конкурсом» (out of competition) on every shown participant whose birth year falls
     // outside their group's allowed age window — the same rule that red-tints the birth-date cell
     // (Group.ViolatesAgeWindow). In day mode this checks the current day's group; in the roster it
@@ -1625,7 +1625,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 string.IsNullOrWhiteSpace(name) ? Localization.Get("Participants.Chip.UnnamedHolder") : name));
     }
 
-    // ── Bulk edit one field across the shown rows ──────────────────────────────────────────────
+    // ── Bulk edit one field across the shown rows
     // Changes a single field on every row currently shown (the filtered + sorted set the view hands in
     // as VisibleItems), e.g. set the same group / representative / "Член ФСОУ" for everyone visible. We
     // never touch the unique fields (number, chip). The modal picks a field + value; we then set the
@@ -1899,7 +1899,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         }
     }
 
-    // ── Roster block collapse/expand ──────────────────────────────────────────────────────────
+    // ── Roster block collapse/expand
     // Flips a block between its merged (collapsed) and per-day (expanded) views. The view rebuilds
     // the roster's per-day columns in response to RosterColumnsChanged.
     [RelayCommand]
@@ -1911,7 +1911,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         RosterColumnsChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    // ── Roster per-day group change ───────────────────────────────────────────────────────────
+    // ── Roster per-day group change
     // Picking a real group joins the day (or changes the group); picking "не участвує" (null) leaves
     // the day. Either way the write runs in the background and the cell's membership is updated.
     private void RequestCellGroupChange(RosterDayCellViewModel cell)
@@ -1919,7 +1919,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _ = ApplyCellGroupChangeAsync(cell);
     }
 
-    // ── Roster per-day chip change ────────────────────────────────────────────────────────────
+    // ── Roster per-day chip change
     // Editing a member day's chip (expanded cell, or a collapsed all-days edit) may collide with
     // another competitor on that day: confirm the reassignment, then persist (clearing the previous
     // holder) or revert. Only member days carry a chip, so there is no membership change to apply here.
@@ -1948,7 +1948,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _ = Task.Run(() => _editor.SetParticipantDayOutOfCompetitionAsync(participantId, dayId, value));
     }
 
-    // ── Result status override (day grid + roster) ────────────────────────────────────────────
+    // ── Result status override (day grid + roster)
     // The status dropdown persists a manual override on the participant-day, then re-ranks the day so
     // places re-number live across the visible rows. Day grid uses the session's current day; the roster
     // cell carries its own day.
@@ -1977,7 +1977,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         catch { /* never crash the UI over a status edit */ }
     }
 
-    // ── Bonus (points correction) edit (day grid + roster) ─────────────────────────────────────
+    // ── Bonus (points correction) edit (day grid + roster)
     // The «бонус» cell persists a points correction on the participant-day, then recomputes the day so
     // «Бали» and places re-number live (a correction can re-rank individuals and rogaine teams). Day grid
     // uses the session's current day; the roster cell carries its own day.
@@ -2102,7 +2102,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         catch { }
     }
 
-    // ── Region options + per-row region edit ──────────────────────────────────────────────────────
+    // ── Region options + per-row region edit
     // Rebuilds the shared region options list from the current DB. Called on reload and after a "+ new"
     // create, so the list is always: "(none)", regions A→Z, "+ new".
     private async Task RefreshRegionOptionsAsync(bool hasEvent)
@@ -2209,7 +2209,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         }
     }
 
-    // ── Club options + per-row club edit (mirrors the region flow above) ───────────────────────────
+    // ── Club options + per-row club edit (mirrors the region flow above)
     private async Task RefreshClubOptionsAsync(bool hasEvent)
     {
         var clubs = hasEvent
@@ -2306,7 +2306,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         }
     }
 
-    // ── ДЮСШ options + per-row school edit (mirrors the region/club flow above) ─────────────────────
+    // ── ДЮСШ options + per-row school edit (mirrors the region/club flow above)
     private async Task RefreshDusshOptionsAsync(bool hasEvent)
     {
         var dusshes = hasEvent
@@ -2403,7 +2403,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         }
     }
 
-    // ── Rank options (application-level, no "+ new") ───────────────────────────────────────────────
+    // ── Rank options (application-level, no "+ new")
     // Rebuilds the shared rank options from the app database: "(none)" then the ranks in order. Rank is
     // stored as text, so there is no create flow here — ranks are managed on their own page.
     private async Task RefreshRankOptionsAsync()
@@ -2416,7 +2416,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _rankOptions = options;
     }
 
-    // ── Entry-fee data (discounts + the recompute snapshot) ─────────────────────────────────────────
+    // ── Entry-fee data (discounts + the recompute snapshot)
     // Loads the discount set and rebuilds the shared fee context from the current competition inputs.
     // The context lets each row recompute its total live (on a discount/raised-fee/group/chip change)
     // without a DB round-trip; the rows are still seeded with the server-precomputed total on load.
@@ -2479,7 +2479,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private void RequestRosterDiscountChange(ParticipantRosterRowViewModel row, Guid discountId, bool on)
         => _ = Task.Run(() => _editor.SetParticipantDiscountAsync(row.ParticipantId, discountId, on));
 
-    // ── Rental-chip highlight + toggle ────────────────────────────────────────────────────────────
+    // ── Rental-chip highlight + toggle
     private async Task RefreshRentalChipsAsync(bool hasEvent)
     {
         var chips = hasEvent

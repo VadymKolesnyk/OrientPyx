@@ -25,7 +25,6 @@ public sealed partial class ControlPointRowViewModel : ObservableObject
     private readonly double? _mapY;
     private readonly int? _mapScale;
 
-    // Suppresses save requests while the constructor seeds initial values.
     private readonly bool _initialized;
 
     [ObservableProperty]

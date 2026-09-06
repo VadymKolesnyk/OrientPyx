@@ -133,7 +133,7 @@ internal sealed class RosterCellFactory
         return WrapWithNonMemberBackdrop(combo, i);
     }
 
-    // ── Identity ────────────────────────────────────────────────────────────────────────────────
+    // ── Identity
     private static Control BuildIdentityText(string path, SheetColumnBuilder.NumericMask mask = SheetColumnBuilder.NumericMask.None)
         => new LazyTextCell(path, path, new SheetTextOptions { Mask = mask });
 
@@ -172,7 +172,7 @@ internal sealed class RosterCellFactory
         return WrapWithNonMemberBackdrop(box, i);
     }
 
-    // ── Expanded per-day cell ─────────────────────────────────────────────────────────────────────
+    // ── Expanded per-day cell
     private Control BuildDayCell(SheetColumn column, bool isGroup)
     {
         var i = column.DayIndex;
@@ -253,7 +253,7 @@ internal sealed class RosterCellFactory
         return panel;
     }
 
-    // ── Collapsed merged cells ────────────────────────────────────────────────────────────────────
+    // ── Collapsed merged cells
     private Control BuildCollapsedGroup()
     {
         var panel = new Panel();
@@ -329,7 +329,7 @@ internal sealed class RosterCellFactory
         return panel;
     }
 
-    // ── Shared editors ────────────────────────────────────────────────────────────────────────────
+    // ── Shared editors
     // Each combo cell is a LazyComboCell: it shows the selected option's label and only builds the real
     // SearchableComboBox when the cell is entered (focus / click / keyboard). At 600 rows × N combo
     // columns this keeps the realised visual tree tiny — the combos were the dominant scroll/GC cost.
@@ -484,7 +484,7 @@ internal sealed class RosterCellFactory
         [!TextBlock.ForegroundProperty] = new DynamicResourceExtension("TextMuted")
     };
 
-    // ── Result columns (read-only text + status combo) ──────────────────────────────────────────
+    // ── Result columns (read-only text + status combo)
     // Built as Custom cells by the column builders. The day grid binds directly on the row (empty prefix);
     // the roster binds on Days[i] (prefix "Days[i].") and dims/disables on non-member days.
 

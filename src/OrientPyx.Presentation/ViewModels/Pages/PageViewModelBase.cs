@@ -28,7 +28,6 @@ public abstract class PageViewModelBase : ViewModelBase
     /// <summary>Localization key for the sidebar navigation label.</summary>
     public abstract string NavKey { get; }
 
-    /// <summary>Localization key for the page title.</summary>
     public abstract string TitleKey { get; }
 
     /// <summary>Localization key for the page placeholder text.</summary>

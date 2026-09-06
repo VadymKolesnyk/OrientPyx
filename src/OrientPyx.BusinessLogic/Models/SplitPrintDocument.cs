@@ -32,7 +32,7 @@ public sealed record A4PrintSettings(string PrinterName)
 /// </summary>
 public sealed class SplitPrintDocument
 {
-    // ── Header ────────────────────────────────────────────────────────────────────────────────────
+    // ── Header
     public string FullName { get; init; } = string.Empty;
     public string Number { get; init; } = string.Empty;
     public string ChipNumber { get; init; } = string.Empty;
@@ -93,7 +93,7 @@ public sealed class SplitPrintDocument
 
     public DateTimeOffset PrintedAt { get; init; } = DateTimeOffset.Now;
 
-    // ── Body ──────────────────────────────────────────────────────────────────────────────────────
+    // ── Body
 
     /// <summary>The course passage in order (every punch in chip order), already formatted.</summary>
     public IReadOnlyList<SplitPrintRow> Rows { get; init; } = [];

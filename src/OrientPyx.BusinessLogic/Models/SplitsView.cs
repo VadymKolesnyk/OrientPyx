@@ -192,7 +192,6 @@ public enum PassageKind
     /// <summary>A punched control (the default); judged on/off course.</summary>
     Control,
 
-    /// <summary>The start marker — shown first, no on/off-course judgement.</summary>
     Start,
 
     /// <summary>The finish marker — shown last, no on/off-course judgement.</summary>

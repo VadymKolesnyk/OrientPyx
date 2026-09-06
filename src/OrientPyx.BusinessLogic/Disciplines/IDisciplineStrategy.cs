@@ -23,7 +23,6 @@ public interface IDisciplineStrategy
     /// </summary>
     string NameKey { get; }
 
-    /// <summary>True when the given group column is meaningful for this discipline.</summary>
     bool UsesColumn(GroupColumn column);
 
     /// <summary>True when the given participant column is meaningful for this discipline (e.g. the

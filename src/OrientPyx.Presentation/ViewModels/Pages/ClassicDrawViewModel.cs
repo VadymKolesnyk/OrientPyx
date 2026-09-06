@@ -80,7 +80,7 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
     public override string IconData =>
         "M3 5h18 M3 12h18 M3 19h18";
 
-    // ── Day picker (does NOT touch the session) ──────────────────────────────────────────────────────
+    // ── Day picker (does NOT touch the session)
 
     public ObservableCollection<DayOption> DayOptions { get; } = [];
 
@@ -89,14 +89,13 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
 
     public bool ShowDaySelector => DayOptions.Count > 1;
 
-    // ── Draw controls ────────────────────────────────────────────────────────────────────────────────
+    // ── Draw controls
 
     public ObservableCollection<DrawSeparationOption> SeparationOptions { get; }
 
     [ObservableProperty]
     private DrawSeparationOption _selectedSeparation;
 
-    /// <summary>The group rows for the selected day.</summary>
     public ObservableCollection<ClassicDrawGroupRowViewModel> Groups { get; } = [];
 
     /// <summary>The drawn result rows, ordered by start time; populated by <see cref="RunDrawCommand"/>.</summary>
@@ -241,7 +240,7 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
         row.FreeMinute = StartTimeFormat.Format(free);
     }
 
-    // ── Commands ─────────────────────────────────────────────────────────────────────────────────────
+    // ── Commands
 
     /// <summary>Checks every group row (selects all for the draw).</summary>
     [RelayCommand]

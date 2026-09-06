@@ -13,28 +13,17 @@ public enum SheetCellKind
     /// <summary>A competition-level identity text field (surname, name, …) edited on the row.</summary>
     IdentityText,
 
-    /// <summary>
-    /// A digits-only text field edited directly on the row by its <see cref="SheetColumn.IdentityPath"/>
-    /// (like <see cref="IdentityText"/> but only accepts digits). Used by the day-mode chip column.
-    /// </summary>
+    /// <summary>Digits-only <see cref="IdentityText"/>; the day-mode chip column.</summary>
     ChipText,
 
-    /// <summary>
-    /// An identity text field (like <see cref="IdentityText"/>) that background-tints by the row's
-    /// <c>PaymentStatus</c> — how «Оплата» compares to the computed total fee. Used by the participant
-    /// payment column; see <see cref="OrientPyx.Presentation.Behaviors.PaymentHighlight"/>.
-    /// </summary>
+    /// <summary><see cref="IdentityText"/> tinted by the row's <c>PaymentStatus</c> («Оплата» vs total fee);
+    /// see <see cref="OrientPyx.Presentation.Behaviors.PaymentHighlight"/>.</summary>
     PaymentText,
 
-    /// <summary>A start-time text field (HH:mm) edited directly on the row by its
-    /// <see cref="SheetColumn.IdentityPath"/>. Used by the day-mode start-time column.</summary>
+    /// <summary>HH:mm on the row's <see cref="SheetColumn.IdentityPath"/>; the day-mode start-time column.</summary>
     StartTimeText,
 
-    /// <summary>
-    /// A signed-integer text field (optional '-' then digits) edited directly on the row by its
-    /// <see cref="SheetColumn.IdentityPath"/>. Used by the day-mode «бонус» points-correction column;
-    /// only present on point-scoring days.
-    /// </summary>
+    /// <summary>Signed integer on the row's path — the day-mode «бонус» column, point-scoring days only.</summary>
     RowBonus,
 
     /// <summary>The competition-level birth date (CalendarDatePicker).</summary>
@@ -43,7 +32,6 @@ public enum SheetCellKind
     /// <summary>A single day's group (ComboBox of <see cref="GroupOption"/>), bound to Days[i].</summary>
     Group,
 
-    /// <summary>A single day's chip (TextBox), bound to Days[i].</summary>
     Chip,
 
     /// <summary>A single day's start time (TextBox HH:mm), bound to Days[i].</summary>
@@ -52,43 +40,27 @@ public enum SheetCellKind
     /// <summary>A single day's "out of competition" flag (CheckBox), bound to Days[i].</summary>
     OutOfCompetition,
 
-    /// <summary>A single day's «бонус» points correction (signed-integer TextBox), bound to Days[i].
-    /// Disabled/greyed for non-members. The roster «Бонус» column.</summary>
+    /// <summary>Days[i] «бонус» (signed int); greyed for non-members. The roster column.</summary>
     Bonus,
 
-    /// <summary>
-    /// A group ComboBox bound directly on the row (GroupOptions/SelectedGroup), not via Days[i].
-    /// Used by the flat day-mode table where each row already represents a single day.
-    /// </summary>
+    /// <summary>Group combo on the row (GroupOptions/SelectedGroup), not Days[i] — the flat day-mode table.</summary>
     RowGroup,
 
-    /// <summary>
-    /// A region ComboBox bound directly on the row (RegionOptions/SelectedRegion). Region is a
-    /// competition-level participant field, so it is one column for the whole row (both the day grid
-    /// and the roster). The dropdown carries a "(none)" sentinel and a trailing "+ new" option.
-    /// </summary>
+    /// <summary>Region combo on the row; competition-level, so one column in both grids.
+    /// Dropdown carries a "(none)" sentinel and a trailing "+ new".</summary>
     RowRegion,
 
-    /// <summary>A club ComboBox bound directly on the row (ClubOptions/SelectedClub); same shape as
-    /// <see cref="RowRegion"/>.</summary>
+    /// <summary>Same shape as <see cref="RowRegion"/>.</summary>
     RowClub,
 
-    /// <summary>A sports-school (ДЮСШ) ComboBox bound directly on the row (DusshOptions/SelectedDussh);
-    /// same shape as <see cref="RowRegion"/>.</summary>
+    /// <summary>ДЮСШ; same shape as <see cref="RowRegion"/>.</summary>
     RowDussh,
 
-    /// <summary>
-    /// A rank ComboBox bound directly on the row (RankOptions/SelectedRank). Rank is a competition-level
-    /// participant field stored as text (the rank name); the dropdown carries a "(none)" sentinel and
-    /// offers the application-level rank list, plus the participant's own value when it is not in the
-    /// list (old/renamed). Unlike region/club it has no "+ new" option — ranks are edited on their page.
-    /// </summary>
+    /// <summary>Rank combo on the row. Stored as text (the rank name); lists the app-level ranks plus the
+    /// participant's own value when it is not among them. No "+ new" — ranks are edited on their own page.</summary>
     RowRank,
 
-    /// <summary>
-    /// A competition-level boolean field (CheckBox) edited on the row by its
-    /// <see cref="SheetColumn.IdentityPath"/>. Used by the participant "FSOU member" column.
-    /// </summary>
+    /// <summary>CheckBox on the row's path; the participant "FSOU member" column.</summary>
     IdentityBool,
 
     /// <summary>A collapsed block's merged group cell (combo when shared, "різні" when days differ).</summary>
@@ -103,47 +75,26 @@ public enum SheetCellKind
     /// <summary>A collapsed block's merged out-of-competition cell (CheckBox when shared, "різні" when days differ).</summary>
     CollapsedOutOfCompetition,
 
-    /// <summary>
-    /// A CheckBox bound to the row's <c>PaysRaisedFee</c> — marks a participant as paying the raised
-    /// (late) start-entry fee. Only present when the competition has the raised fee enabled.
-    /// </summary>
+    /// <summary>Row's <c>PaysRaisedFee</c> (late entry fee); only when the competition enables it.</summary>
     RaisedFeeFlag,
 
-    /// <summary>
-    /// A read-only, right-aligned money label bound to the row's computed total entry fee
-    /// (<c>FormattedTotalFee</c>). Placed at the end of the participants table.
-    /// </summary>
+    /// <summary>Read-only <c>FormattedTotalFee</c>, right-aligned; last in the participants table.</summary>
     TotalFee,
 
-    /// <summary>
-    /// A read-only computed-result text label bound directly on the row by its
-    /// <see cref="SheetColumn.IdentityPath"/> (e.g. "FinishText"). Used by the day-grid result columns.
-    /// </summary>
+    /// <summary>Read-only label on the row's path (e.g. "FinishText") — the day-grid result columns.</summary>
     RowResultText,
 
-    /// <summary>
-    /// A finish-status ComboBox bound directly on the row (StatusOptions/SelectedStatus). The day-grid
-    /// result status column; lets a judge override the computed status.
-    /// </summary>
+    /// <summary>Status combo on the row — lets a judge override the computed status.</summary>
     RowStatus,
 
-    /// <summary>
-    /// A read-only computed-result text label for a single day, bound to <c>Days[i].{IdentityPath}</c>.
-    /// Greyed on days the participant doesn't run. The roster result columns.
-    /// </summary>
+    /// <summary>Read-only <c>Days[i].{IdentityPath}</c>; greyed on days the participant doesn't run.</summary>
     ResultText,
 
-    /// <summary>
-    /// A finish-status ComboBox for a single day, bound to <c>Days[i].StatusOptions/SelectedStatus</c>.
-    /// Disabled/greyed for non-members. The roster result status column.
-    /// </summary>
+    /// <summary>Days[i] status combo; greyed for non-members.</summary>
     Status,
 
-    /// <summary>
-    /// A collapsed result block's merged read-only text cell: the shared per-day value, or "різні" when
-    /// the member days disagree. The column's <see cref="SheetColumn.IdentityPath"/> carries the roster
-    /// row's merged-text property; a parallel <c>*Differs</c> property drives the "різні" state.
-    /// </summary>
+    /// <summary>Merged read-only cell: the shared value, or "різні" when member days disagree.
+    /// <see cref="SheetColumn.IdentityPath"/> is the merged-text property; a parallel <c>*Differs</c> drives "різні".</summary>
     CollapsedResultText,
 
     /// <summary>A collapsed result-status block's merged read-only cell (shared status code, or "різні").</summary>
@@ -152,11 +103,8 @@ public enum SheetCellKind
     /// <summary>The trailing delete-action button column.</summary>
     Actions,
 
-    /// <summary>
-    /// A page-supplied cell: the column carries a <see cref="SheetColumn.CellBuilder"/> that builds
-    /// the editor/display control. This is how non-participant pages (control points, groups, days,
-    /// chips) reuse the table without baking their bindings into <see cref="RosterCellFactory"/>.
-    /// </summary>
+    /// <summary>Page-supplied cell via <see cref="SheetColumn.CellBuilder"/> — how non-participant pages reuse
+    /// the table without baking bindings into <see cref="RosterCellFactory"/>.</summary>
     Custom
 }
 
@@ -292,11 +240,9 @@ public sealed partial class SheetColumn : ObservableObject
     public System.Func<Avalonia.Controls.Control>? CellBuilder { get; set; }
 
     /// <summary>
-    /// Optional per-cell background tint: a bool property on the bound row that, when true, paints the
-    /// whole cell in <see cref="CellBackgroundBrush"/> (false / not set ⇒ transparent, hit-testable).
-    /// Tints the whole cell area — including empty space — the same way the payment/age columns do, but
-    /// generically for any column. Null ⇒ no tint. Pair with <see cref="CellBackgroundTooltipPath"/> to
-    /// explain the tint on hover.
+    /// Bool property on the row: true ⇒ the whole cell (empty space included) is painted in
+    /// <see cref="CellBackgroundBrush"/>, else transparent and hit-testable. Null ⇒ no tint.
+    /// Pair with <see cref="CellBackgroundTooltipPath"/> to explain the tint on hover.
     /// </summary>
     public string? CellBackgroundPath { get; set; }
 
@@ -322,21 +268,16 @@ public sealed partial class SheetColumn : ObservableObject
     public string? CellBackgroundTooltipPath { get; set; }
 
     /// <summary>
-    /// The two-way bindable string property on the bound row this column edits, when the column is a
-    /// plain editable text cell. Set, it enables multi-row "fill down" paste: a clipboard with several
-    /// newline-separated lines pasted onto a cell writes one line per successive row straight to this
-    /// property (reusing the property's normal change/save handling). Null ⇒ the column has no flat
-    /// text value (combo/date/custom cell) and paste stays single-cell.
+    /// Two-way string property on the row, for a plain text cell. Set ⇒ multi-row "fill down" paste:
+    /// one clipboard line per successive row. Null ⇒ not a flat text column; paste stays single-cell.
     /// </summary>
     public string? PastePath { get; set; }
 
     /// <summary>
-    /// Combo-paste descriptor for an option-list column (region/club/group/rank/status). When set, a
-    /// paste (single value or a multi-line fill-down) onto this column does NOT write raw text: it
-    /// resolves the pasted text against the row's options (<see cref="ComboItemsPath"/>) by their visible
-    /// label (<see cref="ComboLabelPath"/>) and assigns the matching option to <see cref="ComboSelectedPath"/>
-    /// ONLY when exactly one option matches 1:1 (case-insensitive, trimmed). A non-matching value leaves
-    /// the cell unchanged — so pasting can never invent or half-match a selection. Null ⇒ not a combo column.
+    /// Option-list column (region/club/group/rank/status). Paste resolves the text against the row's
+    /// options by <see cref="ComboLabelPath"/> and assigns <see cref="ComboSelectedPath"/> ONLY on an
+    /// exact 1:1 match (case-insensitive, trimmed) — a non-match leaves the cell alone, so paste can
+    /// never invent a selection. Null ⇒ not a combo column.
     /// </summary>
     public string? ComboItemsPath { get; set; }
 
@@ -358,11 +299,8 @@ public sealed partial class SheetColumn : ObservableObject
     public bool RentalChipColumn { get; set; }
 
     /// <summary>
-    /// Property path on the bound row to a numeric value this column sums in the table's status bar.
-    /// When set, the status bar shows the total of this value across the currently displayed (filtered)
-    /// rows, right-aligned under this column. The value may be a number (decimal/int/double) or a
-    /// numeric string (e.g. the free-text «Оплата» field) — the table parses it leniently. Empty ⇒ the
-    /// column has no footer sum. See the participant fee/payment columns.
+    /// Row property summed in the status bar over the currently displayed (filtered) rows. Accepts a
+    /// number or a numeric string (e.g. the free-text «Оплата»), parsed leniently. Empty ⇒ no sum.
     /// </summary>
     public string SummaryPath { get; set; } = string.Empty;
 

@@ -71,22 +71,19 @@ public sealed class SetCourseStrategy : DisciplineStrategyBase
     }
 
     /// <summary>
-    /// Ordered (set-course) splits as two parallel lists. The <b>passage</b> keeps every punch read from
-    /// the chip in chip order — nothing dropped, including out-of-order, foreign and repeated punches.
-    /// A punch is flagged <see cref="PassagePunch.OnCourse"/> when it advances the prescribed course (a
-    /// greedy <b>subsequence</b> match, the same rule the status check uses): it may skip past a missed
-    /// control or a foreign/repeated punch, so a single missing КП in the middle does <b>not</b> off-course
-    /// every later control — they still map onto their columns. The <b>leg/pace</b> is filled only for a
-    /// <i>contiguous</i> on-course control — one whose prescribed predecessor was itself taken — and is
-    /// measured from that previous on-course control (any extra punches in between are treated as if they
-    /// were not there), so the split is the true single-leg time. A control reached after a missed КП (its
-    /// leg would span the gap), an off-course punch, and the finish after an incomplete course all carry
-    /// <b>no</b> course leg, since that time spans more than one prescribed leg and is meaningless. On top of
-    /// that, every row also carries a <b>display</b> leg/distance/pace measured from the immediately preceding
-    /// punch in chip order (<see cref="PassagePunch.DisplayLeg"/> etc.) — filled for every control, extras and
-    /// the finish included — so the read-out panel and the slip always show час перегону/довжина/швидкість and
-    /// keep their full column structure. The <b>expected</b> list is the prescribed course in order, each
-    /// flagged taken or missing.
+    /// Ordered (set-course) splits as two parallel lists — <b>passage</b> (every punch, in chip order,
+    /// nothing dropped) and <b>expected</b> (the prescribed course, each flagged taken or missing).
+    /// <list type="bullet">
+    ///   <item><see cref="PassagePunch.OnCourse"/> — set when the punch advances the course, by the same
+    ///   greedy subsequence match the status check uses. It skips past a missed control or a foreign
+    ///   punch, so one missing КП does not off-course every later control.</item>
+    ///   <item>Course leg/pace — only for a <i>contiguous</i> on-course control (its prescribed
+    ///   predecessor was taken), measured from that control, extras in between ignored. Left empty after
+    ///   a missed КП, for an off-course punch, and for the finish of an incomplete course: that time
+    ///   would span more than one prescribed leg.</item>
+    ///   <item><see cref="PassagePunch.DisplayLeg"/> — measured from the previous punch in chip order and
+    ///   filled for every row, so the panel and slip always show час перегону/довжина/швидкість.</item>
+    /// </list>
     /// </summary>
     public override SplitsView BuildSplits(SplitsContext context) =>
         BuildOrderedSplits(context, context.ExpectedControls, _distance);

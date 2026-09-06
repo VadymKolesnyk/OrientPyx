@@ -29,7 +29,6 @@
             KeyboardNavigation.TabNavigation="Cycle">
         <DockPanel LastChildFill="True">
 
-            <!-- Header -->
             <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
                     BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
                     Padding="22,16">
@@ -37,7 +36,6 @@
                            VerticalAlignment="Center" />
             </Border>
 
-            <!-- Footer -->
             <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
                     BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
                     Padding="22,14">

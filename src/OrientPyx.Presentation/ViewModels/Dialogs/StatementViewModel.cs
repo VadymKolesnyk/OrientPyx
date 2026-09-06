@@ -94,7 +94,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
     /// <summary>Completes when the modal is closed (the result is unused — export/print happen via commands).</summary>
     public Task<bool> Completion => _completion.Task;
 
-    // ── Localized chrome ─────────────────────────────────────────────────────────────────────────────
+    // ── Localized chrome
 
     public string Title => Localization.Get("Statement.Modal.Title");
     public string LandscapeLabel => Localization.Get("Statement.Layout.Landscape");
@@ -125,7 +125,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         OnPropertyChanged(nameof(SettingsSavedHint));
     }
 
-    // ── Settings ─────────────────────────────────────────────────────────────────────────────────────
+    // ── Settings
 
     /// <summary>The configurable columns, in on-page order (checkbox toggle + drag-reorder via the preview).</summary>
     public ObservableCollection<StatementColumnItemViewModel> Columns { get; } = [];
@@ -243,7 +243,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         DateTextPlaceholder = _headerDefaults.DateText;
     }
 
-    // ── Column reorder (drag from the preview header) ──────────────────────────────────────────────────
+    // ── Column reorder (drag from the preview header)
 
     public void MoveColumnByKey(string draggedKey, string targetKey, bool insertAfter)
     {
@@ -275,7 +275,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         return -1;
     }
 
-    // ── Persistence ──────────────────────────────────────────────────────────────────────────────────
+    // ── Persistence
 
     // Auto-saves the current template to the competition on every change. Fire-and-forget off the UI thread.
     private void AutoSave()
@@ -306,7 +306,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         SettingsSaved = true;
     }
 
-    // ── Preview ──────────────────────────────────────────────────────────────────────────────────────
+    // ── Preview
 
     private void RefreshPreview()
     {
@@ -360,9 +360,10 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         Preview.HasOfficials = false;
     }
 
-    // ── Build settings ───────────────────────────────────────────────────────────────────────────────
 
     // Persisted: the user's typed values (blanks stay blank; the watermark is a hint, never stored).
+
+// ── Build settings
     private StatementSettings BuildSettings() => new()
     {
         Orientation = IsLandscape ? ProtocolOrientation.Landscape : ProtocolOrientation.Portrait,
@@ -408,7 +409,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
             FooterPageLabel: Localization.Get("Protocols.Footer.Page"));
     }
 
-    // ── Export / print ───────────────────────────────────────────────────────────────────────────────
+    // ── Export / print
 
     /// <summary>Builds the .docx bytes + a suggested file name for the current view (the View runs the save
     /// dialog). Also persists the current settings. Returns null when there is nothing to export.</summary>
@@ -472,7 +473,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
     [RelayCommand]
     private void Close() => _completion.TrySetResult(true);
 
-    // ── Header-edit hooks (mirror the protocols page) ──────────────────────────────────────────────────
+    // ── Header-edit hooks (mirror the protocols page)
 
     private void OnHeaderEdited()
     {
@@ -521,7 +522,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         date: _headerDefaults.CompetitionDate,
         defaultNameKey: "Statement.DefaultName");
 
-    // ── Column captions ────────────────────────────────────────────────────────────────────────────────
+    // ── Column captions
 
     private static string CaptionKey(StatementColumn column) => column switch
     {

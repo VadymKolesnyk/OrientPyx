@@ -84,7 +84,7 @@ public sealed class SummaryProtocolSettings
     /// first by total points, then by the number of counted results (more first), then by the priority day.</summary>
     public bool RequireAllDays { get; set; }
 
-    // ── Header text. Blank ⇒ fall back to the competition's own value at build time. ────────────────
+    // ── Header text. Blank ⇒ fall back to the competition's own value at build time.
 
     public string CompetitionName { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;

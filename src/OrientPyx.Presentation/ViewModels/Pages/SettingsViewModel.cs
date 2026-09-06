@@ -22,7 +22,7 @@ public sealed partial class SettingsViewModel : PageViewModelBase
     [ObservableProperty]
     private bool _pathsSaved;
 
-    // --- Online live-results (Supabase) connection -------------------------------------------------
+    // --- Online live-results (Supabase) connection
 
     [ObservableProperty]
     private string _onlineSupabaseUrl = string.Empty;
@@ -67,7 +67,7 @@ public sealed partial class SettingsViewModel : PageViewModelBase
         _ = LoadReadoutTypeAsync();
     }
 
-    // --- Updates -----------------------------------------------------------------------------------
+    // --- Updates
 
     /// <summary>The running app version (e.g. "1.4.0"), or "—" for a dev/xcopy build.</summary>
     public string AppVersion =>
@@ -114,7 +114,7 @@ public sealed partial class SettingsViewModel : PageViewModelBase
             UpdateStatus = Localization.Get("Page.Settings.Update.Failed");
     }
 
-    // --- Readout type (timing system) --------------------------------------------------------------
+    // --- Readout type (timing system)
 
     // Guards the setter while LoadReadoutTypeAsync applies the stored value, so it doesn't persist during load.
     private bool _loadingReadoutType;

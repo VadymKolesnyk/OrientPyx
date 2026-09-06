@@ -47,7 +47,7 @@ public sealed partial class CreateEventViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isMultiDay;
 
-    // ── Officials (optional; printed on the protocols, editable later on the Information page) ──
+    // ── Officials (optional; printed on the protocols, editable later on the Information page)
     [ObservableProperty]
     private string _courseSetter = string.Empty;
 

@@ -35,10 +35,10 @@ public static class AppDatabasePaths
         _overrideBaseDirectory = path;
     }
 
-    /// <summary>Default ./data path (absolute).</summary>
+    /// <summary>Absolute.</summary>
     public static string DefaultDataPath => Path.Combine(BaseDirectory, DefaultDataFolderName);
 
-    /// <summary>Default ./events path (absolute).</summary>
+    /// <summary>Absolute.</summary>
     public static string DefaultEventsPath => Path.Combine(BaseDirectory, DefaultEventsFolderName);
 
     /// <summary>Full path to the app database, ensuring its folder exists.</summary>

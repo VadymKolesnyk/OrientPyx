@@ -84,7 +84,7 @@ internal abstract class LazyEditCell : Decorator
     /// <summary>True when this cell type opens a list/calendar on Enter (combo, date) vs. just edits text.</summary>
     public bool OpensOnEnter => ShouldOpenOnActivate(Key.Enter);
 
-    // ── Subclass contract ─────────────────────────────────────────────────────────────────────────
+    // ── Subclass contract
     /// <summary>Builds the real editor, already bound to its value path(s) on the row.</summary>
     protected abstract Control CreateEditor();
 
@@ -138,7 +138,7 @@ internal abstract class LazyEditCell : Decorator
     /// </summary>
     protected virtual void PlaceCaret(Control editor, Point pointInCell) { }
 
-    // ── Activation lifecycle ────────────────────────────────────────────────────────────────────
+    // ── Activation lifecycle
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);

@@ -47,7 +47,6 @@ public sealed class CoursePattern
     /// <summary>True when the pattern parsed without any structural error.</summary>
     public bool IsValid => Errors.Count == 0;
 
-    /// <summary>The start marker shown before the order (the day's start code when supplied, else "S").</summary>
     public string StartMarker { get; private set; } = "S";
 
     /// <summary>The finish marker shown after the order (the day's finish code when supplied, else "F").</summary>
@@ -130,31 +129,26 @@ public sealed class CoursePattern
         return ok;
     }
 
-    // ── Order check & variant listing (editor tools) ────────────────────────────────────────────────
+    // ── Order check & variant listing (editor tools)
 
     /// <summary>The most orders <see cref="EnumerateOrders"/> will list before reporting the rest as
     /// truncated — a wide free-choice block grows factorially, and nobody reads past a few hundred.</summary>
     public const int VariantLimit = 500;
 
-    // What separates the codes of a typed order: whitespace of any kind, plus the punctuation an
-    // operator is likely to reach for (comma, semicolon, dash) and the pattern's own brackets.
     private static readonly char[] Separators =
         [' ', '\t', '\r', '\n', ',', ';', '-', '>', '<'];
 
     /// <summary>
-    /// Checks one concrete passage order against the pattern — the same walk the read-out uses, so what the
-    /// modal says matches how a runner with those punches would be judged. <paramref name="order"/> is the
-    /// codes in punching order; an optional leading start / trailing finish marker is dropped.
+    /// The same walk the read-out uses, so the modal matches how a runner with those punches is judged.
+    /// A leading start / trailing finish marker in <paramref name="order"/> is dropped.
     /// </summary>
-    /// <returns>An empty string when the order is valid; otherwise the first control the pattern could not
-    /// satisfy (the MP detail).</returns>
+    /// <returns><paramref name="firstMissing"/> is empty when valid, else the first unsatisfied control
+    /// (the MP detail).</returns>
     public bool CheckOrder(IReadOnlyList<string> order, out string firstMissing, out bool[] onCourse) =>
         Match(order, ignoredCodes: null, out onCourse, out firstMissing);
 
-    /// <summary>
-    /// Splits a typed order into control codes: whitespace, commas, semicolons and dashes all separate, and
-    /// a leading start / trailing finish marker is dropped (so «S 41 42 F» reads as «41 42»).
-    /// </summary>
+    /// <summary>Any of <see cref="Separators"/> splits; a start/finish marker is dropped
+    /// («S 41 42 F» → «41 42»).</summary>
     public static IReadOnlyList<string> SplitOrder(string? text)
     {
         var codes = (text ?? string.Empty)
@@ -192,7 +186,7 @@ public sealed class CoursePattern
         return new CourseVariantSet(variants, total, total > variants.Count);
     }
 
-    // ── Parsing ──────────────────────────────────────────────────────────────────────────────────────
+    // ── Parsing
 
     // Drops an optional leading start marker and trailing finish marker (S/Start… and F/Finish) from the
     // pattern body so they are not parsed as required controls. Only the very first/last bare token is

@@ -4,8 +4,7 @@
         xmlns:conv="using:Avalonia.Controls.Converters"
         xmlns:controls="using:OrientPyx.Presentation.Controls">
 
-    <!-- ============================================================
-         Popup scaling.
+    <!-- Popup scaling.
 
          The whole UI is scaled by a single LayoutTransformControl at the
          window root (MainWindow.axaml). Popups — the CalendarDatePicker
@@ -25,8 +24,7 @@
          only the popup content wrapped; everything else is kept verbatim so
          behaviour and theming are unchanged. UiScale is exposed app-wide as
          a StaticResource in App.axaml (bound via ReflectionBinding, matching
-         the rest of the app).
-         ============================================================ -->
+         the rest of the app). -->
 
     <Styles.Resources>
         <conv:PlatformKeyGestureConverter x:Key="OD_KeyGestureConverter" />
@@ -50,9 +48,7 @@
         </ControlTheme>
     </Styles.Resources>
 
-    <!-- ============================================================
-         CalendarDatePicker — wrap PART_Calendar in a LayoutTransformControl.
-         ============================================================ -->
+    <!-- CalendarDatePicker — wrap PART_Calendar in a LayoutTransformControl. -->
     <Style Selector="CalendarDatePicker">
         <Setter Property="Template">
             <ControlTemplate>
@@ -117,9 +113,7 @@
         </Style>
     </Style>
 
-    <!-- ============================================================
-         Classic top menu-bar item — wrap PART_Popup content.
-         ============================================================ -->
+    <!-- Classic top menu-bar item — wrap PART_Popup content. -->
     <Style Selector="Menu > MenuItem">
         <Setter Property="Template">
             <ControlTemplate>
@@ -179,10 +173,8 @@
         </Style>
     </Style>
 
-    <!-- ============================================================
-         Submenu items (nested MenuItem popups) — wrap PART_Popup content.
-         Excludes top-level bar items (handled by the Menu > MenuItem rule).
-         ============================================================ -->
+    <!-- Submenu items (nested MenuItem popups) — wrap PART_Popup content.
+         Excludes top-level bar items (handled by the Menu > MenuItem rule). -->
     <Style Selector="MenuItem:not(Menu > MenuItem)">
         <Setter Property="Template">
             <ControlTemplate>
@@ -288,13 +280,11 @@
         </Style>
     </Style>
 
-    <!-- ============================================================
-         Menu separators. A default separator is 1px tall; the whole menu
+    <!-- Menu separators. A default separator is 1px tall; the whole menu
          popup is rendered inside a LayoutTransformControl scaled by UiScale,
          which can be as low as 0.8 — 1px * 0.8 snaps to 0 and the line
          vanishes. Give it a MinHeight that survives the smallest scale
-         (1 / 0.8 = 1.25) so the divider is always drawn.
-         ============================================================ -->
+         (1 / 0.8 = 1.25) so the divider is always drawn. -->
     <Style Selector="Menu Separator, MenuFlyoutPresenter Separator">
         <Setter Property="MinHeight" Value="1.5" />
     </Style>

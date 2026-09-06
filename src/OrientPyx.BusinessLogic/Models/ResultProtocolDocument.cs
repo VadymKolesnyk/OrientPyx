@@ -66,7 +66,7 @@ public sealed class ResultProtocolDocument
     /// Missing entry ⇒ treated as the most-protected priority (1). See the renderers' DistributeWidths.</summary>
     public IReadOnlyList<int> ColumnShrinkPriority { get; init; } = [];
 
-    /// <summary>The group sections, in display order.</summary>
+    /// <summary>In display order.</summary>
     public IReadOnlyList<ResultProtocolSection> Sections { get; init; } = [];
 
     /// <summary>The officials' signature block printed at the very end (chief judge, secretary, jury). Empty

@@ -107,7 +107,6 @@ public sealed record SplitExportLabels(
     string SplitDetailTotal,
     /// <summary>Detail-panel section caption for this single leg's figures.</summary>
     string SplitDetailLeg,
-    /// <summary>Detail-panel row caption for a time value.</summary>
     string SplitDetailTime,
     /// <summary>Detail-panel row caption for a place value.</summary>
     string SplitDetailPlace,

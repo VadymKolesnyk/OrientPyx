@@ -15,7 +15,6 @@ public sealed partial class RentalChipRowViewModel : ObservableObject
     private readonly DateTimeOffset _createdAt;
     private readonly Action<RentalChipRowViewModel> _requestSave;
 
-    // Suppresses save requests while the constructor seeds initial values.
     private readonly bool _initialized;
 
     [ObservableProperty]

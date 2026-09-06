@@ -157,7 +157,7 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
     // The column after a found one, or -1 when the source column was absent.
     private static int NextOrNone(int index) => index >= 0 ? index + 1 : -1;
 
-    // --- Punches -------------------------------------------------------------
+    // --- Punches
 
     // Reads the trailing punch triplets — "<code> ; <DOW> ; <time>", repeated — that start at
     // <paramref name="firstPunchIndex"/> and run to the end of the row. A blank triplet (all three
@@ -200,7 +200,7 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
         return punches;
     }
 
-    // --- Time parsing --------------------------------------------------------
+    // --- Time parsing
 
     // Parses SPORTident's two-letter English weekday code (Mo/Tu/We/Th/Fr/Sa/Su). Anything else → null,
     // which routes the timestamp through the monotonic fallback instead.
@@ -226,7 +226,7 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
             : null;
     }
 
-    // --- CSV helpers ---------------------------------------------------------
+    // --- CSV helpers
 
     private static string? FirstLine(string content)
     {

@@ -21,13 +21,11 @@ public sealed record EventDaySnapshot
     /// <summary>Every participant in the competition (links resolve into these by id).</summary>
     public IReadOnlyList<Participant> Participants { get; init; } = [];
 
-    /// <summary>Every group in the competition.</summary>
     public IReadOnlyList<Group> Groups { get; init; } = [];
 
     /// <summary>The day's per-group settings (membership + course/discipline overrides), in display order.</summary>
     public IReadOnlyList<GroupDaySettings> GroupDaySettings { get; init; } = [];
 
-    /// <summary>The day's control points.</summary>
     public IReadOnlyList<ControlPoint> ControlPoints { get; init; } = [];
 
     public IReadOnlyList<Region> Regions { get; init; } = [];
@@ -36,7 +34,6 @@ public sealed record EventDaySnapshot
 
     public IReadOnlyList<Dussh> Dusshes { get; init; } = [];
 
-    /// <summary>All days of the competition.</summary>
     public IReadOnlyList<EventDay> Days { get; init; } = [];
 
     /// <summary>Competition metadata (name, organisation, officials); null when none is stored yet.</summary>

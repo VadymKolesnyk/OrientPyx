@@ -107,7 +107,7 @@ public sealed class SummaryPreviewTable
             AddSpanning(section.GroupName, row, leaf, bold: true, size: CaptionFontSize, topMargin: row == 0 ? 0 : 12);
             row++;
 
-            // ── Tier 1 (band row) ───────────────────────────────────────────────────────────────────
+            // ── Tier 1 (band row)
             _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
             // Leading headers span both tiers (rowspan 2) — each a drag source/target for its column.
             for (var c = 0; c < leadCount; c++)
@@ -126,7 +126,7 @@ public sealed class SummaryPreviewTable
             AddHeader(document.TotalColumnHeader, col, row, colSpan: 1, rowSpan: 2, shaded: false);
             row++;
 
-            // ── Tier 2 (sub-column row) ─────────────────────────────────────────────────────────────
+            // ── Tier 2 (sub-column row)
             _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
             col = leadCount;
             foreach (var band in document.DayBands)
@@ -139,7 +139,7 @@ public sealed class SummaryPreviewTable
             }
             row++;
 
-            // ── Data rows ───────────────────────────────────────────────────────────────────────────
+            // ── Data rows
             foreach (var cells in section.Rows)
             {
                 _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
@@ -249,7 +249,7 @@ public sealed class SummaryPreviewTable
         return border;
     }
 
-    // ── Leading-column drag-reorder ───────────────────────────────────────────────────────────────────────
+    // ── Leading-column drag-reorder
 
     // Makes a leading cell (header or body) a drag source + drop target for its column. The column key travels
     // in the cell's Tag so the same handlers serve header and body cells. The 4-arrow move cursor signals it.
@@ -338,7 +338,7 @@ public sealed class SummaryPreviewTable
         return -1;
     }
 
-    // ── Drag highlight ───────────────────────────────────────────────────────────────────────────────────
+    // ── Drag highlight
 
     private void TintDraggedColumn(string draggedKey)
     {

@@ -26,7 +26,6 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     private readonly IDisciplineStrategyProvider _strategies;
     private readonly Action<GroupDayRowViewModel> _requestSave;
 
-    // Suppresses save requests while the constructor seeds initial values.
     private readonly bool _initialized;
 
     [ObservableProperty]

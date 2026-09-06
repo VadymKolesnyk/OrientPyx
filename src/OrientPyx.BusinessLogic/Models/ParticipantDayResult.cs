@@ -40,18 +40,13 @@ public sealed record ParticipantDayResult(
     public static readonly ParticipantDayResult Empty =
         new(null, null, FinishStatus.None, null, FinishStatus.None, null, null, null, HasReadout: false);
 
-    /// <summary>
-    /// True when the effective status is a "problem" code — anything other than OK (the all-clear) and
-    /// the blank <see cref="FinishStatus.None"/>. Drives the red status text in the participant tables.
-    /// </summary>
+    /// <summary>Anything but OK and the blank <see cref="FinishStatus.None"/>. Drives the red status text.</summary>
     public bool StatusIsProblem => Status is not (FinishStatus.Ok or FinishStatus.None);
 
     /// <summary>
-    /// True when this is an «поза конкурсом» (out-of-competition) run in a PERSONAL (non-team) discipline.
-    /// Such a runner is scored normally (their result time / Бали still compute) but is NOT placed and does
-    /// NOT occupy a position — the others are ranked as if they were not there — so the place column shows the
-    /// «П/К» marker (see <see cref="OutOfCompetitionMark"/>) instead of a rank. Team (rogaine) поза конкурсом is
-    /// handled by the team pass and does not set this flag.
+    /// «Поза конкурсом» in a PERSONAL (non-team) discipline: scored normally, but not placed and not
+    /// occupying a position — others rank as if they were absent, and the place column shows
+    /// <see cref="OutOfCompetitionMark"/>. Team (rogaine) поза конкурсом goes through the team pass instead.
     /// </summary>
     public bool OutOfCompetition { get; init; }
 
@@ -60,11 +55,9 @@ public sealed record ParticipantDayResult(
     public const string OutOfCompetitionMark = "П/К";
 
     /// <summary>
-    /// True when this participant's chip read-out shows they actually ran: it recorded a start box, a
-    /// finish box, or at least one control punch. Broader than <see cref="ActualStart"/> on purpose — on a
-    /// mass/assigned start there is no start box, so «did they run» cannot be answered by the start punch
-    /// alone. This is what the points formula's <c>N_с</c> counts. False for a member whose chip was never
-    /// read, and for an empty read-out that recorded nothing at all.
+    /// The read-out recorded a start box, a finish box, or at least one punch. Deliberately broader than
+    /// <see cref="ActualStart"/>: a mass/assigned start has no start box, so the start punch alone cannot
+    /// answer «did they run». This is what the points formula's <c>N_с</c> counts.
     /// </summary>
     public bool WasOnCourse { get; init; }
 

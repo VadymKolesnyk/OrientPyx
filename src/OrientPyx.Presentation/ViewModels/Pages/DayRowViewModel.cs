@@ -61,7 +61,6 @@ public sealed partial class DayRowViewModel : ObservableObject
     /// <summary>1-based day number (immutable label).</summary>
     public int Number { get; }
 
-    /// <summary>"Day 1"-style label for the row.</summary>
     public string NumberLabel => $"{Localization.Get("Header.Day")} {Number}";
 
     public EventDay ToEntity() => new()

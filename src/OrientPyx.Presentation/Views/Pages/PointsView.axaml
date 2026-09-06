@@ -10,7 +10,6 @@
 
     <DockPanel LastChildFill="True">
 
-        <!-- Heading -->
         <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
             <StackPanel Grid.Column="0" Spacing="4">
                 <TextBlock Text="{Binding Title}" Classes="h1"
@@ -25,7 +24,7 @@
         <!-- Master (rule list) + detail (selected rule editor) -->
         <Grid ColumnDefinitions="260,16,*">
 
-            <!-- ── Master: list of rules + add/delete actions ─────────────────────────────── -->
+            <!-- ── Master: list of rules + add/delete actions -->
             <Border Grid.Column="0" Classes="card" Padding="0" ClipToBounds="True">
                 <DockPanel LastChildFill="True">
 
@@ -56,7 +55,7 @@
                 </DockPanel>
             </Border>
 
-            <!-- ── Detail: editor for the selected rule ───────────────────────────────────── -->
+            <!-- ── Detail: editor for the selected rule -->
             <Border Grid.Column="2" Classes="card" Padding="18" ClipToBounds="True">
               <Grid>
 

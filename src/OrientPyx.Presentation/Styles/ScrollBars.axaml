@@ -1,8 +1,7 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- ============================================================
-         Slim always-visible scrollbars.
+    <!-- Slim always-visible scrollbars.
 
          Fluent's default hides the thumb down to a ~2px hairline until the pointer is
          over the scroller, which makes it very hard to grab. Here the collapsed thumb is
@@ -14,8 +13,7 @@
 
          The line (arrow) buttons are collapsed away entirely rather than merely made
          transparent: Fluent reserves ScrollBarSize at each end for them, which would
-         otherwise shorten the track for no reason.
-         ============================================================ -->
+         otherwise shorten the track for no reason. -->
 
     <!-- Always on, and the bar gets its OWN lane rather than floating over the content.
          Both come from ScrollViewer.AllowAutoHide: while it is True the Fluent template spans

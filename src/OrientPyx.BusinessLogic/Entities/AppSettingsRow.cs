@@ -74,7 +74,7 @@ public class AppSettingsRow
     /// </summary>
     public int RankCountForRank { get; set; } = 12;
 
-    // --- Online live-results (Supabase) connection, shared across competitions ----------------------
+    // --- Online live-results (Supabase) connection, shared across competitions
 
     /// <summary>The Supabase project URL the live-results publisher pushes to. Blank until configured.</summary>
     public string OnlineSupabaseUrl { get; set; } = string.Empty;

@@ -85,7 +85,7 @@ public sealed partial class ChipsViewModel : PageViewModelBase
     [ObservableProperty]
     private RentalChipRowViewModel? _selectedChip;
 
-    // --- Auto-read panel (in-memory only; never persisted, per the session rule) -----------------
+    // --- Auto-read panel (in-memory only; never persisted, per the session rule)
 
     /// <summary>Default readout file: <c>chips\rentchip.csv</c> under the competition folder.</summary>
     private const string DefaultReadoutSubPath = "chips/rentchip.csv";
@@ -243,7 +243,6 @@ public sealed partial class ChipsViewModel : PageViewModelBase
     [RelayCommand]
     private Task DeleteChipAsync(RentalChipRowViewModel? row) => RemoveChipAsync(row, skipConfirm: false);
 
-    /// <summary>Deletes a row without the confirmation prompt (Ctrl+Click / Ctrl+Delete).</summary>
     public Task DeleteChipNoConfirmAsync(RentalChipRowViewModel? row) => RemoveChipAsync(row, skipConfirm: true);
 
     /// <summary>Deletes the currently selected chip (Delete key); confirms unless skipConfirm.</summary>
@@ -292,7 +291,7 @@ public sealed partial class ChipsViewModel : PageViewModelBase
             RequestGridFocus();
     }
 
-    // --- Auto-read wiring --------------------------------------------------------------------------
+    // --- Auto-read wiring
 
     partial void OnAutoReadEnabledChanged(bool value)
     {
@@ -371,7 +370,7 @@ public sealed partial class ChipsViewModel : PageViewModelBase
     // is idempotent, so a plain assignment both stops the poll and reflects it in the UI.
     private void StopAutoRead() => AutoReadEnabled = false;
 
-    // --- Top-bar background activity ---------------------------------------------------------------
+    // --- Top-bar background activity
 
     // Creates the activity handle and registers it so the menu-bar block shows auto-read while it runs.
     private void ShowActivity()
@@ -431,7 +430,7 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         _autoReadActivity.StatusText = string.Format(Localization.Get(key), fileName, AutoReadIntervalSeconds);
     }
 
-    // --- Debounced save ----------------------------------------------------------------------------
+    // --- Debounced save
 
     private void RequestRowSave(RentalChipRowViewModel row)
     {
@@ -453,11 +452,9 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         }
         catch (OperationCanceledException)
         {
-            // Superseded by a newer edit (or the page reloaded) — ignore.
         }
         catch
         {
-            // Background save failed; never crash the UI over an autosave.
         }
     }
 

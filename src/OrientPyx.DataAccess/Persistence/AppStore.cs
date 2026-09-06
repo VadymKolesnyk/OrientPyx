@@ -340,7 +340,7 @@ public sealed class AppStore : IAppStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    // ── Sports ranks ───────────────────────────────────────────────────────────────────────────────
+    // ── Sports ranks
 
     public async Task SeedRanksIfEmptyAsync(IReadOnlyList<SportRank> ranks, CancellationToken cancellationToken = default)
     {
@@ -413,8 +413,8 @@ public sealed class AppStore : IAppStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    // ── Points rules ─────────────────────────────────────────────────────────────────────────────────
 
+// ── Points rules
     public async Task SeedPointsRulesIfEmptyAsync(IReadOnlyList<PointsRule> rules, CancellationToken cancellationToken = default)
     {
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
@@ -494,7 +494,7 @@ public sealed class AppStore : IAppStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    // ── Rank qualification table ───────────────────────────────────────────────────────────────────────
+    // ── Rank qualification table
 
     public async Task SeedRankQualificationIfEmptyAsync(IReadOnlyList<RankQualificationRow> rows, CancellationToken cancellationToken = default)
     {

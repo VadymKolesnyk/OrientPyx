@@ -296,7 +296,6 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
         }
         catch (OperationCanceledException)
         {
-            // Superseded by a newer request — ignore.
         }
         catch (Exception ex)
         {
@@ -384,7 +383,7 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
         ScheduleAutoSave();
     }
 
-    // --- Auto-save --------------------------------------------------------------------------------
+    // --- Auto-save
     // The monitor configuration persists automatically on any edit — there's no Save button. Edits are debounced
     // into ONE write, and the write runs on a pool thread (no busy overlay) so the UI never blocks. LoadAsync
     // sets a guard so filling the fields on load doesn't self-save.
@@ -413,7 +412,6 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
         }
         catch (OperationCanceledException)
         {
-            // Superseded by a newer edit — ignore.
         }
         catch (Exception ex)
         {
@@ -432,7 +430,7 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
         await Task.Run(() => _editor.SaveMonitorSettingsAsync(settings, ct), ct);
     }
 
-    // --- Start / stop generation -------------------------------------------------------------------
+    // --- Start / stop generation
 
     [RelayCommand]
     private async Task StartGeneratingAsync()
@@ -570,7 +568,7 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
             StatusRunning: Localization.Get("Monitor.Status.Running"));
     }
 
-    // --- Top-bar background activity ---------------------------------------------------------------
+    // --- Top-bar background activity
 
     private void ShowActivity()
     {

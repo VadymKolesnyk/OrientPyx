@@ -95,7 +95,7 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
     public override string IconData =>
         "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z M14 2v4a2 2 0 0 0 2 2h4 M16 13H8 M16 17H8 M10 9H8";
 
-    // ── Day picker (does NOT touch the session) ──────────────────────────────────────────────────────
+    // ── Day picker (does NOT touch the session)
 
     public ObservableCollection<DayOption> DayOptions { get; } = [];
 
@@ -104,7 +104,7 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
 
     public bool ShowDaySelector => DayOptions.Count > 1;
 
-    // ── Settings ─────────────────────────────────────────────────────────────────────────────────────
+    // ── Settings
 
     /// <summary>The configurable columns, in on-page order. Reordered with up/down; toggled visible.</summary>
     public ObservableCollection<ProtocolColumnItemViewModel> Columns { get; } = [];
@@ -140,7 +140,7 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
     [ObservableProperty]
     private string _dateText = string.Empty;
 
-    // ── Header placeholders (watermarks) ───────────────────────────────────────────────────────────────
+    // ── Header placeholders (watermarks)
     // The resolved competition/day default for each header field, shown as the TextBox watermark when the
     // user has typed nothing. A blank field falls back to this value at build/export time (so the printed
     // protocol carries the competition's own metadata); when the placeholder is itself empty (the DB has no
@@ -313,7 +313,6 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         CompetitionNamePlaceholder = name?.Trim() ?? string.Empty;
         SubtitlePlaceholder = info?.Organisation?.Trim() ?? string.Empty;
 
-        // Venue: the day's own venue, else the competition venue.
         VenuePlaceholder = FirstNonBlank(day?.Venue, info?.Venue);
 
         // Date: the day's date, else the competition's start date.

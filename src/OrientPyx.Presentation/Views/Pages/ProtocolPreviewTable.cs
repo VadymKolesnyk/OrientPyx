@@ -249,7 +249,7 @@ public sealed class ProtocolPreviewTable
         _host.Children.Add(_dropLine);
     }
 
-    // ── Content-proportional column widths (mirrors the .docx writer so the preview matches the document) ──
+    // ── Content-proportional column widths (mirrors the .docx writer so the preview matches the document)
 
     // The preview sheet's geometry, kept in sync with LandscapeToPageWidthConverter + the sheet padding in the
     // protocol Views, so the table fills the same printable width the document does. (Short side × A4 ratio for
@@ -647,7 +647,7 @@ public sealed class ProtocolPreviewTable
         DragDrop.SetAllowDrop(cell, true);
     }
 
-    // ── Column drag-reorder (from any cell in a column) ──────────────────────────────────────────────────
+    // ── Column drag-reorder (from any cell in a column)
 
     private async void OnHeaderPointerPressed(object? sender, PointerPressedEventArgs e)
     {
@@ -729,7 +729,7 @@ public sealed class ProtocolPreviewTable
         return -1;
     }
 
-    // ── Drag highlight ───────────────────────────────────────────────────────────────────────────────────
+    // ── Drag highlight
 
     // Tints the dragged column (a faint wash) at drag start, before any column is hovered.
     private void TintDraggedColumn(string draggedKey)

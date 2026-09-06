@@ -7,6 +7,7 @@ namespace OrientPyx.BusinessLogic.Interfaces;
 /// <summary>
 /// Abstraction over a single competition's database, addressed by its folder path.
 /// Implemented in DataAccess; keeps EF Core out of BusinessLogic.
+/// Every Update*/Delete* below is a no-op when the target row is missing.
 /// </summary>
 public interface IEventStore
 {
@@ -21,10 +22,8 @@ public interface IEventStore
     /// </summary>
     Task CheckpointAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
-    /// <summary>Reads competition metadata, or null if none is stored.</summary>
     Task<CompetitionInfo?> GetCompetitionInfoAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
-    /// <summary>Stores (inserts/updates) the single competition metadata row.</summary>
     Task SaveCompetitionInfoAsync(string eventFolderPath, CompetitionInfo info, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -33,25 +32,21 @@ public interface IEventStore
     /// </summary>
     Task SetHiddenAsync(string eventFolderPath, bool hidden, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns the competition days ordered by number.</summary>
+    /// <summary>Ordered by number.</summary>
     Task<IReadOnlyList<EventDay>> GetDaysAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
-    /// <summary>Adds a day to the competition.</summary>
     Task AddDayAsync(string eventFolderPath, EventDay day, CancellationToken cancellationToken = default);
 
-    /// <summary>Updates an existing day's editable fields (date, venue, discipline).</summary>
     Task UpdateDayAsync(string eventFolderPath, EventDay day, CancellationToken cancellationToken = default);
 
-    /// <summary>Sets a day's 1-based number. Does nothing if the day is missing.</summary>
+    /// <summary>Sets a day's 1-based number.</summary>
     Task UpdateDayNumberAsync(string eventFolderPath, Guid dayId, int newNumber, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes a day by id. Does nothing if it is missing.</summary>
     Task DeleteDayAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns a day's control points ordered by their sort order.</summary>
+    /// <summary>Ordered by sort order.</summary>
     Task<IReadOnlyList<ControlPoint>> GetControlPointsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
 
-    /// <summary>Adds a control point to a day.</summary>
     Task AddControlPointAsync(string eventFolderPath, ControlPoint point, CancellationToken cancellationToken = default);
 
     /// <summary>Adds several control points to a day in one transaction (e.g. an XML import).</summary>
@@ -60,10 +55,8 @@ public interface IEventStore
     /// <summary>Deletes a day's existing control points and inserts the supplied set in one transaction.</summary>
     Task ReplaceControlPointsAsync(string eventFolderPath, Guid dayId, IReadOnlyList<ControlPoint> points, CancellationToken cancellationToken = default);
 
-    /// <summary>Updates an existing control point's editable fields (code, coordinates, type).</summary>
     Task UpdateControlPointAsync(string eventFolderPath, ControlPoint point, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes a control point by id. Does nothing if it is missing.</summary>
     Task DeleteControlPointAsync(string eventFolderPath, Guid pointId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -75,41 +68,34 @@ public interface IEventStore
         string eventFolderPath, Guid dayId, IReadOnlyCollection<Guid> disabledPointIds,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Returns the competition's groups, ordered by name.</summary>
+    /// <summary>Ordered by name.</summary>
     Task<IReadOnlyList<Group>> GetGroupsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
-    /// <summary>Adds a competition-level group.</summary>
     Task AddGroupAsync(string eventFolderPath, Group group, CancellationToken cancellationToken = default);
 
-    /// <summary>Updates an existing group's editable fields (name). Does nothing if it is missing.</summary>
     Task UpdateGroupAsync(string eventFolderPath, Group group, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes a group by id. Does nothing if it is missing.</summary>
     Task DeleteGroupAsync(string eventFolderPath, Guid groupId, CancellationToken cancellationToken = default);
 
-    /// <summary>Sets a group's base entry fee (shared across days). Does nothing if the group is missing.</summary>
+    /// <summary>Entry fee is shared across all days.</summary>
     Task UpdateGroupEntryFeeAsync(string eventFolderPath, Guid groupId, decimal? entryFee, CancellationToken cancellationToken = default);
 
-    /// <summary>Sets a group's allowed birth-year window (both bounds inclusive, either optional; shared
-    /// across days). Does nothing if the group is missing.</summary>
+    /// <summary>Both bounds inclusive, either optional; shared across days.</summary>
     Task UpdateGroupAgeWindowAsync(string eventFolderPath, Guid groupId, int? minBirthYear, int? maxBirthYear, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns a day's group settings rows, ordered by their sort order.</summary>
+    /// <summary>Ordered by sort order.</summary>
     Task<IReadOnlyList<GroupDaySettings>> GetGroupDaySettingsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
 
-    /// <summary>Counts a group's settings rows across all days (used to decide cascade deletion).</summary>
+    /// <summary>Across all days — callers use this to decide cascade deletion.</summary>
     Task<int> CountGroupDaySettingsForGroupAsync(string eventFolderPath, Guid groupId, CancellationToken cancellationToken = default);
 
-    /// <summary>Adds a group-day settings row (attaches a group to a day).</summary>
     Task AddGroupDaySettingsAsync(string eventFolderPath, GroupDaySettings settings, CancellationToken cancellationToken = default);
 
     /// <summary>Adds several group-day settings rows in one transaction (e.g. "pull all groups").</summary>
     Task AddGroupDaySettingsRangeAsync(string eventFolderPath, IReadOnlyList<GroupDaySettings> settings, CancellationToken cancellationToken = default);
 
-    /// <summary>Updates a group-day settings row (course order, distance, override). Does nothing if it is missing.</summary>
     Task UpdateGroupDaySettingsAsync(string eventFolderPath, GroupDaySettings settings, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes a group-day settings row by id (detaches a group from a day). Does nothing if it is missing.</summary>
     Task DeleteGroupDaySettingsAsync(string eventFolderPath, Guid settingsId, CancellationToken cancellationToken = default);
 
     /// <summary>Returns all scatter («розсіювання») variant rows for a day (across every group), ordered by
@@ -121,16 +107,14 @@ public interface IEventStore
     /// group stops being a scatter course).</summary>
     Task ReplaceScatterVariantsForGroupAsync(string eventFolderPath, Guid dayId, Guid groupId, IReadOnlyList<ScatterVariant> variants, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns the competition's rental chips, ordered by number.</summary>
+    /// <summary>Ordered by number.</summary>
     Task<IReadOnlyList<RentalChip>> GetRentalChipsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
-    /// <summary>Adds a rental chip to the competition.</summary>
     Task AddRentalChipAsync(string eventFolderPath, RentalChip chip, CancellationToken cancellationToken = default);
 
     /// <summary>Adds several rental chips in one transaction (e.g. a bulk range or a file import).</summary>
     Task AddRentalChipsAsync(string eventFolderPath, IReadOnlyList<RentalChip> chips, CancellationToken cancellationToken = default);
 
-    /// <summary>Updates an existing rental chip's editable fields (number, note). Does nothing if it is missing.</summary>
     Task UpdateRentalChipAsync(string eventFolderPath, RentalChip chip, CancellationToken cancellationToken = default);
 
     /// <summary>Removes a rental chip by id. Does nothing if it is missing.</summary>
@@ -142,52 +126,42 @@ public interface IEventStore
     /// <summary>Returns the competition's regions, ordered by name.</summary>
     Task<IReadOnlyList<Region>> GetRegionsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
-    /// <summary>Adds a competition-level region.</summary>
     Task AddRegionAsync(string eventFolderPath, Region region, CancellationToken cancellationToken = default);
 
-    /// <summary>Updates an existing region's editable fields (name). Does nothing if it is missing.</summary>
     Task UpdateRegionAsync(string eventFolderPath, Region region, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes a region by id. Does nothing if it is missing.</summary>
     Task DeleteRegionAsync(string eventFolderPath, Guid regionId, CancellationToken cancellationToken = default);
 
-    /// <summary>Clears a region from every participant that references it (sets their RegionId to null).</summary>
+    /// <summary>Sets RegionId to null on every participant referencing it.</summary>
     Task ClearParticipantsRegionAsync(string eventFolderPath, Guid regionId, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns the competition's clubs, ordered by name.</summary>
+    /// <summary>Ordered by name.</summary>
     Task<IReadOnlyList<Club>> GetClubsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
-    /// <summary>Adds a competition-level club.</summary>
     Task AddClubAsync(string eventFolderPath, Club club, CancellationToken cancellationToken = default);
 
-    /// <summary>Updates an existing club's editable fields (name). Does nothing if it is missing.</summary>
     Task UpdateClubAsync(string eventFolderPath, Club club, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes a club by id. Does nothing if it is missing.</summary>
     Task DeleteClubAsync(string eventFolderPath, Guid clubId, CancellationToken cancellationToken = default);
 
-    /// <summary>Clears a club from every participant that references it (sets their ClubId to null).</summary>
+    /// <summary>Sets ClubId to null on every participant referencing it.</summary>
     Task ClearParticipantsClubAsync(string eventFolderPath, Guid clubId, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns the competition's sports schools (ДЮСШ), ordered by name.</summary>
+    /// <summary>Sports schools (ДЮСШ), ordered by name.</summary>
     Task<IReadOnlyList<Dussh>> GetDusshesAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
-    /// <summary>Adds a competition-level sports school.</summary>
     Task AddDusshAsync(string eventFolderPath, Dussh dussh, CancellationToken cancellationToken = default);
 
-    /// <summary>Updates an existing sports school's editable fields (name). Does nothing if it is missing.</summary>
     Task UpdateDusshAsync(string eventFolderPath, Dussh dussh, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes a sports school by id. Does nothing if it is missing.</summary>
     Task DeleteDusshAsync(string eventFolderPath, Guid dusshId, CancellationToken cancellationToken = default);
 
-    /// <summary>Clears a sports school from every participant that references it (sets their DusshId to null).</summary>
+    /// <summary>Sets DusshId to null on every participant referencing it.</summary>
     Task ClearParticipantsDusshAsync(string eventFolderPath, Guid dusshId, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns the competition's participants, ordered by surname then name.</summary>
+    /// <summary>Ordered by surname then name.</summary>
     Task<IReadOnlyList<Participant>> GetParticipantsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
-    /// <summary>Adds a competition-level participant.</summary>
     Task AddParticipantAsync(string eventFolderPath, Participant participant, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -197,16 +171,13 @@ public interface IEventStore
     /// </summary>
     Task<int> DeleteAllParticipantsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
-    /// <summary>Updates a participant's identity fields (surname, name, number, rank, coach, birth date). Does nothing if it is missing.</summary>
     Task UpdateParticipantAsync(string eventFolderPath, Participant participant, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes a participant by id. Does nothing if it is missing.</summary>
     Task DeleteParticipantAsync(string eventFolderPath, Guid participantId, CancellationToken cancellationToken = default);
 
-    /// <summary>Sets a participant's "pays the raised fee" flag. Does nothing if it is missing.</summary>
     Task SetParticipantPaysRaisedFeeAsync(string eventFolderPath, Guid participantId, bool paysRaisedFee, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns every participant↔discount link in the competition (used to resolve selected discounts).</summary>
+    /// <summary>Every participant↔discount link in the competition.</summary>
     Task<IReadOnlyList<ParticipantDiscount>> GetParticipantDiscountsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -215,7 +186,7 @@ public interface IEventStore
     /// </summary>
     Task SetParticipantDiscountAsync(string eventFolderPath, Guid participantId, Guid discountId, bool on, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns a day's participant links, ordered by their sort order.</summary>
+    /// <summary>Ordered by sort order.</summary>
     Task<IReadOnlyList<ParticipantDay>> GetParticipantDaysAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -227,7 +198,7 @@ public interface IEventStore
     /// </summary>
     Task<EventDaySnapshot> GetDaySnapshotAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns every participant link across all days (used to build the roster / Мандатка view).</summary>
+    /// <summary>Across all days — the roster («Мандатка») source.</summary>
     Task<IReadOnlyList<ParticipantDay>> GetAllParticipantDaysAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -238,10 +209,9 @@ public interface IEventStore
     /// </summary>
     Task<Guid> SetParticipantDayGroupAsync(string eventFolderPath, Guid participantId, Guid dayId, Guid? groupId, CancellationToken cancellationToken = default);
 
-    /// <summary>Counts a participant's links across all days (used to decide cascade deletion).</summary>
+    /// <summary>Across all days — callers use this to decide cascade deletion.</summary>
     Task<int> CountParticipantDaysForParticipantAsync(string eventFolderPath, Guid participantId, CancellationToken cancellationToken = default);
 
-    /// <summary>Adds a participant-day link (attaches a participant to a day).</summary>
     Task AddParticipantDayAsync(string eventFolderPath, ParticipantDay link, CancellationToken cancellationToken = default);
 
     /// <summary>Updates a participant-day link (group, chip, start, order, out-of-competition). Deliberately
@@ -295,7 +265,6 @@ public interface IEventStore
         IReadOnlyList<(Guid ParticipantId, string Number)> assignments,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Removes a participant-day link by id (detaches a participant from a day). Does nothing if it is missing.</summary>
     Task DeleteParticipantDayAsync(string eventFolderPath, Guid linkId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -316,10 +285,10 @@ public interface IEventStore
         IProgress<ImportProgress>? progress,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Returns a day's finish read-outs, ordered by their sequence (Order).</summary>
+    /// <summary>Ordered by Order (read sequence).</summary>
     Task<IReadOnlyList<FinishReadout>> GetFinishReadoutsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
 
-    /// <summary>Adds several finish read-outs to a day in one transaction (an auto-read tick).</summary>
+    /// <summary>One transaction per auto-read tick.</summary>
     Task AddFinishReadoutsAsync(string eventFolderPath, IReadOnlyList<FinishReadout> readouts, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -329,83 +298,59 @@ public interface IEventStore
     /// </summary>
     Task UpdateFinishReadoutAsync(string eventFolderPath, FinishReadout readout, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes every finish read-out from a day. Returns how many were deleted.</summary>
+    /// <summary>Returns how many were deleted.</summary>
     Task<int> DeleteFinishReadoutsForDayAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns the competition's chip-price overrides (note → price/day), ordered by note.</summary>
+    /// <summary>note → price/day, ordered by note.</summary>
     Task<IReadOnlyList<ChipPriceOverride>> GetChipPriceOverridesAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
-    /// <summary>Adds a chip-price override to the competition.</summary>
     Task AddChipPriceOverrideAsync(string eventFolderPath, ChipPriceOverride priceOverride, CancellationToken cancellationToken = default);
 
-    /// <summary>Updates a chip-price override's editable fields (note, price). Does nothing if it is missing.</summary>
     Task UpdateChipPriceOverrideAsync(string eventFolderPath, ChipPriceOverride priceOverride, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes a chip-price override by id. Does nothing if it is missing.</summary>
     Task DeleteChipPriceOverrideAsync(string eventFolderPath, Guid overrideId, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns the competition's entry-fee discounts, ordered by name.</summary>
+    /// <summary>Ordered by name.</summary>
     Task<IReadOnlyList<EntryFeeDiscount>> GetEntryFeeDiscountsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
-    /// <summary>Adds an entry-fee discount to the competition.</summary>
     Task AddEntryFeeDiscountAsync(string eventFolderPath, EntryFeeDiscount discount, CancellationToken cancellationToken = default);
 
-    /// <summary>Updates an entry-fee discount's editable fields (name, percent, applies-to-chip). Does nothing if it is missing.</summary>
     Task UpdateEntryFeeDiscountAsync(string eventFolderPath, EntryFeeDiscount discount, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes an entry-fee discount by id. Does nothing if it is missing.</summary>
     Task DeleteEntryFeeDiscountAsync(string eventFolderPath, Guid discountId, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Returns a day's saved results-protocol template JSON, or null when the day has no row yet (the
-    /// caller then seeds it from the app-level default).
-    /// </summary>
+    /// <summary>Null when the day has no row yet — caller seeds from the app-level default.</summary>
     Task<string?> GetResultProtocolJsonAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
 
-    /// <summary>Stores (inserts/updates) a day's results-protocol template JSON.</summary>
     Task SaveResultProtocolJsonAsync(string eventFolderPath, Guid dayId, string json, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Returns a day's saved start-protocol template JSON for a kind, or null when the (day, kind) has no row
-    /// yet (the caller then seeds it from the kind's built-in default).
-    /// </summary>
+    /// <summary>Null when the (day, kind) has no row yet — caller seeds from the kind's default.</summary>
     Task<string?> GetStartProtocolJsonAsync(string eventFolderPath, Guid dayId, StartProtocolKind kind, CancellationToken cancellationToken = default);
 
-    /// <summary>Stores (inserts/updates) a day's start-protocol template JSON for a kind.</summary>
     Task SaveStartProtocolJsonAsync(string eventFolderPath, Guid dayId, StartProtocolKind kind, string json, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Returns a day's saved start-draw settings JSON for a draw page, or null when the (day, kind) has no
-    /// row yet (the caller then falls back to the page defaults).
-    /// </summary>
+    /// <summary>Null when the (day, kind) has no row yet — caller falls back to page defaults.</summary>
     Task<string?> GetDrawSettingsJsonAsync(string eventFolderPath, Guid dayId, DrawSettingsKind kind, CancellationToken cancellationToken = default);
 
-    /// <summary>Stores (inserts/updates) a day's start-draw settings JSON for a draw page.</summary>
     Task SaveDrawSettingsJsonAsync(string eventFolderPath, Guid dayId, DrawSettingsKind kind, string json, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns the competition-level summary-protocol template JSON, or null when none is stored.</summary>
+    /// <summary>Competition-level; null when none is stored.</summary>
     Task<string?> GetSummaryProtocolJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
-    /// <summary>Stores (inserts/updates) the competition-level summary-protocol template JSON.</summary>
     Task SaveSummaryProtocolJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns the competition-level participant-statement («відомість») template JSON, or null when
-    /// none is stored (the caller then seeds from the app-level default).</summary>
+    /// <summary>Participant statement («відомість»); null ⇒ caller seeds from the app-level default.</summary>
     Task<string?> GetStatementJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
-    /// <summary>Stores (inserts/updates) the competition-level participant-statement template JSON.</summary>
     Task SaveStatementJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns the competition-level online-publish settings JSON, or null when none is stored (the
-    /// caller then seeds defaults from the competition metadata).</summary>
+    /// <summary>Null when none is stored — caller seeds from the competition metadata.</summary>
     Task<string?> GetOnlinePublishJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
-    /// <summary>Stores (inserts/updates) the competition-level online-publish settings JSON.</summary>
     Task SaveOnlinePublishJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns the competition-level results-monitor settings JSON, or null when none is stored.</summary>
+    /// <summary>Competition-level; null when none is stored.</summary>
     Task<string?> GetMonitorJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
-    /// <summary>Stores (inserts/updates) the competition-level results-monitor settings JSON.</summary>
     Task SaveMonitorJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default);
 }

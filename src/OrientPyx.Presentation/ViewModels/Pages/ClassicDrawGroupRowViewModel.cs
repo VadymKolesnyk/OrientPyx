@@ -29,7 +29,6 @@ public sealed partial class ClassicDrawGroupRowViewModel : ObservableObject
     public string FirstControlLabel =>
         string.IsNullOrEmpty(Group.FirstControl) ? string.Empty : $"КП {Group.FirstControl}";
 
-    /// <summary>"×12" member-count badge.</summary>
     public string CountLabel => $"×{MemberCount}";
 
     /// <summary>Whether this group takes part in the draw (only checked groups are drawn). Empty groups stay

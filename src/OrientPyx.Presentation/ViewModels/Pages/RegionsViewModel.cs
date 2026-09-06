@@ -99,7 +99,6 @@ public sealed partial class RegionsViewModel : PageViewModelBase
     [RelayCommand]
     private Task DeleteRegionAsync(RegionRowViewModel? row) => RemoveRegionAsync(row, skipConfirm: false);
 
-    /// <summary>Deletes a row without the confirmation prompt (Ctrl+Click / Ctrl+Delete).</summary>
     public Task DeleteRegionNoConfirmAsync(RegionRowViewModel? row) => RemoveRegionAsync(row, skipConfirm: true);
 
     /// <summary>Deletes the currently selected region (Delete key); confirms unless skipConfirm.</summary>
@@ -140,7 +139,7 @@ public sealed partial class RegionsViewModel : PageViewModelBase
             RequestGridFocus();
     }
 
-    // --- Debounced save ----------------------------------------------------------------------------
+    // --- Debounced save
 
     private void RequestRowSave(RegionRowViewModel row)
     {
@@ -162,11 +161,9 @@ public sealed partial class RegionsViewModel : PageViewModelBase
         }
         catch (OperationCanceledException)
         {
-            // Superseded by a newer edit (or the page reloaded) — ignore.
         }
         catch
         {
-            // Background save failed; never crash the UI over an autosave.
         }
     }
 

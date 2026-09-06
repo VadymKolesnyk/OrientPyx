@@ -86,7 +86,7 @@ public interface IAppStore
 
     Task SaveLastSessionAsync(string? identifier, int? dayNumber, CancellationToken cancellationToken = default);
 
-    // ── Sports ranks (application-level, shared across competitions) ────────────────────────────────
+    // ── Sports ranks (application-level, shared across competitions)
 
     /// <summary>Seeds the given ranks only when the ranks table is empty (first run). A no-op otherwise.</summary>
     Task SeedRanksIfEmptyAsync(IReadOnlyList<SportRank> ranks, CancellationToken cancellationToken = default);
@@ -106,7 +106,7 @@ public interface IAppStore
     /// <summary>Removes a rank. Participants keep their stored rank text; it just stops matching a known rank.</summary>
     Task DeleteRankAsync(Guid rankId, CancellationToken cancellationToken = default);
 
-    // ── Points rules (application-level, shared across competitions) ─────────────────────────────────
+    // ── Points rules (application-level, shared across competitions)
 
     /// <summary>Seeds the given points rules only when the rules table is empty (first run). A no-op otherwise.</summary>
     Task SeedPointsRulesIfEmptyAsync(IReadOnlyList<PointsRule> rules, CancellationToken cancellationToken = default);
@@ -123,10 +123,9 @@ public interface IAppStore
     /// </summary>
     Task UpdatePointsRuleAsync(PointsRule rule, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes a points rule.</summary>
     Task DeletePointsRuleAsync(Guid ruleId, CancellationToken cancellationToken = default);
 
-    // ── Rank qualification table (application-level, shared across competitions) ──────────────────────
+    // ── Rank qualification table (application-level, shared across competitions)
 
     /// <summary>Seeds the given qualification rows only when the table is empty (first run). A no-op otherwise.</summary>
     Task SeedRankQualificationIfEmptyAsync(IReadOnlyList<RankQualificationRow> rows, CancellationToken cancellationToken = default);
@@ -140,6 +139,5 @@ public interface IAppStore
     /// <summary>Saves an edited qualification row (rank threshold + cells).</summary>
     Task UpdateRankQualificationRowAsync(RankQualificationRow row, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes a qualification row.</summary>
     Task DeleteRankQualificationRowAsync(Guid rowId, CancellationToken cancellationToken = default);
 }

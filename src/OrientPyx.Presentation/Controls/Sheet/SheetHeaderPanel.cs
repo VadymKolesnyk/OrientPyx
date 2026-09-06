@@ -222,7 +222,7 @@ internal sealed class SheetHeaderPanel : Grid
         Children.Add(_dropLine);
     }
 
-    // ── Header cells ────────────────────────────────────────────────────────────────────────────
+    // ── Header cells
     // An identity header: label (stretch) + a small sort button on the right; the whole cell is a
     // band-drag handle (sort button excluded so its click sorts rather than drags).
     private Border BuildHeaderText(string text, SheetColumn column, SheetBand band, int bandIndex)
@@ -493,7 +493,7 @@ internal sealed class SheetHeaderPanel : Grid
         flyout.ShowAt(header);
     }
 
-    // ── Sort + drag wiring on an identity header cell ───────────────────────────────────────────
+    // ── Sort + drag wiring on an identity header cell
     private void WireHeaderInteractions(Control header, int bandIndex)
     {
         header.PointerPressed += (_, e) =>
@@ -558,7 +558,7 @@ internal sealed class SheetHeaderPanel : Grid
         return false;
     }
 
-    // ── Drag-reorder of whole bands ─────────────────────────────────────────────────────────────
+    // ── Drag-reorder of whole bands
     private void ArmDrag(int bandIndex)
     {
         _dragArmed = true;
@@ -661,7 +661,7 @@ internal sealed class SheetHeaderPanel : Grid
 
     private void HideDropLine() => _dropLine.IsVisible = false;
 
-    // ── Resize grip ─────────────────────────────────────────────────────────────────────────────
+// ── Resize grip
     private void AddResizeGrip(SheetColumn column, int col, int rowSpan, int row = 0)
     {
         var grip = new Thumb

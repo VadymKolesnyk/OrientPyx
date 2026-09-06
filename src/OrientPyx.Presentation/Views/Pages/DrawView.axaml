@@ -50,7 +50,6 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
         <StackPanel Spacing="16">
 
-        <!-- Heading + day picker -->
         <Grid ColumnDefinitions="*,Auto">
             <StackPanel Grid.Column="0" Spacing="4">
                 <TextBlock Text="{Binding Localization[Page.Draw.Title]}" Classes="h1"
@@ -312,7 +311,6 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Actions -->
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <Button Classes="accent" Content="{Binding Localization[Draw.Run]}"
                             Command="{Binding RunDrawCommand}" />

@@ -503,7 +503,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             _requestSave(this);
     }
 
-    // ── Collapsed-block aggregates ───────────────────────────────────────────────────────────────
+    // ── Collapsed-block aggregates
     // The roster groups its per-day columns into collapsible blocks. When a block is collapsed it
     // shows ONE merged cell per row whose value is computed from the relevant day cells:
     //   • Groups span ALL days; Chips span only the days the participant runs (IsMember).
@@ -664,7 +664,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             cell.Chip = value;
     }
 
-    // ── Start time (member-only, like Chips) ─────────────────────────────────────────────────────
+    // ── Start time (member-only, like Chips)
     /// <summary>
     /// The shared start time across member days as "hh:mm:ss" text (empty when they differ/none). The
     /// collapsed Start-times cell is read-only — start time is edited per day, never on the merged cell
@@ -697,7 +697,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             cell.StartTimeText = value;
     }
 
-    // ── Out of competition (member-only, like Chips) ─────────────────────────────────────────────
+    // ── Out of competition (member-only, like Chips)
     /// <summary>
     /// The shared "out of competition" flag across member days (null when they differ/none). Setting
     /// it fans out to every member day. Bound TwoWay by the collapsed cell's CheckBox.
@@ -733,7 +733,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             cell.OutOfCompetition = value;
     }
 
-    // ── Collapsed (merged) result blocks — read-only ─────────────────────────────────────────────
+    // ── Collapsed (merged) result blocks — read-only
     // Each shows the shared per-day text when all member days agree, else the localized "різні".
     public string CollapsedActualStart => MergedResult(c => c.ActualStartText);
     public string CollapsedFinish => MergedResult(c => c.FinishText);

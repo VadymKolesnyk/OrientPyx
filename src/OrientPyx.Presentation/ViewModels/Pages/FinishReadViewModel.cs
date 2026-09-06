@@ -122,7 +122,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     [ObservableProperty]
     private bool _showScoreColumn;
 
-    // --- Auto-read panel (in-memory only; never persisted, per the session rule) -----------------
+    // --- Auto-read panel (in-memory only; never persisted, per the session rule)
 
     [ObservableProperty]
     private bool _isAutoReadExpanded = true;
@@ -163,6 +163,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     // SetCurrentDayAsync (which would re-raise SessionChanged → LoadAsync in a loop).
     private bool _syncingDay;
 
+// --- Split printout
     [RelayCommand]
     private void ToggleAutoRead() => IsAutoReadExpanded = !IsAutoReadExpanded;
 
@@ -327,7 +328,6 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
             Splits.Show(view, heading);
     }
 
-    // --- Split printout ----------------------------------------------------------------------------
 
     // Prints the split printout for a log row (the print icon in the «Дії» column). Prints straight to the
     // configured printer; when none is set yet (or the saved one is gone), opens the print-settings modal
@@ -483,7 +483,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         confirmKey: "Common.Ok",
         cancelKey: "Common.Ok"));
 
-    // --- Auto-read wiring --------------------------------------------------------------------------
+    // --- Auto-read wiring
 
     partial void OnAutoReadEnabledChanged(bool value)
     {
@@ -735,7 +735,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     // Used on competition/day switch: turning the toggle off runs OnAutoReadEnabledChanged → Stop.
     private void StopAutoRead() => AutoReadEnabled = false;
 
-    // --- Top-bar background activity ---------------------------------------------------------------
+    // --- Top-bar background activity
 
     private void ShowActivity()
     {

@@ -10,7 +10,7 @@ public static class BusinessLogicServiceCollectionExtensions
     /// <summary>Registers business-logic services.</summary>
     public static IServiceCollection AddOrientPyxBusinessLogic(this IServiceCollection services)
     {
-        // Session/catalog/settings
+
         services.AddSingleton<IAppSettingsService, AppSettingsService>();
         services.AddSingleton<IEventCatalogService, EventCatalogService>();
         services.AddSingleton<ISessionService, SessionService>();

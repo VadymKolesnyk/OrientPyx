@@ -17,7 +17,7 @@ public sealed class DashboardInfo
     /// <summary>False when no competition is selected — the dashboard then shows an empty state.</summary>
     public bool HasSelection { get; init; }
 
-    // --- Competition summary ---
+    // --- Competition summary
     public string CompetitionName { get; init; } = string.Empty;
     public string Venue { get; init; } = string.Empty;
 
@@ -26,7 +26,7 @@ public sealed class DashboardInfo
 
     public int DayCount { get; init; }
 
-    // --- Current day ---
+// --- Current day
     public int CurrentDayNumber { get; init; }
 
     /// <summary>The current day's calendar date formatted dd.MM.yyyy, or empty when unset.</summary>
@@ -35,7 +35,7 @@ public sealed class DashboardInfo
     /// <summary>The current day's default discipline (вид змагань); the VM localizes its name.</summary>
     public DisciplineType CurrentDayDiscipline { get; init; }
 
-    // --- Participants & groups ---
+    // --- Participants & groups
     /// <summary>Total participants in the competition (across all days).</summary>
     public int ParticipantTotal { get; init; }
 
@@ -45,12 +45,12 @@ public sealed class DashboardInfo
     /// <summary>Groups attached to the current day.</summary>
     public int GroupsToday { get; init; }
 
-    // --- Rental chips ---
+    // --- Rental chips
     public int ChipsTotal { get; init; }
     public int ChipsHandedOut { get; init; }
     public int ChipsFree { get; init; }
 
-    // --- Start (current day) ---
+    // --- Start (current day)
     /// <summary>Earliest assigned start time among the day's members, or null when none is drawn.</summary>
     public TimeSpan? FirstStart { get; init; }
 
@@ -60,13 +60,12 @@ public sealed class DashboardInfo
     /// <summary>Day members with a start time assigned (жеребкування done for them).</summary>
     public int StartsAssigned { get; init; }
 
-    /// <summary>Day members still without a chip (a pre-start data check).</summary>
     public int WithoutChip { get; init; }
 
     /// <summary>Day members not yet assigned to a group (a pre-start data check).</summary>
     public int WithoutGroup { get; init; }
 
-    // --- Finish read & results (current day) ---
+    // --- Finish read & results (current day)
     /// <summary>Read-out rows logged for the current day.</summary>
     public int ReadoutsToday { get; init; }
 

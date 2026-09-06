@@ -56,7 +56,6 @@
                 </Panel>
             </Border>
 
-            <!-- Actions -->
             <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="10" Margin="0,20,0,0">
                 <Button Content="{Binding Localization[EventSelection.Open]}"
                         Command="{Binding OpenCommand}"

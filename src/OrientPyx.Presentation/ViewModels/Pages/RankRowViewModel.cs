@@ -17,7 +17,6 @@ public sealed partial class RankRowViewModel : ObservableObject
     private readonly int _order;
     private readonly Action<RankRowViewModel> _requestSave;
 
-    // Suppresses save requests while the constructor seeds initial values.
     private readonly bool _initialized;
 
     [ObservableProperty]

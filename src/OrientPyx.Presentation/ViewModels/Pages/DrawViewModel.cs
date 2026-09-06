@@ -79,7 +79,7 @@ public sealed partial class DrawViewModel : PageViewModelBase
     public override string IconData =>
         "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 6v6l4 2";
 
-    // ── Day picker (does NOT touch the session) ──────────────────────────────────────────────────────
+    // ── Day picker (does NOT touch the session)
 
     public ObservableCollection<DayOption> DayOptions { get; } = [];
 
@@ -88,7 +88,7 @@ public sealed partial class DrawViewModel : PageViewModelBase
 
     public bool ShowDaySelector => DayOptions.Count > 1;
 
-    // ── Draw controls ────────────────────────────────────────────────────────────────────────────────
+    // ── Draw controls
 
     [ObservableProperty]
     private string _globalStart = "11:00:00";
@@ -152,7 +152,7 @@ public sealed partial class DrawViewModel : PageViewModelBase
     // A chip shorter than this can't fit two text rows (name + detail), so its detail moves onto the name line.
     private const double TwoRowMinHeight = 40.0;
 
-    // ── Arrangement + output ─────────────────────────────────────────────────────────────────────────
+    // ── Arrangement + output
 
     /// <summary>The start groups (columns), each an ordered set of groups.</summary>
     public ObservableCollection<DrawStartGroupViewModel> StartGroups { get; } = [];
@@ -569,7 +569,7 @@ public sealed partial class DrawViewModel : PageViewModelBase
     private static string VariantKey(IReadOnlyList<string> controls) =>
         string.Join("→", controls.Select(c => c.Trim()));
 
-    // ── Commands ─────────────────────────────────────────────────────────────────────────────────────
+    // ── Commands
 
     [RelayCommand]
     private void IncrementAutoGroupCount() => AutoGroupCount = Math.Min(50, AutoGroupCount + 1);
@@ -712,7 +712,7 @@ public sealed partial class DrawViewModel : PageViewModelBase
         SaveSettings();
     }
 
-    // ── Drag visuals ───────────────────────────────────────────────────────────────────────────────────
+    // ── Drag visuals
     // Driven by the View's drag handlers; pure presentation state (transparency of the dragged chip, the
     // hovered-column highlight, and the single insertion line between chips).
 

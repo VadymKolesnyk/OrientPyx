@@ -24,10 +24,11 @@ public partial class ProtocolsView : UserControl
         _previewTable?.Bind(DataContext as IProtocolPreviewHost);
     }
 
-    // ── Generate (.docx) ─────────────────────────────────────────────────────────────────────────────────
 
     // Build the protocol (the VM owns the build + settings persistence), then run the save dialog (it needs
     // the window's StorageProvider) and write the .docx bytes. Mirrors the participants export code-behind.
+
+// ── Generate (.docx)
     private async void OnGenerateClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not ProtocolsViewModel vm)

@@ -315,7 +315,6 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     /// <summary>True while <see cref="NumberError"/> has something to show. Drives the warning line.</summary>
     public bool HasNumberError => NumberError.Length > 0;
 
-    /// <summary>New participant: date of birth (optional).</summary>
     [ObservableProperty]
     private DateTimeOffset? _newBirthDate;
 
@@ -382,7 +381,6 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     [RelayCommand]
     private void AddPunch() => Punches.Add(MakePunch(new ChipPunch(string.Empty, null)));
 
-    /// <summary>Removes a punch row.</summary>
     [RelayCommand]
     private void RemovePunch(PunchEditViewModel? punch)
     {
@@ -587,7 +585,6 @@ public sealed class ReassignOption
 
     public static ReassignOption Keep(string label) => new(null, label);
 
-    /// <summary>The "+ create a new participant" entry.</summary>
     public static ReassignOption CreateNew(string label) => new(null, label, isCreateNew: true);
 
     public static ReassignOption ForParticipant(FinishReadoutParticipantOption p)

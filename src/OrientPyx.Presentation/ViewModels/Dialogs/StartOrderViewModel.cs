@@ -85,7 +85,7 @@ public sealed partial class StartOrderViewModel : ObservableObject
     /// <summary>Completes with the reassignments on save (empty when nothing changed), or null on cancel/close.</summary>
     public Task<IReadOnlyList<DrawStartAssignment>?> Completion => _completion.Task;
 
-    // ── Drag state (mirrors the Draw page's insertion-line preview) ─────────────────────────────────────
+    // ── Drag state (mirrors the Draw page's insertion-line preview)
 
     private StartOrderMemberViewModel? _draggingItem;
 

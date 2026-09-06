@@ -45,7 +45,7 @@ public sealed class SummaryProtocolDocument
     /// summary squeezes the same kinds of columns (the name column is protected; codes give way first).</summary>
     public IReadOnlyList<int> ColumnShrinkPriority { get; init; } = [];
 
-    /// <summary>The group sections, in display order.</summary>
+    /// <summary>In display order.</summary>
     public IReadOnlyList<SummaryProtocolSection> Sections { get; init; } = [];
 
     /// <summary>The officials' signature block printed at the end. Empty when none configured.</summary>

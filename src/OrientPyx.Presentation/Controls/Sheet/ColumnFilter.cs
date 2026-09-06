@@ -48,15 +48,15 @@ public sealed class SheetFilter
 
     public SheetFilterMode Mode { get; set; } = SheetFilterMode.Condition;
 
-    // ── Condition mode ──
+    // ── Condition mode
     public SheetFilterCondition Condition { get; set; } = SheetFilterCondition.Contains;
     public string Text { get; set; } = string.Empty;
 
-    // ── Values mode ──
+    // ── Values mode
     /// <summary>The set of cell values (as displayed text) to keep. Null ⇒ every value passes.</summary>
     public HashSet<string>? AllowedValues { get; set; }
 
-    // ── Status mode ──
+    // ── Status mode
     /// <summary>The set of status tokens (category names) to keep. Null ⇒ every status passes.</summary>
     public HashSet<string>? AllowedStatuses { get; set; }
 

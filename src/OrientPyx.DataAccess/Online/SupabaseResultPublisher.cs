@@ -112,7 +112,7 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
         }
     }
 
-    // ── Row builders ─────────────────────────────────────────────────────────────────────────────────
+    // ── Row builders
 
     private static Dictionary<string, object?> BuildEventRow(OnlinePublishSettings p, int daysCount) => new()
     {
@@ -239,7 +239,7 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
         _ => null,
     };
 
-    // ── PostgREST upsert ─────────────────────────────────────────────────────────────────────────────
+    // ── PostgREST upsert
 
     private async Task PushAsync(
         OnlineApiSettings api, string table, string onConflict,

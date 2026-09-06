@@ -251,7 +251,7 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
         return tr;
     }
 
-    // ── Content-fit, group-equal column widths ───────────────────────────────────────────────────────────
+    // ── Content-fit, group-equal column widths
 
     // Per-column width in twips: sized to the widest content in that column, then scaled to exactly fill the
     // printable page width. Computed once for the whole document, so all group tables share identical widths.

@@ -89,7 +89,7 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
     public override string IconData =>
         "M3 3h18v18H3z M3 9h18 M9 9v12 M3 15h18";
 
-    // ── The live preview document (built by RefreshPreview) ───────────────────────────────────────────
+    // ── The live preview document (built by RefreshPreview)
 
     /// <summary>The built summary document the preview table renders. Null until first built.</summary>
     [ObservableProperty]
@@ -125,7 +125,7 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
     [ObservableProperty]
     private bool _pageFooter = true;
 
-    // ── Mode ─────────────────────────────────────────────────────────────────────────────────────────
+    // ── Mode
 
     public IReadOnlyList<SummaryModeOption> ModeOptions { get; }
 
@@ -138,19 +138,19 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
     [ObservableProperty]
     private bool _requireAllDays;
 
-    // ── Leading columns (add / hide + order) ─────────────────────────────────────────────────────────
+    // ── Leading columns (add / hide + order)
     // Only the leading identity columns are configurable; the per-day result bands and the trailing «Сума»
     // are always last.
 
     /// <summary>The configurable leading columns, in on-page order. Reordered with up/down; toggled visible.</summary>
     public ObservableCollection<SummaryColumnItemViewModel> LeadingColumns { get; } = [];
 
-    // ── Days (which to count + order) ──────────────────────────────────────────────────────────────────
+    // ── Days (which to count + order)
 
     public ObservableCollection<SummaryDayItemViewModel> Days { get; } = [];
 
-    // ── Priority day ───────────────────────────────────────────────────────────────────────────────────
 
+// ── Priority day
     public ObservableCollection<DayOption> PriorityDayOptions { get; } = [];
 
     [ObservableProperty]
@@ -158,7 +158,7 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
 
     public bool HasMultipleDays => Days.Count > 1;
 
-    // ── Header text (mirrors the results protocol) ─────────────────────────────────────────────────────
+    // ── Header text (mirrors the results protocol)
 
     [ObservableProperty] private string _competitionName = string.Empty;
     [ObservableProperty] private string _title = string.Empty;

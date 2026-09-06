@@ -93,7 +93,6 @@ public sealed partial class ClubsViewModel : PageViewModelBase
     [RelayCommand]
     private Task DeleteClubAsync(ClubRowViewModel? row) => RemoveClubAsync(row, skipConfirm: false);
 
-    /// <summary>Deletes a row without the confirmation prompt (Ctrl+Click / Ctrl+Delete).</summary>
     public Task DeleteClubNoConfirmAsync(ClubRowViewModel? row) => RemoveClubAsync(row, skipConfirm: true);
 
     /// <summary>Deletes the currently selected club (Delete key); confirms unless skipConfirm.</summary>
@@ -132,7 +131,7 @@ public sealed partial class ClubsViewModel : PageViewModelBase
             RequestGridFocus();
     }
 
-    // --- Debounced save ----------------------------------------------------------------------------
+    // --- Debounced save
 
     private void RequestRowSave(ClubRowViewModel row)
     {

@@ -17,7 +17,6 @@
             ClipToBounds="True">
         <DockPanel LastChildFill="True">
 
-            <!-- Header -->
             <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
                     BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
                     Padding="22,16">
@@ -28,7 +27,6 @@
                 </StackPanel>
             </Border>
 
-            <!-- Footer actions -->
             <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
                     BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
                     Padding="22,14">
@@ -42,7 +40,6 @@
                 </StackPanel>
             </Border>
 
-            <!-- Body -->
             <DockPanel Margin="22,16" LastChildFill="True">
 
                 <!-- Validation warning (e.g. DNS blocked because already read), shown below the table. -->

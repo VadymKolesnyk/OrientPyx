@@ -222,7 +222,6 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
     [RelayCommand]
     private Task DeletePointAsync(ControlPointRowViewModel? row) => RemovePointAsync(row, skipConfirm: false);
 
-    /// <summary>Deletes a row without the confirmation prompt (Ctrl+Click / Ctrl+Delete).</summary>
     public Task DeletePointNoConfirmAsync(ControlPointRowViewModel? row) => RemovePointAsync(row, skipConfirm: true);
 
     /// <summary>Deletes the currently selected control point (Delete key); confirms unless skipConfirm.</summary>
@@ -289,11 +288,9 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
         }
         catch (OperationCanceledException)
         {
-            // Superseded by a newer edit (or the page reloaded) — ignore.
         }
         catch
         {
-            // Background save failed; never crash the UI over an autosave.
         }
     }
 

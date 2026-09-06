@@ -72,7 +72,7 @@ public sealed partial class PointsViewModel : PageViewModelBase
     [ObservableProperty]
     private PointsRuleListItemViewModel? _selectedRule;
 
-    // ── Detail pane: shared ────────────────────────────────────────────────────────────────────────
+    // ── Detail pane: shared
 
     /// <summary>Whether a rule is selected (the detail pane is shown).</summary>
     public bool HasSelection => SelectedRule is not null;
@@ -87,12 +87,12 @@ public sealed partial class PointsViewModel : PageViewModelBase
     [ObservableProperty]
     private string _editName = string.Empty;
 
-    // ── Detail pane: table editor ──────────────────────────────────────────────────────────────────
+    // ── Detail pane: table editor
 
     /// <summary>The place→points rows for a table rule (index 0 = 1st place).</summary>
     public ObservableCollection<PointsTableRowViewModel> TableRows { get; } = [];
 
-    // ── Detail pane: formula editor ────────────────────────────────────────────────────────────────
+    // ── Detail pane: formula editor
 
     /// <summary>The formula expression text for a formula rule.</summary>
     [ObservableProperty]
@@ -175,7 +175,7 @@ public sealed partial class PointsViewModel : PageViewModelBase
         _loadingDetail = false;
     }
 
-    // ── Name / table / formula change handlers ─────────────────────────────────────────────────────
+    // ── Name / table / formula change handlers
 
     partial void OnEditNameChanged(string value)
     {
@@ -199,7 +199,7 @@ public sealed partial class PointsViewModel : PageViewModelBase
             QueueSave();
     }
 
-    // ── Commands ───────────────────────────────────────────────────────────────────────────────────
+    // ── Commands
 
     [RelayCommand]
     private Task AddTableRuleAsync() => AddRuleAsync(PointsRuleKind.Table);
@@ -276,7 +276,7 @@ public sealed partial class PointsViewModel : PageViewModelBase
         _ = Task.Run(() => _appStore.DeletePointsRuleAsync(id));
     }
 
-    // ── Debounced save ─────────────────────────────────────────────────────────────────────────────
+    // ── Debounced save
 
     private void QueueSave()
     {
@@ -312,11 +312,9 @@ public sealed partial class PointsViewModel : PageViewModelBase
         }
         catch (OperationCanceledException)
         {
-            // Superseded by a newer edit (or the page reloaded) — ignore.
         }
         catch
         {
-            // Background save failed; never crash the UI over an autosave.
         }
     }
 

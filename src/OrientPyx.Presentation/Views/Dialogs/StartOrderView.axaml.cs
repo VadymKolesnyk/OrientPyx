@@ -20,7 +20,7 @@ public partial class StartOrderView : UserControl
 
     private StartOrderViewModel? Vm => DataContext as StartOrderViewModel;
 
-    // ── Drag start ───────────────────────────────────────────────────────────────────────────────────
+    // ── Drag start
 
     private async void OnRowPointerPressed(object? sender, PointerPressedEventArgs e)
     {
@@ -45,7 +45,7 @@ public partial class StartOrderView : UserControl
         }
     }
 
-    // ── Drag over (insertion-line preview) ───────────────────────────────────────────────────────────
+    // ── Drag over (insertion-line preview)
 
     private static bool TryGetDragged(DragEventArgs e, out StartOrderMemberViewModel item)
     {
@@ -81,7 +81,7 @@ public partial class StartOrderView : UserControl
             Vm?.ClearDropIndicator();
     }
 
-    // ── Drop ─────────────────────────────────────────────────────────────────────────────────────────
+    // ── Drop
 
     private void OnListDrop(object? sender, DragEventArgs e)
     {
@@ -92,7 +92,7 @@ public partial class StartOrderView : UserControl
         e.Handled = true;
     }
 
-    // ── Shared insertion-index math ────────────────────────────────────────────────────────────────────
+    // ── Shared insertion-index math
 
     // Returns where a drop at the current pointer position would insert: the index of the first row whose
     // vertical midpoint is below the pointer, or the member count when the pointer is below them all. Computed

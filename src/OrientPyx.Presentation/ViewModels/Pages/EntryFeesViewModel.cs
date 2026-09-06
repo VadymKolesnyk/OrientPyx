@@ -80,7 +80,7 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
     [ObservableProperty]
     private EntryFeeDiscountRowViewModel? _selectedDiscount;
 
-    // --- Standalone settings (saved into CompetitionInfo) ------------------------------------------
+    // --- Standalone settings (saved into CompetitionInfo)
 
     /// <summary>Whether a raised (late) start-entry fee applies after the deadline.</summary>
     [ObservableProperty]
@@ -145,8 +145,12 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
     {
     }
 
-    // --- Add commands ------------------------------------------------------------------------------
+    // --- Add commands
 
+
+// --- Discount delete
+
+// --- Chip-price delete
     [RelayCommand]
     private async Task AddChipPriceAsync()
     {
@@ -167,7 +171,6 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
         Discounts.Add(new EntryFeeDiscountRowViewModel(discount, Localization, RequestDiscountSave));
     }
 
-    // --- Chip-price delete -------------------------------------------------------------------------
 
     [RelayCommand]
     private Task DeleteChipPriceAsync(ChipPriceOverrideRowViewModel? row) => RemoveChipPriceAsync(row, skipConfirm: false);
@@ -209,7 +212,6 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
             RequestGridFocus();
     }
 
-    // --- Discount delete ---------------------------------------------------------------------------
 
     [RelayCommand]
     private Task DeleteDiscountAsync(EntryFeeDiscountRowViewModel? row) => RemoveDiscountAsync(row, skipConfirm: false);
@@ -256,7 +258,7 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
             RequestGridFocus();
     }
 
-    // --- Standalone settings save ------------------------------------------------------------------
+    // --- Standalone settings save
 
     partial void OnRaisedFeeEnabledChanged(bool value) => QueueSettingsSave();
     partial void OnRaisedFeeAmountTextChanged(string value) => QueueSettingsSave();
@@ -289,15 +291,13 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
         }
         catch (OperationCanceledException)
         {
-            // Superseded by a newer edit (or the page reloaded) — ignore.
         }
         catch
         {
-            // Background save failed; never crash the UI over an autosave.
         }
     }
 
-    // --- Per-row debounced saves -------------------------------------------------------------------
+    // --- Per-row debounced saves
 
     private void RequestGroupFeeSave(GroupFeeRowViewModel row)
         => Debounce(_groupFeeTimers, row.Id, token => SaveGroupFeeAsync(row, token));
@@ -332,11 +332,9 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
         }
         catch (OperationCanceledException)
         {
-            // Superseded by a newer edit (or the page reloaded) — ignore.
         }
         catch
         {
-            // Background save failed; never crash the UI over an autosave.
         }
     }
 

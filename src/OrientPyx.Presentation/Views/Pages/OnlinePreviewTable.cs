@@ -264,7 +264,7 @@ public sealed class OnlinePreviewTable
         }
     };
 
-    // ── Column drag-reorder (from any cell in a column) ──────────────────────────────────────────────────
+    // ── Column drag-reorder (from any cell in a column)
 
     private void WireDrag(Border cell)
     {

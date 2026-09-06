@@ -202,7 +202,7 @@ public sealed class SportTimeCsvReadoutParser : IReadoutParser
         return SyntheticBase.AddDays(shift);
     }
 
-    // --- Time + weekday parsing ----------------------------------------------
+    // --- Time + weekday parsing
 
     // Splits a Sport Time value like "11:17:16.187 (Вт)" into its time of day and (optional) weekday. The
     // weekday, when present, is a Ukrainian two-letter code in parentheses; a plain "11:13:54" yields no DOW.
@@ -239,7 +239,7 @@ public sealed class SportTimeCsvReadoutParser : IReadoutParser
         _ => null
     };
 
-    // --- CSV helpers ---------------------------------------------------------
+    // --- CSV helpers
 
     // The first non-blank line — the header (or, for a headerless export, the first data row). Sport Time
     // sometimes prefixes the file with an empty line, so leading blanks are skipped rather than treated as

@@ -94,7 +94,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     /// <summary>Day picker is shown only when the competition has more than one day.</summary>
     public bool ShowDaySelector => DayOptions.Count > 1;
 
-    // ── Competition-level settings (top "Загальні налаштування" strip) ──────────────────────────────
+    // ── Competition-level settings (top "Загальні налаштування" strip)
     // These are competition-wide defaults edited above the table: the global course-setter (начальник
     // дистанції, which a group may override per day) and the default points rule (overridable per group).
     // Persisted to CompetitionInfo, debounced. _suppressInfoSave guards the seeding in LoadAsync.
@@ -168,7 +168,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             string.IsNullOrWhiteSpace(row.Name) ? "—" : row.Name)
         : Localization.Get("Groups.SelectedCourse.None");
 
-    // ── «Mixed» course-order pattern live preview ────────────────────────────────────────────────────
+    // ── «Mixed» course-order pattern live preview
     // Only meaningful when the selected group's effective discipline is Mixed: the order field is then a
     // pattern, so we parse it on every keystroke and show either the normalized "S … F" order (valid) or
     // the first structural error (invalid). The day's start/finish codes label the S/F markers.
@@ -188,7 +188,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     [ObservableProperty]
     private string _patternPreviewText = string.Empty;
 
-    // ── Scatter («розсіювання») variants editor (bottom panel) ───────────────────────────────────────
+    // ── Scatter («розсіювання») variants editor (bottom panel)
     // Shown only when the selected group's effective discipline is Scatter: the group has several valid
     // orders (variants), edited here as a Код / Дистанція table. Each edit debounces a background save that
     // replaces the group's variant set; the grid's «N варіантів дистанції» cell is kept live off the count.
@@ -322,11 +322,9 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         }
         catch (OperationCanceledException)
         {
-            // Superseded by a newer edit (or the page reloaded) — ignore.
         }
         catch
         {
-            // Background save failed; never crash the UI over an autosave.
         }
     }
 
@@ -630,7 +628,6 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     [RelayCommand]
     private Task DeleteGroupAsync(GroupDayRowViewModel? row) => RemoveGroupAsync(row, skipConfirm: false);
 
-    /// <summary>Deletes a row without the confirmation prompt (Ctrl+Click / Ctrl+Delete).</summary>
     public Task DeleteGroupNoConfirmAsync(GroupDayRowViewModel? row) => RemoveGroupAsync(row, skipConfirm: true);
 
     /// <summary>Deletes the currently selected group (Delete key); confirms unless skipConfirm.</summary>
@@ -676,7 +673,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             RequestGridFocus();
     }
 
-    // ── Competition-level settings strip: change handlers + debounced save ───────────────────────────
+    // ── Competition-level settings strip: change handlers + debounced save
 
     partial void OnDefaultCourseSetterChanged(string value)
     {
@@ -736,11 +733,9 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         }
         catch (OperationCanceledException)
         {
-            // Superseded by a newer edit (or the page reloaded) — ignore.
         }
         catch
         {
-            // Background save failed; never crash the UI over an autosave.
         }
     }
 
@@ -767,11 +762,9 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         }
         catch (OperationCanceledException)
         {
-            // Superseded by a newer edit (or the page reloaded) — ignore.
         }
         catch
         {
-            // Background save failed; never crash the UI over an autosave.
         }
     }
 
