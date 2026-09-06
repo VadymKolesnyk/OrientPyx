@@ -2227,6 +2227,35 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return _eventStore.SaveStartProtocolJsonAsync(FolderPath, dayId, kind, json, cancellationToken);
     }
 
+    public async Task<DrawSettings?> GetDrawSettingsAsync(Guid dayId, DrawSettingsKind kind, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return null;
+
+        var json = await _eventStore.GetDrawSettingsJsonAsync(FolderPath, dayId, kind, cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+            return null; // nothing stored for this (day, kind) yet — the page keeps its defaults
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<DrawSettings>(json);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null; // corrupt JSON ⇒ treat as "nothing stored"
+        }
+    }
+
+    public Task SaveDrawSettingsAsync(Guid dayId, DrawSettingsKind kind, DrawSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (_session.CurrentEvent is null)
+            return Task.CompletedTask;
+
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        return _eventStore.SaveDrawSettingsJsonAsync(FolderPath, dayId, kind, json, cancellationToken);
+    }
+
     public async Task<SplitExportData> GetDaySplitsExportDataAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null)

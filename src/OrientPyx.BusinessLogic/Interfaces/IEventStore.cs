@@ -357,6 +357,15 @@ public interface IEventStore
     /// <summary>Stores (inserts/updates) a day's start-protocol template JSON for a kind.</summary>
     Task SaveStartProtocolJsonAsync(string eventFolderPath, Guid dayId, StartProtocolKind kind, string json, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns a day's saved start-draw settings JSON for a draw page, or null when the (day, kind) has no
+    /// row yet (the caller then falls back to the page defaults).
+    /// </summary>
+    Task<string?> GetDrawSettingsJsonAsync(string eventFolderPath, Guid dayId, DrawSettingsKind kind, CancellationToken cancellationToken = default);
+
+    /// <summary>Stores (inserts/updates) a day's start-draw settings JSON for a draw page.</summary>
+    Task SaveDrawSettingsJsonAsync(string eventFolderPath, Guid dayId, DrawSettingsKind kind, string json, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the competition-level summary-protocol template JSON, or null when none is stored.</summary>
     Task<string?> GetSummaryProtocolJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 

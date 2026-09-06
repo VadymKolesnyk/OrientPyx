@@ -100,4 +100,20 @@ public sealed record SplitExportLabels(
     /// <summary>Set-course cell tooltip: loss to the leader by overall time, "{0}" = gap (e.g. "Відставання: +{0}").</summary>
     string SplitLossTotal,
     /// <summary>Set-course cell tooltip: loss on this leg, "{0}" = gap (e.g. "На перегоні: +{0}").</summary>
-    string SplitLossLeg);
+    string SplitLossLeg,
+    /// <summary>Detail-panel heading template, "{0}" = runner name, "{1}" = control caption (e.g. "КП-3 (45)").</summary>
+    string SplitDetailTitle,
+    /// <summary>Detail-panel section caption for the overall (cumulative) figures.</summary>
+    string SplitDetailTotal,
+    /// <summary>Detail-panel section caption for this single leg's figures.</summary>
+    string SplitDetailLeg,
+    /// <summary>Detail-panel row caption for a time value.</summary>
+    string SplitDetailTime,
+    /// <summary>Detail-panel row caption for a place value.</summary>
+    string SplitDetailPlace,
+    /// <summary>Detail-panel row caption for the gap to the leader / fastest leg.</summary>
+    string SplitDetailGap,
+    /// <summary>Detail-panel value shown in the gap row when the runner leads (no gap).</summary>
+    string SplitDetailLeader,
+    /// <summary>Detail-panel close-button tooltip.</summary>
+    string SplitDetailClose);

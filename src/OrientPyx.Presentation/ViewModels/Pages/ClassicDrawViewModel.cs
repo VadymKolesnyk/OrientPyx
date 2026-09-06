@@ -32,6 +32,13 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
     private const string DefaultStart = "11:00:00";
     private const string DefaultInterval = "00:01:00";
 
+    // Suppresses the auto-save while the table is being (re)filled from the database — otherwise every
+    // row assignment during a load would write the half-restored state straight back.
+    private bool _loading;
+
+    // The day the current rows/settings belong to; what the auto-save writes to.
+    private Guid? _settingsDayId;
+
     public ClassicDrawViewModel(
         ILocalizationService localization,
         ICompetitionEditorService editor,
@@ -131,33 +138,92 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
         _ = ReloadGroupsAsync();
     }
 
-    // Loads the selected day's groups + members into the table. Groups with members are checked by default
-    // (they're the ones that need a draw); empty groups stay unchecked. Clears any prior draw.
+    // Loads the selected day's groups + members into the table. When the day has saved settings (the values
+    // last entered here) each group's checkbox/start/interval is restored from them, and so is the separation;
+    // a group with nothing stored (or a day with no settings at all) falls back to the defaults — checked when
+    // it has members, unchecked when empty. Clears any prior draw.
     private async Task ReloadGroupsAsync()
     {
         ClearGroups();
 
         if (SelectedDay?.Day is not { } day)
         {
+            _settingsDayId = null;
             ClearResults();
             return;
         }
 
         var data = await _busy.RunAsync(() => _editor.GetDrawPrepDataAsync(day.Id));
+        var saved = await _busy.RunAsync(() => _editor.GetDrawSettingsAsync(day.Id, DrawSettingsKind.Classic));
+        var savedRows = saved?.Rows.GroupBy(r => r.GroupId).ToDictionary(g => g.Key, g => g.First());
 
-        foreach (var group in data.Groups)
+        _loading = true;
+        try
         {
-            var row = new ClassicDrawGroupRowViewModel(group, DefaultStart, DefaultInterval)
+            _settingsDayId = day.Id;
+
+            if (saved is not null)
+                SelectedSeparation = SeparationOptions.FirstOrDefault(o => o.Value == saved.Separation)
+                                     ?? SelectedSeparation;
+
+            foreach (var group in data.Groups)
             {
-                Selected = group.Members.Count > 0,
-            };
-            row.FreeMinuteChanged += () => RecomputeFreeMinute(row);
-            RecomputeFreeMinute(row);
-            Groups.Add(row);
+                ClassicDrawGroupRowViewModel row;
+                if (savedRows is not null && savedRows.TryGetValue(group.GroupId, out var stored))
+                {
+                    row = new ClassicDrawGroupRowViewModel(group, stored.Start, stored.Interval)
+                    {
+                        Selected = stored.Selected,
+                    };
+                }
+                else
+                {
+                    row = new ClassicDrawGroupRowViewModel(group, DefaultStart, DefaultInterval)
+                    {
+                        Selected = group.Members.Count > 0,
+                    };
+                }
+
+                row.FreeMinuteChanged += () => RecomputeFreeMinute(row);
+                row.SettingsChanged += SaveSettings;
+                RecomputeFreeMinute(row);
+                Groups.Add(row);
+            }
+        }
+        finally
+        {
+            _loading = false;
         }
 
         ClearResults();
     }
+
+    // Writes the current table state onto the day so reopening the page restores it. Skipped while a load is
+    // in progress (a load assigns the very properties that trigger this) and when no day is selected.
+    private void SaveSettings()
+    {
+        if (_loading || _settingsDayId is not { } dayId)
+            return;
+
+        var settings = new DrawSettings
+        {
+            Separation = SelectedSeparation.Value,
+            Rows = Groups
+                .Select(g => new DrawGroupRowSettings
+                {
+                    GroupId = g.GroupId,
+                    Selected = g.Selected,
+                    Start = g.Start,
+                    Interval = g.Interval,
+                })
+                .ToList(),
+        };
+
+        // Fire-and-forget: the settings are a convenience, a failed write must not block the page.
+        _ = _editor.SaveDrawSettingsAsync(dayId, DrawSettingsKind.Classic, settings);
+    }
+
+    partial void OnSelectedSeparationChanged(DrawSeparationOption value) => SaveSettings();
 
     // Computes a row's first free start minute: group start + members × interval. Blank when either the
     // start or interval can't be parsed, or the group has no members.
@@ -179,18 +245,26 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
 
     /// <summary>Checks every group row (selects all for the draw).</summary>
     [RelayCommand]
-    private void SelectAll()
-    {
-        foreach (var row in Groups)
-            row.Selected = true;
-    }
+    private void SelectAll() => SetAllSelected(true);
 
     /// <summary>Unchecks every group row (selects none).</summary>
     [RelayCommand]
-    private void SelectNone()
+    private void SelectNone() => SetAllSelected(false);
+
+    // Toggles every row at once, persisting the table only once at the end rather than per row.
+    private void SetAllSelected(bool selected)
     {
-        foreach (var row in Groups)
-            row.Selected = false;
+        _loading = true;
+        try
+        {
+            foreach (var row in Groups)
+                row.Selected = selected;
+        }
+        finally
+        {
+            _loading = false;
+        }
+        SaveSettings();
     }
 
     /// <summary>
@@ -293,6 +367,11 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
 
     private void ClearGroups()
     {
+        foreach (var row in Groups)
+        {
+            row.FreeMinuteChanged = null;
+            row.SettingsChanged = null;
+        }
         Groups.Clear();
     }
 

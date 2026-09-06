@@ -469,6 +469,16 @@ public interface ICompetitionEditorService
     Task SaveStartProtocolSettingsAsync(Guid dayId, StartProtocolKind kind, StartProtocolSettings settings, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Loads a day's saved start-draw settings for a draw page (the values last entered there), or null when
+    /// the (day, kind) has nothing stored yet — the caller then keeps its defaults. Stored per day + kind in
+    /// the event database. Returns null when no competition is selected.
+    /// </summary>
+    Task<DrawSettings?> GetDrawSettingsAsync(Guid dayId, DrawSettingsKind kind, CancellationToken cancellationToken = default);
+
+    /// <summary>Saves a day's start-draw settings for a draw page. A no-op when no competition is selected.</summary>
+    Task SaveDrawSettingsAsync(Guid dayId, DrawSettingsKind kind, DrawSettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gathers the multi-day summary («Підсумковий залік») data: every competition day, and every group with
     /// its members and each member's per-day computed result. The summary builder aggregates and ranks. Empty
     /// when no competition is selected.

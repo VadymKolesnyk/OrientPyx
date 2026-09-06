@@ -35,6 +35,13 @@ public sealed partial class DrawViewModel : PageViewModelBase
     // The groups loaded for the selected day (source of truth for what's available to arrange).
     private IReadOnlyList<DrawGroup> _loadedGroups = [];
 
+    // Suppresses the auto-save while the page is being (re)filled from the database — otherwise every
+    // property assignment during a load would write the half-restored state straight back.
+    private bool _loading;
+
+    // The day the current arrangement/settings belong to; what the auto-save writes to.
+    private Guid? _settingsDayId;
+
     public DrawViewModel(
         ILocalizationService localization,
         ICompetitionEditorService editor,
@@ -189,13 +196,15 @@ public sealed partial class DrawViewModel : PageViewModelBase
         _ = ReloadGroupsAsync();
     }
 
-    // Loads the selected day's groups + members and seeds the initial start groups. The day opens already
-    // distributed into 5 balanced start groups (the same split the «Авто» button applies), clamped down when
-    // the day has fewer groups. Clears any prior draw.
+    // Loads the selected day's groups + members and seeds the initial start groups. When the day has saved
+    // settings (the values last entered here) they are restored — start/interval/gap, separation and the lane
+    // arrangement; otherwise the day opens distributed into 5 balanced start groups (the same split the «Авто»
+    // button applies), clamped down when the day has fewer groups. Clears any prior draw.
     private async Task ReloadGroupsAsync()
     {
         if (SelectedDay?.Day is not { } day)
         {
+            _settingsDayId = null;
             _loadedGroups = [];
             StartGroups.Clear();
             ClearResults();
@@ -203,23 +212,127 @@ public sealed partial class DrawViewModel : PageViewModelBase
         }
 
         var data = await _busy.RunAsync(() => _editor.GetDrawPrepDataAsync(day.Id));
-        _loadedGroups = data.Groups;
+        var saved = await _busy.RunAsync(() => _editor.GetDrawSettingsAsync(day.Id, DrawSettingsKind.Lanes));
 
-        // Default the auto-distribute count to 5 start groups (clamped down if the day has fewer groups),
-        // then build that many balanced lanes.
-        AutoGroupCount = Math.Clamp(5, 1, Math.Max(1, _loadedGroups.Count));
-        DistributeIntoStartGroups(AutoGroupCount);
+        _loading = true;
+        try
+        {
+            _settingsDayId = day.Id;
+            _loadedGroups = data.Groups;
+
+            if (saved is not null)
+            {
+                GlobalStart = saved.GlobalStart;
+                Interval = saved.Interval;
+                GroupGap = saved.GroupGap;
+                ProportionalHeights = saved.ProportionalHeights;
+                SelectedSeparation = SeparationOptions.FirstOrDefault(o => o.Value == saved.Separation)
+                                     ?? SelectedSeparation;
+                AutoGroupCount = Math.Clamp(saved.AutoGroupCount, 1, 50);
+                RestoreStartGroups(saved.Lanes);
+            }
+            else
+            {
+                // Default the auto-distribute count to 5 start groups (clamped down if the day has fewer
+                // groups), then build that many balanced lanes.
+                AutoGroupCount = Math.Clamp(5, 1, Math.Max(1, _loadedGroups.Count));
+                DistributeIntoStartGroups(AutoGroupCount);
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+
         ClearResults();
         RecomputeColumnTimes();
     }
 
-    partial void OnGlobalStartChanged(string value) => RecomputeColumnTimes();
+    // Rebuilds the lanes from a saved arrangement. Group ids that no longer run on the day are skipped, and
+    // any group the saved state doesn't mention (added since) lands in the first lane so nothing is lost.
+    // Groups with no members are left out entirely, exactly as the auto-distribution does.
+    private void RestoreStartGroups(IReadOnlyList<DrawLaneSettings> lanes)
+    {
+        var byId = _loadedGroups
+            .Where(g => g.Members.Count > 0)
+            .ToDictionary(g => g.GroupId);
 
-    partial void OnIntervalChanged(string value) => RecomputeColumnTimes();
+        StartGroups.Clear();
+        var placed = new HashSet<Guid>();
+        foreach (var lane in lanes)
+        {
+            var column = new DrawStartGroupViewModel(StartGroups.Count, Localization);
+            foreach (var id in lane.GroupIds)
+            {
+                if (!byId.TryGetValue(id, out var group) || !placed.Add(id))
+                    continue;
+                column.Groups.Add(new DrawGroupItemViewModel(group));
+            }
+            StartGroups.Add(column);
+        }
 
-    partial void OnGroupGapChanged(string value) => RecomputeColumnTimes();
+        if (StartGroups.Count == 0)
+            StartGroups.Add(new DrawStartGroupViewModel(0, Localization));
 
-    partial void OnProportionalHeightsChanged(bool value) => ApplyChipHeights();
+        foreach (var group in _loadedGroups)
+        {
+            if (group.Members.Count == 0 || !placed.Add(group.GroupId))
+                continue;
+            StartGroups[0].Groups.Add(new DrawGroupItemViewModel(group));
+        }
+    }
+
+    // Writes the current page state onto the day so reopening the page restores it. Skipped while a load is
+    // in progress (a load assigns the very properties that trigger this) and when no day is selected.
+    private void SaveSettings()
+    {
+        if (_loading || _settingsDayId is not { } dayId)
+            return;
+
+        var settings = new DrawSettings
+        {
+            Separation = SelectedSeparation.Value,
+            GlobalStart = GlobalStart,
+            Interval = Interval,
+            GroupGap = GroupGap,
+            AutoGroupCount = AutoGroupCount,
+            ProportionalHeights = ProportionalHeights,
+            Lanes = StartGroups
+                .Select(c => new DrawLaneSettings { GroupIds = c.Groups.Select(g => g.GroupId).ToList() })
+                .ToList(),
+        };
+
+        // Fire-and-forget: the settings are a convenience, a failed write must not block the page.
+        _ = _editor.SaveDrawSettingsAsync(dayId, DrawSettingsKind.Lanes, settings);
+    }
+
+    partial void OnGlobalStartChanged(string value)
+    {
+        RecomputeColumnTimes();
+        SaveSettings();
+    }
+
+    partial void OnIntervalChanged(string value)
+    {
+        RecomputeColumnTimes();
+        SaveSettings();
+    }
+
+    partial void OnGroupGapChanged(string value)
+    {
+        RecomputeColumnTimes();
+        SaveSettings();
+    }
+
+    partial void OnProportionalHeightsChanged(bool value)
+    {
+        ApplyChipHeights();
+        SaveSettings();
+    }
+
+    partial void OnSelectedSeparationChanged(DrawSeparationOption value) => SaveSettings();
+
+    partial void OnAutoGroupCountChanged(int value) => SaveSettings();
 
     // Sizes every chip according to the current mode: proportional to the member count (timeline view) or
     // content-sized (NaN) in normal mode. Called whenever the mode toggles or the arrangement changes.
@@ -469,6 +582,7 @@ public sealed partial class DrawViewModel : PageViewModelBase
     private void AddStartGroup()
     {
         StartGroups.Add(new DrawStartGroupViewModel(StartGroups.Count, Localization));
+        SaveSettings();
     }
 
     /// <summary>Removes a start group; its groups fall back into the first column so none are lost.</summary>
@@ -493,6 +607,7 @@ public sealed partial class DrawViewModel : PageViewModelBase
         }
         Reindex();
         RecomputeColumnTimes();
+        SaveSettings();
     }
 
     /// <summary>
@@ -594,6 +709,7 @@ public sealed partial class DrawViewModel : PageViewModelBase
         sourceColumn.Groups.Remove(item);
         targetColumn.Groups.Insert(to, item);
         RecomputeColumnTimes();
+        SaveSettings();
     }
 
     // ── Drag visuals ───────────────────────────────────────────────────────────────────────────────────
@@ -647,6 +763,7 @@ public sealed partial class DrawViewModel : PageViewModelBase
         DistributeIntoStartGroups(Math.Max(1, AutoGroupCount));
         ClearResults();
         RecomputeColumnTimes();
+        SaveSettings();
     }
 
     /// <summary>

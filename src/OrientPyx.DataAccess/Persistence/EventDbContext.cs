@@ -36,6 +36,7 @@ public class EventDbContext : DbContext
     public DbSet<StatementSettingsRow> StatementSettings => Set<StatementSettingsRow>();
     public DbSet<OnlinePublishSettingsRow> OnlinePublishSettings => Set<OnlinePublishSettingsRow>();
     public DbSet<MonitorSettingsRow> MonitorSettings => Set<MonitorSettingsRow>();
+    public DbSet<DrawSettingsRow> DrawSettings => Set<DrawSettingsRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -122,6 +123,15 @@ public class EventDbContext : DbContext
             .HasConversion<string>();
 
         modelBuilder.Entity<StartProtocolSettingsRow>()
+            .HasIndex(r => new { r.EventDayId, r.Kind })
+            .IsUnique();
+
+        // Start-draw settings: the kind persists as its string name; at most one row per (day, kind).
+        modelBuilder.Entity<DrawSettingsRow>()
+            .Property(r => r.Kind)
+            .HasConversion<string>();
+
+        modelBuilder.Entity<DrawSettingsRow>()
             .HasIndex(r => new { r.EventDayId, r.Kind })
             .IsUnique();
 

@@ -1130,6 +1130,34 @@ public sealed class EventStore : IEventStore
         });
     }
 
+    public async Task<string?> GetDrawSettingsJsonAsync(string eventFolderPath, Guid dayId, DrawSettingsKind kind, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var row = await db.DrawSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.EventDayId == dayId && r.Kind == kind, cancellationToken);
+        return row?.Json;
+    }
+
+    public async Task SaveDrawSettingsJsonAsync(string eventFolderPath, Guid dayId, DrawSettingsKind kind, string json, CancellationToken cancellationToken = default)
+    {
+        // See SaveResultProtocolJsonAsync: concurrent auto-saves race on the (EventDayId, Kind) unique index.
+        await UpsertWithUniqueRetryAsync(eventFolderPath, async db =>
+        {
+            var row = await db.DrawSettings.FirstOrDefaultAsync(r => r.EventDayId == dayId && r.Kind == kind, cancellationToken);
+            if (row is null)
+            {
+                row = new DrawSettingsRow { EventDayId = dayId, Kind = kind, Json = json };
+                db.DrawSettings.Add(row);
+            }
+            else
+            {
+                row.Json = json;
+            }
+            await db.SaveChangesAsync(cancellationToken);
+        });
+    }
+
     public async Task<string?> GetSummaryProtocolJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);

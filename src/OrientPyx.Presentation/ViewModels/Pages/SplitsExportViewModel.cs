@@ -238,7 +238,15 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
         ScoreTooltipBonus: Localization.Get("Participants.Score.Tooltip.Bonus"),
         ScoreTooltipTotal: Localization.Get("Participants.Score.Tooltip.Total"),
         SplitLossTotal: Localization.Get("Splits.Loss.Total"),
-        SplitLossLeg: Localization.Get("Splits.Loss.Leg"));
+        SplitLossLeg: Localization.Get("Splits.Loss.Leg"),
+        SplitDetailTitle: Localization.Get("Splits.Detail.Title"),
+        SplitDetailTotal: Localization.Get("Splits.Detail.Total"),
+        SplitDetailLeg: Localization.Get("Splits.Detail.Leg"),
+        SplitDetailTime: Localization.Get("Splits.Detail.Time"),
+        SplitDetailPlace: Localization.Get("Splits.Detail.Place"),
+        SplitDetailGap: Localization.Get("Splits.Detail.Gap"),
+        SplitDetailLeader: Localization.Get("Splits.Detail.Leader"),
+        SplitDetailClose: Localization.Get("Splits.Detail.Close"));
 
     // "<competition> — спліти <День N> <date>.html", sanitised for the save dialog.
     private string SuggestedFileName(EventDay day)

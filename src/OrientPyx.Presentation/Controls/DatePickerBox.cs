@@ -23,6 +23,8 @@ public sealed class DatePickerBox : CalendarDatePicker
     public DatePickerBox()
     {
         NumericInput.SetDate(this, true);
+        // The wheel must never rewrite the date while scrolling the form past this field.
+        DateWheelGuard.Attach(this);
         GotFocus += OnGotFocus;
     }
 

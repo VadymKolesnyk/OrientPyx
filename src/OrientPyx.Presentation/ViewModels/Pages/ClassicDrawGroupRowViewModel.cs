@@ -53,10 +53,23 @@ public sealed partial class ClassicDrawGroupRowViewModel : ObservableObject
     [ObservableProperty]
     private string _freeMinute = string.Empty;
 
-    partial void OnStartChanged(string value) => FreeMinuteChanged?.Invoke();
+    partial void OnStartChanged(string value)
+    {
+        FreeMinuteChanged?.Invoke();
+        SettingsChanged?.Invoke();
+    }
 
-    partial void OnIntervalChanged(string value) => FreeMinuteChanged?.Invoke();
+    partial void OnIntervalChanged(string value)
+    {
+        FreeMinuteChanged?.Invoke();
+        SettingsChanged?.Invoke();
+    }
+
+    partial void OnSelectedChanged(bool value) => SettingsChanged?.Invoke();
 
     /// <summary>Raised when the start or interval text changes so the page can recompute <see cref="FreeMinute"/>.</summary>
-    public event Action? FreeMinuteChanged;
+    public Action? FreeMinuteChanged;
+
+    /// <summary>Raised when an editable value changes so the page can persist the row onto the day.</summary>
+    public Action? SettingsChanged;
 }

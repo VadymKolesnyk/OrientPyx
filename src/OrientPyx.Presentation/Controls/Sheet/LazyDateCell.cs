@@ -68,6 +68,9 @@ internal sealed class LazyDateCell : LazyEditCell
         if (_placeholder is not null)
             picker.PlaceholderText = _placeholder;
         NumericInput.SetDate(picker, true);
+        // Scrolling the sheet over an active date cell must not rewrite its value — swallow the wheel
+        // and let the table's own scroller take it instead (same guard the combo cells get).
+        DateWheelGuard.Attach(picker);
         // The picker is a focus host; whenever it gains focus (click, Tab, keyboard) push the caret into
         // its inner text box so the cell edits as text rather than parking focus on the calendar button.
         picker.GotFocus += OnPickerGotFocus;
@@ -82,6 +85,7 @@ internal sealed class LazyDateCell : LazyEditCell
         {
             picker.GotFocus -= OnPickerGotFocus;
             picker.TemplateApplied -= OnPickerTemplateApplied;
+            DateWheelGuard.Detach(picker);
         }
     }
 

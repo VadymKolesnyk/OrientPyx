@@ -310,6 +310,14 @@
   "Splits.Generated": "Generated:",
   "Splits.Loss.Total": "Behind overall: +{0}",
   "Splits.Loss.Leg": "On this leg: +{0}",
+  "Splits.Detail.Title": "{0} — {1}",
+  "Splits.Detail.Total": "Overall",
+  "Splits.Detail.Leg": "On this leg",
+  "Splits.Detail.Time": "Time",
+  "Splits.Detail.Place": "Place",
+  "Splits.Detail.Gap": "Gap",
+  "Splits.Detail.Leader": "leader",
+  "Splits.Detail.Close": "Close",
 
   "Nav.Draw": "Start draw",
   "Page.Draw.Title": "Start draw",
@@ -1509,7 +1517,7 @@
   "Help.Splits.Title": "Splits (HTML)",
   "Help.Splits.What": "Export of the day's course-passage layout (splits) to modern HTML: a CP table with cumulative time and places, or a per-participant layout for rogaine.",
   "Help.Splits.Why": "Gives a detailed leg-by-leg analysis of the passage — where time was lost and who led at each CP.",
-  "Help.Splits.How": "Pick the day at the top.\nThe export button saves the splits HTML file.\nIn the table, the leader and the best leg time are highlighted; a tooltip shows the time loss.\nThe look depends on the day's discipline (set CP order or rogaine).",
+  "Help.Splits.How": "Pick the day at the top.\nThe export button saves the splits HTML file.\nThe table highlights the leader and the fastest leg; the place is printed next to each time — overall on the top line, on the leg below.\nTap a control cell (the whole block lights up) to see the overall gap and the gap on that leg.\nPinch with two fingers (Ctrl and the mouse wheel on a computer) to resize the text: shrink it to fit more controls on screen.\nThe shape depends on the day's format (set course or rogaine).",
 
   "Help.Draw.Title": "Start draw",
   "Help.Draw.What": "Start-time draw: groups are combined into start lanes, and each participant is assigned a start minute with teammate separation.",
