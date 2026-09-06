@@ -162,6 +162,22 @@ public sealed partial class DialogService : ObservableObject, IDialogService
         }
     }
 
+    public async Task<string?> ShowFileLockedAsync(FileLockedViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
+
     public async Task<string?> ShowAddRegionAsync(AddRegionViewModel dialog)
     {
         ArgumentNullException.ThrowIfNull(dialog);

@@ -45,19 +45,10 @@ public partial class SplitsExportView : UserControl
         if (file is null)
             return; // save cancelled
 
-        try
-        {
-            await using (var stream = await file.OpenWriteAsync())
-                await stream.WriteAsync(result.Bytes);
-
-            // Open the freshly saved splits HTML in the OS default app (browser) so the user sees it
-            // immediately — same behaviour as the result-protocol export.
-            ProtocolFileLauncher.TryOpen(file);
-        }
-        catch
-        {
-            // The file couldn't be written (permissions, removed drive, etc.). The user can retry. Mirrors
-            // the result-protocol export behaviour.
-        }
+        // The saver handles a target that is open in another program (Word keeps a .docx locked):
+        // it then writes "name (2).ext" beside it and tells the user. Null means nothing was saved.
+        var saved = await vm.FileSaver.SaveAsync(file, result.Bytes);
+        if (saved is not null)
+            ProtocolFileLauncher.TryOpen(saved);
     }
 }

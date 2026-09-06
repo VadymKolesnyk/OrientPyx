@@ -11,8 +11,12 @@ namespace OrientPyx.DataAccess.Documents;
 /// <list type="bullet">
 ///   <item><b>Ordered</b> (set course): a split table with one column per prescribed control (КП-N(code)).
 ///   Each runner is two rows — the cumulative time + its overall place on top, the leg split + its place on
-///   that leg below. Ranks, the leader baseline and the fastest legs are computed across the OK (placed)
-///   runners only, so a disqualified/MP/DNF run is never ranked or highlighted. The top 3 cumulatives and
+///   that leg below. A non-OK run (MP/DNF/DSQ) is not excluded wholesale — the part of it that was really
+///   run counts: <b>every</b> leg split takes part in the leg ranking (a leg time only exists between two
+///   consecutive on-course controls, so it is genuine however the run ended), while the cumulative ranking
+///   and the leader baseline take a runner only up to the control before their first missed one — past that
+///   their elapsed time covers a shorter course, so those cells are printed but neither ranked, highlighted
+///   nor given a gap. The top 3 cumulatives and
 ///   the top 3 legs at each control are highlighted gold/silver/bronze. The two cells of one control are a
 ///   single clickable block: hovering shows the loss to the leader overall and on that leg, and clicking
 ///   (tapping) either cell outlines the block and opens a &lt;dialog&gt; spelling both out — time, place and
@@ -166,31 +170,42 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
         // Each runner's per-control cumulative + leg times, keyed by the control code in the order it was
         // taken on course. The table columns are the prescribed controls (g.Controls); a runner who missed a
         // control simply has no entry for it. The finish column uses the splits' finish marker.
-        var runners = g.Rows.Select(r => RunnerSplits.From(r)).ToList();
-
-        // Per-control fastest leg and leader cumulative, plus the cell ranks — computed across the OK
-        // (placed) runners only, so a disqualified/MP/DNF run is never the leader, never a fastest leg, and
-        // gets no rank or top-3 highlight. Non-OK runners still render their own times for reference.
-        // The finish column is treated as one more "control" keyed by a sentinel.
+        // Every column is one position on the prescribed course — a course that visits the same control twice
+        // gets two columns for that code, and each keeps its own time.
         var columns = g.Controls.ToList();
-        var ranked = runners.Where(r => r.Row.IsOk).ToList();
-        var bestLeg = new Dictionary<string, TimeSpan>(StringComparer.OrdinalIgnoreCase);
-        var leadCumulative = new Dictionary<string, TimeSpan>(StringComparer.OrdinalIgnoreCase);
-        foreach (var col in columns.Append(FinishKey))
+        var finishColumn = columns.Count;
+        var runners = g.Rows.Select(r => RunnerSplits.From(r, columns, finishColumn)).ToList();
+
+        // Per-control fastest leg and leader cumulative, plus the cell ranks. A non-OK run (MP/DNF/DSQ) is
+        // not simply dropped: the part of it that was actually run clean is real and competes.
+        //   • Leg splits: every runner counts, always — a leg time exists only for a contiguous on-course
+        //     pair of controls, so it is a genuine leg however the run ended.
+        //   • Cumulative times: a runner counts up to their first missed control (see
+        //     <see cref="RunnerSplits.ValidCumulativeThrough"/>); past that point their elapsed time is no
+        //     longer comparable (they skipped course), so it is rendered but neither ranked nor highlighted.
+        // The finish is treated as one more "control", the column past the last one.
+        var bestLeg = new Dictionary<int, TimeSpan>();
+        var leadCumulative = new Dictionary<int, TimeSpan>();
+        foreach (var col in Enumerable.Range(0, columns.Count + 1))
         {
-            foreach (var runner in ranked)
+            // Cumulative: only the runners whose run is still valid at this column.
+            var cumRanked = runners.Where(r => r.CumulativeCountsAt(col)).ToList();
+            foreach (var runner in runners)
             {
                 if (runner.Leg.TryGetValue(col, out var leg) && (!bestLeg.TryGetValue(col, out var bl) || leg < bl))
                     bestLeg[col] = leg;
-                if (runner.Cumulative.TryGetValue(col, out var cum) && (!leadCumulative.TryGetValue(col, out var lc) || cum < lc))
+                if (runner.CumulativeCountsAt(col)
+                    && runner.Cumulative.TryGetValue(col, out var cum)
+                    && (!leadCumulative.TryGetValue(col, out var lc) || cum < lc))
                     leadCumulative[col] = cum;
             }
 
-            // Per-control rank by ascending cumulative time across the OK runners who reached it (ties share a
+            // Per-control rank by ascending cumulative time across the runners still valid here (ties share a
             // rank), so each cell can show its "/N" position and the top 3 can be highlighted.
-            RankInto(ranked, col, r => r.Cumulative, r => r.Rank);
-            // Same ranking on the leg split alone, so the fastest legs (top 3) are highlighted too.
-            RankInto(ranked, col, r => r.Leg, r => r.LegRank);
+            RankInto(cumRanked, col, r => r.Cumulative, r => r.Rank);
+            // Same ranking on the leg split alone, across every runner, so the fastest legs (top 3) are
+            // highlighted even when they were run by someone who was later disqualified.
+            RankInto(runners, col, r => r.Leg, r => r.LegRank);
         }
 
         sb.Append("<div class=\"table-wrap\">\n<table class=\"splits ordered\">\n<thead>\n<tr>");
@@ -215,15 +230,15 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
             sb.Append("<td class=\"result\" rowspan=\"2\">").Append(ResultCell(runner.Row)).Append("</td>");
 
             for (var c = 0; c < columns.Count; c++)
-                WriteOrderedCumulativeCell(sb, runner, c, columns[c], leadCumulative, bestLeg);
-            WriteOrderedCumulativeCell(sb, runner, columns.Count, FinishKey, leadCumulative, bestLeg);
+                WriteOrderedCumulativeCell(sb, runner, c, leadCumulative, bestLeg);
+            WriteOrderedCumulativeCell(sb, runner, finishColumn, leadCumulative, bestLeg);
             sb.Append("</tr>\n");
 
             // Second (bottom) row: the leg split with its own leg place, fastest legs (top 3) highlighted.
             sb.Append("<tr class=\"").Append(rowClass).Append(" leg-row\">");
             for (var c = 0; c < columns.Count; c++)
-                WriteOrderedLegCell(sb, runner, c, columns[c]);
-            WriteOrderedLegCell(sb, runner, columns.Count, FinishKey);
+                WriteOrderedLegCell(sb, runner, c);
+            WriteOrderedLegCell(sb, runner, finishColumn);
             sb.Append("</tr>\n");
         }
 
@@ -233,9 +248,9 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
     // Ranks the runners who have a time for this column (ascending, ties shared) into the chosen rank
     // dictionary — used for both the cumulative rank and the leg-split rank.
     private static void RankInto(
-        IReadOnlyList<RunnerSplits> runners, string col,
-        Func<RunnerSplits, Dictionary<string, TimeSpan>> times,
-        Func<RunnerSplits, Dictionary<string, int>> rank)
+        IReadOnlyList<RunnerSplits> runners, int col,
+        Func<RunnerSplits, Dictionary<int, TimeSpan>> times,
+        Func<RunnerSplits, Dictionary<int, int>> rank)
     {
         var reached = runners
             .Where(r => times(r).ContainsKey(col))
@@ -261,8 +276,8 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
     // The runner's name and the control's caption are not repeated either — the script takes them from the
     // row's name cell and the column's header.
     private static string DetailData(
-        RunnerSplits runner, string col,
-        IReadOnlyDictionary<string, TimeSpan> leadCumulative, IReadOnlyDictionary<string, TimeSpan> bestLeg)
+        RunnerSplits runner, int col,
+        IReadOnlyDictionary<int, TimeSpan> leadCumulative, IReadOnlyDictionary<int, TimeSpan> bestLeg)
     {
         var sb = new StringBuilder(96);
 
@@ -271,7 +286,9 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
             sb.Append(" data-t=\"").Append(FormatClock(cum)).Append('"');
             if (runner.Rank.TryGetValue(col, out var rank))
                 sb.Append(" data-tp=\"").Append(rank.ToString(CultureInfo.InvariantCulture)).Append('"');
-            if (leadCumulative.TryGetValue(col, out var lc))
+            // The gap only makes sense while the runner is still on the whole course — past a missed control
+            // their elapsed time covers less ground than the leader's, so no gap is offered.
+            if (runner.CumulativeCountsAt(col) && leadCumulative.TryGetValue(col, out var lc))
                 sb.Append(" data-tg=\"").Append(FormatClock(cum - lc)).Append('"');
         }
 
@@ -288,8 +305,8 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
     }
 
     private static void WriteOrderedCumulativeCell(
-        StringBuilder sb, RunnerSplits runner, int colIndex, string col,
-        IReadOnlyDictionary<string, TimeSpan> leadCumulative, IReadOnlyDictionary<string, TimeSpan> bestLeg)
+        StringBuilder sb, RunnerSplits runner, int col,
+        IReadOnlyDictionary<int, TimeSpan> leadCumulative, IReadOnlyDictionary<int, TimeSpan> bestLeg)
     {
         if (!runner.Cumulative.TryGetValue(col, out var cum))
         {
@@ -305,7 +322,7 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
         // first hover, from the data-* below — baking a title= into every cell was a tenth of the file on a
         // full competition, for text almost none of which is ever read.
         sb.Append("<td class=\"").Append(cls).Append('"')
-          .Append(" data-c=\"").Append(colIndex).Append('"')
+          .Append(" data-c=\"").Append(col).Append('"')
           .Append(DetailData(runner, col, leadCumulative, bestLeg)).Append('>');
         sb.Append("<span class=\"cum\">").Append(FormatClock(cum)).Append("</span>");
         if (runner.Rank.TryGetValue(col, out var rank))
@@ -313,7 +330,7 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
         sb.Append("</td>");
     }
 
-    private static void WriteOrderedLegCell(StringBuilder sb, RunnerSplits runner, int colIndex, string col)
+    private static void WriteOrderedLegCell(StringBuilder sb, RunnerSplits runner, int col)
     {
         if (!runner.Leg.TryGetValue(col, out var leg))
         {
@@ -323,7 +340,7 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
         // Highlight the 3 fastest legs at this control (the leg ranking), not just the single best.
         var rankClass = runner.LegRank.TryGetValue(col, out var lr) ? PodiumClass(lr) : string.Empty;
         sb.Append("<td class=\"leg-cell detail").Append(rankClass.Length > 0 ? " " + rankClass : "")
-          .Append("\" data-c=\"").Append(colIndex).Append("\">")
+          .Append("\" data-c=\"").Append(col).Append("\">")
           .Append("<span class=\"leg\">").Append(FormatClock(leg)).Append("</span>");
         // The leg place next to the leg time, mirroring the cumulative row's rank badge — so the place on
         // this single leg reads off the cell instead of only from the top-3 tint.
@@ -526,9 +543,6 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
             return string.Empty;
         return s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");
     }
-
-    // Sentinel column key for the finish "control", so it can share the cumulative/leg/rank dictionaries.
-    private const string FinishKey = " F";
 
     private const string Css = """
 :root {
@@ -971,27 +985,50 @@ table.ordered tr.leg-row td.detail.picked {
 """;
 
     /// <summary>
-    /// One runner's set-course splits reduced to per-control cumulative time, leg split and rank, keyed by
-    /// control code (the finish under <see cref="FinishKey"/>). Built from the on-course punches of the
-    /// runner's <see cref="SplitsView.Passage"/>; a missed/off-course control simply has no entry.
+    /// One runner's set-course splits reduced to per-control cumulative time, leg split and rank, keyed by the
+    /// <b>column index</b> — the position on the prescribed course, with the finish under
+    /// <paramref name="finishColumn"/> (the column past the last control). Built from the on-course punches of
+    /// the runner's <see cref="SplitsView.Passage"/>; a missed/off-course control simply has no entry.
+    /// <para>
+    /// The key is the position, not the code, because a course may visit the same control twice (e.g.
+    /// «55 44 43 55 66»): keying by code put the second visit's time into both «55» columns.
+    /// </para>
     /// </summary>
     private sealed class RunnerSplits
     {
         public required SplitExportRow Row { get; init; }
-        public Dictionary<string, TimeSpan> Cumulative { get; } = new(StringComparer.OrdinalIgnoreCase);
-        public Dictionary<string, TimeSpan> Leg { get; } = new(StringComparer.OrdinalIgnoreCase);
-        public Dictionary<string, int> Rank { get; } = new(StringComparer.OrdinalIgnoreCase);
-        public Dictionary<string, int> LegRank { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<int, TimeSpan> Cumulative { get; } = [];
+        public Dictionary<int, TimeSpan> Leg { get; } = [];
+        public Dictionary<int, int> Rank { get; } = [];
+        public Dictionary<int, int> LegRank { get; } = [];
 
-        public static RunnerSplits From(SplitExportRow row)
+        /// <summary>
+        /// The last column whose cumulative time still describes the <b>whole prescribed course so far</b> —
+        /// i.e. the column just before the runner's first missed control. Up to (and including) it the elapsed
+        /// time is comparable with everyone else's and takes part in the ranking/leader baseline; from the
+        /// first skipped control on it no longer is (the runner ran a shorter course), so those cells are
+        /// still printed but neither ranked nor highlighted. −1 when the very first control was missed.
+        /// An OK run keeps every column, the finish included.
+        /// </summary>
+        public int ValidCumulativeThrough { get; private set; } = -1;
+
+        /// <summary>True when this runner's cumulative time at <paramref name="col"/> counts for the
+        /// ranking and the leader baseline (see <see cref="ValidCumulativeThrough"/>).</summary>
+        public bool CumulativeCountsAt(int col) => col <= ValidCumulativeThrough;
+
+        public static RunnerSplits From(SplitExportRow row, IReadOnlyList<string> columns, int finishColumn)
         {
             var rs = new RunnerSplits { Row = row };
+            // Fallback for a layout whose punches carry no course position (e.g. the «mixed» pattern splits):
+            // walk the columns forward, matching each on-course punch to the next column with that code, so
+            // repeats still land on distinct columns.
+            var next = 0;
             foreach (var p in row.Splits.Passage)
             {
                 if (p.Kind == PassageKind.Finish)
                 {
-                    if (p.Elapsed is { } fe) rs.Cumulative[FinishKey] = fe;
-                    if (p.Leg is { } fl) rs.Leg[FinishKey] = fl;
+                    if (p.Elapsed is { } fe) rs.Cumulative[finishColumn] = fe;
+                    if (p.Leg is { } fl) rs.Leg[finishColumn] = fl;
                     continue;
                 }
                 if (p.Kind != PassageKind.Control || !p.OnCourse)
@@ -999,9 +1036,49 @@ table.ordered tr.leg-row td.detail.picked {
                 var code = p.Code.Trim();
                 if (code.Length == 0)
                     continue;
-                if (p.Elapsed is { } e) rs.Cumulative[code] = e;
-                if (p.Leg is { } l) rs.Leg[code] = l;
+
+                int column;
+                if (p.CourseIndex is { } ci && ci >= 0 && ci < columns.Count)
+                {
+                    column = ci;
+                    next = ci + 1;
+                }
+                else
+                {
+                    var found = -1;
+                    for (var j = next; j < columns.Count; j++)
+                    {
+                        if (string.Equals(code, columns[j].Trim(), StringComparison.OrdinalIgnoreCase))
+                        {
+                            found = j;
+                            break;
+                        }
+                    }
+                    if (found < 0)
+                        continue;
+                    column = found;
+                    next = found + 1;
+                }
+
+                if (p.Elapsed is { } e) rs.Cumulative[column] = e;
+                if (p.Leg is { } l) rs.Leg[column] = l;
             }
+
+            // How far the cumulative times stay comparable: an OK run all the way (the finish column
+            // included), otherwise up to the column before the first control with no time — the first one
+            // the runner missed. Note a non-OK run can still own every control column (e.g. a DSQ or a
+            // late finish), in which case nothing is cut off.
+            var through = finishColumn;
+            for (var col = 0; col <= finishColumn; col++)
+            {
+                if (rs.Cumulative.ContainsKey(col))
+                    continue;
+                // The finish column is only "missing" for a run with no finish punch; either way everything
+                // before it stands.
+                through = col - 1;
+                break;
+            }
+            rs.ValidCumulativeThrough = row.IsOk ? finishColumn : through;
             return rs;
         }
     }

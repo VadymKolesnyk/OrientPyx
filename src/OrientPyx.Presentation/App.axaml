@@ -10,6 +10,9 @@
         <!-- Make popups (dropdowns, calendar, menus) follow the global UI scale -->
         <StyleInclude Source="avares://OrientPyx/Styles/PopupScaling.axaml" />
 
+        <!-- Slim always-visible scrollbars (no arrow buttons, thicken on hover) -->
+        <StyleInclude Source="avares://OrientPyx/Styles/ScrollBars.axaml" />
+
         <!-- Shared editable sheet table; supports a true two-tier banded header (controls:SheetTable) -->
         <StyleInclude Source="avares://OrientPyx/Styles/SheetTable.axaml" />
 

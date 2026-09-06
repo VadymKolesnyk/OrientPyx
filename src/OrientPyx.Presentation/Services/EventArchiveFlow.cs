@@ -113,17 +113,16 @@ public sealed class EventArchiveFlow : IEventArchiveFlow
         }
     }
 
-    // "<competition> <date>.opyx" (sanitised), the default name in the save dialog.
+    // "Архів - <competition> - <competition start date>.opyx" (see ExportFileName). Falls back to the
+    // folder identifier when the competition has no name.
     private string SuggestedFileName(EventSummary competition)
     {
         var name = string.IsNullOrWhiteSpace(competition.Name)
             ? competition.Identifier
             : competition.Name;
-        var stamp = DateTime.Now.ToString("yyyy-MM-dd");
-        var baseName = $"{name} {stamp}";
-        foreach (var invalid in System.IO.Path.GetInvalidFileNameChars())
-            baseName = baseName.Replace(invalid, '_');
-        return $"{baseName}.{EventArchiveConstants.Extension}";
+        return ExportFileName.Build(
+            _localization, "EventArchive.NamePart", name, EventArchiveConstants.Extension,
+            date: competition.StartDate);
     }
 
     // Reuses the import-options modal as a plain "title + message + OK" error box (no toggles).

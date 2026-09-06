@@ -123,6 +123,10 @@ public sealed partial class FinishSplitsViewModel : ObservableObject
     [RelayCommand]
     private void ToggleDock() => IsDockedRight = !IsDockedRight;
 
+    /// <summary>Hides the panel (the View's close button). Selecting another log row shows it again.</summary>
+    [RelayCommand]
+    private void Close() => HasData = false;
+
     /// <summary>Clears the panel (called when the selection is lost or the chip is unrecognised).</summary>
     public void Clear()
     {

@@ -689,9 +689,12 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
 
         if (edit is not null)
         {
-            // Save: persist the edit + reassignment, then (if auto-print on) print for the assigned runner.
+            // Save: persist the edit + reassignment (creating the participant first when the operator
+            // filled in the new-participant form), then (if auto-print on) print for the assigned runner.
             await _editor.UpdateFinishReadoutAsync(edit);
-            _log.Action(string.Format(Localization.Get("FinishRead.Unknown.AssignedLog"), edit.ChipNumber));
+            _log.Action(edit.NewParticipant is { } created
+                ? string.Format(Localization.Get("FinishRead.Unknown.CreatedLog"), created.FullName, edit.ChipNumber)
+                : string.Format(Localization.Get("FinishRead.Unknown.AssignedLog"), edit.ChipNumber));
             await AutoPrintNewReadsAsync([readoutId]);
         }
         else

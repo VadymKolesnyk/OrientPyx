@@ -218,8 +218,25 @@ public interface IEventStore
     /// <summary>Returns a day's participant links, ordered by their sort order.</summary>
     Task<IReadOnlyList<ParticipantDay>> GetParticipantDaysAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Reads every table a per-day view needs (links, participants, groups, day settings, control points,
+    /// regions/clubs/ДЮСШ, days, competition info) inside ONE transaction, so the returned lists are all
+    /// from the same consistent snapshot. Use this instead of issuing the reads one by one: separate reads
+    /// each open their own connection and, under WAL, may land on different snapshots when a write happens
+    /// in between — which mixes stale and fresh rows into one result.
+    /// </summary>
+    Task<EventDaySnapshot> GetDaySnapshotAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
+
     /// <summary>Returns every participant link across all days (used to build the roster / Мандатка view).</summary>
     Task<IReadOnlyList<ParticipantDay>> GetAllParticipantDaysAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets a participant's group on a day, creating the link when the participant does not run that day
+    /// yet, and returns the link's id. Look-up and insert happen in ONE transaction, so two concurrent
+    /// callers cannot both decide the link is missing and each add one (which used to leave a duplicate
+    /// that printed the runner twice on every protocol). An existing link keeps its chip/order/start time.
+    /// </summary>
+    Task<Guid> SetParticipantDayGroupAsync(string eventFolderPath, Guid participantId, Guid dayId, Guid? groupId, CancellationToken cancellationToken = default);
 
     /// <summary>Counts a participant's links across all days (used to decide cascade deletion).</summary>
     Task<int> CountParticipantDaysForParticipantAsync(string eventFolderPath, Guid participantId, CancellationToken cancellationToken = default);

@@ -25,6 +25,7 @@ public sealed class StatementFlow : IStatementFlow
     private readonly IStatementPrintService _printService;
     private readonly IDialogService _dialogs;
     private readonly IBusyService _busy;
+    private readonly IExportFileSaver _fileSaver;
 
     public StatementFlow(
         ILocalizationService localization,
@@ -35,7 +36,8 @@ public sealed class StatementFlow : IStatementFlow
         IResultProtocolWriter writer,
         IStatementPrintService printService,
         IDialogService dialogs,
-        IBusyService busy)
+        IBusyService busy,
+        IExportFileSaver fileSaver)
     {
         _localization = localization;
         _session = session;
@@ -46,6 +48,7 @@ public sealed class StatementFlow : IStatementFlow
         _printService = printService;
         _dialogs = dialogs;
         _busy = busy;
+        _fileSaver = fileSaver;
     }
 
     public async Task OpenAsync(SheetTable table, Guid? dayId)
@@ -71,7 +74,7 @@ public sealed class StatementFlow : IStatementFlow
 
         var vm = new StatementViewModel(
             _localization, _editor, _appSettings, _builder, _writer, _printService, _dialogs, _busy, _session,
-            data, filterSummary, headerDefaults);
+            _fileSaver, data, filterSummary, headerDefaults);
         await vm.LoadAsync();
         await _dialogs.ShowStatementAsync(vm);
     }
@@ -200,7 +203,11 @@ public sealed class StatementFlow : IStatementFlow
         var date = day?.Date ?? info?.StartDate;
         var dateText = date is { } dt ? dt.ToString("dd.MM.yyyy", System.Globalization.CultureInfo.InvariantCulture) : string.Empty;
 
-        return new StatementHeaderDefaults(name, organisation, venue, dateText);
+        return new StatementHeaderDefaults(name, organisation, venue, dateText)
+        {
+            Day = day,
+            CompetitionDate = info?.StartDate ?? _session.CurrentEvent?.StartDate
+        };
     }
 
     private static string FirstNonBlank(params string?[] candidates)

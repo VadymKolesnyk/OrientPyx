@@ -1,0 +1,129 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ============================================================
+         Slim always-visible scrollbars.
+
+         Fluent's default hides the thumb down to a ~2px hairline until the pointer is
+         over the scroller, which makes it very hard to grab. Here the collapsed thumb is
+         a proper rounded bar (SheetScrollBarThumbSize) that is always visible but stays
+         quiet: translucent, no track, no background, and no up/down line buttons at all.
+         On hover the ScrollBar goes :expanded — the thumb thickens to the full groove and
+         darkens, and a faint track appears — so it reads as a real scrollbar only while
+         it is being used.
+
+         The line (arrow) buttons are collapsed away entirely rather than merely made
+         transparent: Fluent reserves ScrollBarSize at each end for them, which would
+         otherwise shorten the track for no reason.
+         ============================================================ -->
+
+    <!-- Always on, and the bar gets its OWN lane rather than floating over the content.
+         Both come from ScrollViewer.AllowAutoHide: while it is True the Fluent template spans
+         the content presenter across all rows/columns (ColumnSpan=2, RowSpan=2) so the bar
+         overlays the content, and the bar fades out after the last scroll. Setting it False on
+         the ScrollViewer — not merely on the ScrollBar — makes the grid reserve the scrollbar's
+         column/row, so the content is inset by the groove width instead of running under it. -->
+    <Style Selector="ScrollViewer">
+        <Setter Property="AllowAutoHide" Value="False" />
+    </Style>
+
+    <!-- A ScrollViewer nested inside another control's template is NOT matched by the bare
+         "ScrollViewer" type selector above, so scrolling lists kept overlaying their content.
+         Templated controls surface it as the ScrollViewer.AllowAutoHide attached property,
+         which their template binds through to the inner viewer — set it on the host control. -->
+    <Style Selector="ListBox">
+        <Setter Property="ScrollViewer.AllowAutoHide" Value="False" />
+    </Style>
+    <Style Selector="ListBoxItem">
+        <Setter Property="ScrollViewer.AllowAutoHide" Value="False" />
+    </Style>
+    <Style Selector="ComboBox">
+        <Setter Property="ScrollViewer.AllowAutoHide" Value="False" />
+    </Style>
+    <Style Selector="TreeView">
+        <Setter Property="ScrollViewer.AllowAutoHide" Value="False" />
+    </Style>
+    <Style Selector="ItemsControl">
+        <Setter Property="ScrollViewer.AllowAutoHide" Value="False" />
+    </Style>
+    <Style Selector="TextBox">
+        <Setter Property="ScrollViewer.AllowAutoHide" Value="False" />
+    </Style>
+
+    <!-- Backstop for any other control that hosts a ScrollViewer in its template without
+         forwarding the attached property (matched positionally, not by type selector). -->
+    <Style Selector=":is(Control) /template/ ScrollViewer">
+        <Setter Property="AllowAutoHide" Value="False" />
+    </Style>
+
+    <Style Selector="ScrollBar">
+        <Setter Property="AllowAutoHide" Value="False" />
+        <!-- Groove thickness = the pointer target. Wider than Fluent's default (12) so the
+             bar is easy to hit; the thumb inside it stays thin until hovered. -->
+        <Setter Property="MinWidth" Value="14" />
+        <Setter Property="MinHeight" Value="14" />
+        <!-- Never paint a gutter: the bar floats over the content it scrolls. -->
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+
+    <!-- No arrow buttons, in either orientation. -->
+    <Style Selector="ScrollBar /template/ RepeatButton#PART_LineUpButton">
+        <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="ScrollBar /template/ RepeatButton#PART_LineDownButton">
+        <Setter Property="IsVisible" Value="False" />
+    </Style>
+
+    <!-- Collapsed (idle) thumb: a slim translucent bar, centred in the groove.
+         Fluent shrinks the thumb with a RenderTransform pinned to the groove edge; that is
+         replaced with an explicit width/height so the collapsed bar keeps a usable size. -->
+    <Style Selector="ScrollBar:vertical /template/ Thumb">
+        <Setter Property="RenderTransform" Value="none" />
+        <Setter Property="Width" Value="7" />
+        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Background" Value="#40000000" />
+    </Style>
+    <Style Selector="ScrollBar:horizontal /template/ Thumb">
+        <Setter Property="RenderTransform" Value="none" />
+        <Setter Property="Height" Value="7" />
+        <Setter Property="MinWidth" Value="28" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Background" Value="#40000000" />
+    </Style>
+
+    <!-- Expanded (pointer over the scroller): fill the groove and darken. -->
+    <Style Selector="ScrollBar[IsExpanded=true]:vertical /template/ Thumb">
+        <Setter Property="Width" Value="10" />
+        <Setter Property="Background" Value="#73000000" />
+    </Style>
+    <Style Selector="ScrollBar[IsExpanded=true]:horizontal /template/ Thumb">
+        <Setter Property="Height" Value="10" />
+        <Setter Property="Background" Value="#73000000" />
+    </Style>
+
+    <!-- Direct hover / drag on the thumb itself. -->
+    <Style Selector="ScrollBar /template/ Thumb:pointerover /template/ Border">
+        <Setter Property="Background" Value="#8C000000" />
+    </Style>
+    <Style Selector="ScrollBar /template/ Thumb:pressed /template/ Border">
+        <Setter Property="Background" Value="#A6000000" />
+    </Style>
+
+    <!-- Track: invisible while idle, a faint rail once expanded. Keeps the Fluent fade. -->
+    <Style Selector="ScrollBar /template/ Rectangle#TrackRect">
+        <Setter Property="Stroke" Value="Transparent" />
+        <Setter Property="StrokeThickness" Value="0" />
+    </Style>
+    <Style Selector="ScrollBar[IsExpanded=true] /template/ Rectangle#TrackRect">
+        <Setter Property="Fill" Value="#14000000" />
+        <Setter Property="Stroke" Value="Transparent" />
+        <Setter Property="Opacity" Value="1" />
+    </Style>
+    <!-- Fluent tints the whole groove on expand; keep it clear so only the rail shows. -->
+    <Style Selector="ScrollBar[IsExpanded=true] /template/ Grid#Root">
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+</Styles>

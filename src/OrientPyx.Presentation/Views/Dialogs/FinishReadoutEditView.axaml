@@ -5,6 +5,7 @@
              xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
              xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
              xmlns:controls="using:OrientPyx.Presentation.Controls"
+             xmlns:models="using:OrientPyx.BusinessLogic.Models"
              xmlns:behaviors="using:OrientPyx.Presentation.Behaviors"
              mc:Ignorable="d" d:DesignWidth="480" d:DesignHeight="560"
              x:Class="OrientPyx.Presentation.Views.Dialogs.FinishReadoutEditView"
@@ -70,6 +71,109 @@
                         </controls:SearchableComboBox>
                     </StackPanel>
 
+                    <!-- "Create a new participant" form: shown only when that entry is picked above.
+                         ПІБ + група are required (Save is disabled until both are set); the rest are the
+                         optional identity fields the protocols print. -->
+                    <StackPanel Spacing="10" IsVisible="{Binding IsCreatingNew}">
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding NewFullNameLabel}" Classes="label" />
+                            <TextBox Text="{Binding NewFullName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                            <StackPanel Grid.Column="0" Spacing="6">
+                                <TextBlock Text="{Binding NewGroupLabel}" Classes="label" />
+                                <controls:SearchableComboBox ItemsSource="{Binding Groups}"
+                                          SelectedItem="{Binding NewGroup, Mode=TwoWay}"
+                                          SearchWatermark="{Binding Localization[Common.Search]}"
+                                          HorizontalAlignment="Stretch">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="models:FinishReadoutLookupOption">
+                                            <TextBlock Text="{Binding Name}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </controls:SearchableComboBox>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="6">
+                                <TextBlock Text="{Binding NewNumberLabel}" Classes="label" />
+                                <TextBox Text="{Binding NewNumber, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <!-- Numbers are unique per competition: name the holder and block Save. -->
+                                <TextBlock Text="{Binding NumberError}"
+                                           IsVisible="{Binding HasNumberError}"
+                                           Foreground="{DynamicResource DangerBrush}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                            <StackPanel Grid.Column="0" Spacing="6">
+                                <TextBlock Text="{Binding NewBirthDateLabel}" Classes="label" />
+                                <controls:DatePickerBox SelectedDate="{Binding NewBirthDate, Mode=TwoWay,
+                                                        Converter={StaticResource DateTimeOffsetToDateTime}}"
+                                                    SelectedDateFormat="Custom"
+                                                    CustomDateFormatString="dd.MM.yyyy"
+                                                    PlaceholderText="{Binding Localization[Common.DatePlaceholder]}"
+                                                    HorizontalAlignment="Stretch" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="6">
+                                <TextBlock Text="{Binding NewRankLabel}" Classes="label" />
+                                <controls:SearchableComboBox ItemsSource="{Binding Ranks}"
+                                          SelectedItem="{Binding NewRank, Mode=TwoWay}"
+                                          SearchWatermark="{Binding Localization[Common.Search]}"
+                                          HorizontalAlignment="Stretch" />
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding NewRegionLabel}" Classes="label" />
+                            <controls:SearchableComboBox ItemsSource="{Binding Regions}"
+                                      SelectedItem="{Binding NewRegion, Mode=TwoWay}"
+                                      SearchWatermark="{Binding Localization[Common.Search]}"
+                                      HorizontalAlignment="Stretch">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="dialogs:LookupChoice">
+                                        <TextBlock Text="{Binding Label}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </controls:SearchableComboBox>
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding NewClubLabel}" Classes="label" />
+                            <controls:SearchableComboBox ItemsSource="{Binding Clubs}"
+                                      SelectedItem="{Binding NewClub, Mode=TwoWay}"
+                                      SearchWatermark="{Binding Localization[Common.Search]}"
+                                      HorizontalAlignment="Stretch">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="dialogs:LookupChoice">
+                                        <TextBlock Text="{Binding Label}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </controls:SearchableComboBox>
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding NewDusshLabel}" Classes="label" />
+                            <controls:SearchableComboBox ItemsSource="{Binding Dusshes}"
+                                      SelectedItem="{Binding NewDussh, Mode=TwoWay}"
+                                      SearchWatermark="{Binding Localization[Common.Search]}"
+                                      HorizontalAlignment="Stretch">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="dialogs:LookupChoice">
+                                        <TextBlock Text="{Binding Label}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </controls:SearchableComboBox>
+                        </StackPanel>
+
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding NewCoachLabel}" Classes="label" />
+                            <TextBox Text="{Binding NewCoach, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+
+                        <TextBlock Text="{Binding NewParticipantHint}" Classes="subtitle" TextWrapping="Wrap" />
+                    </StackPanel>
 
                     <!-- Start + finish times on one row -->
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="12">

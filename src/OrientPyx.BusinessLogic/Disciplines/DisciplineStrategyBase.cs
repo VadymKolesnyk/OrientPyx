@@ -249,7 +249,10 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
 
             passage.Add(new PassagePunch(++index, code, onCourse, punch.Time, leg, elapsed,
                 PassageKind.Control, legKm, pace,
-                DisplayLeg: displayLeg, DisplayLegKm: displayKm, DisplayPace: displayPace));
+                DisplayLeg: displayLeg, DisplayLegKm: displayKm, DisplayPace: displayPace,
+                // Which prescribed control this punch took — the splits table keys its columns on this, so a
+                // course that visits one code twice (55 … 55) keeps a separate time under each occurrence.
+                CourseIndex: onCourse ? matchedIndex : null));
 
             if (onCourse)
             {

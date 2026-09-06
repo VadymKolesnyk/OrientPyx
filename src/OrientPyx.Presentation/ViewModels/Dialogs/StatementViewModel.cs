@@ -58,6 +58,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         IDialogService dialogs,
         IBusyService busy,
         ISessionService session,
+        IExportFileSaver fileSaver,
         StatementData data,
         string filterSummary,
         StatementHeaderDefaults headerDefaults)
@@ -71,6 +72,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         _dialogs = dialogs;
         _busy = busy;
         _session = session;
+        FileSaver = fileSaver;
         _data = data;
         _headerDefaults = headerDefaults;
 
@@ -83,6 +85,9 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
 
     public ILocalizationService Localization { get; }
 
+    /// <summary>Writes the export to the file the user picked (handles a target locked by Word). Used by the view.</summary>
+    public IExportFileSaver FileSaver { get; }
+
     /// <summary>The live document preview shown in the modal. Rebuilt by <see cref="RefreshPreview"/>.</summary>
     public ProtocolPreviewViewModel Preview { get; } = new();
 
@@ -93,6 +98,8 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
 
     public string Title => Localization.Get("Statement.Modal.Title");
     public string LandscapeLabel => Localization.Get("Statement.Layout.Landscape");
+    public string TableBordersLabel => Localization.Get("Statement.Layout.TableBorders");
+    public string PageFooterLabel => Localization.Get("Statement.Layout.PageFooter");
     public string ColumnsLabel => Localization.Get("Statement.Columns.Title");
     public string ExportWordLabel => Localization.Get("Statement.ExportWord");
     public string PrintLabel => Localization.Get("Statement.Print");
@@ -106,6 +113,8 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
     {
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(LandscapeLabel));
+        OnPropertyChanged(nameof(TableBordersLabel));
+        OnPropertyChanged(nameof(PageFooterLabel));
         OnPropertyChanged(nameof(ColumnsLabel));
         OnPropertyChanged(nameof(ExportWordLabel));
         OnPropertyChanged(nameof(PrintLabel));
@@ -123,6 +132,16 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
 
     [ObservableProperty]
     private bool _isLandscape;
+
+    /// <summary>«Друк таблиці» — print the data table inside a full border grid. Off by default (only the
+    /// header row is boxed); saved with the rest of the template.</summary>
+    [ObservableProperty]
+    private bool _tableBorders;
+
+    /// <summary>«Друк колонтитулів» — print the page footer (program name, generation time, page number) at
+    /// the bottom of every page. On by default; saved with the rest of the template.</summary>
+    [ObservableProperty]
+    private bool _pageFooter = true;
 
     [ObservableProperty]
     private string _competitionName = string.Empty;
@@ -178,6 +197,8 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         try
         {
             IsLandscape = settings.Orientation == ProtocolOrientation.Landscape;
+            TableBorders = settings.TableBorders;
+            PageFooter = settings.PageFooter;
             CompetitionName = settings.CompetitionName;
             Title2 = settings.Title;
             Subtitle = settings.Subtitle;
@@ -292,6 +313,9 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         var settings = BuildDocumentSettings();
 
         Preview.IsLandscape = settings.Orientation == ProtocolOrientation.Landscape;
+        Preview.ShowTableBorders = settings.TableBorders;
+        Preview.ShowFooter = settings.PageFooter;
+        ApplyPreviewFooter();
         Preview.CompetitionName = settings.CompetitionName;
         Preview.Title = settings.Title.Length > 0 ? settings.Title : Localization.Get("Statement.DefaultTitle");
         Preview.Subtitle = settings.Subtitle;
@@ -342,6 +366,8 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
     private StatementSettings BuildSettings() => new()
     {
         Orientation = IsLandscape ? ProtocolOrientation.Landscape : ProtocolOrientation.Portrait,
+        TableBorders = TableBorders,
+        PageFooter = PageFooter,
         CompetitionName = CompetitionName?.Trim() ?? string.Empty,
         Title = Title2?.Trim() ?? string.Empty,
         Subtitle = Subtitle?.Trim() ?? string.Empty,
@@ -463,25 +489,37 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         AutoSave();
     }
 
+    // The two print toggles change only how the table/page is decorated, so the preview flags are pushed
+    // directly (no builder run) and the template is auto-saved to the current day.
+    partial void OnTableBordersChanged(bool value)
+    {
+        if (_applyingSettings)
+            return;
+        Preview.ShowTableBorders = value;
+        AutoSave();
+    }
+
+    partial void OnPageFooterChanged(bool value)
+    {
+        if (_applyingSettings)
+            return;
+        Preview.ShowFooter = value;
+        AutoSave();
+    }
+
     partial void OnCompetitionNameChanged(string value) => OnHeaderEdited();
     partial void OnTitle2Changed(string value) => OnHeaderEdited();
     partial void OnSubtitleChanged(string value) => OnHeaderEdited();
     partial void OnVenueChanged(string value) => OnHeaderEdited();
     partial void OnDateTextChanged(string value) => OnHeaderEdited();
 
-    // "<competition> — відомість <date>.docx", sanitised for the save dialog.
-    private string SuggestedFileName(string extension)
-    {
-        var competition = _session.CurrentEvent?.Name;
-        if (string.IsNullOrWhiteSpace(competition))
-            competition = Localization.Get("Statement.DefaultName");
-        var part = Localization.Get("Statement.NamePart");
-        var stamp = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        var baseName = $"{competition} — {part} {stamp}";
-        foreach (var invalid in System.IO.Path.GetInvalidFileNameChars())
-            baseName = baseName.Replace(invalid, '_');
-        return $"{baseName}.{extension}";
-    }
+    // "Відомість - <competition> - [День N - ]<date>.docx" (see ExportFileName). A statement spanning the
+    // whole competition carries no day segment and is dated by the competition's start.
+    private string SuggestedFileName(string extension) => Services.ExportFileName.Build(
+        Localization, "Statement.NamePart", _session.CurrentEvent?.Name, extension,
+        _headerDefaults.Day,
+        date: _headerDefaults.CompetitionDate,
+        defaultNameKey: "Statement.DefaultName");
 
     // ── Column captions ────────────────────────────────────────────────────────────────────────────────
 
@@ -515,11 +553,31 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         StatementColumn.Representative => "Statement.Col.Short.Representative",
         _ => null
     };
+    // Fills the preview's footer line with the same three fields the .docx колонтитул prints — the software
+    // name, the generation stamp, and the page-number line ("Сторінка 1"; the mock-up is always page one).
+    private void ApplyPreviewFooter()
+    {
+        Preview.FooterSoftware = Localization.Get("Protocols.Footer.Software");
+        var generatedLabel = Localization.Get("Protocols.Footer.Generated");
+        var generated = DateTime.Now.ToString("dd.MM.yyyy HH:mm");
+        Preview.FooterGenerated = generatedLabel.Length > 0 ? $"{generatedLabel}: {generated}" : generated;
+        var pageLabel = Localization.Get("Protocols.Footer.Page");
+        Preview.FooterPage = pageLabel.Length > 0 ? $"{pageLabel} 1" : "1";
+    }
+
 }
 
 /// <summary>The resolved competition/day defaults used as the statement header watermarks + blank fallbacks.</summary>
 public sealed record StatementHeaderDefaults(
-    string CompetitionName, string Organisation, string Venue, string DateText);
+    string CompetitionName, string Organisation, string Venue, string DateText)
+{
+    /// <summary>The single day the statement is scoped to, or null when it spans the whole competition.
+    /// Used to name the exported file; the header text itself comes from the fields above.</summary>
+    public OrientPyx.BusinessLogic.Entities.EventDay? Day { get; init; }
+
+    /// <summary>The competition's start date — the file-name date when there is no scoped day.</summary>
+    public DateTimeOffset? CompetitionDate { get; init; }
+}
 
 /// <summary>The result of building a statement: the .docx bytes and a suggested save file name.</summary>
 public sealed record StatementExportResult(byte[] Bytes, string SuggestedFileName);

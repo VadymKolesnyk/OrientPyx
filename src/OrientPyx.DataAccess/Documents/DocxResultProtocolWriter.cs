@@ -149,7 +149,7 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
         if (sub.Length > 0)
             body.Append(CaptionParagraph(sub, bold: false));
 
-        body.Append(BuildTable(headers, section.Rows, columnWidths, bodyWrap));
+        body.Append(BuildTable(headers, section.Rows, columnWidths, bodyWrap, doc.TableBorders));
 
         // Rank-derivation line under the table, when the group awards a rank and the column is shown.
         if (section.RankCalculationText.Length > 0)
@@ -568,24 +568,26 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
     private const string TableFontHalfPoints = "22";
 
     private static Table BuildTable(IReadOnlyList<string> headers, IReadOnlyList<ResultProtocolBodyRow> rows,
-        int[] columnWidths, IReadOnlyList<bool> bodyWrap)
+        int[] columnWidths, IReadOnlyList<bool> bodyWrap, bool borders)
     {
         var totalWidth = columnWidths.Sum();
         var table = new Table();
-        // No table-level borders — only the header row is boxed (see the header cells below). TableProperties
-        // child order matters: layout/width before margins (schema CT_TblPrBase). A FIXED layout makes Word
-        // honour the explicit column widths verbatim (so every group's table lines up identically) instead of
-        // auto-fitting each table to its own content.
+        // Table-level borders follow the «Друк таблиці» setting: on ⇒ a full grid (outer frame + inside rules);
+        // off ⇒ nothing at table level and only the header row boxed (see the header cells below).
+        // TableProperties child order matters: layout/width before margins (schema CT_TblPrBase). A FIXED layout
+        // makes Word honour the explicit column widths verbatim (so every group's table lines up identically)
+        // instead of auto-fitting each table to its own content.
+        var rule = borders ? BorderValues.Single : BorderValues.None;
         table.AppendChild(new TableProperties(
             new TableLayout { Type = TableLayoutValues.Fixed },
             new TableWidth { Width = totalWidth.ToString(), Type = TableWidthUnitValues.Dxa },
             new TableBorders(
-                new TopBorder { Val = BorderValues.None },
-                new LeftBorder { Val = BorderValues.None },
-                new BottomBorder { Val = BorderValues.None },
-                new RightBorder { Val = BorderValues.None },
-                new InsideHorizontalBorder { Val = BorderValues.None },
-                new InsideVerticalBorder { Val = BorderValues.None }),
+                new TopBorder { Val = rule, Size = 4 },
+                new LeftBorder { Val = rule, Size = 4 },
+                new BottomBorder { Val = rule, Size = 4 },
+                new RightBorder { Val = rule, Size = 4 },
+                new InsideHorizontalBorder { Val = rule, Size = 4 },
+                new InsideVerticalBorder { Val = rule, Size = 4 }),
             // Tight default cell padding (≈0.7 mm left/right) so rows stay compact.
             new TableCellMarginDefault(
                 new TableCellLeftMargin { Width = 40, Type = TableWidthValues.Dxa },

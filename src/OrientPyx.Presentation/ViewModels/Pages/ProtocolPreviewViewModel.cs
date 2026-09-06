@@ -60,6 +60,28 @@ public sealed partial class ProtocolPreviewViewModel : ObservableObject
     /// <summary>True when there are officials to print (drives the block's visibility on the page).</summary>
     [ObservableProperty]
     private bool _hasOfficials;
+
+    /// <summary>Whether the table is drawn as a full border grid («Друк таблиці»). When false only the header
+    /// row is boxed and the data rows keep the light separator rules — mirroring the .docx export.</summary>
+    [ObservableProperty]
+    private bool _showTableBorders;
+
+    /// <summary>Whether the page footer (нижній колонтитул) is shown at the bottom of the mock-up page,
+    /// mirroring the «Друк колонтитулів» setting.</summary>
+    [ObservableProperty]
+    private bool _showFooter = true;
+
+    /// <summary>The footer's left part — the software name ("П/З: OrientPyx").</summary>
+    [ObservableProperty]
+    private string _footerSoftware = string.Empty;
+
+    /// <summary>The footer's centre part — the generation stamp ("Згенеровано: 06.09.2026 12:30").</summary>
+    [ObservableProperty]
+    private string _footerGenerated = string.Empty;
+
+    /// <summary>The footer's right part — the page-number line ("Сторінка 1").</summary>
+    [ObservableProperty]
+    private string _footerPage = string.Empty;
 }
 
 /// <summary>

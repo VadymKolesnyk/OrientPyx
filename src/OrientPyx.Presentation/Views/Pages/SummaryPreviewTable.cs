@@ -32,6 +32,9 @@ public sealed class SummaryPreviewTable
 
     private static readonly FontFamily Serif = new(SerifFont);
     private static readonly IBrush GridBorder = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33));
+
+    // The light bottom hairline used for data rows when the table prints without borders.
+    private static readonly IBrush FaintRule = new SolidColorBrush(Color.FromRgb(0xE2, 0xE2, 0xE2));
     private static readonly IBrush BandFill = new SolidColorBrush(Color.FromRgb(0xF2, 0xF2, 0xF2));
 
     // Column highlight while dragging a leading column (matches ProtocolPreviewTable): a translucent accent wash
@@ -144,7 +147,7 @@ public sealed class SummaryPreviewTable
                 {
                     var text = c < cells.Count ? cells[c] : string.Empty;
                     var isName = c == nameCol;
-                    var cell = AddBody(text, c, row, centred: !isName, wrap: isName);
+                    var cell = AddBody(text, c, row, centred: !isName, wrap: isName, boxed: document.TableBorders);
                     // Leading body cells are also drag handles, so a column can be grabbed anywhere in it.
                     if (c < leadCount)
                     {
@@ -219,12 +222,14 @@ public sealed class SummaryPreviewTable
         return border;
     }
 
-    private Border AddBody(string text, int col, int row, bool centred, bool wrap)
+    // <paramref name="boxed"/> follows the «Друк таблиці» setting: true ⇒ a full cell box like the .docx grid;
+    // false ⇒ a light bottom hairline only, matching the border-less .docx table.
+    private Border AddBody(string text, int col, int row, bool centred, bool wrap, bool boxed)
     {
         var border = new Border
         {
-            BorderBrush = GridBorder,
-            BorderThickness = new Thickness(0.8),
+            BorderBrush = boxed ? GridBorder : FaintRule,
+            BorderThickness = boxed ? new Thickness(0.8) : new Thickness(0, 0, 0, 0.5),
             Background = Brushes.Transparent,
             Padding = new Thickness(3, 1.5),
             Child = new TextBlock

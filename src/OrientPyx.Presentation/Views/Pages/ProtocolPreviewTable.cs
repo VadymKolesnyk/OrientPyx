@@ -99,7 +99,8 @@ public sealed class ProtocolPreviewTable
     // rebuild on IsLandscape. (Other header-text properties don't affect the table, so they're ignored.)
     private void OnPreviewPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(ProtocolPreviewViewModel.IsLandscape))
+        if (e.PropertyName == nameof(ProtocolPreviewViewModel.IsLandscape) ||
+            e.PropertyName == nameof(ProtocolPreviewViewModel.ShowTableBorders))
             Rebuild();
     }
 
@@ -135,6 +136,9 @@ public sealed class ProtocolPreviewTable
         // column header is drawn ONCE at the very top and then each section is just its band + rows — the sheet
         // reads as one running list with start-minute dividers (matches the .docx + the printed form).
         var banded = sections.Count > 0 && AllBanded(sections);
+        // «Друк таблиці»: draw the data rows inside a full cell grid, like the .docx does. The banded
+        // judges' layout is always gridded regardless of the setting.
+        var gridded = banded || host.Preview.ShowTableBorders;
         if (banded)
         {
             _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
@@ -208,7 +212,7 @@ public sealed class ProtocolPreviewTable
                     // Per-cell bold (the statement's own-chip cells) OR'd with the whole-row team-caption bold.
                     var cellBold = bodyRow.IsTeamHeader
                         || (bodyRow.BoldCells is { } mask && c < mask.Count && mask[c]);
-                    var cell = BuildBodyCell(text, cellBold, columns[c], boxed: banded);
+                    var cell = BuildBodyCell(text, cellBold, columns[c], boxed: gridded);
                     WireDrag(cell); // drag anywhere in a column, not just its header
                     Grid.SetColumn(cell, c);
                     Grid.SetRow(cell, row);

@@ -44,6 +44,12 @@ public interface IAppStore
 
     Task SaveStatementJsonAsync(string json, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the app-level default summary-protocol («підсумковий залік») settings JSON, or
+    /// null/blank when never saved.</summary>
+    Task<string?> GetSummaryProtocolJsonAsync(CancellationToken cancellationToken = default);
+
+    Task SaveSummaryProtocolJsonAsync(string json, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the app-level default start-protocol settings JSON for the given kind, or null/blank
     /// when never saved.</summary>
     Task<string?> GetStartProtocolJsonAsync(StartProtocolKind kind, CancellationToken cancellationToken = default);

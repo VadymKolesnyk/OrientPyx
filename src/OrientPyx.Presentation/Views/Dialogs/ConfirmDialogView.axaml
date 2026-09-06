@@ -42,13 +42,15 @@
                     Padding="22,14">
                 <StackPanel Classes="dialog-actions"
                             Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+                    <!-- Hidden for a plain message box (IsMessage), which only needs the OK button. -->
                     <Button Content="{Binding CancelText}"
                             Classes="ghost"
                             IsCancel="True"
+                            IsVisible="{Binding ShowCancel}"
                             Command="{Binding CancelCommand}" />
                     <Button Name="ConfirmButton"
                             Content="{Binding ConfirmText}"
-                            Classes="danger"
+                            Classes.danger="{Binding ShowCancel}"
                             IsDefault="True"
                             Command="{Binding ConfirmCommand}" />
                 </StackPanel>

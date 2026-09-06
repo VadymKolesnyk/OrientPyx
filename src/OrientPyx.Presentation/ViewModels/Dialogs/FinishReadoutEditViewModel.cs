@@ -12,9 +12,15 @@ namespace OrientPyx.Presentation.ViewModels.Dialogs;
 
 /// <summary>
 /// Modal for editing one logged finish read-out: reassign the chip to a different participant (search by
-/// bib / ПІБ), edit the start and finish times, edit each control-point punch (code + time, add/remove
-/// rows), and set a manual status override. The chip number itself is shown read-only — it is reassigned
-/// through the holder dropdown, never retyped.
+/// bib / ПІБ) <b>or create a brand-new one on the spot</b>, edit the start and finish times, edit each
+/// control-point punch (code + time, add/remove rows), and set a manual status override. The chip number
+/// itself is shown read-only — it is reassigned through the holder dropdown, never retyped.
+///
+/// The holder dropdown carries a leading «+ Створити нового учасника» option; picking it swaps the block
+/// for an identity form (ПІБ + group required, number / birth date / region / club / ДЮСШ / rank /
+/// coach optional — the fields the protocols print). A bib number already held by another competitor is
+/// rejected inline (numbers are unique per competition). Saving then creates the competitor, adds them
+/// to the day in the chosen group, and hands them the chip.
 ///
 /// Times are edited in <b>local time</b> as <c>hh:mm:ss</c> (an empty time clears it), reusing the
 /// participant grid's lenient <see cref="StartTimeFormat"/> parser — so "9:30" / "9:99" auto-resolve and
@@ -39,6 +45,9 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     // on one date). Taken from the finish, else the start, else the first timed punch, in local time;
     // today's local date when the read carried no time at all.
     private readonly DateTime _anchorDate;
+    // The competition's bib numbers already handed out, mapped to their holder's name — snapshotted when
+    // the modal opened, so the new-participant form can flag a duplicate as it is typed.
+    private readonly IReadOnlyDictionary<string, string> _takenNumbers;
 
     public FinishReadoutEditViewModel(
         ILocalizationService localization,
@@ -48,6 +57,7 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     {
         Localization = localization;
         _id = data.Id;
+        _takenNumbers = data.TakenNumbers;
         _titleKey = titleKey;
         _showCancelAll = showCancelAll;
 
@@ -65,16 +75,37 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
             data.Punches.Select(MakePunch));
         SortPunches();
 
-        // Reassign dropdown: a leading "(не змінювати)" sentinel, then each day member. Opens on the
-        // current holder when the chip is recognised, else on "keep".
+        // Reassign dropdown: a leading "(не змінювати)" sentinel, then the "create a new participant"
+        // action, then each day member. Opens on the current holder when the chip is recognised, else on
+        // "keep". The "create" entry is offered only when the day has a group to put the newcomer in.
         var keep = ReassignOption.Keep(localization.Get("FinishRead.Edit.KeepHolder"));
         var options = new List<ReassignOption> { keep };
+        if (data.Groups.Count > 0)
+            options.Add(ReassignOption.CreateNew(localization.Get("FinishRead.Edit.CreateNew")));
         foreach (var p in data.Participants)
             options.Add(ReassignOption.ForParticipant(p));
         Participants = new ObservableCollection<ReassignOption>(options);
         _selectedParticipant = data.CurrentHolderId is { } id
             ? Participants.FirstOrDefault(o => o.ParticipantId == id) ?? keep
             : keep;
+        _chosen = _selectedParticipant;
+
+        // Lookups for the new-participant form. Region / club / ДЮСШ / rank each get a leading "(none)"
+        // sentinel; the group list has none — a group is mandatory, so it opens on the first one.
+        Groups = new ObservableCollection<FinishReadoutLookupOption>(data.Groups);
+        _newGroup = Groups.FirstOrDefault();
+        _chosenGroup = _newGroup;
+        Regions = BuildOptional(data.Regions, localization.Get("Participants.Region.None"));
+        _newRegion = Regions[0];
+        Clubs = BuildOptional(data.Clubs, localization.Get("Participants.Club.None"));
+        _newClub = Clubs[0];
+        Dusshes = BuildOptional(data.Dusshes, localization.Get("Participants.Dussh.None"));
+        _newDussh = Dusshes[0];
+
+        var rankOptions = new List<string> { localization.Get("Participants.Rank.None") };
+        rankOptions.AddRange(data.Ranks);
+        Ranks = new ObservableCollection<string>(rankOptions);
+        _newRank = Ranks[0];
 
         // Status dropdown: a leading "(автоматично)" = clear the override, then each settable status.
         Statuses = new ObservableCollection<FinishStatusOption>(FinishStatusOptions.Build(localization));
@@ -93,7 +124,29 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
             OnPropertyChanged(nameof(StatusLabel));
             OnPropertyChanged(nameof(TimeHint));
             OnPropertyChanged(nameof(CancelAllLabel));
+            OnPropertyChanged(nameof(NewFullNameLabel));
+            OnPropertyChanged(nameof(NewGroupLabel));
+            OnPropertyChanged(nameof(NewNumberLabel));
+            OnPropertyChanged(nameof(NewBirthDateLabel));
+            OnPropertyChanged(nameof(NumberError));
+            OnPropertyChanged(nameof(NewRegionLabel));
+            OnPropertyChanged(nameof(NewClubLabel));
+            OnPropertyChanged(nameof(NewDusshLabel));
+            OnPropertyChanged(nameof(NewRankLabel));
+            OnPropertyChanged(nameof(NewCoachLabel));
+            OnPropertyChanged(nameof(NewParticipantHint));
         };
+    }
+
+    // An optional lookup dropdown: a "(none)" sentinel (null id) followed by the rows themselves.
+    private static ObservableCollection<LookupChoice> BuildOptional(
+        IReadOnlyList<FinishReadoutLookupOption> rows,
+        string noneLabel)
+    {
+        var list = new List<LookupChoice> { LookupChoice.None(noneLabel) };
+        foreach (var row in rows)
+            list.Add(new LookupChoice(row.Id, row.Name));
+        return new ObservableCollection<LookupChoice>(list);
     }
 
     public ILocalizationService Localization { get; }
@@ -160,8 +213,146 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     /// <summary>The reassign-chip choices: a "keep" sentinel, then each day member.</summary>
     public ObservableCollection<ReassignOption> Participants { get; }
 
+    /// <summary>
+    /// The chosen holder. Nullable because <see cref="Controls.SearchableComboBox"/> swaps its
+    /// <c>ItemsSource</c> for a filtered copy while the user types, which momentarily drops the current
+    /// item out of the list and makes Avalonia write a null back — <see cref="Chosen"/> keeps reading the
+    /// last real choice through that window.
+    /// </summary>
     [ObservableProperty]
-    private ReassignOption _selectedParticipant;
+    private ReassignOption? _selectedParticipant;
+
+    // The last non-null selection: what the modal actually acts on. A filter-induced null never becomes
+    // "keep the current holder", which would silently undo the operator's pick mid-search.
+    private ReassignOption _chosen;
+
+    /// <summary>The effective holder choice — the selection, ignoring a transient search-filter null.</summary>
+    private ReassignOption Chosen => SelectedParticipant ?? _chosen;
+
+    // Picking "+ create a new participant" reveals the identity form (and re-checks whether Save is
+    // allowed, since the form then has its own required fields).
+    partial void OnSelectedParticipantChanged(ReassignOption? value)
+    {
+        if (value is not null)
+            _chosen = value;
+        OnPropertyChanged(nameof(IsCreatingNew));
+        ConfirmCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>True while the "create a new participant" form is showing instead of a plain reassignment.</summary>
+    public bool IsCreatingNew => Chosen.IsCreateNew;
+
+    /// <summary>The day's groups a new participant can be put in (mandatory — no "(none)" entry).</summary>
+    public ObservableCollection<FinishReadoutLookupOption> Groups { get; }
+
+    /// <summary>The competition's regions, with a leading "(none)".</summary>
+    public ObservableCollection<LookupChoice> Regions { get; }
+
+    /// <summary>The competition's clubs, with a leading "(none)".</summary>
+    public ObservableCollection<LookupChoice> Clubs { get; }
+
+    /// <summary>The competition's sports schools (ДЮСШ), with a leading "(none)".</summary>
+    public ObservableCollection<LookupChoice> Dusshes { get; }
+
+    /// <summary>The app-level rank names, with a leading "(none)" first entry. Rank is stored as text.</summary>
+    public ObservableCollection<string> Ranks { get; }
+
+    /// <summary>New participant: full name (ПІБ). Required — Save stays disabled while it is blank.</summary>
+    [ObservableProperty]
+    private string _newFullName = string.Empty;
+
+    partial void OnNewFullNameChanged(string value) => ConfirmCommand.NotifyCanExecuteChanged();
+
+    /// <summary>
+    /// New participant: group on the current day. Required. Nullable for the searchable-combo reason
+    /// above — <see cref="ChosenGroup"/> is what the form actually saves.
+    /// </summary>
+    [ObservableProperty]
+    private FinishReadoutLookupOption? _newGroup;
+
+    // The last non-null group pick, so a mid-search null neither clears the choice nor greys out Save.
+    private FinishReadoutLookupOption? _chosenGroup;
+
+    /// <summary>The effective group — the selection, ignoring a transient search-filter null.</summary>
+    private FinishReadoutLookupOption? ChosenGroup => NewGroup ?? _chosenGroup;
+
+    partial void OnNewGroupChanged(FinishReadoutLookupOption? value)
+    {
+        if (value is not null)
+            _chosenGroup = value;
+        ConfirmCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// New participant: bib number (optional). Numbers are unique per competition, so one already held
+    /// by somebody else is rejected — <see cref="NumberError"/> names the holder and Save stays disabled.
+    /// </summary>
+    [ObservableProperty]
+    private string _newNumber = string.Empty;
+
+    partial void OnNewNumberChanged(string value)
+    {
+        OnPropertyChanged(nameof(NumberError));
+        OnPropertyChanged(nameof(HasNumberError));
+        ConfirmCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// The duplicate-number message ("Номер уже в «X»"), or empty when the typed number is free / blank.
+    /// Checked against the competition's numbers snapshot taken when the modal opened.
+    /// </summary>
+    public string NumberError
+    {
+        get
+        {
+            var number = NewNumber.Trim();
+            return number.Length > 0 && _takenNumbers.TryGetValue(number, out var holder)
+                ? string.Format(Localization.Get("FinishRead.Edit.New.NumberTaken"), holder)
+                : string.Empty;
+        }
+    }
+
+    /// <summary>True while <see cref="NumberError"/> has something to show. Drives the warning line.</summary>
+    public bool HasNumberError => NumberError.Length > 0;
+
+    /// <summary>New participant: date of birth (optional).</summary>
+    [ObservableProperty]
+    private DateTimeOffset? _newBirthDate;
+
+    // The optional lookups are nullable for the same reason as SelectedParticipant: the searchable combo
+    // writes a null while its filtered list momentarily excludes the current item. Here a null simply
+    // reads as "(none)", which is what the sentinel means anyway — no separate shadow field needed.
+
+    /// <summary>New participant: region (optional); null / the sentinel both mean "none".</summary>
+    [ObservableProperty]
+    private LookupChoice? _newRegion;
+
+    /// <summary>New participant: club (optional); null / the sentinel both mean "none".</summary>
+    [ObservableProperty]
+    private LookupChoice? _newClub;
+
+    /// <summary>New participant: ДЮСШ (optional); null / the sentinel both mean "none".</summary>
+    [ObservableProperty]
+    private LookupChoice? _newDussh;
+
+    /// <summary>New participant: sports rank (optional); the first entry (and null) mean "none".</summary>
+    [ObservableProperty]
+    private string? _newRank;
+
+    /// <summary>New participant: coach (optional).</summary>
+    [ObservableProperty]
+    private string _newCoach = string.Empty;
+
+    public string NewFullNameLabel => Localization.Get("FinishRead.Edit.New.FullName");
+    public string NewGroupLabel => Localization.Get("FinishRead.Edit.New.Group");
+    public string NewNumberLabel => Localization.Get("FinishRead.Edit.New.Number");
+    public string NewBirthDateLabel => Localization.Get("FinishRead.Edit.New.BirthDate");
+    public string NewRegionLabel => Localization.Get("FinishRead.Edit.New.Region");
+    public string NewClubLabel => Localization.Get("FinishRead.Edit.New.Club");
+    public string NewDusshLabel => Localization.Get("FinishRead.Edit.New.Dussh");
+    public string NewRankLabel => Localization.Get("FinishRead.Edit.New.Rank");
+    public string NewCoachLabel => Localization.Get("FinishRead.Edit.New.Coach");
+    public string NewParticipantHint => Localization.Get("FinishRead.Edit.New.Hint");
 
     /// <summary>The status choices: an "auto" sentinel (clears the override), then each settable status.</summary>
     public ObservableCollection<FinishStatusOption> Statuses { get; }
@@ -233,7 +424,16 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
+    /// <summary>
+    /// Save is blocked only while the "create a new participant" form is open and either a required field
+    /// (ПІБ / group) is missing or the typed bib number is already held by somebody else — a plain edit /
+    /// reassignment always saves.
+    /// </summary>
+    private bool CanConfirm() =>
+        !IsCreatingNew ||
+        (NewFullName.Trim().Length > 0 && ChosenGroup is not null && !HasNumberError);
+
+    [RelayCommand(CanExecute = nameof(CanConfirm))]
     private void Confirm()
     {
         var punches = Punches
@@ -249,8 +449,33 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
             FinishTime = Combine(FinishTimeOfDay),
             Punches = punches,
             ManualStatus = SelectedStatus.Status,
-            ReassignToParticipantId = SelectedParticipant.ParticipantId
+            ReassignToParticipantId = Chosen.ParticipantId,
+            NewParticipant = BuildNewParticipant()
         });
+    }
+
+    // The filled-in new-participant form, or null when the operator picked an existing runner / left the
+    // holder unchanged. CanConfirm has already guaranteed the required fields.
+    private NewParticipantData? BuildNewParticipant()
+    {
+        if (!IsCreatingNew || ChosenGroup is not { } group)
+            return null;
+
+        // Rank's first entry is the "(none)" placeholder, so it (like a null) maps to a blank rank.
+        var rank = NewRank is null || ReferenceEquals(NewRank, Ranks[0]) ? string.Empty : NewRank;
+
+        return new NewParticipantData
+        {
+            FullName = NewFullName.Trim(),
+            GroupId = group.Id,
+            Number = NewNumber.Trim(),
+            BirthDate = NewBirthDate,
+            RegionId = NewRegion?.Id,
+            ClubId = NewClub?.Id,
+            DusshId = NewDussh?.Id,
+            Rank = rank,
+            Coach = NewCoach.Trim()
+        };
     }
 
     [RelayCommand]
@@ -338,24 +563,32 @@ public sealed partial class PunchEditViewModel : ObservableObject
 }
 
 /// <summary>
-/// One choice in the reassign-chip dropdown: a leading "keep current holder" sentinel
-/// (<see cref="ParticipantId"/> null) or a specific day member.
+/// One choice in the reassign-chip dropdown: the leading "keep current holder" sentinel
+/// (<see cref="ParticipantId"/> null), the "+ create a new participant" action
+/// (<see cref="IsCreateNew"/>), or a specific day member.
 /// </summary>
 public sealed class ReassignOption
 {
-    private ReassignOption(Guid? participantId, string label)
+    private ReassignOption(Guid? participantId, string label, bool isCreateNew = false)
     {
         ParticipantId = participantId;
         Label = label;
+        IsCreateNew = isCreateNew;
     }
 
-    /// <summary>The participant to reassign to, or null for the "keep" sentinel.</summary>
+    /// <summary>The participant to reassign to, or null for the "keep" / "create new" sentinels.</summary>
     public Guid? ParticipantId { get; }
 
     /// <summary>The text shown in the dropdown.</summary>
     public string Label { get; }
 
+    /// <summary>True for the "+ create a new participant" entry, which reveals the identity form.</summary>
+    public bool IsCreateNew { get; }
+
     public static ReassignOption Keep(string label) => new(null, label);
+
+    /// <summary>The "+ create a new participant" entry.</summary>
+    public static ReassignOption CreateNew(string label) => new(null, label, isCreateNew: true);
 
     public static ReassignOption ForParticipant(FinishReadoutParticipantOption p)
     {
@@ -365,3 +598,27 @@ public sealed class ReassignOption
     }
 }
 
+
+/// <summary>
+/// One choice in an optional lookup dropdown of the "create a new participant" form (region / club /
+/// ДЮСШ): a competition-level row, or the leading "(none)" sentinel with a null <see cref="Id"/>.
+/// </summary>
+public sealed class LookupChoice
+{
+    public LookupChoice(Guid id, string label)
+    {
+        Id = id;
+        Label = label;
+    }
+
+    private LookupChoice(string label) => Label = label;
+
+    /// <summary>The row's id, or null for the "(none)" sentinel.</summary>
+    public Guid? Id { get; }
+
+    /// <summary>The text shown in the dropdown.</summary>
+    public string Label { get; }
+
+    /// <summary>The "(none)" sentinel: leaves the field unset.</summary>
+    public static LookupChoice None(string label) => new(label);
+}

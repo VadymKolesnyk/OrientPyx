@@ -25,6 +25,15 @@ public sealed class StartProtocolSettings
     /// <summary>The columns in on-page order. Defaults differ by kind (see the factory methods below).</summary>
     public List<StartProtocolColumnSetting> Columns { get; set; } = RegularDefaultColumns();
 
+    /// <summary>Whether the data table is printed with a full border grid (outer frame + inside rules). When
+    /// <c>false</c> (the default for this protocol) only the header row is boxed and the data rows stay
+    /// border-less. Honoured by both the .docx export and the on-screen preview.</summary>
+    public bool TableBorders { get; set; }
+
+    /// <summary>Whether the page footer (нижній колонтитул — program name, generation time, page number) is
+    /// printed at the bottom of every page. Default <c>true</c>.</summary>
+    public bool PageFooter { get; set; } = true;
+
     // ── Header text. Blank ⇒ fall back to the competition's own value at build time. ────────────────
 
     /// <summary>Competition-name line, printed centred above the title. Blank ⇒ the current competition's name.</summary>

@@ -55,6 +55,9 @@
         <DataTemplate DataType="dialogs:ChangeDayNumberViewModel">
             <dialogViews:ChangeDayNumberView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:FileLockedViewModel">
+            <dialogViews:FileLockedView />
+        </DataTemplate>
         <DataTemplate DataType="dialogs:AddRegionViewModel">
             <dialogViews:AddRegionView />
         </DataTemplate>

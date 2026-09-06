@@ -1540,41 +1540,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     public Task DeleteParticipantAsync(Guid participantId, CancellationToken cancellationToken = default)
         => _eventStore.DeleteParticipantAsync(FolderPath, participantId, cancellationToken);
 
-    public async Task<Guid> SetParticipantDayGroupAsync(Guid participantId, Guid dayId, Guid? groupId, CancellationToken cancellationToken = default)
-    {
-        var folder = FolderPath;
-        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
-        var existing = links.FirstOrDefault(l => l.ParticipantId == participantId);
-
-        if (existing is null)
-        {
-            // Joining the day: create the link carrying the chosen group.
-            var nextOrder = links.Count == 0 ? 1 : links.Max(l => l.Order) + 1;
-            var link = new ParticipantDay
-            {
-                EventDayId = dayId,
-                ParticipantId = participantId,
-                Order = nextOrder,
-                GroupId = groupId
-            };
-            await _eventStore.AddParticipantDayAsync(folder, link, cancellationToken);
-            return link.Id;
-        }
-
-        // Already a member: update only the group, preserving the day's chip/order.
-        await _eventStore.UpdateParticipantDayAsync(folder, new ParticipantDay
-        {
-            Id = existing.Id,
-            EventDayId = dayId,
-            ParticipantId = participantId,
-            Order = existing.Order,
-            GroupId = groupId,
-            Chip = existing.Chip,
-            StartTime = existing.StartTime,
-            OutOfCompetition = existing.OutOfCompetition
-        }, cancellationToken);
-        return existing.Id;
-    }
+    // Joining a day and changing a group are the same operation here; the store does the look-up and the
+    // insert in one transaction so two concurrent edits can't each create a link for the same (day, person).
+    public Task<Guid> SetParticipantDayGroupAsync(Guid participantId, Guid dayId, Guid? groupId, CancellationToken cancellationToken = default)
+        => _eventStore.SetParticipantDayGroupAsync(FolderPath, participantId, dayId, groupId, cancellationToken);
 
     public async Task SetParticipantDayChipAsync(Guid participantId, Guid dayId, string chip, CancellationToken cancellationToken = default)
     {
@@ -1720,20 +1689,22 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             return new ResultProtocolData([]);
 
         var folder = FolderPath;
-        var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        // One transactional read: every list below is from the same snapshot (see GetDaySnapshotAsync).
+        var snapshot = await _eventStore.GetDaySnapshotAsync(folder, dayId, cancellationToken);
+        var days = snapshot.Days;
         var day = days.FirstOrDefault(d => d.Id == dayId);
         if (day is null)
             return new ResultProtocolData([]);
 
-        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
-        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
-        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
-        var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
-        var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
-        var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
-        var dusshes = await _eventStore.GetDusshesAsync(folder, cancellationToken);
-        var controlPoints = await _eventStore.GetControlPointsAsync(folder, dayId, cancellationToken);
-        var info = await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken);
+        var links = DistinctLinks(snapshot.Links);
+        var participants = snapshot.Participants;
+        var groups = snapshot.Groups;
+        var settings = snapshot.GroupDaySettings;
+        var regions = snapshot.Regions;
+        var clubs = snapshot.Clubs;
+        var dusshes = snapshot.Dusshes;
+        var controlPoints = snapshot.ControlPoints;
+        var info = snapshot.Info;
 
         var byParticipant = participants.ToDictionary(p => p.Id);
         var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
@@ -1808,6 +1779,20 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         }
 
         return new ResultProtocolData(sections, OfficialsFrom(info));
+    }
+
+    // Defensive guard for the day's participant links: keeps the FIRST link per participant, dropping any
+    // repeat. A participant can only run a day once, so a second link is always bad data — either a legacy
+    // duplicate row written before the unique index existed, or (historically) rows mixed from two different
+    // read snapshots. Without this a duplicate silently printed the runner twice on the protocol.
+    private static List<ParticipantDay> DistinctLinks(IReadOnlyList<ParticipantDay> links)
+    {
+        var seen = new HashSet<Guid>(links.Count);
+        var result = new List<ParticipantDay>(links.Count);
+        foreach (var link in links)
+            if (seen.Add(link.ParticipantId))
+                result.Add(link);
+        return result;
     }
 
     // The effective course-setter for a group on a day: the group's own override (when its name is non-blank),
@@ -2141,14 +2126,16 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             return new StartProtocolData([]);
 
         var folder = FolderPath;
-        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
-        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
-        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
-        var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
-        var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
-        var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
-        var dusshes = await _eventStore.GetDusshesAsync(folder, cancellationToken);
-        var info = await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken);
+        // One transactional read: every list below is from the same snapshot (see GetDaySnapshotAsync).
+        var snapshot = await _eventStore.GetDaySnapshotAsync(folder, dayId, cancellationToken);
+        var links = DistinctLinks(snapshot.Links);
+        var participants = snapshot.Participants;
+        var groups = snapshot.Groups;
+        var settings = snapshot.GroupDaySettings;
+        var regions = snapshot.Regions;
+        var clubs = snapshot.Clubs;
+        var dusshes = snapshot.Dusshes;
+        var info = snapshot.Info;
 
         var byParticipant = participants.ToDictionary(p => p.Id);
         var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
@@ -3283,12 +3270,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             return new StartOrderData([]);
 
         var folder = FolderPath;
-        var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
-        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
-        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
-        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
-        var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
-        var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
+        // One transactional read: every list below is from the same snapshot (see GetDaySnapshotAsync).
+        var snapshot = await _eventStore.GetDaySnapshotAsync(folder, dayId, cancellationToken);
+        var settings = snapshot.GroupDaySettings;
+        var groups = snapshot.Groups;
+        var links = DistinctLinks(snapshot.Links);
+        var participants = snapshot.Participants;
+        var regions = snapshot.Regions;
+        var clubs = snapshot.Clubs;
 
         var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
         var byParticipant = participants.ToDictionary(p => p.Id);
@@ -3388,20 +3377,26 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         var folder = FolderPath;
         var dayId = CurrentDayId;
+        // The read-out log itself stays a separate read: the background poller appends to it continuously,
+        // and showing the newest punches matters more here than pinning it to the snapshot below.
         var readouts = await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
 
+        // Everything the log resolves against comes from ONE transactional read, so participants, groups,
+        // day settings and control points can't disagree with each other (see GetDaySnapshotAsync).
+        var snapshot = await _eventStore.GetDaySnapshotAsync(folder, dayId, cancellationToken);
+
         // Resolve each chip against the day's participants (chip → number/name/group), case-insensitive.
-        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
-        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
-        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var links = DistinctLinks(snapshot.Links);
+        var participants = snapshot.Participants;
+        var groups = snapshot.Groups;
         var byId = participants.ToDictionary(p => p.Id);
         var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
 
         // For the order-check: each group's prescribed course + settings, and the day's start/finish
         // control codes (so they're dropped from both the expected course and the punched sequence).
-        var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
+        var settings = snapshot.GroupDaySettings;
         var settingsByGroup = settings.ToDictionary(s => s.GroupId);
-        var controlPoints = await _eventStore.GetControlPointsAsync(folder, dayId, cancellationToken);
+        var controlPoints = snapshot.ControlPoints;
         var startFinishCodes = new HashSet<string>(
             controlPoints
                 .Where(c => c.Type is ControlPointType.Start or ControlPointType.Finish)
@@ -4183,6 +4178,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var holder = links.FirstOrDefault(l =>
             string.Equals(l.Chip.Trim(), readout.ChipNumber.Trim(), StringComparison.OrdinalIgnoreCase));
 
+        // Lookups for the modal's "create a new participant" form: the day's groups (the one mandatory
+        // field besides ПІБ) plus the competition's regions / clubs / ДЮСШ and the app-level rank names.
+        var dayGroups = await GetGroupsForDayAsync(dayId, cancellationToken);
+        var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
+        var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
+        var dusshes = await _eventStore.GetDusshesAsync(folder, cancellationToken);
+        var ranks = await _appStore.GetRanksAsync(cancellationToken);
+
         return new FinishReadoutEditData
         {
             Id = readout.Id,
@@ -4193,7 +4196,32 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Status = effectiveStatus,
             HasManualStatus = readout.ManualStatus is not null,
             Participants = options,
-            CurrentHolderId = holder?.ParticipantId
+            CurrentHolderId = holder?.ParticipantId,
+            Groups = dayGroups
+                .Select(g => new FinishReadoutLookupOption(g.GroupId, g.Name))
+                .ToList(),
+            Regions = regions
+                .OrderBy(r => r.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(r => new FinishReadoutLookupOption(r.Id, r.Name))
+                .ToList(),
+            Clubs = clubs
+                .OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(c => new FinishReadoutLookupOption(c.Id, c.Name))
+                .ToList(),
+            Dusshes = dusshes
+                .OrderBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(d => new FinishReadoutLookupOption(d.Id, d.Name))
+                .ToList(),
+            Ranks = ranks
+                .Where(r => !string.IsNullOrWhiteSpace(r.Name))
+                .Select(r => r.Name)
+                .ToList(),
+            // Every bib already handed out in the competition (numbers are competition-level), so the
+            // new-participant form can flag a duplicate as it is typed and name who holds it.
+            TakenNumbers = participants
+                .Where(p => p.Number.Trim().Length > 0)
+                .GroupBy(p => p.Number.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().FullName, StringComparer.OrdinalIgnoreCase)
         };
     }
 
@@ -4219,9 +4247,16 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         readout.ManualStatus = edit.ManualStatus;
         await _eventStore.UpdateFinishReadoutAsync(folder, readout, cancellationToken);
 
+        // The operator filled in the "new participant" form: create the competitor, add them to the day in
+        // the chosen group, and treat them as the reassign target below — so the chip lands on them exactly
+        // like on an existing runner.
+        var targetParticipantId = edit.ReassignToParticipantId;
+        if (edit.NewParticipant is { } newcomer)
+            targetParticipantId = await CreateParticipantForDayAsync(folder, dayId, newcomer, cancellationToken);
+
         // (Re)assign this read-out's chip to the chosen participant on the day, taking it from any previous
         // holder so the chip stays unique per day. The caller has already confirmed the reassignment.
-        if (edit.ReassignToParticipantId is { } targetId)
+        if (targetParticipantId is { } targetId)
             await ReassignParticipantDayChipAsync(targetId, dayId, readout.ChipNumber, cancellationToken);
 
         // Propagate the chosen status onto the participant who now holds this chip on the day, so the manual
@@ -4234,6 +4269,47 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             string.Equals(l.Chip.Trim(), readout.ChipNumber, StringComparison.OrdinalIgnoreCase));
         if (holder is not null)
             await SetParticipantDayResultStatusAsync(holder.ParticipantId, dayId, edit.ManualStatus, cancellationToken);
+    }
+
+    // Creates a competitor from the unknown-chip modal's "new participant" form and adds them to the day
+    // in the chosen group. Only ПІБ + group are required; the rest are the optional identity fields that
+    // show up in the protocols. A bib number already taken by someone else is dropped (left blank) rather
+    // than duplicated — same rule as the participant grid. Returns the new participant's id.
+    private async Task<Guid> CreateParticipantForDayAsync(
+        string folder,
+        Guid dayId,
+        NewParticipantData data,
+        CancellationToken cancellationToken)
+    {
+        var existing = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var number = (data.Number ?? string.Empty).Trim();
+        if (number.Length > 0 && existing.Any(p =>
+                string.Equals(p.Number.Trim(), number, StringComparison.OrdinalIgnoreCase)))
+            number = string.Empty;
+
+        var participant = new Participant
+        {
+            FullName = (data.FullName ?? string.Empty).Trim(),
+            Number = number,
+            Rank = (data.Rank ?? string.Empty).Trim(),
+            Coach = (data.Coach ?? string.Empty).Trim(),
+            BirthDate = data.BirthDate,
+            RegionId = data.RegionId,
+            ClubId = data.ClubId,
+            DusshId = data.DusshId
+        };
+        await _eventStore.AddParticipantAsync(folder, participant, cancellationToken);
+
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        await _eventStore.AddParticipantDayAsync(folder, new ParticipantDay
+        {
+            EventDayId = dayId,
+            ParticipantId = participant.Id,
+            Order = links.Count == 0 ? 1 : links.Max(l => l.Order) + 1,
+            GroupId = data.GroupId
+        }, cancellationToken);
+
+        return participant.Id;
     }
 
     // Stable signature of a read-out record's content, so re-reading the same physical row is detected

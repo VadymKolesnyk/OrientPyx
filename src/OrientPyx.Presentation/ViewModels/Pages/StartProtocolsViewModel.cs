@@ -43,6 +43,14 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
     private StartProtocolData? _previewData;
     private CompetitionInfo? _competitionInfo;
 
+    /// <summary>
+    /// Generation counter guarding the day-template load. Re-entering the page (or switching day) while an
+    /// earlier load is still reading the database starts a second load; without this the two would race and
+    /// the slower one would win, overwriting <see cref="_previewData"/> with stale data. Each load takes the
+    /// next number and, on completion, applies its result only if it is still the newest.
+    /// </summary>
+    private int _loadGeneration;
+
     public StartProtocolsViewModel(
         ILocalizationService localization,
         ICompetitionEditorService editor,
@@ -50,7 +58,8 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         IAppSettingsService appSettings,
         IStartProtocolBuilder builder,
         IResultProtocolWriter writer,
-        IBusyService busy)
+        IBusyService busy,
+        IExportFileSaver fileSaver)
         : base(localization)
     {
         _editor = editor;
@@ -59,6 +68,7 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         _builder = builder;
         _writer = writer;
         _busy = busy;
+        FileSaver = fileSaver;
 
         // Singleton VM: reload the day list + template on a competition/day change (marshal to UI).
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
@@ -74,6 +84,10 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
     public ProtocolPreviewViewModel Preview { get; } = new();
 
     // The nav/title keys switch with the kind so the shell tab + heading read correctly for each protocol.
+
+    /// <summary>Writes the export to the file the user picked (handles a target locked by Word). Used by the view.</summary>
+    public IExportFileSaver FileSaver { get; }
+
     public override string NavKey => Kind == StartProtocolKind.Judges ? "Nav.StartProtocolJudges" : "Nav.StartProtocol";
     public override string TitleKey => Kind == StartProtocolKind.Judges ? "Page.StartProtocolJudges.Title" : "Page.StartProtocol.Title";
     public override string TextKey => Kind == StartProtocolKind.Judges ? "Page.StartProtocolJudges.Text" : "Page.StartProtocol.Text";
@@ -104,6 +118,16 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
 
     [ObservableProperty]
     private bool _isLandscape;
+
+    /// <summary>«Друк таблиці» — print the data table inside a full border grid. Off by default (only the
+    /// header row is boxed); saved with the rest of the template.</summary>
+    [ObservableProperty]
+    private bool _tableBorders;
+
+    /// <summary>«Друк колонтитулів» — print the page footer (program name, generation time, page number) at
+    /// the bottom of every page. On by default; saved with the rest of the template.</summary>
+    [ObservableProperty]
+    private bool _pageFooter = true;
 
     [ObservableProperty]
     private string _competitionName = string.Empty;
@@ -184,12 +208,19 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
 
     public async Task LoadAsync()
     {
+        var generation = ++_loadGeneration;
+
         var (days, info) = await _busy.RunAsync(async () =>
         {
             var d = await _editor.GetDaysAsync();
             var i = await _editor.GetInfoAsync();
             return (d, i);
         });
+
+        // Re-entered (navigated back to the page, or the day switched) while this read was in flight —
+        // the newer load owns the state now, so leave it alone.
+        if (generation != _loadGeneration)
+            return;
 
         _syncingDay = true;
         try
@@ -215,6 +246,8 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
     // seeds header defaults, fetches the day's start data, and renders the preview.
     private async Task LoadDayTemplateAsync()
     {
+        var generation = ++_loadGeneration;
+
         if (SelectedDay?.Day is not { } day)
         {
             _previewData = null;
@@ -232,6 +265,11 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
             return (s, d);
         });
 
+        // A newer load started while this one was reading — its data is the current one, so drop ours
+        // rather than overwriting the preview with what the database looked like a moment ago.
+        if (generation != _loadGeneration)
+            return;
+
         _previewData = data;
         ApplySettings(settings);
         ResolveHeaderPlaceholders(_competitionInfo);
@@ -244,6 +282,8 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         try
         {
             IsLandscape = settings.Orientation == ProtocolOrientation.Landscape;
+            TableBorders = settings.TableBorders;
+            PageFooter = settings.PageFooter;
             CompetitionName = settings.CompetitionName;
             Title = settings.Title;
             Subtitle = settings.Subtitle;
@@ -431,6 +471,9 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         var settings = BuildDocumentSettings();
 
         Preview.IsLandscape = settings.Orientation == ProtocolOrientation.Landscape;
+        Preview.ShowTableBorders = settings.TableBorders;
+        Preview.ShowFooter = settings.PageFooter;
+        ApplyPreviewFooter();
         Preview.CompetitionName = settings.CompetitionName;
         Preview.Title = settings.Title.Length > 0 ? settings.Title : Localization.Get(DefaultTitleKey);
         Preview.Subtitle = settings.Subtitle;
@@ -480,6 +523,8 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
     private StartProtocolSettings BuildSettings() => new()
     {
         Orientation = IsLandscape ? ProtocolOrientation.Landscape : ProtocolOrientation.Portrait,
+        TableBorders = TableBorders,
+        PageFooter = PageFooter,
         CompetitionName = CompetitionName?.Trim() ?? string.Empty,
         Title = Title?.Trim() ?? string.Empty,
         Subtitle = Subtitle?.Trim() ?? string.Empty,
@@ -567,19 +612,15 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         _ => null
     };
 
-    private string SuggestedFileName(EventDay day)
-    {
-        var competition = _session.CurrentEvent?.Name;
-        if (string.IsNullOrWhiteSpace(competition))
-            competition = Localization.Get("Protocols.DefaultName");
-        var part = Localization.Get(Kind == StartProtocolKind.Judges
-            ? "StartProtocols.NamePart.Judges" : "StartProtocols.NamePart.Regular");
-        var stamp = DateTime.Now.ToString("yyyy-MM-dd");
-        var baseName = $"{competition} — {part} {Localization.Get("Header.Day")} {day.Number} {stamp}";
-        foreach (var invalid in System.IO.Path.GetInvalidFileNameChars())
-            baseName = baseName.Replace(invalid, '_');
-        return $"{baseName}.docx";
-    }
+    // "Стартовий протокол - <competition> - День N - <day date>.docx" (see ExportFileName).
+    private string SuggestedFileName(EventDay day) => ExportFileName.Build(
+        Localization,
+        Kind == StartProtocolKind.Judges
+            ? "StartProtocols.NamePart.Judges"
+            : "StartProtocols.NamePart.Regular",
+        _session.CurrentEvent?.Name,
+        "docx",
+        day);
 
     // The preview's header is the SAME two-way-bound text boxes, so a header-text edit updates the mock-up with
     // no rebuild — typing must not re-run the (expensive) builder or re-render the table, or every keystroke
@@ -601,10 +642,40 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         AutoSave();
     }
 
+    // The two print toggles change only how the table/page is decorated, so the preview flags are pushed
+    // directly (no builder run) and the template is auto-saved to the current day.
+    partial void OnTableBordersChanged(bool value)
+    {
+        if (_applyingSettings)
+            return;
+        Preview.ShowTableBorders = value;
+        AutoSave();
+    }
+
+    partial void OnPageFooterChanged(bool value)
+    {
+        if (_applyingSettings)
+            return;
+        Preview.ShowFooter = value;
+        AutoSave();
+    }
+
     partial void OnCompetitionNameChanged(string value) => OnHeaderEdited();
     partial void OnTitleChanged(string value) => OnHeaderEdited();
     partial void OnSubtitleChanged(string value) => OnHeaderEdited();
     partial void OnVenueChanged(string value) => OnHeaderEdited();
     partial void OnCompetitionTypeChanged(string value) => OnHeaderEdited();
     partial void OnDateTextChanged(string value) => OnHeaderEdited();
+    // Fills the preview's footer line with the same three fields the .docx колонтитул prints — the software
+    // name, the generation stamp, and the page-number line ("Сторінка 1"; the mock-up is always page one).
+    private void ApplyPreviewFooter()
+    {
+        Preview.FooterSoftware = Localization.Get("Protocols.Footer.Software");
+        var generatedLabel = Localization.Get("Protocols.Footer.Generated");
+        var generated = DateTime.Now.ToString("dd.MM.yyyy HH:mm");
+        Preview.FooterGenerated = generatedLabel.Length > 0 ? $"{generatedLabel}: {generated}" : generated;
+        var pageLabel = Localization.Get("Protocols.Footer.Page");
+        Preview.FooterPage = pageLabel.Length > 0 ? $"{pageLabel} 1" : "1";
+    }
+
 }

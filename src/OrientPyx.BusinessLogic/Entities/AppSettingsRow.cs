@@ -49,6 +49,14 @@ public class AppSettingsRow
     public string StartProtocolJudgesJson { get; set; } = string.Empty;
 
     /// <summary>
+    /// App-level default template for the multi-day summary protocol («підсумковий залік»), serialised as JSON.
+    /// Blank until the user saves one (via "save for next competitions"); a competition with no template of its
+    /// own seeds from this, falling back to the built-in defaults when blank. The per-competition day list and
+    /// priority day are NOT carried over — they only make sense inside one competition.
+    /// </summary>
+    public string SummaryProtocolJson { get; set; } = string.Empty;
+
+    /// <summary>
     /// Мінімум учасників у групі для дійсності присвоєння будь-якого розряду (Додаток 89, п.7 — «не менше
     /// трьох»): a group with fewer participants awards no ranks at all. Default 3.
     /// </summary>

@@ -1,0 +1,63 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
+             mc:Ignorable="d" d:DesignWidth="480" d:DesignHeight="260"
+             x:Class="OrientPyx.Presentation.Views.Dialogs.FileLockedView"
+             x:DataType="dialogs:FileLockedViewModel">
+
+    <!-- Centered card; the backdrop is supplied by the host overlay. -->
+    <Border Background="{DynamicResource SurfaceCard}"
+            CornerRadius="12"
+            MinWidth="440" MaxWidth="560"
+            BoxShadow="0 10 40 0 #40000000"
+            HorizontalAlignment="Center" VerticalAlignment="Center"
+            ClipToBounds="True">
+        <DockPanel LastChildFill="True">
+
+            <!-- Header -->
+            <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
+                    Padding="22,16">
+                <TextBlock Text="{Binding Title}" Classes="h2" VerticalAlignment="Center" />
+            </Border>
+
+            <!-- Footer actions -->
+            <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
+                    Padding="22,14">
+                <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+                    <Button Content="{Binding Localization[Common.Cancel]}"
+                            Classes="ghost"
+                            IsCancel="True"
+                            Command="{Binding CancelCommand}" />
+                    <Button Content="{Binding Localization[Export.Locked.Save]}"
+                            Classes="accent"
+                            IsDefault="True"
+                            IsEnabled="{Binding CanConfirm}"
+                            Command="{Binding ConfirmCommand}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Body: what happened, then the editable name (pre-filled with a free one). -->
+            <StackPanel Margin="22,18" Spacing="14">
+                <TextBlock Text="{Binding Message}" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextPrimary}" />
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[Export.Locked.NewName]}" Classes="label" />
+                    <TextBox Name="FileNameBox"
+                             Text="{Binding FileName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             PlaceholderText="—" />
+                    <TextBlock Text="{Binding TakenWarning}"
+                               IsVisible="{Binding IsTaken}"
+                               Foreground="{DynamicResource DangerBrush}"
+                               FontSize="12" TextWrapping="Wrap" />
+                </StackPanel>
+            </StackPanel>
+
+        </DockPanel>
+    </Border>
+
+</UserControl>

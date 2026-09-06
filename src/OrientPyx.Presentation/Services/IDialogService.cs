@@ -75,6 +75,13 @@ public interface IDialogService : INotifyPropertyChanged
     Task<int?> ShowChangeDayNumberAsync(ChangeDayNumberViewModel dialog);
 
     /// <summary>
+    /// Shows the "file is locked" modal — an export could not overwrite its target because another program
+    /// holds it open — offering to save under a different name. Returns the chosen file name (no path) on
+    /// confirm, or null when cancelled/closed. Only one dialog is shown at a time.
+    /// </summary>
+    Task<string?> ShowFileLockedAsync(FileLockedViewModel dialog);
+
+    /// <summary>
     /// Shows the add-region modal and awaits the user's input. Returns the trimmed name on confirm,
     /// or null when cancelled/closed. Only one dialog is shown at a time.
     /// </summary>

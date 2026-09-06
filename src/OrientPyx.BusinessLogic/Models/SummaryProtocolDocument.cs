@@ -11,6 +11,10 @@ public sealed class SummaryProtocolDocument
 {
     public ProtocolOrientation Orientation { get; init; } = ProtocolOrientation.Landscape;
 
+    /// <summary>When <c>true</c> (the summary's default) the table is drawn as a full grid; when <c>false</c>
+    /// only the two-tier header is boxed and the data rows stay border-less. Chosen in the settings.</summary>
+    public bool TableBorders { get; init; } = true;
+
     public string CompetitionName { get; init; } = string.Empty;
     public string Title { get; init; } = string.Empty;
     public string Subtitle { get; init; } = string.Empty;

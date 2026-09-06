@@ -73,6 +73,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         IParticipantImportFlow importFlow,
         ICsvImportFlow csvImportFlow,
         IParticipantExportFlow exportFlow,
+        IExportFileSaver fileSaver,
         IStatementFlow statementFlow,
         IEntryFeeCalculator entryFeeCalculator,
         IActivityLog log,
@@ -89,6 +90,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _importFlow = importFlow;
         _csvImportFlow = csvImportFlow;
         _exportFlow = exportFlow;
+        FileSaver = fileSaver;
         _statementFlow = statementFlow;
         _entryFeeCalculator = entryFeeCalculator;
         _log = log;
@@ -257,9 +259,12 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     /// whole competition, but with one day it still targets that day). Null when the roster spans multiple
     /// days (no single day to act on).
     /// </summary>
-    private Guid? EffectiveDayId => IsDayMode
-        ? SelectedDay?.Day?.Id
-        : RosterDays.Count == 1 ? RosterDays[0].Id : null;
+    private Guid? EffectiveDayId => EffectiveDay?.Id;
+
+    /// <summary>The day <see cref="EffectiveDayId"/> refers to, or null when no single day is in view.</summary>
+    private EventDay? EffectiveDay => IsDayMode
+        ? SelectedDay?.Day
+        : RosterDays.Count == 1 ? RosterDays[0] : null;
 
     /// <summary>True when a single day is unambiguously in view, gating the manual start-order action.</summary>
     public bool CanEditStartOrder => EffectiveDayId is not null;
@@ -449,7 +454,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     /// snapshot; returns the bytes for the view to save (file picking lives in the view). Null when there
     /// is nothing to export or the user cancelled.
     /// </summary>
-    public Task<ParticipantExportResult?> ExportAsync(CsvParticipantData view) => _exportFlow.RunAsync(view);
+    /// <summary>Writes the export to the file the user picked (handles a target locked by Excel/Word). Used by the view.</summary>
+    public IExportFileSaver FileSaver { get; }
+
+    public Task<ParticipantExportResult?> ExportAsync(CsvParticipantData view) =>
+        _exportFlow.RunAsync(view, EffectiveDay);
 
     /// <summary>Opens the participant-statement («відомість») modal for the given table's current view (the
     /// page hands in the active table). Scopes per-day fields to the day in view (day mode / a single-day

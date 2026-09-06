@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Interfaces;
@@ -726,6 +726,95 @@ public sealed class EventStore : IEventStore
             .Where(p => p.EventDayId == dayId)
             .OrderBy(p => p.Order)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<Guid> SetParticipantDayGroupAsync(
+        string eventFolderPath, Guid participantId, Guid dayId, Guid? groupId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        // Look-up and insert share one transaction so a concurrent caller can't slip between them and add
+        // a second link for the same (day, participant). The unique index is the backstop; this keeps the
+        // common path from ever hitting it.
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        var existing = await db.ParticipantDays
+            .FirstOrDefaultAsync(p => p.EventDayId == dayId && p.ParticipantId == participantId, cancellationToken);
+
+        if (existing is null)
+        {
+            // Joining the day: the link carries the chosen group; order continues the day's grid.
+            var maxOrder = await db.ParticipantDays
+                .Where(p => p.EventDayId == dayId)
+                .Select(p => (int?)p.Order)
+                .MaxAsync(cancellationToken) ?? 0;
+
+            var link = new ParticipantDay
+            {
+                EventDayId = dayId,
+                ParticipantId = participantId,
+                Order = maxOrder + 1,
+                GroupId = groupId
+            };
+            db.ParticipantDays.Add(link);
+            await db.SaveChangesAsync(cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+            return link.Id;
+        }
+
+        // Already a member: change only the group, preserving the day's chip/order/start time.
+        existing.GroupId = groupId;
+        await db.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+        return existing.Id;
+    }
+
+    public async Task<EventDaySnapshot> GetDaySnapshotAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        // ONE connection, ONE transaction for every table below. Each read otherwise opens its own
+        // connection, and under WAL each connection takes its own read snapshot — so a write landing
+        // between two reads (a draw saving while a protocol page reloads) would give one list the old
+        // rows and the next list the new ones. The built document then showed rows twice, in a broken
+        // order. A single transaction pins one snapshot for the whole set.
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // Sort orders below mirror the individual per-table readers, so a caller switching to the
+        // snapshot sees exactly the ordering it had before.
+        var links = await db.ParticipantDays.AsNoTracking()
+            .Where(p => p.EventDayId == dayId).OrderBy(p => p.Order).ToListAsync(cancellationToken);
+        var participants = await db.Participants.AsNoTracking()
+            .OrderBy(p => p.FullName).ToListAsync(cancellationToken);
+        var groups = await db.Groups.AsNoTracking()
+            .OrderBy(g => g.Name).ToListAsync(cancellationToken);
+        var groupDaySettings = await db.GroupDaySettings.AsNoTracking()
+            .Where(s => s.EventDayId == dayId).OrderBy(s => s.Order).ToListAsync(cancellationToken);
+        var controlPoints = await db.ControlPoints.AsNoTracking()
+            .Where(cp => cp.EventDayId == dayId).OrderBy(cp => cp.Order).ToListAsync(cancellationToken);
+        var regions = await db.Regions.AsNoTracking()
+            .OrderBy(r => r.Name).ToListAsync(cancellationToken);
+        var clubs = await db.Clubs.AsNoTracking()
+            .OrderBy(c => c.Name).ToListAsync(cancellationToken);
+        var dusshes = await db.Dusshes.AsNoTracking()
+            .OrderBy(d => d.Name).ToListAsync(cancellationToken);
+        var days = await db.Days.AsNoTracking()
+            .OrderBy(d => d.Number).ToListAsync(cancellationToken);
+        var info = await db.Competition.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+
+        return new EventDaySnapshot
+        {
+            Links = links,
+            Participants = participants,
+            Groups = groups,
+            GroupDaySettings = groupDaySettings,
+            ControlPoints = controlPoints,
+            Regions = regions,
+            Clubs = clubs,
+            Dusshes = dusshes,
+            Days = days,
+            Info = info
+        };
     }
 
     public async Task<IReadOnlyList<ParticipantDay>> GetAllParticipantDaysAsync(string eventFolderPath, CancellationToken cancellationToken = default)
@@ -1532,7 +1621,9 @@ public sealed class EventStore : IEventStore
                 ? [scope.TargetDayNumber]
                 : src.DayNumbers.Count > 0 ? src.DayNumbers : days.Select(d => d.Number).ToList();
 
-            foreach (var dayNumber in dayNumbers)
+            // A source file may list the same day twice for one participant; entering it once is what the
+            // import means, and a second link for the same (day, participant) is rejected by the unique index.
+            foreach (var dayNumber in dayNumbers.Distinct())
             {
                 if (!dayByNumber.TryGetValue(dayNumber, out var day))
                     continue; // a number with no matching day (shouldn't happen — caller created them)
@@ -1543,14 +1634,18 @@ public sealed class EventStore : IEventStore
                 var link = priorLinks.FirstOrDefault(x => x.EventDayId == day.Id);
                 if (link is null)
                 {
-                    db.ParticipantDays.Add(new ParticipantDay
+                    var newLink = new ParticipantDay
                     {
                         EventDayId = day.Id,
                         ParticipantId = participant.Id,
                         Order = ++linkOrderByDay[day.Id],
                         GroupId = group?.Id,
                         Chip = src.Chip
-                    });
+                    };
+                    db.ParticipantDays.Add(newLink);
+                    // Track it so a later pass over the same participant updates this link instead of
+                    // adding a second one for the day.
+                    priorLinks.Add(newLink);
                 }
                 else
                 {

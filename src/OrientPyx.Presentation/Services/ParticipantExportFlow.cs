@@ -1,3 +1,4 @@
+using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
@@ -34,7 +35,7 @@ public sealed class ParticipantExportFlow : IParticipantExportFlow
         _writers = writers.ToDictionary(w => w.Format);
     }
 
-    public async Task<ParticipantExportResult?> RunAsync(CsvParticipantData view)
+    public async Task<ParticipantExportResult?> RunAsync(CsvParticipantData view, EventDay? day)
     {
         if (_session.CurrentEvent is null || view.Header.Count == 0)
             return null;
@@ -54,20 +55,13 @@ public sealed class ParticipantExportFlow : IParticipantExportFlow
             _ => ("csv", "text/csv")
         };
 
-        return new ParticipantExportResult(format.Value, bytes, SuggestedFileName(extension), extension, mime);
+        return new ParticipantExportResult(format.Value, bytes, SuggestedFileName(extension, day), extension, mime);
     }
 
-    // "<competition> — учасники <date>.<ext>", sanitised of path-illegal characters so the save dialog
-    // accepts it as a default name.
-    private string SuggestedFileName(string extension)
-    {
-        var competition = _session.CurrentEvent?.Name;
-        if (string.IsNullOrWhiteSpace(competition))
-            competition = _localization.Get("Export.DefaultName");
-        var stamp = DateTime.Now.ToString("yyyy-MM-dd");
-        var baseName = $"{competition} — {_localization.Get("Export.NamePart")} {stamp}";
-        foreach (var invalid in System.IO.Path.GetInvalidFileNameChars())
-            baseName = baseName.Replace(invalid, '_');
-        return $"{baseName}.{extension}";
-    }
+    // "Учасники - <competition> - [День N - ]<day date>.<ext>" (see ExportFileName). A multi-day roster
+    // has no single day, so it is named by the competition alone.
+    private string SuggestedFileName(string extension, EventDay? day) => ExportFileName.Build(
+        _localization, "Export.NamePart", _session.CurrentEvent?.Name, extension, day,
+        date: _session.CurrentEvent?.StartDate,
+        defaultNameKey: "Export.DefaultName");
 }

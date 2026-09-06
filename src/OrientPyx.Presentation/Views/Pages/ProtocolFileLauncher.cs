@@ -10,11 +10,14 @@ namespace OrientPyx.Presentation.Views.Pages;
 /// </summary>
 internal static class ProtocolFileLauncher
 {
-    public static void TryOpen(IStorageFile file)
+    public static void TryOpen(IStorageFile file) => TryOpen(file.TryGetLocalPath());
+
+    /// <summary>Opens a local path. Used after a save that may have landed on a different name than the
+    /// picked file (a locked target is saved beside it), so the launched file is the one actually written.</summary>
+    public static void TryOpen(string? path)
     {
         try
         {
-            var path = file.TryGetLocalPath();
             if (string.IsNullOrEmpty(path))
                 return;
             // UseShellExecute lets the OS pick the registered handler (Word/LibreOffice) for the .docx.

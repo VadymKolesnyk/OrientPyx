@@ -46,6 +46,12 @@ public interface IAppSettingsService
 
     Task SaveStatementSettingsAsync(StatementSettings settings, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the app-level default summary-protocol («підсумковий залік») settings, applying
+    /// defaults when never saved or unreadable.</summary>
+    Task<SummaryProtocolSettings> GetSummaryProtocolSettingsAsync(CancellationToken cancellationToken = default);
+
+    Task SaveSummaryProtocolSettingsAsync(SummaryProtocolSettings settings, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the app-level default start-protocol settings for the kind, applying the kind's
     /// built-in default when never saved or unreadable.</summary>
     Task<StartProtocolSettings> GetStartProtocolSettingsAsync(StartProtocolKind kind, CancellationToken cancellationToken = default);

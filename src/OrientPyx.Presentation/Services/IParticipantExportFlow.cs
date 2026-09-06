@@ -1,3 +1,4 @@
+using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Models;
 
 namespace OrientPyx.Presentation.Services;
@@ -15,9 +16,10 @@ public interface IParticipantExportFlow
     /// <summary>
     /// Shows the format modal and, on confirm, serialises <paramref name="view"/> into the chosen
     /// format's bytes. Returns the result to save, or null when there is nothing to export or the user
-    /// cancelled. The caller saves the bytes (the view owns the save picker).
+    /// cancelled. The caller saves the bytes (the view owns the save picker). <paramref name="day"/> is the
+    /// single day in view, used to name the file; null for a multi-day roster, whose name then carries no day.
     /// </summary>
-    Task<ParticipantExportResult?> RunAsync(CsvParticipantData view);
+    Task<ParticipantExportResult?> RunAsync(CsvParticipantData view, EventDay? day);
 }
 
 /// <summary>

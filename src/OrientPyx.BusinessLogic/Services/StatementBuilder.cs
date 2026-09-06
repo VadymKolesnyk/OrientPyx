@@ -106,6 +106,7 @@ public sealed class StatementBuilder : IStatementBuilder
         return new ResultProtocolDocument
         {
             Orientation = settings.Orientation,
+            TableBorders = settings.TableBorders,
             CompetitionName = string.Empty,
             Title = string.Empty,
             Subtitle = string.Empty,
@@ -118,8 +119,11 @@ public sealed class StatementBuilder : IStatementBuilder
             ColumnBodyWrap = bodyWrap,
             ColumnShrinkPriority = shrinkPriority,
             Sections = [section],
-            Footer = ProtocolFooterFactory.Build(
-                labels.FooterSoftwareName, labels.FooterGeneratedLabel, labels.FooterPageLabel)
+            // The page footer is opt-out: a null Footer makes the renderer skip the колонтитул entirely.
+            Footer = settings.PageFooter
+                ? ProtocolFooterFactory.Build(
+                    labels.FooterSoftwareName, labels.FooterGeneratedLabel, labels.FooterPageLabel)
+                : null
         };
     }
 

@@ -218,6 +218,12 @@ public enum PassageKind
 /// filled for <b>every</b> control (including extras/off-course) and the finish; the read-out panel and
 /// the printout slip show these so each row keeps its time/distance columns rather than blanking out.
 /// </para>
+/// <para>
+/// <see cref="CourseIndex"/> is the 0-based position on the prescribed course that this punch took, set only
+/// for an on-course punch of an ordered layout (null otherwise). It — not the bare code — identifies which
+/// course leg a punch belongs to: a course may visit the same control twice (e.g. 55 44 43 55 66), so keying
+/// splits by code alone would collapse both visits onto one column.
+/// </para>
 /// </summary>
 public sealed record PassagePunch(
     int Index,
@@ -234,7 +240,8 @@ public sealed record PassagePunch(
     bool CountsForTeam = false,
     TimeSpan? DisplayLeg = null,
     decimal? DisplayLegKm = null,
-    double? DisplayPace = null);
+    double? DisplayPace = null,
+    int? CourseIndex = null);
 
 /// <summary>
 /// One control of the prescribed course (ordered layout): its 1-based order, its code, and whether the

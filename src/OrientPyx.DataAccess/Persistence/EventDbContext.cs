@@ -92,6 +92,14 @@ public class EventDbContext : DbContext
         modelBuilder.Entity<ParticipantDay>()
             .HasIndex(p => p.ParticipantId);
 
+        // A participant runs a day at most once, so (day, participant) is unique. Enforced by the database
+        // because a duplicate link is silently destructive — it prints the runner twice on every protocol —
+        // and the service-layer "does a link already exist?" check is a read-then-write that two concurrent
+        // callers can both pass. Also covers the by-participant lookups the previous index served.
+        modelBuilder.Entity<ParticipantDay>()
+            .HasIndex(p => new { p.EventDayId, p.ParticipantId })
+            .IsUnique();
+
         // Finish read-outs are queried by day (the day's log) and de-duplicated by content within a day.
         modelBuilder.Entity<FinishReadout>()
             .HasIndex(r => r.EventDayId);

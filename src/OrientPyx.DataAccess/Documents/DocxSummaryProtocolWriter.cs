@@ -103,17 +103,21 @@ public sealed class DocxSummaryProtocolWriter : ISummaryProtocolWriter
     private static Table BuildTable(SummaryProtocolDocument doc, SummaryProtocolSection section, int[] widths)
     {
         var totalWidth = widths.Sum();
+        // «Друк таблиці»: on ⇒ a full grid; off ⇒ no table-level rules, and only the two-tier header keeps its
+        // own cell box so the banded captions still read as a header over the border-less data rows.
+        var rule = doc.TableBorders ? BorderValues.Single : BorderValues.None;
+        var boxHeader = !doc.TableBorders;
         var table = new Table();
         table.AppendChild(new TableProperties(
             new TableLayout { Type = TableLayoutValues.Fixed },
             new TableWidth { Width = totalWidth.ToString(), Type = TableWidthUnitValues.Dxa },
             new TableBorders(
-                new TopBorder { Val = BorderValues.Single, Size = 4 },
-                new LeftBorder { Val = BorderValues.Single, Size = 4 },
-                new BottomBorder { Val = BorderValues.Single, Size = 4 },
-                new RightBorder { Val = BorderValues.Single, Size = 4 },
-                new InsideHorizontalBorder { Val = BorderValues.Single, Size = 4 },
-                new InsideVerticalBorder { Val = BorderValues.Single, Size = 4 }),
+                new TopBorder { Val = rule, Size = 4 },
+                new LeftBorder { Val = rule, Size = 4 },
+                new BottomBorder { Val = rule, Size = 4 },
+                new RightBorder { Val = rule, Size = 4 },
+                new InsideHorizontalBorder { Val = rule, Size = 4 },
+                new InsideVerticalBorder { Val = rule, Size = 4 }),
             new TableCellMarginDefault(
                 new TableCellLeftMargin { Width = 30, Type = TableWidthValues.Dxa },
                 new TableCellRightMargin { Width = 30, Type = TableWidthValues.Dxa })));
@@ -130,7 +134,7 @@ public sealed class DocxSummaryProtocolWriter : ISummaryProtocolWriter
         // Leading columns: a header cell spanning both tiers (vertical-merge restart).
         for (var c = 0; c < leadCount; c++)
             tier1.Append(HeaderCell(doc.LeadingColumns[c].Caption, widths[c],
-                vMerge: MergedCellValues.Restart, centred: true));
+                vMerge: MergedCellValues.Restart, centred: true, boxed: boxHeader));
 
         // Day bands: a band caption cell spanning the band's sub-columns (horizontal merge), shaded.
         var col = leadCount;
@@ -138,33 +142,36 @@ public sealed class DocxSummaryProtocolWriter : ISummaryProtocolWriter
         {
             var span = band.SubColumns.Count;
             // First cell of the band: the caption, horizontal-merge restart, shaded.
-            tier1.Append(BandHeaderCell(band.Caption, widths[col], MergedCellValues.Restart));
+            tier1.Append(BandHeaderCell(band.Caption, widths[col], MergedCellValues.Restart, boxHeader));
             for (var s = 1; s < span; s++)
-                tier1.Append(BandHeaderCell(string.Empty, widths[col + s], MergedCellValues.Continue));
+                tier1.Append(BandHeaderCell(string.Empty, widths[col + s], MergedCellValues.Continue, boxHeader));
             col += span;
         }
 
         // Total column: spans both tiers.
-        tier1.Append(HeaderCell(doc.TotalColumnHeader, widths[col], vMerge: MergedCellValues.Restart, centred: true));
+        tier1.Append(HeaderCell(doc.TotalColumnHeader, widths[col], vMerge: MergedCellValues.Restart,
+            centred: true, boxed: boxHeader));
         table.Append(tier1);
 
         // ── Tier 2 (sub-column row) ─────────────────────────────────────────────────────────────────────
         var tier2 = new TableRow();
         // Leading columns: vertical-merge continuation (empty).
         for (var c = 0; c < leadCount; c++)
-            tier2.Append(HeaderCell(string.Empty, widths[c], vMerge: MergedCellValues.Continue, centred: true));
+            tier2.Append(HeaderCell(string.Empty, widths[c], vMerge: MergedCellValues.Continue, centred: true,
+                boxed: boxHeader));
 
         col = leadCount;
         foreach (var band in doc.DayBands)
         {
             foreach (var sub in band.SubColumns)
             {
-                tier2.Append(HeaderCell(sub, widths[col], vMerge: null, centred: true));
+                tier2.Append(HeaderCell(sub, widths[col], vMerge: null, centred: true, boxed: boxHeader));
                 col++;
             }
         }
         // Total column: vertical-merge continuation.
-        tier2.Append(HeaderCell(string.Empty, widths[col], vMerge: MergedCellValues.Continue, centred: true));
+        tier2.Append(HeaderCell(string.Empty, widths[col], vMerge: MergedCellValues.Continue, centred: true,
+            boxed: boxHeader));
         table.Append(tier2);
 
         // ── Data rows ───────────────────────────────────────────────────────────────────────────────────
@@ -420,10 +427,21 @@ public sealed class DocxSummaryProtocolWriter : ISummaryProtocolWriter
 
     // ── Cells ───────────────────────────────────────────────────────────────────────────────────────────
 
-    private static TableCell HeaderCell(string text, int widthTwips, MergedCellValues? vMerge, bool centred)
+    // A single-line box on all four sides of one cell — used for the header tiers when the table itself carries
+    // no borders, so the header still reads as a header above border-less data rows.
+    private static TableCellBorders CellBox() => new(
+        new TopBorder { Val = BorderValues.Single, Size = 4 },
+        new LeftBorder { Val = BorderValues.Single, Size = 4 },
+        new BottomBorder { Val = BorderValues.Single, Size = 4 },
+        new RightBorder { Val = BorderValues.Single, Size = 4 });
+
+    private static TableCell HeaderCell(string text, int widthTwips, MergedCellValues? vMerge, bool centred,
+        bool boxed = false)
     {
         var props = new TableCellProperties(
             new TableCellWidth { Width = widthTwips.ToString(), Type = TableWidthUnitValues.Dxa });
+        if (boxed)
+            props.Append(CellBox());
         if (vMerge is { } vm)
             props.Append(new VerticalMerge { Val = vm });
         props.Append(new TableCellVerticalAlignment { Val = TableVerticalAlignmentValues.Center });
@@ -438,11 +456,15 @@ public sealed class DocxSummaryProtocolWriter : ISummaryProtocolWriter
         return new TableCell(props, para);
     }
 
-    private static TableCell BandHeaderCell(string text, int widthTwips, MergedCellValues hMerge)
+    private static TableCell BandHeaderCell(string text, int widthTwips, MergedCellValues hMerge,
+        bool boxed = false)
     {
         var props = new TableCellProperties(
-            new TableCellWidth { Width = widthTwips.ToString(), Type = TableWidthUnitValues.Dxa },
-            new HorizontalMerge { Val = hMerge },
+            new TableCellWidth { Width = widthTwips.ToString(), Type = TableWidthUnitValues.Dxa });
+        if (boxed)
+            props.Append(CellBox());
+        props.Append(new HorizontalMerge { Val = hMerge });
+        props.Append(
             new Shading { Val = ShadingPatternValues.Clear, Fill = BandShade },
             new TableCellVerticalAlignment { Val = TableVerticalAlignmentValues.Center });
 

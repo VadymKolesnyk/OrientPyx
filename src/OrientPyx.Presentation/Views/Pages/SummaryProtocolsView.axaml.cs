@@ -73,15 +73,10 @@ public partial class SummaryProtocolsView : UserControl
         if (file is null)
             return;
 
-        try
-        {
-            await using (var stream = await file.OpenWriteAsync())
-                await stream.WriteAsync(result.Bytes);
-            ProtocolFileLauncher.TryOpen(file);
-        }
-        catch
-        {
-            // Best-effort; the user can retry.
-        }
+        // The saver handles a target that is open in another program (Word keeps a .docx locked):
+        // it then writes "name (2).ext" beside it and tells the user. Null means nothing was saved.
+        var saved = await vm.FileSaver.SaveAsync(file, result.Bytes);
+        if (saved is not null)
+            ProtocolFileLauncher.TryOpen(saved);
     }
 }

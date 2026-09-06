@@ -57,6 +57,15 @@ public sealed class SummaryProtocolSettings
 
     public ProtocolOrientation Orientation { get; set; } = ProtocolOrientation.Landscape;
 
+    /// <summary>Whether the data table is printed with a full border grid (outer frame + inside rules). The
+    /// summary protocol defaults to <c>true</c> — its two-tier banded header only reads correctly inside a
+    /// grid. Honoured by both the .docx export and the on-screen preview.</summary>
+    public bool TableBorders { get; set; } = true;
+
+    /// <summary>Whether the page footer (нижній колонтитул — program name, generation time, page number) is
+    /// printed at the bottom of every page. Default <c>true</c>.</summary>
+    public bool PageFooter { get; set; } = true;
+
     /// <summary>The leading (identity) columns in on-page order, before the per-day result bands. Reordered and
     /// toggled in the settings UI. Defaults to the printed summary sheet's layout (Місце, ПІБ, ДН, Регіон,
     /// Клуб).</summary>

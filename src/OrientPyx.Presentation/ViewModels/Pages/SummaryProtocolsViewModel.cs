@@ -31,6 +31,7 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
     private readonly IWinnersPrintBuilder _winnersBuilder;
     private readonly IWinnersPrintFlow _winnersPrint;
     private readonly IBusyService _busy;
+    private readonly IAppSettingsService _appSettings;
 
     /// <summary>How many prize places the winners printout includes per group (a standard podium).</summary>
     private const int WinnersTopPlaces = 3;
@@ -53,7 +54,9 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
         ISummaryProtocolWriter writer,
         IWinnersPrintBuilder winnersBuilder,
         IWinnersPrintFlow winnersPrint,
-        IBusyService busy)
+        IBusyService busy,
+        IAppSettingsService appSettings,
+        IExportFileSaver fileSaver)
         : base(localization)
     {
         _editor = editor;
@@ -63,6 +66,8 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
         _winnersBuilder = winnersBuilder;
         _winnersPrint = winnersPrint;
         _busy = busy;
+        _appSettings = appSettings;
+        FileSaver = fileSaver;
 
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
 
@@ -72,6 +77,9 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
             new(SummaryMode.ByTime, "SummaryProtocol.Mode.ByTime", localization),
         ];
     }
+
+    /// <summary>Writes the export to the file the user picked (handles a target locked by Word). Used by the view.</summary>
+    public IExportFileSaver FileSaver { get; }
 
     public override string NavKey => "Nav.SummaryProtocol";
     public override string TitleKey => "Page.SummaryProtocol.Title";
@@ -91,8 +99,31 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
     [ObservableProperty]
     private bool _isEmpty = true;
 
+    /// <summary>The footer's left part — the software name ("П/З: OrientPyx"), shown on the mock-up page when
+    /// «Друк колонтитулів» is on.</summary>
+    [ObservableProperty]
+    private string _footerSoftware = string.Empty;
+
+    /// <summary>The footer's centre part — the generation stamp.</summary>
+    [ObservableProperty]
+    private string _footerGenerated = string.Empty;
+
+    /// <summary>The footer's right part — the page-number line ("Сторінка 1").</summary>
+    [ObservableProperty]
+    private string _footerPage = string.Empty;
+
     [ObservableProperty]
     private bool _isLandscape = true;
+
+    /// <summary>«Друк таблиці» — print the data table inside a full border grid. Off by default (only the
+    /// header row is boxed); saved with the rest of the template.</summary>
+    [ObservableProperty]
+    private bool _tableBorders;
+
+    /// <summary>«Друк колонтитулів» — print the page footer (program name, generation time, page number) at
+    /// the bottom of every page. On by default; saved with the rest of the template.</summary>
+    [ObservableProperty]
+    private bool _pageFooter = true;
 
     // ── Mode ─────────────────────────────────────────────────────────────────────────────────────────
 
@@ -151,13 +182,24 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
         {
             var d = await _editor.GetSummaryProtocolDataAsync();
             var i = await _editor.GetInfoAsync();
+            // The competition's own template, or the app-level default saved via "save for next competitions".
+            // The app default carries no day list (those belong to one competition), so it is filled in here.
             var s = await _editor.GetSummaryProtocolSettingsAsync();
+            if (s is null)
+            {
+                s = await _appSettings.GetSummaryProtocolSettingsAsync();
+                s.Days = d.Days.Select(day => new SummaryDaySetting
+                {
+                    DayId = day.Id, DayNumber = day.Number, Counted = true
+                }).ToList();
+                s.PriorityDayId = d.Days.Count > 0 ? d.Days[0].Id : null;
+            }
             return (d, i, s);
         });
 
         _data = data;
         _competitionInfo = info;
-        ApplySettings(settings ?? Default(data));
+        ApplySettings(settings);
         ResolveHeaderPlaceholders(info);
         RefreshPreview();
     }
@@ -194,6 +236,8 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
         {
             SelectedMode = ModeOptions.FirstOrDefault(o => o.Mode == settings.Mode) ?? ModeOptions[0];
             IsLandscape = settings.Orientation == ProtocolOrientation.Landscape;
+            TableBorders = settings.TableBorders;
+            PageFooter = settings.PageFooter;
             RequireAllDays = settings.RequireAllDays;
             CompetitionName = settings.CompetitionName;
             Title = settings.Title;
@@ -333,6 +377,23 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
         AutoSave();
     }
 
+    // The two print toggles change only how the table/page is decorated, so the preview flags are pushed
+    // directly (no builder run) and the template is auto-saved to the current day.
+    partial void OnTableBordersChanged(bool value)
+    {
+        if (_applyingSettings)
+            return;
+        RefreshPreview(); // the flag rides on the built document, so the table re-renders with/without the grid
+        AutoSave();
+    }
+
+    partial void OnPageFooterChanged(bool value)
+    {
+        if (_applyingSettings)
+            return;
+        AutoSave();
+    }
+
     /// <summary>
     /// Moves the leading column with key <paramref name="draggedKey"/> next to the one with key
     /// <paramref name="targetKey"/> — before it, or after it when <paramref name="insertAfter"/> is true. Called
@@ -416,6 +477,28 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
     partial void OnCompetitionTypeChanged(string value) => OnHeaderEdited();
     partial void OnDateTextChanged(string value) => OnHeaderEdited();
 
+    // Fills the preview footer with the same three fields the .docx колонтитул prints (the mock-up is page one).
+    private void ApplyPreviewFooter()
+    {
+        FooterSoftware = Localization.Get("Protocols.Footer.Software");
+        var generatedLabel = Localization.Get("Protocols.Footer.Generated");
+        var generated = DateTime.Now.ToString("dd.MM.yyyy HH:mm");
+        FooterGenerated = generatedLabel.Length > 0 ? $"{generatedLabel}: {generated}" : generated;
+        var pageLabel = Localization.Get("Protocols.Footer.Page");
+        FooterPage = pageLabel.Length > 0 ? $"{pageLabel} 1" : "1";
+    }
+
+    // "Save for next competitions": stores the current layout as the APPLICATION-LEVEL default, so a
+    // competition with no summary template of its own seeds from this. The per-competition template is already
+    // auto-saved on every edit, so this button only sets the shared default (without the day list).
+    [RelayCommand]
+    private async Task SaveSettingsAsync()
+    {
+        var settings = BuildSettings();
+        await _busy.RunAsync(() => _appSettings.SaveSummaryProtocolSettingsAsync(settings));
+        SettingsSaved = true;
+    }
+
     private void RefreshPreview()
     {
         var settings = BuildDocumentSettings();
@@ -447,11 +530,13 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
             TotalColumnHeader = document.TotalColumnHeader,
             ColumnBodyWrap = document.ColumnBodyWrap,
             ColumnShrinkPriority = document.ColumnShrinkPriority,
+            TableBorders = document.TableBorders,
             Sections = sections,
         };
 
         Preview = capped;
         IsEmpty = sections.Count == 0 || sections.All(s => s.Rows.Count == 0);
+        ApplyPreviewFooter();
     }
 
     // The persisted settings: the user's typed header values (blanks stay blank).
@@ -459,6 +544,8 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
     {
         Mode = SelectedMode?.Mode ?? SummaryMode.ByPoints,
         Orientation = IsLandscape ? ProtocolOrientation.Landscape : ProtocolOrientation.Portrait,
+        TableBorders = TableBorders,
+        PageFooter = PageFooter,
         LeadingColumns = LeadingColumns.Select(c => c.ToSetting()).ToList(),
         RequireAllDays = RequireAllDays,
         Days = Days.Select(d => new SummaryDaySetting { DayId = d.DayId, DayNumber = d.DayNumber, Counted = d.Counted }).ToList(),
@@ -516,7 +603,6 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
             var document = _builder.Build(data, documentSettings, labels);
             return _writer.Write(document);
         });
-        SettingsSaved = true;
 
         return new ProtocolExportResult(bytes, SuggestedFileName());
     }
@@ -576,17 +662,19 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
         FooterGeneratedLabel: Localization.Get("Protocols.Footer.Generated"),
         FooterPageLabel: Localization.Get("Protocols.Footer.Page"));
 
-    private string SuggestedFileName()
+    // "Підсумковий протокол - <competition> - <last day's date>.docx" — no "День N" (it spans them all),
+    // and dated by the last counted day so the name doesn't drift with the export date (see ExportFileName).
+    private string SuggestedFileName() => ExportFileName.Build(
+        Localization, "SummaryProtocol.NamePart", _session.CurrentEvent?.Name, "docx",
+        date: LastCountedDayDate());
+
+    /// <summary>The latest date among the counted days, or null when none of them has a date.</summary>
+    private DateTimeOffset? LastCountedDayDate()
     {
-        var competition = _session.CurrentEvent?.Name;
-        if (string.IsNullOrWhiteSpace(competition))
-            competition = Localization.Get("Protocols.DefaultName");
-        var part = Localization.Get("SummaryProtocol.NamePart");
-        var stamp = DateTime.Now.ToString("yyyy-MM-dd");
-        var baseName = $"{competition} — {part} {stamp}";
-        foreach (var invalid in System.IO.Path.GetInvalidFileNameChars())
-            baseName = baseName.Replace(invalid, '_');
-        return $"{baseName}.docx";
+        var counted = Days.Where(d => d.Counted).Select(d => d.DayId).ToHashSet();
+        return (_data?.Days ?? [])
+            .Where(d => d.Date is not null && (counted.Count == 0 || counted.Contains(d.Id)))
+            .Max(d => d.Date);
     }
 }
 
@@ -606,5 +694,4 @@ public sealed partial class SummaryModeOption : ObservableObject
 
     public SummaryMode Mode { get; }
 
-    public string Caption => _localization.Get(_captionKey);
-}
+    public string Caption => _localization.Get(_captionKey);}

@@ -59,18 +59,10 @@ public partial class ProtocolsView : UserControl
         if (file is null)
             return; // save cancelled
 
-        try
-        {
-            await using (var stream = await file.OpenWriteAsync())
-                await stream.WriteAsync(result.Bytes);
-
-            // Open the freshly saved document in the OS default app (Word) so the user sees it immediately.
-            ProtocolFileLauncher.TryOpen(file);
-        }
-        catch
-        {
-            // The file couldn't be written (permissions, removed drive, etc.). The user can retry; a future
-            // toast could surface it. Mirrors the participants export behaviour.
-        }
+        // The saver handles a target that is open in another program (Word keeps a .docx locked):
+        // it then writes "name (2).ext" beside it and tells the user. Null means nothing was saved.
+        var saved = await vm.FileSaver.SaveAsync(file, result.Bytes);
+        if (saved is not null)
+            ProtocolFileLauncher.TryOpen(saved);
     }
 }

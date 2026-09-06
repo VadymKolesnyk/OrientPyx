@@ -63,7 +63,8 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         IResultProtocolWriter writer,
         IWinnersPrintBuilder winnersBuilder,
         IWinnersPrintFlow winnersPrint,
-        IBusyService busy)
+        IBusyService busy,
+        IExportFileSaver fileSaver)
         : base(localization)
     {
         _editor = editor;
@@ -74,6 +75,7 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         _winnersBuilder = winnersBuilder;
         _winnersPrint = winnersPrint;
         _busy = busy;
+        FileSaver = fileSaver;
 
         // Singleton VM: reload the day list + header defaults on a competition/day change (marshal to UI).
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
@@ -81,6 +83,9 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
 
     /// <summary>The live document preview shown on the page. Rebuilt by <see cref="RefreshPreview"/>.</summary>
     public ProtocolPreviewViewModel Preview { get; } = new();
+
+    /// <summary>Writes the export to the file the user picked (handles a target locked by Word). Used by the view.</summary>
+    public IExportFileSaver FileSaver { get; }
 
     public override string NavKey => "Nav.Protocols";
     public override string TitleKey => "Page.Protocols.Title";
@@ -106,6 +111,16 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
 
     [ObservableProperty]
     private bool _isLandscape;
+
+    /// <summary>«Друк таблиці» — print the data table inside a full border grid. Off by default (only the
+    /// header row is boxed); saved with the rest of the template.</summary>
+    [ObservableProperty]
+    private bool _tableBorders;
+
+    /// <summary>«Друк колонтитулів» — print the page footer (program name, generation time, page number) at
+    /// the bottom of every page. On by default; saved with the rest of the template.</summary>
+    [ObservableProperty]
+    private bool _pageFooter = true;
 
     [ObservableProperty]
     private string _competitionName = string.Empty;
@@ -239,6 +254,8 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         try
         {
             IsLandscape = settings.Orientation == ProtocolOrientation.Landscape;
+            TableBorders = settings.TableBorders;
+            PageFooter = settings.PageFooter;
             CompetitionName = settings.CompetitionName;
             Title = settings.Title;
             Subtitle = settings.Subtitle;
@@ -440,6 +457,9 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         var settings = BuildDocumentSettings();
 
         Preview.IsLandscape = settings.Orientation == ProtocolOrientation.Landscape;
+        Preview.ShowTableBorders = settings.TableBorders;
+        Preview.ShowFooter = settings.PageFooter;
+        ApplyPreviewFooter();
         Preview.CompetitionName = settings.CompetitionName;
         Preview.Title = settings.Title.Length > 0 ? settings.Title : Localization.Get("Protocols.DefaultTitle");
         Preview.Subtitle = settings.Subtitle;
@@ -497,6 +517,8 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
     private ResultProtocolSettings BuildSettings() => new()
     {
         Orientation = IsLandscape ? ProtocolOrientation.Landscape : ProtocolOrientation.Portrait,
+        TableBorders = TableBorders,
+        PageFooter = PageFooter,
         CompetitionName = CompetitionName?.Trim() ?? string.Empty,
         Title = Title?.Trim() ?? string.Empty,
         Subtitle = Subtitle?.Trim() ?? string.Empty,
@@ -626,19 +648,9 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         _ => null
     };
 
-    // "<competition> — протокол <День N> <date>.docx", sanitised for the save dialog.
-    private string SuggestedFileName(EventDay day)
-    {
-        var competition = _session.CurrentEvent?.Name;
-        if (string.IsNullOrWhiteSpace(competition))
-            competition = Localization.Get("Protocols.DefaultName");
-        var part = Localization.Get("Protocols.NamePart");
-        var stamp = DateTime.Now.ToString("yyyy-MM-dd");
-        var baseName = $"{competition} — {part} {Localization.Get("Header.Day")} {day.Number} {stamp}";
-        foreach (var invalid in System.IO.Path.GetInvalidFileNameChars())
-            baseName = baseName.Replace(invalid, '_');
-        return $"{baseName}.docx";
-    }
+    // "Протокол результатів - <competition> - День N - <day date>.docx" (see ExportFileName).
+    private string SuggestedFileName(EventDay day) => ExportFileName.Build(
+        Localization, "Protocols.NamePart", _session.CurrentEvent?.Name, "docx", day);
 
     // Clear the "saved" flash on a header-text edit. The preview's header is the SAME two-way-bound text
     // boxes, so the document mock-up updates with no rebuild — typing must not re-run the (expensive) builder
@@ -661,12 +673,42 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         AutoSave();
     }
 
+    // The two print toggles change only how the table/page is decorated, so the preview flags are pushed
+    // directly (no builder run) and the template is auto-saved to the current day.
+    partial void OnTableBordersChanged(bool value)
+    {
+        if (_applyingSettings)
+            return;
+        Preview.ShowTableBorders = value;
+        AutoSave();
+    }
+
+    partial void OnPageFooterChanged(bool value)
+    {
+        if (_applyingSettings)
+            return;
+        Preview.ShowFooter = value;
+        AutoSave();
+    }
+
     partial void OnCompetitionNameChanged(string value) => OnHeaderEdited();
     partial void OnTitleChanged(string value) => OnHeaderEdited();
     partial void OnSubtitleChanged(string value) => OnHeaderEdited();
     partial void OnVenueChanged(string value) => OnHeaderEdited();
     partial void OnCompetitionTypeChanged(string value) => OnHeaderEdited();
     partial void OnDateTextChanged(string value) => OnHeaderEdited();
+    // Fills the preview's footer line with the same three fields the .docx колонтитул prints — the software
+    // name, the generation stamp, and the page-number line ("Сторінка 1"; the mock-up is always page one).
+    private void ApplyPreviewFooter()
+    {
+        Preview.FooterSoftware = Localization.Get("Protocols.Footer.Software");
+        var generatedLabel = Localization.Get("Protocols.Footer.Generated");
+        var generated = DateTime.Now.ToString("dd.MM.yyyy HH:mm");
+        Preview.FooterGenerated = generatedLabel.Length > 0 ? $"{generatedLabel}: {generated}" : generated;
+        var pageLabel = Localization.Get("Protocols.Footer.Page");
+        Preview.FooterPage = pageLabel.Length > 0 ? $"{pageLabel} 1" : "1";
+    }
+
 }
 
 /// <summary>The result of building a protocol: the .docx bytes and a suggested save file name.</summary>

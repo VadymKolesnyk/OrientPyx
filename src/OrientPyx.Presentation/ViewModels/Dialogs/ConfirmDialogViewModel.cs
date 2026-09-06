@@ -47,6 +47,16 @@ public sealed partial class ConfirmDialogViewModel : ObservableObject
     public string CancelKey { get; }
 
     /// <summary>
+    /// True for a plain "message + OK" box: the Cancel button is hidden and the OK button is styled neutrally
+    /// rather than as a destructive action. The <see cref="Completion"/> task still completes (with true on OK,
+    /// false when the dialog is closed), so a caller that only informs can simply await and ignore the result.
+    /// </summary>
+    public bool IsMessage { get; init; }
+
+    /// <summary>Inverse of <see cref="IsMessage"/>, bound by the view to show/hide the Cancel button.</summary>
+    public bool ShowCancel => !IsMessage;
+
+    /// <summary>
     /// Optional arguments formatted into the localized message via <see cref="string.Format(string, object?[])"/>.
     /// Lets a confirmation include dynamic values (e.g. a chip number and its current holder) while the
     /// message text itself stays a localizable resource with <c>{0}</c>/<c>{1}</c> placeholders.

@@ -480,16 +480,9 @@ public partial class ParticipantsView : UserControl
         if (file is null)
             return; // save cancelled
 
-        try
-        {
-            await using var stream = await file.OpenWriteAsync();
-            await stream.WriteAsync(result.Bytes);
-        }
-        catch
-        {
-            // The file couldn't be written (permissions, removed drive, etc.). Nothing more we can do
-            // here; the user can retry. A future toast could surface it.
-        }
+        // The saver handles a locked target (the workbook open in Excel) by writing "name (2).ext"
+        // beside it and telling the user, instead of failing silently.
+        await _vm.FileSaver.SaveAsync(file, result.Bytes);
     }
 
     // Bulk-assign start numbers. The on-screen (filtered + sorted) row order lives in the SheetTable,

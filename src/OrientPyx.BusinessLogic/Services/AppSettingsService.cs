@@ -103,6 +103,56 @@ public sealed class AppSettingsService : IAppSettingsService
         return _appStore.SaveStatementJsonAsync(json, cancellationToken);
     }
 
+    public async Task<SummaryProtocolSettings> GetSummaryProtocolSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        var json = await _appStore.GetSummaryProtocolJsonAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+            return new SummaryProtocolSettings();
+
+        try
+        {
+            var settings = System.Text.Json.JsonSerializer.Deserialize<SummaryProtocolSettings>(json);
+            if (settings is null)
+                return new SummaryProtocolSettings();
+            // A leading-column list that lost its way (empty after a bad round-trip) falls back to the defaults.
+            if (settings.LeadingColumns.Count == 0)
+                settings.LeadingColumns = SummaryProtocolSettings.DefaultLeadingColumns();
+            // The day list and priority day belong to one competition — never carry them across.
+            settings.Days = [];
+            settings.PriorityDayId = null;
+            return settings;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Corrupt JSON — start from defaults rather than breaking the summary page.
+            return new SummaryProtocolSettings();
+        }
+    }
+
+    public Task SaveSummaryProtocolSettingsAsync(SummaryProtocolSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        // Store the layout only: the per-competition day selection and priority day are stripped so a future
+        // competition seeds from a clean template.
+        var shared = new SummaryProtocolSettings
+        {
+            Mode = settings.Mode,
+            Orientation = settings.Orientation,
+            TableBorders = settings.TableBorders,
+            PageFooter = settings.PageFooter,
+            LeadingColumns = settings.LeadingColumns,
+            RequireAllDays = settings.RequireAllDays,
+            CompetitionName = settings.CompetitionName,
+            Title = settings.Title,
+            Subtitle = settings.Subtitle,
+            Venue = settings.Venue,
+            CompetitionType = settings.CompetitionType,
+            DateText = settings.DateText
+        };
+        var json = System.Text.Json.JsonSerializer.Serialize(shared);
+        return _appStore.SaveSummaryProtocolJsonAsync(json, cancellationToken);
+    }
+
     public async Task<ResultProtocolSettings> GetResultProtocolSettingsAsync(CancellationToken cancellationToken = default)
     {
         var json = await _appStore.GetResultProtocolJsonAsync(cancellationToken);

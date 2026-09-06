@@ -87,6 +87,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         return new ResultProtocolDocument
         {
             Orientation = settings.Orientation,
+            TableBorders = settings.TableBorders,
             CompetitionName = settings.CompetitionName.Trim(),
             Title = title,
             Subtitle = settings.Subtitle.Trim(),
@@ -100,8 +101,11 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
             Sections = sections,
             Officials = ProtocolOfficialsFactory.Build(
                 data.Officials, labels.ChiefJudgeLabel, labels.ChiefSecretaryLabel, labels.JuryLabel),
-            Footer = ProtocolFooterFactory.Build(
-                labels.FooterSoftwareName, labels.FooterGeneratedLabel, labels.FooterPageLabel)
+            // The page footer is opt-out: a null Footer makes the renderer skip the колонтитул entirely.
+            Footer = settings.PageFooter
+                ? ProtocolFooterFactory.Build(
+                    labels.FooterSoftwareName, labels.FooterGeneratedLabel, labels.FooterPageLabel)
+                : null
         };
     }
 

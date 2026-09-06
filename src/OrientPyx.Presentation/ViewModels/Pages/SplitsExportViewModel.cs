@@ -34,7 +34,8 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
         ISessionService session,
         ISplitExportBuilder builder,
         ISplitHtmlWriter writer,
-        IBusyService busy)
+        IBusyService busy,
+        IExportFileSaver fileSaver)
         : base(localization)
     {
         _editor = editor;
@@ -42,10 +43,14 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
         _builder = builder;
         _writer = writer;
         _busy = busy;
+        FileSaver = fileSaver;
 
         // Singleton VM: reload the day list + header defaults on a competition/day change (marshal to UI).
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
     }
+
+    /// <summary>Writes the export to the file the user picked (handles a target locked by Word). Used by the view.</summary>
+    public IExportFileSaver FileSaver { get; }
 
     public override string NavKey => "Nav.Splits";
     public override string TitleKey => "Page.Splits.Title";
@@ -248,19 +253,10 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
         SplitDetailLeader: Localization.Get("Splits.Detail.Leader"),
         SplitDetailClose: Localization.Get("Splits.Detail.Close"));
 
-    // "<competition> — спліти <День N> <date>.html", sanitised for the save dialog.
-    private string SuggestedFileName(EventDay day)
-    {
-        var competition = _session.CurrentEvent?.Name;
-        if (string.IsNullOrWhiteSpace(competition))
-            competition = Localization.Get("Splits.DefaultName");
-        var part = Localization.Get("Splits.NamePart");
-        var stamp = DateTime.Now.ToString("yyyy-MM-dd");
-        var baseName = $"{competition} — {part} {Localization.Get("Header.Day")} {day.Number} {stamp}";
-        foreach (var invalid in System.IO.Path.GetInvalidFileNameChars())
-            baseName = baseName.Replace(invalid, '_');
-        return $"{baseName}.html";
-    }
+    // "Спліти - <competition> - День N - <day date>.html" (see ExportFileName).
+    private string SuggestedFileName(EventDay day) => ExportFileName.Build(
+        Localization, "Splits.NamePart", _session.CurrentEvent?.Name, "html", day,
+        defaultNameKey: "Splits.DefaultName");
 }
 
 /// <summary>The result of building a split export: the HTML bytes and a suggested save file name.</summary>

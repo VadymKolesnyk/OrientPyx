@@ -11,6 +11,11 @@ public sealed class ResultProtocolDocument
     /// <summary>Page orientation chosen in the settings.</summary>
     public ProtocolOrientation Orientation { get; init; } = ProtocolOrientation.Portrait;
 
+    /// <summary>When <c>true</c> every data table is drawn as a full grid (outer frame + inside rules); when
+    /// <c>false</c> only the header row is boxed and the data rows stay border-less. Chosen in the settings
+    /// ("Друк таблиці"). The banded judges' layout is always a full grid regardless of this flag.</summary>
+    public bool TableBorders { get; init; }
+
     /// <summary>Competition-name line (centred), printed above the title. Blank ⇒ nothing printed.</summary>
     public string CompetitionName { get; init; } = string.Empty;
 
