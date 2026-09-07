@@ -4065,11 +4065,16 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var dayId = CurrentDayId;
         var existing = await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
 
-        // Seed the dedup set with what's already logged (content keys), and continue the sequence.
-        var seen = new HashSet<string>(existing.Select(r => r.ContentKey), StringComparer.Ordinal);
+        // Seed the dedup set with what's already logged (content keys), and continue the sequence. The
+        // map lets a skipped record name the row it repeats, so the caller can re-print that slip.
+        var loggedByKey = new Dictionary<string, Guid>(StringComparer.Ordinal);
+        foreach (var row in existing)
+            loggedByKey.TryAdd(row.ContentKey, row.Id);
+        var seen = new HashSet<string>(loggedByKey.Keys, StringComparer.Ordinal);
         var nextOrder = existing.Count == 0 ? 1 : existing.Max(r => r.Order) + 1;
 
         var toAdd = new List<FinishReadout>();
+        var duplicates = new List<FinishReadoutDuplicate>();
         var skipped = 0;
         foreach (var record in data.Records)
         {
@@ -4083,6 +4088,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             if (!seen.Add(key))
             {
                 skipped++;
+                // Report it against the logged row it repeats (a within-file twin has no row of its own).
+                // The read mark rides along: two physical read-outs of the same chip produce the same
+                // content key but different marks, which is what tells a repeat read from a re-read file.
+                if (loggedByKey.TryGetValue(key, out var loggedId))
+                    duplicates.Add(new FinishReadoutDuplicate(loggedId, key, record.ReadMark));
                 continue;
             }
 
@@ -4124,7 +4134,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return new FinishReadoutImportResult(
             Added: toAdd.Count,
             Skipped: skipped,
-            AddedIds: toAdd.Select(r => r.Id).ToList());
+            AddedIds: toAdd.Select(r => r.Id).ToList(),
+            Duplicates: duplicates);
     }
 
     public Task<int> ClearFinishReadoutsAsync(CancellationToken cancellationToken = default)
@@ -4421,6 +4432,44 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         return previousHolder;
     }
+
+    public async Task<Guid?> SwapParticipantDayChipsAsync(Guid participantId, Guid dayId, string chip, string previousChip, CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        var trimmed = (chip ?? string.Empty).Trim();
+        var handBack = (previousChip ?? string.Empty).Trim();
+        if (trimmed.Length == 0 || handBack.Length == 0)
+            return null;
+
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var target = links.FirstOrDefault(l => l.ParticipantId == participantId);
+        if (target is null)
+            return null;
+
+        var other = links.FirstOrDefault(l =>
+            l.Id != target.Id &&
+            string.Equals(l.Chip.Trim(), trimmed, StringComparison.OrdinalIgnoreCase));
+        if (other is null)
+            return null;
+
+        // Give the other holder the chip this participant is giving up, then take theirs. Order does
+        // not matter here — both rows are written explicitly, so no intermediate state is persisted.
+        await _eventStore.UpdateParticipantDayAsync(folder, WithChip(other, dayId, handBack), cancellationToken);
+        await _eventStore.UpdateParticipantDayAsync(folder, WithChip(target, dayId, trimmed), cancellationToken);
+        return other.ParticipantId;
+    }
+
+    private static ParticipantDay WithChip(ParticipantDay source, Guid dayId, string chip) => new()
+    {
+        Id = source.Id,
+        EventDayId = dayId,
+        ParticipantId = source.ParticipantId,
+        Order = source.Order,
+        GroupId = source.GroupId,
+        Chip = chip,
+        StartTime = source.StartTime,
+        OutOfCompetition = source.OutOfCompetition
+    };
 
     public async Task<bool> ToggleRentalChipAsync(string number, CancellationToken cancellationToken = default)
     {

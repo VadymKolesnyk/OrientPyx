@@ -63,6 +63,8 @@
                                          ItemsSource="{Binding Rows}"
                                          Localization="{Binding Localization}"
                                          SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
+                                         LayoutKey="participants.quickwithdrawal"
+                                         LayoutStore="{Binding LayoutStore}"
                                          DeleteRequested="OnDeleteRequested" />
                 </Border>
 

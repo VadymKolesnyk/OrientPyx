@@ -33,6 +33,15 @@ public sealed class ChipReadRecord
 
     /// <summary>Controls punched in order, when the file recorded them. Empty otherwise.</summary>
     public IReadOnlyList<ChipPunch> Punches { get; init; } = [];
+
+    /// <summary>
+    /// The moment the chip was read out, exactly as the file wrote it ("Read on" / "read at"), or empty
+    /// when the format carries none. Kept RAW and unparsed on purpose: it is not used as a time, only to
+    /// tell one physical read-out of a chip from another. A runner who reads out twice produces two
+    /// records that are otherwise identical — same start, finish and punches — so this is the only field
+    /// that separates them.
+    /// </summary>
+    public string ReadMark { get; init; } = string.Empty;
 }
 
 /// <summary>A single control punch read from a chip: the control code and, when known, its time.</summary>

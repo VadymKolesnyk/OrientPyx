@@ -25,6 +25,9 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
 {
     private const string DefaultReadoutFileName = "event.csv";
 
+    /// <summary>Joins the parts of a repeat-read key; a control character so it can't occur in the data.</summary>
+    private const string Separator = "\u0001";
+
     private readonly ICompetitionEditorService _editor;
     private readonly ISessionService _session;
     private readonly IReadoutParserSelector _readoutParsers;
@@ -41,6 +44,20 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
 
     /// <summary>The app-level readout format, refreshed on load; drives which "no file" hint is shown.</summary>
     private ReadoutType _readoutType = ReadoutType.SportIdent;
+
+    /// <summary>
+    /// The read-outs this watch has already seen in the file, keyed by content + read mark. The watched
+    /// file is re-read WHOLE every tick, so every already-logged row comes back as a duplicate each time;
+    /// what separates a genuine repeat read is the READ MARK ("Read on" / "read at"), which the timing
+    /// system stamps afresh each time a chip is put on the station. So the same row re-read a hundred
+    /// times keeps one key, while a runner reading out a second time — same start, finish and punches —
+    /// arrives with a new mark and prints once. Primed (without printing) on the first tick of a watch,
+    /// so the log's existing rows don't all print at once. Touched only from the poller's loop.
+    /// </summary>
+    private readonly HashSet<string> _seenInFile = new(StringComparer.Ordinal);
+
+    /// <summary>False until the first tick of the current watch has primed <see cref="_seenInFile"/>.</summary>
+    private bool _fileSeenPrimed;
 
     public FinishReadViewModel(
         ILocalizationService localization,
@@ -183,6 +200,8 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
             return;
 
         await _busy.RunAsync(() => _editor.ClearFinishReadoutsAsync());
+        // The rows those keys pointed at are gone; the file's records will be logged as new reads again.
+        ResetSeenInFile();
         await LoadAsync();
     }
 
@@ -497,6 +516,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
             _poller.Stop();
             HideActivity();
             AutoReadError = string.Empty;
+            ResetSeenInFile();
         }
     }
 
@@ -537,6 +557,10 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         // wrong list format is selected), and an existing file the current parser can't read is the
         // wrong format. The poller creates the file when absent, so this check runs BEFORE it starts.
         _ = ValidateReadoutFileAsync();
+
+        // A fresh watch (new file, new interval, re-enabled) re-primes: whatever is in the file at its
+        // first tick counts as history, not as repeat reads to print.
+        ResetSeenInFile();
 
         var interval = TimeSpan.FromSeconds(Math.Max(1, AutoReadIntervalSeconds));
         _poller.Start(AutoReadFilePath, interval, OnPolledContentAsync);
@@ -623,6 +647,8 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
                 await HandleNewReadsAsync(result.AddedIds);
                 await Dispatcher.UIThread.InvokeAsync(LoadAsync);
             }
+
+            await HandleRepeatedReadsAsync(result.Duplicates);
         }
         catch (ReadoutFormatException)
         {
@@ -668,6 +694,56 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
             }
             else
                 await AutoPrintNewReadsAsync([id]);
+        }
+    }
+
+    // A runner who reads out a second time with an identical passage produces a record that is already
+    // logged, so nothing is written (the log must not double). When auto-print is on we still hand them a
+    // second slip — the usual reason for the repeat read is a lost or misprinted printout.
+    //
+    // The watched file is re-read whole on every tick, so being a duplicate is not enough — the row the
+    // runner read an hour ago comes back on every single tick. What marks a REAL repeat read is the read
+    // mark ("Read on" / "read at"), stamped anew each time a chip touches the station: the same row
+    // re-read all afternoon keeps one key and prints once, while a second physical read-out arrives with
+    // a new mark and gets its slip. The first tick of a watch only primes the set (printing nothing), so
+    // the log's existing rows don't all print at once.
+    // Runs on the poller's thread; never throws out of the poll.
+    private async Task HandleRepeatedReadsAsync(IReadOnlyList<FinishReadoutDuplicate> duplicates)
+    {
+        // Occurrence-numbered so two read-outs that landed on the SAME mark (a format with no read-mark
+        // column at all, or one whose resolution is a whole second) still count as two.
+        var keys = new List<(FinishReadoutDuplicate Duplicate, string Key)>(duplicates.Count);
+        var occurrence = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var duplicate in duplicates)
+        {
+            var baseKey = duplicate.ContentKey + Separator + duplicate.ReadMark;
+            var n = occurrence.TryGetValue(baseKey, out var seen) ? seen + 1 : 1;
+            occurrence[baseKey] = n;
+            keys.Add((duplicate, $"{baseKey}{Separator}{n}"));
+        }
+
+        if (!_fileSeenPrimed)
+        {
+            // First tick of this watch: everything already in the file is history, not a repeat read.
+            foreach (var (_, key) in keys)
+                _seenInFile.Add(key);
+            _fileSeenPrimed = true;
+            return;
+        }
+
+        var repeats = keys.Where(k => _seenInFile.Add(k.Key)).Select(k => k.Duplicate).ToList();
+        if (repeats.Count == 0)
+            return;
+
+        // Chip numbers for the log line come from the store, not the bound collection — this runs on the
+        // poller's thread and Readouts belongs to the UI.
+        var rows = await _editor.GetFinishReadoutRowsAsync();
+        var byId = rows.ToDictionary(r => r.Id);
+        foreach (var repeat in repeats)
+        {
+            var chip = byId.TryGetValue(repeat.ReadoutId, out var row) ? row.ChipNumber : string.Empty;
+            _log.Action(string.Format(Localization.Get("FinishRead.Repeat.Log"), chip));
+            await AutoPrintNewReadsAsync([repeat.ReadoutId]);
         }
     }
 
@@ -734,6 +810,14 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
 
     // Used on competition/day switch: turning the toggle off runs OnAutoReadEnabledChanged → Stop.
     private void StopAutoRead() => AutoReadEnabled = false;
+
+    // Drops what this watch has seen in the file, so the next tick primes afresh instead of treating the
+    // file's existing rows as repeat reads to print.
+    private void ResetSeenInFile()
+    {
+        _seenInFile.Clear();
+        _fileSeenPrimed = false;
+    }
 
     // --- Top-bar background activity
 

@@ -119,13 +119,16 @@ public sealed class SheetColumnsButton : Button
         return transform;
     }
 
-    // (Re)builds the checkbox list from the table's toggleable columns. Each checkbox is checked when
-    // the column is visible; toggling it shows/hides via the table (which rebuilds and re-raises).
+    // (Re)builds the flyout: the view actions ("save this arrangement for the next competitions" /
+    // "reset") first, then the checkbox list of toggleable columns. Each checkbox is checked when the
+    // column is visible; toggling it shows/hides via the table (which rebuilds and re-raises).
     private void RebuildList()
     {
         _list.Children.Clear();
         if (Table is not { } table)
             return;
+
+        PrependViewActions(table);
 
         foreach (var column in table.ToggleableColumns())
         {
@@ -145,5 +148,43 @@ public sealed class SheetColumnsButton : Button
             };
             _list.Children.Add(check);
         }
+    }
+
+    // The per-table view actions, above the column checkboxes and separated from them: save the current
+    // arrangement as the app-wide default for THIS table (new competitions then start from it), or drop it
+    // in both layers. Only shown when the table actually persists its view — without a LayoutKey the
+    // actions would silently do nothing.
+    private void PrependViewActions(SheetTable table)
+    {
+        if (!table.SupportsLayoutPersistence)
+            return;
+
+        _list.Children.Add(ActionButton("Sheet.Columns.SaveAsDefault", "Sheet.Columns.SaveAsDefault.Tooltip", () =>
+        {
+            table.SaveLayoutAsDefault();
+            _flyout.Hide();
+        }));
+        _list.Children.Add(ActionButton("Sheet.Columns.ResetLayout", "Sheet.Columns.ResetLayout.Tooltip", () =>
+        {
+            table.ResetLayout();
+            _flyout.Hide();
+        }));
+        _list.Children.Add(new Separator { Margin = new Thickness(0, 4) });
+    }
+
+    private Button ActionButton(string labelKey, string tooltipKey, Action action)
+    {
+        var button = new Button
+        {
+            Content = Localization?.Get(labelKey) ?? labelKey,
+            Padding = new Thickness(6, 3),
+            MinHeight = 0,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left
+        };
+        button.Classes.Add("ghost");
+        ToolTip.SetTip(button, Localization?.Get(tooltipKey) ?? string.Empty);
+        button.Click += (_, _) => action();
+        return button;
     }
 }

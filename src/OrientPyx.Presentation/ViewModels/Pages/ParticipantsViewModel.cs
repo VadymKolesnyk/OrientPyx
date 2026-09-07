@@ -845,18 +845,28 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         await _chipGate.WaitAsync();
         try
         {
-            var ok = await ResolveChipReassignmentAsync(participantId, dayId, newChip);
-            if (!ok)
+            var previousChip = (row.CommittedChip ?? string.Empty).Trim();
+            var choice = await ResolveChipReassignmentAsync(participantId, dayId, newChip, previousChip);
+            if (choice == ChipConflictChoice.Cancel)
             {
                 // Rejected: restore the previous chip without re-triggering this handler.
-                row.SetChipSilently(row.CommittedChip);
+                row.SetChipSilently(previousChip);
                 return;
             }
 
             row.MarkChipCommitted(newChip);
-            await Task.Run(() => _editor.ReassignParticipantDayChipAsync(participantId, dayId, newChip));
-            // The other holder (if any) had their chip cleared in the DB; refresh that row in the grid.
-            ClearChipOnConflictingDayRow(participantId, newChip);
+            if (choice == ChipConflictChoice.Swap)
+            {
+                await Task.Run(() => _editor.SwapParticipantDayChipsAsync(participantId, dayId, newChip, previousChip));
+                // The other holder took this participant's old chip; mirror that in the grid.
+                SetChipOnConflictingDayRow(participantId, newChip, previousChip);
+            }
+            else
+            {
+                await Task.Run(() => _editor.ReassignParticipantDayChipAsync(participantId, dayId, newChip));
+                // The other holder (if any) had their chip cleared in the DB; refresh that row in the grid.
+                SetChipOnConflictingDayRow(participantId, newChip, string.Empty);
+            }
         }
         finally
         {
@@ -864,9 +874,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         }
     }
 
-    // After a reassignment, drop the chip from whatever OTHER day-grid row was showing it, so the UI
-    // matches the DB (only one competitor holds a chip per day).
-    private void ClearChipOnConflictingDayRow(Guid keepParticipantId, string chip)
+    // After a reassignment, replace the chip on whatever OTHER day-grid row was showing it, so the UI
+    // matches the DB (only one competitor holds a chip per day). handBack is blank for a plain
+    // take-over and the traded chip for a swap.
+    private void SetChipOnConflictingDayRow(Guid keepParticipantId, string chip, string handBack)
     {
         if (chip.Length == 0)
             return;
@@ -876,35 +887,58 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 continue;
             if (string.Equals((other.Chip ?? string.Empty).Trim(), chip, StringComparison.OrdinalIgnoreCase))
             {
-                other.SetChipSilently(string.Empty);
-                other.MarkChipCommitted(string.Empty);
+                other.SetChipSilently(handBack);
+                other.MarkChipCommitted(handBack);
             }
         }
     }
 
-    // Shared confirm step for a chip reassignment (day grid and roster). Returns true when the chip is
-    // free or the user confirmed taking it; false when another competitor holds it and the user
-    // declined. A blank chip is always free.
-    private async Task<bool> ResolveChipReassignmentAsync(Guid participantId, Guid dayId, string chip)
+    // What to do with a chip edit that collides with another competitor on the same day.
+    private enum ChipConflictChoice
+    {
+        /// <summary>The user declined - revert the cell.</summary>
+        Cancel,
+
+        /// <summary>Take the chip; the previous holder is left without one.</summary>
+        Take,
+
+        /// <summary>Trade: the previous holder gets the chip this participant is giving up.</summary>
+        Swap
+    }
+
+    // Shared confirm step for a chip reassignment (day grid and roster). Returns Take when the chip is
+    // free or the user confirmed taking it, Swap when they chose to trade the two chips, and Cancel
+    // when they declined. A blank chip is always free. The swap option is offered only when this
+    // participant already had a chip to hand over (previousChip) - there is nothing to trade otherwise.
+    private async Task<ChipConflictChoice> ResolveChipReassignmentAsync(
+        Guid participantId, Guid dayId, string chip, string previousChip)
     {
         if (chip.Length == 0)
-            return true;
+            return ChipConflictChoice.Take;
 
         var holder = await _busy.RunAsync(() => _editor.FindChipHolderAsync(dayId, chip, participantId));
         if (holder is null)
-            return true;
+            return ChipConflictChoice.Take;
 
         var who = string.IsNullOrWhiteSpace(holder) ? Localization.Get("Participants.Chip.UnnamedHolder") : holder;
+        var canSwap = previousChip.Length > 0;
         var dialog = new ConfirmDialogViewModel(
             Localization,
             titleKey: "Participants.Chip.Reassign.Title",
-            messageKey: "Participants.Chip.Reassign.Message",
+            messageKey: canSwap ? "Participants.Chip.Reassign.SwapMessage" : "Participants.Chip.Reassign.Message",
             confirmKey: "Participants.Chip.Reassign.Confirm",
             cancelKey: "Common.Cancel")
         {
-            MessageArgs = [chip, who]
+            AlternateKey = canSwap ? "Participants.Chip.Reassign.Swap" : null,
+            MessageArgs = canSwap ? [chip, who, previousChip] : [chip, who]
         };
-        return await _dialogs.ConfirmAsync(dialog);
+
+        return await _dialogs.ChooseAsync(dialog) switch
+        {
+            ConfirmDialogResult.Confirm => ChipConflictChoice.Take,
+            ConfirmDialogResult.Alternate => ChipConflictChoice.Swap,
+            _ => ChipConflictChoice.Cancel
+        };
     }
 
     // ── Day-row autosave (debounced per row)
@@ -1250,7 +1284,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             return;
         }
 
-        var assignments = await _dialogs.ShowQuickWithdrawalAsync(new QuickWithdrawalViewModel(Localization, data));
+        var assignments = await _dialogs.ShowQuickWithdrawalAsync(new QuickWithdrawalViewModel(Localization, data, LayoutStore));
         if (assignments is null || assignments.Count == 0)
             return;
 
@@ -2034,17 +2068,26 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         await _chipGate.WaitAsync();
         try
         {
-            var ok = await ResolveChipReassignmentAsync(participantId, dayId, newChip);
-            if (!ok)
+            var previousChip = (cell.CommittedChip ?? string.Empty).Trim();
+            var choice = await ResolveChipReassignmentAsync(participantId, dayId, newChip, previousChip);
+            if (choice == ChipConflictChoice.Cancel)
             {
-                cell.SetChipSilently(cell.CommittedChip);
+                cell.SetChipSilently(previousChip);
                 return;
             }
 
             cell.MarkChipCommitted(newChip);
-            await Task.Run(() => _editor.ReassignParticipantDayChipAsync(participantId, dayId, newChip));
-            // Mirror the DB: drop the chip from any other roster cell on the SAME day that showed it.
-            ClearChipOnConflictingRosterCell(participantId, dayId, newChip);
+            if (choice == ChipConflictChoice.Swap)
+            {
+                await Task.Run(() => _editor.SwapParticipantDayChipsAsync(participantId, dayId, newChip, previousChip));
+                SetChipOnConflictingRosterCell(participantId, dayId, newChip, previousChip);
+            }
+            else
+            {
+                await Task.Run(() => _editor.ReassignParticipantDayChipAsync(participantId, dayId, newChip));
+                // Mirror the DB: drop the chip from any other roster cell on the SAME day that showed it.
+                SetChipOnConflictingRosterCell(participantId, dayId, newChip, string.Empty);
+            }
         }
         finally
         {
@@ -2052,8 +2095,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         }
     }
 
-    // After a roster reassignment, clear the chip from the other participant's cell on the same day.
-    private void ClearChipOnConflictingRosterCell(Guid keepParticipantId, Guid dayId, string chip)
+    // After a roster reassignment, replace the chip on the other participant's cell on the same day:
+    // blank for a plain take-over, the traded chip for a swap.
+    private void SetChipOnConflictingRosterCell(Guid keepParticipantId, Guid dayId, string chip, string handBack)
     {
         if (chip.Length == 0)
             return;
@@ -2066,8 +2110,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 if (cell.DayId == dayId && cell.IsMember &&
                     string.Equals((cell.Chip ?? string.Empty).Trim(), chip, StringComparison.OrdinalIgnoreCase))
                 {
-                    cell.SetChipSilently(string.Empty);
-                    cell.MarkChipCommitted(string.Empty);
+                    cell.SetChipSilently(handBack);
+                    cell.MarkChipCommitted(handBack);
                 }
             }
         }

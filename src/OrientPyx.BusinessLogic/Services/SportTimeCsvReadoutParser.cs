@@ -40,7 +40,8 @@ public sealed class SportTimeCsvReadoutParser : IReadoutParser
     // reader occasionally omits it). They match the named layout exactly:
     //   No.;read at;SI-Card;St no;cat.;…;start time;FI_CN;FI_DOW;Finish time;No. of punches;1.CN;1.DOW;1.Time;…
     // so "No. of punches" is at index 28 and the first punch triplet begins at 29.
-    private static readonly ColumnLayout HeaderlessLayout = new(Chip: 2, Start: 24, Finish: 27, FirstPunch: 29);
+    private static readonly ColumnLayout HeaderlessLayout = new(
+        Chip: 2, ReadAt: 1, Start: 24, Finish: 27, FirstPunch: 29);
 
     // A synthetic base date the file itself doesn't carry. Its weekday is shifted to match the finish's
     // parenthesised DOW when there is one, so weekday-relative dating works; otherwise it's arbitrary and
@@ -104,6 +105,7 @@ public sealed class SportTimeCsvReadoutParser : IReadoutParser
         var layout = hasHeader
             ? new ColumnLayout(
                 Chip: IndexOf(header, ChipColumn),
+                ReadAt: IndexOf(header, ReadAtColumn),
                 Start: IndexOf(header, StartTimeColumn),
                 Finish: IndexOf(header, FinishTimeColumn),
                 FirstPunch: NextOrNone(IndexOf(header, PunchCountColumn)))
@@ -153,7 +155,10 @@ public sealed class SportTimeCsvReadoutParser : IReadoutParser
             ChipNumber = chip,
             StartTime = start,
             FinishTime = finish,
-            Punches = punches
+            Punches = punches,
+            // "read at" is a time of day with no date, but it only has to differ between two read-outs
+            // of the same chip, so it is taken raw and never parsed.
+            ReadMark = Field(fields, layout.ReadAt).Trim()
         };
     }
 
@@ -188,7 +193,7 @@ public sealed class SportTimeCsvReadoutParser : IReadoutParser
         return (codes, punches);
     }
 
-    private readonly record struct ColumnLayout(int Chip, int Start, int Finish, int FirstPunch);
+    private readonly record struct ColumnLayout(int Chip, int ReadAt, int Start, int Finish, int FirstPunch);
 
     private static int NextOrNone(int index) => index >= 0 ? index + 1 : -1;
 

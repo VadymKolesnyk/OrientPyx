@@ -62,6 +62,10 @@ the UI shows only the selection / creation screens (gating in `MainWindowViewMod
   root** to `%LocalAppData%\OrientDesk\data-root` (see `AppDatabasePaths` / `Program.cs`) so
   data survives auto-updates — the app-dir default is for local dev only.
 - The competition list is built by **scanning** `./events` (`IEventFolderScanner`).
+- The identifier can be changed later on the Information page (`IEventCatalogService.RenameIdentifierAsync`):
+  it renames the folder *and* rewrites `CompetitionInfo.Identifier` (the scanner reads it from the DB, so both
+  must move together). The event DB is released first (`IEventStore.ReleaseAsync` — WAL checkpoint +
+  `SqliteConnection.ClearAllPools()`), otherwise Windows refuses to move a folder holding an open file.
 
 **Session rule (important):** the active competition/day is held **in-memory** by
 `ISessionService` for the running instance. The app DB only stores the last selection for
@@ -135,11 +139,22 @@ Column widths are content-sized then user-resizable; explicit fixed widths are s
 `width:` argument. There is no star/`*` sizing — the table left-aligns content-width columns and
 scrolls horizontally.
 
-A table can **persist its view** (column order, width, hidden set) per competition: set `LayoutKey`
-(a stable id, e.g. `"participants.day"`) and `LayoutStore` (`ITableLayoutStore`, a singleton) on the
-`SheetTable`. It saves to `events/<id>/views.json` (one JSON object keyed by table id) on every
-hide/reorder/resize and reloads on build. Persistence is opt-in — only set where wanted (currently the
-two Participants tables); tables without it stay in-memory only. No-op when no competition is selected.
+A table **persists its view** (column order, width, hidden set) in two layers, wired by setting
+`LayoutKey` (a stable id, e.g. `"participants.day"`) and `LayoutStore` (`ITableLayoutStore`, a
+singleton) on the `SheetTable` — every table in the app sets both.
+
+- **Per competition** — `events/<id>/views.json`, one JSON object keyed by table id. Written
+  automatically on every hide/reorder/resize, reloaded on build. No-op when no competition is selected.
+- **Application default** — `views-default.json` in the data root (`AppDatabasePaths.BaseDirectory`,
+  so it follows the installed build's redirected root). Written only when the user picks «Зберегти
+  вигляд для наступних змагань» in the table's columns menu, and only for that one table. A
+  competition with no view of its own seeds from it.
+
+`Load` returns the competition's own entry, else the app default. The columns menu also offers
+«Скинути вигляд таблиці» (`SheetTable.ResetLayout`), which drops the table's entry in *both* layers and
+restores the widths the columns were built with. Both files are sanitised on read (blank/duplicate
+keys, implausible widths dropped; an entry left with nothing reads as "no layout"), so a hand-edited or
+stale file always falls back to the build default rather than breaking the table.
 
 ## How to build
 

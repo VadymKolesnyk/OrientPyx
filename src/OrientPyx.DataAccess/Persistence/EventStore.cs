@@ -37,6 +37,17 @@ public sealed class EventStore : IEventStore
         await db.Database.ExecuteSqlRawAsync("PRAGMA wal_checkpoint(TRUNCATE);", cancellationToken);
     }
 
+    public async Task ReleaseAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await CheckpointAsync(eventFolderPath, cancellationToken);
+
+        // Microsoft.Data.Sqlite pools connections per connection string, so a disposed DbContext still
+        // leaves the file open. Clearing the pools drops those handles; the next store call simply
+        // opens a fresh connection. This is process-wide (every event DB), which is harmless — the
+        // pool exists only to save re-open cost.
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+    }
+
     public async Task<CompetitionInfo?> GetCompetitionInfoAsync(string eventFolderPath, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);

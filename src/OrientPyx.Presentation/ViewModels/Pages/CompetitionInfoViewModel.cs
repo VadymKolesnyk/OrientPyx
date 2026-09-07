@@ -6,6 +6,7 @@ using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.ViewModels.Dialogs;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
 
@@ -18,11 +19,22 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
     private readonly ICompetitionEditorService _editor;
     private readonly ISessionService _session;
     private readonly IBusyService _busy;
+    private readonly IEventCatalogService _catalog;
+    private readonly IDialogService _dialogs;
+    private readonly IActivityLog _log;
+    private readonly IBackgroundActivityService _activities;
 
     private CompetitionInfo? _info;
 
     [ObservableProperty]
     private string _name = string.Empty;
+
+    /// <summary>
+    /// The competition's identifier — the name of its folder under the events path. Shown read-only;
+    /// changed through the rename modal, which also moves the folder.
+    /// </summary>
+    [ObservableProperty]
+    private string _identifier = string.Empty;
 
     [ObservableProperty]
     private string _venue = string.Empty;
@@ -64,12 +76,20 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
         ILocalizationService localization,
         ICompetitionEditorService editor,
         ISessionService session,
-        IBusyService busy)
+        IBusyService busy,
+        IEventCatalogService catalog,
+        IDialogService dialogs,
+        IActivityLog log,
+        IBackgroundActivityService activities)
         : base(localization)
     {
         _editor = editor;
         _session = session;
         _busy = busy;
+        _catalog = catalog;
+        _dialogs = dialogs;
+        _log = log;
+        _activities = activities;
         // Singleton VM: re-read the form whenever the competition changes so a switched event
         // never leaves the previous competition's metadata on screen. The event may arrive on a
         // pool thread (session writes run inside RunAsync), so marshal LoadAsync onto the UI thread.
@@ -87,6 +107,7 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
         // BD read runs off the UI thread; the form fields are set afterwards on the UI thread.
         _info = await _busy.RunAsync(() => _editor.GetInfoAsync());
         Name = _info?.Name ?? string.Empty;
+        Identifier = _session.CurrentEvent?.Identifier ?? _info?.Identifier ?? string.Empty;
         Venue = _info?.Venue ?? string.Empty;
         Organisation = _info?.Organisation ?? string.Empty;
         StartDate = _info?.StartDate;
@@ -137,6 +158,59 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
 
         Saved = true;
     }
+
+    /// <summary>
+    /// Opens the rename modal and applies the chosen identifier: the catalog moves the competition
+    /// folder and rewrites the identifier in its database, then the session is re-pointed at the new
+    /// folder. Blocked while a background process is running — those keep writing into the folder that
+    /// is about to move.
+    /// </summary>
+    [RelayCommand]
+    private async Task RenameIdentifierAsync()
+    {
+        if (_session.CurrentEvent is not { } current)
+            return;
+
+        if (_activities.IsAnyActive)
+        {
+            await ShowMessageAsync("CompetitionInfo.Rename.BusyActivities");
+            return;
+        }
+
+        var dialog = new RenameEventViewModel(
+            Localization, current.Identifier, candidate => _catalog.IsIdentifierAvailableAsync(candidate));
+        var newIdentifier = await _dialogs.ShowRenameEventAsync(dialog);
+        if (newIdentifier is null)
+            return;
+
+        // The log writes into the competition folder; move it out first so no line lands in (and
+        // re-creates) the folder while it is being renamed. The session points it at the new folder after.
+        _log.UseSharedFolder();
+
+        EventSummary renamed;
+        try
+        {
+            renamed = await _busy.RunAsync(() => _catalog.RenameIdentifierAsync(current, newIdentifier));
+        }
+        catch (Exception ex)
+        {
+            _log.UseEventFolder(current.FolderPath);
+            _log.Error("Не вдалося змінити ідентифікатор змагань", ex);
+            await ShowMessageAsync("CompetitionInfo.Rename.Error");
+            return;
+        }
+
+        await _busy.RunAsync(() => _session.RenameCurrentEventAsync(renamed));
+        Identifier = renamed.Identifier;
+    }
+
+    // Reuses the import-options modal as a plain "title + message + OK" box (no toggles).
+    private Task ShowMessageAsync(string messageKey) =>
+        _dialogs.ShowImportOptionsAsync(new ImportOptionsViewModel(
+            Localization,
+            titleKey: "CompetitionInfo.Rename.Title",
+            messageKey: messageKey,
+            options: []));
 
     partial void OnNameChanged(string value) => Saved = false;
     partial void OnVenueChanged(string value) => Saved = false;

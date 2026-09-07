@@ -119,6 +119,65 @@ public sealed class EventCatalogService : IEventCatalogService
         };
     }
 
+    public async Task<EventSummary> RenameIdentifierAsync(
+        EventSummary competition,
+        string newIdentifier,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(competition);
+
+        newIdentifier = (newIdentifier ?? string.Empty).Trim();
+        if (!IsValidIdentifier(newIdentifier))
+            throw new ArgumentException("Identifier must be a valid folder name.", nameof(newIdentifier));
+
+        if (string.Equals(competition.Identifier, newIdentifier, StringComparison.Ordinal))
+            return competition;
+
+        var paths = await _settings.GetPathsAsync(cancellationToken);
+        var oldFolder = competition.FolderPath;
+        var newFolder = Path.Combine(paths.EventsPath, newIdentifier);
+
+        if (!Directory.Exists(oldFolder))
+            throw new InvalidOperationException($"Competition folder '{oldFolder}' no longer exists.");
+
+        // A pure case change ("cup" → "Cup") targets the same folder on a case-insensitive file system,
+        // so Directory.Exists would report a clash against the folder we are renaming. Only a genuinely
+        // different folder counts as taken.
+        var sameFolder = string.Equals(
+            Path.GetFullPath(oldFolder).TrimEnd(Path.DirectorySeparatorChar),
+            Path.GetFullPath(newFolder).TrimEnd(Path.DirectorySeparatorChar),
+            StringComparison.OrdinalIgnoreCase);
+        if (!sameFolder && Directory.Exists(newFolder))
+            throw new InvalidOperationException($"A competition with identifier '{newIdentifier}' already exists.");
+
+        // The competition may be the one currently open: fold its write-ahead log back into event.db and
+        // drop the pooled connections, otherwise Windows refuses to move a folder holding an open file.
+        await _eventStore.ReleaseAsync(oldFolder, cancellationToken);
+
+        Directory.Move(oldFolder, newFolder);
+
+        // The scanner reads the identifier from the database, not the folder name — keep them in step.
+        var info = await _eventStore.GetCompetitionInfoAsync(newFolder, cancellationToken);
+        if (info is not null)
+        {
+            info.Identifier = newIdentifier;
+            await _eventStore.SaveCompetitionInfoAsync(newFolder, info, cancellationToken);
+        }
+
+        return new EventSummary
+        {
+            Identifier = newIdentifier,
+            Name = info?.Name ?? competition.Name,
+            Venue = info?.Venue ?? competition.Venue,
+            FolderPath = newFolder,
+            CreatedAt = info?.CreatedAt ?? competition.CreatedAt,
+            DayCount = competition.DayCount,
+            StartDate = info?.StartDate ?? competition.StartDate,
+            EndDate = info?.EndDate ?? competition.EndDate,
+            IsHidden = info?.IsHidden ?? competition.IsHidden
+        };
+    }
+
     public async Task<bool> IsIdentifierAvailableAsync(string identifier, CancellationToken cancellationToken = default)
     {
         identifier = (identifier ?? string.Empty).Trim();

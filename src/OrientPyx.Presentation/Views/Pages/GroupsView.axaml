@@ -241,6 +241,8 @@
                         <controls:SheetTable Name="ScatterSheet"
                                              ItemsSource="{Binding ScatterVariants}"
                                              Localization="{Binding Localization}"
+                                             LayoutKey="groups.scatter"
+                                             LayoutStore="{Binding LayoutStore}"
                                              DeleteRequested="OnScatterDeleteRequested" />
                     </Border>
                 </DockPanel>

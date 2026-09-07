@@ -36,7 +36,8 @@ public sealed partial class EventSelectionViewModel : ViewModelBase
         IAppStore appStore,
         ISessionService session,
         IBusyService busy,
-        ILocalizationService localization)
+        ILocalizationService localization,
+        ITableLayoutStore layoutStore)
     {
         _catalog = catalog;
         _eventStore = eventStore;
@@ -44,9 +45,14 @@ public sealed partial class EventSelectionViewModel : ViewModelBase
         _session = session;
         _busy = busy;
         Localization = localization;
+        LayoutStore = layoutStore;
     }
 
     public ILocalizationService Localization { get; }
+
+    /// <summary>Persists the table's column view. No competition is selected on this screen, so only the
+    /// application-default layer applies here — the arrangement the user saves for the next competitions.</summary>
+    public ITableLayoutStore LayoutStore { get; }
 
     /// <summary>The rows currently shown in the table (hidden ones only when <see cref="ShowHidden"/> is on).</summary>
     public ObservableCollection<EventSummaryRowViewModel> Events { get; } = [];

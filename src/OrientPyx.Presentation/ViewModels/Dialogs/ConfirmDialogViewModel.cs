@@ -8,11 +8,12 @@ namespace OrientPyx.Presentation.ViewModels.Dialogs;
 /// A reusable yes/no confirmation modal: a title, a short message, and Confirm/Cancel buttons.
 /// Used for destructive actions (e.g. deleting a group) where the user should be asked first.
 /// Callers <c>await</c> <see cref="Completion"/>, which yields true on Confirm and false on
-/// Cancel/close.
+/// Cancel/close. An optional third button (<see cref="AlternateKey"/>) offers a second positive
+/// action next to Confirm; those callers await <see cref="ChoiceCompletion"/> instead.
 /// </summary>
 public sealed partial class ConfirmDialogViewModel : ObservableObject
 {
-    private readonly TaskCompletionSource<bool> _completion =
+    private readonly TaskCompletionSource<ConfirmDialogResult> _completion =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public ConfirmDialogViewModel(
@@ -36,6 +37,7 @@ public sealed partial class ConfirmDialogViewModel : ObservableObject
             OnPropertyChanged(nameof(Message));
             OnPropertyChanged(nameof(ConfirmText));
             OnPropertyChanged(nameof(CancelText));
+            OnPropertyChanged(nameof(AlternateText));
         };
     }
 
@@ -45,6 +47,16 @@ public sealed partial class ConfirmDialogViewModel : ObservableObject
     public string MessageKey { get; }
     public string ConfirmKey { get; }
     public string CancelKey { get; }
+
+    /// <summary>
+    /// Optional localization key for a third button, shown between Cancel and Confirm — a second
+    /// positive action the user may pick instead of the plain confirm (e.g. swapping two chips rather
+    /// than overwriting one). Null (the default) hides the button.
+    /// </summary>
+    public string? AlternateKey { get; init; }
+
+    /// <summary>Bound by the view to show/hide the optional third button.</summary>
+    public bool ShowAlternate => !string.IsNullOrEmpty(AlternateKey);
 
     /// <summary>
     /// True for a plain "message + OK" box: the Cancel button is hidden and the OK button is styled neutrally
@@ -69,13 +81,35 @@ public sealed partial class ConfirmDialogViewModel : ObservableObject
         : Localization.Get(MessageKey);
     public string ConfirmText => Localization.Get(ConfirmKey);
     public string CancelText => Localization.Get(CancelKey);
+    public string AlternateText => AlternateKey is null ? string.Empty : Localization.Get(AlternateKey);
 
     /// <summary>Completes with true when the user confirms, false when they cancel or close.</summary>
-    public Task<bool> Completion => _completion.Task;
+    public Task<bool> Completion => AsBoolAsync();
+
+    /// <summary>Which button the user pressed — for dialogs that offer the optional third action.</summary>
+    public Task<ConfirmDialogResult> ChoiceCompletion => _completion.Task;
+
+    private async Task<bool> AsBoolAsync() => await _completion.Task == ConfirmDialogResult.Confirm;
 
     [RelayCommand]
-    private void Confirm() => _completion.TrySetResult(true);
+    private void Confirm() => _completion.TrySetResult(ConfirmDialogResult.Confirm);
 
     [RelayCommand]
-    private void Cancel() => _completion.TrySetResult(false);
+    private void Alternate() => _completion.TrySetResult(ConfirmDialogResult.Alternate);
+
+    [RelayCommand]
+    private void Cancel() => _completion.TrySetResult(ConfirmDialogResult.Cancel);
+}
+
+/// <summary>Which button closed a <see cref="ConfirmDialogViewModel"/>.</summary>
+public enum ConfirmDialogResult
+{
+    /// <summary>Cancelled, closed or dismissed with Esc.</summary>
+    Cancel,
+
+    /// <summary>The primary (Confirm) button.</summary>
+    Confirm,
+
+    /// <summary>The optional third button (<see cref="ConfirmDialogViewModel.AlternateKey"/>).</summary>
+    Alternate
 }

@@ -24,6 +24,21 @@ public interface IEventCatalogService
     Task<bool> IsIdentifierAvailableAsync(string identifier, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Renames a competition's identifier: moves its folder to the new name under the events path and
+    /// writes the new identifier into the competition metadata (the scanner reads it from the database,
+    /// so both must change together). Returns the updated summary.
+    /// </summary>
+    /// <remarks>
+    /// The competition's database files are released first, so the folder can be moved even when this is
+    /// the active session's own competition. Throws when the identifier is invalid, unchanged, or already
+    /// taken, and when the folder cannot be moved (e.g. another program holds a file in it open).
+    /// </remarks>
+    Task<EventSummary> RenameIdentifierAsync(
+        EventSummary competition,
+        string newIdentifier,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Creates a competition: a folder named <paramref name="identifier"/> under the events
     /// path, its event database, the metadata row, and <paramref name="dayCount"/> days. Throws
     /// if the identifier is invalid or already exists.

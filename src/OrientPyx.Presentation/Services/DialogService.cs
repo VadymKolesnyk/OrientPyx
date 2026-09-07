@@ -35,13 +35,16 @@ public sealed partial class DialogService : ObservableObject, IDialogService
     }
 
     public async Task<bool> ConfirmAsync(ConfirmDialogViewModel dialog)
+        => await ChooseAsync(dialog) == ConfirmDialogResult.Confirm;
+
+    public async Task<ConfirmDialogResult> ChooseAsync(ConfirmDialogViewModel dialog)
     {
         ArgumentNullException.ThrowIfNull(dialog);
 
         Current = dialog;
         try
         {
-            return await dialog.Completion;
+            return await dialog.ChoiceCompletion;
         }
         finally
         {
@@ -438,6 +441,22 @@ public sealed partial class DialogService : ObservableObject, IDialogService
     }
 
     public async Task<ImportEventDecision?> ShowImportEventAsync(ImportEventViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
+
+    public async Task<string?> ShowRenameEventAsync(RenameEventViewModel dialog)
     {
         ArgumentNullException.ThrowIfNull(dialog);
 

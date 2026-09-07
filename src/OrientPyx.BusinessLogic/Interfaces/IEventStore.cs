@@ -22,6 +22,13 @@ public interface IEventStore
     /// </summary>
     Task CheckpointAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Checkpoints the write-ahead log and releases every pooled connection to this competition's
+    /// database, so its files are no longer held open by this process. Needed before the competition
+    /// folder is moved or renamed — Windows refuses to rename a folder holding an open file.
+    /// </summary>
+    Task ReleaseAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
     Task<CompetitionInfo?> GetCompetitionInfoAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
     Task SaveCompetitionInfoAsync(string eventFolderPath, CompetitionInfo info, CancellationToken cancellationToken = default);

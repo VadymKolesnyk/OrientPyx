@@ -71,6 +71,21 @@ public sealed class SessionService : ISessionService
         SessionChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    public async Task RenameCurrentEventAsync(EventSummary competition, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(competition);
+        if (CurrentEvent is null || CurrentDay is null)
+            return;
+
+        CurrentEvent = competition;
+        _log.UseEventFolder(competition.FolderPath);
+        _log.Action($"Competition identifier changed to '{competition.Identifier}'");
+
+        // The pointer stores the identifier, so a restart would otherwise look for the old folder name.
+        await _appStore.SaveLastSessionAsync(competition.Identifier, CurrentDay.Number, cancellationToken);
+        SessionChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     public void Clear()
     {
         CurrentEvent = null;

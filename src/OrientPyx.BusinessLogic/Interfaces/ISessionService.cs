@@ -31,6 +31,13 @@ public interface ISessionService
     /// </summary>
     void UpdateCurrentEvent(EventSummary competition);
 
+    /// <summary>
+    /// Replaces the in-memory competition after its identifier (and folder) changed, re-points the
+    /// diagnostic log at the new folder, and rewrites the last-session pointer so a restart still
+    /// finds the competition under its new name. No-op when there is no current selection.
+    /// </summary>
+    Task RenameCurrentEventAsync(EventSummary competition, CancellationToken cancellationToken = default);
+
     /// <summary>Clears the active selection (does not erase the persisted last session).</summary>
     void Clear();
 

@@ -145,7 +145,9 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
             ChipNumber = chip,
             StartTime = start,
             FinishTime = finish,
-            Punches = punches
+            Punches = punches,
+            // Raw, not the parsed readOn: it only has to differ between two read-outs of the same chip.
+            ReadMark = Field(fields, layout.ReadOn).Trim()
         };
     }
 

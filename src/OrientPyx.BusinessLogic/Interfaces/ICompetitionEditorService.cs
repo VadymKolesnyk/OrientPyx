@@ -485,7 +485,8 @@ public interface ICompetitionEditorService
     /// <summary> Imports parsed read-out records into the current day's finish log. Append-only: each record
     /// that is not already logged (by content — chip + start/finish + punches) is added; identical records
     /// already present are skipped, so re-reading the same file never doubles rows. Duplicates of a chip with
-    /// different content are kept. </summary>
+    /// different content are kept. Skipped records are still reported back (with the id of the row they
+    /// duplicate) so the caller can act on a re-read — e.g. print the slip again — without a second row. </summary>
     Task<FinishReadoutImportResult> ImportFinishReadoutsAsync(ChipReadData data, CancellationToken cancellationToken = default);
 
     /// <summary>Returns how many rows were removed.</summary>
@@ -522,6 +523,15 @@ public interface ICompetitionEditorService
     /// the participant id whose chip was cleared (the previous holder), or null when none.
     /// </summary>
     Task<Guid?> ReassignParticipantDayChipAsync(Guid participantId, Guid dayId, string chip, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Swaps two participants' chips on one day: <paramref name="participantId"/> takes
+    /// <paramref name="chip"/> and the participant who held it gets <paramref name="previousChip"/>
+    /// (the chip the first one had). Only meaningful when both are members of the day and someone else
+    /// really holds the chip; a no-op otherwise. Returns the other participant's id when the swap
+    /// happened, null when it did not.
+    /// </summary>
+    Task<Guid?> SwapParticipantDayChipsAsync(Guid participantId, Guid dayId, string chip, string previousChip, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Toggles a chip number's presence in the rental-chip database: adds it when absent, removes it
@@ -690,10 +700,27 @@ public readonly record struct RentalChipImportResult(int Added, int Skipped);
 /// <param name="Added">How many read-out rows were newly logged.</param>
 /// <param name="Skipped">How many records were already logged (identical content) and were skipped.</param>
 /// <param name="AddedIds">Ids of the newly-logged rows, in log order — used to auto-print just the new reads.</param>
-public readonly record struct FinishReadoutImportResult(int Added, int Skipped, IReadOnlyList<Guid> AddedIds)
+/// <param name="Duplicates">The skipped records, each pointing at the already-logged row it repeats. A caller
+/// watching a file that is re-read whole every tick must decide for itself which of these are genuinely new
+/// re-reads (see <see cref="FinishReadoutDuplicate"/>).</param>
+public readonly record struct FinishReadoutImportResult(
+    int Added,
+    int Skipped,
+    IReadOnlyList<Guid> AddedIds,
+    IReadOnlyList<FinishReadoutDuplicate> Duplicates)
 {
-    public FinishReadoutImportResult(int Added, int Skipped) : this(Added, Skipped, []) { }
+    public FinishReadoutImportResult(int Added, int Skipped) : this(Added, Skipped, [], []) { }
 }
+
+/// <summary>A read-out record that was already logged, so nothing was written for it.</summary>
+/// <param name="ReadoutId">The existing log row this record is identical to.</param>
+/// <param name="ContentKey">The record's content signature — stable across re-reads of the same physical
+/// row, so a caller can tell a row it has already seen in the file from one that just appeared.</param>
+/// <param name="ReadMark">The moment the chip was read out, raw from the file ("Read on" / "read at"), or
+/// empty when the format carries none. A runner who reads out a second time produces the same
+/// <paramref name="ContentKey"/> — same start, finish and punches — but a NEW mark, so the pair
+/// (key, mark) identifies one physical read-out.</param>
+public readonly record struct FinishReadoutDuplicate(Guid ReadoutId, string ContentKey, string ReadMark);
 
 /// <summary>Outcome of a group import, for reporting back to the user.</summary>
 /// <param name="Added">How many groups were newly attached to the day.</param>

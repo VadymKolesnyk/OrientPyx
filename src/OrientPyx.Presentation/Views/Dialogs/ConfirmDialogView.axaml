@@ -46,6 +46,12 @@
                             IsCancel="True"
                             IsVisible="{Binding ShowCancel}"
                             Command="{Binding CancelCommand}" />
+                    <!-- Optional second positive action (e.g. "swap the two chips"); hidden unless the
+                         caller supplied AlternateKey. -->
+                    <Button Content="{Binding AlternateText}"
+                            Classes="ghost"
+                            IsVisible="{Binding ShowAlternate}"
+                            Command="{Binding AlternateCommand}" />
                     <Button Name="ConfirmButton"
                             Content="{Binding ConfirmText}"
                             Classes.danger="{Binding ShowCancel}"

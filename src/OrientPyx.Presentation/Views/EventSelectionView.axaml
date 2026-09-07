@@ -39,6 +39,8 @@
                                          ItemsSource="{Binding Events}"
                                          Localization="{Binding Localization}"
                                          SelectedItem="{Binding SelectedEvent, Mode=TwoWay}"
+                                         LayoutKey="eventselection"
+                                         LayoutStore="{Binding LayoutStore}"
                                          DoubleTapped="OnRowDoubleTapped" />
 
                     <!-- Empty state, shown over the (empty) table -->

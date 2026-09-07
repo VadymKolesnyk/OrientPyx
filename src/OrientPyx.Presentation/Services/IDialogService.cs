@@ -25,6 +25,9 @@ public interface IDialogService : INotifyPropertyChanged
     /// <summary>True when confirmed.</summary>
     Task<bool> ConfirmAsync(ConfirmDialogViewModel dialog);
 
+    /// <summary>Same modal, but reports which button was pressed — for dialogs with the optional third action.</summary>
+    Task<ConfirmDialogResult> ChooseAsync(ConfirmDialogViewModel dialog);
+
     /// <summary>Returns the entered values on OK.</summary>
     Task<BulkAddChipsResult?> ShowBulkAddChipsAsync(BulkAddChipsViewModel dialog);
 
@@ -102,4 +105,7 @@ public interface IDialogService : INotifyPropertyChanged
 
     /// <summary>Confirm, or resolve an identifier clash by overwriting or entering a new unique name.</summary>
     Task<ImportEventDecision?> ShowImportEventAsync(ImportEventViewModel dialog);
+
+    /// <summary>Returns the new competition identifier (folder name), validated against the events folder.</summary>
+    Task<string?> ShowRenameEventAsync(RenameEventViewModel dialog);
 }

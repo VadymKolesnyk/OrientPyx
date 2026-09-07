@@ -23,6 +23,13 @@ public interface IActivityLog
     /// </summary>
     void UseEventFolder(string eventFolderPath);
 
+    /// <summary>
+    /// Moves logging back out of the competition folder into the shared <c>logs</c> folder under the
+    /// events path. Used while a competition folder is being renamed, so no line lands in (and
+    /// re-creates) the folder that is about to move. Best-effort; never throws.
+    /// </summary>
+    void UseSharedFolder();
+
     /// <summary>Absolute path of the current launch's log file, for surfacing to the user.</summary>
     string LogFilePath { get; }
 }

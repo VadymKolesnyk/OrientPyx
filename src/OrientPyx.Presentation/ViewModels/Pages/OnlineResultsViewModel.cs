@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
 using Avalonia.Threading;
@@ -161,6 +161,19 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
 
     public bool IsStopped => !IsPublishing;
 
+    /// <summary>Selectable days for the top-right day picker — the published day is the selected one.</summary>
+    public ObservableCollection<DayOption> DayOptions { get; } = [];
+
+    [ObservableProperty]
+    private DayOption? _selectedDay;
+
+    /// <summary>Day picker is shown only when the competition has more than one day.</summary>
+    public bool ShowDaySelector => DayOptions.Count > 1;
+
+    // True while LoadAsync syncs SelectedDay to the session, so the setter does NOT call
+    // SetCurrentDayAsync (which would re-raise SessionChanged → LoadAsync in a loop).
+    private bool _syncingDay;
+
     /// <summary>The spectator links generated for the configured competition (one per day, + «Сума»).</summary>
     public ObservableCollection<string> Links { get; } = [];
 
@@ -177,7 +190,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         if (_session.CurrentEvent is null)
             return;
 
-        var (api, publish, rules, info, groups) = await _busy.RunAsync(async () =>
+        var (api, publish, rules, info, groups, days) = await _busy.RunAsync(async () =>
         {
             var a = await _appSettings.GetOnlineApiSettingsAsync();
             var p = await _editor.GetOnlinePublishSettingsAsync();
@@ -187,8 +200,30 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
             var g = _session.CurrentDay is null
                 ? (IReadOnlyList<GroupDayRow>)[]
                 : await _editor.GetGroupDayRowsAsync();
-            return (a, p, r, i, g);
+            var d = await _editor.GetDaysAsync();
+            return (a, p, r, i, g, d);
         });
+
+        // Day picker — same pattern as the other per-day pages: switching the day re-points the session.
+        _syncingDay = true;
+        try
+        {
+            if (!SameDays(days))
+            {
+                DayOptions.Clear();
+                foreach (var day in days)
+                    DayOptions.Add(new DayOption(day, Localization));
+            }
+
+            var current = _session.CurrentDay?.Number;
+            SelectedDay = DayOptions.FirstOrDefault(o => o.Number == current) ?? DayOptions.FirstOrDefault();
+        }
+        finally
+        {
+            _syncingDay = false;
+        }
+
+        OnPropertyChanged(nameof(ShowDaySelector));
 
         _api = api;
         SupabaseUrl = api.SupabaseUrl;
@@ -215,6 +250,29 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         UpdatePointsRuleStatus(rules, info?.DefaultPointsRuleId, groups);
         RebuildLinks();
         RequestPreviewRefresh(immediate: true);
+    }
+
+    // True when the current options already represent exactly these days (same count and numbers, in order).
+    private bool SameDays(IReadOnlyList<EventDay> days)
+    {
+        if (DayOptions.Count != days.Count)
+            return false;
+        for (var i = 0; i < days.Count; i++)
+            if (DayOptions[i].Number != days[i].Number)
+                return false;
+        return true;
+    }
+
+    // Driven by the day ComboBox. Switching the session's day re-raises SessionChanged, which reloads this
+    // page (and stops publishing); the _syncingDay guard stops LoadAsync's reassignment from re-entering.
+    partial void OnSelectedDayChanged(DayOption? value)
+    {
+        if (_syncingDay || value?.Day is null)
+            return;
+        if (_session.CurrentDay?.Number == value.Number)
+            return;
+
+        _ = _busy.RunAsync(() => _session.SetCurrentDayAsync(value.Day));
     }
 
     // Recomputes whether the «Очки» column is enabled on either screen, so the points-rule status below the

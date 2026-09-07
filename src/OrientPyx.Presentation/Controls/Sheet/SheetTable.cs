@@ -406,7 +406,13 @@ public sealed class SheetTable : TemplatedControl
             {
                 _bodyScroll = args.NameScope.Find<ScrollViewer>("PART_ScrollViewer");
                 if (_bodyScroll is not null)
+                {
                     _bodyScroll.GetObservable(ScrollViewer.OffsetProperty).Subscribe(new OffsetSync(this));
+                    // The vertical scrollbar can appear/disappear (filtering, resize) without the offset
+                    // changing; re-run the sync so the header's compensating padding follows the viewport.
+                    _bodyScroll.GetObservable(ScrollViewer.ViewportProperty)
+                        .Subscribe(new ViewportSync(this));
+                }
             };
         }
 
@@ -450,6 +456,14 @@ public sealed class SheetTable : TemplatedControl
             foreach (var col in band.Columns)
             {
                 col.IsHidden = _hiddenKeys.Contains(col.Key);
+                // Remember the built width the first time this key appears, before a saved one lands on
+                // top of it — ResetLayout has nothing else to restore from.
+                if (!_builtWidths.ContainsKey(col.Key))
+                    _builtWidths[col.Key] = col.Width;
+                // A reset restores the built width BY KEY here, after the bands are built — see ResetLayout
+                // for why it cannot be done before the rebuild.
+                else if (_restoreBuiltWidths)
+                    col.Width = _builtWidths[col.Key];
                 // Restore a saved width by key — the first build has no previous bands for CarryWidths
                 // to copy from, so saved widths would otherwise be lost until the next rebuild.
                 if (_savedWidths is not null && _savedWidths.TryGetValue(col.Key, out var w))
@@ -457,6 +471,7 @@ public sealed class SheetTable : TemplatedControl
                 if (_filters.TryGetValue(col.Key, out var filter))
                     filter.Header = string.IsNullOrEmpty(col.PickerLabel) ? col.Header : col.PickerLabel;
             }
+        _restoreBuiltWidths = false;
 
         _visibleBands = ComputeVisibleBands(_bands);
 
@@ -908,6 +923,13 @@ public sealed class SheetTable : TemplatedControl
     // Saved widths by column key, applied onto freshly built columns (the first build has no previous
     // bands for CarryWidths to copy from). Loaded once per (LayoutKey + competition).
     private Dictionary<string, double>? _savedWidths;
+    // The width each column was BUILT with, captured the first time a key is seen (before any saved width
+    // is applied over it). ResetLayout restores from here — the column instances outlive a rebuild, so
+    // there is otherwise nothing left that remembers the un-resized width.
+    private readonly Dictionary<string, double> _builtWidths = new();
+    // Set by ResetLayout for the duration of the rebuild it triggers, so the width restore happens by key
+    // after the bands are built (the roster builder's positional CarryWidths would otherwise win).
+    private bool _restoreBuiltWidths;
     // "<LayoutKey>|<scopeId>" the cached layout was loaded for; cleared on a competition/key change so
     // Rebuild reloads (and never carries one competition's view into another).
     private string? _loadedFor;
@@ -953,14 +975,63 @@ public sealed class SheetTable : TemplatedControl
         if (LayoutStore is not { } store || LayoutKey is not { } key)
             return;
 
+        store.Save(key, CaptureLayout());
+    }
+
+    /// <summary>
+    /// Stores the table's current view (order, hidden set, widths) as the application-wide default for
+    /// this table, so competitions that have no view of their own start from it. Only this table's entry
+    /// is written. No-op when persistence isn't configured.
+    /// </summary>
+    public void SaveLayoutAsDefault()
+    {
+        if (LayoutStore is not { } store || LayoutKey is not { } key)
+            return;
+
+        var layout = CaptureLayout();
+        store.SaveDefault(key, layout);
+        // Also pin it as this competition's own view, so "save as default" doesn't read as a no-op here
+        // while every other competition changes.
+        store.Save(key, layout);
+    }
+
+    /// <summary>
+    /// Drops this table's saved view in both layers (this competition and the application default) and
+    /// rebuilds from the layout the view itself declares. No-op when persistence isn't configured.
+    /// </summary>
+    public void ResetLayout()
+    {
+        if (LayoutStore is not { } store || LayoutKey is not { } key)
+            return;
+
+        store.ClearLayout(key);
+        _bandOrder = null;
+        _hiddenKeys.Clear();
+        _savedWidths = null;
+        // Widths live on the column instances and survive a rebuild, so ask the rebuild to restore each
+        // column's built width. It must happen INSIDE Rebuild, by key, after the bands are built: the
+        // roster builder's CarryWidths copies widths from the previous bands POSITIONALLY (index + Kind),
+        // and the previous bands are still in the order being reset away from — so anything written here
+        // would be overwritten, landing widths on the wrong columns.
+        _restoreBuiltWidths = true;
+        Rebuild();
+        ColumnVisibilityChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>True when persistence is configured for this table, so the view actions apply to it.</summary>
+    public bool SupportsLayoutPersistence => LayoutStore is not null && LayoutKey is not null;
+
+    // Snapshots the current order / hidden set / widths. Also refreshes the in-memory width cache, so the
+    // next Rebuild re-applies the CURRENT widths by key (line ~335) rather than the stale values loaded
+    // once at session start — without it, resizing a column then hiding/reordering any column reverts the
+    // resize on rebuild.
+    private TableLayout CaptureLayout()
+    {
         var layout = new TableLayout
         {
             Order = new List<string>(_bandOrder ?? CurrentBandSignatures()),
             Hidden = new List<string>(_hiddenKeys),
         };
-        // Refresh the in-memory width cache as we serialize, so the next Rebuild re-applies the CURRENT
-        // widths by key (line ~335) rather than the stale values loaded once at session start. Without
-        // this, resizing a column then hiding/reordering any column reverts the resize on rebuild.
         _savedWidths = new Dictionary<string, double>();
         foreach (var band in _bands)
             foreach (var col in band.Columns)
@@ -971,7 +1042,7 @@ public sealed class SheetTable : TemplatedControl
                         _savedWidths[col.Key] = w;
                 }
 
-        store.Save(key, layout);
+        return layout;
     }
 
     // The signatures of the current bands in their built order (used when the user hasn't reordered but
@@ -1754,12 +1825,31 @@ public sealed class SheetTable : TemplatedControl
     }
 
     // Keep the frozen header (and the status-bar sums row) lined up with the body's horizontal scroll.
+    // The body's viewport is narrower than the header's by the width of its vertical scrollbar, so its
+    // maximum horizontal offset is larger by that same amount. A ScrollViewer clamps Offset to
+    // Extent - Viewport, so at the far right the header would stop short and drift out of alignment with
+    // the columns. Pad the header/status content on the right by the viewport difference to give those
+    // scrollers the same scrollable range as the body.
     private void SyncHeaderOffset(Vector bodyOffset)
     {
-        if (_headerScroll is not null)
-            _headerScroll.Offset = new Vector(bodyOffset.X, 0);
-        if (_statusScroll is not null)
-            _statusScroll.Offset = new Vector(bodyOffset.X, 0);
+        SyncSlaveScroll(_headerScroll, bodyOffset.X);
+        SyncSlaveScroll(_statusScroll, bodyOffset.X);
+    }
+
+    private void SyncSlaveScroll(ScrollViewer? slave, double offsetX)
+    {
+        if (slave is null)
+            return;
+
+        if (_bodyScroll is not null && slave.Content is Control content)
+        {
+            var gap = Math.Max(0, slave.Viewport.Width - _bodyScroll.Viewport.Width);
+            var margin = content.Margin;
+            if (Math.Abs(margin.Right - gap) > 0.5)
+                content.Margin = new Thickness(margin.Left, margin.Top, gap, margin.Bottom);
+        }
+
+        slave.Offset = new Vector(offsetX, 0);
     }
 
     /// <summary>Forwards the body scroller's offset to <see cref="SyncHeaderOffset"/>.</summary>
@@ -1768,6 +1858,15 @@ public sealed class SheetTable : TemplatedControl
         public void OnCompleted() { }
         public void OnError(Exception error) { }
         public void OnNext(Vector value) => owner.SyncHeaderOffset(value);
+    }
+
+    /// <summary>Re-syncs on a body viewport change (scrollbar shown/hidden, table resized).</summary>
+    private sealed class ViewportSync(SheetTable owner) : IObserver<Size>
+    {
+        public void OnCompleted() { }
+        public void OnError(Exception error) { }
+        public void OnNext(Size value) =>
+            owner.SyncHeaderOffset(owner._bodyScroll?.Offset ?? default);
     }
 
     private void RequestDelete(object row)

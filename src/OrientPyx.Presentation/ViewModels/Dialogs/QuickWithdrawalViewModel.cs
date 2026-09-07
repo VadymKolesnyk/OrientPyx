@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
+using OrientPyx.Presentation.Services;
 using OrientPyx.Presentation.ViewModels.Pages;
 
 namespace OrientPyx.Presentation.ViewModels.Dialogs;
@@ -34,9 +35,11 @@ public sealed partial class QuickWithdrawalViewModel : ObservableObject
     // overrides this in Confirm, so it never wrongly clears someone who is still listed.
     private readonly HashSet<Guid> _clearedOnRemove = [];
 
-    public QuickWithdrawalViewModel(ILocalizationService localization, QuickWithdrawalData data)
+    public QuickWithdrawalViewModel(ILocalizationService localization, QuickWithdrawalData data,
+        ITableLayoutStore layoutStore)
     {
         Localization = localization;
+        LayoutStore = layoutStore;
 
         _byNumber = new Dictionary<string, QuickWithdrawalMember>(StringComparer.OrdinalIgnoreCase);
         foreach (var m in data.Members)
@@ -67,6 +70,10 @@ public sealed partial class QuickWithdrawalViewModel : ObservableObject
     }
 
     public ILocalizationService Localization { get; }
+
+    /// <summary>Persists the table's column view, so the judge's preferred arrangement of this dialog
+    /// survives — per competition, and as an application default via the columns menu.</summary>
+    public ITableLayoutStore LayoutStore { get; }
 
     public string Title => Localization.Get("Participants.QuickWithdrawal.Title");
 

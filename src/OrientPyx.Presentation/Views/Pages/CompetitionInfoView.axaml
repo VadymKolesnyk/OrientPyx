@@ -28,6 +28,20 @@
                     <TextBox Text="{Binding Name, Mode=TwoWay}" />
                 </StackPanel>
 
+                <!-- Identifier: the competition's folder name. Read-only here — changing it moves the
+                     folder on disk, so it goes through the rename modal next to the field. -->
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[CompetitionInfo.Identifier]}" Classes="label" />
+                    <Grid ColumnDefinitions="*,10,Auto">
+                        <TextBox Grid.Column="0" Text="{Binding Identifier}" IsReadOnly="True" />
+                        <Button Grid.Column="2" Classes="ghost"
+                                Content="{Binding Localization[CompetitionInfo.Rename]}"
+                                Command="{Binding RenameIdentifierCommand}" />
+                    </Grid>
+                    <TextBlock Text="{Binding Localization[CompetitionInfo.IdentifierHint]}" Classes="subtitle"
+                               FontSize="12" TextWrapping="Wrap" />
+                </StackPanel>
+
                 <StackPanel Spacing="6">
                     <TextBlock Text="{Binding Localization[CompetitionInfo.Venue]}" Classes="label" />
                     <TextBox Text="{Binding Venue, Mode=TwoWay}" />

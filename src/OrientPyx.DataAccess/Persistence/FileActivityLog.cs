@@ -60,6 +60,17 @@ public sealed class FileActivityLog : IActivityLog
         Write("INFO", $"=== Logging moved to competition folder ({DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}) ===");
     }
 
+    public void UseSharedFolder()
+    {
+        var target = OpenIn(Path.Combine(AppDatabasePaths.DefaultEventsPath, "logs"));
+        lock (_gate)
+        {
+            if (string.Equals(target, _logFilePath, StringComparison.OrdinalIgnoreCase))
+                return;
+            _logFilePath = target;
+        }
+    }
+
     // Resolves a free, launch-stamped log file path inside the given folder and ensures the folder
     // exists. Never throws — if the folder can't be made, Append below just keeps failing quietly.
     private string OpenIn(string logsDir)
