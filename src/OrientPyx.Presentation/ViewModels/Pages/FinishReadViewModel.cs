@@ -38,6 +38,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     private readonly IAppSettingsService _appSettings;
     private readonly ISplitPrintService _printer;
     private readonly IActivityLog _log;
+    private readonly IDayLockService _dayLock;
 
     /// <summary>Top-bar activity handle while auto-read runs; null when off.</summary>
     private FinishReadActivity? _activity;
@@ -72,9 +73,12 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         ISplitPrintService printer,
         IActivityLog log,
         IUiPreferencesService preferences,
-        ITableLayoutStore layoutStore)
+        ITableLayoutStore layoutStore,
+        IDayLockService dayLock)
         : base(localization)
     {
+        UseDayLock(dayLock);
+        _dayLock = dayLock;
         LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
@@ -176,6 +180,15 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
 
     partial void OnAutoReadErrorChanged(string value) => OnPropertyChanged(nameof(HasAutoReadError));
 
+    /// <summary>
+    /// Drives the note explaining that the auto-read fields are dead because the day is closed. Only
+    /// while the panel is open — collapsed there is nothing greyed out to explain.
+    /// </summary>
+    public bool ShowAutoReadDayLockedNote => IsAutoReadExpanded && IsDayLocked;
+
+    partial void OnIsAutoReadExpandedChanged(bool value)
+        => OnPropertyChanged(nameof(ShowAutoReadDayLockedNote));
+
     // True while LoadAsync syncs SelectedDay to the session, so the setter does NOT call
     // SetCurrentDayAsync (which would re-raise SessionChanged → LoadAsync in a loop).
     private bool _syncingDay;
@@ -189,7 +202,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     [RelayCommand]
     private async Task ClearReadoutsAsync()
     {
-        if (_session.CurrentDay is null || Readouts.Count == 0)
+        if (_session.CurrentDay is null || Readouts.Count == 0 || !await EnsureDayEditableAsync())
             return;
 
         var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
@@ -240,6 +253,8 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
             _syncingDay = false;
         }
         OnPropertyChanged(nameof(ShowDaySelector));
+        RefreshDayLock();
+        OnPropertyChanged(nameof(ShowAutoReadDayLockedNote));
 
         // Default the watched file to the current day's folder (day{N}/event.csv) unless the user
         // already typed a path. Done after the day is resolved so it follows the selected day.
@@ -409,7 +424,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     [RelayCommand]
     private async Task EditRowAsync(FinishReadRowViewModel? row)
     {
-        if (row is null)
+        if (row is null || !await EnsureDayEditableAsync())
             return;
 
         var data = await _busy.RunAsync(() => _editor.GetFinishReadoutEditAsync(row.Id));
@@ -431,7 +446,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     [RelayCommand]
     private async Task OpenProblematicControlsAsync()
     {
-        if (_session.CurrentDay is null)
+        if (_session.CurrentDay is null || !await EnsureDayEditableAsync())
             return;
 
         var controls = await _busy.RunAsync(() => _editor.GetControlPointsAsync());
@@ -506,10 +521,20 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
 
     partial void OnAutoReadEnabledChanged(bool value)
     {
+        // A read-out IS a write to the day, so a closed day must not start one. The poller's own
+        // DayLockedException backstop only reports the refusal after the fact (and only in the banner);
+        // refusing here keeps the switch honest — it flips straight back and says why.
+        if (value && IsDayLocked)
+        {
+            _ = RefuseAutoReadAsync();
+            return;
+        }
+
         if (value)
         {
-            StartAutoRead();
-            ShowActivity();
+            // Starting today's read-out is the moment an earlier day left open becomes dangerous, so
+            // ask about those first; the watch only starts once that question is settled.
+            _ = StartAutoReadCheckedAsync();
         }
         else
         {
@@ -532,6 +557,33 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         if (AutoReadEnabled && !IsAutoReadPaused)
             StartAutoRead();
         UpdateActivityStatus();
+    }
+
+    // Puts the auto-read switch back to off and explains the closed day. Deferred to the next dispatcher
+    // pass so the reset isn't swallowed by the property change that is still being raised.
+    private async Task RefuseAutoReadAsync()
+    {
+        await Dispatcher.UIThread.InvokeAsync(() => AutoReadEnabled = false, DispatcherPriority.Background);
+        await ExplainDayLockAsync();
+    }
+
+    // Warns about still-open earlier days before the first punch of this day is written, then starts the
+    // watch. Cancelling the warning (as opposed to choosing to leave them open) aborts the start, so the
+    // switch goes back to off.
+    private async Task StartAutoReadCheckedAsync()
+    {
+        if (!await _dayLock.EnsurePreviousDaysClosedAsync())
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => AutoReadEnabled = false, DispatcherPriority.Background);
+            return;
+        }
+
+        // The user may have switched the day or turned the watch off again while the dialog was open.
+        if (!AutoReadEnabled)
+            return;
+
+        StartAutoRead();
+        ShowActivity();
     }
 
     [RelayCommand]
@@ -653,6 +705,14 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         catch (ReadoutFormatException)
         {
             // Passed CanParse but still failed mid-parse — likely a half-written row; skip this tick.
+        }
+        catch (DayLockedException ex)
+        {
+            // The day was closed for editing (a read-out IS a write to it). Say so in the banner rather
+            // than failing silently — the operator is standing at the finish and needs to know why the
+            // chip didn't register. Reopening the day with the lock resumes reading immediately.
+            var message = string.Format(Localization.Get("FinishRead.AutoRead.Error.DayLocked"), ex.DayNumber);
+            await Dispatcher.UIThread.InvokeAsync(() => AutoReadError = message);
         }
     }
 

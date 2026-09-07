@@ -23,6 +23,9 @@ public sealed record ParticipantRosterRow(
     string FsouCode,
     bool IsFsouMember,
     string Payment,
+    // Whether the competition charges the entry fee per day, so the roster knows whether «Оплата» is one
+    // competition-level value or a per-day block.
+    bool PaymentPerDay,
     string Note,
     string Team,
     bool PaysRaisedFee,
@@ -44,6 +47,8 @@ public sealed record RosterDayCell(
     Guid? GroupId,
     string GroupName,
     string Chip,
+    // This day's own payment («Оплата» in per-day payment mode); empty for a non-member.
+    string Payment,
     TimeSpan? StartTime,
     bool OutOfCompetition,
     // The judge's points correction («бонус») for this day; null = none (empty for a non-member). Editable

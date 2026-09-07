@@ -63,12 +63,12 @@ public sealed class EntryFeeContext
     /// <param name="paysRaisedFee">The participant's "pays the raised fee" flag.</param>
     /// <param name="isFsouMember">Whether the participant is an FSOU member (auto-applies that discount).</param>
     /// <param name="selectedDiscountIds">The manual (non-FSOU) discount ids the participant has selected.</param>
-    /// <param name="memberDays">Each day the participant runs: its group id (null = no group) and chip.</param>
+    /// <param name="memberDays">Each day the participant runs: its id, its group id (null = no group) and chip.</param>
     public decimal Total(
         bool paysRaisedFee,
         bool isFsouMember,
         IEnumerable<Guid> selectedDiscountIds,
-        IEnumerable<(Guid? GroupId, string Chip)> memberDays)
+        IEnumerable<(Guid DayId, Guid? GroupId, string Chip)> memberDays)
         => Describe(paysRaisedFee, isFsouMember, selectedDiscountIds, memberDays).Total;
 
     /// <summary>
@@ -80,20 +80,20 @@ public sealed class EntryFeeContext
         bool paysRaisedFee,
         bool isFsouMember,
         IEnumerable<Guid> selectedDiscountIds,
-        IEnumerable<(Guid? GroupId, string Chip)> memberDays)
+        IEnumerable<(Guid DayId, Guid? GroupId, string Chip)> memberDays)
     {
         var useRaised = _raisedFeeEnabled && paysRaisedFee;
 
         var days = new List<EntryFeeDayInput>();
         var dayBreakdowns = new List<EntryFeeDayBreakdown>();
-        foreach (var (groupId, chip) in memberDays)
+        foreach (var (dayId, groupId, chip) in memberDays)
         {
             var baseFee = useRaised
                 ? _raisedFee
                 : groupId is { } gid && _groupFee.TryGetValue(gid, out var f) ? f : 0m;
             var (chipPrice, reason) = ChipPriceFor(chip);
             days.Add(new EntryFeeDayInput(baseFee, chipPrice));
-            dayBreakdowns.Add(new EntryFeeDayBreakdown(baseFee, chipPrice, reason));
+            dayBreakdowns.Add(new EntryFeeDayBreakdown(dayId, baseFee, chipPrice, reason));
         }
 
         var entryPercents = new List<decimal>();

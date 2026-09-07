@@ -7,6 +7,9 @@ public enum RosterField
 {
     Groups,
     Chips,
+    // Per-day «Оплата», only while the competition charges the entry fee per day (CompetitionInfo.PaymentPerDay);
+    // otherwise the payment is one competition-level identity column and this block is not built at all.
+    Payment,
     StartTimes,
     OutOfCompetition,
 

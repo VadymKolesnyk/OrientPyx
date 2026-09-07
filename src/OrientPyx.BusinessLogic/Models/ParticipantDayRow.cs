@@ -11,6 +11,8 @@ namespace OrientPyx.BusinessLogic.Models;
 /// </summary>
 public sealed record ParticipantDayRow(
     Guid LinkId,
+    // The day this row belongs to, so the row can ask what this one day costs (per-day payment mode).
+    Guid DayId,
     Guid ParticipantId,
     int Order,
     string FullName,
@@ -28,6 +30,12 @@ public sealed record ParticipantDayRow(
     string FsouCode,
     bool IsFsouMember,
     string Payment,
+    // This day's own payment («Оплата» in per-day payment mode); ignored while the competition pays once
+    // for the whole competition (then the competition-level Payment above is the live value).
+    string DayPayment,
+    // Whether the competition charges the entry fee per day, so the row knows which payment field the
+    // «Оплата» column edits and which fee the payment is compared against.
+    bool PaymentPerDay,
     string Note,
     bool PaysRaisedFee,
     IReadOnlyList<Guid> SelectedDiscountIds,
@@ -50,5 +58,6 @@ public sealed record ParticipantDayRow(
     // ParticipantDayResult; Empty when the chip was never read.
     ParticipantDayResult Result);
 
-/// <summary>One participating day's fee inputs: the group assigned (null = none) and the chip held.</summary>
-public readonly record struct ParticipantFeeDay(Guid? GroupId, string Chip);
+/// <summary>One participating day's fee inputs: which day it is, the group assigned (null = none) and the
+/// chip held. The day id lets the caller ask what that single day costs (per-day payment mode).</summary>
+public readonly record struct ParticipantFeeDay(Guid DayId, Guid? GroupId, string Chip);

@@ -42,6 +42,18 @@ public sealed class SheetColumnBuilder
     /// <summary>The accumulated bands, ready to assign to <see cref="SheetTable.Bands"/>.</summary>
     public IReadOnlyList<SheetBand> Bands => _bands;
 
+    /// <summary>
+    /// Binds a cell's per-row day lock. Most tables lock as a whole (the table's own <c>IsLocked</c>,
+    /// set from the page's day), but a table whose ROWS are days — the competition-days grid — has one
+    /// lock state per row, so the cell reads the day number off the row itself. A zero means "open".
+    /// </summary>
+    private static Control WithRowLock(LazyEditCell cell, string? lockedDayPath)
+    {
+        if (lockedDayPath is not null)
+            cell[!LazyEditCell.LockedDayNumberProperty] = new Binding(lockedDayPath);
+        return cell;
+    }
+
     // ── Display / editable text
     /// <summary>
     /// A text column: a read-only <see cref="TextBlock"/> in normal state, a <see cref="TextBox"/>
@@ -59,7 +71,8 @@ public sealed class SheetColumnBuilder
         string? opacityPath = null,
         string? placeholder = "—",
         string? placeholderPath = null,
-        RentalChipRegistry? rentalChips = null)
+        RentalChipRegistry? rentalChips = null,
+        string? lockedDayPath = null)
     {
         var column = NewColumn(headerKey, width, minWidth, sortPath ?? displayPath);
         // An editable text column supports fill-down paste straight to its bound property.
@@ -72,7 +85,7 @@ public sealed class SheetColumnBuilder
             if (editPath is null)
                 return ReadOnlyText(displayPath, opacityPath);
 
-            return new LazyTextCell(displayPath, editPath, new SheetTextOptions
+            return WithRowLock(new LazyTextCell(displayPath, editPath, new SheetTextOptions
             {
                 Mask = mask,
                 Placeholder = placeholder,
@@ -80,7 +93,7 @@ public sealed class SheetColumnBuilder
                 EnabledPath = enabledPath,
                 OpacityPath = opacityPath,
                 RentalChips = rentalChips,
-            });
+            }), lockedDayPath);
         };
         return Add(column);
     }
@@ -97,7 +110,8 @@ public sealed class SheetColumnBuilder
         string labelPath,
         double? width = null,
         double minWidth = SheetColumn.SortHandleMinWidth,
-        string? sortPath = null)
+        string? sortPath = null,
+        string? lockedDayPath = null)
     {
         var column = NewColumn(headerKey, width, minWidth, sortPath ?? string.Empty);
         // The combo is filtered by the selected option's visible label, so the user filters on the text
@@ -110,7 +124,7 @@ public sealed class SheetColumnBuilder
         column.ComboLabelPath = labelPath;
         // A LazyComboCell: shows the selected option's label and builds the real SearchableComboBox only
         // when the cell is entered. Keeps virtualized rows light on pages with a combo per row.
-        column.CellBuilder = () => new LazyComboCell(
+        column.CellBuilder = () => WithRowLock(new LazyComboCell(
             () => new SearchableComboBox
             {
                 HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -125,7 +139,7 @@ public sealed class SheetColumnBuilder
                     new Binding(selectedPath) { Mode = BindingMode.TwoWay }
             },
             $"{selectedPath}.{labelPath}",
-            selectedPath: selectedPath);
+            selectedPath: selectedPath), lockedDayPath);
         return Add(column);
     }
 
@@ -139,11 +153,12 @@ public sealed class SheetColumnBuilder
         string path,
         double? width = 160,
         double minWidth = SheetColumn.SortHandleMinWidth,
-        string? placeholderKey = "Common.DatePlaceholder")
+        string? placeholderKey = "Common.DatePlaceholder",
+        string? lockedDayPath = null)
     {
         var column = NewColumn(headerKey, width, minWidth, path);
         var placeholder = placeholderKey is not null ? _loc.Get(placeholderKey) : null;
-        column.CellBuilder = () => new LazyDateCell(path, placeholder);
+        column.CellBuilder = () => WithRowLock(new LazyDateCell(path, placeholder), lockedDayPath);
         return Add(column);
     }
 
@@ -178,11 +193,18 @@ public sealed class SheetColumnBuilder
         double minWidth = SheetColumn.SortHandleMinWidth)
     {
         var column = NewColumn(headerKey, width, minWidth, path);
-        column.CellBuilder = () => new CheckBox
+        column.CellBuilder = () =>
         {
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            [!ToggleButton.IsCheckedProperty] = new Binding(path) { Mode = BindingMode.TwoWay }
+            var box = new CheckBox
+            {
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                [!ToggleButton.IsCheckedProperty] = new Binding(path) { Mode = BindingMode.TwoWay }
+            };
+            // A checkbox toggles on a single click without ever going through LazyEditCell, so the
+            // table's lock has to reach it directly.
+            SheetLock.DisableWhenLocked(box);
+            return box;
         };
         return Add(column);
     }
@@ -300,6 +322,10 @@ public sealed class SheetColumnBuilder
             },
             [ToolTip.TipProperty] = _loc.Get(tooltipKey)
         };
+
+        // Deleting a row is a write like any other; on a closed day the button is hidden rather than
+        // greyed, so the action column doesn't sit there full of dead buttons.
+        SheetLock.HideWhenLocked(button);
         // Rows may opt out of deletion by exposing a CanDelete = false property (e.g. the seeded
         // FSOU-member discount). Rows without the property leave the button visible (binding to a
         // missing property keeps the default), so every other table is unaffected.

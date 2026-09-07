@@ -34,6 +34,10 @@ public enum SheetCellKind
 
     Chip,
 
+    /// <summary>A single day's «Оплата» (text, tinted by that day's payment status), bound to Days[i]. The
+    /// roster's per-day payment block; only built while the competition charges the entry fee per day.</summary>
+    DayPayment,
+
     /// <summary>A single day's start time (TextBox HH:mm), bound to Days[i].</summary>
     StartTime,
 
@@ -68,6 +72,10 @@ public enum SheetCellKind
 
     /// <summary>A collapsed block's merged chip cell (input when shared, "різні" when days differ).</summary>
     CollapsedChip,
+
+    /// <summary>A collapsed payment block's merged cell (input when the member days share a value, "різні"
+    /// when they differ); tinted by the row's paid-vs-total aggregate.</summary>
+    CollapsedPayment,
 
     /// <summary>A collapsed block's merged start-time cell (input when shared, "різні" when days differ).</summary>
     CollapsedStartTime,
@@ -215,6 +223,14 @@ public sealed partial class SheetColumn : ObservableObject
     /// <see cref="FilterPath"/> must read a <c>PaymentStatus</c> token (the row's <c>PaymentStatusKey</c>).
     /// </summary>
     public bool StatusFilter { get; set; }
+
+    /// <summary>
+    /// Where a <see cref="SheetCellKind.PaymentText"/> cell reads the <c>PaymentStatus</c> that tints it.
+    /// Blank means the row's own <c>PaymentStatus</c> property — the competition-level «Оплата» column. The
+    /// roster's per-day payment leaves point it at their own day cell (<c>Days[i].PaymentStatus</c>) so each
+    /// column tints by its own day rather than all sharing the row's.
+    /// </summary>
+    public string PaymentStatusPath { get; set; } = string.Empty;
 
     /// <summary>Default starting width for content columns the builder doesn't fix explicitly.</summary>
     public const double DefaultWidth = 130;

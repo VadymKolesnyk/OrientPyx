@@ -69,6 +69,17 @@ public sealed partial class ConfirmDialogViewModel : ObservableObject
     public bool ShowCancel => !IsMessage;
 
     /// <summary>
+    /// True to style the Confirm button as a destructive action (red). Defaults to true for a real
+    /// confirmation, since most of them delete or overwrite something. Set false when the confirm is a
+    /// harmless, reversible action the dialog is actively recommending — closing a day, say — so the
+    /// suggested answer does not read as a warning.
+    /// </summary>
+    public bool IsDestructive { get; init; } = true;
+
+    /// <summary>Bound by the view: the Confirm button is red only for a destructive confirmation.</summary>
+    public bool ShowDanger => ShowCancel && IsDestructive;
+
+    /// <summary>
     /// Optional arguments formatted into the localized message via <see cref="string.Format(string, object?[])"/>.
     /// Lets a confirmation include dynamic values (e.g. a chip number and its current holder) while the
     /// message text itself stays a localizable resource with <c>{0}</c>/<c>{1}</c> placeholders.

@@ -20,6 +20,10 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
     private readonly ISessionService _session;
     private readonly IBusyService _busy;
     private readonly IDialogService _dialogs;
+    private readonly IActivityLog _log;
+    // Held directly rather than through UseDayLock: that binds the page to the SESSION's day, and this
+    // page shows every day at once — each row's lock is its own.
+    private readonly IDayLockService _dayLock;
 
     public CompetitionDaysViewModel(
         ILocalizationService localization,
@@ -27,14 +31,18 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         ISessionService session,
         IBusyService busy,
         IDialogService dialogs,
-        ITableLayoutStore layoutStore)
+        ITableLayoutStore layoutStore,
+        IDayLockService dayLock,
+        IActivityLog log)
         : base(localization)
     {
+        _dayLock = dayLock;
         LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
         _busy = busy;
         _dialogs = dialogs;
+        _log = log;
         // Singleton VM: reload the day rows whenever the competition/day changes so a switched
         // event never leaves the previous competition's days on screen. The event may arrive on a
         // pool thread (session writes run inside RunAsync), so marshal LoadAsync onto the UI thread.
@@ -53,6 +61,24 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
     /// <summary>The row selected in the grid; the Delete key acts on it.</summary>
     [ObservableProperty]
     private DayRowViewModel? _selectedRow;
+
+    /// <inheritdoc />
+    public override Task ExplainDayLockAsync(int dayNumber = 0, bool merged = false)
+        => _dayLock.ExplainLockedCellAsync(dayNumber, merged);
+
+    /// <summary>
+    /// The gate for a row action (save, renumber, delete): a closed day refuses, naming itself. The
+    /// page-wide <c>EnsureDayEditableForActionAsync</c> can't be used here — it asks about the session's
+    /// day, and every row on this page is a different day.
+    /// </summary>
+    private async Task<bool> EnsureRowEditableAsync(DayRowViewModel row)
+    {
+        if (!row.IsLocked)
+            return true;
+
+        await ExplainDayLockAsync(row.Number);
+        return false;
+    }
 
     /// <summary>Reloads the day rows from the current competition. Called when the page is shown.</summary>
     public async Task LoadAsync()
@@ -89,7 +115,7 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
     [RelayCommand]
     private async Task ChangeDayNumberAsync(DayRowViewModel? row)
     {
-        if (row is null)
+        if (row is null || !await EnsureRowEditableAsync(row))
             return;
 
         var taken = Days.Where(d => d.Id != row.Id).Select(d => d.Number).ToHashSet();
@@ -115,7 +141,7 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
     [RelayCommand]
     private async Task SaveDayAsync(DayRowViewModel? row)
     {
-        if (row is null)
+        if (row is null || !await EnsureRowEditableAsync(row))
             return;
 
         var entity = row.ToEntity();
@@ -128,6 +154,47 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         // this they keep the stale discipline until the app is restarted.
         if (row.IsActive)
             await _busy.RunAsync(() => _session.SetCurrentDayAsync(entity));
+    }
+
+    /// <summary>
+    /// Closes or opens a day straight from the grid — the one screen that shows every day at once, so a
+    /// judge can see and set which days are finished. Same rule as the lock next to the day selector:
+    /// closing is immediate, opening asks first, since that is when the protection is dropped.
+    /// </summary>
+    [RelayCommand]
+    private async Task ToggleDayLockAsync(DayRowViewModel? row)
+    {
+        if (row is null)
+            return;
+
+        if (row.IsLocked)
+        {
+            var confirm = new ConfirmDialogViewModel(
+                Localization,
+                "DayLock.Confirm.Title",
+                "DayLock.Confirm.Message",
+                confirmKey: "DayLock.Confirm.Ok")
+            {
+                MessageArgs = [row.Number]
+            };
+
+            if (!await _dialogs.ConfirmAsync(confirm))
+                return;
+        }
+
+        var updated = await _busy.RunAsync(() => _editor.SetDayLockedAsync(row.Id, !row.IsLocked));
+        if (updated is null)
+            return;
+
+        row.IsLocked = updated.IsLocked;
+        _log.Action(updated.IsLocked
+            ? $"Day {updated.Number} closed for editing"
+            : $"Day {updated.Number} opened for editing");
+
+        // The session caches the active day, and every per-day page reads the lock off it — re-point it
+        // so those pages (and their day selectors) follow immediately.
+        if (row.IsActive)
+            _session.UpdateCurrentDay(updated);
     }
 
     // The grid's delete button binds to this command. A plain click asks for confirmation first;

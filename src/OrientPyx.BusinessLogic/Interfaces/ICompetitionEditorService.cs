@@ -26,6 +26,15 @@ public interface ICompetitionEditorService
 
     Task SaveInfoAsync(CompetitionInfo info, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Whether the participants page offers the roster («Мандатка») view for this competition. True
+    /// (the default) with no competition selected, so the page starts in its usual shape.
+    /// </summary>
+    Task<bool> GetRosterEnabledAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Turns the roster view on or off, writing only that flag on the competition row.</summary>
+    Task SetRosterEnabledAsync(bool enabled, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<EventDay>> GetDaysAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Numbered after the last existing day.</summary>
@@ -34,6 +43,14 @@ public interface ICompetitionEditorService
     Task UpdateDayAsync(EventDay day, CancellationToken cancellationToken = default);
 
     Task DeleteDayAsync(Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Opens or closes the day for editing. A closed («закритий») day still reads, computes, prints
+    /// and publishes normally — only writes to its own data are refused, so a finished day can't be
+    /// changed by accident while working on another one. Returns the updated day, or null when it
+    /// doesn't exist or already had that state.
+    /// </summary>
+    Task<EventDay?> SetDayLockedAsync(Guid dayId, bool locked, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Changes a day's 1-based number to <paramref name="newNumber"/> and renames its files folder
@@ -340,6 +357,34 @@ public interface ICompetitionEditorService
     /// among its members (see the scoring pass).
     /// </summary>
     Task SetParticipantDayBonusAsync(Guid participantId, Guid dayId, int? bonus, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets a participant's payment («Оплата») for one day, persisted on the participant-day link. Only
+    /// meaningful while the competition is in per-day payment mode
+    /// (<see cref="Entities.CompetitionInfo.PaymentPerDay"/>); the competition-level payment lives on the
+    /// participant and is saved with the row. Has its own writer so the debounced row save can't wipe it.
+    /// </summary>
+    Task SetParticipantDayPaymentAsync(Guid participantId, Guid dayId, string payment, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Counts how many participants carry a non-blank payment value in the mode currently in force — the
+    /// number a switch of <see cref="Entities.CompetitionInfo.PaymentPerDay"/> would redistribute. Lets the
+    /// UI say «Зачеплено N учасників» before asking for confirmation.
+    /// </summary>
+    Task<int> CountParticipantsWithPaymentAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Switches the competition between "one payment for the whole competition" and "a payment per day",
+    /// migrating every participant's stored value across in one transaction.
+    ///
+    /// Turning it ON spreads each participant's single payment over the days they run, in proportion to
+    /// each day's share of their total fee (equal shares when the total is 0); the last day absorbs the
+    /// rounding remainder so the parts add back up exactly. A value that is not a number goes to the first
+    /// day as text. Turning it OFF sums the per-day numbers back into the single value (a non-numeric
+    /// per-day value wins as text). Neither direction clears the source column, so switching back and forth
+    /// never loses what the user typed. No-op when the mode already matches.
+    /// </summary>
+    Task SetPaymentPerDayAsync(bool paymentPerDay, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Computes the run results for one day from the finish read-outs, keyed by participant id. Used by

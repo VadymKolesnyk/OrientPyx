@@ -21,17 +21,16 @@
                 <Button Classes="help" VerticalAlignment="Center"
                         Command="{Binding ShowHelpCommand}"
                         ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
-                <controls:SearchableComboBox IsVisible="{Binding ShowDaySelector}"
-                          MinWidth="120" VerticalAlignment="Center"
-                          SearchWatermark="{Binding Localization[Common.Search]}"
-                          ItemsSource="{Binding DayOptions}"
-                          SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="pages:DayOption">
-                            <TextBlock Text="{Binding Label}" />
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </controls:SearchableComboBox>
+                <controls:DaySelector VerticalAlignment="Center"
+                                      ShowDays="{Binding ShowDaySelector}"
+                                      ShowLock="False"
+                                      IsDayLocked="{Binding IsDayLocked}"
+                                      ToggleLockCommand="{Binding ToggleDayLockCommand}"
+                                      LockTooltip="{Binding Localization[DayLock.Lock.Tooltip]}"
+                                      UnlockTooltip="{Binding Localization[DayLock.Unlock.Tooltip]}"
+                                      SearchWatermark="{Binding Localization[Common.Search]}"
+                                      DayOptions="{Binding DayOptions}"
+                                      SelectedDay="{Binding SelectedDay, Mode=TwoWay}" />
             </StackPanel>
         </Grid>
 

@@ -52,9 +52,11 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         IDisciplineStrategyProvider strategies,
         IDialogService dialogs,
         IAppStore appStore,
-        ITableLayoutStore layoutStore)
+        ITableLayoutStore layoutStore,
+        IDayLockService dayLock)
         : base(localization)
     {
+        UseDayLock(dayLock);
         LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
@@ -431,6 +433,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         }
 
         OnPropertyChanged(nameof(ShowDaySelector));
+        RefreshDayLock();
 
         SeedCompetitionSettings();
 
@@ -578,7 +581,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     [RelayCommand]
     private async Task AddGroupAsync()
     {
-        if (_session.CurrentDay is null)
+        if (_session.CurrentDay is null || !await EnsureDayEditableAsync())
             return;
 
         // Add a blank, named-later row (the user types the name in-grid; the debounced save then
@@ -591,7 +594,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     [RelayCommand]
     private async Task PullAllGroupsAsync()
     {
-        if (_session.CurrentDay is null)
+        if (_session.CurrentDay is null || !await EnsureDayEditableAsync())
             return;
 
         await _busy.RunAsync(() => _editor.PullAllGroupsIntoDayAsync());
@@ -602,7 +605,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     [RelayCommand]
     private async Task RecalculateAgeWindowsAsync()
     {
-        if (_session.CurrentEvent is null)
+        if (_session.CurrentEvent is null || !await EnsureDayEditableAsync())
             return;
 
         // Recompute every group's birth-year window from its name (overwriting any hand-edited bounds),

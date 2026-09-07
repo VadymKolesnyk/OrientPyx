@@ -95,6 +95,20 @@ public sealed class SheetTable : TemplatedControl
     public static readonly StyledProperty<bool> RaisedFeeEnabledProperty =
         AvaloniaProperty.Register<SheetTable, bool>(nameof(RaisedFeeEnabled));
 
+    /// <summary>Roster auto-build only: mirrors the competition's per-day payment mode, which decides
+    /// whether «Оплата» is one identity column or a collapsible per-day block.</summary>
+    public static readonly StyledProperty<bool> PaymentPerDayProperty =
+        AvaloniaProperty.Register<SheetTable, bool>(nameof(PaymentPerDay));
+
+    /// <summary>
+    /// True when the table's day is closed for editing, which stops the table entering edit at all:
+    /// no cell editor opens, Delete raises nothing, and a paste is ignored. This is the convenience
+    /// half of the day lock — the guarantee lives in the business layer, which refuses the write even
+    /// if some path gets here anyway. Reading, sorting, filtering and column tools stay untouched.
+    /// </summary>
+    public static readonly StyledProperty<bool> IsLockedProperty =
+        AvaloniaProperty.Register<SheetTable, bool>(nameof(IsLocked));
+
     /// <summary>Roster auto-build only; team disciplines.</summary>
     public static readonly StyledProperty<bool> ShowTeamProperty =
         AvaloniaProperty.Register<SheetTable, bool>(nameof(ShowTeam));
@@ -132,6 +146,17 @@ public sealed class SheetTable : TemplatedControl
 
     /// <summary>Keyboard delete; arg = skip-confirm.</summary>
     public event EventHandler<SheetDeleteEventArgs>? DeleteRequested;
+
+    /// <summary>
+    /// Raised when the user tries to edit a cell that a closed day holds read-only — the gesture that
+    /// would normally open the editor. Nothing happening reads as the app ignoring the click, so the page
+    /// answers with a modal explaining which day is closed and how to open it.
+    ///
+    /// Two sources feed this: a whole locked table (the per-day grids), and individual roster cells,
+    /// which bubble <see cref="LazyEditCell.LockedEditAttemptedEvent"/> because the roster spans every
+    /// day at once and is never locked as a whole.
+    /// </summary>
+    public event EventHandler<SheetLockedEditEventArgs>? LockedEditAttempted;
 
     /// <summary>
     /// Raised when the user picks "bulk edit this column" from a header's context menu; arg = the leaf
@@ -214,6 +239,18 @@ public sealed class SheetTable : TemplatedControl
         set => SetValue(RaisedFeeEnabledProperty, value);
     }
 
+    public bool PaymentPerDay
+    {
+        get => GetValue(PaymentPerDayProperty);
+        set => SetValue(PaymentPerDayProperty, value);
+    }
+
+    public bool IsLocked
+    {
+        get => GetValue(IsLockedProperty);
+        set => SetValue(IsLockedProperty, value);
+    }
+
     public bool ShowTeam
     {
         get => GetValue(ShowTeamProperty);
@@ -287,6 +324,9 @@ public sealed class SheetTable : TemplatedControl
         AddHandler(KeyDownEvent, OnTunnelKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnBubbleKeyDown, RoutingStrategies.Bubble);
         AddHandler(PointerPressedEvent, OnTunnelPointerPressed, RoutingStrategies.Tunnel);
+        // A roster cell refuses on its own (its day is closed while the table as a whole is not), and
+        // bubbles it here so the page gets one place to answer from.
+        AddHandler(LazyEditCell.LockedEditAttemptedEvent, OnCellLockedEditAttempted);
         AddHandler(PointerPressedEvent, OnCellRightClick, RoutingStrategies.Tunnel);
         AddHandler(PointerMovedEvent, OnTunnelPointerMoved, RoutingStrategies.Tunnel);
         AddHandler(PointerReleasedEvent, OnTunnelPointerReleased, RoutingStrategies.Tunnel);
@@ -324,7 +364,8 @@ public sealed class SheetTable : TemplatedControl
             change.Property == BandsProperty || change.Property == RentalChipsProperty ||
             change.Property == ToggleRentalChipCommandProperty ||
             change.Property == DiscountsProperty || change.Property == RaisedFeeEnabledProperty ||
-            change.Property == ShowTeamProperty || change.Property == ShowScoreProperty)
+            change.Property == ShowTeamProperty || change.Property == ShowScoreProperty ||
+            change.Property == PaymentPerDayProperty)
         {
             Rebuild();
         }
@@ -442,7 +483,7 @@ public sealed class SheetTable : TemplatedControl
             if (Days is null || Blocks is null)
                 return;
             var builder = new RosterColumnBuilder(Localization);
-            _bands = builder.Build(Days, AsList(Blocks), Discounts ?? [], RaisedFeeEnabled, ShowTeam, ShowScore, _bands);
+            _bands = builder.Build(Days, AsList(Blocks), Discounts ?? [], RaisedFeeEnabled, ShowTeam, ShowScore, PaymentPerDay, _bands);
         }
 
         // Apply any user reorder (drag), keyed by a stable band signature so it survives rebuilds.
@@ -1441,6 +1482,11 @@ public sealed class SheetTable : TemplatedControl
             var first = col.SummaryPath.Split('.', '[')[0];
             if (first.Length > 0)
                 _summedProps.Add(first);
+            // A per-day summary path (Days[i].Payment) is read off a child cell, whose PropertyChanged the
+            // row never re-raises. The roster row does raise its paid aggregate whenever a day cell's
+            // payment moves, so watch that instead and the footer sum stays live for those columns too.
+            if (col.SummaryPath.Contains('['))
+                _summedProps.Add(nameof(ParticipantRosterRowViewModel.TotalPaid));
             // The payment column's tooltip also reacts to the owed (total-fee) value, so watch it too.
             if (col.HasSummaryOwed)
             {
@@ -1721,14 +1767,24 @@ public sealed class SheetTable : TemplatedControl
                 };
                 grid.ColumnDefinitions.Add(def);
 
-                var cell = new SheetCell(column, col) { Content = _cellFactory!.Build(column) };
-                if (column.Kind == SheetCellKind.PaymentText)
+                var content = _cellFactory!.Build(column);
+                // Plain controls inside the cell (a checkbox, the delete button) can't reach the lock on
+                // their own; bind them here, where the table is known and every recycle passes through.
+                SheetLock.ApplyTo(content, this);
+
+                var cell = new SheetCell(column, col) { Content = content };
+                if (column.Kind is SheetCellKind.PaymentText or SheetCellKind.DayPayment or SheetCellKind.CollapsedPayment)
                 {
-                    // Tint the whole cell by the row's payment status (so empty cells colour too), not the
-                    // inner label's text footprint. The cell inherits the row DataContext; the converter
-                    // returns a transparent brush for the no-tint case so the cell stays hit-testable.
+                    // Tint the whole cell by the payment status (so empty cells colour too), not the inner
+                    // label's text footprint. The cell inherits the row DataContext; the converter returns a
+                    // transparent brush for the no-tint case so the cell stays hit-testable. The column names
+                    // the status to read — the row's own by default, a per-day cell's in the roster's per-day
+                    // payment block, so those columns don't all tint alike.
+                    var statusPath = string.IsNullOrEmpty(column.PaymentStatusPath)
+                        ? nameof(ParticipantRosterRowViewModel.PaymentStatus)
+                        : column.PaymentStatusPath;
                     cell[!TemplatedControl.BackgroundProperty] =
-                        new Avalonia.Data.Binding(nameof(ParticipantRosterRowViewModel.PaymentStatus))
+                        new Avalonia.Data.Binding(statusPath)
                         {
                             Converter = Behaviors.PaymentHighlight.Instance
                         };
@@ -1867,6 +1923,12 @@ public sealed class SheetTable : TemplatedControl
         public void OnError(Exception error) { }
         public void OnNext(Size value) =>
             owner.SyncHeaderOffset(owner._bodyScroll?.Offset ?? default);
+    }
+
+    private void OnCellLockedEditAttempted(object? sender, SheetLockedEditEventArgs e)
+    {
+        e.Handled = true;
+        LockedEditAttempted?.Invoke(this, e);
     }
 
     private void RequestDelete(object row)
@@ -2036,6 +2098,21 @@ public sealed class SheetTable : TemplatedControl
             cell.Focus();
             if (wasActiveCell)
             {
+                // The editor never opens when the day is closed, so clicking again looks like the app is
+                // ignoring the user. Explain instead — this is the click that meant "let me edit this".
+                // Two sources: the whole table is locked (a per-day grid), or this one cell is held by a
+                // closed day (the roster, where each column is a different day).
+                if (IsLocked || lazy.IsLockedByDay)
+                {
+                    e.Handled = true;
+                    var info = lazy.LockInfo;
+                    LockedEditAttempted?.Invoke(this, new SheetLockedEditEventArgs(
+                        LazyEditCell.LockedEditAttemptedEvent,
+                        info?.DayNumber ?? 0,
+                        info?.Merged ?? false));
+                    return;
+                }
+
                 _pendingEditCell = lazy;
                 _pendingEditPoint = e.GetPosition(lazy);
             }
@@ -2467,10 +2544,20 @@ public sealed class SheetTable : TemplatedControl
             return null;
         if (content is LazyEditCell direct)
             return direct;
+
+        // Visible but NOT necessarily enabled: a cell a closed day holds read-only is disabled, and
+        // skipping it here would hide it from the caller that wants to explain the lock. Whether the
+        // edit may actually start is decided afterwards (IsLocked / IsLockedByDay), not by this lookup.
+        LazyEditCell? disabled = null;
         foreach (var d in content.GetVisualDescendants())
-            if (d is LazyEditCell lazy && lazy.IsVisible && lazy.IsEnabled)
+        {
+            if (d is not LazyEditCell lazy || !lazy.IsVisible)
+                continue;
+            if (lazy.IsEnabled)
                 return lazy;
-        return null;
+            disabled ??= lazy;
+        }
+        return disabled;
     }
 
     // True when the clicked visual is (inside) an interactive editor within the cell.
@@ -2685,6 +2772,8 @@ public sealed class SheetTable : TemplatedControl
     {
         if (e.Key != Key.Delete)
             return;
+        if (IsLocked)
+            return;
         if (TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is TextBox)
             return;
         if (SelectedItem is null)
@@ -2700,6 +2789,9 @@ public sealed class SheetTable : TemplatedControl
     // remain (a bare ComboBox or TextBox in a custom column), handled as before.
     private bool BeginEditFocusedCell()
     {
+        if (IsLocked)
+            return false;
+
         if (FindFocusedCell()?.Content is not Control content)
             return false;
 
@@ -2709,6 +2801,17 @@ public sealed class SheetTable : TemplatedControl
 
         if (FindLazyCell(content) is { } lazy)
         {
+            // Enter/F2 on a cell a closed day holds: explain, exactly as a click on it does.
+            if (IsLocked || lazy.IsLockedByDay)
+            {
+                var info = lazy.LockInfo;
+                LockedEditAttempted?.Invoke(this, new SheetLockedEditEventArgs(
+                    LazyEditCell.LockedEditAttemptedEvent,
+                    info?.DayNumber ?? 0,
+                    info?.Merged ?? false));
+                return true;
+            }
+
             _editingLazy = lazy;
             lazy.BeginEdit(open: lazy.OpensOnEnter);
             return true;
@@ -3203,6 +3306,8 @@ public sealed class SheetTable : TemplatedControl
     // column with no flat text path) falls back to opening the editor and pasting into it as before.
     private async void PasteFromClipboard()
     {
+        if (IsLocked)
+            return;
         if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
             return;
         var text = await clipboard.TryGetTextAsync();

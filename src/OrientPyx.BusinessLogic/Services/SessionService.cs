@@ -86,6 +86,18 @@ public sealed class SessionService : ISessionService
         SessionChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    public bool IsCurrentDayLocked => CurrentDay?.IsLocked ?? false;
+
+    public void UpdateCurrentDay(EventDay day)
+    {
+        ArgumentNullException.ThrowIfNull(day);
+        if (CurrentDay is null || CurrentDay.Id != day.Id)
+            return;
+
+        CurrentDay = day;
+        SessionChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     public void Clear()
     {
         CurrentEvent = null;

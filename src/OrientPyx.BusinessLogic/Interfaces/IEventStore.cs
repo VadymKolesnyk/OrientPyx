@@ -39,6 +39,12 @@ public interface IEventStore
     /// </summary>
     Task SetHiddenAsync(string eventFolderPath, bool hidden, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Sets only the "participants page offers the roster view" flag on the competition metadata row,
+    /// leaving every other field alone (same narrow-write reasoning as <see cref="SetHiddenAsync"/>).
+    /// </summary>
+    Task SetRosterEnabledAsync(string eventFolderPath, bool enabled, CancellationToken cancellationToken = default);
+
     /// <summary>Ordered by number.</summary>
     Task<IReadOnlyList<EventDay>> GetDaysAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
@@ -237,6 +243,24 @@ public interface IEventStore
     /// from <see cref="UpdateParticipantDayAsync"/> so the debounced row save never clobbers it. No-op if
     /// the link is missing.</summary>
     Task SetParticipantDayBonusAsync(string eventFolderPath, Guid linkId, int? bonus, CancellationToken cancellationToken = default);
+
+    /// <summary>Writes only the per-day payment («Оплата») on one participant-day link. The sole writer of
+    /// that column — kept separate from <see cref="UpdateParticipantDayAsync"/> so the debounced row save
+    /// never clobbers it. No-op if the link is missing.</summary>
+    Task SetParticipantDayPaymentAsync(string eventFolderPath, Guid linkId, string payment, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Writes only <see cref="CompetitionInfo.PaymentPerDay"/> plus the migrated payment values, in a
+    /// single transaction: the participant-level payments in <paramref name="participantPayments"/> and the
+    /// per-day ones in <paramref name="dayPayments"/> (keyed by participant-day link id). Either map may be
+    /// empty; missing rows are skipped. Kept as one store call so a half-migrated competition can't happen.
+    /// </summary>
+    Task SetPaymentPerDayAsync(
+        string eventFolderPath,
+        bool paymentPerDay,
+        IReadOnlyDictionary<Guid, string> participantPayments,
+        IReadOnlyDictionary<Guid, string> dayPayments,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Sets the chip on many participant-day links at once, in a single transaction (used by bulk chip

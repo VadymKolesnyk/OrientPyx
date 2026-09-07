@@ -83,6 +83,10 @@ public sealed class EventStore : IEventStore
             existing.ChiefSecretaryCategory = info.ChiefSecretaryCategory;
             existing.Jury = info.Jury;
             existing.DefaultPointsRuleId = info.DefaultPointsRuleId;
+            existing.RosterEnabled = info.RosterEnabled;
+            // PaymentPerDay is deliberately NOT copied here: switching that mode also migrates every
+            // participant's payment value, so it has its own writer (SetPaymentPerDayAsync). A page that
+            // saves a stale CompetitionInfo must not silently flip the mode back.
         }
 
         await db.SaveChangesAsync(cancellationToken);
@@ -97,6 +101,18 @@ public sealed class EventStore : IEventStore
             return;
 
         existing.IsHidden = hidden;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SetRosterEnabledAsync(string eventFolderPath, bool enabled, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.Competition.FirstOrDefaultAsync(cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.RosterEnabled = enabled;
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -127,6 +143,7 @@ public sealed class EventStore : IEventStore
         existing.Date = day.Date;
         existing.Venue = day.Venue;
         existing.DefaultDiscipline = day.DefaultDiscipline;
+        existing.IsLocked = day.IsLocked;
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -893,6 +910,50 @@ public sealed class EventStore : IEventStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task SetParticipantDayPaymentAsync(string eventFolderPath, Guid linkId, string payment, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.ParticipantDays.FirstOrDefaultAsync(p => p.Id == linkId, cancellationToken);
+        if (existing is null)
+            return;
+
+        // The sole writer of the per-day payment column (UpdateParticipantDayAsync leaves it untouched).
+        existing.Payment = (payment ?? string.Empty).Trim();
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SetPaymentPerDayAsync(
+        string eventFolderPath,
+        bool paymentPerDay,
+        IReadOnlyDictionary<Guid, string> participantPayments,
+        IReadOnlyDictionary<Guid, string> dayPayments,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var info = await db.Competition.FirstOrDefaultAsync(cancellationToken);
+        if (info is not null)
+            info.PaymentPerDay = paymentPerDay;
+
+        if (participantPayments.Count > 0)
+        {
+            foreach (var participant in await db.Participants.ToListAsync(cancellationToken))
+                if (participantPayments.TryGetValue(participant.Id, out var value))
+                    participant.Payment = value;
+        }
+
+        if (dayPayments.Count > 0)
+        {
+            foreach (var link in await db.ParticipantDays.ToListAsync(cancellationToken))
+                if (dayPayments.TryGetValue(link.Id, out var value))
+                    link.Payment = value;
+        }
+
+        // One SaveChanges = one transaction, so the flag and the migrated values always move together.
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<int> SetParticipantDayChipsBatchAsync(
         string eventFolderPath,
         IReadOnlyList<(Guid ParticipantId, Guid DayId, string Chip)> assignments,
@@ -1453,8 +1514,11 @@ public sealed class EventStore : IEventStore
         var clubs = await db.Clubs.ToListAsync(cancellationToken);
         var dusshes = await db.Dusshes.ToListAsync(cancellationToken);
         var groups = await db.Groups.ToListAsync(cancellationToken);
-        var startYear = (await db.Competition.AsNoTracking().FirstOrDefaultAsync(cancellationToken))
-            ?.StartDate?.Year ?? DateTimeOffset.Now.Year;
+        var competition = await db.Competition.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        var startYear = competition?.StartDate?.Year ?? DateTimeOffset.Now.Year;
+        // Where an imported payment lands: on the participant (one payment for the competition) or on each
+        // day link the import touches (per-day mode).
+        var paymentPerDay = competition?.PaymentPerDay ?? false;
 
         Guid? ResolveRegion(string name) => ResolveLookup(name, regions, n => new Region { Name = n }, db.Regions);
         Guid? ResolveClub(string name) => ResolveLookup(name, clubs, n => new Club { Name = n }, db.Clubs);
@@ -1554,6 +1618,11 @@ public sealed class EventStore : IEventStore
                 participant = matched;
             }
 
+            // The payment cell may simply be absent from the file (an unmapped CSV column, a blank cell);
+            // that is "no information", not "clear it", so a blank value never overwrites a stored one.
+            var srcPayment = (src.Payment ?? string.Empty).Trim();
+            var hasPayment = srcPayment.Length > 0;
+
             if (participant is null)
             {
                 participant = new Participant
@@ -1570,7 +1639,12 @@ public sealed class EventStore : IEventStore
                     Representative = src.Representative,
                     FsouCode = code,
                     IsFsouMember = src.IsFsouMember,
-                    Payment = src.Payment
+                    // A brand-new athlete is fully populated, but the payment still honours the caller's
+                    // "оплата" toggle (a day-scoped import that was told not to bring payments must not
+                    // bring them for new people either), and in per-day mode it belongs on the day link.
+                    Payment = !paymentPerDay && hasPayment && ImportsPayment(scope, currentDayOnly)
+                        ? srcPayment
+                        : string.Empty
                 };
                 db.Participants.Add(participant);
                 added++;
@@ -1615,8 +1689,10 @@ public sealed class EventStore : IEventStore
                     participant.Representative = src.Representative;
                 if (Update(ParticipantUpdateFields.IsFsouMember))
                     participant.IsFsouMember = src.IsFsouMember;
-                if (Update(ParticipantUpdateFields.Payment))
-                    participant.Payment = src.Payment;
+                // Never wipe a stored payment with a blank cell (see srcPayment above); in per-day mode the
+                // value belongs on the day link, so the participant-level column is left alone entirely.
+                if (!paymentPerDay && hasPayment && Update(ParticipantUpdateFields.Payment))
+                    participant.Payment = srcPayment;
                 updated++;
             }
 
@@ -1640,6 +1716,12 @@ public sealed class EventStore : IEventStore
                 if (group is not null)
                     EnsureGroupOnDay(day.Id, group.Id);
 
+                // In per-day mode the file's payment goes onto every day this import enters the athlete on
+                // (in current-day-only mode that is exactly the target day) — never onto their other days.
+                var dayPayment = paymentPerDay && hasPayment && ImportsPayment(scope, currentDayOnly)
+                    ? srcPayment
+                    : null;
+
                 var link = priorLinks.FirstOrDefault(x => x.EventDayId == day.Id);
                 if (link is null)
                 {
@@ -1649,7 +1731,8 @@ public sealed class EventStore : IEventStore
                         ParticipantId = participant.Id,
                         Order = ++linkOrderByDay[day.Id],
                         GroupId = group?.Id,
-                        Chip = src.Chip
+                        Chip = src.Chip,
+                        Payment = dayPayment ?? string.Empty
                     };
                     db.ParticipantDays.Add(newLink);
                     // Track it so a later pass over the same participant updates this link instead of
@@ -1660,6 +1743,8 @@ public sealed class EventStore : IEventStore
                 {
                     link.GroupId = group?.Id;
                     link.Chip = src.Chip;
+                    if (dayPayment is not null)
+                        link.Payment = dayPayment;
                 }
             }
 
@@ -1675,6 +1760,12 @@ public sealed class EventStore : IEventStore
 
         return new ParticipantImportResult(Added: added, Updated: updated, DaysCreated: daysCreated);
     }
+
+    // Whether this import is allowed to bring the «Оплата» column at all. All-days mode always may (its
+    // legacy behaviour is to overwrite everything); a day-scoped import only when the user ticked it in the
+    // options modal. Applies to a brand-new athlete too, which the per-field Update() check below does not.
+    private static bool ImportsPayment(ParticipantImportScope scope, bool currentDayOnly) =>
+        !currentDayOnly || scope.UpdateFields.HasFlag(ParticipantUpdateFields.Payment);
 
     // Get-or-create against an in-memory tracked list + the DbSet (added rows are saved with the batch).
     private static Guid? ResolveLookup<T>(string name, List<T> cache, Func<string, T> create, DbSet<T> set)

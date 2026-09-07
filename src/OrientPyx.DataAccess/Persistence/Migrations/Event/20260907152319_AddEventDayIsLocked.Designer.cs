@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using OrientPyx.DataAccess.Persistence;
 
@@ -10,9 +11,11 @@ using OrientPyx.DataAccess.Persistence;
 namespace OrientPyx.DataAccess.Persistence.Migrations.Event
 {
     [DbContext(typeof(EventDbContext))]
-    partial class EventDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260907152319_AddEventDayIsLocked")]
+    partial class AddEventDayIsLocked
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.9");
@@ -120,16 +123,10 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<bool>("PaymentPerDay")
-                        .HasColumnType("INTEGER");
-
                     b.Property<decimal?>("RaisedFeeAmount")
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("RaisedFeeEnabled")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("RosterEnabled")
                         .HasColumnType("INTEGER");
 
                     b.Property<DateTimeOffset?>("StartDate")
@@ -562,10 +559,6 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                         .HasColumnType("INTEGER");
 
                     b.Property<Guid>("ParticipantId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Payment")
-                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<int?>("ResultStatusOverride")

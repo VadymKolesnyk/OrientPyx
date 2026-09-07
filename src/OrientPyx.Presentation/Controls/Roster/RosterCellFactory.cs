@@ -58,6 +58,8 @@ internal sealed class RosterCellFactory
         SheetCellKind.BirthDate => BuildBirthDate(),
         SheetCellKind.Group => BuildDayCell(column, isGroup: true),
         SheetCellKind.Chip => BuildDayCell(column, isGroup: false),
+        SheetCellKind.DayPayment => BuildDayPaymentCell(column),
+        SheetCellKind.CollapsedPayment => BuildCollapsedPayment(),
         SheetCellKind.StartTime => BuildDayStartTimeCell(column),
         SheetCellKind.OutOfCompetition => BuildDayOutOfCompetitionCell(column),
         SheetCellKind.RowGroup => BuildGroupCombo(pathPrefix: string.Empty),
@@ -130,6 +132,8 @@ internal sealed class RosterCellFactory
             $"Days[{i}].{nameof(RosterDayCellViewModel.StatusIsProblem)}");
         combo[!InputElement.IsEnabledProperty] =
             new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.CanEditStatus)}");
+        combo[!LazyEditCell.LockedDayNumberProperty] =
+            new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.LockedDayNumber)}");
         return WrapWithNonMemberBackdrop(combo, i);
     }
 
@@ -168,7 +172,10 @@ internal sealed class RosterCellFactory
             Mask = SheetColumnBuilder.NumericMask.Integer,
             CommitOnLostFocus = true,
         });
-        box[!InputElement.IsEnabledProperty] = new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.IsMember)}");
+        box[!InputElement.IsEnabledProperty] =
+            new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.CanEditMemberFields)}");
+        box[!LazyEditCell.LockedDayNumberProperty] =
+            new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.LockedDayNumber)}");
         return WrapWithNonMemberBackdrop(box, i);
     }
 
@@ -183,6 +190,12 @@ internal sealed class RosterCellFactory
             var cell = BuildGroupCombo($"Days[{i}].");
             cell[!Visual.OpacityProperty] =
                 new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.IsMember)}") { Converter = DimWhenNotMember };
+            // Joining a day happens through this combo, so it stays live for non-members — but a closed
+            // day accepts no joins either.
+            cell[!InputElement.IsEnabledProperty] =
+                new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.CanEdit)}");
+            cell[!LazyEditCell.LockedDayNumberProperty] =
+                new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.LockedDayNumber)}");
             return cell;
         }
 
@@ -191,7 +204,9 @@ internal sealed class RosterCellFactory
         // rather than a faint floating textbox.
         var editor = BuildChipEditor($"Days[{i}].", highlight: true);
         editor[!InputElement.IsEnabledProperty] =
-            new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.IsMember)}");
+            new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.CanEditMemberFields)}");
+        editor[!LazyEditCell.LockedDayNumberProperty] =
+            new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.LockedDayNumber)}");
 
         var backdrop = new Border
         {
@@ -203,6 +218,43 @@ internal sealed class RosterCellFactory
         var panel = new Panel();
         panel.Children.Add(backdrop);
         panel.Children.Add(editor);
+        return panel;
+    }
+
+    // A per-day «Оплата» cell: free text like the identity payment column, disabled + greyed on days the
+    // participant doesn't run. The cell background tint is painted by the table from the column's
+    // PaymentStatusPath (this day's own status), not here.
+    private Control BuildDayPaymentCell(SheetColumn column)
+    {
+        var i = column.DayIndex;
+        var path = $"Days[{i}].{nameof(RosterDayCellViewModel.Payment)}";
+        var box = new LazyTextCell(path, path, new SheetTextOptions { CommitOnLostFocus = true });
+        box[!InputElement.IsEnabledProperty] =
+            new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.CanEditMemberFields)}");
+        box[!LazyEditCell.LockedDayNumberProperty] =
+            new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.LockedDayNumber)}");
+        return WrapWithNonMemberBackdrop(box, i);
+    }
+
+    // The merged «Оплата» cell: one editable value written to every member day (like the merged chip), or
+    // the read-only "різні" label when the days disagree.
+    private Control BuildCollapsedPayment()
+    {
+        var panel = new Panel();
+        const string path = nameof(ParticipantRosterRowViewModel.CollapsedPaymentValue);
+        var editor = new LazyTextCell(path, path, new SheetTextOptions { CommitOnLostFocus = true });
+        editor[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.PaymentShowsInput));
+        editor[!InputElement.IsEnabledProperty] =
+            new Binding(nameof(ParticipantRosterRowViewModel.ChipMergedEditable));
+        editor[!ToolTip.TipProperty] = new Binding(nameof(ParticipantRosterRowViewModel.MergedLockTooltip));
+        editor[!LazyEditCell.LockedDayNumberProperty] =
+            new Binding(nameof(ParticipantRosterRowViewModel.MemberMergedLockedDay));
+        editor.LockedMerged = true;
+        panel.Children.Add(editor);
+
+        var different = BuildDifferentLabel();
+        different[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.PaymentShowsDifferent));
+        panel.Children.Add(different);
         return panel;
     }
 
@@ -218,7 +270,10 @@ internal sealed class RosterCellFactory
             Placeholder = _loc.Get("Common.TimePlaceholder"),
             CommitOnLostFocus = true,
         });
-        box[!InputElement.IsEnabledProperty] = new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.IsMember)}");
+        box[!InputElement.IsEnabledProperty] =
+            new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.CanEditMemberFields)}");
+        box[!LazyEditCell.LockedDayNumberProperty] =
+            new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.LockedDayNumber)}");
         return WrapWithNonMemberBackdrop(box, i);
     }
 
@@ -232,9 +287,15 @@ internal sealed class RosterCellFactory
             VerticalAlignment = VerticalAlignment.Center,
             [!ToggleButton.IsCheckedProperty] = new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.OutOfCompetition)}")
                 { Mode = BindingMode.TwoWay },
-            [!InputElement.IsEnabledProperty] = new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.IsMember)}"),
+            [!InputElement.IsEnabledProperty] =
+                new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.CanEditMemberFields)}"),
         };
-        return WrapWithNonMemberBackdrop(box, i);
+
+        // A checkbox has no activation path of its own, so the explanation comes from a catcher laid
+        // over it while the day is closed.
+        var cell = LockedCellNotifier.Wrap(
+            box, $"Days[{i}].{nameof(RosterDayCellViewModel.LockedDayNumber)}");
+        return WrapWithNonMemberBackdrop(cell, i);
     }
 
     // Lays a grey backdrop behind an editor that is only visible on days the participant doesn't run,
@@ -262,6 +323,14 @@ internal sealed class RosterCellFactory
             groupOptionsPath: $"Days[0].{nameof(RosterDayCellViewModel.GroupOptions)}",
             selectedPath: nameof(ParticipantRosterRowViewModel.CollapsedGroupValue));
         combo[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.GroupShowsInput));
+        // A merged cell writes to every day at once, so a single closed day among them shuts it: the
+        // shared value stays readable, but not editable.
+        combo[!InputElement.IsEnabledProperty] =
+            new Binding(nameof(ParticipantRosterRowViewModel.GroupMergedEditable));
+        combo[!ToolTip.TipProperty] = new Binding(nameof(ParticipantRosterRowViewModel.MergedLockTooltip));
+        combo[!LazyEditCell.LockedDayNumberProperty] =
+            new Binding(nameof(ParticipantRosterRowViewModel.GroupMergedLockedDay));
+        combo.LockedMerged = true;
         panel.Children.Add(combo);
 
         // One real group used on some (not all) days: read-only "<group> (<n> днів)" summary.
@@ -284,6 +353,12 @@ internal sealed class RosterCellFactory
             chipPath: nameof(ParticipantRosterRowViewModel.CollapsedChipValue),
             highlight: true);
         editor[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.ChipShowsInput));
+        editor[!InputElement.IsEnabledProperty] =
+            new Binding(nameof(ParticipantRosterRowViewModel.ChipMergedEditable));
+        editor[!ToolTip.TipProperty] = new Binding(nameof(ParticipantRosterRowViewModel.MergedLockTooltip));
+        editor[!LazyEditCell.LockedDayNumberProperty] =
+            new Binding(nameof(ParticipantRosterRowViewModel.MemberMergedLockedDay));
+        editor.LockedMerged = true;
         panel.Children.Add(editor);
 
         var different = BuildDifferentLabel();
@@ -320,8 +395,12 @@ internal sealed class RosterCellFactory
             [!ToggleButton.IsCheckedProperty] = new Binding(nameof(ParticipantRosterRowViewModel.CollapsedOutOfCompetition))
                 { Mode = BindingMode.TwoWay },
             [!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.OutOfCompetitionShowsInput)),
+            [!InputElement.IsEnabledProperty] =
+                new Binding(nameof(ParticipantRosterRowViewModel.OutOfCompetitionMergedEditable)),
+            [!ToolTip.TipProperty] = new Binding(nameof(ParticipantRosterRowViewModel.MergedLockTooltip)),
         };
-        panel.Children.Add(box);
+        panel.Children.Add(LockedCellNotifier.Wrap(
+            box, nameof(ParticipantRosterRowViewModel.MemberMergedLockedDay), merged: true));
 
         var different = BuildDifferentLabel();
         different[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.OutOfCompetitionShowsDifferent));
@@ -413,6 +492,9 @@ internal sealed class RosterCellFactory
             VerticalAlignment = VerticalAlignment.Center,
             [!ToggleButton.IsCheckedProperty] = new Binding(path) { Mode = BindingMode.TwoWay }
         };
+        // These flags are participant-level, so they stay editable in the roster (which is never locked
+        // as a whole); in a day grid the table's own lock disables them along with every other cell.
+        SheetLock.DisableWhenLocked(box);
         return box;
     }
 
@@ -541,6 +623,10 @@ internal sealed class RosterCellFactory
             if (button.DataContext is { } row)
                 _onDelete?.Invoke(row);
         };
+
+        // Hidden on a closed day (the day grid). The roster table is never locked as a whole — it spans
+        // every day — so this leaves its own delete button alone.
+        SheetLock.HideWhenLocked(button);
         return button;
     }
 }

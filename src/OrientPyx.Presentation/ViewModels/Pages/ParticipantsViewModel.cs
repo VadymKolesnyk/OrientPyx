@@ -77,9 +77,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         IStatementFlow statementFlow,
         IEntryFeeCalculator entryFeeCalculator,
         IActivityLog log,
-        ITableLayoutStore layoutStore)
+        ITableLayoutStore layoutStore,
+        IDayLockService dayLock)
         : base(localization)
     {
+        UseDayLock(dayLock);
         LayoutStore = layoutStore;
         _editor = editor;
         _appStore = appStore;
@@ -99,7 +101,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
         // Re-localize the day-table column headers on a language switch (their text is baked into the
         // band model at build time, so the bands must be rebuilt — the RosterTable picks it up).
-        Localization.PropertyChanged += (_, _) => RebuildDayBands();
+        Localization.PropertyChanged += (_, _) =>
+        {
+            RebuildDayBands();
+            OnPropertyChanged(nameof(ToggleRosterLabel));
+        };
     }
 
     public override string NavKey => "Nav.Participants";
@@ -124,6 +130,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     [
         new(RosterField.Groups, "Participants.Roster.Block.Groups", _ => true),
         new(RosterField.Chips, "Participants.Roster.Block.Chips", c => c.IsMember),
+        // Per-day «Оплата» — relevant on the days the participant runs, like «Чіпи». The column builder
+        // drops the block entirely unless the competition charges per day.
+        new(RosterField.Payment, "Participants.Roster.Block.Payment", c => c.IsMember),
         new(RosterField.StartTimes, "Participants.Roster.Block.StartTimes", c => c.IsMember),
         new(RosterField.OutOfCompetition, "Participants.Roster.Block.OutOfCompetition", c => c.IsMember),
         // Result blocks — collapsible per day like Groups/Chips. Score is dropped by the column builder
@@ -164,6 +173,14 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private bool _raisedFeeEnabled;
 
     /// <summary>
+    /// Whether the competition charges the entry fee per day (mirrors CompetitionInfo.PaymentPerDay). It
+    /// decides where the «Оплата» column writes: the day link in the day grid, a per-day block in the
+    /// roster. Reloaded with the page; a change to it rebuilds both tables' columns.
+    /// </summary>
+    [ObservableProperty]
+    private bool _paymentPerDay;
+
+    /// <summary>
     /// The system-info line shown on the right of each participants table's status bar: rental-chip
     /// totals (in rental / free) plus, in day mode, the day's member count. Recomputed whenever the
     /// rows or the rental set change. The status bar's row counts and per-column sums are owned by the
@@ -175,6 +192,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // The shared fee snapshot used to recompute each row's total live; rebuilt on every load from the
     // current info / group fees / chip prices / discounts / rental chips.
     private EntryFeeContext _feeContext = null!;
+
+    // The competition's closed days. The roster spans every day at once, so its cells and merged blocks
+    // need the whole set — unlike the day grid, which only ever shows the one selected day.
+    private IReadOnlyCollection<Guid> _lockedDayIds = [];
 
     /// <summary>
     /// Set by the View: reports whether the «Стартовий внесок» (fee:total) column is currently visible on
@@ -239,11 +260,19 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     }
 
     private void RebuildDayBands()
-        => DayBands = new Controls.DayColumnBuilder(Localization).Build(ShowTeamColumn, ShowScoreColumn, Discounts, RaisedFeeEnabled, _dayBands);
+        => DayBands = new Controls.DayColumnBuilder(Localization)
+            .Build(ShowTeamColumn, ShowScoreColumn, Discounts, RaisedFeeEnabled, PaymentPerDay, _dayBands);
+
+    // The day grid's «Оплата» column binds a different property in each mode, so the bands must be rebuilt
+    // when the mode changes (the roster table rebuilds itself off its own PaymentPerDay binding).
+    partial void OnPaymentPerDayChanged(bool value) => RebuildDayBands();
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsRosterMode))]
     [NotifyPropertyChangedFor(nameof(IsDayMode))]
+    [NotifyPropertyChangedFor(nameof(CanToggleDayLock))]
+    [NotifyPropertyChangedFor(nameof(IsDayLocked))]
+    [NotifyPropertyChangedFor(nameof(IsEffectiveDayLocked))]
     [NotifyPropertyChangedFor(nameof(CanEditStartOrder))]
     private DayOption? _selectedDay;
 
@@ -252,6 +281,19 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
     /// <summary>True while a real day's participants are shown (the inverse of roster mode).</summary>
     public bool IsDayMode => !IsRosterMode;
+
+    /// <summary>
+    /// The lock closes ONE day, so it only makes sense while a real day is in view. In roster mode the
+    /// table spans every day at once — a per-day lock has no single day to act on there, and each day's
+    /// own cells already carry their lock (a closed day's cells rest read-only inside the live roster).
+    /// </summary>
+    public override bool CanToggleDayLock => base.CanToggleDayLock && IsDayMode;
+
+    /// <summary>
+    /// The roster isn't one day, so it reports no lock state of its own — otherwise the selector would
+    /// show the session day's padlock next to a table that spans every day.
+    /// </summary>
+    public override bool IsDayLocked => IsDayMode && base.IsDayLocked;
 
     /// <summary>
     /// The single day the page is currently bound to, or null when there is no unambiguous day: a real day
@@ -269,10 +311,41 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     /// <summary>True when a single day is unambiguously in view, gating the manual start-order action.</summary>
     public bool CanEditStartOrder => EffectiveDayId is not null;
 
+    /// <summary>
+    /// The gate for a toolbar action that writes to the day in view. Uses <see cref="EffectiveDay"/>
+    /// rather than the page's own <see cref="IsDayLocked"/>, because the roster of a single-day
+    /// competition acts on that day too while reporting no lock of its own (see <see cref="IsDayLocked"/>).
+    /// Multi-day roster actions have no one day to check and pass; each row's per-day cells hold their
+    /// own lock, and the editor refuses a closed day underneath in any case.
+    /// </summary>
+    /// <summary>
+    /// True when the day the toolbar acts on is closed — what the action buttons grey out on. Differs
+    /// from <see cref="IsDayLocked"/> (which reports nothing in roster mode, so the selector shows no
+    /// padlock next to a table spanning every day): the roster of a SINGLE-day competition still acts
+    /// on that one day, so its buttons must follow that day's lock.
+    /// </summary>
+    public bool IsEffectiveDayLocked => EffectiveDay is { IsLocked: true };
+
+    private async Task<bool> EnsureEffectiveDayEditableAsync()
+    {
+        if (EffectiveDay is not { IsLocked: true } day)
+            return true;
+
+        await ExplainDayLockAsync(day.Number);
+        return false;
+    }
+
+    /// <summary>
+    /// The same gate for the view's own actions (the file-picking import handlers, which must run in
+    /// code-behind for the window's StorageProvider). Overridden here so those go through the effective
+    /// day rather than the session's.
+    /// </summary>
+    public override Task<bool> EnsureDayEditableForActionAsync() => EnsureEffectiveDayEditableAsync();
+
     /// <summary>The day picker is shown only when the competition has more than one real day. With a
-    /// single day there is nothing to switch between, so we hide it and always show the roster
-    /// ("Мандатка"). (DayOptions carries a leading roster sentinel, so >2 means two or more real days.)</summary>
-    public bool ShowDaySelector => DayOptions.Count > 2;
+    /// single day there is nothing to switch between (the roster and that day carry the same people),
+    /// so we hide it and show whichever single view applies.</summary>
+    public bool ShowDaySelector => RosterDays.Count > 1;
 
     // Cached per-day flag: true when the day's default discipline OR any group on the day (via its
     // DisciplineOverride) uses teams. Recomputed when the day's rows load (see ReloadContentAsync).
@@ -345,6 +418,54 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // true so the page opens on the roster until the user picks a real day.
     private bool _rosterChosen = true;
 
+    // Whether this competition offers the roster view at all (CompetitionInfo.RosterEnabled). Loaded
+    // with the page and toggled from the «Дії» menu; drives whether DayOptions carries the sentinel.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ToggleRosterLabel))]
+    private bool _rosterEnabled = true;
+
+    /// <summary>
+    /// The roster toggle only makes sense with two or more days: with a single day the roster and that
+    /// day show the same people, and hiding it would leave the page with nothing to switch to.
+    /// </summary>
+    public bool CanToggleRoster => RosterDays.Count > 1;
+
+    /// <summary>The toggle's menu caption — "hide" while the roster is on, "show" while it is off.</summary>
+    public string ToggleRosterLabel => Localization.Get(RosterEnabled
+        ? "Participants.HideRoster"
+        : "Participants.ShowRoster");
+
+    /// <summary>
+    /// Turns the roster («Мандатка») view on or off for this competition and persists the choice. When
+    /// it goes off the page falls back to a real day; when it comes back on the roster is selected.
+    /// </summary>
+    [RelayCommand]
+    private async Task ToggleRosterAsync()
+    {
+        if (_session.CurrentEvent is null || !CanToggleRoster)
+            return;
+
+        var enabled = !RosterEnabled;
+        await _busy.RunAsync(() => _editor.SetRosterEnabledAsync(enabled));
+        RosterEnabled = enabled;
+        _rosterChosen = enabled;
+
+        _syncingDay = true;
+        try
+        {
+            RebuildDayOptions(RosterDays);
+            SelectedDay = ResolveSelectedDay();
+        }
+        finally
+        {
+            _syncingDay = false;
+        }
+
+        RefreshDayLock();
+        OnPropertyChanged(nameof(IsEffectiveDayLocked));
+        await ReloadContentAsync();
+    }
+
     /// <summary>Reloads the page for the current selection. Called when the page is shown.</summary>
     public async Task LoadAsync()
     {
@@ -355,6 +476,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             ? await _busy.RunAsync(() => _editor.GetDaysAsync())
             : (IReadOnlyList<EventDay>)[];
         RosterDays = days;
+
+        // The per-competition roster switch, read before the options are rebuilt (it decides whether the
+        // sentinel is in the list at all).
+        RosterEnabled = !hasEvent || await _busy.RunAsync(() => _editor.GetRosterEnabledAsync());
 
         // Refresh the rental-chip set so cells highlight non-rental numbers against the current DB.
         await RefreshRentalChipsAsync(hasEvent);
@@ -370,6 +495,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         // Entry-fee inputs: the discount set + the fee snapshot used to compute each row's total.
         await RefreshFeeDataAsync(hasEvent);
 
+        _lockedDayIds = days.Where(d => d.IsLocked).Select(d => d.Id).ToHashSet();
+
         _syncingDay = true;
         try
         {
@@ -378,30 +505,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             // A pending quick filter (from a dashboard drill-in) targets the current day's chip/group
             // column, so force day mode for the current day regardless of the remembered roster choice.
             if (_pendingQuickFilter != ParticipantQuickFilter.None)
-            {
                 _rosterChosen = false;
-                var current = _session.CurrentDay?.Number;
-                SelectedDay =
-                    DayOptions.FirstOrDefault(o => !o.IsRoster && o.Number == current)
-                    ?? DayOptions.FirstOrDefault(o => !o.IsRoster)
-                    ?? DayOptions.FirstOrDefault();
-            }
-            // Resolve the selected option: honour a remembered roster choice, else follow the
-            // session day, else the first real day (or the roster option when no day exists).
-            // When the picker is hidden (a single real day), force the roster — there is no UI to
-            // switch back to it, so a stale day choice must not leave the page stuck in day mode.
-            else if (_rosterChosen || DayOptions.Count <= 2)
-            {
-                SelectedDay = DayOptions.FirstOrDefault(o => o.IsRoster);
-            }
-            else
-            {
-                var current = _session.CurrentDay?.Number;
-                SelectedDay =
-                    DayOptions.FirstOrDefault(o => !o.IsRoster && o.Number == current)
-                    ?? DayOptions.FirstOrDefault(o => !o.IsRoster)
-                    ?? DayOptions.FirstOrDefault();
-            }
+
+            SelectedDay = ResolveSelectedDay();
         }
         finally
         {
@@ -409,6 +515,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         }
 
         OnPropertyChanged(nameof(ShowDaySelector));
+        OnPropertyChanged(nameof(CanToggleRoster));
+        RefreshDayLock();
+        OnPropertyChanged(nameof(IsEffectiveDayLocked));
         await ReloadContentAsync();
 
         // Signal an already-attached view to apply a pending quick filter now that the day grid is up.
@@ -471,25 +580,46 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     public Task PrintStatementDirectAsync(Controls.SheetTable table) => _statementFlow.PrintDirectAsync(table, EffectiveDayId);
 
     // Rebuilds the day options only when the day set changed, so the ComboBox keeps a valid
-    // SelectedItem reference across reloads. The roster sentinel is always first.
+    // SelectedItem reference across reloads. The roster sentinel leads the list while the roster view
+    // is enabled; with it off the picker lists the real days alone.
     private void RebuildDayOptions(IReadOnlyList<EventDay> days)
     {
         if (SameDays(days))
             return;
 
         DayOptions.Clear();
-        DayOptions.Add(DayOption.Roster(Localization, "Participants.Roster"));
+        if (RosterEnabled)
+            DayOptions.Add(DayOption.Roster(Localization, "Participants.Roster"));
         foreach (var day in days)
             DayOptions.Add(new DayOption(day, Localization));
     }
 
+    // Picks the option to show: honour a remembered roster choice, else follow the session day, else the
+    // first real day. When the picker is hidden (a single real day) the roster wins while it is enabled —
+    // there is no UI to switch back to it, so a stale day choice must not leave the page stuck in day mode.
+    // With the roster off there is no sentinel to fall back to, so a real day is always chosen.
+    private DayOption? ResolveSelectedDay()
+    {
+        if (RosterEnabled && (_rosterChosen || RosterDays.Count <= 1))
+            return DayOptions.FirstOrDefault(o => o.IsRoster);
+
+        var current = _session.CurrentDay?.Number;
+        return DayOptions.FirstOrDefault(o => !o.IsRoster && o.Number == current)
+            ?? DayOptions.FirstOrDefault(o => !o.IsRoster)
+            ?? DayOptions.FirstOrDefault();
+    }
+
     private bool SameDays(IReadOnlyList<EventDay> days)
     {
-        // First option is always the roster sentinel; the rest must match the day numbers in order.
-        if (DayOptions.Count != days.Count + 1)
+        // The leading roster sentinel is present only while the roster view is on; the rest must match
+        // the day numbers in order.
+        var offset = RosterEnabled ? 1 : 0;
+        if (DayOptions.Count != days.Count + offset)
+            return false;
+        if (RosterEnabled != (DayOptions.Count > 0 && DayOptions[0].IsRoster))
             return false;
         for (var i = 0; i < days.Count; i++)
-            if (DayOptions[i + 1].Number != days[i].Number)
+            if (DayOptions[i + offset].Number != days[i].Number)
                 return false;
         return true;
     }
@@ -626,7 +756,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             RequestDayRowClubChange, RequestDayRowAddClub,
             RequestDayRowDusshChange, RequestDayRowAddDussh,
             RequestRowRaisedFeeChange, RequestRowDiscountChange,
-            RequestDayRowResultStatusChange, RequestDayRowBonusChange);
+            RequestDayRowResultStatusChange, RequestDayRowBonusChange, RequestDayRowPaymentChange);
 
     private ParticipantRosterRowViewModel CreateRosterRow(
         ParticipantRosterRow row,
@@ -638,14 +768,18 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             var options = groupsByDay.TryGetValue(cell.DayId, out var o)
                 ? o
                 : [new GroupOption(null, string.Empty, Localization)];
-            cells.Add(new RosterDayCellViewModel(row.ParticipantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange, RequestCellStartTimeChange, RequestCellOutOfCompetitionChange, RequestCellResultStatusChange, RequestCellBonusChange));
+            cells.Add(new RosterDayCellViewModel(row.ParticipantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange, RequestCellStartTimeChange, RequestCellOutOfCompetitionChange, RequestCellResultStatusChange, RequestCellBonusChange, RequestCellPaymentChange));
         }
-        return new ParticipantRosterRowViewModel(row, cells, _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Discounts, _feeContext, Localization,
+        var rosterRow = new ParticipantRosterRowViewModel(row, cells, _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Discounts, _feeContext, Localization,
             RequestRosterRowSave,
             RequestRosterRowRegionChange, RequestRosterRowAddRegion,
             RequestRosterRowClubChange, RequestRosterRowAddClub,
             RequestRosterRowDusshChange, RequestRosterRowAddDussh,
             RequestRosterRaisedFeeChange, RequestRosterDiscountChange);
+
+        // Mark the closed days before the row goes live, so a locked cell never accepts a first edit.
+        rosterRow.ApplyDayLocks(_lockedDayIds);
+        return rosterRow;
     }
 
     // Driven by the day ComboBox. A real day switches the session (so other pages follow); the roster
@@ -682,7 +816,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     [RelayCommand]
     private async Task AddParticipantAsync()
     {
-        if (_session.CurrentEvent is null)
+        if (_session.CurrentEvent is null || !await EnsureEffectiveDayEditableAsync())
             return;
 
         if (IsRosterMode)
@@ -997,6 +1131,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 (row.FsouCode ?? string.Empty).Trim(),
                 row.IsFsouMember,
                 (row.Payment ?? string.Empty).Trim(),
+                row.PaymentPerDay,
                 (row.Note ?? string.Empty).Trim(),
                 (row.Team ?? string.Empty).Trim(),
                 // Fee fields are persisted through their own callbacks, not the identity save; pass
@@ -1022,7 +1157,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     [RelayCommand]
     private async Task AssignNumbersAsync(IReadOnlyList<object?>? visibleRows)
     {
-        if (visibleRows is null || visibleRows.Count == 0)
+        if (visibleRows is null || visibleRows.Count == 0 || !await EnsureEffectiveDayEditableAsync())
             return;
 
         // All numbers currently taken across the whole competition (not just the visible set), mapped to
@@ -1231,7 +1366,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     [RelayCommand]
     private async Task EditStartOrderAsync()
     {
-        if (EffectiveDayId is not { } dayId)
+        if (EffectiveDayId is not { } dayId || !await EnsureEffectiveDayEditableAsync())
             return;
 
         var data = await _busy.RunAsync(() => _editor.GetStartOrderDataAsync(dayId));
@@ -1269,7 +1404,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     [RelayCommand]
     private async Task QuickWithdrawalAsync()
     {
-        if (EffectiveDayId is not { } dayId)
+        if (EffectiveDayId is not { } dayId || !await EnsureEffectiveDayEditableAsync())
             return;
 
         var data = await _busy.RunAsync(() => _editor.GetQuickWithdrawalDataAsync(dayId));
@@ -1313,7 +1448,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     [RelayCommand]
     private async Task AssignChipsAsync(IReadOnlyList<object?>? visibleRows)
     {
-        if (visibleRows is null || visibleRows.Count == 0)
+        if (visibleRows is null || visibleRows.Count == 0 || !await EnsureEffectiveDayEditableAsync())
             return;
 
         // The rental pool (ordered by number) and the set of chip numbers already held on any day. An empty
@@ -1564,7 +1699,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     [RelayCommand]
     private async Task MarkAgeViolatorsOutOfCompetitionAsync(IReadOnlyList<object?>? visibleRows)
     {
-        if (visibleRows is null || visibleRows.Count == 0 || _session.CurrentEvent is null)
+        if (visibleRows is null || visibleRows.Count == 0 || _session.CurrentEvent is null
+            || !await EnsureEffectiveDayEditableAsync())
             return;
 
         // Collect who will be marked (and the deferred set-OOC actions) BEFORE asking, so the
@@ -1672,7 +1808,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private async Task BulkEditAsync(BulkEditRequest? request)
     {
         var visibleRows = request?.Rows;
-        if (visibleRows is null || visibleRows.Count == 0 || _session.CurrentEvent is null)
+        if (visibleRows is null || visibleRows.Count == 0 || _session.CurrentEvent is null
+            || !await EnsureEffectiveDayEditableAsync())
             return;
 
         // The group dropdown needs a real-group list. In day mode it's the current day's groups; in the
@@ -1890,7 +2027,13 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             case "Coach": row.Coach = r.Text ?? string.Empty; break;
             case "Representative": row.Representative = r.Text ?? string.Empty; break;
             case "FsouCode": row.FsouCode = r.Text ?? string.Empty; break;
-            case "Payment": row.Payment = r.Text ?? string.Empty; break;
+            // In per-day mode the day grid's «Оплата» is this day's own value, so bulk edit writes there.
+            case "Payment":
+                if (PaymentPerDay)
+                    row.DayPayment = r.Text ?? string.Empty;
+                else
+                    row.Payment = r.Text ?? string.Empty;
+                break;
             case "Note": row.Note = r.Text ?? string.Empty; break;
             case "Team": row.Team = r.Text ?? string.Empty; break;
             case "StartTime": row.StartTimeText = r.Text ?? string.Empty; break;
@@ -1922,7 +2065,13 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             case "Coach": row.Coach = r.Text ?? string.Empty; break;
             case "Representative": row.Representative = r.Text ?? string.Empty; break;
             case "FsouCode": row.FsouCode = r.Text ?? string.Empty; break;
-            case "Payment": row.Payment = r.Text ?? string.Empty; break;
+            // Per-day mode fans the payment out to the member days, like the collapsed roster cell does.
+            case "Payment":
+                if (PaymentPerDay)
+                    row.SetPaymentForMemberDays(r.Text ?? string.Empty);
+                else
+                    row.Payment = r.Text ?? string.Empty;
+                break;
             case "Note": row.Note = r.Text ?? string.Empty; break;
             case "Team": row.Team = r.Text ?? string.Empty; break;
             case "IsFsouMember": row.IsFsouMember = r.Bool ?? false; break;
@@ -2027,6 +2176,31 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (!cell.IsMember)
             return;
         _ = ApplyBonusAsync(cell.ParticipantId, cell.DayId, cell.Bonus);
+    }
+
+    // The day grid's «Оплата» cell in per-day mode: persisted through its own writer, like the bonus, so
+    // the debounced row save can't wipe it. No result recompute — a payment changes no standings.
+    private void RequestDayRowPaymentChange(ParticipantDayRowViewModel row)
+    {
+        if (_session.CurrentDay is not { } day)
+            return;
+        _ = ApplyDayPaymentAsync(row.ParticipantId, day.Id, row.DayPayment);
+    }
+
+    private void RequestCellPaymentChange(RosterDayCellViewModel cell)
+    {
+        if (!cell.IsMember)
+            return;
+        _ = ApplyDayPaymentAsync(cell.ParticipantId, cell.DayId, cell.Payment);
+    }
+
+    private async Task ApplyDayPaymentAsync(Guid participantId, Guid dayId, string payment)
+    {
+        try
+        {
+            await Task.Run(() => _editor.SetParticipantDayPaymentAsync(participantId, dayId, payment));
+        }
+        catch { /* never crash the UI over a payment edit */ }
     }
 
     private async Task ApplyBonusAsync(Guid participantId, Guid dayId, int? bonus)
@@ -2472,6 +2646,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         {
             Discounts = [];
             RaisedFeeEnabled = false;
+            PaymentPerDay = false;
             _feeContext = new EntryFeeContext(_entryFeeCalculator, null, [], [], [], []);
             return;
         }
@@ -2491,6 +2666,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (!DiscountsEqual(Discounts, discounts))
             Discounts = discounts;
         RaisedFeeEnabled = info?.RaisedFeeEnabled ?? false;
+        PaymentPerDay = info?.PaymentPerDay ?? false;
         _feeContext = new EntryFeeContext(_entryFeeCalculator, info, groups, chipPrices, discounts, rentalChips);
     }
 

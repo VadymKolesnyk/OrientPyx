@@ -86,4 +86,12 @@ public partial class ClassicDrawView : UserControl
             _vm.Localization.PropertyChanged -= OnLocalizationChanged;
         _vm = null;
     }
+
+    // The table refused to enter edit because its day is closed. Explain why and how to reopen it —
+    // otherwise the click just does nothing and reads as the app being broken.
+    private void OnLockedEditAttempted(object? sender, Controls.SheetLockedEditEventArgs e)
+    {
+        if (DataContext is OrientPyx.Presentation.ViewModels.Pages.PageViewModelBase vm)
+            _ = vm.ExplainDayLockAsync(e.DayNumber, e.Merged);
+    }
 }

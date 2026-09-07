@@ -21,17 +21,16 @@
                         VerticalAlignment="Center">
                 <Button Classes="help" Command="{Binding ShowHelpCommand}"
                         ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
-                <controls:SearchableComboBox IsVisible="{Binding ShowDaySelector}"
-                          MinWidth="140" VerticalAlignment="Center"
-                          SearchWatermark="{Binding Localization[Common.Search]}"
-                          ItemsSource="{Binding DayOptions}"
-                          SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="pages:DayOption">
-                            <TextBlock Text="{Binding Label}" />
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </controls:SearchableComboBox>
+                <controls:DaySelector VerticalAlignment="Center"
+                                      ShowDays="{Binding ShowDaySelector}"
+                                      ShowLock="{Binding CanToggleDayLock}"
+                                      IsDayLocked="{Binding IsDayLocked}"
+                                      ToggleLockCommand="{Binding ToggleDayLockCommand}"
+                                      LockTooltip="{Binding Localization[DayLock.Lock.Tooltip]}"
+                                      UnlockTooltip="{Binding Localization[DayLock.Unlock.Tooltip]}"
+                                      SearchWatermark="{Binding Localization[Common.Search]}"
+                                      DayOptions="{Binding DayOptions}"
+                                      SelectedDay="{Binding SelectedDay, Mode=TwoWay}" />
 
                 <!-- The show/hide-columns gear (and filter chips) now live in each SheetTable's own
                      built-in toolbar, so no per-page columns button is needed here anymore. -->
@@ -44,8 +43,9 @@
                      top-level popup, outside the window's scale transform (same approach as the settings
                      flyout in MainWindow and the column picker). -->
 
-                <!-- Import group: UOF XML file + CSV/Excel. -->
-                <Button Classes="ghost">
+                <!-- Import group: UOF XML file + CSV/Excel. Both write to the day, so the whole menu
+                     closes with it. -->
+                <Button Classes="ghost" IsEnabled="{Binding !IsEffectiveDayLocked}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <controls:Icon Kind="Download" Size="15" />
                         <TextBlock Text="{Binding Localization[Participants.ImportMenu]}" />
@@ -158,6 +158,9 @@
                 <!-- Bulk-action group: assign numbers / chips, bulk-edit, mark out-of-competition by age.
                      Each click handler in code-behind reads the active table's on-screen (filtered/sorted)
                      VisibleItems and hands them to the matching command. -->
+                <!-- Every bulk entry writes to the day, so those grey out with a closed one — the gate
+                     sits on the inner panel rather than on this button, so the menu still opens on a
+                     closed day to reach the roster toggle (a view change, not a data edit). -->
                 <Button Classes="ghost">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <controls:Icon Kind="SquarePen" Size="15" />
@@ -172,6 +175,7 @@
                                                     ScaleY="{ReflectionBinding Scale, Source={StaticResource UiScale}}" />
                                 </LayoutTransformControl.LayoutTransform>
                                 <StackPanel Spacing="2" Margin="4" MinWidth="280">
+                                    <StackPanel Spacing="2" IsEnabled="{Binding !IsEffectiveDayLocked}">
                                     <!-- Sequential start numbers in on-screen order. Hotkey Ctrl+B. -->
                                     <Button Click="OnAssignNumbersClick" Classes="menu" HorizontalAlignment="Stretch">
                                         <DockPanel>
@@ -238,6 +242,22 @@
                                             </StackPanel>
                                         </DockPanel>
                                     </Button>
+                                    </StackPanel>
+                                    <Separator Margin="4,2" IsVisible="{Binding CanToggleRoster}" />
+                                    <!-- Show/hide the roster («Мандатка») option in the day picker. Only
+                                         offered with two or more days — with one day the roster and that
+                                         day hold the same people. The choice is per competition and is
+                                         persisted, so the caption flips between "показати"/"сховати". -->
+                                    <!-- Sits outside the lock-gated panel above: it changes the page's
+                                         view, not the day's data, so it stays usable on a closed day. -->
+                                    <Button Command="{Binding ToggleRosterCommand}" Classes="menu"
+                                            HorizontalAlignment="Stretch"
+                                            IsVisible="{Binding CanToggleRoster}">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <controls:Icon Kind="Table" Size="16" />
+                                            <TextBlock Text="{Binding ToggleRosterLabel}" />
+                                        </StackPanel>
+                                    </Button>
                                 </StackPanel>
                             </LayoutTransformControl>
                         </Flyout>
@@ -246,7 +266,8 @@
 
                 <!-- Add works in both modes: on a day it attaches to that day; on Мандатка it attaches
                      the new participant to every day that has a group. -->
-                <Button Command="{Binding AddParticipantCommand}" Classes="accent">
+                <Button Command="{Binding AddParticipantCommand}" Classes="accent"
+                        IsEnabled="{Binding !IsEffectiveDayLocked}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <controls:Icon Kind="Plus" Size="15" Foreground="White" />
                         <TextBlock Text="{Binding Localization[Participants.Add]}" />
@@ -262,6 +283,8 @@
                  built from the VM's DayBands. -->
             <Border Classes="card" ClipToBounds="True" IsVisible="{Binding IsDayMode}">
                 <controls:SheetTable Name="DayTable"
+                                      IsLocked="{Binding IsDayLocked}"
+                                 LockedEditAttempted="OnLockedEditAttempted"
                                       ItemsSource="{Binding Participants}"
                                       Localization="{Binding Localization}"
                                       LayoutStore="{Binding LayoutStore}"
@@ -280,6 +303,7 @@
                  cannot do. Columns/cells are built in code from the VM's day set + blocks. -->
             <Border Classes="card" ClipToBounds="True" IsVisible="{Binding IsRosterMode}">
                 <controls:SheetTable Name="RosterTable"
+                                      LockedEditAttempted="OnLockedEditAttempted"
                                       ItemsSource="{Binding Roster}"
                                       Localization="{Binding Localization}"
                                       LayoutStore="{Binding LayoutStore}"
@@ -288,6 +312,7 @@
                                       Blocks="{Binding Blocks}"
                                       Discounts="{Binding Discounts}"
                                       RaisedFeeEnabled="{Binding RaisedFeeEnabled}"
+                                      PaymentPerDay="{Binding PaymentPerDay}"
                                       ShowTeam="{Binding RosterShowsTeam}"
                                       ShowScore="{Binding RosterShowsScore}"
                                       StatusInfo="{Binding StatusInfo}"

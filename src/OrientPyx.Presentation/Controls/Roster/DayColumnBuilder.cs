@@ -30,6 +30,7 @@ public sealed class DayColumnBuilder
         bool showScore,
         IReadOnlyList<EntryFeeDiscount> discounts,
         bool raisedFeeEnabled,
+        bool paymentPerDay,
         IReadOnlyList<SheetBand>? previous)
     {
         var bands = new List<SheetBand>();
@@ -56,9 +57,14 @@ public sealed class DayColumnBuilder
         bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Representative", nameof(ParticipantDayRowViewModel.Representative)));
         bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.FsouCode", nameof(ParticipantDayRowViewModel.FsouCode)));
         bands.Add(Identity(SheetCellKind.IdentityBool, "Participants.Col.IsFsouMember", nameof(ParticipantDayRowViewModel.IsFsouMember), fixedWidth: 110));
-        var paymentBand = Identity(SheetCellKind.PaymentText, "Participants.Col.Payment", nameof(ParticipantDayRowViewModel.Payment));
-        ConfigurePaymentColumn(paymentBand.Columns[0], nameof(ParticipantDayRowViewModel.PaymentStatusKey),
-            nameof(ParticipantDayRowViewModel.Payment));
+        // In per-day payment mode the cell edits THIS day's payment; otherwise the one competition-level
+        // value. Either way it is compared against PaymentBase, which follows the same mode.
+        var paymentPath = paymentPerDay
+            ? nameof(ParticipantDayRowViewModel.DayPayment)
+            : nameof(ParticipantDayRowViewModel.Payment);
+        var paymentBand = Identity(SheetCellKind.PaymentText, "Participants.Col.Payment", paymentPath);
+        ConfigurePaymentColumn(paymentBand.Columns[0], nameof(ParticipantDayRowViewModel.PaymentStatusKey), paymentPath);
+        paymentBand.Columns[0].SummaryOwedPath = nameof(ParticipantDayRowViewModel.PaymentBase);
         bands.Add(paymentBand);
         bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Note", nameof(ParticipantDayRowViewModel.Note), fixedWidth: 180));
 

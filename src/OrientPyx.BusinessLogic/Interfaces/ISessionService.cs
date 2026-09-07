@@ -38,6 +38,20 @@ public interface ISessionService
     /// </summary>
     Task RenameCurrentEventAsync(EventSummary competition, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// True when the active day is closed for editing (<see cref="EventDay.IsLocked"/>). False when
+    /// no day is selected. The UI reads this to grey out editing; the actual guarantee is enforced in
+    /// <c>ICompetitionEditorService</c>.
+    /// </summary>
+    bool IsCurrentDayLocked { get; }
+
+    /// <summary>
+    /// Replaces the in-memory current day after its own row changed (e.g. it was locked or unlocked),
+    /// so pages reading <see cref="CurrentDay"/> see the new state. Ignores a day that is not the
+    /// current one. Raises <see cref="SessionChanged"/>.
+    /// </summary>
+    void UpdateCurrentDay(EventDay day);
+
     /// <summary>Clears the active selection (does not erase the persisted last session).</summary>
     void Clear();
 

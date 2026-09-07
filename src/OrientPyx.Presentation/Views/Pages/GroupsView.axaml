@@ -25,19 +25,20 @@
                 <Button Classes="help" Command="{Binding ShowHelpCommand}"
                         Margin="0,0,8,8"
                         ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
-                <controls:SearchableComboBox IsVisible="{Binding ShowDaySelector}"
-                          MinWidth="120" VerticalAlignment="Center" Margin="0,0,8,8"
-                          SearchWatermark="{Binding Localization[Common.Search]}"
-                          ItemsSource="{Binding DayOptions}"
-                          SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="pages:DayOption">
-                            <TextBlock Text="{Binding Label}" />
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </controls:SearchableComboBox>
+                <controls:DaySelector VerticalAlignment="Center"
+                                      Margin="0,0,8,8"
+                                      ShowDays="{Binding ShowDaySelector}"
+                                      ShowLock="{Binding CanToggleDayLock}"
+                                      IsDayLocked="{Binding IsDayLocked}"
+                                      ToggleLockCommand="{Binding ToggleDayLockCommand}"
+                                      LockTooltip="{Binding Localization[DayLock.Lock.Tooltip]}"
+                                      UnlockTooltip="{Binding Localization[DayLock.Unlock.Tooltip]}"
+                                      SearchWatermark="{Binding Localization[Common.Search]}"
+                                      DayOptions="{Binding DayOptions}"
+                                      SelectedDay="{Binding SelectedDay, Mode=TwoWay}" />
                 <Button Name="ImportButton" Classes="ghost" Click="OnImportClick"
                         Margin="0,0,8,8"
+                        IsEnabled="{Binding !IsDayLocked}"
                         ToolTip.Tip="{Binding Localization[Import.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <controls:Icon Kind="Download" Size="15" />
@@ -46,6 +47,7 @@
                 </Button>
                 <Button Command="{Binding RecalculateAgeWindowsCommand}" Classes="ghost"
                         Margin="0,0,8,8"
+                        IsEnabled="{Binding !IsDayLocked}"
                         ToolTip.Tip="{Binding Localization[Groups.RecalcAge.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <controls:Icon Kind="RefreshCw" Size="15" />
@@ -54,6 +56,7 @@
                 </Button>
                 <Button Command="{Binding PullAllGroupsCommand}" Classes="ghost"
                         Margin="0,0,8,8"
+                        IsEnabled="{Binding !IsDayLocked}"
                         ToolTip.Tip="{Binding Localization[Groups.PullAll.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <controls:Icon Kind="Upload" Size="15" />
@@ -61,7 +64,8 @@
                     </StackPanel>
                 </Button>
                 <Button Command="{Binding AddGroupCommand}" Classes="accent"
-                        Margin="0,0,0,8">
+                        Margin="0,0,0,8"
+                        IsEnabled="{Binding !IsDayLocked}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <controls:Icon Kind="Plus" Size="15" Foreground="White" />
                         <TextBlock Text="{Binding Localization[Groups.Add]}" />
@@ -90,7 +94,8 @@
                     </StackPanel>
                 </Button>
 
-                <WrapPanel Orientation="Horizontal" IsVisible="{Binding IsGlobalSettingsExpanded}">
+                <WrapPanel Orientation="Horizontal" IsVisible="{Binding IsGlobalSettingsExpanded}"
+                           IsEnabled="{Binding !IsDayLocked}">
                     <!-- Course-setter (name + category) -->
                     <StackPanel Spacing="4" Margin="0,0,28,8" VerticalAlignment="Bottom">
                         <TextBlock Text="{Binding Localization[Groups.GlobalSettings.CourseSetter]}" Classes="label" />
@@ -134,6 +139,8 @@
              in code-behind (SheetColumnBuilder) and handed to the shared SheetTable via Bands. -->
         <Border Grid.Row="0" Classes="card" ClipToBounds="True">
             <controls:SheetTable Name="Sheet"
+                                 IsLocked="{Binding IsDayLocked}"
+                                 LockedEditAttempted="OnLockedEditAttempted"
                                  ItemsSource="{Binding Groups}"
                                  Localization="{Binding Localization}"
                                  SelectedItem="{Binding SelectedGroup, Mode=TwoWay}"
@@ -229,6 +236,7 @@
                             Classes="ghost"
                             HorizontalAlignment="Left"
                             Margin="0,8,0,0"
+                            IsEnabled="{Binding !IsDayLocked}"
                             Content="{Binding Localization[Groups.Scatter.Add]}"
                             Command="{Binding AddScatterVariantCommand}" />
                     <TextBlock DockPanel.Dock="Bottom"
@@ -239,6 +247,8 @@
                                Text="{Binding Localization[Groups.Scatter.Empty]}" />
                     <Border Classes="card" ClipToBounds="True">
                         <controls:SheetTable Name="ScatterSheet"
+                                             IsLocked="{Binding IsDayLocked}"
+                                 LockedEditAttempted="OnLockedEditAttempted"
                                              ItemsSource="{Binding ScatterVariants}"
                                              Localization="{Binding Localization}"
                                              LayoutKey="groups.scatter"
@@ -253,6 +263,8 @@
                          VerticalContentAlignment="Top"
                          IsVisible="{Binding !IsScatterEditorVisible}"
                          IsEnabled="{Binding HasSelectedGroup}"
+                         IsReadOnly="{Binding IsDayLocked}"
+                         GotFocus="OnCourseOrderFocus"
                          PlaceholderText="{Binding Localization[Groups.SelectedCourse.Placeholder]}"
                          Text="{Binding SelectedGroup.CourseOrder, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}" />
             </DockPanel>

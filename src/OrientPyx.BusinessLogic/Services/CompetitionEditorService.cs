@@ -46,6 +46,32 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     private DisciplineType CurrentDayDefaultDiscipline =>
         _session.CurrentDay?.DefaultDiscipline ?? DisciplineType.SetCourse;
 
+    /// <summary>
+    /// Refuses the write when the day is closed for editing. Every per-day write goes through this,
+    /// so no path (a page, bulk edit, an import, the auto read-out) can change a finished day —
+    /// reads, results, protocols and publishing are deliberately left alone.
+    /// </summary>
+    private async Task EnsureDayEditableAsync(Guid dayId, CancellationToken cancellationToken)
+    {
+        var days = await _eventStore.GetDaysAsync(FolderPath, cancellationToken);
+        var day = days.FirstOrDefault(d => d.Id == dayId);
+        if (day is { IsLocked: true })
+            throw new DayLockedException(day.Number);
+    }
+
+    public async Task<EventDay?> SetDayLockedAsync(
+        Guid dayId, bool locked, CancellationToken cancellationToken = default)
+    {
+        var days = await _eventStore.GetDaysAsync(FolderPath, cancellationToken);
+        var day = days.FirstOrDefault(d => d.Id == dayId);
+        if (day is null || day.IsLocked == locked)
+            return null;
+
+        day.IsLocked = locked;
+        await _eventStore.UpdateDayAsync(FolderPath, day, cancellationToken);
+        return day;
+    }
+
     public Task<CompetitionInfo?> GetInfoAsync(CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null)
@@ -76,6 +102,23 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     {
         ArgumentNullException.ThrowIfNull(info);
         return _eventStore.SaveCompetitionInfoAsync(FolderPath, info, cancellationToken);
+    }
+
+    public async Task<bool> GetRosterEnabledAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return true;
+
+        var info = await _eventStore.GetCompetitionInfoAsync(FolderPath, cancellationToken);
+        return info?.RosterEnabled ?? true;
+    }
+
+    public Task SetRosterEnabledAsync(bool enabled, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return Task.CompletedTask;
+
+        return _eventStore.SetRosterEnabledAsync(FolderPath, enabled, cancellationToken);
     }
 
     public async Task<DashboardInfo> GetDashboardAsync(CancellationToken cancellationToken = default)
@@ -226,19 +269,27 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return day;
     }
 
-    public Task UpdateDayAsync(EventDay day, CancellationToken cancellationToken = default)
+    // The day row itself (date, venue, default discipline) is day data too, so a closed day refuses
+    // these — note SetDayLockedAsync writes through the store directly, so the lock can still be lifted.
+    public async Task UpdateDayAsync(EventDay day, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(day);
-        return _eventStore.UpdateDayAsync(FolderPath, day, cancellationToken);
+        await EnsureDayEditableAsync(day.Id, cancellationToken);
+        await _eventStore.UpdateDayAsync(FolderPath, day, cancellationToken);
     }
 
-    public Task DeleteDayAsync(Guid dayId, CancellationToken cancellationToken = default)
-        => _eventStore.DeleteDayAsync(FolderPath, dayId, cancellationToken);
+    public async Task DeleteDayAsync(Guid dayId, CancellationToken cancellationToken = default)
+    {
+        await EnsureDayEditableAsync(dayId, cancellationToken);
+        await _eventStore.DeleteDayAsync(FolderPath, dayId, cancellationToken);
+    }
 
     public async Task<EventDay?> ChangeDayNumberAsync(Guid dayId, int newNumber, CancellationToken cancellationToken = default)
     {
         if (newNumber < 1)
             return null;
+
+        await EnsureDayEditableAsync(dayId, cancellationToken);
 
         var folder = FolderPath;
         var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
@@ -279,6 +330,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Date = day.Date,
             Venue = day.Venue,
             DefaultDiscipline = day.DefaultDiscipline,
+            IsLocked = day.IsLocked,
             CreatedAt = day.CreatedAt
         };
     }
@@ -354,6 +406,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     public async Task<ControlPoint> AddControlPointAsync(CancellationToken cancellationToken = default)
     {
         var dayId = CurrentDayId;
+        await EnsureDayEditableAsync(dayId, cancellationToken);
         var existing = await _eventStore.GetControlPointsAsync(FolderPath, dayId, cancellationToken);
         var nextOrder = existing.Count == 0 ? 1 : existing.Max(cp => cp.Order) + 1;
 
@@ -367,24 +420,32 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return point;
     }
 
-    public Task UpdateControlPointAsync(ControlPoint point, CancellationToken cancellationToken = default)
+    public async Task UpdateControlPointAsync(ControlPoint point, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(point);
-        return _eventStore.UpdateControlPointAsync(FolderPath, point, cancellationToken);
+        // A control point belongs to one day (EventDayId), so its own day decides — not the session's.
+        await EnsureDayEditableAsync(point.EventDayId, cancellationToken);
+        await _eventStore.UpdateControlPointAsync(FolderPath, point, cancellationToken);
     }
 
-    public Task DeleteControlPointAsync(Guid pointId, CancellationToken cancellationToken = default)
-        => _eventStore.DeleteControlPointAsync(FolderPath, pointId, cancellationToken);
+    public async Task DeleteControlPointAsync(Guid pointId, CancellationToken cancellationToken = default)
+    {
+        await EnsureDayEditableAsync(CurrentDayId, cancellationToken);
+        await _eventStore.DeleteControlPointAsync(FolderPath, pointId, cancellationToken);
+    }
 
-    public Task<int> SetProblematicControlsAsync(
+    public async Task<int> SetProblematicControlsAsync(
         IReadOnlyCollection<Guid> disabledPointIds, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(disabledPointIds);
         if (_session.CurrentEvent is null || _session.CurrentDay is null)
-            return Task.FromResult(0);
+            return 0;
 
-        return _eventStore.SetControlPointsDisabledAsync(
-            FolderPath, CurrentDayId, disabledPointIds, cancellationToken);
+        var dayId = CurrentDayId;
+        await EnsureDayEditableAsync(dayId, cancellationToken);
+
+        return await _eventStore.SetControlPointsDisabledAsync(
+            FolderPath, dayId, disabledPointIds, cancellationToken);
     }
 
     public async Task<ControlPointImportResult> ImportControlPointsAsync(
@@ -395,6 +456,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         ArgumentNullException.ThrowIfNull(data);
         var dayId = CurrentDayId;
         var folder = FolderPath;
+        await EnsureDayEditableAsync(dayId, cancellationToken);
 
         // Collapse duplicate codes within the file (a control may also appear as start/finish),
         // keeping the first occurrence so file order — and thus display order — is preserved.
@@ -509,12 +571,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             .ToList();
     }
 
-    public Task SaveScatterVariantsAsync(Guid groupId, IReadOnlyList<ScatterVariantRow> variants, CancellationToken cancellationToken = default)
+    public async Task SaveScatterVariantsAsync(Guid groupId, IReadOnlyList<ScatterVariantRow> variants, CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null || _session.CurrentDay is null)
-            return Task.CompletedTask;
+            return;
 
         var dayId = CurrentDayId;
+        await EnsureDayEditableAsync(dayId, cancellationToken);
+
         var order = 0;
         var rows = variants
             .Select(v => new ScatterVariant
@@ -529,7 +593,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             .Where(v => v.Code.Length > 0 || v.CourseOrder.Length > 0)
             .ToList();
 
-        return _eventStore.ReplaceScatterVariantsForGroupAsync(FolderPath, dayId, groupId, rows, cancellationToken);
+        await _eventStore.ReplaceScatterVariantsForGroupAsync(FolderPath, dayId, groupId, rows, cancellationToken);
     }
 
     public Task<IReadOnlyList<Group>> GetGroupsAsync(CancellationToken cancellationToken = default)
@@ -546,6 +610,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     public async Task<GroupDayRow> AddGroupToDayAsync(string name, CancellationToken cancellationToken = default)
     {
         var dayId = CurrentDayId;
+        await EnsureDayEditableAsync(dayId, cancellationToken);
         var trimmed = (name ?? string.Empty).Trim();
 
         // Match on name, case-insensitively.
@@ -578,6 +643,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     public async Task<IReadOnlyList<GroupDayRow>> PullAllGroupsIntoDayAsync(CancellationToken cancellationToken = default)
     {
         var dayId = CurrentDayId;
+        await EnsureDayEditableAsync(dayId, cancellationToken);
 
         var groups = await _eventStore.GetGroupsAsync(FolderPath, cancellationToken);
         var settings = await _eventStore.GetGroupDaySettingsAsync(FolderPath, dayId, cancellationToken);
@@ -604,6 +670,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     public async Task UpdateGroupDayRowAsync(GroupDayRow row, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(row);
+        await EnsureDayEditableAsync(CurrentDayId, cancellationToken);
 
         // Rename the group (affects every day it runs on). Ignore empty names and collisions with a
         // different group, keeping the previous name — the row text reverts on the next reload.
@@ -667,6 +734,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
     public async Task RemoveGroupFromDayAsync(Guid settingsId, Guid groupId, CancellationToken cancellationToken = default)
     {
+        await EnsureDayEditableAsync(CurrentDayId, cancellationToken);
+
         await _eventStore.DeleteGroupDaySettingsAsync(FolderPath, settingsId, cancellationToken);
 
         // A group that no longer runs on any day is removed entirely.
@@ -682,6 +751,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     {
         ArgumentNullException.ThrowIfNull(data);
         var dayId = CurrentDayId;
+        await EnsureDayEditableAsync(dayId, cancellationToken);
+
         var folder = FolderPath;
 
         // Coordinate lookup for distance, keyed by control code (case-insensitive). The day's saved
@@ -1308,6 +1379,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // The fee total spans every day the participant runs, so gather their links across all days
         // (grouped by participant) — the day grid still shows the same competition-wide total.
         var fees = await LoadFeeContextAsync(folder, cancellationToken);
+        var paymentPerDay = (await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken))?.PaymentPerDay ?? false;
         var allLinks = await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
         var linksByParticipant = allLinks
             .GroupBy(l => l.ParticipantId)
@@ -1324,16 +1396,16 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 continue;
 
             var all = linksByParticipant.TryGetValue(participant.Id, out var ls) ? ls : [link];
-            var memberDays = all.Select(l => ((Guid?)l.GroupId, l.Chip)).ToList();
+            var memberDays = all.Select(l => (l.EventDayId, (Guid?)l.GroupId, l.Chip)).ToList();
             // The day grid lets a row recompute live; it needs the OTHER days' fixed contributions.
             var otherDays = all
                 .Where(l => l.Id != link.Id)
-                .Select(l => new ParticipantFeeDay(l.GroupId, l.Chip))
+                .Select(l => new ParticipantFeeDay(l.EventDayId, l.GroupId, l.Chip))
                 .ToList();
             var result = results.TryGetValue(link.Id, out var r) ? r : ParticipantDayResult.Empty;
             rows.Add(ToRow(link, participant, groupName, regionName, clubName, dusshName,
                 participant.PaysRaisedFee, fees.SelectedDiscountIds(participant.Id),
-                fees.Total(participant, memberDays), otherDays, result));
+                fees.Total(participant, memberDays), otherDays, result, paymentPerDay));
         }
         return rows;
     }
@@ -1357,6 +1429,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var dusshName = dusshes.ToDictionary(d => d.Id, d => d.Name);
 
         var fees = await LoadFeeContextAsync(folder, cancellationToken);
+        var rosterPaymentPerDay = (await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken))?.PaymentPerDay ?? false;
 
         // Per day, keyed by link id — the roster spans all days.
         var resultsByDay = new Dictionary<Guid, IReadOnlyDictionary<Guid, ParticipantDayResult>>(days.Count);
@@ -1370,7 +1443,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         foreach (var participant in participants)
         {
             var cells = new List<RosterDayCell>(days.Count);
-            var memberDays = new List<(Guid?, string)>();
+            var memberDays = new List<(Guid, Guid?, string)>();
             foreach (var day in days)
             {
                 if (linkByKey.TryGetValue((participant.Id, day.Id), out var link))
@@ -1378,12 +1451,12 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     var name = link.GroupId is { } gid && groupName.TryGetValue(gid, out var n) ? n : string.Empty;
                     var result = resultsByDay.TryGetValue(day.Id, out var dr) && dr.TryGetValue(link.Id, out var r)
                         ? r : ParticipantDayResult.Empty;
-                    cells.Add(new RosterDayCell(day.Id, day.Number, link.Id, IsMember: true, link.GroupId, name, link.Chip, link.StartTime, link.OutOfCompetition, link.Bonus, result));
-                    memberDays.Add((link.GroupId, link.Chip));
+                    cells.Add(new RosterDayCell(day.Id, day.Number, link.Id, IsMember: true, link.GroupId, name, link.Chip, link.Payment, link.StartTime, link.OutOfCompetition, link.Bonus, result));
+                    memberDays.Add((day.Id, link.GroupId, link.Chip));
                 }
                 else
                 {
-                    cells.Add(new RosterDayCell(day.Id, day.Number, LinkId: null, IsMember: false, GroupId: null, GroupName: string.Empty, Chip: string.Empty, StartTime: null, OutOfCompetition: false, Bonus: null, ParticipantDayResult.Empty));
+                    cells.Add(new RosterDayCell(day.Id, day.Number, LinkId: null, IsMember: false, GroupId: null, GroupName: string.Empty, Chip: string.Empty, Payment: string.Empty, StartTime: null, OutOfCompetition: false, Bonus: null, ParticipantDayResult.Empty));
                 }
             }
             var region = participant.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
@@ -1406,6 +1479,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 participant.FsouCode,
                 participant.IsFsouMember,
                 participant.Payment,
+                rosterPaymentPerDay,
                 participant.Note,
                 participant.Team,
                 participant.PaysRaisedFee,
@@ -1420,6 +1494,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     {
         var folder = FolderPath;
         var dayId = CurrentDayId;
+        await EnsureDayEditableAsync(dayId, cancellationToken);
 
         // A member always has a group; refuse to add when the day has no groups to assign.
         var dayGroups = await GetGroupsForDayAsync(dayId, cancellationToken);
@@ -1441,12 +1516,16 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         };
         await _eventStore.AddParticipantDayAsync(folder, link, cancellationToken);
 
-        // A fresh participant has no region/club/ДЮСШ yet, so empty name maps are fine.
+        // A fresh participant has no region/club/ДЮСШ yet, so empty name maps are fine. The payment mode
+        // still has to travel with the row, or the new row's «Оплата» cell would edit the wrong field
+        // until the page is reloaded.
+        var paymentPerDay = (await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken))?.PaymentPerDay ?? false;
         return ToRow(link, participant,
             new Dictionary<Guid, string> { [firstGroup.GroupId] = firstGroup.Name },
             new Dictionary<Guid, string>(),
             new Dictionary<Guid, string>(),
-            new Dictionary<Guid, string>());
+            new Dictionary<Guid, string>(),
+            paymentPerDay: paymentPerDay);
     }
 
     public async Task<ParticipantRosterRow?> AddRosterParticipantAsync(CancellationToken cancellationToken = default)
@@ -1471,6 +1550,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         var folder = FolderPath;
         var dayId = CurrentDayId;
+        await EnsureDayEditableAsync(dayId, cancellationToken);
 
         // Save the participant identity (affects every day). A number colliding with a different
         // participant is dropped, keeping the stored number — the row reverts on the next reload.
@@ -1525,6 +1605,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
     public async Task RemoveParticipantFromDayAsync(Guid linkId, Guid participantId, CancellationToken cancellationToken = default)
     {
+        await EnsureDayEditableAsync(CurrentDayId, cancellationToken);
+
         var folder = FolderPath;
         await _eventStore.DeleteParticipantDayAsync(folder, linkId, cancellationToken);
 
@@ -1539,11 +1621,15 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
     // Joining a day and changing a group are the same operation here; the store does the look-up and the
     // insert in one transaction so two concurrent edits can't each create a link for the same (day, person).
-    public Task<Guid> SetParticipantDayGroupAsync(Guid participantId, Guid dayId, Guid? groupId, CancellationToken cancellationToken = default)
-        => _eventStore.SetParticipantDayGroupAsync(FolderPath, participantId, dayId, groupId, cancellationToken);
+    public async Task<Guid> SetParticipantDayGroupAsync(Guid participantId, Guid dayId, Guid? groupId, CancellationToken cancellationToken = default)
+    {
+        await EnsureDayEditableAsync(dayId, cancellationToken);
+        return await _eventStore.SetParticipantDayGroupAsync(FolderPath, participantId, dayId, groupId, cancellationToken);
+    }
 
     public async Task SetParticipantDayChipAsync(Guid participantId, Guid dayId, string chip, CancellationToken cancellationToken = default)
     {
+        await EnsureDayEditableAsync(dayId, cancellationToken);
         var folder = FolderPath;
         var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
         var existing = links.FirstOrDefault(l => l.ParticipantId == participantId);
@@ -1573,10 +1659,19 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         }, cancellationToken);
     }
 
-    public Task<int> SetParticipantDayChipsBatchAsync(
+    public async Task<int> SetParticipantDayChipsBatchAsync(
         IReadOnlyList<(Guid ParticipantId, Guid DayId, string Chip)> assignments,
         CancellationToken cancellationToken = default)
-        => _eventStore.SetParticipantDayChipsBatchAsync(FolderPath, assignments, cancellationToken);
+    {
+        ArgumentNullException.ThrowIfNull(assignments);
+
+        // The batch may span several days (the roster hands one chip out across days), so every day
+        // it writes to must be open — a partly-applied batch would be worse than a refused one.
+        foreach (var dayId in assignments.Select(a => a.DayId).Distinct())
+            await EnsureDayEditableAsync(dayId, cancellationToken);
+
+        return await _eventStore.SetParticipantDayChipsBatchAsync(FolderPath, assignments, cancellationToken);
+    }
 
     public Task<int> SetParticipantNumbersBatchAsync(
         IReadOnlyList<(Guid ParticipantId, string Number)> assignments,
@@ -1585,6 +1680,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
     public async Task SetParticipantDayStartTimeAsync(Guid participantId, Guid dayId, TimeSpan? startTime, CancellationToken cancellationToken = default)
     {
+        await EnsureDayEditableAsync(dayId, cancellationToken);
         var folder = FolderPath;
         var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
         var existing = links.FirstOrDefault(l => l.ParticipantId == participantId);
@@ -1598,6 +1694,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
     public async Task SetParticipantDayOutOfCompetitionAsync(Guid participantId, Guid dayId, bool outOfCompetition, CancellationToken cancellationToken = default)
     {
+        await EnsureDayEditableAsync(dayId, cancellationToken);
         var folder = FolderPath;
         var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
         var existing = links.FirstOrDefault(l => l.ParticipantId == participantId);
@@ -1610,6 +1707,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
     public async Task SetParticipantDayResultStatusAsync(Guid participantId, Guid dayId, FinishStatus? status, CancellationToken cancellationToken = default)
     {
+        await EnsureDayEditableAsync(dayId, cancellationToken);
         var folder = FolderPath;
         var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
         var existing = links.FirstOrDefault(l => l.ParticipantId == participantId);
@@ -1648,6 +1746,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
     public async Task SetParticipantDayBonusAsync(Guid participantId, Guid dayId, int? bonus, CancellationToken cancellationToken = default)
     {
+        await EnsureDayEditableAsync(dayId, cancellationToken);
         var folder = FolderPath;
         var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
         var existing = links.FirstOrDefault(l => l.ParticipantId == participantId);
@@ -1657,6 +1756,145 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // Its own writer (UpdateParticipantDayAsync leaves the bonus column alone), so the debounced row
         // save can't wipe the correction set here. The recompute folds it into «Бали» (see ComputeDayResultsAsync).
         await _eventStore.SetParticipantDayBonusAsync(folder, existing.Id, bonus, cancellationToken);
+    }
+
+    public async Task SetParticipantDayPaymentAsync(Guid participantId, Guid dayId, string payment, CancellationToken cancellationToken = default)
+    {
+        await EnsureDayEditableAsync(dayId, cancellationToken);
+        var folder = FolderPath;
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var existing = links.FirstOrDefault(l => l.ParticipantId == participantId);
+        if (existing is null)
+            return;
+
+        // Its own writer, like the bonus — the debounced row save leaves this column alone.
+        await _eventStore.SetParticipantDayPaymentAsync(folder, existing.Id, payment, cancellationToken);
+    }
+
+    public async Task<int> CountParticipantsWithPaymentAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return 0;
+
+        var folder = FolderPath;
+        var info = await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken);
+        if (info?.PaymentPerDay == true)
+        {
+            var links = await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
+            return links
+                .Where(l => !string.IsNullOrWhiteSpace(l.Payment))
+                .Select(l => l.ParticipantId)
+                .Distinct()
+                .Count();
+        }
+
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        return participants.Count(p => !string.IsNullOrWhiteSpace(p.Payment));
+    }
+
+    public async Task SetPaymentPerDayAsync(bool paymentPerDay, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return;
+
+        var folder = FolderPath;
+        var info = await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken);
+        if (info is null || info.PaymentPerDay == paymentPerDay)
+            return;
+
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var links = await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
+        var linksByParticipant = links
+            .GroupBy(l => l.ParticipantId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(l => l.Order).ToList());
+
+        var participantPayments = new Dictionary<Guid, string>();
+        var dayPayments = new Dictionary<Guid, string>();
+
+        if (paymentPerDay)
+        {
+            // OFF → ON: spread each single payment across the days the participant runs, in proportion to
+            // each day's share of their fee. The fee context is the same one the tables compute with.
+            var fees = await LoadFeeContextAsync(folder, cancellationToken);
+            foreach (var participant in participants)
+            {
+                var text = (participant.Payment ?? string.Empty).Trim();
+                if (text.Length == 0)
+                    continue;
+                if (!linksByParticipant.TryGetValue(participant.Id, out var memberLinks) || memberLinks.Count == 0)
+                    continue;
+
+                if (!PaymentValue.TryParse(text, out var amount))
+                {
+                    // Not a number — the text can't be split, so it goes to the first day whole.
+                    dayPayments[memberLinks[0].Id] = text;
+                    continue;
+                }
+
+                var breakdown = fees.Describe(participant, memberLinks.Select(l => (l.EventDayId, l.GroupId, l.Chip)));
+                var shares = ProportionalShares(amount, memberLinks.Select(l => breakdown.DayTotal(l.EventDayId)).ToList());
+                for (var i = 0; i < memberLinks.Count; i++)
+                    dayPayments[memberLinks[i].Id] = PaymentValue.Format(shares[i]);
+            }
+        }
+        else
+        {
+            // ON → OFF: add the per-day numbers back up into the one competition-level value. A per-day
+            // value that isn't a number can't be summed, so the first such text wins for the whole row.
+            foreach (var participant in participants)
+            {
+                if (!linksByParticipant.TryGetValue(participant.Id, out var memberLinks))
+                    continue;
+
+                var sum = 0m;
+                var any = false;
+                string? text = null;
+                foreach (var link in memberLinks)
+                {
+                    var value = (link.Payment ?? string.Empty).Trim();
+                    if (value.Length == 0)
+                        continue;
+                    if (PaymentValue.TryParse(value, out var amount))
+                    {
+                        sum += amount;
+                        any = true;
+                    }
+                    else
+                    {
+                        text ??= value;
+                    }
+                }
+
+                if (text is not null)
+                    participantPayments[participant.Id] = text;
+                else if (any)
+                    participantPayments[participant.Id] = PaymentValue.Format(sum);
+            }
+        }
+
+        await _eventStore.SetPaymentPerDayAsync(folder, paymentPerDay, participantPayments, dayPayments, cancellationToken);
+    }
+
+    // Splits an amount across the given day weights, rounded to 0.01, with the last day absorbing the
+    // remainder so the parts add back up to the amount exactly. All-zero weights split it equally.
+    private static IReadOnlyList<decimal> ProportionalShares(decimal amount, IReadOnlyList<decimal> weights)
+    {
+        var shares = new decimal[weights.Count];
+        if (weights.Count == 0)
+            return shares;
+
+        var totalWeight = weights.Sum();
+        var running = 0m;
+        for (var i = 0; i < weights.Count - 1; i++)
+        {
+            var share = totalWeight > 0m
+                ? decimal.Round(amount * weights[i] / totalWeight, 2, MidpointRounding.AwayFromZero)
+                : decimal.Round(amount / weights.Count, 2, MidpointRounding.AwayFromZero);
+            shares[i] = share;
+            running += share;
+        }
+        shares[^1] = amount - running;
+        return shares;
     }
 
     public async Task<IReadOnlyDictionary<Guid, ParticipantDayResult>> GetDayResultsByParticipantAsync(Guid dayId, CancellationToken cancellationToken = default)
@@ -3355,16 +3593,18 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return new QuickWithdrawalData(ordered);
     }
 
-    public Task<int> SaveDrawStartTimesAsync(
+    public async Task<int> SaveDrawStartTimesAsync(
         IReadOnlyList<DrawStartAssignment> assignments,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(assignments);
         if (_session.CurrentEvent is null || assignments.Count == 0)
-            return Task.FromResult(0);
+            return 0;
+
+        await EnsureDayEditableAsync(CurrentDayId, cancellationToken);
 
         var batch = assignments.Select(a => (a.LinkId, a.StartTime)).ToList();
-        return _eventStore.SetParticipantDayStartTimesBatchAsync(FolderPath, batch, cancellationToken);
+        return await _eventStore.SetParticipantDayStartTimesBatchAsync(FolderPath, batch, cancellationToken);
     }
 
     public async Task<IReadOnlyList<FinishReadoutRow>> GetFinishReadoutRowsAsync(CancellationToken cancellationToken = default)
@@ -4063,6 +4303,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         var folder = FolderPath;
         var dayId = CurrentDayId;
+        await EnsureDayEditableAsync(dayId, cancellationToken);
+
         var existing = await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
 
         // Seed the dedup set with what's already logged (content keys), and continue the sequence. The
@@ -4138,11 +4380,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Duplicates: duplicates);
     }
 
-    public Task<int> ClearFinishReadoutsAsync(CancellationToken cancellationToken = default)
+    public async Task<int> ClearFinishReadoutsAsync(CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null || _session.CurrentDay is null)
-            return Task.FromResult(0);
-        return _eventStore.DeleteFinishReadoutsForDayAsync(FolderPath, CurrentDayId, cancellationToken);
+            return 0;
+
+        var dayId = CurrentDayId;
+        await EnsureDayEditableAsync(dayId, cancellationToken);
+        return await _eventStore.DeleteFinishReadoutsForDayAsync(FolderPath, dayId, cancellationToken);
     }
 
     public async Task<FinishReadoutEditData?> GetFinishReadoutEditAsync(Guid readoutId, CancellationToken cancellationToken = default)
@@ -4241,6 +4486,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         var folder = FolderPath;
         var dayId = CurrentDayId;
+        await EnsureDayEditableAsync(dayId, cancellationToken);
 
         var readouts = await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
         var readout = readouts.FirstOrDefault(r => r.Id == edit.Id);
@@ -4385,6 +4631,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<Guid?> ReassignParticipantDayChipAsync(Guid participantId, Guid dayId, string chip, CancellationToken cancellationToken = default)
     {
+        await EnsureDayEditableAsync(dayId, cancellationToken);
         var folder = FolderPath;
         var trimmed = (chip ?? string.Empty).Trim();
 
@@ -4435,6 +4682,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<Guid?> SwapParticipantDayChipsAsync(Guid participantId, Guid dayId, string chip, string previousChip, CancellationToken cancellationToken = default)
     {
+        await EnsureDayEditableAsync(dayId, cancellationToken);
         var folder = FolderPath;
         var trimmed = (chip ?? string.Empty).Trim();
         var handBack = (previousChip ?? string.Empty).Trim();
@@ -4559,6 +4807,21 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         ArgumentNullException.ThrowIfNull(scope);
         if (_session.CurrentEvent is null)
             return default;
+
+        // An import rewrites the roster of whole days at once, so every day it touches must be open:
+        // the current one when importing into a single day, all existing ones otherwise.
+        if (scope.Mode == ParticipantImportMode.AllDays)
+        {
+            foreach (var existingDay in await _eventStore.GetDaysAsync(FolderPath, cancellationToken))
+            {
+                if (existingDay.IsLocked)
+                    throw new DayLockedException(existingDay.Number);
+            }
+        }
+        else
+        {
+            await EnsureDayEditableAsync(CurrentDayId, cancellationToken);
+        }
 
         // Current-day-only import targets a single existing day — never create days from the file's info.
         var daysCreated = 0;
@@ -5051,8 +5314,13 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         public IReadOnlyList<Guid> SelectedDiscountIds(Guid participantId) =>
             discountsByParticipant.TryGetValue(participantId, out var ids) ? ids : [];
 
-        public decimal Total(Participant participant, IEnumerable<(Guid? GroupId, string Chip)> memberDays) =>
+        public decimal Total(Participant participant, IEnumerable<(Guid DayId, Guid? GroupId, string Chip)> memberDays) =>
             context.Total(participant.PaysRaisedFee, participant.IsFsouMember, SelectedDiscountIds(participant.Id), memberDays);
+
+        /// <summary>The structured breakdown behind <see cref="Total"/> — the caller needs it to ask what one
+        /// day of the participant's fee costs (per-day payment redistribution).</summary>
+        public EntryFeeBreakdown Describe(Participant participant, IEnumerable<(Guid DayId, Guid? GroupId, string Chip)> memberDays) =>
+            context.Describe(participant.PaysRaisedFee, participant.IsFsouMember, SelectedDiscountIds(participant.Id), memberDays);
     }
 
     private ParticipantDayRow ToRow(
@@ -5066,7 +5334,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         IReadOnlyList<Guid>? selectedDiscountIds = null,
         decimal totalEntryFee = 0m,
         IReadOnlyList<ParticipantFeeDay>? otherDays = null,
-        ParticipantDayResult? result = null)
+        ParticipantDayResult? result = null,
+        bool paymentPerDay = false)
     {
         var name = link.GroupId is { } gid && groupName.TryGetValue(gid, out var n) ? n : string.Empty;
         var region = p.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
@@ -5074,6 +5343,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var dussh = p.DusshId is { } did && dusshName.TryGetValue(did, out var dn) ? dn : string.Empty;
         return new ParticipantDayRow(
             LinkId: link.Id,
+            DayId: link.EventDayId,
             ParticipantId: p.Id,
             Order: link.Order,
             FullName: p.FullName,
@@ -5091,6 +5361,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             FsouCode: p.FsouCode,
             IsFsouMember: p.IsFsouMember,
             Payment: p.Payment,
+            DayPayment: link.Payment,
+            PaymentPerDay: paymentPerDay,
             Note: p.Note,
             PaysRaisedFee: paysRaisedFee,
             SelectedDiscountIds: selectedDiscountIds ?? [],

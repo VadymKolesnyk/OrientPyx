@@ -37,9 +37,11 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
         IBusyService busy,
         IDisciplineStrategyProvider strategies,
         IDialogService dialogs,
-        ITableLayoutStore layoutStore)
+        ITableLayoutStore layoutStore,
+        IDayLockService dayLock)
         : base(localization)
     {
+        UseDayLock(dayLock);
         LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
@@ -142,6 +144,7 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
         }
 
         OnPropertyChanged(nameof(ShowDaySelector));
+        RefreshDayLock();
 
         foreach (var point in points)
             Points.Add(new ControlPointRowViewModel(point, Localization, RequestRowSave));
@@ -197,7 +200,7 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
     [RelayCommand]
     private async Task AddPointAsync()
     {
-        if (_session.CurrentDay is null)
+        if (_session.CurrentDay is null || !await EnsureDayEditableAsync())
             return;
 
         // Persist immediately so the new row carries its real id for later debounced updates.

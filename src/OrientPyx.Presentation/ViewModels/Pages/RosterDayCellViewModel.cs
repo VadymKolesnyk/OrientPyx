@@ -1,3 +1,4 @@
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Models;
@@ -20,6 +21,7 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     private readonly Action<RosterDayCellViewModel> _requestOutOfCompetitionChange;
     private readonly Action<RosterDayCellViewModel> _requestResultStatusChange;
     private readonly Action<RosterDayCellViewModel> _requestBonusChange;
+    private readonly Action<RosterDayCellViewModel> _requestPaymentChange;
     private ParticipantDayResult _result;
     // The judge's points correction («бонус») for this day; null = none. Edited via BonusText.
     private int? _bonus;
@@ -33,6 +35,13 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
 
     [ObservableProperty]
     private string _chip;
+
+    /// <summary>
+    /// This day's payment («Оплата»), edited in the roster's per-day payment block; only in force while the
+    /// competition charges per day. Persisted through its own page callback, like the chip.
+    /// </summary>
+    [ObservableProperty]
+    private string _payment;
 
     [ObservableProperty]
     private TimeSpan? _startTime;
@@ -54,7 +63,8 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         Action<RosterDayCellViewModel> requestStartTimeChange,
         Action<RosterDayCellViewModel> requestOutOfCompetitionChange,
         Action<RosterDayCellViewModel> requestResultStatusChange,
-        Action<RosterDayCellViewModel> requestBonusChange)
+        Action<RosterDayCellViewModel> requestBonusChange,
+        Action<RosterDayCellViewModel> requestPaymentChange)
     {
         _participantId = participantId;
         DayId = cell.DayId;
@@ -67,12 +77,14 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         _requestOutOfCompetitionChange = requestOutOfCompetitionChange;
         _requestResultStatusChange = requestResultStatusChange;
         _requestBonusChange = requestBonusChange;
+        _requestPaymentChange = requestPaymentChange;
         Localization = localization;
 
         GroupOptions = groupOptions;
         _selectedGroup = groupOptions.FirstOrDefault(o => o.Id == cell.GroupId) ?? groupOptions[0];
         _chip = cell.Chip;
         _committedChip = cell.Chip;
+        _payment = cell.Payment;
         _startTime = cell.StartTime;
         _outOfCompetition = cell.OutOfCompetition;
         _bonus = cell.Bonus;
@@ -100,9 +112,37 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     /// <summary>True when the status is a problem code (anything but OK / blank) — the cell shows it in red.</summary>
     public bool StatusIsProblem => _result.StatusIsProblem;
 
+    /// <summary>
+    /// True when this cell's day is closed for editing. Set by the page from the day list; a locked
+    /// day's cells rest read-only in the roster exactly as its own grid does.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanEdit))]
+    [NotifyPropertyChangedFor(nameof(CanEditStatus))]
+    [NotifyPropertyChangedFor(nameof(CanEditMemberFields))]
+    [NotifyPropertyChangedFor(nameof(LockedDayNumber))]
+    private bool _isDayLocked;
+
+    /// <summary>True when this day's cells accept edits at all (an open day).</summary>
+    public bool CanEdit => !IsDayLocked;
+
+    /// <summary>
+    /// This cell's day number while it is closed, else 0. Bound by the cell so a refused click can name
+    /// the day — in the roster each column is a different day, so "the current day" would be wrong.
+    /// </summary>
+    public int LockedDayNumber => IsDayLocked ? DayNumber : 0;
+
+    /// <summary>
+    /// True when the per-day member fields (chip, start time, bonus, поза конкурсом) are editable here:
+    /// the participant runs this day AND the day is still open. The cells bind their enabled state to
+    /// this, so a closed day reads exactly like a non-member day — flat, greyed, not clickable.
+    /// </summary>
+    public bool CanEditMemberFields => IsMember && !IsDayLocked;
+
     /// <summary>True for any day the participant runs: a judge can override the computed status (with a
-    /// read-out) or mark DNS/DNF/… without one (picking OK then leaves it blank). Non-members can't.</summary>
-    public bool CanEditStatus => IsMember;
+    /// read-out) or mark DNS/DNF/… without one (picking OK then leaves it blank). Non-members can't,
+    /// and neither can a day that is closed for editing.</summary>
+    public bool CanEditStatus => IsMember && !IsDayLocked;
 
     // ── Read-only computed result columns
     public string ActualStartText => ResultText.ActualStart(_result);
@@ -136,7 +176,7 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
                 return;
             _bonus = parsed;
             OnPropertyChanged();
-            if (_initialized && IsMember)
+            if (_initialized && IsMember && !IsDayLocked)
                 _requestBonusChange(this);
         }
     }
@@ -144,13 +184,20 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     /// <summary>The parsed bonus the user entered (null = none). Read by the page's bonus callback.</summary>
     public int? Bonus => _bonus;
 
-    // CanEditStatus folds in membership, so re-raise it when membership flips.
-    partial void OnIsMemberChanged(bool value) => OnPropertyChanged(nameof(CanEditStatus));
+    // CanEditStatus / CanEditMemberFields fold in membership (and the day lock), so re-raise both
+    // whenever membership flips.
+    partial void OnIsMemberChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanEditStatus));
+        OnPropertyChanged(nameof(CanEditMemberFields));
+        OnPropertyChanged(nameof(PaymentStatus));
+        OnPropertyChanged(nameof(PaymentStatusKey));
+    }
 
     // The status dropdown is owned by the page (persists the override + re-ranks); member-only.
     partial void OnSelectedStatusChanged(FinishStatusOption value)
     {
-        if (_initialized && IsMember && value is not null)
+        if (_initialized && IsMember && !IsDayLocked && value is not null)
             _requestResultStatusChange(this);
     }
 
@@ -231,27 +278,77 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
 
     partial void OnSelectedGroupChanged(GroupOption value)
     {
-        if (_initialized)
+        if (_initialized && !IsDayLocked)
             _requestGroupChange(this);
     }
 
     partial void OnChipChanged(string value)
     {
-        if (_initialized)
+        if (_initialized && !IsDayLocked)
             _requestChipChange(this);
+    }
+
+    partial void OnPaymentChanged(string value)
+    {
+        // The tint compares against this day's own share of the fee, so it moves with the typed value.
+        OnPropertyChanged(nameof(PaymentStatus));
+        OnPropertyChanged(nameof(PaymentStatusKey));
+        if (_initialized && IsMember && !IsDayLocked)
+            _requestPaymentChange(this);
+    }
+
+    private decimal _dayEntryFee;
+
+    /// <summary>
+    /// This day's share of the participant's total entry fee — the baseline «Оплата» is compared against in
+    /// per-day payment mode. Written by the row whenever it recomputes the total (a group / chip / discount
+    /// edit moves it), not by this cell.
+    /// </summary>
+    public decimal DayEntryFee
+    {
+        get => _dayEntryFee;
+        set
+        {
+            if (SetProperty(ref _dayEntryFee, value))
+            {
+                OnPropertyChanged(nameof(FormattedDayFee));
+                OnPropertyChanged(nameof(PaymentStatus));
+                OnPropertyChanged(nameof(PaymentStatusKey));
+            }
+        }
+    }
+
+    /// <summary>This day's fee share formatted for display (no currency symbol, trims trailing zeros).</summary>
+    public string FormattedDayFee => DayEntryFee.ToString("0.##", CultureInfo.InvariantCulture);
+
+    /// <summary>How this day's «Оплата» compares to this day's fee share — drives the cell tint + filter.</summary>
+    public PaymentStatus PaymentStatus => IsMember
+        ? PaymentStatusExtensions.Classify(Payment, DayEntryFee)
+        : PaymentStatus.Empty;
+
+    /// <summary>The payment status as a stable token, used as the per-day payment column's filter value.</summary>
+    public string PaymentStatusKey => PaymentStatus.ToString();
+
+    /// <summary>Sets the payment without re-triggering the change callback (a merged write already persisted).</summary>
+    public void SetPaymentSilently(string value)
+    {
+        var wasInitialized = _initialized;
+        _initialized = false;
+        Payment = value;
+        _initialized = wasInitialized;
     }
 
     partial void OnStartTimeChanged(TimeSpan? value)
     {
         // Keep the editable text in sync, then persist (no uniqueness rule, so a plain save).
         OnPropertyChanged(nameof(StartTimeText));
-        if (_initialized)
+        if (_initialized && !IsDayLocked)
             _requestStartTimeChange(this);
     }
 
     partial void OnOutOfCompetitionChanged(bool value)
     {
-        if (_initialized)
+        if (_initialized && !IsDayLocked)
             _requestOutOfCompetitionChange(this);
     }
 
@@ -278,6 +375,7 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         {
             SelectedGroup = GroupOptions[0];
             Chip = string.Empty;
+            Payment = string.Empty;
             StartTime = null;
             OutOfCompetition = false;
             _bonus = null;

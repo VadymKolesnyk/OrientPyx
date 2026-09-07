@@ -111,6 +111,10 @@ public static class IconData
         ["LoaderCircle"] = "M21 12a9 9 0 1 1-6.219-8.56",
         // activity (running background processes badge)
         ["Activity"] = "M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2",
+        // lock (day closed for editing)
+        ["Lock"] = "M5 11h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1z M7 11V7a5 5 0 0 1 10 0v4",
+        // lock-open (day open for editing)
+        ["LockOpen"] = "M5 11h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1z M7 11V7a5 5 0 0 1 9.9-1",
         // grip-vertical (drag handle)
         ["GripVertical"] = "M9 5a1 1 0 1 0 0 2 1 1 0 0 0 0-2z M9 11a1 1 0 1 0 0 2 1 1 0 0 0 0-2z M9 17a1 1 0 1 0 0 2 1 1 0 0 0 0-2z M15 5a1 1 0 1 0 0 2 1 1 0 0 0 0-2z M15 11a1 1 0 1 0 0 2 1 1 0 0 0 0-2z M15 17a1 1 0 1 0 0 2 1 1 0 0 0 0-2z",
     };

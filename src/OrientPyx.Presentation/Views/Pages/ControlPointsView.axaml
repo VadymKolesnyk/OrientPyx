@@ -20,30 +20,31 @@
                         VerticalAlignment="Center">
                 <Button Classes="help" Command="{Binding ShowHelpCommand}"
                         ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
-                <controls:SearchableComboBox IsVisible="{Binding ShowDaySelector}"
-                          MinWidth="120" VerticalAlignment="Center"
-                          SearchWatermark="{Binding Localization[Common.Search]}"
-                          ItemsSource="{Binding DayOptions}"
-                          SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="pages:DayOption">
-                            <TextBlock Text="{Binding Label}" />
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </controls:SearchableComboBox>
+                <controls:DaySelector VerticalAlignment="Center"
+                                      ShowDays="{Binding ShowDaySelector}"
+                                      ShowLock="{Binding CanToggleDayLock}"
+                                      IsDayLocked="{Binding IsDayLocked}"
+                                      ToggleLockCommand="{Binding ToggleDayLockCommand}"
+                                      LockTooltip="{Binding Localization[DayLock.Lock.Tooltip]}"
+                                      UnlockTooltip="{Binding Localization[DayLock.Unlock.Tooltip]}"
+                                      SearchWatermark="{Binding Localization[Common.Search]}"
+                                      DayOptions="{Binding DayOptions}"
+                                      SelectedDay="{Binding SelectedDay, Mode=TwoWay}" />
                 <ToggleSwitch IsChecked="{Binding ShowMapCoordinates, Mode=TwoWay}"
                               VerticalAlignment="Center"
                               OnContent="{Binding Localization[ControlPoints.Coords.Map]}"
                               OffContent="{Binding Localization[ControlPoints.Coords.Map]}"
                               ToolTip.Tip="{Binding Localization[ControlPoints.Coords.Hint]}" />
                 <Button Name="ImportButton" Classes="ghost" Click="OnImportClick"
+                        IsEnabled="{Binding !IsDayLocked}"
                         ToolTip.Tip="{Binding Localization[Import.Hint]}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <controls:Icon Kind="Download" Size="15" />
                         <TextBlock Text="{Binding Localization[Import]}" />
                     </StackPanel>
                 </Button>
-                <Button Command="{Binding AddPointCommand}" Classes="accent">
+                <Button Command="{Binding AddPointCommand}" Classes="accent"
+                        IsEnabled="{Binding !IsDayLocked}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <controls:Icon Kind="Plus" Size="15" Foreground="White" />
                         <TextBlock Text="{Binding Localization[ControlPoints.Add]}" />
@@ -56,6 +57,8 @@
              in code-behind (SheetColumnBuilder) and handed to the shared SheetTable via Bands. -->
         <Border Classes="card" ClipToBounds="True">
             <controls:SheetTable Name="Sheet"
+                                 IsLocked="{Binding IsDayLocked}"
+                                 LockedEditAttempted="OnLockedEditAttempted"
                                  ItemsSource="{Binding Points}"
                                  Localization="{Binding Localization}"
                                  SelectedItem="{Binding SelectedPoint, Mode=TwoWay}"

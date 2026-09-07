@@ -94,6 +94,18 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
     [ObservableProperty]
     private string _chipBasePriceText = string.Empty;
 
+    /// <summary>
+    /// Whether the entry fee is paid per day rather than once for the whole competition. Unlike the other
+    /// settings on this page this one is NOT saved by the debounced settings write: flipping it migrates
+    /// every participant's payment value, so it goes through <see cref="ApplyPaymentPerDayAsync"/> after a
+    /// confirmation, and reverts silently if the user backs out.
+    /// </summary>
+    [ObservableProperty]
+    private bool _paymentPerDay;
+
+    // Suppresses the confirmation flow while LoadAsync (or a revert) seeds the toggle.
+    private bool _applyingPaymentMode;
+
     /// <summary>Reloads everything for the current competition. Called when the page is shown.</summary>
     public async Task LoadAsync()
     {
@@ -118,6 +130,9 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
             RaisedFeeEnabled = _info?.RaisedFeeEnabled ?? false;
             RaisedFeeAmountText = FormatDecimal(_info?.RaisedFeeAmount);
             ChipBasePriceText = FormatDecimal(_info?.ChipRentalPricePerDay);
+            _applyingPaymentMode = true;
+            PaymentPerDay = _info?.PaymentPerDay ?? false;
+            _applyingPaymentMode = false;
         }
         finally
         {
@@ -263,6 +278,50 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
     partial void OnRaisedFeeEnabledChanged(bool value) => QueueSettingsSave();
     partial void OnRaisedFeeAmountTextChanged(string value) => QueueSettingsSave();
     partial void OnChipBasePriceTextChanged(string value) => QueueSettingsSave();
+
+    // The payment-mode switch: confirm first (it rewrites every participant's payment), then apply. On
+    // cancel the checkbox goes back to where it was without touching the database.
+    partial void OnPaymentPerDayChanged(bool value)
+    {
+        if (_applyingPaymentMode || _loadingSettings || _session.CurrentEvent is null)
+            return;
+        _ = ApplyPaymentPerDayAsync(value);
+    }
+
+    private async Task ApplyPaymentPerDayAsync(bool value)
+    {
+        var affected = await _busy.RunAsync(() => _editor.CountParticipantsWithPaymentAsync());
+
+        var dialog = new ConfirmDialogViewModel(
+            Localization,
+            "EntryFees.PaymentPerDay.Confirm.Title",
+            value ? "EntryFees.PaymentPerDay.Confirm.On" : "EntryFees.PaymentPerDay.Confirm.Off",
+            confirmKey: "EntryFees.PaymentPerDay.Confirm.Apply")
+        {
+            // Nothing is lost either way — the source column is kept — so this is not a red button.
+            IsDestructive = false,
+            MessageArgs = [affected]
+        };
+
+        if (!await _dialogs.ConfirmAsync(dialog))
+        {
+            // Put the checkbox back without re-entering this handler or writing anything.
+            _applyingPaymentMode = true;
+            PaymentPerDay = !value;
+            _applyingPaymentMode = false;
+            return;
+        }
+
+        await _busy.RunAsync(() => _editor.SetPaymentPerDayAsync(value));
+        // Keep the cached metadata in step so a later settings save doesn't write a stale flag.
+        if (_info is not null)
+            _info.PaymentPerDay = value;
+
+        // The participants page bakes the mode into its columns and rows, so nudge the session to make it
+        // (and anything else listening) reload with the new mode in force.
+        if (_session.CurrentEvent is { } current)
+            _session.UpdateCurrentEvent(current);
+    }
 
     private void QueueSettingsSave()
     {

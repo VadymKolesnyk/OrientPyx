@@ -11,9 +11,14 @@
         <!-- Make the keyboard-focused footer button unmistakable: a thick accent ring around the
              button content. Tab / arrow keys move focus between the two buttons; Enter runs the
              focused one. Drawn for :focus-visible (keyboard focus) only, not on mouse clicks. -->
-        <Style Selector="StackPanel.dialog-actions > Button:focus-visible /template/ ContentPresenter">
+        <Style Selector="WrapPanel.dialog-actions > Button:focus-visible /template/ ContentPresenter">
             <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
             <Setter Property="BorderThickness" Value="2" />
+        </Style>
+        <!-- WrapPanel has no Spacing: the gap between the buttons is a left margin, and the top one
+             separates the rows once a third button pushes the set onto two lines. -->
+        <Style Selector="WrapPanel.dialog-actions > Button">
+            <Setter Property="Margin" Value="10,4,0,0" />
         </Style>
     </UserControl.Styles>
 
@@ -22,7 +27,7 @@
          and never leaks to the window behind the modal. -->
     <Border Background="{DynamicResource SurfaceCard}"
             CornerRadius="12"
-            MinWidth="380" MaxWidth="460"
+            MinWidth="380" MaxWidth="520"
             BoxShadow="0 10 40 0 #40000000"
             HorizontalAlignment="Center" VerticalAlignment="Center"
             ClipToBounds="True"
@@ -38,8 +43,10 @@
             <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
                     BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
                     Padding="22,14">
-                <StackPanel Classes="dialog-actions"
-                            Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+                <!-- WrapPanel, not a horizontal StackPanel: a dialog with the optional third button can
+                     carry three long labels, which a StackPanel would push past the card's MaxWidth and
+                     off the edge. Wrapping drops them onto a second row instead. -->
+                <WrapPanel Classes="dialog-actions" HorizontalAlignment="Right" Margin="-10,-4,0,0">
                     <!-- Hidden for a plain message box (IsMessage), which only needs the OK button. -->
                     <Button Content="{Binding CancelText}"
                             Classes="ghost"
@@ -54,10 +61,10 @@
                             Command="{Binding AlternateCommand}" />
                     <Button Name="ConfirmButton"
                             Content="{Binding ConfirmText}"
-                            Classes.danger="{Binding ShowCancel}"
+                            Classes.danger="{Binding ShowDanger}"
                             IsDefault="True"
                             Command="{Binding ConfirmCommand}" />
-                </StackPanel>
+                </WrapPanel>
             </Border>
 
             <!-- Body: message. Scrolls when the text is long (e.g. a confirmation that lists many

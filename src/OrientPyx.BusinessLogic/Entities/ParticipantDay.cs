@@ -27,6 +27,13 @@ public class ParticipantDay
     /// <summary>Chip number for this day; optional, free text. Unique per day when non-blank.</summary>
     public string Chip { get; set; } = string.Empty;
 
+    /// <summary>
+    /// This day's payment note (Оплата), used only while the competition is in per-day payment mode
+    /// (<see cref="CompetitionInfo.PaymentPerDay"/>); free text like the competition-level
+    /// <see cref="Participant.Payment"/>. Has its own writer so the debounced row save can't wipe it.
+    /// </summary>
+    public string Payment { get; set; } = string.Empty;
+
     /// <summary>Start time (time of day) for this day; null when not set. Per-day, member-only.</summary>
     public TimeSpan? StartTime { get; set; }
 

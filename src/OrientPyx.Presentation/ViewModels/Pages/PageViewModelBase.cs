@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientPyx.Localization;
+using OrientPyx.Presentation.Services;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
 
@@ -91,6 +92,95 @@ public abstract class PageViewModelBase : ViewModelBase
 
     /// <summary>Asks the View to return keyboard focus to the page's grid (see <see cref="FocusGridRequested"/>).</summary>
     protected void RequestGridFocus() => FocusGridRequested?.Invoke(this, EventArgs.Empty);
+
+    // ── Day lock (see IDayLockService)
+    // Per-day pages hand the base their lock service; the shared day selector then binds straight to
+    // these. A page that never writes to a day simply leaves the service null and shows no lock.
+
+    private IDayLockService? _dayLock;
+
+    /// <summary>
+    /// Wires this page to the day lock. Call from the constructor of a page that edits day data; the
+    /// day selector picks the state up from <see cref="IsDayLocked"/> and <see cref="ToggleDayLockCommand"/>.
+    /// </summary>
+    protected void UseDayLock(IDayLockService dayLock)
+    {
+        _dayLock = dayLock;
+        ToggleDayLockCommand = new AsyncRelayCommand(ToggleDayLockAsync);
+    }
+
+    /// <summary>
+    /// True when the page's current day is closed for editing (false when it has no lock). Virtual for
+    /// the same reason as <see cref="CanToggleDayLock"/>: a view that isn't bound to one day must not
+    /// report the session day's state as its own.
+    /// </summary>
+    public virtual bool IsDayLocked => _dayLock?.IsCurrentDayLocked ?? false;
+
+    /// <summary>
+    /// True on pages that write to the day, so the selector offers the lock button. Virtual because a
+    /// page may show views that aren't bound to one day — the participants roster spans every day at
+    /// once, where a single day's lock has nothing to act on.
+    /// </summary>
+    public virtual bool CanToggleDayLock => _dayLock is not null;
+
+    /// <summary>Bound by the day selector's lock button; null on pages with no lock.</summary>
+    public IAsyncRelayCommand? ToggleDayLockCommand { get; private set; }
+
+    /// <summary>
+    /// Re-raises the lock-derived properties. Pages call this from their load path so the lock state
+    /// shown next to the day (and every cell's editability) follows a day switch.
+    /// </summary>
+    protected void RefreshDayLock()
+    {
+        OnPropertyChanged(nameof(IsDayLocked));
+        OnPropertyChanged(nameof(CanToggleDayLock));
+    }
+
+    // Flipping the lock rewrites the session's current day, and that raises SessionChanged — which every
+    // per-day page already handles by reloading. So there is nothing to re-fire here: the reload carries
+    // the new state into every row, and RefreshDayLock covers the selector itself.
+    /// <summary>
+    /// Explains a read-only cell the user just clicked into (see <c>SheetTable.LockedEditAttempted</c>).
+    /// Views wire their table's event to this so the lock never reads as the app ignoring a click.
+    /// </summary>
+    /// <param name="dayNumber">The closed day the cell belongs to; 0 means "the page's current day".</param>
+    /// <param name="merged">True for a roster cell that writes to several days at once.</param>
+    /// <remarks>
+    /// Virtual because a page may hold the lock service without going through <see cref="UseDayLock"/> —
+    /// the days grid shows every day at once, so it explains a row's own day rather than the session's.
+    /// </remarks>
+    public virtual Task ExplainDayLockAsync(int dayNumber = 0, bool merged = false)
+        => _dayLock?.ExplainLockedCellAsync(dayNumber, merged) ?? Task.CompletedTask;
+
+    /// <summary>
+    /// The gate every action that writes to the day passes through first: returns false (and explains
+    /// why) when the day is closed. Cells are covered by the table's own lock, but a toolbar action —
+    /// an import, a draw, a bulk edit, clearing the read-out log — starts from a button, so each of
+    /// those commands calls this before doing anything.
+    ///
+    /// Buttons are also greyed out while the day is closed; this is what makes the rule hold for the
+    /// paths a disabled button can't cover (a hotkey, a flyout item, a command invoked in code).
+    /// </summary>
+    public virtual async Task<bool> EnsureDayEditableForActionAsync()
+    {
+        if (!IsDayLocked)
+            return true;
+
+        await ExplainDayLockAsync();
+        return false;
+    }
+
+    /// <summary>Same gate, for commands on the view model itself.</summary>
+    protected Task<bool> EnsureDayEditableAsync() => EnsureDayEditableForActionAsync();
+
+    private async Task ToggleDayLockAsync()
+    {
+        if (_dayLock is null)
+            return;
+
+        await _dayLock.ToggleCurrentDayAsync();
+        RefreshDayLock();
+    }
 
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e)
     {

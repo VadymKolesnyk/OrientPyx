@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
+using Avalonia.Data.Converters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -57,18 +58,28 @@ public partial class CompetitionDaysView : UserControl
             // Day number: read-only, sorts by number. Styled stronger than a plain read-only cell.
             .Custom("CompetitionDays.Col.Day", BuildNumberCell, width: 120,
                     sortPath: nameof(DayRowViewModel.Number))
-            .Date("CompetitionDays.Col.Date", nameof(DayRowViewModel.Date), width: 160, minWidth: 140)
+            // Each row IS a day, so the lock is per row (lockedDayPath) rather than table-wide: a closed
+            // day's date/venue/discipline rest read-only while its neighbours stay editable. Changing a
+            // finished day's discipline would recompute its results, which is exactly what the lock guards.
+            .Date("CompetitionDays.Col.Date", nameof(DayRowViewModel.Date), width: 160, minWidth: 140,
+                  lockedDayPath: nameof(DayRowViewModel.LockedDayNumber))
             .Text("CompetitionDays.Col.Venue", nameof(DayRowViewModel.Venue),
                   editPath: nameof(DayRowViewModel.Venue), minWidth: 120,
-                  placeholderPath: nameof(DayRowViewModel.VenuePlaceholder))
+                  placeholderPath: nameof(DayRowViewModel.VenuePlaceholder),
+                  lockedDayPath: nameof(DayRowViewModel.LockedDayNumber))
             .Combo("CompetitionDays.Col.Discipline",
                    nameof(DayRowViewModel.DisciplineOptions),
                    nameof(DayRowViewModel.SelectedDiscipline),
                    nameof(DisciplineTypeOption.Label),
                    width: 180, minWidth: 160,
-                   sortPath: $"{nameof(DayRowViewModel.SelectedDiscipline)}.Value")
+                   sortPath: $"{nameof(DayRowViewModel.SelectedDiscipline)}.Value",
+                   lockedDayPath: nameof(DayRowViewModel.LockedDayNumber))
             // Actions: Save / Change-number / Delete. A custom cell so the Save/ChangeNumber buttons
             // can bind to the VM's commands with the row as parameter.
+            // Closed-for-editing lock. The days grid is the only place every day is visible at once, so
+            // this is where the whole competition's state can be seen and set; the same lock also sits
+            // next to the day selector on each per-day page.
+            .Custom("DayLock.Col.Locked", BuildLockCell, width: 110)
             .Custom("CompetitionDays.Col.Actions", BuildActionsCell, minWidth: 220)
             .Bands;
     }
@@ -85,6 +96,38 @@ public partial class CompetitionDaysView : UserControl
         };
     }
 
+    // A single toggle button showing the day's lock state: a closed padlock (tinted) when the day is
+    // closed, an open one when it isn't. The VM confirms before opening a closed day.
+    private Control BuildLockCell()
+    {
+        var icon = new Icon { Size = 15 };
+        icon.Bind(Icon.KindProperty, new Binding(nameof(DayRowViewModel.IsLocked))
+        {
+            Converter = new FuncValueConverter<bool, string>(locked => locked ? "Lock" : "LockOpen")
+        });
+        icon.Bind(Icon.ForegroundProperty, new Binding(nameof(DayRowViewModel.IsLocked))
+        {
+            Converter = new FuncValueConverter<bool, IBrush?>(locked => locked
+                ? (IBrush?)Application.Current!.FindResource("AccentBrush")
+                : (IBrush?)Application.Current!.FindResource("TextMuted"))
+        });
+
+        return new Button
+        {
+            Classes = { "ghost", "small" },
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Command = _vm!.ToggleDayLockCommand,
+            Content = icon,
+            [!Button.CommandParameterProperty] = new Binding(),
+            [!ToolTip.TipProperty] = new Binding(nameof(DayRowViewModel.IsLocked))
+            {
+                Converter = new FuncValueConverter<bool, string>(locked => _vm.Localization.Get(
+                    locked ? "DayLock.Unlock.Tooltip" : "DayLock.Lock.Tooltip"))
+            }
+        };
+    }
+
     private Control BuildActionsCell()
     {
         var save = new Button
@@ -93,7 +136,7 @@ public partial class CompetitionDaysView : UserControl
             Command = _vm!.SaveDayCommand,
             [!Button.ContentProperty] = new Binding("Localization[CompetitionDays.Save]"),
             [!Button.CommandParameterProperty] = new Binding(),
-            [!InputElement.IsEnabledProperty] = new Binding(nameof(DayRowViewModel.IsDirty))
+            [!InputElement.IsEnabledProperty] = new Binding(nameof(DayRowViewModel.CanSave))
         };
 
         var changeNumber = new Button
@@ -102,18 +145,17 @@ public partial class CompetitionDaysView : UserControl
             Command = _vm.ChangeDayNumberCommand,
             [!Button.ContentProperty] = new Binding("Localization[CompetitionDays.ChangeNumber]"),
             [!Button.CommandParameterProperty] = new Binding(),
+            [!InputElement.IsEnabledProperty] = new Binding(nameof(DayRowViewModel.CanEdit)),
             [ToolTip.TipProperty] = _vm.Localization.Get("CompetitionDays.ChangeNumber.Hint")
         };
 
-        // Click confirms before deleting; Ctrl+Click deletes immediately. Disabled for the active day.
+        // Click confirms before deleting; Ctrl+Click deletes immediately. Off for the active day and
+        // for a closed one.
         var delete = new Button
         {
             Classes = { "danger", "small" },
             [ToolTip.TipProperty] = _vm.Localization.Get("CompetitionDays.Delete"),
-            [!InputElement.IsEnabledProperty] = new Binding(nameof(DayRowViewModel.IsActive))
-            {
-                Converter = Avalonia.Data.Converters.BoolConverters.Not
-            },
+            [!InputElement.IsEnabledProperty] = new Binding(nameof(DayRowViewModel.CanDelete)),
             Content = new PathIcon
             {
                 Data = Geometry.Parse("M6,7 h12 M9,7 v-2 h6 v2 M8,7 l1,13 h6 l1,-13"),
@@ -153,8 +195,23 @@ public partial class CompetitionDaysView : UserControl
     private void OnTunnelPointerPressed(object? sender, PointerPressedEventArgs e)
         => _deleteCtrlDown = e.KeyModifiers.HasFlag(KeyModifiers.Control);
 
+    // A cell of a closed day refused to enter edit — say why (see GroupsView.OnLockedEditAttempted).
+    private void OnLockedEditAttempted(object? sender, SheetLockedEditEventArgs e)
+    {
+        if (_vm is not null)
+            _ = _vm.ExplainDayLockAsync(e.DayNumber, e.Merged);
+    }
+
     private void DeleteRow(DayRowViewModel row, bool skipConfirm)
     {
+        // The keyboard Delete reaches here too, and the table has no lock of its own on this page
+        // (its rows are the days), so the row's own state is what decides.
+        if (row.IsLocked)
+        {
+            _ = _vm!.ExplainDayLockAsync(row.Number);
+            return;
+        }
+
         if (skipConfirm)
             _ = _vm!.DeleteDayNoConfirmAsync(row);
         else

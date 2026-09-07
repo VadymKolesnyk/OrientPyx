@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Data;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -81,6 +82,16 @@ internal abstract class LazyEditCell : Decorator
     /// </param>
     public void BeginEdit(bool open, Point? caretAt = null) => Activate(open, caretAt);
 
+    /// <summary>
+    /// True when a closed day is holding this cell read-only. The table asks before starting an edit so
+    /// it can explain the refusal — it intercepts the press in its tunnel handler, so the cell would
+    /// otherwise never see the click that meant "let me edit this".
+    /// </summary>
+    public bool IsLockedByDay => LockedBy() is not null;
+
+    /// <summary>The closed day holding this cell, and whether it spans several days. Null when open.</summary>
+    public (int DayNumber, bool Merged)? LockInfo => LockedBy();
+
     /// <summary>True when this cell type opens a list/calendar on Enter (combo, date) vs. just edits text.</summary>
     public bool OpensOnEnter => ShouldOpenOnActivate(Key.Enter);
 
@@ -131,6 +142,53 @@ internal abstract class LazyEditCell : Decorator
     /// disabled editor.
     /// </summary>
     protected virtual bool CanActivate() => true;
+
+    /// <summary>
+    /// Raised when the user tried to edit this cell but it is held read-only by a closed day. Bubbles to
+    /// the <see cref="SheetTable"/>, which forwards it to the page so it can explain the lock instead of
+    /// leaving the click looking ignored.
+    /// </summary>
+    public static readonly RoutedEvent<SheetLockedEditEventArgs> LockedEditAttemptedEvent =
+        RoutedEvent.Register<LazyEditCell, SheetLockedEditEventArgs>(
+            "LockedEditAttempted", RoutingStrategies.Bubble);
+
+    /// <summary>
+    /// The closed day holding this cell read-only, or 0 when the cell isn't blocked by a lock. Bound by
+    /// the roster's cell factory, where each column is a different day and the session's current day
+    /// says nothing about the cell the user clicked.
+    /// </summary>
+    public static readonly StyledProperty<int> LockedDayNumberProperty =
+        AvaloniaProperty.Register<LazyEditCell, int>(nameof(LockedDayNumber));
+
+    /// <summary>True when this is a merged roster cell writing to several days at once.</summary>
+    public static readonly StyledProperty<bool> LockedMergedProperty =
+        AvaloniaProperty.Register<LazyEditCell, bool>(nameof(LockedMerged));
+
+    public int LockedDayNumber
+    {
+        get => GetValue(LockedDayNumberProperty);
+        set => SetValue(LockedDayNumberProperty, value);
+    }
+
+    public bool LockedMerged
+    {
+        get => GetValue(LockedMergedProperty);
+        set => SetValue(LockedMergedProperty, value);
+    }
+
+    /// <summary>Which closed day is holding this cell shut; null when no lock is responsible.</summary>
+    private (int DayNumber, bool Merged)? LockedBy()
+        => LockedDayNumber > 0 ? (LockedDayNumber, LockedMerged) : null;
+
+    /// <summary>Announces a refused edit so the page can explain it. Returns true when it was raised.</summary>
+    private bool RaiseIfLocked()
+    {
+        if (LockedBy() is not { } locked)
+            return false;
+
+        RaiseEvent(new SheetLockedEditEventArgs(LockedEditAttemptedEvent, locked.DayNumber, locked.Merged));
+        return true;
+    }
 
     /// <summary>
     /// Called after a click-activated editor has been focused, with the click point in this cell's
@@ -187,8 +245,29 @@ internal abstract class LazyEditCell : Decorator
     // caretAt is the click point (cell space) so a text editor can land its caret there.
     private void Activate(bool open, Point? caretAt = null)
     {
-        // A cell whose per-row "enabled" binding is false never edits — stay the resting label.
+        // A cell whose per-row "enabled" binding is false never edits — stay the resting label. When the
+        // reason is a closed day, say so rather than doing nothing.
         if (_editor is null && !CanActivate())
+        {
+            RaiseIfLocked();
+            return;
+        }
+
+        // A lazy cell rests as a plain label and only builds its editor on demand, so a disabled cell
+        // still looked fully editable: IsEnabled governs the editor that doesn't exist yet, not the
+        // label standing in for it. Honour it here, where every activation path passes, so binding
+        // IsEnabled on a lazy cell means what it says (the roster's per-day group combo relies on it).
+        if (!IsEnabled)
+        {
+            RaiseIfLocked();
+            return;
+        }
+
+        // Same for every cell of a day the user has closed for editing. This is the one choke point all
+        // activation paths share (click, focus, typing, Enter/F2), so the whole table rests read-only
+        // without each call site having to know about the lock. (The table raises the explanation for
+        // this case itself, on the click that meant "let me edit".)
+        if (this.FindAncestorOfType<SheetTable>() is { IsLocked: true })
             return;
 
         var editor = _editor;

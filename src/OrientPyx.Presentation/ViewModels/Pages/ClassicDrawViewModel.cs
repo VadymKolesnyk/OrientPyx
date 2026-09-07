@@ -46,9 +46,11 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
         IStartDrawService draw,
         IBusyService busy,
         IDialogService dialogs,
-        ITableLayoutStore layoutStore)
+        ITableLayoutStore layoutStore,
+        IDayLockService dayLock)
         : base(localization)
     {
+        UseDayLock(dayLock);
         LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
@@ -126,6 +128,7 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
             _syncingDay = false;
         }
         OnPropertyChanged(nameof(ShowDaySelector));
+        RefreshDayLock();
 
         await ReloadGroupsAsync();
     }
@@ -275,6 +278,9 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
     private async Task RunDrawAsync()
     {
         StatusMessage = string.Empty;
+
+        if (!await EnsureDayEditableAsync())
+            return;
 
         var selected = Groups.Where(g => g.Selected).ToList();
         if (selected.Count == 0)

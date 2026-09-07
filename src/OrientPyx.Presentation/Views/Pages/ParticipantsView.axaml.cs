@@ -292,7 +292,7 @@ public partial class ParticipantsView : UserControl
 
     private async System.Threading.Tasks.Task ImportXmlAsync()
     {
-        if (_vm is null)
+        if (_vm is null || !await _vm.EnsureDayEditableForActionAsync())
             return;
 
         var topLevel = TopLevel.GetTopLevel(this);
@@ -345,7 +345,7 @@ public partial class ParticipantsView : UserControl
 
     private async System.Threading.Tasks.Task ImportCsvAsync()
     {
-        if (_vm is null)
+        if (_vm is null || !await _vm.EnsureDayEditableForActionAsync())
             return;
 
         var topLevel = TopLevel.GetTopLevel(this);
@@ -609,7 +609,11 @@ public partial class ParticipantsView : UserControl
                 return "Dussh";
             case SheetCellKind.RowRank:
                 return "Rank";
+            // «Оплата» in either mode: the competition-level column, and (per-day mode) a day leaf or the
+            // merged block cell — bulk edit resolves where the value actually goes from the page's mode.
             case SheetCellKind.PaymentText:
+            case SheetCellKind.DayPayment:
+            case SheetCellKind.CollapsedPayment:
                 return "Payment";
             case SheetCellKind.StartTimeText:
             case SheetCellKind.StartTime:
@@ -679,5 +683,13 @@ public partial class ParticipantsView : UserControl
             _vm.IsFeeColumnVisible = null;
         }
         _vm = null;
+    }
+
+    // The table refused to enter edit because its day is closed. Explain why and how to reopen it —
+    // otherwise the click just does nothing and reads as the app being broken.
+    private void OnLockedEditAttempted(object? sender, Controls.SheetLockedEditEventArgs e)
+    {
+        if (DataContext is OrientPyx.Presentation.ViewModels.Pages.PageViewModelBase vm)
+            _ = vm.ExplainDayLockAsync(e.DayNumber, e.Merged);
     }
 }

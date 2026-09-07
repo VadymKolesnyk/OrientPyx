@@ -22,25 +22,26 @@
                 <Button Classes="help" Command="{Binding ShowHelpCommand}"
                         ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
                 <Button Classes="ghost" VerticalAlignment="Center"
+                        IsEnabled="{Binding !IsDayLocked}"
                         Command="{Binding OpenProblematicControlsCommand}"
                         Content="{Binding Localization[FinishRead.Problematic.Button]}" />
                 <Button Classes="ghost" VerticalAlignment="Center"
                         Command="{Binding OpenPrintSettingsCommand}"
                         Content="{Binding Localization[Print.Settings.Title]}" />
                 <Button Classes="ghost danger" VerticalAlignment="Center"
+                        IsEnabled="{Binding !IsDayLocked}"
                         Command="{Binding ClearReadoutsCommand}"
                         Content="{Binding Localization[FinishRead.Clear]}" />
-                <controls:SearchableComboBox IsVisible="{Binding ShowDaySelector}"
-                          MinWidth="140" VerticalAlignment="Center"
-                          SearchWatermark="{Binding Localization[Common.Search]}"
-                          ItemsSource="{Binding DayOptions}"
-                          SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="pages:DayOption">
-                            <TextBlock Text="{Binding Label}" />
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </controls:SearchableComboBox>
+                <controls:DaySelector VerticalAlignment="Center"
+                                      ShowDays="{Binding ShowDaySelector}"
+                                      ShowLock="{Binding CanToggleDayLock}"
+                                      IsDayLocked="{Binding IsDayLocked}"
+                                      ToggleLockCommand="{Binding ToggleDayLockCommand}"
+                                      LockTooltip="{Binding Localization[DayLock.Lock.Tooltip]}"
+                                      UnlockTooltip="{Binding Localization[DayLock.Unlock.Tooltip]}"
+                                      SearchWatermark="{Binding Localization[Common.Search]}"
+                                      DayOptions="{Binding DayOptions}"
+                                      SelectedDay="{Binding SelectedDay, Mode=TwoWay}" />
             </StackPanel>
         </Grid>
 
@@ -61,9 +62,21 @@
                     </StackPanel>
                 </Button>
 
+                <!-- Why the fields below are dead: the day is closed, and a read-out writes to it.
+                     Without this the greyed-out switch reads as a bug rather than a deliberate lock. -->
+                <Border IsVisible="{Binding ShowAutoReadDayLockedNote}"
+                        Background="{DynamicResource SurfaceSubtle}" CornerRadius="8" Padding="12,8">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <controls:Icon Kind="Lock" Size="16" VerticalAlignment="Top" Margin="0,2,0,0" />
+                        <TextBlock Text="{Binding Localization[FinishRead.AutoRead.DayLocked]}"
+                                   Classes="muted" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
                 <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto"
                       ColumnSpacing="10" RowSpacing="10"
-                      IsVisible="{Binding IsAutoReadExpanded}">
+                      IsVisible="{Binding IsAutoReadExpanded}"
+                      IsEnabled="{Binding !IsDayLocked}">
 
                     <!-- File path + picker. The TextBox takes the remaining width and the buttons dock to
                          its right, so the row stays inside column 0 instead of overflowing into the stepper. -->
@@ -133,6 +146,8 @@
             <!-- Read-only log table; columns built in code-behind. -->
             <Border Name="TablePane" Classes="card" ClipToBounds="True">
                 <controls:SheetTable Name="Sheet"
+                                     IsLocked="{Binding IsDayLocked}"
+                                 LockedEditAttempted="OnLockedEditAttempted"
                                      ItemsSource="{Binding Readouts}"
                                      SelectedItem="{Binding SelectedReadout, Mode=TwoWay}"
                                      Localization="{Binding Localization}"

@@ -175,6 +175,16 @@ internal static class Program
     /// </summary>
     internal static void HandleCrash(string source, Exception? ex)
     {
+        // A refused write to a day the user closed for editing is an expected outcome, not a crash: the
+        // UI blocks these up front, so reaching here means a background path (an optimistic row delete,
+        // a poller tick) hit the business-layer guard. Log it and carry on — never show a crash dialog.
+        if (ex is OrientPyx.BusinessLogic.Models.DayLockedException
+            || ex?.InnerException is OrientPyx.BusinessLogic.Models.DayLockedException)
+        {
+            LogCrash(source, ex);
+            return;
+        }
+
         LogCrash(source, ex);
 
         if (_showingCrashDialog)

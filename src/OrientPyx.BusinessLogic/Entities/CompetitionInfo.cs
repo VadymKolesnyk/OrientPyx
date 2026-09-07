@@ -41,6 +41,16 @@ public class CompetitionInfo
     /// <summary>Base rental-chip price per day, the default unless a note-keyed override matches. Null = unset.</summary>
     public decimal? ChipRentalPricePerDay { get; set; }
 
+    /// <summary>
+    /// Whether the start-entry fee is paid per day rather than once for the whole competition. Off (the
+    /// default) the payment is a single competition-level value on <see cref="Participant.Payment"/>,
+    /// compared against the total fee across every day the athlete runs. On, each
+    /// <see cref="ParticipantDay.Payment"/> carries that day's payment and is compared against that day's
+    /// own share of the fee. Both columns are kept, so toggling the mode back and forth never loses data;
+    /// the switch migrates the values across (see <c>SetPaymentPerDayAsync</c>).
+    /// </summary>
+    public bool PaymentPerDay { get; set; }
+
     // --- Officials (edited on the «Інформація» page; printed on the protocols)
     // Each named official has an optional judge category (суддівська категорія). The course-setter
     // (начальник дистанції) is the competition-wide default; a group on a given day may override it
@@ -77,6 +87,16 @@ public class CompetitionInfo
     /// (see <see cref="GroupDaySettings.PointsRuleId"/>). Scoring with the rule is a later feature.
     /// </summary>
     public Guid? DefaultPointsRuleId { get; set; }
+
+    // --- Participants page view
+
+    /// <summary>
+    /// Whether the participants page offers the roster («Мандатка») aggregate view. On (the default) the
+    /// day selector carries the roster option ahead of the days; off, it lists the days alone and the page
+    /// always shows one day. Toggled from the page's «Дії» menu and kept here so the choice survives a
+    /// restart and travels with an export.
+    /// </summary>
+    public bool RosterEnabled { get; set; } = true;
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

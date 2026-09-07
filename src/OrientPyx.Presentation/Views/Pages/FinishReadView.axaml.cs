@@ -291,6 +291,9 @@ public partial class FinishReadView : UserControl
             },
             [ToolTip.TipProperty] = _vm!.Localization.Get("FinishRead.Edit.Tooltip"),
         };
+        // Editing a read rewrites the day's result, so the pencil greys out while the day is closed.
+        // Printing (below) only reads, and stays available.
+        SheetLock.DisableWhenLocked(edit);
         edit.Click += (_, _) =>
         {
             if (edit.DataContext is FinishReadRowViewModel row)
@@ -472,5 +475,13 @@ public partial class FinishReadView : UserControl
             _vm.PropertyChanged -= OnViewModelChanged;
         }
         _vm = null;
+    }
+
+    // The table refused to enter edit because its day is closed. Explain why and how to reopen it —
+    // otherwise the click just does nothing and reads as the app being broken.
+    private void OnLockedEditAttempted(object? sender, Controls.SheetLockedEditEventArgs e)
+    {
+        if (DataContext is OrientPyx.Presentation.ViewModels.Pages.PageViewModelBase vm)
+            _ = vm.ExplainDayLockAsync(e.DayNumber, e.Merged);
     }
 }

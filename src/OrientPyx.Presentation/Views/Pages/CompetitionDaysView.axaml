@@ -38,6 +38,7 @@
                                  SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
                                  LayoutStore="{Binding LayoutStore}"
                                  LayoutKey="competitiondays"
+                                 LockedEditAttempted="OnLockedEditAttempted"
                                  DeleteRequested="OnDeleteRequested" />
         </Border>
 

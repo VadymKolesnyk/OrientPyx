@@ -24,6 +24,7 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
     private readonly ISplitExportBuilder _builder;
     private readonly ISplitHtmlWriter _writer;
     private readonly IBusyService _busy;
+    private readonly IDayLockService _dayLock;
 
     // Guards SelectedDay sync during LoadAsync so the setter doesn't fight the load.
     private bool _syncingDay;
@@ -35,6 +36,7 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
         ISplitExportBuilder builder,
         ISplitHtmlWriter writer,
         IBusyService busy,
+        IDayLockService dayLock,
         IExportFileSaver fileSaver)
         : base(localization)
     {
@@ -43,6 +45,7 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
         _builder = builder;
         _writer = writer;
         _busy = busy;
+        _dayLock = dayLock;
         FileSaver = fileSaver;
 
         // Singleton VM: reload the day list + header defaults on a competition/day change (marshal to UI).
@@ -191,6 +194,11 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
     {
         if (_session.CurrentEvent is null || SelectedDay?.Day is not { } day)
             return null;
+
+        // Building the splits is normally the last step of a finished day, so a day still open here is
+        // usually one nobody meant to keep editable — offer to close it before the sheet goes out. The
+        // prompt never blocks the export; either answer carries on to the save dialog.
+        await _dayLock.OfferCloseBeforeSplitsAsync(day);
 
         // Each blank field falls back to its resolved placeholder (the competition/day default), so the
         // exported header carries the competition's own metadata without the user retyping it; a placeholder

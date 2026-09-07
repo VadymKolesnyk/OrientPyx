@@ -23,6 +23,7 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 public sealed partial class ParticipantDayRowViewModel : ObservableObject
 {
     private readonly Guid _linkId;
+    private readonly Guid _dayId;
     private readonly Guid _participantId;
     private readonly int _order;
     private readonly DisciplineType _dayDefaultDiscipline;
@@ -40,6 +41,10 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private readonly Action<ParticipantDayRowViewModel, Guid, bool> _requestDiscountChange;
     private readonly Action<ParticipantDayRowViewModel> _requestResultStatusChange;
     private readonly Action<ParticipantDayRowViewModel> _requestBonusChange;
+    private readonly Action<ParticipantDayRowViewModel> _requestDayPaymentChange;
+    // Whether the competition charges per day: decides which payment field the «Оплата» column edits and
+    // which fee the value is compared against. Fixed for the row's lifetime (a mode change reloads the page).
+    private readonly bool _paymentPerDay;
     private EntryFeeContext _fees;
     private readonly IReadOnlyList<ParticipantFeeDay> _otherDays;
 
@@ -93,6 +98,14 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     [ObservableProperty]
     private string _payment;
 
+    /// <summary>
+    /// This day's own payment («Оплата» in per-day payment mode). The «Оплата» column binds here instead of
+    /// <see cref="Payment"/> while the competition charges per day; persisted through its own callback so
+    /// the debounced row save can't wipe it.
+    /// </summary>
+    [ObservableProperty]
+    private string _dayPayment;
+
     [ObservableProperty]
     private string _note;
 
@@ -143,9 +156,11 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         Action<ParticipantDayRowViewModel> requestRaisedFeeChange,
         Action<ParticipantDayRowViewModel, Guid, bool> requestDiscountChange,
         Action<ParticipantDayRowViewModel> requestResultStatusChange,
-        Action<ParticipantDayRowViewModel> requestBonusChange)
+        Action<ParticipantDayRowViewModel> requestBonusChange,
+        Action<ParticipantDayRowViewModel> requestDayPaymentChange)
     {
         _linkId = row.LinkId;
+        _dayId = row.DayId;
         _participantId = row.ParticipantId;
         _order = row.Order;
         _dayDefaultDiscipline = row.DayDefaultDiscipline;
@@ -163,6 +178,8 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         _requestDiscountChange = requestDiscountChange;
         _requestResultStatusChange = requestResultStatusChange;
         _requestBonusChange = requestBonusChange;
+        _requestDayPaymentChange = requestDayPaymentChange;
+        _paymentPerDay = row.PaymentPerDay;
         _fees = fees;
         _otherDays = row.OtherDays;
         Localization = localization;
@@ -187,6 +204,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         _note = row.Note;
         _isFsouMember = row.IsFsouMember;
         _payment = row.Payment;
+        _dayPayment = row.DayPayment;
         _chip = row.Chip;
         _committedChip = row.Chip;
         _team = row.Team;
@@ -320,8 +338,9 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
             if (SetProperty(ref _totalEntryFee, value))
             {
                 OnPropertyChanged(nameof(FormattedTotalFee));
-                // The total is the baseline the payment cell compares against — re-tint when it moves
-                // (discount / raised-fee / group / chip edits recompute it).
+                // The total is the baseline the payment cell compares against (in whole-competition payment
+                // mode) — re-tint when it moves (discount / raised-fee / group / chip edits recompute it).
+                OnPropertyChanged(nameof(PaymentBase));
                 OnPropertyChanged(nameof(PaymentStatus));
                 OnPropertyChanged(nameof(PaymentStatusKey));
             }
@@ -331,8 +350,41 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     /// <summary>The total fee formatted for display (no currency symbol, trims trailing zeros).</summary>
     public string FormattedTotalFee => TotalEntryFee.ToString("0.##", CultureInfo.InvariantCulture);
 
-    /// <summary>How «Оплата» compares to the computed total fee — drives the payment cell tint + filter.</summary>
-    public PaymentStatus PaymentStatus => PaymentStatusExtensions.Classify(Payment, TotalEntryFee);
+    private decimal _dayEntryFee;
+
+    /// <summary>
+    /// This day's share of the total entry fee — what the payment is measured against in per-day payment
+    /// mode. Recomputed alongside <see cref="TotalEntryFee"/>; equal to it on a one-day competition.
+    /// </summary>
+    public decimal DayEntryFee
+    {
+        get => _dayEntryFee;
+        private set
+        {
+            if (SetProperty(ref _dayEntryFee, value))
+            {
+                OnPropertyChanged(nameof(FormattedDayFee));
+                OnPropertyChanged(nameof(PaymentBase));
+                OnPropertyChanged(nameof(PaymentStatus));
+                OnPropertyChanged(nameof(PaymentStatusKey));
+            }
+        }
+    }
+
+    /// <summary>This day's fee share formatted for display (no currency symbol, trims trailing zeros).</summary>
+    public string FormattedDayFee => DayEntryFee.ToString("0.##", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The fee the «Оплата» cell is compared against: this day's share when the competition charges per day,
+    /// else the whole-competition total. Also what the status bar's "still owed" line sums.
+    /// </summary>
+    public decimal PaymentBase => _paymentPerDay ? DayEntryFee : TotalEntryFee;
+
+    /// <summary>The payment value in force: this day's own in per-day mode, else the competition-level one.</summary>
+    public string EffectivePayment => _paymentPerDay ? DayPayment : Payment;
+
+    /// <summary>How «Оплата» compares to the fee it is measured against — drives the cell tint + filter.</summary>
+    public PaymentStatus PaymentStatus => PaymentStatusExtensions.Classify(EffectivePayment, PaymentBase);
 
     /// <summary>The payment status as a stable token, used as the payment column's filter value.</summary>
     public string PaymentStatusKey => PaymentStatus.ToString();
@@ -358,14 +410,15 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
             .Where(f => !f.IsFsouMemberDiscount && f.IsSelected)
             .Select(f => f.DiscountId)
             .ToList();
-        var memberDays = new List<(Guid?, string)>(_otherDays.Count + 1)
+        var memberDays = new List<(Guid, Guid?, string)>(_otherDays.Count + 1)
         {
-            (SelectedGroup.Id, Chip ?? string.Empty)
+            (_dayId, SelectedGroup.Id, Chip ?? string.Empty)
         };
         foreach (var d in _otherDays)
-            memberDays.Add((d.GroupId, d.Chip));
+            memberDays.Add((d.DayId, d.GroupId, d.Chip));
         var breakdown = _fees.Describe(PaysRaisedFee, IsFsouMember, selected, memberDays);
         TotalEntryFee = breakdown.Total;
+        DayEntryFee = breakdown.DayTotal(_dayId);
         FeeBreakdown = EntryFeeBreakdownFormatter.Format(breakdown, Localization);
     }
 
@@ -483,6 +536,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
 
     public ParticipantDayRow ToRow() => new(
         LinkId: _linkId,
+        DayId: _dayId,
         ParticipantId: _participantId,
         Order: _order,
         FullName: (FullName ?? string.Empty).Trim(),
@@ -500,6 +554,8 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         FsouCode: (FsouCode ?? string.Empty).Trim(),
         IsFsouMember: IsFsouMember,
         Payment: (Payment ?? string.Empty).Trim(),
+        DayPayment: (DayPayment ?? string.Empty).Trim(),
+        PaymentPerDay: _paymentPerDay,
         Note: (Note ?? string.Empty).Trim(),
         // Fee fields are persisted through their own callbacks, not the row save; carry them so the
         // record round-trips unchanged (the editor's row-save ignores them).
@@ -741,9 +797,20 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     partial void OnPaymentChanged(string value)
     {
         // Re-tint the payment cell (and re-evaluate the status filter) as the user types.
+        OnPropertyChanged(nameof(EffectivePayment));
         OnPropertyChanged(nameof(PaymentStatus));
         OnPropertyChanged(nameof(PaymentStatusKey));
         QueueSave();
+    }
+
+    partial void OnDayPaymentChanged(string value)
+    {
+        OnPropertyChanged(nameof(EffectivePayment));
+        OnPropertyChanged(nameof(PaymentStatus));
+        OnPropertyChanged(nameof(PaymentStatusKey));
+        // Its own writer (the row save leaves the per-day payment column alone), like the bonus.
+        if (_initialized)
+            _requestDayPaymentChange(this);
     }
 
     private void QueueSave()

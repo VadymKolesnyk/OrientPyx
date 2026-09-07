@@ -20,18 +20,16 @@
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                 <Button Classes="help" Command="{Binding ShowHelpCommand}"
                         ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
-                <controls:SearchableComboBox
-                      IsVisible="{Binding ShowDaySelector}"
-                      MinWidth="140" VerticalAlignment="Center"
-                      SearchWatermark="{Binding Localization[Common.Search]}"
-                      ItemsSource="{Binding DayOptions}"
-                      SelectedItem="{Binding SelectedDay, Mode=TwoWay}">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="pages:DayOption">
-                            <TextBlock Text="{Binding Label}" />
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </controls:SearchableComboBox>
+                <controls:DaySelector VerticalAlignment="Center"
+                                      ShowDays="{Binding ShowDaySelector}"
+                                      ShowLock="{Binding CanToggleDayLock}"
+                                      IsDayLocked="{Binding IsDayLocked}"
+                                      ToggleLockCommand="{Binding ToggleDayLockCommand}"
+                                      LockTooltip="{Binding Localization[DayLock.Lock.Tooltip]}"
+                                      UnlockTooltip="{Binding Localization[DayLock.Unlock.Tooltip]}"
+                                      SearchWatermark="{Binding Localization[Common.Search]}"
+                                      DayOptions="{Binding DayOptions}"
+                                      SelectedDay="{Binding SelectedDay, Mode=TwoWay}" />
             </StackPanel>
         </Grid>
 
@@ -59,6 +57,7 @@
                     Command="{Binding SelectNoneCommand}" />
             <Button Grid.Column="3" Classes="accent" VerticalAlignment="Center"
                     Content="{Binding Localization[Draw.Run]}"
+                    IsEnabled="{Binding !IsDayLocked}"
                     Command="{Binding RunDrawCommand}" />
             <TextBlock Grid.Column="4" Text="{Binding StatusMessage}" Classes="subtitle"
                        VerticalAlignment="Center" />
@@ -68,6 +67,8 @@
         <Border DockPanel.Dock="Bottom" Classes="card" ClipToBounds="True"
                 MaxHeight="320" Margin="0,16,0,0" IsVisible="{Binding HasResults}">
             <controls:SheetTable Name="ResultsSheet"
+                                 IsLocked="{Binding IsDayLocked}"
+                                 LockedEditAttempted="OnLockedEditAttempted"
                                  ItemsSource="{Binding Results}"
                                  Localization="{Binding Localization}"
                                  LayoutStore="{Binding LayoutStore}"
@@ -77,6 +78,8 @@
         <!-- Groups table (shared SheetTable) fills the rest. -->
         <Border Classes="card" ClipToBounds="True">
             <controls:SheetTable Name="GroupsSheet"
+                                 IsLocked="{Binding IsDayLocked}"
+                                 LockedEditAttempted="OnLockedEditAttempted"
                                  ItemsSource="{Binding Groups}"
                                  Localization="{Binding Localization}"
                                  LayoutStore="{Binding LayoutStore}"

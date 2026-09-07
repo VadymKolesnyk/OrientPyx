@@ -66,7 +66,26 @@
                 </Border>
             </StackPanel>
 
-            <!-- 3. Chip rental: a base price/day + note-keyed price overrides -->
+            <!-- 3. Payment mode: one payment for the whole competition, or one per day -->
+            <StackPanel Spacing="8">
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Localization[EntryFees.PaymentPerDay.Title]}" Classes="h2"
+                               VerticalAlignment="Center" />
+                    <Button Classes="help"
+                            Command="{Binding ShowBlockHelpCommand}" CommandParameter="Help.EntryFees.PaymentPerDay"
+                            ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                </StackPanel>
+                <Border Classes="card" Padding="20">
+                    <StackPanel Spacing="8">
+                        <CheckBox IsChecked="{Binding PaymentPerDay, Mode=TwoWay}"
+                                  Content="{Binding Localization[EntryFees.PaymentPerDay.Enable]}" />
+                        <TextBlock Text="{Binding Localization[EntryFees.PaymentPerDay.Hint]}"
+                                   Classes="muted" TextWrapping="Wrap" MaxWidth="620" HorizontalAlignment="Left" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- 4. Chip rental: a base price/day + note-keyed price overrides -->
             <StackPanel Spacing="8">
                 <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                     <TextBlock Text="{Binding Localization[EntryFees.Chips.Title]}" Classes="h2"
@@ -105,7 +124,7 @@
                 </Border>
             </StackPanel>
 
-            <!-- 4. Additional discounts -->
+            <!-- 5. Additional discounts -->
             <StackPanel Spacing="8">
                 <Grid ColumnDefinitions="*,Auto">
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">

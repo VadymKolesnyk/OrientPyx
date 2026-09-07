@@ -29,6 +29,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     private readonly Action<ParticipantRosterRowViewModel> _requestRaisedFeeChange;
     private readonly Action<ParticipantRosterRowViewModel, Guid, bool> _requestDiscountChange;
     private EntryFeeContext _fees;
+    // Whether the competition charges the entry fee per day: decides whether «Оплата» is one row-level value
+    // or the per-day block, and which fee each payment is measured against.
+    private readonly bool _paymentPerDay;
     private bool _initialized;
 
     /// <summary>Whether this participant is charged the raised (late) fee. Competition-level.</summary>
@@ -112,6 +115,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         _requestRaisedFeeChange = requestRaisedFeeChange;
         _requestDiscountChange = requestDiscountChange;
         _fees = fees;
+        _paymentPerDay = row.PaymentPerDay;
         Localization = localization;
 
         Days = new ObservableCollection<RosterDayCellViewModel>(dayCells);
@@ -194,6 +198,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
                 // (discount / raised-fee / group / chip edits recompute it).
                 OnPropertyChanged(nameof(PaymentStatus));
                 OnPropertyChanged(nameof(PaymentStatusKey));
+                OnPropertyChanged(nameof(CollapsedPaymentStatus));
             }
         }
     }
@@ -201,8 +206,34 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     /// <summary>The total fee formatted for display (no currency symbol, trims trailing zeros).</summary>
     public string FormattedTotalFee => TotalEntryFee.ToString("0.##", CultureInfo.InvariantCulture);
 
+    /// <summary>True while the competition charges the entry fee per day (the roster shows a per-day block).</summary>
+    public bool PaymentPerDay => _paymentPerDay;
+
     /// <summary>How «Оплата» compares to the computed total fee — drives the payment cell tint + filter.</summary>
     public PaymentStatus PaymentStatus => PaymentStatusExtensions.Classify(Payment, TotalEntryFee);
+
+    /// <summary>
+    /// What the participant has paid in total: the sum of the (numeric) per-day payments in per-day mode,
+    /// else the one competition-level value. Feeds the read-only «Разом сплачено» column and the status
+    /// bar sums, so both read the same number whichever mode is in force.
+    /// </summary>
+    public decimal TotalPaid
+    {
+        get
+        {
+            if (!_paymentPerDay)
+                return PaymentValue.TryParse(Payment, out var single) ? single : 0m;
+
+            var sum = 0m;
+            foreach (var cell in Days)
+                if (cell.IsMember && PaymentValue.TryParse(cell.Payment, out var amount))
+                    sum += amount;
+            return sum;
+        }
+    }
+
+    /// <summary>«Разом сплачено» formatted for display (no currency symbol, trims trailing zeros).</summary>
+    public string FormattedTotalPaid => TotalPaid.ToString("0.##", CultureInfo.InvariantCulture);
 
     /// <summary>The payment status as a stable token, used as the payment column's filter value.</summary>
     public string PaymentStatusKey => PaymentStatus.ToString();
@@ -230,10 +261,13 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             .ToList();
         var memberDays = Days
             .Where(d => d.IsMember)
-            .Select(d => ((Guid?)d.SelectedGroup.Id, d.Chip ?? string.Empty))
+            .Select(d => (d.DayId, (Guid?)d.SelectedGroup.Id, d.Chip ?? string.Empty))
             .ToList();
         var breakdown = _fees.Describe(PaysRaisedFee, IsFsouMember, selected, memberDays);
         TotalEntryFee = breakdown.Total;
+        // Hand each day its own share, so a per-day payment cell tints against what that day costs.
+        foreach (var cell in Days)
+            cell.DayEntryFee = cell.IsMember ? breakdown.DayTotal(cell.DayId) : 0m;
         FeeBreakdown = EntryFeeBreakdownFormatter.Format(breakdown, Localization);
     }
 
@@ -491,6 +525,8 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     }
     partial void OnPaymentChanged(string value)
     {
+        OnPropertyChanged(nameof(TotalPaid));
+        OnPropertyChanged(nameof(FormattedTotalPaid));
         // Re-tint the payment cell (and re-evaluate the status filter) as the user types.
         OnPropertyChanged(nameof(PaymentStatus));
         OnPropertyChanged(nameof(PaymentStatusKey));
@@ -537,6 +573,57 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
 
     private int DistinctRealGroupCount =>
         Days.Select(d => d.SelectedGroup.Id).Where(id => id is not null).Distinct().Count();
+
+    // ── Collapsed blocks vs the day lock
+    // A merged cell writes to EVERY relevant day at once, so it is editable only while all of those days
+    // are open. Writing to just the open ones would silently apply the edit to some days and not others —
+    // worse than refusing it, because the user would believe the value is now the same everywhere. The
+    // блок stays readable; to edit, expand it and use the open days' own cells (or open the closed day).
+
+    /// <summary>True when a day the merged Groups cell would write to is closed (Groups span all days).</summary>
+    public bool GroupsHaveLockedDay => Days.Any(d => d.IsDayLocked);
+
+    /// <summary>The first closed day the Groups block covers, for the "why can't I edit this" tooltip.</summary>
+    public int LockedGroupDayNumber => Days.FirstOrDefault(d => d.IsDayLocked)?.DayNumber ?? 0;
+
+    /// <summary>True when a day the member-scoped merged cells write to is closed (Chips, start times, …).</summary>
+    public bool MemberDaysHaveLockedDay => Days.Any(d => d.IsMember && d.IsDayLocked);
+
+    /// <summary>The first closed member day, for the member-scoped blocks' tooltip.</summary>
+    public int LockedMemberDayNumber => Days.FirstOrDefault(d => d.IsMember && d.IsDayLocked)?.DayNumber ?? 0;
+
+    /// <summary>True when the merged Groups cell may be edited (a shared value AND no closed day).</summary>
+    public bool GroupMergedEditable => GroupShowsInput && !GroupsHaveLockedDay;
+
+    /// <summary>
+    /// The closed day blocking the merged Groups cell (0 when none). Bound by the cell so a refused
+    /// click can name the day that has to be opened.
+    /// </summary>
+    public int GroupMergedLockedDay => GroupsHaveLockedDay ? LockedGroupDayNumber : 0;
+
+    /// <summary>The closed day blocking the member-scoped merged cells (chip, поза конкурсом); 0 when none.</summary>
+    public int MemberMergedLockedDay => MemberDaysHaveLockedDay ? LockedMemberDayNumber : 0;
+
+    /// <summary>True when the merged Chips cell may be edited.</summary>
+    public bool ChipMergedEditable => ChipShowsInput && !MemberDaysHaveLockedDay;
+
+    /// <summary>True when the merged «поза конкурсом» cell may be edited.</summary>
+    public bool OutOfCompetitionMergedEditable => OutOfCompetitionShowsInput && !MemberDaysHaveLockedDay;
+
+    /// <summary>
+    /// Tooltip for a merged cell the lock is holding shut, naming the closed day so the user knows which
+    /// one to open. Empty while nothing is locked.
+    /// </summary>
+    public string MergedLockTooltip
+    {
+        get
+        {
+            var day = GroupsHaveLockedDay ? LockedGroupDayNumber : LockedMemberDayNumber;
+            return day == 0
+                ? string.Empty
+                : string.Format(Localization.Get("DayLock.Merged.Tooltip"), day);
+        }
+    }
 
     /// <summary>True when every day shares one value (one real group on all, or "(none)" on all).</summary>
     public bool GroupShowsInput =>
@@ -621,6 +708,10 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     /// </summary>
     public void SetGroupForAllDays(Guid? groupId)
     {
+        // All-or-nothing: a closed day among these would leave the group applied to only part of them.
+        if (GroupsHaveLockedDay)
+            return;
+
         // Each day owns a distinct GroupOptions list, and the combo matches its selection by reference.
         // Resolve the equivalent option (by group id) from each day's own list so its per-day combo can
         // find the selected item — assigning the shared instance directly leaves other days' combos blank.
@@ -660,8 +751,67 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     /// <summary>Sets the chip on every member day to <paramref name="value"/> (each cell persists itself).</summary>
     public void SetChipForMemberDays(string value)
     {
+        if (MemberDaysHaveLockedDay)
+            return;
+
         foreach (var cell in Days.Where(d => d.IsMember))
             cell.Chip = value;
+    }
+
+    // ── Payment (member-only, like Chips) — the roster per-day «Оплата» block
+    /// <summary>
+    /// The shared payment across the member days (empty when they differ/none). Setting it fans out to every
+    /// member day, like the merged chip cell. Only meaningful while the competition charges per day.
+    /// </summary>
+    public string CollapsedPaymentValue
+    {
+        get
+        {
+            var members = Days.Where(d => d.IsMember).ToList();
+            return members.Count == 0 || PaymentValuesDiffer ? string.Empty : members[0].Payment;
+        }
+        set => SetPaymentForMemberDays(value ?? string.Empty);
+    }
+
+    /// <summary>True when the member days do not all share one payment value (by trimmed text).</summary>
+    public bool PaymentValuesDiffer =>
+        Days.Where(d => d.IsMember).Select(d => (d.Payment ?? string.Empty).Trim()).Distinct().Count() > 1;
+
+    /// <summary>True when the collapsed «Оплата» cell shows the editable input (a member day, all equal).</summary>
+    public bool PaymentShowsInput => HasAnyChipMember && !PaymentValuesDiffer;
+
+    /// <summary>True when the collapsed «Оплата» cell shows the read-only "різні" label.</summary>
+    public bool PaymentShowsDifferent => HasAnyChipMember && PaymentValuesDiffer;
+
+    /// <summary>
+    /// The tint of the merged «Оплата» cell: the total paid measured against the total fee, so a collapsed
+    /// block still says at a glance whether the whole competition is settled. (Each expanded day cell tints
+    /// against its own day.) Blank cells across the board stay untinted-as-empty like a single cell would.
+    /// </summary>
+    public PaymentStatus CollapsedPaymentStatus
+    {
+        get
+        {
+            if (!HasAnyChipMember)
+                return PaymentStatus.Empty;
+            var members = Days.Where(d => d.IsMember).ToList();
+            if (members.All(d => string.IsNullOrWhiteSpace(d.Payment)))
+                return PaymentStatus.Empty;
+            // A day carrying text instead of a number can not be summed — report it as such.
+            if (members.Any(d => !string.IsNullOrWhiteSpace(d.Payment) && !PaymentValue.TryParse(d.Payment, out _)))
+                return PaymentStatus.NotANumber;
+            return PaymentStatusExtensions.Classify(FormattedTotalPaid, TotalEntryFee);
+        }
+    }
+
+    /// <summary>Sets the payment on every member day to <paramref name="value"/> (each cell persists itself).</summary>
+    public void SetPaymentForMemberDays(string value)
+    {
+        if (MemberDaysHaveLockedDay)
+            return;
+
+        foreach (var cell in Days.Where(d => d.IsMember))
+            cell.Payment = value;
     }
 
     // ── Start time (member-only, like Chips)
@@ -693,6 +843,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     /// by bulk edit; the per-day cells parse/format the text the same way the inline editor does.</summary>
     public void SetStartTimeForMemberDays(string value)
     {
+        if (MemberDaysHaveLockedDay)
+            return;
+
         foreach (var cell in Days.Where(d => d.IsMember))
             cell.StartTimeText = value;
     }
@@ -729,6 +882,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     /// <summary>Sets the flag on every member day (each cell persists itself).</summary>
     public void SetOutOfCompetitionForMemberDays(bool value)
     {
+        if (MemberDaysHaveLockedDay)
+            return;
+
         foreach (var cell in Days.Where(d => d.IsMember))
             cell.OutOfCompetition = value;
     }
@@ -784,6 +940,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
                 RaiseChipAggregates();
                 RecomputeTotal();
                 break;
+            case nameof(RosterDayCellViewModel.Payment):
+                RaisePaymentAggregates();
+                break;
             case nameof(RosterDayCellViewModel.StartTime):
                 RaiseStartTimeAggregates();
                 break;
@@ -811,9 +970,21 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
                 RaiseChipAggregates();
                 RaiseStartTimeAggregates();
                 RaiseOutOfCompetitionAggregates();
+                RaisePaymentAggregates();
                 RecomputeTotal();
                 break;
         }
+    }
+
+    private void RaisePaymentAggregates()
+    {
+        OnPropertyChanged(nameof(CollapsedPaymentValue));
+        OnPropertyChanged(nameof(PaymentValuesDiffer));
+        OnPropertyChanged(nameof(PaymentShowsInput));
+        OnPropertyChanged(nameof(PaymentShowsDifferent));
+        OnPropertyChanged(nameof(CollapsedPaymentStatus));
+        OnPropertyChanged(nameof(TotalPaid));
+        OnPropertyChanged(nameof(FormattedTotalPaid));
     }
 
     // When a day cell flips to "member" with no chip of its own, copy a chip the participant already
@@ -831,6 +1002,30 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             joined.Chip = source.Chip;
     }
 
+    /// <summary>
+    /// Applies the competition's closed-day set to this row: each day cell learns whether it is locked,
+    /// and every merged block re-evaluates whether it can still be edited. Called by the page after the
+    /// days are loaded and whenever a lock is flipped.
+    /// </summary>
+    public void ApplyDayLocks(IReadOnlyCollection<Guid> lockedDayIds)
+    {
+        foreach (var cell in Days)
+            cell.IsDayLocked = lockedDayIds.Contains(cell.DayId);
+
+        OnPropertyChanged(nameof(GroupsHaveLockedDay));
+        OnPropertyChanged(nameof(LockedGroupDayNumber));
+        OnPropertyChanged(nameof(MemberDaysHaveLockedDay));
+        OnPropertyChanged(nameof(LockedMemberDayNumber));
+        OnPropertyChanged(nameof(MergedLockTooltip));
+        OnPropertyChanged(nameof(GroupMergedLockedDay));
+        OnPropertyChanged(nameof(MemberMergedLockedDay));
+
+        RaiseGroupAggregates();
+        RaiseChipAggregates();
+        RaiseStartTimeAggregates();
+        RaiseOutOfCompetitionAggregates();
+    }
+
     private void RaiseGroupAggregates()
     {
         OnPropertyChanged(nameof(CollapsedGroupValue));
@@ -838,6 +1033,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         OnPropertyChanged(nameof(GroupShowsSingle));
         OnPropertyChanged(nameof(GroupShowsDifferent));
         OnPropertyChanged(nameof(GroupSingleSummary));
+        OnPropertyChanged(nameof(GroupMergedEditable));
         // The age window is read off each day's group, so a group/membership change can flip the highlight.
         OnPropertyChanged(nameof(BirthDateViolatesAge));
         OnPropertyChanged(nameof(AgeViolationTooltip));
@@ -850,6 +1046,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         OnPropertyChanged(nameof(HasAnyChipMember));
         OnPropertyChanged(nameof(ChipShowsInput));
         OnPropertyChanged(nameof(ChipShowsDifferent));
+        OnPropertyChanged(nameof(ChipMergedEditable));
     }
 
     private void RaiseStartTimeAggregates()
@@ -866,5 +1063,6 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         OnPropertyChanged(nameof(OutOfCompetitionValuesDiffer));
         OnPropertyChanged(nameof(OutOfCompetitionShowsInput));
         OnPropertyChanged(nameof(OutOfCompetitionShowsDifferent));
+        OnPropertyChanged(nameof(OutOfCompetitionMergedEditable));
     }
 }

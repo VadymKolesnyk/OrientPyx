@@ -62,6 +62,7 @@ public sealed class RosterColumnBuilder
         bool raisedFeeEnabled,
         bool showTeam,
         bool showScore,
+        bool paymentPerDay,
         IReadOnlyList<SheetBand>? previous)
     {
         var bands = new List<SheetBand>(Identity.Length + blocks.Count + 2);
@@ -72,6 +73,11 @@ public sealed class RosterColumnBuilder
         var identity = showTeam
             ? [.. Identity, TeamColumn]
             : Identity;
+
+        // Per-day payment mode replaces the single competition-level «Оплата» identity column with a
+        // collapsible per-day block (built below, like «Чіпи»), so drop it from the identity set here.
+        if (paymentPerDay)
+            identity = identity.Where(c => c.Kind != SheetCellKind.PaymentText).ToArray();
 
         // Identity: one single-column band each, spanning both header tiers.
         foreach (var (kind, headerKey, path, fixedWidth) in identity)
@@ -118,6 +124,10 @@ public sealed class RosterColumnBuilder
             // The «Бали» (score) and editable «Бонус» blocks only appear on point-scoring days.
             if (block.Field is RosterField.Score or RosterField.Bonus && !showScore)
                 continue;
+            // «Оплата» is a per-day block only while the competition charges per day; otherwise it is the
+            // identity column kept above.
+            if (block.Field == RosterField.Payment && !paymentPerDay)
+                continue;
 
             var cols = new List<SheetColumn>();
             var fieldWidth = ResultWidth(block.Field);
@@ -146,6 +156,7 @@ public sealed class RosterColumnBuilder
                 };
                 // Single-day group/status cell binds under Days[0]. too — wire combo-paste the same way.
                 ConfigureDayComboPaste(col, block.Field, 0);
+                ConfigureDayPaymentColumn(col, block.Field, 0);
                 bands.Add(new SheetBand(SheetBand.BandKind.Identity, [col]) { Header = blockLabel });
                 continue;
             }
@@ -177,6 +188,15 @@ public sealed class RosterColumnBuilder
                     // edit, like an expanded one, is still a chip value).
                     RentalChipColumn = isChips,
                 });
+                if (block.Field == RosterField.Payment)
+                {
+                    // The merged cell shows one value for the whole competition, so it tints (and sums) by
+                    // the row's aggregates rather than any single day's.
+                    var merged = cols[0];
+                    merged.PaymentStatusPath = nameof(ParticipantRosterRowViewModel.CollapsedPaymentStatus);
+                    merged.SummaryPath = nameof(ParticipantRosterRowViewModel.TotalPaid);
+                    merged.SummaryOwedPath = nameof(ParticipantRosterRowViewModel.TotalEntryFee);
+                }
             }
             else
             {
@@ -202,6 +222,7 @@ public sealed class RosterColumnBuilder
                     // Per-day combo leaves (group / status) resolve a paste to an option on that day by
                     // exact label match — bound under Days[i]. like the cell factory binds them.
                     ConfigureDayComboPaste(leaf, block.Field, i);
+                    ConfigureDayPaymentColumn(leaf, block.Field, i);
                     cols.Add(leaf);
                 }
             }
@@ -211,6 +232,27 @@ public sealed class RosterColumnBuilder
                 Header = _loc.Get(block.LabelKey),
                 Block = block,
             });
+        }
+
+        // «Разом сплачено»: what the per-day payments add up to, read-only, next to the fee total so the
+        // two are read together. Only in per-day mode — otherwise the single «Оплата» column IS the total.
+        if (paymentPerDay)
+        {
+            var paidHeader = _loc.Get("Participants.Col.TotalPaid");
+            var paid = new SheetColumn(SheetCellKind.ResultText)
+            {
+                Header = paidHeader,
+                // A row-level (not Days[i].) read-only label: DayIndex stays -1 so the factory binds on the row.
+                IdentityPath = nameof(ParticipantRosterRowViewModel.FormattedTotalPaid),
+                SortPath = nameof(ParticipantRosterRowViewModel.TotalPaid),
+                SummaryPath = nameof(ParticipantRosterRowViewModel.TotalPaid),
+                SummaryOwedPath = nameof(ParticipantRosterRowViewModel.TotalEntryFee),
+                Width = 110,
+                WidthCapped = true,
+                Key = "id:Participants.Col.TotalPaid",
+                PickerLabel = paidHeader,
+            };
+            bands.Add(new SheetBand(SheetBand.BandKind.Identity, [paid]) { Header = paidHeader });
         }
 
         // Entry-fee tail: raised-fee flag (when enabled), one column per discount, then the total.
@@ -233,10 +275,28 @@ public sealed class RosterColumnBuilder
         return bands;
     }
 
+    // Points a per-day «Оплата» leaf at its own day cell's status, so each day column tints against that
+    // day's fee share instead of every column sharing the row's status. Other fields get no descriptor.
+    private static void ConfigureDayPaymentColumn(SheetColumn col, RosterField field, int dayIndex)
+    {
+        if (field != RosterField.Payment)
+            return;
+
+        var prefix = $"Days[{dayIndex}].";
+        col.PaymentStatusPath = $"{prefix}{nameof(RosterDayCellViewModel.PaymentStatus)}";
+        col.FilterPath = $"{prefix}{nameof(RosterDayCellViewModel.PaymentStatusKey)}";
+        col.StatusFilter = true;
+        var value = $"{prefix}{nameof(RosterDayCellViewModel.Payment)}";
+        col.CopyPath = value;
+        col.SummaryPath = value;
+        col.SummaryOwedPath = $"{prefix}{nameof(RosterDayCellViewModel.DayEntryFee)}";
+    }
+
     private static SheetCellKind LeafKind(RosterField field) => field switch
     {
         RosterField.Groups => SheetCellKind.Group,
         RosterField.Chips => SheetCellKind.Chip,
+        RosterField.Payment => SheetCellKind.DayPayment,
         RosterField.StartTimes => SheetCellKind.StartTime,
         RosterField.OutOfCompetition => SheetCellKind.OutOfCompetition,
         // Result blocks: the status one is an editable combo, «бонус» an editable signed-integer cell, the
@@ -280,6 +340,7 @@ public sealed class RosterColumnBuilder
         RosterField.Points => nameof(RosterDayCellViewModel.PointsText),
         RosterField.AwardedRank => nameof(RosterDayCellViewModel.AwardedRankText),
         RosterField.Bonus => nameof(RosterDayCellViewModel.BonusText),
+        RosterField.Payment => nameof(RosterDayCellViewModel.Payment),
         _ => string.Empty,
     };
 
@@ -298,6 +359,7 @@ public sealed class RosterColumnBuilder
         RosterField.Place or RosterField.Score or RosterField.Points => 70.0,
         RosterField.AwardedRank => 120.0,
         RosterField.Bonus => 80.0,
+        RosterField.Payment => 100.0,
         _ => 110.0, // groups / chips / start times / out-of-competition
     };
 
@@ -305,6 +367,7 @@ public sealed class RosterColumnBuilder
     {
         RosterField.Groups => SheetCellKind.CollapsedGroup,
         RosterField.Chips => SheetCellKind.CollapsedChip,
+        RosterField.Payment => SheetCellKind.CollapsedPayment,
         RosterField.StartTimes => SheetCellKind.CollapsedStartTime,
         RosterField.OutOfCompetition => SheetCellKind.CollapsedOutOfCompetition,
         RosterField.ResultStatus => SheetCellKind.CollapsedStatus,
@@ -330,6 +393,8 @@ public sealed class RosterColumnBuilder
     {
         RosterField.Groups => nameof(ParticipantRosterRowViewModel.CollapsedGroupSortKey),
         RosterField.Chips => nameof(ParticipantRosterRowViewModel.CollapsedChipValue),
+        // The merged payment column sorts by what the participant has actually paid across the days.
+        RosterField.Payment => nameof(ParticipantRosterRowViewModel.TotalPaid),
         RosterField.StartTimes => nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText),
         RosterField.OutOfCompetition => nameof(ParticipantRosterRowViewModel.CollapsedOutOfCompetition),
         // Result blocks: sort the collapsed column by its merged display value.
@@ -344,6 +409,7 @@ public sealed class RosterColumnBuilder
         RosterField.Groups =>
             $"{nameof(ParticipantRosterRowViewModel.CollapsedGroupValue)}.{nameof(GroupOption.Label)}",
         RosterField.Chips => nameof(ParticipantRosterRowViewModel.CollapsedChipValue),
+        RosterField.Payment => nameof(ParticipantRosterRowViewModel.CollapsedPaymentValue),
         RosterField.StartTimes => nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText),
         RosterField.OutOfCompetition => nameof(ParticipantRosterRowViewModel.CollapsedOutOfCompetition),
         _ => CollapsedResultPath(field),
@@ -365,6 +431,7 @@ public sealed class RosterColumnBuilder
     private static string? LeafPastePath(RosterField field, int i) => field switch
     {
         RosterField.Chips => $"Days[{i}].{nameof(RosterDayCellViewModel.Chip)}",
+        RosterField.Payment => $"Days[{i}].{nameof(RosterDayCellViewModel.Payment)}",
         RosterField.StartTimes => $"Days[{i}].{nameof(RosterDayCellViewModel.StartTime)}",
         RosterField.Bonus => $"Days[{i}].{nameof(RosterDayCellViewModel.BonusText)}",
         _ => null,
@@ -374,6 +441,7 @@ public sealed class RosterColumnBuilder
     {
         RosterField.Groups => $"Days[{i}].{nameof(RosterDayCellViewModel.SelectedGroup)}.{nameof(GroupOption.Label)}",
         RosterField.Chips => $"Days[{i}].{nameof(RosterDayCellViewModel.Chip)}",
+        RosterField.Payment => $"Days[{i}].{nameof(RosterDayCellViewModel.Payment)}",
         RosterField.StartTimes => $"Days[{i}].{nameof(RosterDayCellViewModel.StartTime)}",
         RosterField.OutOfCompetition => $"Days[{i}].{nameof(RosterDayCellViewModel.OutOfCompetition)}",
         // Result blocks sort by the cell's display text (status sorts by the selected option's label).

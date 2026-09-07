@@ -128,7 +128,9 @@ public sealed partial class ImportScopeChoice : ObservableObject
 
         // Which global (participant-level) fields a current-day-only import may overwrite on an athlete that
         // already exists from another day. Off by default so a day import doesn't rewrite shared details;
-        // only «Оплата» is pre-ticked, since that is the one field routinely re-entered per day.
+        // only «Оплата» is pre-ticked, since that is the one field routinely re-entered per day. In a
+        // competition that charges per day the payment tick governs the same import, but the value then
+        // lands on the target day's link rather than on the participant (see EventStore.ImportsPayment).
         UpdateFields =
         [
             new UpdateFieldOption(ParticipantUpdateFields.FullName, "CsvImport.Field.FullName"),

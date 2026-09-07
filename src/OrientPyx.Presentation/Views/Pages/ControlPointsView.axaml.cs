@@ -137,7 +137,7 @@ public partial class ControlPointsView : UserControl
     // owns parsing, the options modal, and the import itself.
     private async void OnImportClick(object? sender, RoutedEventArgs e)
     {
-        if (_vm is null)
+        if (_vm is null || !await _vm.EnsureDayEditableForActionAsync())
             return;
 
         var topLevel = TopLevel.GetTopLevel(this);
@@ -195,5 +195,13 @@ public partial class ControlPointsView : UserControl
             _vm.FocusGridRequested -= OnFocusGridRequested;
         }
         _vm = null;
+    }
+
+    // The table refused to enter edit because its day is closed. Explain why and how to reopen it —
+    // otherwise the click just does nothing and reads as the app being broken.
+    private void OnLockedEditAttempted(object? sender, Controls.SheetLockedEditEventArgs e)
+    {
+        if (DataContext is OrientPyx.Presentation.ViewModels.Pages.PageViewModelBase vm)
+            _ = vm.ExplainDayLockAsync(e.DayNumber, e.Merged);
     }
 }
