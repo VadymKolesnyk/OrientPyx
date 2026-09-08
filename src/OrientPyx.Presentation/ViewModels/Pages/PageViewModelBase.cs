@@ -173,12 +173,27 @@ public abstract class PageViewModelBase : ViewModelBase
     /// <summary>Same gate, for commands on the view model itself.</summary>
     protected Task<bool> EnsureDayEditableAsync() => EnsureDayEditableForActionAsync();
 
+    // Guards against a second click landing while the first toggle is still in flight. The toggle
+    // awaits a confirmation dialog and a database write, and the button stays clickable throughout —
+    // without this, two overlapping runs would each decide the direction from the same starting state
+    // and the day would end up where it began.
+    private bool _togglingDayLock;
+
     private async Task ToggleDayLockAsync()
     {
-        if (_dayLock is null)
+        if (_dayLock is null || _togglingDayLock)
             return;
 
-        await _dayLock.ToggleCurrentDayAsync();
+        _togglingDayLock = true;
+        try
+        {
+            await _dayLock.ToggleCurrentDayAsync();
+        }
+        finally
+        {
+            _togglingDayLock = false;
+        }
+
         RefreshDayLock();
     }
 

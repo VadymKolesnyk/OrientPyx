@@ -47,10 +47,18 @@ public interface ICompetitionEditorService
     /// <summary>
     /// Opens or closes the day for editing. A closed («закритий») day still reads, computes, prints
     /// and publishes normally — only writes to its own data are refused, so a finished day can't be
-    /// changed by accident while working on another one. Returns the updated day, or null when it
-    /// doesn't exist or already had that state.
+    /// changed by accident while working on another one. Returns the day as it now stands, or null
+    /// only when there is no such day — a day already in the requested state is still returned, so a
+    /// caller working from a stale copy gets the real state back rather than a silent no-op.
     /// </summary>
     Task<EventDay?> SetDayLockedAsync(Guid dayId, bool locked, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Flips the day's lock, deciding the direction from the database rather than from the caller's
+    /// copy of the day (which may predate a change made on another page or in another window).
+    /// Returns the day as it now stands, or null when there is no such day.
+    /// </summary>
+    Task<EventDay?> ToggleDayLockedAsync(Guid dayId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Changes a day's 1-based number to <paramref name="newNumber"/> and renames its files folder

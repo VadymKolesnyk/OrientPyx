@@ -153,6 +153,13 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
                 foreach (var day in days)
                     DayOptions.Add(new DayOption(day, Localization));
             }
+            else
+            {
+                // Same days, so the options are reused (see SameDays) — but they still wrap the
+                // entities they were built with. Re-point them at this read, or picking a day would
+                // hand the session a stale EventDay (a day closed elsewhere would still read open).
+                DayOption.SyncAll(DayOptions, days);
+            }
 
             var current = _session.CurrentDay?.Number;
             SelectedDay = DayOptions.FirstOrDefault(o => o.Number == current) ?? DayOptions.FirstOrDefault();

@@ -588,7 +588,13 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private void RebuildDayOptions(IReadOnlyList<EventDay> days)
     {
         if (SameDays(days))
+        {
+            // The options are reused so the ComboBox keeps a valid SelectedItem — but they still wrap
+            // the entities they were built with. Re-point them at this read, or the page would judge
+            // the day's lock (IsEffectiveDayLocked) from a stale EventDay.
+            DayOption.SyncAll(DayOptions, days);
             return;
+        }
 
         DayOptions.Clear();
         if (RosterEnabled)

@@ -161,12 +161,29 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
     /// judge can see and set which days are finished. Same rule as the lock next to the day selector:
     /// closing is immediate, opening asks first, since that is when the protection is dropped.
     /// </summary>
+    // Guards against a second click landing while the first toggle is still in flight — the command
+    // awaits a confirmation dialog and a database write, and the button stays clickable throughout.
+    private bool _togglingDayLock;
+
     [RelayCommand]
     private async Task ToggleDayLockAsync(DayRowViewModel? row)
     {
-        if (row is null)
+        if (row is null || _togglingDayLock)
             return;
 
+        _togglingDayLock = true;
+        try
+        {
+            await ToggleDayLockCoreAsync(row);
+        }
+        finally
+        {
+            _togglingDayLock = false;
+        }
+    }
+
+    private async Task ToggleDayLockCoreAsync(DayRowViewModel row)
+    {
         if (row.IsLocked)
         {
             var confirm = new ConfirmDialogViewModel(
@@ -182,7 +199,9 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
                 return;
         }
 
-        var updated = await _busy.RunAsync(() => _editor.SetDayLockedAsync(row.Id, !row.IsLocked));
+        // Flip from what the database says, not from the row: the confirmation above is awaited, and the
+        // row may have been re-read (or changed on another page) while the dialog was open.
+        var updated = await _busy.RunAsync(() => _editor.ToggleDayLockedAsync(row.Id));
         if (updated is null)
             return;
 

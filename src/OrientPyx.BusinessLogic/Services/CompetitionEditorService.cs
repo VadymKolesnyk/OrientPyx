@@ -59,15 +59,42 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             throw new DayLockedException(day.Number);
     }
 
+    /// <summary>
+    /// Sets the day's lock and returns the day as it now stands in the database. Null means only
+    /// "no such day" — a day already in the requested state is still returned, so a caller that
+    /// asked from a stale copy (a cached day option, another window) is handed the real state
+    /// instead of a silent no-op it would read as "the button did nothing".
+    /// </summary>
     public async Task<EventDay?> SetDayLockedAsync(
         Guid dayId, bool locked, CancellationToken cancellationToken = default)
     {
         var days = await _eventStore.GetDaysAsync(FolderPath, cancellationToken);
         var day = days.FirstOrDefault(d => d.Id == dayId);
-        if (day is null || day.IsLocked == locked)
+        if (day is null)
             return null;
 
+        if (day.IsLocked == locked)
+            return day;
+
         day.IsLocked = locked;
+        await _eventStore.UpdateDayAsync(FolderPath, day, cancellationToken);
+        return day;
+    }
+
+    /// <summary>
+    /// Flips the day's lock from what the database currently says, and returns the day as it now
+    /// stands (null when there is no such day). The direction is decided under the read, never from
+    /// the caller's copy — that copy may predate a change made on another page or in another window.
+    /// </summary>
+    public async Task<EventDay?> ToggleDayLockedAsync(
+        Guid dayId, CancellationToken cancellationToken = default)
+    {
+        var days = await _eventStore.GetDaysAsync(FolderPath, cancellationToken);
+        var day = days.FirstOrDefault(d => d.Id == dayId);
+        if (day is null)
+            return null;
+
+        day.IsLocked = !day.IsLocked;
         await _eventStore.UpdateDayAsync(FolderPath, day, cancellationToken);
         return day;
     }

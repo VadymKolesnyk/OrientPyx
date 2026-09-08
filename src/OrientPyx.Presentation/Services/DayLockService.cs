@@ -101,7 +101,20 @@ public sealed class DayLockService : IDayLockService
         if (_session.CurrentDay is not { } day)
             return false;
 
-        var unlocking = day.IsLocked;
+        // Ask the database what the day actually is before deciding the direction. The session's copy
+        // can lag — it is handed over by whatever page selected the day, and that page's cached option
+        // may predate a lock change made elsewhere. Deciding from a stale copy is how the button ends
+        // up asking for the state the day is already in, i.e. appearing to do nothing.
+        var days = await _editor.GetDaysAsync();
+        var stored = days.FirstOrDefault(d => d.Id == day.Id);
+        if (stored is null)
+            return false;
+
+        // Bring the session back in step first, so the padlock is right even if the user cancels below.
+        if (stored.IsLocked != day.IsLocked)
+            _session.UpdateCurrentDay(stored);
+
+        var unlocking = stored.IsLocked;
 
         // Only dropping the protection asks; closing a day is safe and instantly reversible.
         if (unlocking)
@@ -112,14 +125,14 @@ public sealed class DayLockService : IDayLockService
                 "DayLock.Confirm.Message",
                 confirmKey: "DayLock.Confirm.Ok")
             {
-                MessageArgs = [day.Number]
+                MessageArgs = [stored.Number]
             };
 
             if (!await _dialogs.ConfirmAsync(confirm))
                 return false;
         }
 
-        var updated = await _editor.SetDayLockedAsync(day.Id, !day.IsLocked);
+        var updated = await _editor.SetDayLockedAsync(day.Id, !unlocking);
         if (updated is null)
             return false;
 
@@ -178,6 +191,14 @@ public sealed class DayLockService : IDayLockService
 
     public async Task OfferCloseBeforeSplitsAsync(EventDay day)
     {
+        ArgumentNullException.ThrowIfNull(day);
+
+        // The caller's copy of the day was read when its page loaded; the lock may have been changed
+        // since (on another page, or by the previous export). Ask the database before offering.
+        var days = await _editor.GetDaysAsync();
+        if (days.FirstOrDefault(d => d.Id == day.Id) is { } stored)
+            day.IsLocked = stored.IsLocked;
+
         if (day.IsLocked)
             return;
 
