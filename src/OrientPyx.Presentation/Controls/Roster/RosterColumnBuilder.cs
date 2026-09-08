@@ -128,6 +128,10 @@ public sealed class RosterColumnBuilder
             // identity column kept above.
             if (block.Field == RosterField.Payment && !paymentPerDay)
                 continue;
+            // Same for the raised-fee flag: per day only while the competition charges per day, and only
+            // while the raised fee is enabled at all (otherwise there is nothing to flag).
+            if (block.Field == RosterField.RaisedFee && (!paymentPerDay || !raisedFeeEnabled))
+                continue;
 
             var cols = new List<SheetColumn>();
             var fieldWidth = ResultWidth(block.Field);
@@ -256,7 +260,8 @@ public sealed class RosterColumnBuilder
         }
 
         // Entry-fee tail: raised-fee flag (when enabled), one column per discount, then the total.
-        EntryFeeColumns.Append(bands, _loc, discounts, raisedFeeEnabled);
+        // In per-day payment mode the flag is a per-day block above, not this competition-level column.
+        EntryFeeColumns.Append(bands, _loc, discounts, raisedFeeEnabled, paymentPerDay);
 
         // Trailing actions column (delete), its own single-column band. A PickerLabel + stable Key make
         // it hideable from the columns picker like any other column.
@@ -297,6 +302,7 @@ public sealed class RosterColumnBuilder
         RosterField.Groups => SheetCellKind.Group,
         RosterField.Chips => SheetCellKind.Chip,
         RosterField.Payment => SheetCellKind.DayPayment,
+        RosterField.RaisedFee => SheetCellKind.DayRaisedFee,
         RosterField.StartTimes => SheetCellKind.StartTime,
         RosterField.OutOfCompetition => SheetCellKind.OutOfCompetition,
         // Result blocks: the status one is an editable combo, «бонус» an editable signed-integer cell, the
@@ -360,6 +366,7 @@ public sealed class RosterColumnBuilder
         RosterField.AwardedRank => 120.0,
         RosterField.Bonus => 80.0,
         RosterField.Payment => 100.0,
+        RosterField.RaisedFee => 120.0,
         _ => 110.0, // groups / chips / start times / out-of-competition
     };
 
@@ -368,6 +375,7 @@ public sealed class RosterColumnBuilder
         RosterField.Groups => SheetCellKind.CollapsedGroup,
         RosterField.Chips => SheetCellKind.CollapsedChip,
         RosterField.Payment => SheetCellKind.CollapsedPayment,
+        RosterField.RaisedFee => SheetCellKind.CollapsedRaisedFee,
         RosterField.StartTimes => SheetCellKind.CollapsedStartTime,
         RosterField.OutOfCompetition => SheetCellKind.CollapsedOutOfCompetition,
         RosterField.ResultStatus => SheetCellKind.CollapsedStatus,
@@ -397,6 +405,7 @@ public sealed class RosterColumnBuilder
         RosterField.Payment => nameof(ParticipantRosterRowViewModel.TotalPaid),
         RosterField.StartTimes => nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText),
         RosterField.OutOfCompetition => nameof(ParticipantRosterRowViewModel.CollapsedOutOfCompetition),
+        RosterField.RaisedFee => nameof(ParticipantRosterRowViewModel.CollapsedRaisedFee),
         // Result blocks: sort the collapsed column by its merged display value.
         _ => CollapsedResultPath(field),
     };
@@ -412,6 +421,7 @@ public sealed class RosterColumnBuilder
         RosterField.Payment => nameof(ParticipantRosterRowViewModel.CollapsedPaymentValue),
         RosterField.StartTimes => nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText),
         RosterField.OutOfCompetition => nameof(ParticipantRosterRowViewModel.CollapsedOutOfCompetition),
+        RosterField.RaisedFee => nameof(ParticipantRosterRowViewModel.CollapsedRaisedFee),
         _ => CollapsedResultPath(field),
     };
 
@@ -444,6 +454,7 @@ public sealed class RosterColumnBuilder
         RosterField.Payment => $"Days[{i}].{nameof(RosterDayCellViewModel.Payment)}",
         RosterField.StartTimes => $"Days[{i}].{nameof(RosterDayCellViewModel.StartTime)}",
         RosterField.OutOfCompetition => $"Days[{i}].{nameof(RosterDayCellViewModel.OutOfCompetition)}",
+        RosterField.RaisedFee => $"Days[{i}].{nameof(RosterDayCellViewModel.PaysRaisedFee)}",
         // Result blocks sort by the cell's display text (status sorts by the selected option's label).
         RosterField.ResultStatus => $"Days[{i}].{nameof(RosterDayCellViewModel.SelectedStatus)}.{nameof(FinishStatusOption.Label)}",
         _ => $"Days[{i}].{ResultTextPath(field)}",

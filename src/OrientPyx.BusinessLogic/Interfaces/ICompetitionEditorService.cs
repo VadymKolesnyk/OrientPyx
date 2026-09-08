@@ -1,4 +1,4 @@
-using OrientPyx.BusinessLogic.Entities;
+﻿using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Models;
 
@@ -325,6 +325,19 @@ public interface ICompetitionEditorService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Copies the participants of one day onto another («Копіювання учасників з дня в день»). Only people
+    /// missing from the target day are added — anyone already there keeps their existing record untouched.
+    /// The group always travels (and is added to the target day when absent there); the chip, per-day
+    /// payment (note + raised-fee flag), start time and «поза конкурсом» flag each travel only when the
+    /// request opts in. A chip already taken on the target day is dropped so chips stay unique per day.
+    /// Throws <see cref="DayLockedException"/> when the TARGET day is closed (the source is only
+    /// read, so a closed day may still be copied FROM). Returns the counts for the caller's report.
+    /// </summary>
+    Task<CopyParticipantsResult> CopyParticipantsBetweenDaysAsync(
+        CopyParticipantsRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Sets the start number (competition-level) on many participants at once, in a single transaction.
     /// Used by bulk number assignment so the whole batch persists together instead of through overlapping
     /// per-row autosaves. Each tuple is (participantId, number text). Returns how many were updated.
@@ -365,6 +378,15 @@ public interface ICompetitionEditorService
     /// participant and is saved with the row. Has its own writer so the debounced row save can't wipe it.
     /// </summary>
     Task SetParticipantDayPaymentAsync(Guid participantId, Guid dayId, string payment, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets whether a participant is charged the raised (late) entry fee on one day, persisted on the
+    /// participant-day link. Only meaningful while the competition is in per-day payment mode
+    /// (<see cref="Entities.CompetitionInfo.PaymentPerDay"/>); outside it the flag is competition-level
+    /// (<see cref="SetParticipantPaysRaisedFeeAsync"/>). Has its own writer so the debounced row save
+    /// can't wipe it.
+    /// </summary>
+    Task SetParticipantDayRaisedFeeAsync(Guid participantId, Guid dayId, bool paysRaisedFee, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Counts how many participants carry a non-blank payment value in the mode currently in force — the

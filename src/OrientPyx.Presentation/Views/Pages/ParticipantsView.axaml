@@ -1,4 +1,4 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -244,6 +244,18 @@
                                     </Button>
                                     </StackPanel>
                                     <Separator Margin="4,2" IsVisible="{Binding CanToggleRoster}" />
+                                    <!-- Copy the people of one day onto another. Offered with two or more
+                                         days only. Deliberately OUTSIDE the IsEnabled panel above: it
+                                         writes to the day picked in the dialog, not the one in view, so a
+                                         closed day in view must not grey it out — the target day's own lock
+                                         is enforced by the service when applying. -->
+                                    <Button Click="OnCopyParticipantsClick" Classes="menu" HorizontalAlignment="Stretch"
+                                            IsVisible="{Binding CanToggleRoster}">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <controls:Icon Kind="Copy" Size="16" />
+                                            <TextBlock Text="{Binding Localization[Participants.CopyDay]}" />
+                                        </StackPanel>
+                                    </Button>
                                     <!-- Show/hide the roster («Мандатка») option in the day picker. Only
                                          offered with two or more days — with one day the roster and that
                                          day hold the same people. The choice is per competition and is

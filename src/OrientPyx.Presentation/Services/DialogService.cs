@@ -1,4 +1,4 @@
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Presentation.ViewModels.Dialogs;
 
@@ -86,6 +86,22 @@ public sealed partial class DialogService : ObservableObject, IDialogService
     }
 
     public async Task<AssignChipsResult?> ShowAssignChipsAsync(AssignChipsViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
+
+    public async Task<CopyParticipantsRequest?> ShowCopyParticipantsAsync(CopyParticipantsViewModel dialog)
     {
         ArgumentNullException.ThrowIfNull(dialog);
 

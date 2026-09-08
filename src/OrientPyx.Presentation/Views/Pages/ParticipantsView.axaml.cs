@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -558,6 +558,14 @@ public partial class ParticipantsView : UserControl
     // table's on-screen (filtered + sorted) rows and hand them to the command, which prompts for the
     // field + value and applies it to each. The dialog opens preselected on the column the user was last
     // focused in, when that column is bulk-editable (otherwise on the first field).
+    // Copies the participants of one day onto another; the dialog picks both days, so nothing from the
+    // table is needed here.
+    private void OnCopyParticipantsClick(object? sender, RoutedEventArgs e)
+    {
+        CloseContainingFlyout(sender);
+        _ = _vm?.CopyParticipantsCommand.ExecuteAsync(null);
+    }
+
     private void OnBulkEditClick(object? sender, RoutedEventArgs e)
     {
         CloseContainingFlyout(sender);
@@ -619,7 +627,11 @@ public partial class ParticipantsView : UserControl
             case SheetCellKind.StartTime:
             case SheetCellKind.CollapsedStartTime:
                 return "StartTime";
+            // The raised-fee flag in either mode: the competition-level column, and (per-day mode) a day
+            // leaf or the merged block cell — the page resolves where the value goes from its mode.
             case SheetCellKind.RaisedFeeFlag:
+            case SheetCellKind.DayRaisedFee:
+            case SheetCellKind.CollapsedRaisedFee:
                 return "PaysRaisedFee";
             case SheetCellKind.OutOfCompetition:
             case SheetCellKind.CollapsedOutOfCompetition:

@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Globalization;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -133,6 +133,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         // Per-day «Оплата» — relevant on the days the participant runs, like «Чіпи». The column builder
         // drops the block entirely unless the competition charges per day.
         new(RosterField.Payment, "Participants.Roster.Block.Payment", c => c.IsMember),
+        // Per-day raised (late) fee flag, next to «Оплата» since they belong to the same mode. Dropped by
+        // the column builder unless the competition charges per day AND the raised fee is enabled.
+        new(RosterField.RaisedFee, "Participants.Roster.Block.RaisedFee", c => c.IsMember),
         new(RosterField.StartTimes, "Participants.Roster.Block.StartTimes", c => c.IsMember),
         new(RosterField.OutOfCompetition, "Participants.Roster.Block.OutOfCompetition", c => c.IsMember),
         // Result blocks — collapsible per day like Groups/Chips. Score is dropped by the column builder
@@ -768,7 +771,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             var options = groupsByDay.TryGetValue(cell.DayId, out var o)
                 ? o
                 : [new GroupOption(null, string.Empty, Localization)];
-            cells.Add(new RosterDayCellViewModel(row.ParticipantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange, RequestCellStartTimeChange, RequestCellOutOfCompetitionChange, RequestCellResultStatusChange, RequestCellBonusChange, RequestCellPaymentChange));
+            cells.Add(new RosterDayCellViewModel(row.ParticipantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange, RequestCellStartTimeChange, RequestCellOutOfCompetitionChange, RequestCellResultStatusChange, RequestCellBonusChange, RequestCellPaymentChange, RequestCellRaisedFeeChange));
         }
         var rosterRow = new ParticipantRosterRowViewModel(row, cells, _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Discounts, _feeContext, Localization,
             RequestRosterRowSave,
@@ -1436,6 +1439,82 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         await LoadAsync();
     }
 
+    // ── Copy participants from one day to another
+    // Adds the source day's people to the target day, skipping anyone already there (their existing record
+    // is never overwritten). The group always travels — a member needs one — so a group missing from the
+    // target day is added to it; every other per-day field is opt-in in the dialog. Needs at least two
+    // days; the target day's lock is enforced by the service, since the day written may not be the one in
+    // view. The page reloads afterwards so the copied rows appear.
+    [RelayCommand]
+    private async Task CopyParticipantsAsync()
+    {
+        if (_session.CurrentEvent is null)
+            return;
+
+        var days = await _busy.RunAsync(() => _editor.GetDaysAsync());
+        if (days.Count < 2)
+        {
+            await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+                Localization,
+                titleKey: "Participants.CopyDay.Title",
+                messageKey: "Participants.CopyDay.NeedTwoDays",
+                confirmKey: "Common.Ok",
+                cancelKey: "Common.Ok"));
+            return;
+        }
+
+        // Real days only — the roster is an aggregate, not a copy source. Seed the source with the day in
+        // view when one is (in roster mode there is none, so the first day is offered).
+        var options = days.Select(d => new DayOption(d, Localization)).ToList();
+        var initialSource = EffectiveDayId is { } dayId
+            ? options.FirstOrDefault(o => o.Day?.Id == dayId)
+            : null;
+
+        var request = await _dialogs.ShowCopyParticipantsAsync(
+            new CopyParticipantsViewModel(Localization, options, PaymentPerDay, initialSource));
+        if (request is null)
+            return;
+
+        var sourceNumber = options.FirstOrDefault(o => o.Day?.Id == request.SourceDayId)?.Number ?? 0;
+        var targetNumber = options.FirstOrDefault(o => o.Day?.Id == request.TargetDayId)?.Number ?? 0;
+
+        // Confirm before writing — this adds rows to a day the user may not be looking at.
+        var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+            Localization,
+            titleKey: "Participants.CopyDay.Title",
+            messageKey: "Participants.CopyDay.ConfirmMessage",
+            confirmKey: "Participants.CopyDay.Confirm",
+            cancelKey: "Common.Cancel")
+        {
+            MessageArgs = [sourceNumber, targetNumber]
+        });
+        if (!confirmed)
+            return;
+
+        var result = await _busy.RunAsync(() => _editor.CopyParticipantsBetweenDaysAsync(request));
+
+        _log.Action(string.Format(
+            Localization.Get("Participants.CopyDay.Log.Copied"),
+            result.Copied, sourceNumber, targetNumber, result.AlreadyPresent, result.GroupsCreated));
+
+        // Report the outcome, calling out the chips that could not travel (the number was already taken on
+        // the target day) so a silently chip-less row is never a surprise.
+        var messageKey = result.ChipsSkipped > 0
+            ? "Participants.CopyDay.DoneWithSkippedChips"
+            : "Participants.CopyDay.Done";
+        await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+            Localization,
+            titleKey: "Participants.CopyDay.Title",
+            messageKey: messageKey,
+            confirmKey: "Common.Ok",
+            cancelKey: "Common.Ok")
+        {
+            MessageArgs = [result.Copied, result.AlreadyPresent, result.GroupsCreated, result.ChipsSkipped]
+        });
+
+        await LoadAsync();
+    }
+
     // ── Bulk assign rental chips
     // Hands out unused rental chips, in ascending number order, to every shown participant (or member
     // day) that has no chip yet — in the table's on-screen order (passed in as VisibleItems). A dropdown
@@ -2075,7 +2154,12 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             case "Note": row.Note = r.Text ?? string.Empty; break;
             case "Team": row.Team = r.Text ?? string.Empty; break;
             case "IsFsouMember": row.IsFsouMember = r.Bool ?? false; break;
-            case "PaysRaisedFee": row.PaysRaisedFee = r.Bool ?? false; break;
+            case "PaysRaisedFee":
+                if (PaymentPerDay)
+                    row.SetRaisedFeeForMemberDays(r.Bool ?? false);
+                else
+                    row.PaysRaisedFee = r.Bool ?? false;
+                break;
             // Per-day fields fan out to the participant's member days (like the collapsed roster cells).
             case "StartTime": row.SetStartTimeForMemberDays(r.Text ?? string.Empty); break;
             case "OutOfCompetition": row.SetOutOfCompetitionForMemberDays(r.Bool ?? false); break;
@@ -2201,6 +2285,23 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             await Task.Run(() => _editor.SetParticipantDayPaymentAsync(participantId, dayId, payment));
         }
         catch { /* never crash the UI over a payment edit */ }
+    }
+
+    // Per-day payment mode only: the raised-fee flag belongs to the day, so it is saved on the link.
+    private void RequestCellRaisedFeeChange(RosterDayCellViewModel cell)
+    {
+        if (!cell.IsMember)
+            return;
+        _ = ApplyDayRaisedFeeAsync(cell.ParticipantId, cell.DayId, cell.PaysRaisedFee);
+    }
+
+    private async Task ApplyDayRaisedFeeAsync(Guid participantId, Guid dayId, bool paysRaisedFee)
+    {
+        try
+        {
+            await Task.Run(() => _editor.SetParticipantDayRaisedFeeAsync(participantId, dayId, paysRaisedFee));
+        }
+        catch { /* never crash the UI over a raised-fee toggle */ }
     }
 
     private async Task ApplyBonusAsync(Guid participantId, Guid dayId, int? bonus)
@@ -2685,12 +2786,29 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         return true;
     }
 
-    // A row's raised-fee flag toggled: persist in the background (competition-level, all days).
+    // A row's raised-fee flag toggled. Per-day payment puts the flag on the day the grid is showing;
+    // otherwise it is competition-level and covers every day the participant runs.
     private void RequestRowRaisedFeeChange(ParticipantDayRowViewModel row)
-        => _ = Task.Run(() => _editor.SetParticipantPaysRaisedFeeAsync(row.ParticipantId, row.PaysRaisedFee));
+    {
+        if (PaymentPerDay)
+        {
+            if (_session.CurrentDay is { } day)
+                _ = ApplyDayRaisedFeeAsync(row.ParticipantId, day.Id, row.PaysRaisedFee);
+            return;
+        }
 
+        _ = Task.Run(() => _editor.SetParticipantPaysRaisedFeeAsync(row.ParticipantId, row.PaysRaisedFee));
+    }
+
+    // The roster's row-level checkbox only exists outside per-day mode (in it, the flag is a per-day
+    // block whose cells save themselves through RequestCellRaisedFeeChange).
     private void RequestRosterRaisedFeeChange(ParticipantRosterRowViewModel row)
-        => _ = Task.Run(() => _editor.SetParticipantPaysRaisedFeeAsync(row.ParticipantId, row.PaysRaisedFee));
+    {
+        if (PaymentPerDay)
+            return;
+
+        _ = Task.Run(() => _editor.SetParticipantPaysRaisedFeeAsync(row.ParticipantId, row.PaysRaisedFee));
+    }
 
     // A row's discount checkbox toggled: persist the link add/remove in the background.
     private void RequestRowDiscountChange(ParticipantDayRowViewModel row, Guid discountId, bool on)

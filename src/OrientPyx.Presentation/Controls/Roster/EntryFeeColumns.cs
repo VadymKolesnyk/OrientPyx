@@ -15,7 +15,9 @@ internal static class EntryFeeColumns
 {
     /// <summary>
     /// Appends the entry-fee bands to <paramref name="bands"/> (just before the trailing actions band).
-    /// The raised-fee flag is added only when <paramref name="raisedFeeEnabled"/> is true. Discount
+    /// The raised-fee flag is added only when <paramref name="raisedFeeEnabled"/> is true and the
+    /// competition is NOT charging per day — in per-day mode the flag belongs to each day, so it is a
+    /// per-day block instead of this one competition-level column. Discount
     /// columns are headed by the discount's own name; the FSOU-member discount's checkbox is disabled
     /// (it follows «Член ФСОУ» rather than being clicked). Columns key off the discount id so a hidden
     /// set survives rebuilds.
@@ -24,9 +26,10 @@ internal static class EntryFeeColumns
         List<SheetBand> bands,
         ILocalizationService loc,
         IReadOnlyList<EntryFeeDiscount> discounts,
-        bool raisedFeeEnabled)
+        bool raisedFeeEnabled,
+        bool paymentPerDay)
     {
-        if (raisedFeeEnabled)
+        if (raisedFeeEnabled && !paymentPerDay)
         {
             var raised = new SheetColumn(SheetCellKind.RaisedFeeFlag)
             {

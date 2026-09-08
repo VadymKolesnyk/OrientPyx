@@ -923,11 +923,26 @@ public sealed class EventStore : IEventStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task SetParticipantDayRaisedFeeAsync(string eventFolderPath, Guid linkId, bool paysRaisedFee, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.ParticipantDays.FirstOrDefaultAsync(p => p.Id == linkId, cancellationToken);
+        if (existing is null)
+            return;
+
+        // The sole writer of the per-day raised-fee column (UpdateParticipantDayAsync leaves it untouched).
+        existing.PaysRaisedFee = paysRaisedFee;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task SetPaymentPerDayAsync(
         string eventFolderPath,
         bool paymentPerDay,
         IReadOnlyDictionary<Guid, string> participantPayments,
         IReadOnlyDictionary<Guid, string> dayPayments,
+        IReadOnlyDictionary<Guid, bool> participantRaisedFees,
+        IReadOnlyDictionary<Guid, bool> dayRaisedFees,
         CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
@@ -936,18 +951,32 @@ public sealed class EventStore : IEventStore
         if (info is not null)
             info.PaymentPerDay = paymentPerDay;
 
-        if (participantPayments.Count > 0)
+        // The mode switch rewrites the raised-fee flag on the side it moves TO and clears the side it
+        // moves away from, so the two never disagree about who pays the raised fee.
+        if (participantPayments.Count > 0 || participantRaisedFees.Count > 0 || !paymentPerDay)
         {
             foreach (var participant in await db.Participants.ToListAsync(cancellationToken))
+            {
                 if (participantPayments.TryGetValue(participant.Id, out var value))
                     participant.Payment = value;
+                if (paymentPerDay)
+                    participant.PaysRaisedFee = false;
+                else
+                    participant.PaysRaisedFee = participantRaisedFees.TryGetValue(participant.Id, out var raised) && raised;
+            }
         }
 
-        if (dayPayments.Count > 0)
+        if (dayPayments.Count > 0 || dayRaisedFees.Count > 0 || paymentPerDay)
         {
             foreach (var link in await db.ParticipantDays.ToListAsync(cancellationToken))
+            {
                 if (dayPayments.TryGetValue(link.Id, out var value))
                     link.Payment = value;
+                if (paymentPerDay)
+                    link.PaysRaisedFee = dayRaisedFees.TryGetValue(link.Id, out var raised) && raised;
+                else
+                    link.PaysRaisedFee = false;
+            }
         }
 
         // One SaveChanges = one transaction, so the flag and the migrated values always move together.
@@ -984,6 +1013,114 @@ public sealed class EventStore : IEventStore
         if (updated > 0)
             await db.SaveChangesAsync(cancellationToken);
         return updated;
+    }
+
+    public async Task<CopyParticipantsResult> CopyParticipantsBetweenDaysAsync(
+        string eventFolderPath,
+        CopyParticipantsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (request.SourceDayId == request.TargetDayId)
+            return new CopyParticipantsResult(0, 0, 0, 0);
+
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        // Everything is read up front and written with one SaveChanges at the end, so a copy either
+        // lands whole or not at all.
+        var source = await db.ParticipantDays
+            .Where(p => p.EventDayId == request.SourceDayId)
+            .OrderBy(p => p.Order)
+            .ToListAsync(cancellationToken);
+        if (source.Count == 0)
+            return new CopyParticipantsResult(0, 0, 0, 0);
+
+        var target = await db.ParticipantDays
+            .Where(p => p.EventDayId == request.TargetDayId)
+            .ToListAsync(cancellationToken);
+
+        // Who is already there stays untouched; a copy never overwrites an existing day record.
+        var present = target.Select(p => p.ParticipantId).ToHashSet();
+
+        // Chips must stay unique per day, so the numbers already in use on the target day block a copy
+        // of that same number; each chip we hand out joins the set so two source rows can't collide either.
+        var chipsInUse = target
+            .Select(p => (p.Chip ?? string.Empty).Trim())
+            .Where(c => c.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // The groups already on the target day. A copied member's group that is missing here gets its own
+        // GroupDaySettings row (blank course fields) so the group genuinely runs on the target day.
+        var targetGroupSettings = await db.GroupDaySettings
+            .Where(g => g.EventDayId == request.TargetDayId)
+            .ToListAsync(cancellationToken);
+        var groupsOnTarget = targetGroupSettings.Select(g => g.GroupId).ToHashSet();
+        var nextGroupOrder = targetGroupSettings.Count == 0 ? 1 : targetGroupSettings.Max(g => g.Order) + 1;
+
+        var nextOrder = target.Count == 0 ? 1 : target.Max(p => p.Order) + 1;
+        var options = request.Options;
+
+        var copied = 0;
+        var alreadyPresent = 0;
+        var groupsCreated = 0;
+        var chipsSkipped = 0;
+
+        foreach (var link in source)
+        {
+            if (present.Contains(link.ParticipantId))
+            {
+                alreadyPresent++;
+                continue;
+            }
+
+            // Bring the group onto the target day when it isn't there yet. The group itself is
+            // competition-level, so nothing needs creating at that level — only its day membership.
+            if (link.GroupId is { } groupId && groupsOnTarget.Add(groupId))
+            {
+                db.GroupDaySettings.Add(new GroupDaySettings
+                {
+                    EventDayId = request.TargetDayId,
+                    GroupId = groupId,
+                    Order = nextGroupOrder++
+                });
+                groupsCreated++;
+            }
+
+            var chip = string.Empty;
+            if (options.Chip)
+            {
+                var candidate = (link.Chip ?? string.Empty).Trim();
+                if (candidate.Length > 0)
+                {
+                    if (chipsInUse.Add(candidate))
+                        chip = candidate;
+                    else
+                        chipsSkipped++;
+                }
+            }
+
+            db.ParticipantDays.Add(new ParticipantDay
+            {
+                EventDayId = request.TargetDayId,
+                ParticipantId = link.ParticipantId,
+                Order = nextOrder++,
+                GroupId = link.GroupId,
+                Chip = chip,
+                // «Оплата» is one concept to the user: the note and the raised-fee flag travel together.
+                Payment = options.Payment ? link.Payment ?? string.Empty : string.Empty,
+                PaysRaisedFee = options.Payment && link.PaysRaisedFee,
+                StartTime = options.StartTime ? link.StartTime : null,
+                OutOfCompetition = options.OutOfCompetition && link.OutOfCompetition
+            });
+            present.Add(link.ParticipantId);
+            copied++;
+        }
+
+        if (copied > 0 || groupsCreated > 0)
+            await db.SaveChangesAsync(cancellationToken);
+
+        return new CopyParticipantsResult(copied, alreadyPresent, groupsCreated, chipsSkipped);
     }
 
     public async Task<int> SetParticipantDayStartTimesBatchAsync(

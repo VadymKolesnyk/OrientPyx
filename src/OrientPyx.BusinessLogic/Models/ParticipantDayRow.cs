@@ -58,6 +58,13 @@ public sealed record ParticipantDayRow(
     // ParticipantDayResult; Empty when the chip was never read.
     ParticipantDayResult Result);
 
-/// <summary>One participating day's fee inputs: which day it is, the group assigned (null = none) and the
-/// chip held. The day id lets the caller ask what that single day costs (per-day payment mode).</summary>
-public readonly record struct ParticipantFeeDay(Guid DayId, Guid? GroupId, string Chip);
+/// <summary>One participating day's fee inputs: which day it is, the group assigned (null = none), the
+/// chip held and whether the raised (late) fee is flagged for that day (per-day payment mode only). The
+/// day id lets the caller ask what that single day costs (per-day payment mode).</summary>
+public readonly record struct ParticipantFeeDay(Guid DayId, Guid? GroupId, string Chip, bool PaysRaisedFee)
+{
+    /// <summary>The shape used outside per-day payment mode, where the flag lives on the participant.</summary>
+    public ParticipantFeeDay(Guid dayId, Guid? groupId, string chip) : this(dayId, groupId, chip, false)
+    {
+    }
+}

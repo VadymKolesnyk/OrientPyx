@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Interfaces;
@@ -1396,15 +1396,18 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 continue;
 
             var all = linksByParticipant.TryGetValue(participant.Id, out var ls) ? ls : [link];
-            var memberDays = all.Select(l => (l.EventDayId, (Guid?)l.GroupId, l.Chip)).ToList();
+            var memberDays = all.Select(l => new EntryFeeDay(l.EventDayId, l.GroupId, l.Chip, l.PaysRaisedFee)).ToList();
             // The day grid lets a row recompute live; it needs the OTHER days' fixed contributions.
             var otherDays = all
                 .Where(l => l.Id != link.Id)
-                .Select(l => new ParticipantFeeDay(l.EventDayId, l.GroupId, l.Chip))
+                .Select(l => new ParticipantFeeDay(l.EventDayId, l.GroupId, l.Chip, l.PaysRaisedFee))
                 .ToList();
             var result = results.TryGetValue(link.Id, out var r) ? r : ParticipantDayResult.Empty;
+            // The grid shows one day, so its raised-fee checkbox reads THIS day's flag in per-day payment
+            // mode and the competition-level one otherwise — matching where the edit is written back.
             rows.Add(ToRow(link, participant, groupName, regionName, clubName, dusshName,
-                participant.PaysRaisedFee, fees.SelectedDiscountIds(participant.Id),
+                paymentPerDay ? link.PaysRaisedFee : participant.PaysRaisedFee,
+                fees.SelectedDiscountIds(participant.Id),
                 fees.Total(participant, memberDays), otherDays, result, paymentPerDay));
         }
         return rows;
@@ -1443,7 +1446,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         foreach (var participant in participants)
         {
             var cells = new List<RosterDayCell>(days.Count);
-            var memberDays = new List<(Guid, Guid?, string)>();
+            var memberDays = new List<EntryFeeDay>();
             foreach (var day in days)
             {
                 if (linkByKey.TryGetValue((participant.Id, day.Id), out var link))
@@ -1451,12 +1454,12 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     var name = link.GroupId is { } gid && groupName.TryGetValue(gid, out var n) ? n : string.Empty;
                     var result = resultsByDay.TryGetValue(day.Id, out var dr) && dr.TryGetValue(link.Id, out var r)
                         ? r : ParticipantDayResult.Empty;
-                    cells.Add(new RosterDayCell(day.Id, day.Number, link.Id, IsMember: true, link.GroupId, name, link.Chip, link.Payment, link.StartTime, link.OutOfCompetition, link.Bonus, result));
-                    memberDays.Add((day.Id, link.GroupId, link.Chip));
+                    cells.Add(new RosterDayCell(day.Id, day.Number, link.Id, IsMember: true, link.GroupId, name, link.Chip, link.Payment, link.PaysRaisedFee, link.StartTime, link.OutOfCompetition, link.Bonus, result));
+                    memberDays.Add(new EntryFeeDay(day.Id, link.GroupId, link.Chip, link.PaysRaisedFee));
                 }
                 else
                 {
-                    cells.Add(new RosterDayCell(day.Id, day.Number, LinkId: null, IsMember: false, GroupId: null, GroupName: string.Empty, Chip: string.Empty, Payment: string.Empty, StartTime: null, OutOfCompetition: false, Bonus: null, ParticipantDayResult.Empty));
+                    cells.Add(new RosterDayCell(day.Id, day.Number, LinkId: null, IsMember: false, GroupId: null, GroupName: string.Empty, Chip: string.Empty, Payment: string.Empty, PaysRaisedFee: false, StartTime: null, OutOfCompetition: false, Bonus: null, ParticipantDayResult.Empty));
                 }
             }
             var region = participant.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
@@ -1601,6 +1604,21 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             StartTime = row.StartTime,
             OutOfCompetition = row.OutOfCompetition
         }, cancellationToken);
+    }
+
+    public async Task<CopyParticipantsResult> CopyParticipantsBetweenDaysAsync(
+        CopyParticipantsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (_session.CurrentEvent is null)
+            return new CopyParticipantsResult(0, 0, 0, 0);
+
+        // Only the target day is written, so a closed source day may still be copied FROM.
+        await EnsureDayEditableAsync(request.TargetDayId, cancellationToken);
+
+        return await _eventStore.CopyParticipantsBetweenDaysAsync(FolderPath, request, cancellationToken);
     }
 
     public async Task RemoveParticipantFromDayAsync(Guid linkId, Guid participantId, CancellationToken cancellationToken = default)
@@ -1771,6 +1789,19 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         await _eventStore.SetParticipantDayPaymentAsync(folder, existing.Id, payment, cancellationToken);
     }
 
+    public async Task SetParticipantDayRaisedFeeAsync(Guid participantId, Guid dayId, bool paysRaisedFee, CancellationToken cancellationToken = default)
+    {
+        await EnsureDayEditableAsync(dayId, cancellationToken);
+        var folder = FolderPath;
+        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
+        var existing = links.FirstOrDefault(l => l.ParticipantId == participantId);
+        if (existing is null)
+            return;
+
+        // Its own writer, like the per-day payment — the debounced row save leaves this column alone.
+        await _eventStore.SetParticipantDayRaisedFeeAsync(folder, existing.Id, paysRaisedFee, cancellationToken);
+    }
+
     public async Task<int> CountParticipantsWithPaymentAsync(CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null)
@@ -1810,6 +1841,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         var participantPayments = new Dictionary<Guid, string>();
         var dayPayments = new Dictionary<Guid, string>();
+        // The raised-fee flag moves with the payment mode, so switching back and forth never loses it:
+        // OFF → ON copies the participant's one flag onto every day they run; ON → OFF flags the
+        // participant when any of their days was flagged.
+        var participantRaised = new Dictionary<Guid, bool>();
+        var dayRaised = new Dictionary<Guid, bool>();
 
         if (paymentPerDay)
         {
@@ -1818,6 +1854,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             var fees = await LoadFeeContextAsync(folder, cancellationToken);
             foreach (var participant in participants)
             {
+                if (participant.PaysRaisedFee && linksByParticipant.TryGetValue(participant.Id, out var raisedLinks))
+                    foreach (var link in raisedLinks)
+                        dayRaised[link.Id] = true;
+
                 var text = (participant.Payment ?? string.Empty).Trim();
                 if (text.Length == 0)
                     continue;
@@ -1831,7 +1871,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     continue;
                 }
 
-                var breakdown = fees.Describe(participant, memberLinks.Select(l => (l.EventDayId, l.GroupId, l.Chip)));
+                var breakdown = fees.Describe(
+                    participant,
+                    memberLinks.Select(l => new EntryFeeDay(l.EventDayId, l.GroupId, l.Chip, l.PaysRaisedFee)));
                 var shares = ProportionalShares(amount, memberLinks.Select(l => breakdown.DayTotal(l.EventDayId)).ToList());
                 for (var i = 0; i < memberLinks.Count; i++)
                     dayPayments[memberLinks[i].Id] = PaymentValue.Format(shares[i]);
@@ -1845,6 +1887,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             {
                 if (!linksByParticipant.TryGetValue(participant.Id, out var memberLinks))
                     continue;
+
+                if (memberLinks.Any(l => l.PaysRaisedFee))
+                    participantRaised[participant.Id] = true;
 
                 var sum = 0m;
                 var any = false;
@@ -1872,7 +1917,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             }
         }
 
-        await _eventStore.SetPaymentPerDayAsync(folder, paymentPerDay, participantPayments, dayPayments, cancellationToken);
+        await _eventStore.SetPaymentPerDayAsync(
+            folder, paymentPerDay, participantPayments, dayPayments, participantRaised, dayRaised, cancellationToken);
     }
 
     // Splits an amount across the given day weights, rounded to 0.01, with the last day absorbing the
@@ -5314,12 +5360,12 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         public IReadOnlyList<Guid> SelectedDiscountIds(Guid participantId) =>
             discountsByParticipant.TryGetValue(participantId, out var ids) ? ids : [];
 
-        public decimal Total(Participant participant, IEnumerable<(Guid DayId, Guid? GroupId, string Chip)> memberDays) =>
+        public decimal Total(Participant participant, IEnumerable<EntryFeeDay> memberDays) =>
             context.Total(participant.PaysRaisedFee, participant.IsFsouMember, SelectedDiscountIds(participant.Id), memberDays);
 
         /// <summary>The structured breakdown behind <see cref="Total"/> — the caller needs it to ask what one
         /// day of the participant's fee costs (per-day payment redistribution).</summary>
-        public EntryFeeBreakdown Describe(Participant participant, IEnumerable<(Guid DayId, Guid? GroupId, string Chip)> memberDays) =>
+        public EntryFeeBreakdown Describe(Participant participant, IEnumerable<EntryFeeDay> memberDays) =>
             context.Describe(participant.PaysRaisedFee, participant.IsFsouMember, SelectedDiscountIds(participant.Id), memberDays);
     }
 

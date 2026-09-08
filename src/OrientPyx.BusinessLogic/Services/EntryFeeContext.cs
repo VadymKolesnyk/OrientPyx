@@ -5,10 +5,10 @@ using OrientPyx.BusinessLogic.Models;
 namespace OrientPyx.BusinessLogic.Services;
 
 /// <summary>
-/// A snapshot of a competition's entry-fee inputs (raised fee, chip prices + note overrides, the
-/// discount set and their percents, rental-chip notes) plus the logic to turn one participant's
-/// state into a total fee. Built once from the loaded lists and reused per participant — pure given
-/// the snapshot. Shared by <see cref="CompetitionEditorService"/> (precomputes the column on load)
+/// A snapshot of a competition's entry-fee inputs (raised fee and whether it is flagged per day, chip
+/// prices + note overrides, the discount set and their percents, rental-chip notes) plus the logic to
+/// turn one participant's state into a total fee. Built once from the loaded lists and reused per
+/// participant — pure given the snapshot. Shared by <see cref="CompetitionEditorService"/> (precomputes the column on load)
 /// and the presentation row view models (live recompute on a toggle, no DB round-trip).
 /// </summary>
 public sealed class EntryFeeContext
@@ -16,6 +16,7 @@ public sealed class EntryFeeContext
     private readonly IEntryFeeCalculator _calc;
     private readonly decimal _raisedFee;
     private readonly bool _raisedFeeEnabled;
+    private readonly bool _paymentPerDay;
     private readonly decimal _chipBasePrice;
     private readonly Dictionary<Guid, decimal> _groupFee;
     private readonly Dictionary<string, decimal> _chipPriceByNote;
@@ -34,6 +35,7 @@ public sealed class EntryFeeContext
         _calc = calc;
         _raisedFeeEnabled = info?.RaisedFeeEnabled ?? false;
         _raisedFee = info?.RaisedFeeAmount ?? 0m;
+        _paymentPerDay = info?.PaymentPerDay ?? false;
         _chipBasePrice = info?.ChipRentalPricePerDay ?? 0m;
         _groupFee = groups.ToDictionary(g => g.Id, g => g.EntryFee ?? 0m);
         // A chip note → price/day; last write wins on a duplicate note (the page sorts by note).
@@ -60,15 +62,17 @@ public sealed class EntryFeeContext
     /// discount applies to the entry portion (including the FSOU-member discount when the participant
     /// is a member); the largest chip-applicable discount applies to the chip portion.
     /// </summary>
-    /// <param name="paysRaisedFee">The participant's "pays the raised fee" flag.</param>
+    /// <param name="paysRaisedFee">The participant's competition-level "pays the raised fee" flag. Ignored
+    /// in per-day payment mode, where each day carries its own flag instead.</param>
     /// <param name="isFsouMember">Whether the participant is an FSOU member (auto-applies that discount).</param>
     /// <param name="selectedDiscountIds">The manual (non-FSOU) discount ids the participant has selected.</param>
-    /// <param name="memberDays">Each day the participant runs: its id, its group id (null = no group) and chip.</param>
+    /// <param name="memberDays">Each day the participant runs: its id, its group id (null = no group), chip
+    /// and that day's own raised-fee flag (only read in per-day payment mode).</param>
     public decimal Total(
         bool paysRaisedFee,
         bool isFsouMember,
         IEnumerable<Guid> selectedDiscountIds,
-        IEnumerable<(Guid DayId, Guid? GroupId, string Chip)> memberDays)
+        IEnumerable<EntryFeeDay> memberDays)
         => Describe(paysRaisedFee, isFsouMember, selectedDiscountIds, memberDays).Total;
 
     /// <summary>
@@ -80,20 +84,23 @@ public sealed class EntryFeeContext
         bool paysRaisedFee,
         bool isFsouMember,
         IEnumerable<Guid> selectedDiscountIds,
-        IEnumerable<(Guid DayId, Guid? GroupId, string Chip)> memberDays)
+        IEnumerable<EntryFeeDay> memberDays)
     {
-        var useRaised = _raisedFeeEnabled && paysRaisedFee;
-
         var days = new List<EntryFeeDayInput>();
         var dayBreakdowns = new List<EntryFeeDayBreakdown>();
-        foreach (var (dayId, groupId, chip) in memberDays)
+        var anyRaised = false;
+        foreach (var (dayId, groupId, chip, dayPaysRaisedFee) in memberDays)
         {
+            // Per-day payment gives every day its own flag; otherwise the one participant-level flag
+            // covers all of them. Either way a raised day replaces that day's group fee.
+            var useRaised = _raisedFeeEnabled && (_paymentPerDay ? dayPaysRaisedFee : paysRaisedFee);
+            anyRaised |= useRaised;
             var baseFee = useRaised
                 ? _raisedFee
                 : groupId is { } gid && _groupFee.TryGetValue(gid, out var f) ? f : 0m;
             var (chipPrice, reason) = ChipPriceFor(chip);
             days.Add(new EntryFeeDayInput(baseFee, chipPrice));
-            dayBreakdowns.Add(new EntryFeeDayBreakdown(dayId, baseFee, chipPrice, reason));
+            dayBreakdowns.Add(new EntryFeeDayBreakdown(dayId, baseFee, chipPrice, reason, useRaised));
         }
 
         var entryPercents = new List<decimal>();
@@ -125,7 +132,7 @@ public sealed class EntryFeeContext
             // applied percent, since only that one actually reduces the fee.
             EntryDiscountPercent = LargestPercent(entryPercents),
             ChipDiscountPercent = LargestPercent(chipPercents),
-            UsesRaisedFee = useRaised,
+            UsesRaisedFee = anyRaised,
             Total = total,
         };
     }

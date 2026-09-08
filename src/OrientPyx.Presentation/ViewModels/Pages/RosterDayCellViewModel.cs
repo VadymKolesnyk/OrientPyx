@@ -22,6 +22,7 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     private readonly Action<RosterDayCellViewModel> _requestResultStatusChange;
     private readonly Action<RosterDayCellViewModel> _requestBonusChange;
     private readonly Action<RosterDayCellViewModel> _requestPaymentChange;
+    private readonly Action<RosterDayCellViewModel> _requestRaisedFeeChange;
     private ParticipantDayResult _result;
     // The judge's points correction («бонус») for this day; null = none. Edited via BonusText.
     private int? _bonus;
@@ -42,6 +43,14 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     /// </summary>
     [ObservableProperty]
     private string _payment;
+
+    /// <summary>
+    /// Whether the raised (late) entry fee is charged for this day, edited in the roster's per-day
+    /// raised-fee block; only in force while the competition charges per day. Persisted through its own
+    /// page callback, like the payment.
+    /// </summary>
+    [ObservableProperty]
+    private bool _paysRaisedFee;
 
     [ObservableProperty]
     private TimeSpan? _startTime;
@@ -64,7 +73,8 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         Action<RosterDayCellViewModel> requestOutOfCompetitionChange,
         Action<RosterDayCellViewModel> requestResultStatusChange,
         Action<RosterDayCellViewModel> requestBonusChange,
-        Action<RosterDayCellViewModel> requestPaymentChange)
+        Action<RosterDayCellViewModel> requestPaymentChange,
+        Action<RosterDayCellViewModel> requestRaisedFeeChange)
     {
         _participantId = participantId;
         DayId = cell.DayId;
@@ -78,6 +88,7 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         _requestResultStatusChange = requestResultStatusChange;
         _requestBonusChange = requestBonusChange;
         _requestPaymentChange = requestPaymentChange;
+        _requestRaisedFeeChange = requestRaisedFeeChange;
         Localization = localization;
 
         GroupOptions = groupOptions;
@@ -85,6 +96,7 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         _chip = cell.Chip;
         _committedChip = cell.Chip;
         _payment = cell.Payment;
+        _paysRaisedFee = cell.PaysRaisedFee;
         _startTime = cell.StartTime;
         _outOfCompetition = cell.OutOfCompetition;
         _bonus = cell.Bonus;
@@ -286,6 +298,12 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     {
         if (_initialized && !IsDayLocked)
             _requestChipChange(this);
+    }
+
+    partial void OnPaysRaisedFeeChanged(bool value)
+    {
+        if (_initialized && IsMember && !IsDayLocked)
+            _requestRaisedFeeChange(this);
     }
 
     partial void OnPaymentChanged(string value)

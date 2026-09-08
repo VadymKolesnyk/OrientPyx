@@ -7,6 +7,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Reactive;
 using OrientPyx.Presentation.Controls;
 using OrientPyx.Presentation.ViewModels.Pages;
 
@@ -96,8 +97,9 @@ public partial class CompetitionDaysView : UserControl
         };
     }
 
-    // A single toggle button showing the day's lock state: a closed padlock (tinted) when the day is
-    // closed, an open one when it isn't. The VM confirms before opening a closed day.
+    // A single toggle button showing the day's lock state: the whole button turns red (Button.locked)
+    // with a closed padlock when the day is closed, a muted open one when it isn't. The VM confirms
+    // before opening a closed day.
     private Control BuildLockCell()
     {
         var icon = new Icon { Size = 15 };
@@ -108,11 +110,11 @@ public partial class CompetitionDaysView : UserControl
         icon.Bind(Icon.ForegroundProperty, new Binding(nameof(DayRowViewModel.IsLocked))
         {
             Converter = new FuncValueConverter<bool, IBrush?>(locked => locked
-                ? (IBrush?)Application.Current!.FindResource("AccentBrush")
+                ? (IBrush?)Application.Current!.FindResource("DangerBrush")
                 : (IBrush?)Application.Current!.FindResource("TextMuted"))
         });
 
-        return new Button
+        var button = new Button
         {
             Classes = { "ghost", "small" },
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -126,6 +128,31 @@ public partial class CompetitionDaysView : UserControl
                     locked ? "DayLock.Unlock.Tooltip" : "DayLock.Lock.Tooltip"))
             }
         };
+
+        // Classes take no binding and the cell is recycled across rows, so the "locked" class is
+        // re-applied whenever the bound row — or its lock state — changes.
+        void Sync() => button.Classes.Set(
+            "locked", (button.DataContext as DayRowViewModel)?.IsLocked == true);
+
+        PropertyChangedEventHandler onRowChanged = (_, e) =>
+        {
+            if (e.PropertyName is null or nameof(DayRowViewModel.IsLocked))
+                Sync();
+        };
+
+        INotifyPropertyChanged? watched = null;
+        button.GetObservable(StyledElement.DataContextProperty).Subscribe(
+            new AnonymousObserver<object?>(_ =>
+            {
+                if (watched is not null)
+                    watched.PropertyChanged -= onRowChanged;
+                watched = button.DataContext as INotifyPropertyChanged;
+                if (watched is not null)
+                    watched.PropertyChanged += onRowChanged;
+                Sync();
+            }));
+
+        return button;
     }
 
     private Control BuildActionsCell()

@@ -1,4 +1,4 @@
-using OrientPyx.BusinessLogic.Entities;
+﻿using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Models;
 
@@ -249,17 +249,27 @@ public interface IEventStore
     /// never clobbers it. No-op if the link is missing.</summary>
     Task SetParticipantDayPaymentAsync(string eventFolderPath, Guid linkId, string payment, CancellationToken cancellationToken = default);
 
+    /// <summary>Writes only the per-day raised-fee flag on one participant-day link. The sole writer of
+    /// that column — kept separate from <see cref="UpdateParticipantDayAsync"/> so the debounced row save
+    /// never clobbers it. No-op if the link is missing.</summary>
+    Task SetParticipantDayRaisedFeeAsync(string eventFolderPath, Guid linkId, bool paysRaisedFee, CancellationToken cancellationToken = default);
+
     /// <summary>
-    /// Writes only <see cref="CompetitionInfo.PaymentPerDay"/> plus the migrated payment values, in a
-    /// single transaction: the participant-level payments in <paramref name="participantPayments"/> and the
-    /// per-day ones in <paramref name="dayPayments"/> (keyed by participant-day link id). Either map may be
-    /// empty; missing rows are skipped. Kept as one store call so a half-migrated competition can't happen.
+    /// Writes only <see cref="CompetitionInfo.PaymentPerDay"/> plus the migrated payment and raised-fee
+    /// values, in a single transaction: the participant-level payments in <paramref name="participantPayments"/>
+    /// and the per-day ones in <paramref name="dayPayments"/> (keyed by participant-day link id). The
+    /// raised-fee flag moves the same way (<paramref name="participantRaisedFees"/> /
+    /// <paramref name="dayRaisedFees"/>), and the side the mode moves away from is cleared so the two can
+    /// never disagree. Any map may be empty; missing rows are skipped. Kept as one store call so a
+    /// half-migrated competition can't happen.
     /// </summary>
     Task SetPaymentPerDayAsync(
         string eventFolderPath,
         bool paymentPerDay,
         IReadOnlyDictionary<Guid, string> participantPayments,
         IReadOnlyDictionary<Guid, string> dayPayments,
+        IReadOnlyDictionary<Guid, bool> participantRaisedFees,
+        IReadOnlyDictionary<Guid, bool> dayRaisedFees,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -271,6 +281,20 @@ public interface IEventStore
     Task<int> SetParticipantDayChipsBatchAsync(
         string eventFolderPath,
         IReadOnlyList<(Guid ParticipantId, Guid DayId, string Chip)> assignments,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Copies the participants of one day onto another, in a single transaction: for every source link
+    /// whose participant is not yet on the target day, a new link is created carrying the fields the
+    /// <paramref name="request"/> opts into. The group always comes across — a group absent from the
+    /// target day is added to it (a <c>GroupDaySettings</c> row, course fields left blank), so the copied
+    /// members land in a real group there. Participants already on the target day are left completely
+    /// untouched (this never overwrites existing data), and a chip already held by someone else on the
+    /// target day is dropped rather than duplicated, keeping chips unique per day. Returns the counts.
+    /// </summary>
+    Task<CopyParticipantsResult> CopyParticipantsBetweenDaysAsync(
+        string eventFolderPath,
+        CopyParticipantsRequest request,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -410,12 +410,14 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
             .Where(f => !f.IsFsouMemberDiscount && f.IsSelected)
             .Select(f => f.DiscountId)
             .ToList();
-        var memberDays = new List<(Guid, Guid?, string)>(_otherDays.Count + 1)
+        // In per-day payment mode this row's checkbox is THIS day's flag; the other days keep the flags
+        // they were loaded with. Outside that mode the context ignores the per-day values entirely.
+        var memberDays = new List<EntryFeeDay>(_otherDays.Count + 1)
         {
-            (_dayId, SelectedGroup.Id, Chip ?? string.Empty)
+            new(_dayId, SelectedGroup.Id, Chip ?? string.Empty, PaysRaisedFee)
         };
         foreach (var d in _otherDays)
-            memberDays.Add((d.DayId, d.GroupId, d.Chip));
+            memberDays.Add(new EntryFeeDay(d.DayId, d.GroupId, d.Chip, d.PaysRaisedFee));
         var breakdown = _fees.Describe(PaysRaisedFee, IsFsouMember, selected, memberDays);
         TotalEntryFee = breakdown.Total;
         DayEntryFee = breakdown.DayTotal(_dayId);

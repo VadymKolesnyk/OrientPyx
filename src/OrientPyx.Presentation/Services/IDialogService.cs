@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Presentation.ViewModels.Dialogs;
 
@@ -36,6 +36,10 @@ public interface IDialogService : INotifyPropertyChanged
 
     /// <summary>Returns the chosen note filter on OK.</summary>
     Task<AssignChipsResult?> ShowAssignChipsAsync(AssignChipsViewModel dialog);
+
+    /// <summary>«Копіювання учасників з дня в день»: returns the chosen source/target day and the
+    /// per-field toggles on OK.</summary>
+    Task<CopyParticipantsRequest?> ShowCopyParticipantsAsync(CopyParticipantsViewModel dialog);
 
     /// <summary>Drag members to re-order a group's start sequence. Returns the start-time reassignments
     /// on save; empty when nothing changed.</summary>

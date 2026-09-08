@@ -231,6 +231,25 @@
             <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
         </Style>
 
+        <!-- Closed-day padlock: the whole button goes red, not just the icon, so a locked day is
+             visible at a glance from anywhere on the page. -->
+        <Style Selector="Button.locked">
+            <Setter Property="Background" Value="{DynamicResource DangerSurface}" />
+            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Button.locked /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource DangerSurface}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <!-- The icon inside stays red, so hover deepens the tint rather than filling with DangerBrush. -->
+        <Style Selector="Button.locked:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#FBCFCF" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}" />
+        </Style>
+
         <!-- Badge / pill -->
         <Style Selector="Border.badge">
             <Setter Property="Background" Value="{DynamicResource AccentSurface}" />

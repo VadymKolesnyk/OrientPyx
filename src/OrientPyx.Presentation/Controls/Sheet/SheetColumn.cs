@@ -86,6 +86,12 @@ public enum SheetCellKind
     /// <summary>Row's <c>PaysRaisedFee</c> (late entry fee); only when the competition enables it.</summary>
     RaisedFeeFlag,
 
+    /// <summary>A single day's raised-fee flag (CheckBox), bound to Days[i]; per-day payment mode only.</summary>
+    DayRaisedFee,
+
+    /// <summary>A collapsed block's merged raised-fee flag (CheckBox when shared, "різні" when days differ).</summary>
+    CollapsedRaisedFee,
+
     /// <summary>Read-only <c>FormattedTotalFee</c>, right-aligned; last in the participants table.</summary>
     TotalFee,
 

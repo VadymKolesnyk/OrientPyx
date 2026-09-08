@@ -62,6 +62,7 @@ internal sealed class RosterCellFactory
         SheetCellKind.CollapsedPayment => BuildCollapsedPayment(),
         SheetCellKind.StartTime => BuildDayStartTimeCell(column),
         SheetCellKind.OutOfCompetition => BuildDayOutOfCompetitionCell(column),
+        SheetCellKind.DayRaisedFee => BuildDayRaisedFeeCell(column),
         SheetCellKind.RowGroup => BuildGroupCombo(pathPrefix: string.Empty),
         SheetCellKind.RowRegion => BuildRegionCombo(),
         SheetCellKind.RowClub => BuildClubCombo(),
@@ -74,6 +75,7 @@ internal sealed class RosterCellFactory
         SheetCellKind.CollapsedChip => BuildCollapsedChip(),
         SheetCellKind.CollapsedStartTime => BuildCollapsedStartTime(),
         SheetCellKind.CollapsedOutOfCompetition => BuildCollapsedOutOfCompetition(),
+        SheetCellKind.CollapsedRaisedFee => BuildCollapsedRaisedFee(),
         SheetCellKind.RowResultText => BuildResultLabel(column.IdentityPath, column.ToolTipPath),
         SheetCellKind.RowStatus => BuildRowStatusCell(),
         SheetCellKind.ResultText => BuildDayResultLabel(column),
@@ -381,6 +383,49 @@ internal sealed class RosterCellFactory
 
         var different = BuildDifferentLabel();
         different[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.StartTimeShowsDifferent));
+        panel.Children.Add(different);
+        return panel;
+    }
+
+    // A per-day raised-fee cell: same shape as the out-of-competition flag — a centered CheckBox,
+    // disabled + greyed for non-members and for a day that is closed for editing.
+    private Control BuildDayRaisedFeeCell(SheetColumn column)
+    {
+        var i = column.DayIndex;
+        var box = new CheckBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            [!ToggleButton.IsCheckedProperty] = new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.PaysRaisedFee)}")
+                { Mode = BindingMode.TwoWay },
+            [!InputElement.IsEnabledProperty] =
+                new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.CanEditMemberFields)}"),
+        };
+
+        var cell = LockedCellNotifier.Wrap(
+            box, $"Days[{i}].{nameof(RosterDayCellViewModel.LockedDayNumber)}");
+        return WrapWithNonMemberBackdrop(cell, i);
+    }
+
+    private Control BuildCollapsedRaisedFee()
+    {
+        var panel = new Panel();
+        var box = new CheckBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            [!ToggleButton.IsCheckedProperty] = new Binding(nameof(ParticipantRosterRowViewModel.CollapsedRaisedFee))
+                { Mode = BindingMode.TwoWay },
+            [!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.RaisedFeeShowsInput)),
+            [!InputElement.IsEnabledProperty] =
+                new Binding(nameof(ParticipantRosterRowViewModel.RaisedFeeMergedEditable)),
+            [!ToolTip.TipProperty] = new Binding(nameof(ParticipantRosterRowViewModel.MergedLockTooltip)),
+        };
+        panel.Children.Add(LockedCellNotifier.Wrap(
+            box, nameof(ParticipantRosterRowViewModel.MemberMergedLockedDay), merged: true));
+
+        var different = BuildDifferentLabel();
+        different[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.RaisedFeeShowsDifferent));
         panel.Children.Add(different);
         return panel;
     }

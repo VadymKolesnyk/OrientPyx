@@ -1,0 +1,92 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
+             xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             mc:Ignorable="d" d:DesignWidth="440" d:DesignHeight="460"
+             x:Class="OrientPyx.Presentation.Views.Dialogs.CopyParticipantsView"
+             x:DataType="dialogs:CopyParticipantsViewModel">
+
+    <!-- Centered card; the backdrop is supplied by the host overlay. -->
+    <Border Background="{DynamicResource SurfaceCard}"
+            CornerRadius="12"
+            MinWidth="400" MaxWidth="480"
+            BoxShadow="0 10 40 0 #40000000"
+            HorizontalAlignment="Center" VerticalAlignment="Center"
+            ClipToBounds="True">
+        <DockPanel LastChildFill="True">
+
+            <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
+                    Padding="22,16">
+                <TextBlock Text="{Binding Title}" Classes="h2" VerticalAlignment="Center" />
+            </Border>
+
+            <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
+                    Padding="22,14">
+                <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+                    <Button Content="{Binding Localization[Common.Cancel]}"
+                            Classes="ghost"
+                            Command="{Binding CancelCommand}" />
+                    <Button Content="{Binding Localization[Participants.CopyDay.Confirm]}"
+                            Classes="accent"
+                            IsEnabled="{Binding CanConfirm}"
+                            Command="{Binding ConfirmCommand}" />
+                </StackPanel>
+            </Border>
+
+            <StackPanel Margin="22,18" Spacing="14">
+
+                <!-- Which day is read, and which is written. -->
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[Participants.CopyDay.From]}" Classes="label" />
+                    <ComboBox ItemsSource="{Binding Days}"
+                              SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
+                              HorizontalAlignment="Stretch">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="pages:DayOption">
+                                <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[Participants.CopyDay.To]}" Classes="label" />
+                    <ComboBox ItemsSource="{Binding Days}"
+                              SelectedItem="{Binding SelectedTarget, Mode=TwoWay}"
+                              HorizontalAlignment="Stretch">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="pages:DayOption">
+                                <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- What travels. The group is not optional, so it is a note rather than a checkbox. -->
+                <StackPanel Spacing="8">
+                    <TextBlock Text="{Binding Localization[Participants.CopyDay.Fields]}" Classes="label" />
+                    <TextBlock Text="{Binding GroupNote}" Classes="subtitle" TextWrapping="Wrap" />
+                    <CheckBox Content="{Binding Localization[Participants.CopyDay.Chip]}"
+                              IsChecked="{Binding CopyChip, Mode=TwoWay}" />
+                    <CheckBox Content="{Binding Localization[Participants.CopyDay.Payment]}"
+                              IsVisible="{Binding ShowPayment}"
+                              IsChecked="{Binding CopyPayment, Mode=TwoWay}" />
+                    <CheckBox Content="{Binding Localization[Participants.CopyDay.StartTime]}"
+                              IsChecked="{Binding CopyStartTime, Mode=TwoWay}" />
+                    <CheckBox Content="{Binding Localization[Participants.CopyDay.OutOfCompetition]}"
+                              IsChecked="{Binding CopyOutOfCompetition, Mode=TwoWay}" />
+                </StackPanel>
+
+                <TextBlock Text="{Binding Localization[Participants.CopyDay.Hint]}"
+                           Classes="subtitle" TextWrapping="Wrap" />
+
+            </StackPanel>
+
+        </DockPanel>
+    </Border>
+
+</UserControl>

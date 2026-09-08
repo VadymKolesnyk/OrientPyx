@@ -34,6 +34,15 @@ public class ParticipantDay
     /// </summary>
     public string Payment { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Whether the participant is charged the raised (late) entry fee on THIS day, used only while the
+    /// competition is in per-day payment mode (<see cref="CompetitionInfo.PaymentPerDay"/>); the
+    /// competition-level flag lives on <see cref="Participant.PaysRaisedFee"/>. Both columns are kept, so
+    /// toggling the mode never loses the flag (see <c>SetPaymentPerDayAsync</c>). Has its own writer so
+    /// the debounced row save can't wipe it.
+    /// </summary>
+    public bool PaysRaisedFee { get; set; }
+
     /// <summary>Start time (time of day) for this day; null when not set. Per-day, member-only.</summary>
     public TimeSpan? StartTime { get; set; }
 

@@ -22,7 +22,9 @@ internal static class EntryFeeBreakdownFormatter
         for (var i = 0; i < breakdown.Days.Count; i++)
         {
             var day = breakdown.Days[i];
-            var entryKey = breakdown.UsesRaisedFee ? "Fee.Breakdown.DayEntryRaised" : "Fee.Breakdown.DayEntry";
+            // Per-day payment flags days individually, so each line says whether THIS day was charged the
+            // raised fee rather than sharing one verdict for the whole entry.
+            var entryKey = day.UsesRaisedFee ? "Fee.Breakdown.DayEntryRaised" : "Fee.Breakdown.DayEntry";
             sb.Append(loc.Get(entryKey)
                 .Replace("{0}", (i + 1).ToString(CultureInfo.InvariantCulture))
                 .Replace("{1}", Money(day.BaseFee)));

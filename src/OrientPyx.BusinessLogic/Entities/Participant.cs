@@ -57,8 +57,9 @@ public class Participant
 
     /// <summary>
     /// Whether this participant is charged the raised (late) start-entry fee instead of their group's
-    /// base fee. Only meaningful when the competition has <see cref="CompetitionInfo.RaisedFeeEnabled"/>
-    /// turned on. Defaults false.
+    /// base fee, on every day they run. Only meaningful when the competition has
+    /// <see cref="CompetitionInfo.RaisedFeeEnabled"/> turned on AND is not in per-day payment mode — in
+    /// that mode the flag is per day instead (<see cref="ParticipantDay.PaysRaisedFee"/>). Defaults false.
     /// </summary>
     public bool PaysRaisedFee { get; set; }
 

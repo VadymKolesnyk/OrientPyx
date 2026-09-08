@@ -168,8 +168,10 @@ public sealed class DaySelector : Control
         _lock.IsEnabled = ShowLock;
         ToolTip.SetTip(_lock, ShowLock ? (IsDayLocked ? UnlockTooltip : LockTooltip) : UnlockTooltip);
 
-        // A closed day is a state, not an error — the accent reads as "deliberately set", not "broken".
-        if (IsDayLocked && this.TryFindResource("AccentBrush", ActualThemeVariant, out var accent) && accent is IBrush brush)
+        // A closed day blocks every edit on the page, so the whole button goes red (see Button.locked
+        // in App.axaml) — loud enough to explain why the grid stopped taking input.
+        _lock.Classes.Set("locked", IsDayLocked);
+        if (IsDayLocked && this.TryFindResource("DangerBrush", ActualThemeVariant, out var danger) && danger is IBrush brush)
             _lockIcon.Foreground = brush;
         else
             _lockIcon.ClearValue(Icon.ForegroundProperty);

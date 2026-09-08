@@ -10,6 +10,9 @@ public enum RosterField
     // Per-day «Оплата», only while the competition charges the entry fee per day (CompetitionInfo.PaymentPerDay);
     // otherwise the payment is one competition-level identity column and this block is not built at all.
     Payment,
+    // Per-day raised (late) entry fee flag, only while the competition charges per day; otherwise the
+    // raised fee is one competition-level column and this block is not built at all.
+    RaisedFee,
     StartTimes,
     OutOfCompetition,
 

@@ -259,9 +259,11 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             .Where(f => !f.IsFsouMemberDiscount && f.IsSelected)
             .Select(f => f.DiscountId)
             .ToList();
+        // Each day carries its own raised-fee flag; the context reads those only in per-day payment mode
+        // and falls back to the row-level flag otherwise.
         var memberDays = Days
             .Where(d => d.IsMember)
-            .Select(d => (d.DayId, (Guid?)d.SelectedGroup.Id, d.Chip ?? string.Empty))
+            .Select(d => new EntryFeeDay(d.DayId, d.SelectedGroup.Id, d.Chip ?? string.Empty, d.PaysRaisedFee))
             .ToList();
         var breakdown = _fees.Describe(PaysRaisedFee, IsFsouMember, selected, memberDays);
         TotalEntryFee = breakdown.Total;
@@ -873,6 +875,48 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     public bool OutOfCompetitionValuesDiffer =>
         Days.Where(d => d.IsMember).Select(d => d.OutOfCompetition).Distinct().Count() > 1;
 
+    /// <summary>
+    /// The merged per-day raised-fee flag: the shared value when every member day agrees, else null
+    /// ("різні"). Only meaningful in per-day payment mode, where the block is built at all — otherwise
+    /// the flag is the competition-level <see cref="PaysRaisedFee"/> identity column.
+    /// </summary>
+    public bool? CollapsedRaisedFee
+    {
+        get
+        {
+            var members = Days.Where(d => d.IsMember).ToList();
+            return members.Count == 0 || RaisedFeeValuesDiffer ? null : members[0].PaysRaisedFee;
+        }
+        set
+        {
+            if (value is { } v)
+                SetRaisedFeeForMemberDays(v);
+        }
+    }
+
+    /// <summary>True when the member days do not all share one raised-fee flag value.</summary>
+    public bool RaisedFeeValuesDiffer =>
+        Days.Where(d => d.IsMember).Select(d => d.PaysRaisedFee).Distinct().Count() > 1;
+
+    /// <summary>True when the collapsed cell should show the editable CheckBox (a member day, all equal).</summary>
+    public bool RaisedFeeShowsInput => HasAnyChipMember && !RaisedFeeValuesDiffer;
+
+    /// <summary>True when the collapsed cell should show the read-only "різні" label.</summary>
+    public bool RaisedFeeShowsDifferent => HasAnyChipMember && RaisedFeeValuesDiffer;
+
+    /// <summary>The merged raised-fee checkbox accepts edits only while no member day is closed.</summary>
+    public bool RaisedFeeMergedEditable => RaisedFeeShowsInput && !MemberDaysHaveLockedDay;
+
+    /// <summary>Sets the raised-fee flag on every member day (each cell persists itself).</summary>
+    public void SetRaisedFeeForMemberDays(bool value)
+    {
+        if (MemberDaysHaveLockedDay)
+            return;
+
+        foreach (var cell in Days.Where(d => d.IsMember))
+            cell.PaysRaisedFee = value;
+    }
+
     /// <summary>True when the collapsed cell should show the editable CheckBox (a member day, all equal).</summary>
     public bool OutOfCompetitionShowsInput => HasAnyChipMember && !OutOfCompetitionValuesDiffer;
 
@@ -949,6 +993,11 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             case nameof(RosterDayCellViewModel.OutOfCompetition):
                 RaiseOutOfCompetitionAggregates();
                 break;
+            // A day's raised-fee flag replaces that day's group fee, so the total moves with it.
+            case nameof(RosterDayCellViewModel.PaysRaisedFee):
+                RaiseRaisedFeeAggregates();
+                RecomputeTotal();
+                break;
             // Any result-text change (after a status edit re-ranks the day) refreshes the merged result cells.
             case nameof(RosterDayCellViewModel.ResultStatusText):
             case nameof(RosterDayCellViewModel.ActualStartText):
@@ -971,6 +1020,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
                 RaiseStartTimeAggregates();
                 RaiseOutOfCompetitionAggregates();
                 RaisePaymentAggregates();
+                RaiseRaisedFeeAggregates();
                 RecomputeTotal();
                 break;
         }
@@ -1064,5 +1114,14 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         OnPropertyChanged(nameof(OutOfCompetitionShowsInput));
         OnPropertyChanged(nameof(OutOfCompetitionShowsDifferent));
         OnPropertyChanged(nameof(OutOfCompetitionMergedEditable));
+    }
+
+    private void RaiseRaisedFeeAggregates()
+    {
+        OnPropertyChanged(nameof(CollapsedRaisedFee));
+        OnPropertyChanged(nameof(RaisedFeeValuesDiffer));
+        OnPropertyChanged(nameof(RaisedFeeShowsInput));
+        OnPropertyChanged(nameof(RaisedFeeShowsDifferent));
+        OnPropertyChanged(nameof(RaisedFeeMergedEditable));
     }
 }

@@ -121,8 +121,10 @@ public sealed class DayColumnBuilder
         // the qualification table — read-only. Blank when the group awards no ranks / not rankable.
         bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.AwardedRank", nameof(ParticipantDayRowViewModel.AwardedRankText), fixedWidth: 120));
 
-        // Entry-fee tail: raised-fee flag (when enabled), one column per discount, then the total.
-        EntryFeeColumns.Append(bands, _loc, discounts, raisedFeeEnabled);
+        // Entry-fee tail: raised-fee flag (when enabled), one column per discount, then the total. The day
+        // grid shows exactly one day, so its flag column is the right editor in BOTH payment modes — the
+        // row hands the edit to whichever level is in force (paymentPerDay: false keeps the column here).
+        EntryFeeColumns.Append(bands, _loc, discounts, raisedFeeEnabled, paymentPerDay: false);
 
         // Trailing delete action. A PickerLabel + stable Key make it hideable from the columns picker.
         var actions = new SheetColumn(SheetCellKind.Actions)

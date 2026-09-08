@@ -49,6 +49,9 @@ public sealed record RosterDayCell(
     string Chip,
     // This day's own payment («Оплата» in per-day payment mode); empty for a non-member.
     string Payment,
+    // Whether the raised (late) entry fee is charged for THIS day; only in force in per-day payment mode,
+    // where the flag is per day rather than one for the whole entry. False for a non-member.
+    bool PaysRaisedFee,
     TimeSpan? StartTime,
     bool OutOfCompetition,
     // The judge's points correction («бонус») for this day; null = none (empty for a non-member). Editable

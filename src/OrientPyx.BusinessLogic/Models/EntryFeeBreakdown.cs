@@ -1,6 +1,21 @@
 namespace OrientPyx.BusinessLogic.Models;
 
 /// <summary>
+/// One day a participant runs, as the fee calculation sees it: which day, the group whose fee applies
+/// (null = unassigned, no fee), the chip that decides the rental charge, and whether the raised (late)
+/// fee is flagged for THIS day. The per-day flag is read only in per-day payment mode
+/// (<see cref="Entities.CompetitionInfo.PaymentPerDay"/>); otherwise the participant-level flag passed
+/// alongside covers every day.
+/// </summary>
+public readonly record struct EntryFeeDay(Guid DayId, Guid? GroupId, string Chip, bool PaysRaisedFee)
+{
+    /// <summary>A day with no per-day raised-fee flag — the shape callers outside per-day mode use.</summary>
+    public EntryFeeDay(Guid dayId, Guid? groupId, string chip) : this(dayId, groupId, chip, false)
+    {
+    }
+}
+
+/// <summary>
 /// A structured, layer-agnostic explanation of how a participant's total start-entry fee was reached:
 /// the per-day entry and chip-rental contributions plus the single discount that was applied to each
 /// portion. Carries numbers and flags only (no localized text) so the presentation layer can render a
@@ -18,7 +33,8 @@ public sealed class EntryFeeBreakdown
     /// <summary>The largest selected discount percent applied to the chip-rental portion (0 = none).</summary>
     public decimal ChipDiscountPercent { get; init; }
 
-    /// <summary>Whether the raised (late) fee replaced the group fee on every day.</summary>
+    /// <summary>Whether the raised (late) fee replaced the group fee on at least one day. Per-day payment
+    /// mode flags days individually, so see <see cref="EntryFeeDayBreakdown.UsesRaisedFee"/> for which.</summary>
     public bool UsesRaisedFee { get; init; }
 
     /// <summary>The final total after discounts — equal to <see cref="Interfaces.IEntryFeeCalculator"/>.</summary>
@@ -56,7 +72,10 @@ public sealed class EntryFeeBreakdown
 /// <param name="BaseFee">The day's entry base before discount (group fee or raised fee). 0 when unset.</param>
 /// <param name="ChipPrice">The day's chip-rental price before discount. 0 when no rental is charged.</param>
 /// <param name="ChipReason">Why a chip-rental price was (or was not) charged this day.</param>
-public readonly record struct EntryFeeDayBreakdown(Guid DayId, decimal BaseFee, decimal ChipPrice, ChipRentalReason ChipReason);
+/// <param name="UsesRaisedFee">Whether <paramref name="BaseFee"/> is the raised (late) fee rather than the
+/// group's own fee — in per-day payment mode this can differ from day to day.</param>
+public readonly record struct EntryFeeDayBreakdown(
+    Guid DayId, decimal BaseFee, decimal ChipPrice, ChipRentalReason ChipReason, bool UsesRaisedFee);
 
 /// <summary>
 /// Why a day's chip-rental price was charged or skipped — so the tooltip can say e.g. "chip not
