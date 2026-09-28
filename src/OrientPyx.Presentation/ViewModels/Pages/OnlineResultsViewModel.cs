@@ -10,6 +10,7 @@ using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.ViewModels.Dialogs;
 using OrientPyx.Presentation.ViewModels.Shared;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
@@ -34,6 +35,11 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
     private readonly IBackgroundActivityService _activities;
     private readonly IBusyService _busy;
     private readonly IActivityLog _log;
+    private readonly IDialogService _dialogs;
+
+    // Serialises publisher calls: a publish tick and a full reload must not interleave (a tick's upsert landing
+    // mid-wipe, or both touching the publisher's metadata memory at once).
+    private readonly SemaphoreSlim _publishGate = new(1, 1);
 
     // The running publish loop; null when stopped.
     private CancellationTokenSource? _publishCts;
@@ -54,7 +60,8 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         IResultPublisher publisher,
         IBackgroundActivityService activities,
         IBusyService busy,
-        IActivityLog log)
+        IActivityLog log,
+        IDialogService dialogs)
         : base(localization)
     {
         _editor = editor;
@@ -65,6 +72,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         _activities = activities;
         _busy = busy;
         _log = log;
+        _dialogs = dialogs;
 
         Columns = new OnlineColumnsEditorViewModel(localization);
         Columns.Changed += (_, _) =>
@@ -160,6 +168,10 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
     private bool _isPaused;
 
     public bool IsStopped => !IsPublishing;
+
+    /// <summary>True while «Перезавантажити результати за всі дні» is wiping and re-uploading.</summary>
+    [ObservableProperty]
+    private bool _isReloading;
 
     /// <summary>Selectable days for the top-right day picker — the published day is the selected one.</summary>
     public ObservableCollection<DayOption> DayOptions { get; } = [];
@@ -473,6 +485,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
 
         IsPublishing = true;
         IsPaused = false;
+        _lastDuplicates = string.Empty;
         _lastSkippedNoNumber = -1; // a fresh run should warn again about un-numbered participants
         _consecutiveFailures = 0;
         _lastFailureKey = null;
@@ -557,7 +570,15 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
             return;
 
         var snapshot = await _editor.GetOnlineResultsSnapshotAsync(day.Id, ct);
-        await _publisher.PublishAsync(publish, _api, snapshot, ct);
+        await _publishGate.WaitAsync(ct);
+        try
+        {
+            await _publisher.PublishAsync(publish, _api, snapshot, ct);
+        }
+        finally
+        {
+            _publishGate.Release();
+        }
 
         ReportSuccess();
 
@@ -576,7 +597,110 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
                     Localization.Get("OnlineResults.Log.SkippedNoNumber"), snapshot.SkippedNoNumber));
         }
 
+        var duplicates = DuplicatesText(snapshot);
+        if (duplicates != _lastDuplicates)
+        {
+            _lastDuplicates = duplicates;
+            if (duplicates.Length > 0)
+                AppendLog(string.Format(Localization.Get("OnlineResults.Log.DuplicateNumbers"), day.Number, duplicates));
+        }
+
         UpdateActivityStatus();
+    }
+
+    // The duplicate-number warning last logged, so it repeats only when the set changes.
+    private string _lastDuplicates = string.Empty;
+
+    private static string DuplicatesText(OnlineResultsSnapshot snapshot) =>
+        snapshot.DuplicateNumbers is { Count: > 0 } d ? string.Join("; ", d) : string.Empty;
+
+    // --- Full reload
+
+    /// <summary>
+    /// «Перезавантажити результати за всі дні»: deletes everything this competition has online (results, groups,
+    /// days) and uploads every day afresh. Clears rows left under stale keys — e.g. old numbers after bibs were
+    /// re-assigned — which the regular upsert-only tick never removes. Works whether or not publishing is on.
+    /// </summary>
+    [RelayCommand]
+    private async Task ReloadAllDaysAsync()
+    {
+        if (IsReloading || _session.CurrentEvent is null)
+            return;
+
+        _api = await _appSettings.GetOnlineApiSettingsAsync();
+        IsConnectionConfigured = _api.IsReadyToPublish;
+        if (!_api.IsReadyToPublish)
+        {
+            AppendLog(Localization.Get("OnlineResults.Log.NotConfigured"));
+            return;
+        }
+
+        var confirm = new ConfirmDialogViewModel(
+            Localization,
+            "OnlineResults.Reload.Confirm.Title",
+            "OnlineResults.Reload.Confirm.Message",
+            confirmKey: "OnlineResults.Reload.Confirm.Ok")
+        {
+            MessageArgs = [Slug.Trim()]
+        };
+        if (!await _dialogs.ConfirmAsync(confirm))
+            return;
+
+        IsReloading = true;
+        _log.Action("Online results: full reload of all days");
+        AppendLog(Localization.Get("OnlineResults.Log.ReloadStarted"));
+        try
+        {
+            // Flush pending option edits first so the reload publishes what the page shows.
+            _autoSaveCts?.Cancel();
+            await PersistAsync();
+
+            await Task.Run(async () =>
+            {
+                var publish = await _editor.GetOnlinePublishSettingsAsync();
+                if (publish is null || string.IsNullOrWhiteSpace(publish.Slug))
+                {
+                    AppendLog(Localization.Get("OnlineResults.Log.ReloadNoSlug"));
+                    return;
+                }
+
+                var days = (await _editor.GetDaysAsync()).OrderBy(d => d.Number).ToList();
+
+                await _publishGate.WaitAsync();
+                try
+                {
+                    await _publisher.ClearEventAsync(_api, publish.Slug);
+                    AppendLog(Localization.Get("OnlineResults.Log.ReloadCleared"));
+
+                    foreach (var day in days)
+                    {
+                        var snapshot = await _editor.GetOnlineResultsSnapshotAsync(day.Id);
+                        await _publisher.PublishAsync(publish, _api, snapshot);
+
+                        AppendLog(string.Format(
+                            Localization.Get("OnlineResults.Log.Tick"),
+                            day.Number, snapshot.Rows.Count, snapshot.Rows.Count(r => r.Place is not null)));
+                        if (DuplicatesText(snapshot) is { Length: > 0 } dup)
+                            AppendLog(string.Format(Localization.Get("OnlineResults.Log.DuplicateNumbers"), day.Number, dup));
+                    }
+                }
+                finally
+                {
+                    _publishGate.Release();
+                }
+
+                AppendLog(string.Format(Localization.Get("OnlineResults.Log.ReloadDone"), days.Count));
+            });
+        }
+        catch (Exception ex)
+        {
+            AppendLog(string.Format(Localization.Get("OnlineResults.Log.ReloadFailed"), DescribeFailure(ex)));
+            _log.Error("Online results: full reload failed", ex);
+        }
+        finally
+        {
+            IsReloading = false;
+        }
     }
 
     // The last skipped-no-number count we warned about, so the warning is logged only when it changes
@@ -636,9 +760,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
     {
         _consecutiveFailures++;
 
-        var (key, detail) = ex is PublishException pe
-            ? (FailureKeyOf(pe.Kind), pe.Detail)
-            : ("OnlineResults.Log.Error.Unknown", Flatten(ex));
+        var (key, detail) = FailureOf(ex);
 
         if (key != _lastFailureKey)
         {
@@ -668,6 +790,16 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         }
 
         UpdateActivityStatus();
+    }
+
+    private static (string Key, string Detail) FailureOf(Exception ex) => ex is PublishException pe
+        ? (FailureKeyOf(pe.Kind), pe.Detail)
+        : ("OnlineResults.Log.Error.Unknown", Flatten(ex));
+
+    private string DescribeFailure(Exception ex)
+    {
+        var (key, detail) = FailureOf(ex);
+        return $"{Localization.Get(key)} ({detail})";
     }
 
     private static string FailureKeyOf(PublishFailureKind kind) => kind switch

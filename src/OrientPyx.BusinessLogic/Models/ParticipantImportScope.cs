@@ -52,6 +52,23 @@ public sealed class ParticipantImportScope
     /// which keeps its legacy behaviour of overwriting every field.
     /// </summary>
     public ParticipantUpdateFields UpdateFields { get; init; } = ParticipantUpdateFields.None;
+
+    /// <summary>
+    /// In <see cref="ParticipantImportMode.CurrentDayOnly"/>, rows the user chose to merge into an existing
+    /// participant after the duplicate check (row index in the import data → participant id). Such a row is
+    /// treated as matched to that participant even though the link field didn't match it.
+    /// </summary>
+    public IReadOnlyDictionary<int, Guid> MergeInto { get; init; } = new Dictionary<int, Guid>();
+
+    /// <summary>A copy of this scope with <see cref="MergeInto"/> replaced.</summary>
+    public ParticipantImportScope WithMergeInto(IReadOnlyDictionary<int, Guid> mergeInto) => new()
+    {
+        Mode = Mode,
+        TargetDayNumber = TargetDayNumber,
+        LinkField = LinkField,
+        UpdateFields = UpdateFields,
+        MergeInto = mergeInto
+    };
 }
 
 /// <summary>

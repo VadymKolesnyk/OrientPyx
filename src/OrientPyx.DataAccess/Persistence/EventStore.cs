@@ -1714,17 +1714,15 @@ public sealed class EventStore : IEventStore
             ? new List<Participant>()
             : await db.Participants.ToListAsync(cancellationToken);
 
-        static string NameKey(string name) => string.Join(' ',
-            name.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-
         var byFsouCode = existingParticipants
             .Where(p => !string.IsNullOrWhiteSpace(p.FsouCode))
             .GroupBy(p => p.FsouCode.Trim(), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
         var byName = existingParticipants
             .Where(p => !string.IsNullOrWhiteSpace(p.FullName))
-            .GroupBy(p => NameKey(p.FullName), StringComparer.OrdinalIgnoreCase)
+            .GroupBy(p => ParticipantNameKey.Of(p.FullName), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var byId = existingParticipants.ToDictionary(p => p.Id);
         var linksByParticipant = existingLinks
             .GroupBy(l => l.ParticipantId)
             .ToDictionary(g => g.Key, g => g.ToList());
@@ -1734,9 +1732,10 @@ public sealed class EventStore : IEventStore
         var processed = 0;
         var total = data.Participants.Count;
 
-        foreach (var src in data.Participants)
+        for (var rowIndex = 0; rowIndex < data.Participants.Count; rowIndex++)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var src = data.Participants[rowIndex];
 
             var regionId = ResolveRegion(src.Region);
             var clubId = ResolveClub(src.Club);
@@ -1744,9 +1743,21 @@ public sealed class EventStore : IEventStore
 
             var code = src.FsouCode.Trim();
             Participant? participant = null;
-            if (matchByName)
+            // The user resolved a same-name-same-group clash as "the same person": attach to that participant.
+            if (currentDayOnly && scope.MergeInto.TryGetValue(rowIndex, out var mergeId)
+                && byId.TryGetValue(mergeId, out var merged))
             {
-                var nameKey = NameKey(src.FullName);
+                participant = merged;
+                // Fill a blank FOU code from the file so the next day's import links them by code.
+                if (code.Length > 0 && string.IsNullOrWhiteSpace(merged.FsouCode))
+                {
+                    merged.FsouCode = code;
+                    byFsouCode.TryAdd(code, merged);
+                }
+            }
+            else if (matchByName)
+            {
+                var nameKey = ParticipantNameKey.Of(src.FullName);
                 if (nameKey.Length > 0 && byName.TryGetValue(nameKey, out var matchedByName))
                     participant = matchedByName;
             }
@@ -1788,7 +1799,7 @@ public sealed class EventStore : IEventStore
 
                 // Register the new participant so a later row with the same key (a second file line for
                 // the same athlete) updates it rather than adding a duplicate.
-                var newNameKey = NameKey(participant.FullName);
+                var newNameKey = ParticipantNameKey.Of(participant.FullName);
                 if (newNameKey.Length > 0)
                     byName.TryAdd(newNameKey, participant);
                 if (code.Length > 0)

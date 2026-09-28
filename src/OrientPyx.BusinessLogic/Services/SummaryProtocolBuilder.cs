@@ -35,8 +35,7 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
 
         var countedDays = ResolveCountedDays(data, settings);
 
-        // The tie-break priority day: the configured one (if still counted), else the first counted day.
-        var priorityDay = countedDays.FirstOrDefault(d => d.Id == settings.PriorityDayId) ?? countedDays.FirstOrDefault();
+        var priorityDay = ResolvePriorityDay(countedDays, settings);
 
         var dayBands = countedDays
             .Select(d => new SummaryDayBand(FormatDayBand(labels.DayBand, d), SubColumns(byPoints, labels)))
@@ -72,7 +71,7 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         columnShrinkPriority.Add(2);
 
         var sections = new List<SummaryProtocolSection>(data.Groups.Count);
-        foreach (var group in data.Groups.OrderBy(g => g.Order))
+        foreach (var group in data.Groups.Where(g => IsIncluded(g, countedDays, settings)).OrderBy(g => g.Order))
         {
             var rows = BuildGroupRows(group, leadingColumns, countedDays, priorityDay, settings, byPoints, subCount);
             if (rows.Count == 0)
@@ -116,10 +115,10 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
 
         var byPoints = settings.Mode == SummaryMode.ByPoints;
         var countedDays = ResolveCountedDays(data, settings);
-        var priorityDay = countedDays.FirstOrDefault(d => d.Id == settings.PriorityDayId) ?? countedDays.FirstOrDefault();
+        var priorityDay = ResolvePriorityDay(countedDays, settings);
 
         var result = new List<SummaryRankedGroup>(data.Groups.Count);
-        foreach (var group in data.Groups.OrderBy(g => g.Order))
+        foreach (var group in data.Groups.Where(g => IsIncluded(g, countedDays, settings)).OrderBy(g => g.Order))
         {
             var (ranked, places, outOfRanking) = RankGroup(group, countedDays, priorityDay, settings, byPoints);
 
@@ -133,6 +132,36 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         }
         return result;
     }
+
+    public bool HasNonZeroResult(SummaryProtocolData data, SummaryProtocolGroup group, SummaryProtocolSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(group);
+        ArgumentNullException.ThrowIfNull(settings);
+        return HasNonZeroResult(group, ResolveCountedDays(data, settings), settings.Mode == SummaryMode.ByPoints);
+    }
+
+    // A group is in the summary when the user said so explicitly, else when it has a non-zero result.
+    private static bool IsIncluded(SummaryProtocolGroup group, IReadOnlyList<SummaryProtocolDay> countedDays, SummaryProtocolSettings settings)
+    {
+        var explicitChoice = settings.Groups.FirstOrDefault(g => g.GroupId == group.Id);
+        return explicitChoice?.Included ?? HasNonZeroResult(group, countedDays, settings.Mode == SummaryMode.ByPoints);
+    }
+
+    // Points mode: someone earned more than 0 points on a counted day. Time mode: someone has a clean result.
+    private static bool HasNonZeroResult(SummaryProtocolGroup group, IReadOnlyList<SummaryProtocolDay> countedDays, bool byPoints) =>
+        group.Members.Any(m => countedDays.Any(d =>
+            m.ResultsByDay.TryGetValue(d.Id, out var r) &&
+            (byPoints
+                ? r.Points is > 0
+                : r.Status == FinishStatus.Ok && r.ResultTime is { } t && t > TimeSpan.Zero)));
+
+    // The tie-break priority day: none with «Без пріоритету»; else the configured one (if still counted), else
+    // the first counted day.
+    private static SummaryProtocolDay? ResolvePriorityDay(IReadOnlyList<SummaryProtocolDay> countedDays, SummaryProtocolSettings settings) =>
+        settings.NoPriorityDay
+            ? null
+            : countedDays.FirstOrDefault(d => d.Id == settings.PriorityDayId) ?? countedDays.FirstOrDefault();
 
     // The «Сума» text for an aggregate under the chosen mode: total points (2dp) or total time (hh:mm:ss).
     private static string TotalText(Aggregate a, bool byPoints) =>
@@ -255,17 +284,20 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
             outOfRanking = aggregates.Where(a => a.CountedResults == 0).ToList();
         }
 
-        SortRanked(ranked, byPoints);
+        // «Без пріоритету»: the total alone decides — equal totals share a place.
+        var tieBreak = !settings.NoPriorityDay;
+        SortRanked(ranked, byPoints, tieBreak);
 
         // Assign 1-based places, sharing a place on a genuine tie (equal on every comparison key).
-        var places = AssignPlaces(ranked, byPoints);
+        var places = AssignPlaces(ranked, byPoints, tieBreak);
 
         return (ranked, places, outOfRanking);
     }
 
     // Sorts the ranked set in place: by points desc / time asc, then result-count (points mode without
-    // require-all: more results first), then the priority-day value, then name.
-    private static void SortRanked(List<Aggregate> ranked, bool byPoints)
+    // require-all: more results first), then the priority-day value, then name. Without tie-break only the
+    // total counts (name just keeps the order stable).
+    private static void SortRanked(List<Aggregate> ranked, bool byPoints, bool tieBreak)
     {
         if (byPoints)
         {
@@ -273,11 +305,12 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
             {
                 var c = b.TotalPoints.CompareTo(a.TotalPoints);              // higher total first
                 if (c != 0) return c;
+                if (!tieBreak) return ByName(a, b);
                 c = b.CountedResults.CompareTo(a.CountedResults);           // more results first
                 if (c != 0) return c;
                 c = b.PriorityPoints.CompareTo(a.PriorityPoints);          // priority-day points desc
                 if (c != 0) return c;
-                return string.Compare(a.Member.FullName, b.Member.FullName, StringComparison.CurrentCultureIgnoreCase);
+                return ByName(a, b);
             });
         }
         else
@@ -286,24 +319,28 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
             {
                 var c = a.TotalTimeSeconds.CompareTo(b.TotalTimeSeconds);    // smaller total first
                 if (c != 0) return c;
+                if (!tieBreak) return ByName(a, b);
                 // priority-day time asc (a missing priority time sorts last)
                 c = PriorityTimeKey(a).CompareTo(PriorityTimeKey(b));
                 if (c != 0) return c;
-                return string.Compare(a.Member.FullName, b.Member.FullName, StringComparison.CurrentCultureIgnoreCase);
+                return ByName(a, b);
             });
         }
     }
+
+    private static int ByName(Aggregate a, Aggregate b) =>
+        string.Compare(a.Member.FullName, b.Member.FullName, StringComparison.CurrentCultureIgnoreCase);
 
     private static double PriorityTimeKey(Aggregate a) => a.PriorityTimeSeconds ?? double.MaxValue;
 
     // Assigns 1-based places to the already-sorted ranked list, sharing a place when two adjacent entries are
     // equal on the mode's ranking keys (excluding name).
-    private static int[] AssignPlaces(List<Aggregate> ranked, bool byPoints)
+    private static int[] AssignPlaces(List<Aggregate> ranked, bool byPoints, bool tieBreak)
     {
         var places = new int[ranked.Count];
         for (var i = 0; i < ranked.Count; i++)
         {
-            if (i > 0 && RankEqual(ranked[i - 1], ranked[i], byPoints))
+            if (i > 0 && RankEqual(ranked[i - 1], ranked[i], byPoints, tieBreak))
                 places[i] = places[i - 1];
             else
                 places[i] = i + 1;
@@ -311,9 +348,9 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         return places;
     }
 
-    private static bool RankEqual(Aggregate a, Aggregate b, bool byPoints) => byPoints
-        ? a.TotalPoints == b.TotalPoints && a.CountedResults == b.CountedResults && a.PriorityPoints == b.PriorityPoints
-        : a.TotalTimeSeconds == b.TotalTimeSeconds && PriorityTimeKey(a) == PriorityTimeKey(b);
+    private static bool RankEqual(Aggregate a, Aggregate b, bool byPoints, bool tieBreak) => byPoints
+        ? a.TotalPoints == b.TotalPoints && (!tieBreak || a.CountedResults == b.CountedResults && a.PriorityPoints == b.PriorityPoints)
+        : a.TotalTimeSeconds == b.TotalTimeSeconds && (!tieBreak || PriorityTimeKey(a) == PriorityTimeKey(b));
 
     // Aggregates one member across the counted days.
     private static Aggregate BuildAggregate(

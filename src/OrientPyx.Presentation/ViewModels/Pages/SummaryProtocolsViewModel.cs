@@ -158,6 +158,16 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
 
     public bool HasMultipleDays => Days.Count > 1;
 
+    // ── Groups (which to include)
+
+    /// <summary>The groups with members, in group order; the checked ones are printed.</summary>
+    public ObservableCollection<SummaryGroupItemViewModel> Groups { get; } = [];
+
+    public bool HasGroups => Groups.Count > 0;
+
+    // Suppresses recording an explicit choice while the default-rule states are being re-applied.
+    private bool _refreshingGroups;
+
     // ── Header text (mirrors the results protocol)
 
     [ObservableProperty] private string _competitionName = string.Empty;
@@ -193,6 +203,7 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
                     DayId = day.Id, DayNumber = day.Number, Counted = true
                 }).ToList();
                 s.PriorityDayId = d.Days.Count > 0 ? d.Days[0].Id : null;
+                s.Groups = [];
             }
             return (d, i, s);
         });
@@ -297,6 +308,7 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
                     if (e.PropertyName == nameof(SummaryDayItemViewModel.Counted))
                     {
                         ResolveHeaderPlaceholders(_competitionInfo);
+                        RefreshGroupDefaults();
                         RefreshPreview();
                         AutoSave();
                     }
@@ -305,17 +317,99 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
             }
             OnPropertyChanged(nameof(HasMultipleDays));
 
-            // Priority-day dropdown = the day list; select the saved one (else the first).
+            // Priority-day dropdown = «Без пріоритету» + the day list; select the saved one (else the first day).
+            // The "none" entry reuses the roster sentinel only for its day-less, key-labelled shape.
             PriorityDayOptions.Clear();
+            var noPriority = DayOption.Roster(Localization, "SummaryProtocol.PriorityDay.None");
+            PriorityDayOptions.Add(noPriority);
             foreach (var day in ordered)
                 PriorityDayOptions.Add(new DayOption(new EventDay { Id = day.Id, Number = day.Number, Date = day.Date }, Localization));
-            PriorityDay = PriorityDayOptions.FirstOrDefault(o => o.Day?.Id == settings.PriorityDayId)
-                          ?? PriorityDayOptions.FirstOrDefault();
+            PriorityDay = settings.NoPriorityDay
+                ? noPriority
+                : PriorityDayOptions.FirstOrDefault(o => o.Day is not null && o.Day.Id == settings.PriorityDayId)
+                  ?? PriorityDayOptions.FirstOrDefault(o => o.Day is not null);
+
+            Groups.Clear();
+            var explicitGroups = settings.Groups.ToDictionary(g => g.GroupId, g => g.Included);
+            foreach (var group in data.Groups.OrderBy(g => g.Order))
+            {
+                var isExplicit = explicitGroups.TryGetValue(group.Id, out var included);
+                var item = new SummaryGroupItemViewModel(group.Id, group.Name, included, isExplicit);
+                item.PropertyChanged += (_, e) =>
+                {
+                    if (e.PropertyName != nameof(SummaryGroupItemViewModel.Included) || _refreshingGroups)
+                        return;
+                    item.IsExplicit = true;
+                    RefreshPreview();
+                    AutoSave();
+                };
+                Groups.Add(item);
+            }
+            OnPropertyChanged(nameof(HasGroups));
+            RefreshGroupDefaults();
         }
         finally
         {
             _applyingSettings = false;
         }
+    }
+
+    // Re-applies the default rule (non-zero result ⇒ included) to the groups the user has not toggled; the rule
+    // depends on the counted days and the mode, so it runs again whenever those change.
+    private void RefreshGroupDefaults()
+    {
+        var data = _data ?? SummaryProtocolData.Empty;
+        var settings = BuildSettings();
+        _refreshingGroups = true;
+        try
+        {
+            foreach (var item in Groups.Where(g => !g.IsExplicit))
+            {
+                var group = data.Groups.FirstOrDefault(g => g.Id == item.GroupId);
+                item.Included = group is not null && _builder.HasNonZeroResult(data, group, settings);
+            }
+        }
+        finally
+        {
+            _refreshingGroups = false;
+        }
+    }
+
+    // «Усі» / «Жодної»: an explicit choice for every group.
+    [RelayCommand]
+    private void SelectAllGroups() => SetAllGroups(true);
+
+    [RelayCommand]
+    private void SelectNoGroups() => SetAllGroups(false);
+
+    // «За замовчуванням»: forget the explicit choices so every group follows the default rule again.
+    [RelayCommand]
+    private void ResetGroups()
+    {
+        foreach (var item in Groups)
+            item.IsExplicit = false;
+        RefreshGroupDefaults();
+        RefreshPreview();
+        AutoSave();
+    }
+
+    private void SetAllGroups(bool included)
+    {
+        _refreshingGroups = true;
+        try
+        {
+            foreach (var item in Groups)
+            {
+                item.IsExplicit = true;
+                item.Included = included;
+            }
+        }
+        finally
+        {
+            _refreshingGroups = false;
+        }
+        RefreshPreview();
+        AutoSave();
     }
 
     private void ResolveHeaderPlaceholders(CompetitionInfo? info)
@@ -349,6 +443,7 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
         OnPropertyChanged(nameof(IsByPoints));
         if (_applyingSettings)
             return;
+        RefreshGroupDefaults();
         RefreshPreview();
         AutoSave();
     }
@@ -550,6 +645,10 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
         RequireAllDays = RequireAllDays,
         Days = Days.Select(d => new SummaryDaySetting { DayId = d.DayId, DayNumber = d.DayNumber, Counted = d.Counted }).ToList(),
         PriorityDayId = PriorityDay?.Day?.Id,
+        NoPriorityDay = PriorityDay is { Day: null },
+        Groups = Groups.Where(g => g.IsExplicit)
+            .Select(g => new SummaryGroupSetting { GroupId = g.GroupId, Included = g.Included })
+            .ToList(),
         CompetitionName = CompetitionName?.Trim() ?? string.Empty,
         Title = Title?.Trim() ?? string.Empty,
         Subtitle = Subtitle?.Trim() ?? string.Empty,

@@ -472,6 +472,22 @@ public sealed partial class DialogService : ObservableObject, IDialogService
         }
     }
 
+    public async Task<IReadOnlyDictionary<int, Guid>?> ShowImportDuplicatesAsync(ImportDuplicatesViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
+
     public async Task<string?> ShowRenameEventAsync(RenameEventViewModel dialog)
     {
         ArgumentNullException.ThrowIfNull(dialog);

@@ -81,6 +81,13 @@ public sealed partial class ChipsViewModel : PageViewModelBase
 
     public ObservableCollection<RentalChipRowViewModel> Chips { get; } = [];
 
+    /// <summary>
+    /// The competition's day numbers, in order — one "assigned to" column per day. The view rebuilds the
+    /// table's columns when this changes.
+    /// </summary>
+    [ObservableProperty]
+    private IReadOnlyList<int> _dayNumbers = [];
+
     /// <summary>The row selected in the grid; the Delete key acts on it.</summary>
     [ObservableProperty]
     private RentalChipRowViewModel? _selectedChip;
@@ -134,18 +141,22 @@ public sealed partial class ChipsViewModel : PageViewModelBase
             AutoReadFilePath = Path.Combine(folder, DefaultReadoutSubPath.Replace('/', Path.DirectorySeparatorChar));
 
         var chips = await _busy.RunAsync(() => _editor.GetRentalChipsAsync());
-        // Who holds each chip (across all days) — populates the read-only "assigned to" column.
-        var holders = await _busy.RunAsync(() => _editor.GetRentalChipHoldersAsync());
+        // Who holds each chip on each day — populates the read-only per-day "assigned to" columns.
+        var holders = await _busy.RunAsync(() => _editor.GetRentalChipHoldersByDayAsync());
 
         foreach (var existing in Chips)
             existing.PropertyChanged -= OnRowPropertyChanged;
         Chips.Clear();
 
+        // Only swap the day list when it actually changed, so the view rebuilds its columns just then.
+        if (!DayNumbers.SequenceEqual(holders.DayNumbers))
+            DayNumbers = holders.DayNumbers;
+
         foreach (var chip in chips)
         {
             var row = CreateRow(chip);
-            if (holders.TryGetValue(chip.Number.Trim(), out var names))
-                row.AssignedTo = names;
+            if (holders.HoldersByChip.TryGetValue(chip.Number.Trim(), out var names))
+                row.DayHolders = names;
             Chips.Add(row);
         }
 

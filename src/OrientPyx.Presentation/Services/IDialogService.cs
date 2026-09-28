@@ -110,6 +110,10 @@ public interface IDialogService : INotifyPropertyChanged
     /// <summary>Confirm, or resolve an identifier clash by overwriting or entering a new unique name.</summary>
     Task<ImportEventDecision?> ShowImportEventAsync(ImportEventViewModel dialog);
 
+    /// <summary>«Можливі дублікати учасників» of a day-scoped import. Returns row index → participant id for
+    /// the rows to merge into an existing athlete (empty when all are new).</summary>
+    Task<IReadOnlyDictionary<int, Guid>?> ShowImportDuplicatesAsync(ImportDuplicatesViewModel dialog);
+
     /// <summary>Returns the new competition identifier (folder name), validated against the events folder.</summary>
     Task<string?> ShowRenameEventAsync(RenameEventViewModel dialog);
 }

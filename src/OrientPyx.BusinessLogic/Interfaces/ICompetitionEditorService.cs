@@ -184,6 +184,14 @@ public interface ICompetitionEditorService
     /// </summary>
     Task<IReadOnlyDictionary<string, string>> GetRentalChipHoldersAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Like <see cref="GetRentalChipHoldersAsync"/> but split by day: for each held chip, the holder's full
+    /// name on every competition day (aligned with the returned day list; empty when free that day). Lets
+    /// the rental-chip grid show one "assigned to" column per day, so a chip passed from one runner to
+    /// another between days reads clearly.
+    /// </summary>
+    Task<RentalChipHoldersByDay> GetRentalChipHoldersByDayAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Returns how many were deleted.</summary>
     Task<int> ClearRentalChipsAsync(CancellationToken cancellationToken = default);
 
@@ -652,6 +660,19 @@ public interface ICompetitionEditorService
         IProgress<ImportProgress>? progress = null,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Duplicate check for a <see cref="ParticipantImportMode.CurrentDayOnly"/> import, run before it: the rows
+    /// the link field would add as new participants although an athlete with the same full name already ran
+    /// in the same group on another day (or is on the target day and <paramref name="clearFirst"/> keeps it).
+    /// Empty for an all-days import. The user's merge choices go back via
+    /// <see cref="ParticipantImportScope.WithMergeInto"/>.
+    /// </summary>
+    Task<IReadOnlyList<ImportDuplicateCase>> FindImportDuplicatesAsync(
+        UofParticipantData data,
+        bool clearFirst,
+        ParticipantImportScope scope,
+        CancellationToken cancellationToken = default);
+
     /// <summary> Loads the current competition's online-publish settings (slug, displayed title/subtitle,
     /// standings / points flags, enabled). When the competition has no row yet, returns defaults seeded from
     /// its metadata (slug from identifier, title from name, subtitle from the date range). </summary>
@@ -778,13 +799,17 @@ public readonly record struct RentalChipImportResult(int Added, int Skipped);
 /// <param name="Duplicates">The skipped records, each pointing at the already-logged row it repeats. A caller
 /// watching a file that is re-read whole every tick must decide for itself which of these are genuinely new
 /// re-reads (see <see cref="FinishReadoutDuplicate"/>).</param>
+/// <param name="AddedReads">The newly-logged records as (row, key, mark) — the same shape as
+/// <paramref name="Duplicates"/>, so a file-watching caller can mark them seen: on the next tick they come
+/// back as duplicates and must not be mistaken for a repeat read.</param>
 public readonly record struct FinishReadoutImportResult(
     int Added,
     int Skipped,
     IReadOnlyList<Guid> AddedIds,
-    IReadOnlyList<FinishReadoutDuplicate> Duplicates)
+    IReadOnlyList<FinishReadoutDuplicate> Duplicates,
+    IReadOnlyList<FinishReadoutDuplicate> AddedReads)
 {
-    public FinishReadoutImportResult(int Added, int Skipped) : this(Added, Skipped, [], []) { }
+    public FinishReadoutImportResult(int Added, int Skipped) : this(Added, Skipped, [], [], []) { }
 }
 
 /// <summary>A read-out record that was already logged, so nothing was written for it.</summary>

@@ -32,7 +32,7 @@ public interface IEventArchiveService
     /// identifier is not a valid folder name, and <see cref="EventArchiveFormatException"/> if the
     /// archive isn't a valid competition archive.
     /// </summary>
-    Task<EventSummary> ImportAsync(
+    Task<EventArchiveImportResult> ImportAsync(
         string archivePath,
         string identifier,
         bool overwrite,

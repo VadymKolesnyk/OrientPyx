@@ -70,7 +70,7 @@ internal sealed class RosterCellFactory
         SheetCellKind.RowRank => BuildRankCombo(),
         SheetCellKind.IdentityBool => BuildBoolCheckBox(column.IdentityPath),
         SheetCellKind.RaisedFeeFlag => BuildBoolCheckBox(nameof(ParticipantRosterRowViewModel.PaysRaisedFee)),
-        SheetCellKind.TotalFee => BuildTotalFee(),
+        SheetCellKind.TotalFee => BuildTotalFee(column),
         SheetCellKind.CollapsedGroup => BuildCollapsedGroup(),
         SheetCellKind.CollapsedChip => BuildCollapsedChip(),
         SheetCellKind.CollapsedStartTime => BuildCollapsedStartTime(),
@@ -585,14 +585,17 @@ internal sealed class RosterCellFactory
     // real data rather than a placeholder. Stretches to fill the cell with right-aligned text so the
     // hover tooltip — a localized breakdown of where the sum came from (FeeBreakdown) — fires anywhere
     // in the cell, not only over the glyphs.
-    private static TextBlock BuildTotalFee() => new()
+    // The day grid points the column at the day's share instead (IdentityPath / ToolTipPath).
+    private static TextBlock BuildTotalFee(SheetColumn column) => new()
     {
         VerticalAlignment = VerticalAlignment.Center,
         HorizontalAlignment = HorizontalAlignment.Stretch,
         TextAlignment = TextAlignment.Right,
         Padding = new Thickness(10, 0),
-        [!TextBlock.TextProperty] = new Binding(nameof(ParticipantRosterRowViewModel.FormattedTotalFee)),
-        [!ToolTip.TipProperty] = new Binding(nameof(ParticipantRosterRowViewModel.FeeBreakdown)),
+        [!TextBlock.TextProperty] = new Binding(string.IsNullOrEmpty(column.IdentityPath)
+            ? nameof(ParticipantRosterRowViewModel.FormattedTotalFee) : column.IdentityPath),
+        [!ToolTip.TipProperty] = new Binding(string.IsNullOrEmpty(column.ToolTipPath)
+            ? nameof(ParticipantRosterRowViewModel.FeeBreakdown) : column.ToolTipPath),
     };
 
     private TextBlock BuildDifferentLabel()

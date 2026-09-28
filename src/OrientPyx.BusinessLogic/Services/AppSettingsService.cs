@@ -120,6 +120,7 @@ public sealed class AppSettingsService : IAppSettingsService
             // The day list and priority day belong to one competition — never carry them across.
             settings.Days = [];
             settings.PriorityDayId = null;
+            settings.Groups = [];
             return settings;
         }
         catch (System.Text.Json.JsonException)
@@ -142,6 +143,7 @@ public sealed class AppSettingsService : IAppSettingsService
             PageFooter = settings.PageFooter,
             LeadingColumns = settings.LeadingColumns,
             RequireAllDays = settings.RequireAllDays,
+            NoPriorityDay = settings.NoPriorityDay,
             CompetitionName = settings.CompetitionName,
             Title = settings.Title,
             Subtitle = settings.Subtitle,

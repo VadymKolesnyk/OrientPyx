@@ -22,7 +22,7 @@ public sealed record SummaryProtocolData(
 public sealed record SummaryProtocolDay(Guid Id, int Number, DateTimeOffset? Date);
 
 /// <summary>One group's members in the summary. Order mirrors the day-grid group order.</summary>
-public sealed record SummaryProtocolGroup(string Name, int Order, IReadOnlyList<SummaryProtocolParticipant> Members);
+public sealed record SummaryProtocolGroup(Guid Id, string Name, int Order, IReadOnlyList<SummaryProtocolParticipant> Members);
 
 /// <summary>
 /// The ranked outcome of one group's summary, exposed by the builder so other consumers (the winners printout)

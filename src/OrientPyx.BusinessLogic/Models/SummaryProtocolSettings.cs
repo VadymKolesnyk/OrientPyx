@@ -32,6 +32,20 @@ public sealed class SummaryDaySetting
 }
 
 /// <summary>
+/// An explicit include/exclude choice for one group in the summary. Groups without an entry follow the default
+/// rule (included only when someone in the group has a non-zero result on a counted day), so a group whose
+/// results arrive later joins the summary on its own.
+/// </summary>
+public sealed class SummaryGroupSetting
+{
+    /// <summary>The group's id (matches <c>Group.Id</c>).</summary>
+    public Guid GroupId { get; set; }
+
+    /// <summary>Whether the group is printed in the summary.</summary>
+    public bool Included { get; set; }
+}
+
+/// <summary>
 /// One configurable leading column in the summary settings: which <see cref="SummaryColumn"/> it is and whether
 /// it is currently shown. The list order IS the on-page order of the leading columns (the per-day result bands
 /// and the trailing «Сума» always follow them). Persisted (JSON) inside <see cref="SummaryProtocolSettings"/>.
@@ -78,6 +92,14 @@ public sealed class SummaryProtocolSettings
     /// <summary>The tie-break priority day: when two participants tie on the total, the one with the better
     /// result on this day wins. Null ⇒ the first counted day is used.</summary>
     public Guid? PriorityDayId { get; set; }
+
+    /// <summary>«Без пріоритету»: no tie-break at all — participants equal on the total share one place
+    /// (<see cref="PriorityDayId"/> is then ignored).</summary>
+    public bool NoPriorityDay { get; set; }
+
+    /// <summary>The user's explicit group choices (only the toggled groups). A group not listed follows the
+    /// default rule — see <see cref="SummaryGroupSetting"/>.</summary>
+    public List<SummaryGroupSetting> Groups { get; set; } = [];
 
     /// <summary>Points mode only. When true, only participants with a counted result on EVERY counted day are
     /// ranked; the rest are listed поза конкурсом at the end of the group. When false, everyone is ranked —

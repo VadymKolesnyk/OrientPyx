@@ -257,6 +257,34 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
         req.Headers.TryAddWithoutValidation("Prefer", "resolution=merge-duplicates,return=minimal");
         req.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
+        await SendAsync(req, table, cancellationToken);
+    }
+
+    public async Task ClearEventAsync(OnlineApiSettings api, string slug, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(api);
+        if (!api.IsReadyToPublish)
+            throw new InvalidOperationException("Online publish settings are incomplete (URL or service-role key missing).");
+        if (string.IsNullOrWhiteSpace(slug))
+            throw new ArgumentException("Slug is required.", nameof(slug));
+
+        _metaSent.Clear();
+
+        // Children first: results and groups hang off (event, day), days off the event. The events row itself
+        // stays — the next publish upserts it anyway, and the frontend keeps a valid competition meanwhile.
+        foreach (var table in new[] { "results", "groups", "event_days" })
+        {
+            var url = $"{api.SupabaseUrl.TrimEnd('/')}/rest/v1/{table}?event=eq.{Uri.EscapeDataString(slug)}";
+            using var req = new HttpRequestMessage(HttpMethod.Delete, url);
+            req.Headers.TryAddWithoutValidation("apikey", api.ServiceRoleKey);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", api.ServiceRoleKey);
+            req.Headers.TryAddWithoutValidation("Prefer", "return=minimal");
+            await SendAsync(req, table, cancellationToken);
+        }
+    }
+
+    private async Task SendAsync(HttpRequestMessage req, string table, CancellationToken cancellationToken)
+    {
         HttpResponseMessage resp;
         try
         {

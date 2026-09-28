@@ -95,9 +95,13 @@ public sealed class EventArchiveFlow : IEventArchiveFlow
 
         try
         {
-            var summary = await _busy.RunAsync(() =>
+            var result = await _busy.RunAsync(() =>
                 _archive.ImportAsync(path, decision.Identifier, decision.Overwrite));
-            _log.Info($"Імпортовано змагання «{summary.Name}» як {summary.Identifier}");
+            var summary = result.Competition;
+            var shared = result.SharedData;
+            _log.Info($"Імпортовано змагання «{summary.Name}» як {summary.Identifier}; " +
+                      $"правила очок: додано {shared.PointsRulesAdded}, зіставлено з наявними {shared.PointsRulesMatched}; " +
+                      $"розряди: додано {shared.RanksAdded}");
             return summary;
         }
         catch (EventArchiveFormatException)

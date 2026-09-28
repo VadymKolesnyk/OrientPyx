@@ -106,6 +106,10 @@ public interface IAppStore
     /// <summary>Removes a rank. Participants keep their stored rank text; it just stops matching a known rank.</summary>
     Task DeleteRankAsync(Guid rankId, CancellationToken cancellationToken = default);
 
+    /// <summary>Appends <paramref name="rank"/> as-is (its name, points) after the last rank. Used when importing
+    /// a competition archive; the caller guarantees the name is not taken.</summary>
+    Task AppendRankAsync(SportRank rank, CancellationToken cancellationToken = default);
+
     // ── Points rules (application-level, shared across competitions)
 
     /// <summary>Seeds the given points rules only when the rules table is empty (first run). A no-op otherwise.</summary>
@@ -124,6 +128,10 @@ public interface IAppStore
     Task UpdatePointsRuleAsync(PointsRule rule, CancellationToken cancellationToken = default);
 
     Task DeletePointsRuleAsync(Guid ruleId, CancellationToken cancellationToken = default);
+
+    /// <summary>Appends <paramref name="rule"/> as-is (keeping its id, name, table/formula) after the last rule.
+    /// Used when importing a competition archive; the caller guarantees the id and name are not taken.</summary>
+    Task AppendPointsRuleAsync(PointsRule rule, CancellationToken cancellationToken = default);
 
     // ── Rank qualification table (application-level, shared across competitions)
 

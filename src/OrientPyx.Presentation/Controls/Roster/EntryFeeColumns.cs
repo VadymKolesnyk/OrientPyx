@@ -27,7 +27,8 @@ internal static class EntryFeeColumns
         ILocalizationService loc,
         IReadOnlyList<EntryFeeDiscount> discounts,
         bool raisedFeeEnabled,
-        bool paymentPerDay)
+        bool paymentPerDay,
+        bool singleDay = false)
     {
         if (raisedFeeEnabled && !paymentPerDay)
         {
@@ -79,10 +80,13 @@ internal static class EntryFeeColumns
             WidthCapped = true,
             Key = "fee:total",
             PickerLabel = loc.Get("Participants.Col.TotalFee"),
-            // Both row VMs expose a numeric TotalEntryFee used for sorting/filtering.
-            SortPath = "TotalEntryFee",
+            // Both row VMs expose a numeric TotalEntryFee used for sorting/filtering. The day grid shows
+            // one day, so its column shows (and sorts/sums) only that day's share of the fee.
+            SortPath = singleDay ? "DayEntryFee" : "TotalEntryFee",
             // The status bar sums this over the displayed (filtered) rows.
-            SummaryPath = "TotalEntryFee",
+            SummaryPath = singleDay ? "DayEntryFee" : "TotalEntryFee",
+            IdentityPath = singleDay ? "FormattedDayFee" : string.Empty,
+            ToolTipPath = singleDay ? "DayFeeBreakdown" : string.Empty,
         };
         bands.Add(new SheetBand(SheetBand.BandKind.Identity, [total]) { Header = total.Header });
     }

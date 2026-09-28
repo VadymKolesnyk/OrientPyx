@@ -124,7 +124,8 @@ public sealed class DayColumnBuilder
         // Entry-fee tail: raised-fee flag (when enabled), one column per discount, then the total. The day
         // grid shows exactly one day, so its flag column is the right editor in BOTH payment modes — the
         // row hands the edit to whichever level is in force (paymentPerDay: false keeps the column here).
-        EntryFeeColumns.Append(bands, _loc, discounts, raisedFeeEnabled, paymentPerDay: false);
+        // The total column shows only this day's share of the fee (singleDay).
+        EntryFeeColumns.Append(bands, _loc, discounts, raisedFeeEnabled, paymentPerDay: false, singleDay: true);
 
         // Trailing delete action. A PickerLabel + stable Key make it hideable from the columns picker.
         var actions = new SheetColumn(SheetCellKind.Actions)

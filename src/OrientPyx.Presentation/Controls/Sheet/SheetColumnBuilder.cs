@@ -259,6 +259,19 @@ public sealed class SheetColumnBuilder
     }
 
     /// <summary>
+    /// Replaces the header of the column just added with ready-made text — for headers that are not a
+    /// plain key (e.g. a per-day header formatted with the day number). Fluent, like <see cref="CellTint"/>.
+    /// </summary>
+    public SheetColumnBuilder HeaderText(string text)
+    {
+        var column = _bands[^1].Columns[^1];
+        column.Header = text;
+        column.PickerLabel = text;
+        _bands[^1].Header = text;
+        return this;
+    }
+
+    /// <summary>
     /// Tints the whole cell of the column just added: when the row's <paramref name="flagPath"/> bool reads
     /// true the cell is painted <paramref name="brush"/> (else transparent), optionally with a tooltip from
     /// <paramref name="tooltipPath"/>. Fluent — chain it right after the column it decorates (e.g. after a

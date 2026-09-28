@@ -76,6 +76,12 @@ public sealed class ParticipantImportFlow : IParticipantImportFlow
         var importScope = result.Scope ?? ParticipantImportScope.AllDays;
         var data = outcome.Data!;
 
+        var resolved = await ImportDuplicatesStep.ResolveAsync(
+            data, clearFirst, importScope, _editor, _dialogs, _busy, _localization);
+        if (resolved is null)
+            return false; // cancelled in the duplicates modal
+        importScope = resolved;
+
         await _busy.RunAsync(reporter =>
             _editor.ImportParticipantsAsync(data, clearFirst, importScope, new ProgressRelay(this, reporter)));
         return true;

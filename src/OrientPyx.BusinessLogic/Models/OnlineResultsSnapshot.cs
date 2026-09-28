@@ -22,7 +22,10 @@ public sealed record OnlineResultsSnapshot(
     IReadOnlyList<OnlineResultRow> Rows,
     /// <summary>How many of the day's participants were left out because they have no start number — they
     /// can't be addressed by the (event, bib, day) key. Surfaced as a warning in the publish log.</summary>
-    int SkippedNoNumber = 0)
+    int SkippedNoNumber = 0,
+    /// <summary>Start numbers shared by several participants of the day, each as "181 (Name, Name)". Only the
+    /// first holder is in <see cref="Rows"/> — the (event, bib, day) key can't carry two rows in one upsert.</summary>
+    IReadOnlyList<string>? DuplicateNumbers = null)
 {
     /// <summary>An empty snapshot (no day selected / nothing to publish).</summary>
     public static readonly OnlineResultsSnapshot Empty = new([], 0, [], []);

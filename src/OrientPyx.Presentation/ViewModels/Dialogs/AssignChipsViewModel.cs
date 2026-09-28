@@ -15,6 +15,8 @@ namespace OrientPyx.Presentation.ViewModels.Dialogs;
 /// rental base (skipping any that already exist), then those very chips are handed out. One modal does
 /// both steps.</item>
 /// </list>
+/// On a single day of a multi-day competition the dialog also asks which chips count as free: those
+/// used on no day (the default), or those merely unused on this day.
 /// Callers <c>await</c> <see cref="Completion"/> for the chosen mode/parameters, or null on cancel.
 /// Mirrors the <see cref="BulkAddChipsViewModel"/> pattern.
 /// </summary>
@@ -24,9 +26,15 @@ public sealed partial class AssignChipsViewModel : ObservableObject
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <param name="noteOptions">The note filter choices: a leading "all" sentinel, then each distinct note.</param>
-    public AssignChipsViewModel(ILocalizationService localization, IReadOnlyList<ChipNoteOption> noteOptions)
+    /// <param name="showAvailability">True on a single day of a multi-day competition — shows the
+    /// "free on any day / free on this day" choice.</param>
+    public AssignChipsViewModel(
+        ILocalizationService localization,
+        IReadOnlyList<ChipNoteOption> noteOptions,
+        bool showAvailability = false)
     {
         Localization = localization;
+        ShowAvailability = showAvailability;
         Notes = new ObservableCollection<ChipNoteOption>(noteOptions);
         _selectedNote = Notes[0];
         Localization.PropertyChanged += (_, _) => OnPropertyChanged(nameof(Title));
@@ -72,6 +80,22 @@ public sealed partial class AssignChipsViewModel : ObservableObject
     [ObservableProperty]
     private string _rangeNote = string.Empty;
 
+    /// <summary>True when the "which chips count as free" choice is shown.</summary>
+    public bool ShowAvailability { get; }
+
+    /// <summary>True when chips unused on this day are free even if held on other days; false (default)
+    /// keeps only chips used on no day at all.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FreeOnAllDays))]
+    private bool _freeOnThisDay;
+
+    /// <summary>Two-way mirror of <see cref="FreeOnThisDay"/> for the second radio button.</summary>
+    public bool FreeOnAllDays
+    {
+        get => !FreeOnThisDay;
+        set => FreeOnThisDay = !value;
+    }
+
     /// <summary>Completes with the chosen mode/parameters on confirm, or null on cancel/close.</summary>
     public Task<AssignChipsResult?> Completion => _completion.Task;
 
@@ -83,11 +107,12 @@ public sealed partial class AssignChipsViewModel : ObservableObject
             _completion.TrySetResult(AssignChipsResult.Range(
                 (StartNumber ?? string.Empty).Trim(),
                 Count,
-                (RangeNote ?? string.Empty).Trim()));
+                (RangeNote ?? string.Empty).Trim()) with { FreeOnThisDay = FreeOnThisDay });
             return;
         }
 
-        _completion.TrySetResult(AssignChipsResult.FromBase(SelectedNote.IsAll ? null : SelectedNote.Note));
+        _completion.TrySetResult(AssignChipsResult.FromBase(SelectedNote.IsAll ? null : SelectedNote.Note)
+            with { FreeOnThisDay = FreeOnThisDay });
     }
 
     [RelayCommand]
@@ -125,6 +150,10 @@ public sealed class ChipNoteOption
 /// </summary>
 public sealed record AssignChipsResult(bool IsRange, string? Note, string StartNumber, int Count, string RangeNote)
 {
+    /// <summary>True when a chip counts as free if nobody holds it on the current day (it may be held on
+    /// other days); false = free only if held on no day at all.</summary>
+    public bool FreeOnThisDay { get; init; }
+
     /// <summary>Draw from the existing rental base; <paramref name="note"/> null = all chips.</summary>
     public static AssignChipsResult FromBase(string? note) =>
         new(IsRange: false, note, StartNumber: string.Empty, Count: 0, RangeNote: string.Empty);

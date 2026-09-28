@@ -14,17 +14,33 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 internal static class EntryFeeBreakdownFormatter
 {
     public static string Format(EntryFeeBreakdown breakdown, ILocalizationService loc)
+        => Format(breakdown, loc, onlyDayId: null);
+
+    /// <summary>
+    /// Explains only one day's share of the fee (the day grid shows a single day): that day's entry/chip
+    /// line, the discounts, and <see cref="EntryFeeBreakdown.DayTotal"/> as the total.
+    /// </summary>
+    public static string FormatDay(EntryFeeBreakdown breakdown, Guid dayId, ILocalizationService loc)
+        => Format(breakdown, loc, onlyDayId: dayId);
+
+    private static string Format(EntryFeeBreakdown breakdown, ILocalizationService loc, Guid? onlyDayId)
     {
-        if (breakdown.Days.Count == 0)
+        var days = onlyDayId is { } id
+            ? breakdown.Days.Where(d => d.DayId == id).ToList()
+            : breakdown.Days;
+        if (days.Count == 0)
             return loc.Get("Fee.Breakdown.Empty");
 
         var sb = new StringBuilder();
-        for (var i = 0; i < breakdown.Days.Count; i++)
+        for (var i = 0; i < days.Count; i++)
         {
-            var day = breakdown.Days[i];
+            var day = days[i];
             // Per-day payment flags days individually, so each line says whether THIS day was charged the
-            // raised fee rather than sharing one verdict for the whole entry.
-            var entryKey = day.UsesRaisedFee ? "Fee.Breakdown.DayEntryRaised" : "Fee.Breakdown.DayEntry";
+            // raised fee rather than sharing one verdict for the whole entry. A single-day explanation
+            // drops the "День N" prefix.
+            var entryKey = onlyDayId is null
+                ? day.UsesRaisedFee ? "Fee.Breakdown.DayEntryRaised" : "Fee.Breakdown.DayEntry"
+                : day.UsesRaisedFee ? "Fee.Breakdown.EntryRaised" : "Fee.Breakdown.Entry";
             sb.Append(loc.Get(entryKey)
                 .Replace("{0}", (i + 1).ToString(CultureInfo.InvariantCulture))
                 .Replace("{1}", Money(day.BaseFee)));
@@ -50,7 +66,8 @@ internal static class EntryFeeBreakdownFormatter
         if (breakdown.ChipDiscountPercent > 0m)
             sb.AppendLine(loc.Get("Fee.Breakdown.ChipDiscount").Replace("{0}", Money(breakdown.ChipDiscountPercent)));
 
-        sb.Append(loc.Get("Fee.Breakdown.Total").Replace("{0}", Money(breakdown.Total)));
+        var total = onlyDayId is { } dayId ? breakdown.DayTotal(dayId) : breakdown.Total;
+        sb.Append(loc.Get("Fee.Breakdown.Total").Replace("{0}", Money(total)));
         return sb.ToString();
     }
 

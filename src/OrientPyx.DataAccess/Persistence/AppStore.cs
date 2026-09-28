@@ -414,6 +414,16 @@ public sealed class AppStore : IAppStore
     }
 
 
+    public async Task AppendRankAsync(SportRank rank, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        rank.Order = await db.Ranks.AnyAsync(cancellationToken)
+            ? await db.Ranks.MaxAsync(r => r.Order, cancellationToken) + 1
+            : 0;
+        db.Ranks.Add(rank);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
 // ── Points rules
     public async Task SeedPointsRulesIfEmptyAsync(IReadOnlyList<PointsRule> rules, CancellationToken cancellationToken = default)
     {
@@ -491,6 +501,16 @@ public sealed class AppStore : IAppStore
             return;
 
         db.PointsRules.Remove(existing);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task AppendPointsRuleAsync(PointsRule rule, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        rule.Order = await db.PointsRules.AnyAsync(cancellationToken)
+            ? await db.PointsRules.MaxAsync(r => r.Order, cancellationToken) + 1
+            : 0;
+        db.PointsRules.Add(rule);
         await db.SaveChangesAsync(cancellationToken);
     }
 

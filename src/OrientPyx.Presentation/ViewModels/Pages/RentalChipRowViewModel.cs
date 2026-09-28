@@ -24,12 +24,12 @@ public sealed partial class RentalChipRowViewModel : ObservableObject
     private string _note;
 
     /// <summary>
-    /// Read-only display of who currently holds this chip: the comma-separated full names of every
-    /// participant assigned this chip on any day. Empty when nobody holds it. Set by the page from the
-    /// chip-holder lookup; it is not persisted on the chip and never triggers a save.
+    /// Read-only display of who holds this chip on each competition day, aligned with the page's day list
+    /// (index i = i-th day; empty when nobody holds it that day). The grid binds one column per day to
+    /// <c>DayHolders[i]</c>. Set by the page from the chip-holder lookup; never persisted, never saves.
     /// </summary>
     [ObservableProperty]
-    private string _assignedTo = string.Empty;
+    private IReadOnlyList<string> _dayHolders = [];
 
     /// <summary>
     /// True when this row's number is a duplicate of another chip in the same competition (numbers must

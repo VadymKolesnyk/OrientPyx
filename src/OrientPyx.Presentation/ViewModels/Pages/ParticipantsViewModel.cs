@@ -1171,7 +1171,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
         // All numbers currently taken across the whole competition (not just the visible set), mapped to
         // their holder, so we can skip/step over taken numbers and clear a number from its previous holder.
-        var holders = BuildNumberHolders();
+        var holders = await BuildNumberHoldersAsync();
 
         // Pre-fill the dialog with the next free number after the largest one already assigned.
         var suggestedStart = holders.Count == 0 ? 1 : holders.Keys.Max() + 1;
@@ -1313,13 +1313,37 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         return list;
     }
 
-    // Maps every number currently in use (across the full backing collection of the active mode) to the
-    // NumberRow that holds it, so the assignment can skip taken numbers and clear a previous holder.
-    private Dictionary<int, NumberRow> BuildNumberHolders()
+    // Maps every number currently in use across the whole competition to the NumberRow that holds it, so
+    // the assignment can skip taken numbers and clear a previous holder. The day grid only lists that day's
+    // members, so participants entered on other days only are loaded from the DB as off-screen holders —
+    // otherwise their numbers would look free and get handed out again.
+    private async Task<Dictionary<int, NumberRow>> BuildNumberHoldersAsync()
     {
-        var all = IsRosterMode
-            ? ProjectNumberRows(Roster)
-            : ProjectNumberRows(Participants);
+        var all = new List<NumberRow>();
+        if (IsRosterMode)
+        {
+            all.AddRange(ProjectNumberRows(Roster));
+        }
+        else
+        {
+            var onScreen = Participants.Select(p => p.ParticipantId).ToHashSet();
+            var roster = await _busy.RunAsync(() => _editor.GetParticipantRosterAsync());
+            foreach (var p in roster.Where(p => !onScreen.Contains(p.ParticipantId)))
+            {
+                var number = p.Number ?? string.Empty;
+                all.Add(new NumberRow
+                {
+                    Source = p,
+                    ParticipantId = p.ParticipantId,
+                    TimerKey = p.ParticipantId,
+                    GetNumber = () => number,
+                    SetNumber = v => number = v,
+                    GetName = () => p.FullName ?? string.Empty
+                });
+            }
+            all.AddRange(ProjectNumberRows(Participants));
+        }
+
         var map = new Dictionary<int, NumberRow>();
         foreach (var row in all)
         {
@@ -1536,11 +1560,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (visibleRows is null || visibleRows.Count == 0 || !await EnsureEffectiveDayEditableAsync())
             return;
 
-        // The rental pool (ordered by number) and the set of chip numbers already held on any day. An empty
+        // The rental pool (ordered by number) and who holds each chip on each day. An empty
         // pool is fine here — the "starting from a number" mode adds its own chips — so we don't bail yet;
         // an empty base only blocks the "from the base" mode, checked after the dialog returns.
         var pool = await _busy.RunAsync(() => _editor.GetRentalChipsAsync());
-        var used = await _busy.RunAsync(() => _editor.GetRentalChipHoldersAsync());
+        var holders = await _busy.RunAsync(() => _editor.GetRentalChipHoldersByDayAsync());
 
         // The note dropdown: a leading "all" option, then each distinct note present in the pool.
         var notes = pool
@@ -1552,7 +1576,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         var options = new List<ChipNoteOption> { ChipNoteOption.All(Localization.Get("Participants.AssignChips.AllChips")) };
         options.AddRange(notes.Select(n => ChipNoteOption.ForNote(n, n)));
 
-        var result = await _dialogs.ShowAssignChipsAsync(new AssignChipsViewModel(Localization, options));
+        var result = await _dialogs.ShowAssignChipsAsync(new AssignChipsViewModel(
+            Localization, options, showAvailability: IsDayMode && holders.DayNumbers.Count > 1));
         if (result is null)
             return;
 
@@ -1582,7 +1607,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             RentalChips.Reset(pool.Select(c => c.Number));
         }
 
-        // The free chips for this run: unused (held by nobody on any day), by ascending number — drawn
+        var used = UsedChipNumbers(holders, result.FreeOnThisDay && IsDayMode ? _session.CurrentDay?.Number : null);
+
+        // The free chips for this run: not in `used`, by ascending number — drawn
         // from the front as we assign. In "from the base" mode narrowed by the note filter; in range mode
         // narrowed to exactly the numbers of the range just added.
         var rangeNumbers = result.IsRange
@@ -1594,7 +1621,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 : result.Note is null
                     || string.Equals((c.Note ?? string.Empty).Trim(), result.Note, StringComparison.OrdinalIgnoreCase))
             .Select(c => (c.Number ?? string.Empty).Trim())
-            .Where(number => number.Length > 0 && !used.ContainsKey(number))
+            .Where(number => number.Length > 0 && !used.Contains(number))
             .OrderBy(number => number, StringComparer.Ordinal));
 
         // Confirm before touching anything (this is a sweeping change). Count the recipients WITHOUT
@@ -1650,6 +1677,18 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         LogChipAssignment(assignments, free.Count);
     }
 
+    // Chip numbers that are taken: held on the given day only, or on any day when dayNumber is null.
+    private static HashSet<string> UsedChipNumbers(RentalChipHoldersByDay holders, int? dayNumber)
+    {
+        var dayIndex = dayNumber is { } number ? holders.DayNumbers.ToList().IndexOf(number) : -1;
+        return holders.HoldersByChip
+            .Where(kvp => dayIndex >= 0
+                ? kvp.Value[dayIndex].Length > 0
+                : kvp.Value.Any(name => name.Length > 0))
+            .Select(kvp => kvp.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
     // The exact chip numbers a "starting from a number" range would produce — the same width-preserving
     // sequence AddRentalChipRangeAsync generates (e.g. "0042" → "0042","0043",…). Used to narrow the free
     // pool to just this range after it has been added. Returns empty for an unparsable start / count ≤ 0.
@@ -1682,8 +1721,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
             if (IsRosterMode)
             {
-                if (item is ParticipantRosterRowViewModel row
-                    && row.Days.Any(d => d.IsMember && string.IsNullOrWhiteSpace(d.Chip)))
+                if (item is ParticipantRosterRowViewModel row && ChiplessOpenDays(row).Any())
                     count++;
             }
             else
@@ -1723,7 +1761,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
     // Roster mode: a chip belongs to a person and is reused across their days, so each shown participant
     // gets ONE free chip applied to every member day-cell that has no chip yet. A participant who already
-    // has a chip on every member day consumes nothing.
+    // has a chip on every open member day consumes nothing. Closed days are skipped: the batch write
+    // refuses a closed day outright, which would leave the cells showing chips that were never saved.
     private void AssignChipsToRoster(
         IReadOnlyList<object?> visibleRows,
         Queue<string> free,
@@ -1737,7 +1776,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             if (item is not ParticipantRosterRowViewModel row)
                 continue;
 
-            var emptyDays = row.Days.Where(d => d.IsMember && string.IsNullOrWhiteSpace(d.Chip)).ToList();
+            var emptyDays = ChiplessOpenDays(row).ToList();
             if (emptyDays.Count == 0)
                 continue;
 
@@ -1751,6 +1790,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             assignments.Add((row.FullName ?? string.Empty, chip));
         }
     }
+
+    // A roster participant's day-cells that can take a chip: member days with no chip on a day that isn't closed.
+    private static IEnumerable<RosterDayCellViewModel> ChiplessOpenDays(ParticipantRosterRowViewModel row)
+        => row.Days.Where(d => d.IsMember && !d.IsDayLocked && string.IsNullOrWhiteSpace(d.Chip));
 
     private void LogChipAssignment(IReadOnlyList<(string Name, string Chip)> assignments, int remainingFree)
     {

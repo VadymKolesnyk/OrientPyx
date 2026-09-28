@@ -701,6 +701,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
                 await Dispatcher.UIThread.InvokeAsync(() => AutoReadError = string.Empty);
 
             var result = await _editor.ImportFinishReadoutsAsync(data);
+            MarkAddedSeenInFile(result.AddedReads ?? []);
             if (result.Added > 0)
             {
                 await HandleNewReadsAsync(result.AddedIds);
@@ -812,6 +813,15 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
             _log.Action(string.Format(Localization.Get("FinishRead.Repeat.Log"), chip));
             await AutoPrintNewReadsAsync([repeat.ReadoutId]);
         }
+    }
+
+    // A row logged this tick is still in the file, so from the next tick on it comes back as a duplicate of
+    // itself. Without this it would miss _seenInFile and be taken for a repeat read — printing its slip a
+    // second time. It is always occurrence 1: had its (key, mark) been logged before, it'd be a duplicate now.
+    private void MarkAddedSeenInFile(IReadOnlyList<FinishReadoutDuplicate> added)
+    {
+        foreach (var read in added)
+            _seenInFile.Add($"{read.ContentKey}{Separator}{read.ReadMark}{Separator}1");
     }
 
     // Opens the unknown-chip assignment modal for one read on the UI thread and prints per its outcome.

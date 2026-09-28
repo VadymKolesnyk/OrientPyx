@@ -99,6 +99,42 @@
                             </ComboBox>
                         </StackPanel>
 
+                        <!-- Groups to include (default: those with a non-zero result) -->
+                        <StackPanel Spacing="8" IsVisible="{Binding HasGroups}">
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Localization[SummaryProtocol.Groups.Title]}" FontWeight="SemiBold"
+                                           VerticalAlignment="Center" />
+                                <Button Classes="ghost" Padding="10,4"
+                                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                        Content="{Binding Localization[SummaryProtocol.Groups.All]}"
+                                        Command="{Binding SelectAllGroupsCommand}" />
+                                <Button Classes="ghost" Padding="10,4"
+                                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                        Content="{Binding Localization[SummaryProtocol.Groups.None]}"
+                                        Command="{Binding SelectNoGroupsCommand}" />
+                                <Button Classes="ghost" Padding="10,4"
+                                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                        Content="{Binding Localization[SummaryProtocol.Groups.Default]}"
+                                        Command="{Binding ResetGroupsCommand}" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding Localization[SummaryProtocol.Groups.Hint]}" Classes="subtitle"
+                                       TextWrapping="Wrap" />
+                            <ItemsControl ItemsSource="{Binding Groups}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="pages:SummaryGroupItemViewModel">
+                                        <CheckBox VerticalAlignment="Center" Margin="0,0,18,6" MinWidth="80"
+                                                  IsChecked="{Binding Included, Mode=TwoWay}"
+                                                  Content="{Binding Name}" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
                         <!-- Orientation -->
                         <CheckBox IsChecked="{Binding IsLandscape, Mode=TwoWay}"
                                   Content="{Binding Localization[Protocols.Layout.Landscape]}" />

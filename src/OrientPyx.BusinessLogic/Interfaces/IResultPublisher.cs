@@ -29,4 +29,11 @@ public interface IResultPublisher
     /// competition / day / group metadata. Call after the publish options change (title, slug, day…).
     /// </summary>
     void ResetMetadata();
+
+    /// <summary>
+    /// Deletes everything published for the competition <paramref name="slug"/> (result rows, groups and days)
+    /// from the online service and forgets the uploaded metadata, so the next <see cref="PublishAsync"/> calls
+    /// rebuild it from scratch. Throws <see cref="PublishException"/> on a transport / server error.
+    /// </summary>
+    Task ClearEventAsync(OnlineApiSettings api, string slug, CancellationToken cancellationToken = default);
 }

@@ -401,6 +401,18 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         private set => SetProperty(ref _feeBreakdown, value);
     }
 
+    private string _dayFeeBreakdown = string.Empty;
+
+    /// <summary>
+    /// Like <see cref="FeeBreakdown"/> but for this day's share only (<see cref="DayEntryFee"/>) — the
+    /// tooltip of the day grid's fee column, which shows the current day's sum.
+    /// </summary>
+    public string DayFeeBreakdown
+    {
+        get => _dayFeeBreakdown;
+        private set => SetProperty(ref _dayFeeBreakdown, value);
+    }
+
     // Recomputes the total from this day's live group/chip plus the other days' fixed contributions,
     // using the shared fee context — no DB round-trip. A participant shown in the day grid is always a
     // member of the current day, so this day always contributes. Also refreshes the breakdown tooltip.
@@ -422,6 +434,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         TotalEntryFee = breakdown.Total;
         DayEntryFee = breakdown.DayTotal(_dayId);
         FeeBreakdown = EntryFeeBreakdownFormatter.Format(breakdown, Localization);
+        DayFeeBreakdown = EntryFeeBreakdownFormatter.FormatDay(breakdown, _dayId, Localization);
     }
 
     /// <summary>

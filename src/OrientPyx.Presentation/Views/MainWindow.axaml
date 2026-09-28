@@ -112,6 +112,9 @@
         <DataTemplate DataType="dialogs:ImportEventViewModel">
             <dialogViews:ImportEventView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:ImportDuplicatesViewModel">
+            <dialogViews:ImportDuplicatesView />
+        </DataTemplate>
         <DataTemplate DataType="dialogs:RenameEventViewModel">
             <dialogViews:RenameEventView />
         </DataTemplate>

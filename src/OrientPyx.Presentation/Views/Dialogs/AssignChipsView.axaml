@@ -92,6 +92,20 @@
                                Classes="subtitle" TextWrapping="Wrap" />
                 </StackPanel>
 
+                <!-- Single day of a multi-day competition: free = used on no day, or just unused today. -->
+                <StackPanel Spacing="8" IsVisible="{Binding ShowAvailability}">
+                    <TextBlock Text="{Binding Localization[Participants.AssignChips.Availability]}" Classes="label" />
+                    <RadioButton GroupName="ChipAvailability"
+                                 Content="{Binding Localization[Participants.AssignChips.Availability.AllDays]}"
+                                 IsChecked="{Binding FreeOnAllDays, Mode=TwoWay}" />
+                    <RadioButton GroupName="ChipAvailability"
+                                 Content="{Binding Localization[Participants.AssignChips.Availability.ThisDay]}"
+                                 IsChecked="{Binding FreeOnThisDay, Mode=TwoWay}" />
+                    <TextBlock Text="{Binding Localization[Participants.AssignChips.Availability.ThisDayHint]}"
+                               Classes="subtitle" TextWrapping="Wrap"
+                               IsVisible="{Binding FreeOnThisDay}" />
+                </StackPanel>
+
             </StackPanel>
 
         </DockPanel>

@@ -15,6 +15,7 @@ public static class BusinessLogicServiceCollectionExtensions
         services.AddSingleton<IEventCatalogService, EventCatalogService>();
         services.AddSingleton<ISessionService, SessionService>();
         services.AddSingleton<ICompetitionEditorService, CompetitionEditorService>();
+        services.AddSingleton<IEventSharedDataService, EventSharedDataService>();
 
         // Competition-type strategies (Open/Closed): one class per discipline, resolved by enum.
         // Add a new discipline by adding a strategy class + a registration line here — nothing else.

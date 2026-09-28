@@ -198,6 +198,10 @@
                                     Classes="danger"
                                     IsVisible="{Binding IsPublishing}"
                                     Command="{Binding StopPublishingCommand}" />
+                            <Button Content="{Binding Localization[OnlineResults.Reload]}"
+                                    IsEnabled="{Binding IsConnectionConfigured}"
+                                    ToolTip.Tip="{Binding Localization[OnlineResults.Reload.Tooltip]}"
+                                    Command="{Binding ReloadAllDaysCommand}" />
                             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                                         IsVisible="{Binding IsPublishing}">
                                 <Ellipse Width="10" Height="10" Fill="{DynamicResource SuccessBrush}"

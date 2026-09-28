@@ -103,6 +103,7 @@ public partial class ChipsView : UserControl
 
         _vm.Localization.PropertyChanged += OnLocalizationChanged;
         _vm.FocusGridRequested += OnFocusGridRequested;
+        _vm.PropertyChanged += OnVmPropertyChanged;
         BuildBands();
     }
 
@@ -122,7 +123,7 @@ public partial class ChipsView : UserControl
         if (_vm is null)
             return;
 
-        Sheet.Bands = new SheetColumnBuilder(_vm.Localization)
+        var builder = new SheetColumnBuilder(_vm.Localization)
             .Text("Chips.Col.Number", nameof(RentalChipRowViewModel.Number),
                   editPath: nameof(RentalChipRowViewModel.Number), minWidth: 140,
                   mask: SheetColumnBuilder.NumericMask.Digits)
@@ -131,11 +132,27 @@ public partial class ChipsView : UserControl
             .CellTint(nameof(RentalChipRowViewModel.IsDuplicate), DuplicateBrush,
                       tooltipPath: nameof(RentalChipRowViewModel.DuplicateTooltip))
             .Text("Chips.Col.Note", nameof(RentalChipRowViewModel.Note),
-                  editPath: nameof(RentalChipRowViewModel.Note), minWidth: 240)
-            // Read-only: who holds this chip (full names across all days, comma-separated). No editPath.
-            .Text("Chips.Col.AssignedTo", nameof(RentalChipRowViewModel.AssignedTo), minWidth: 240)
+                  editPath: nameof(RentalChipRowViewModel.Note), minWidth: 240);
+
+        // Read-only: who holds this chip, one column per day (a chip may pass to another runner between
+        // days). A single-day competition keeps the plain «Видано» header.
+        var days = _vm.DayNumbers;
+        for (var i = 0; i < days.Count; i++)
+        {
+            builder.Text("Chips.Col.AssignedTo", $"{nameof(RentalChipRowViewModel.DayHolders)}[{i}]", minWidth: 180);
+            if (days.Count > 1)
+                builder.HeaderText(_vm.Localization.Get("Chips.Col.AssignedToDay").Replace("{0}", days[i].ToString()));
+        }
+
+        Sheet.Bands = builder
             .DeleteAction(OnDeleteButton, "Chips.Delete")
             .Bands;
+    }
+
+    private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ChipsViewModel.DayNumbers))
+            BuildBands();
     }
 
     private void Unsubscribe()
@@ -144,6 +161,7 @@ public partial class ChipsView : UserControl
         {
             _vm.Localization.PropertyChanged -= OnLocalizationChanged;
             _vm.FocusGridRequested -= OnFocusGridRequested;
+            _vm.PropertyChanged -= OnVmPropertyChanged;
         }
         _vm = null;
     }

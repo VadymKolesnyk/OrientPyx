@@ -101,7 +101,12 @@ public sealed class CsvImportFlow : ICsvImportFlow
             return false;
         }
 
-        var importScope = mapping.Scope ?? ParticipantImportScope.AllDays;
+        var importScope = await ImportDuplicatesStep.ResolveAsync(
+            data, mapping.ClearFirst, mapping.Scope ?? ParticipantImportScope.AllDays,
+            _editor, _dialogs, _busy, _localization);
+        if (importScope is null)
+            return false; // cancelled in the duplicates modal
+
         await _busy.RunAsync(reporter =>
             _editor.ImportParticipantsAsync(data, mapping.ClearFirst, importScope, new ProgressRelay(this, reporter)));
         return true;

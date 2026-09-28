@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text.Json;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
@@ -13,13 +14,19 @@ namespace OrientPyx.DataAccess.FileSystem;
 /// </summary>
 public sealed class EventArchiveService : IEventArchiveService
 {
+    // App-level data the competition refers to (points rules, ranks), stored next to the competition's
+    // own files under the archive's top-level folder. Read on import, never extracted into the folder.
+    private const string SharedDataEntryName = "app-shared.json";
+
     private readonly IAppSettingsService _settings;
     private readonly IEventStore _eventStore;
+    private readonly IEventSharedDataService _sharedData;
 
-    public EventArchiveService(IAppSettingsService settings, IEventStore eventStore)
+    public EventArchiveService(IAppSettingsService settings, IEventStore eventStore, IEventSharedDataService sharedData)
     {
         _settings = settings;
         _eventStore = eventStore;
+        _sharedData = sharedData;
     }
 
     public bool IsValidIdentifier(string identifier) => EventIdentifier.IsValid(identifier);
@@ -49,6 +56,8 @@ public sealed class EventArchiveService : IEventArchiveService
         // and holds the latest committed changes even when this is the active session's own competition.
         await _eventStore.CheckpointAsync(folderPath, cancellationToken);
 
+        var sharedJson = JsonSerializer.Serialize(await _sharedData.CollectAsync(folderPath, cancellationToken));
+
         // Zip the whole folder as a single top-level entry named after the identifier, so the identifier
         // is recoverable on import. Overwrite any existing file at the destination. File I/O is blocking,
         // so run it off the calling thread (callers invoke this inside the busy overlay's worker).
@@ -76,6 +85,10 @@ public sealed class EventArchiveService : IEventArchiveService
                 using var entryStream = entry.Open();
                 source.CopyTo(entryStream);
             }
+
+            var sharedEntry = zip.CreateEntry($"{identifier}/{SharedDataEntryName}", CompressionLevel.Optimal);
+            using (var writer = new StreamWriter(sharedEntry.Open()))
+                writer.Write(sharedJson);
         }, cancellationToken);
     }
 
@@ -88,7 +101,7 @@ public sealed class EventArchiveService : IEventArchiveService
         return new EventArchivePreview(identifier, exists);
     }
 
-    public async Task<EventSummary> ImportAsync(
+    public async Task<EventArchiveImportResult> ImportAsync(
         string archivePath,
         string identifier,
         bool overwrite,
@@ -110,7 +123,7 @@ public sealed class EventArchiveService : IEventArchiveService
             // wipe the existing competition.
         }
 
-        await Task.Run(() => ExtractInto(archivePath, folderPath, cancellationToken), cancellationToken);
+        var sharedData = await Task.Run(() => ExtractInto(archivePath, folderPath, cancellationToken), cancellationToken);
 
         // The archive's event.db may predate a later migration; bring it up to the current schema before
         // it is opened, matching the folder scan's behaviour.
@@ -128,8 +141,12 @@ public sealed class EventArchiveService : IEventArchiveService
             await _eventStore.SaveCompetitionInfoAsync(folderPath, info, cancellationToken);
         }
 
+        // Recreate locally the app-level rules/ranks the competition refers to (archives made before this
+        // existed carry none — nothing to do then).
+        var shared = await _sharedData.ApplyAsync(folderPath, sharedData ?? EventSharedData.Empty, cancellationToken);
+
         var days = await _eventStore.GetDaysAsync(folderPath, cancellationToken);
-        return new EventSummary
+        var summary = new EventSummary
         {
             Identifier = identifier,
             Name = info.Name,
@@ -140,12 +157,13 @@ public sealed class EventArchiveService : IEventArchiveService
             StartDate = info.StartDate,
             EndDate = info.EndDate
         };
+        return new EventArchiveImportResult(summary, shared);
     }
 
     // Extracts the archive's single top-level competition folder into destinationFolder. When the
     // destination exists it is replaced atomically-ish: extract to a sibling temp folder, delete the old,
-    // then move the new into place.
-    private static void ExtractInto(string archivePath, string destinationFolder, CancellationToken cancellationToken)
+    // then move the new into place. Returns the archive's shared app-level data, if it carries any.
+    private static EventSharedData? ExtractInto(string archivePath, string destinationFolder, CancellationToken cancellationToken)
     {
         using var zip = ZipFile.OpenRead(archivePath);
         var root = SingleRootFolder(zip);
@@ -153,6 +171,7 @@ public sealed class EventArchiveService : IEventArchiveService
         var parent = Path.GetDirectoryName(destinationFolder)!;
         var stagingFolder = Path.Combine(parent, $".import-{Guid.NewGuid():N}");
         Directory.CreateDirectory(stagingFolder);
+        EventSharedData? sharedData = null;
         try
         {
             var stagingFull = Path.GetFullPath(stagingFolder + Path.DirectorySeparatorChar);
@@ -169,6 +188,12 @@ public sealed class EventArchiveService : IEventArchiveService
                 if (relative.Length == 0 || relative.EndsWith(Path.DirectorySeparatorChar))
                     continue; // directory entry
 
+                if (string.Equals(relative, SharedDataEntryName, StringComparison.OrdinalIgnoreCase))
+                {
+                    sharedData = ReadSharedData(entry);
+                    continue;
+                }
+
                 var targetPath = Path.GetFullPath(Path.Combine(stagingFolder, relative));
                 // Guard against zip-slip: a crafted entry with ".." must not escape the staging folder.
                 if (!targetPath.StartsWith(stagingFull, StringComparison.Ordinal))
@@ -181,12 +206,26 @@ public sealed class EventArchiveService : IEventArchiveService
             if (Directory.Exists(destinationFolder))
                 Directory.Delete(destinationFolder, recursive: true);
             Directory.Move(stagingFolder, destinationFolder);
+            return sharedData;
         }
         catch
         {
             if (Directory.Exists(stagingFolder))
                 Directory.Delete(stagingFolder, recursive: true);
             throw;
+        }
+    }
+
+    private static EventSharedData? ReadSharedData(ZipArchiveEntry entry)
+    {
+        try
+        {
+            using var stream = entry.Open();
+            return JsonSerializer.Deserialize<EventSharedData>(stream);
+        }
+        catch (JsonException)
+        {
+            return null; // a damaged manifest must not block importing the competition itself
         }
     }
 

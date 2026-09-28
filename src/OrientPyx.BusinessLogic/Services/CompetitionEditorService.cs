@@ -1044,6 +1044,45 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             StringComparer.OrdinalIgnoreCase);
     }
 
+    public async Task<RentalChipHoldersByDay> GetRentalChipHoldersByDayAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return RentalChipHoldersByDay.Empty;
+
+        var folder = FolderPath;
+        var days = (await _eventStore.GetDaysAsync(folder, cancellationToken)).OrderBy(d => d.Number).ToList();
+        var links = await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var nameById = participants.ToDictionary(p => p.Id, p => p.FullName);
+        var indexByDayId = days.Select((d, i) => (d.Id, i)).ToDictionary(x => x.Id, x => x.i);
+
+        // chip → one name list per day. A chip is unique per day, but a stray duplicate is joined rather
+        // than hidden so the grid still shows it. Blank chips and orphaned links are skipped.
+        var holders = new Dictionary<string, List<string>[]>(StringComparer.OrdinalIgnoreCase);
+        foreach (var link in links)
+        {
+            var number = link.Chip.Trim();
+            if (number.Length == 0
+                || !nameById.TryGetValue(link.ParticipantId, out var name)
+                || !indexByDayId.TryGetValue(link.EventDayId, out var dayIndex))
+                continue;
+
+            if (!holders.TryGetValue(number, out var perDay))
+            {
+                perDay = days.Select(_ => new List<string>()).ToArray();
+                holders[number] = perDay;
+            }
+            if (!perDay[dayIndex].Contains(name))
+                perDay[dayIndex].Add(name);
+        }
+
+        var byChip = holders.ToDictionary(
+            kvp => kvp.Key,
+            kvp => (IReadOnlyList<string>)kvp.Value.Select(names => string.Join(", ", names)).ToList(),
+            StringComparer.OrdinalIgnoreCase);
+        return new RentalChipHoldersByDay(days.Select(d => d.Number).ToList(), byChip);
+    }
+
     public Task<int> ClearRentalChipsAsync(CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null)
@@ -2339,28 +2378,23 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         foreach (var day in days)
             resultsByDay[day.Id] = await ComputeDayResultsAsync(folder, day, cancellationToken);
 
-        // The group a member runs in: the group of their FIRST day membership (groups are normally constant
-        // across days). The per-day result is keyed by day id. A member with no group on any day is skipped.
+        // One summary entry per (participant, group): a participant who ran different groups on different days
+        // is summed separately in each group, over only the days they ran in it. The per-day result is keyed by
+        // day id. A link with no group is skipped.
         var orderedDays = days.OrderBy(d => d.Number).ToList();
-        var linksByParticipant = links
+        var linksByParticipantGroup = links
             .Where(l => l.GroupId is not null)
-            .GroupBy(l => l.ParticipantId);
+            .GroupBy(l => (l.ParticipantId, GroupId: l.GroupId!.Value));
 
         // Group order: follow the group entity order (mirrors the day grid). Build a per-group member list.
         var groupOrder = groups.Select((g, i) => (g.Id, i)).ToDictionary(t => t.Id, t => t.i);
         var membersByGroup = new Dictionary<Guid, List<SummaryProtocolParticipant>>();
 
-        foreach (var pg in linksByParticipant)
+        foreach (var pg in linksByParticipantGroup)
         {
-            if (!byParticipant.TryGetValue(pg.Key, out var p))
+            if (!byParticipant.TryGetValue(pg.Key.ParticipantId, out var p))
                 continue;
-
-            // The member's group = the group of their earliest-numbered day membership.
-            var firstLink = pg
-                .OrderBy(l => orderedDays.FindIndex(d => d.Id == l.EventDayId))
-                .First();
-            if (firstLink.GroupId is not { } gid)
-                continue;
+            var gid = pg.Key.GroupId;
 
             var perDay = new Dictionary<Guid, ParticipantDayResult>(pg.Count());
             foreach (var link in pg)
@@ -2389,7 +2423,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             if (!groupName.TryGetValue(gid, out var name))
                 continue;
             var order = groupOrder.TryGetValue(gid, out var o) ? o : int.MaxValue;
-            summaryGroups.Add(new SummaryProtocolGroup(name, order, members));
+            summaryGroups.Add(new SummaryProtocolGroup(gid, name, order, members));
         }
 
         var summaryDays = orderedDays
@@ -4389,6 +4423,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var nextOrder = existing.Count == 0 ? 1 : existing.Max(r => r.Order) + 1;
 
         var toAdd = new List<FinishReadout>();
+        var addedMarks = new List<string>();
         var duplicates = new List<FinishReadoutDuplicate>();
         var skipped = 0;
         foreach (var record in data.Records)
@@ -4422,6 +4457,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 PunchTimes = EncodePunchTimes(record.Punches),
                 ContentKey = key
             });
+            addedMarks.Add(record.ReadMark);
         }
 
         await _eventStore.AddFinishReadoutsAsync(folder, toAdd, cancellationToken);
@@ -4450,7 +4486,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             Added: toAdd.Count,
             Skipped: skipped,
             AddedIds: toAdd.Select(r => r.Id).ToList(),
-            Duplicates: duplicates);
+            Duplicates: duplicates,
+            AddedReads: toAdd.Select((r, i) => new FinishReadoutDuplicate(r.Id, r.ContentKey, addedMarks[i])).ToList());
     }
 
     public async Task<int> ClearFinishReadoutsAsync(CancellationToken cancellationToken = default)
@@ -4920,6 +4957,107 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             FolderPath, data, clearFirst, daysCreated, scope, progress, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ImportDuplicateCase>> FindImportDuplicatesAsync(
+        UofParticipantData data,
+        bool clearFirst,
+        ParticipantImportScope scope,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(scope);
+        if (_session.CurrentEvent is null || scope.Mode != ParticipantImportMode.CurrentDayOnly)
+            return [];
+
+        var folder = FolderPath;
+        var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        var targetDay = days.FirstOrDefault(d => d.Number == scope.TargetDayNumber);
+        if (targetDay is null)
+            return [];
+
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var links = await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
+        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var clubs = (await _eventStore.GetClubsAsync(folder, cancellationToken)).ToDictionary(c => c.Id, c => c.Name);
+        var regions = (await _eventStore.GetRegionsAsync(folder, cancellationToken)).ToDictionary(r => r.Id, r => r.Name);
+        var dayNumberById = days.ToDictionary(d => d.Id, d => d.Number);
+
+        var byName = participants
+            .Where(p => ParticipantNameKey.Of(p.FullName).Length > 0)
+            .ToLookup(p => ParticipantNameKey.Of(p.FullName), StringComparer.OrdinalIgnoreCase);
+        var byCode = participants
+            .Where(p => !string.IsNullOrWhiteSpace(p.FsouCode))
+            .GroupBy(p => p.FsouCode.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var linksByParticipant = links.ToLookup(l => l.ParticipantId);
+        var matchByName = scope.LinkField == ParticipantLinkField.FullName;
+
+        // Which rows the link field already attaches to an existing athlete (mirrors the store's matching),
+        // and which athletes are taken that way — those are never offered as a merge target for another row.
+        var matchedRows = new HashSet<int>();
+        var claimed = new HashSet<Guid>();
+        for (var i = 0; i < data.Participants.Count; i++)
+        {
+            var src = data.Participants[i];
+            Participant? match = null;
+            if (matchByName)
+                match = byName[ParticipantNameKey.Of(src.FullName)].FirstOrDefault();
+            else if (src.FsouCode.Trim() is { Length: > 0 } code)
+                match = byCode.GetValueOrDefault(code);
+            if (match is null)
+                continue;
+            matchedRows.Add(i);
+            claimed.Add(match.Id);
+        }
+
+        var cases = new List<ImportDuplicateCase>();
+        for (var i = 0; i < data.Participants.Count; i++)
+        {
+            if (matchedRows.Contains(i))
+                continue;
+            var src = data.Participants[i];
+            var group = groups.FirstOrDefault(g =>
+                string.Equals(g.Name, src.Group.Trim(), StringComparison.OrdinalIgnoreCase));
+            var nameKey = ParticipantNameKey.Of(src.FullName);
+            if (group is null || nameKey.Length == 0)
+                continue; // a group the competition doesn't have yet can't have been run before
+
+            var candidates = new List<ImportDuplicateCandidate>();
+            foreach (var p in byName[nameKey])
+            {
+                if (claimed.Contains(p.Id))
+                    continue;
+                // Other days count always; the target day only when this import keeps its current roster.
+                var dayNumbers = linksByParticipant[p.Id]
+                    .Where(l => l.GroupId == group.Id && (l.EventDayId != targetDay.Id || !clearFirst))
+                    .Select(l => dayNumberById.GetValueOrDefault(l.EventDayId))
+                    .Where(n => n > 0)
+                    .Distinct()
+                    .Order()
+                    .ToList();
+                if (dayNumbers.Count == 0)
+                    continue;
+                candidates.Add(new ImportDuplicateCandidate(
+                    p.Id,
+                    p.FullName,
+                    p.BirthDate?.Year,
+                    p.ClubId is { } c ? clubs.GetValueOrDefault(c, string.Empty) : string.Empty,
+                    p.RegionId is { } r ? regions.GetValueOrDefault(r, string.Empty) : string.Empty,
+                    p.FsouCode.Trim(),
+                    dayNumbers));
+            }
+
+            if (candidates.Count > 0)
+            {
+                cases.Add(new ImportDuplicateCase(i,
+                    new ImportDuplicateRow(src.FullName.Trim(), group.Name, src.BirthDate?.Year,
+                        src.Club.Trim(), src.Region.Trim(), src.FsouCode.Trim()),
+                    candidates));
+            }
+        }
+
+        return cases;
+    }
+
     // ── Online live-results publishing
 
     public async Task<OnlinePublishSettings?> GetOnlinePublishSettingsAsync(CancellationToken cancellationToken = default)
@@ -5023,6 +5161,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // the publish log can warn that some runners won't appear online until they're given a number.
         var rows = new List<OnlineResultRow>();
         var skippedNoNumber = 0;
+        // bib -> every holder's name. Two participants with one number (e.g. after merging people) would put two
+        // rows with the same key into one upsert, which the server rejects wholesale — so only the first is sent.
+        var holders = new Dictionary<int, List<string>>();
         foreach (var g in data.Groups)
         {
             foreach (var r in g.Rows)
@@ -5033,6 +5174,13 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                     skippedNoNumber++;
                     continue;
                 }
+
+                if (holders.TryGetValue(bib, out var names))
+                {
+                    names.Add(r.FullName);
+                    continue;
+                }
+                holders[bib] = [r.FullName];
 
                 var res = r.Result;
                 rows.Add(new OnlineResultRow(
@@ -5056,7 +5204,13 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             }
         }
 
-        return new OnlineResultsSnapshot(onlineDays, day.Number, groups, rows, skippedNoNumber);
+        var duplicates = holders
+            .Where(h => h.Value.Count > 1)
+            .OrderBy(h => h.Key)
+            .Select(h => $"{h.Key} ({string.Join(", ", h.Value)})")
+            .ToList();
+
+        return new OnlineResultsSnapshot(onlineDays, day.Number, groups, rows, skippedNoNumber, duplicates);
     }
 
     public async Task<MonitorSettings?> GetMonitorSettingsAsync(CancellationToken cancellationToken = default)

@@ -19,4 +19,10 @@ public interface ISummaryProtocolBuilder
     /// chosen mode (total points or total time).
     /// </summary>
     IReadOnlyList<SummaryRankedGroup> RankGroups(SummaryProtocolData data, SummaryProtocolSettings settings);
+
+    /// <summary>
+    /// The default inclusion rule for a group the user has not toggled explicitly: true when someone in the group
+    /// has a non-zero result on a counted day (points &gt; 0 in points mode, a clean result in time mode).
+    /// </summary>
+    bool HasNonZeroResult(SummaryProtocolData data, SummaryProtocolGroup group, SummaryProtocolSettings settings);
 }
