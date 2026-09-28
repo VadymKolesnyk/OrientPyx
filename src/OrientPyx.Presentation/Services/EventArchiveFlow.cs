@@ -66,6 +66,11 @@ public sealed class EventArchiveFlow : IEventArchiveFlow
         if (path is null)
             return null; // cancelled
 
+        return await ImportFileAsync(path);
+    }
+
+    public async Task<EventSummary?> ImportFileAsync(string path)
+    {
         // Inspect the archive (off the UI thread) to learn its identifier and whether it clashes.
         EventArchivePreview preview;
         try
@@ -103,6 +108,12 @@ public sealed class EventArchiveFlow : IEventArchiveFlow
                       $"правила очок: додано {shared.PointsRulesAdded}, зіставлено з наявними {shared.PointsRulesMatched}; " +
                       $"розряди: додано {shared.RanksAdded}");
             return summary;
+        }
+        catch (EventFolderInUseException ex)
+        {
+            _log.Error("Не вдалося перезаписати змагання: папка зайнята", ex);
+            await ShowErrorAsync("ImportEvent.InUse");
+            return null;
         }
         catch (EventArchiveFormatException)
         {

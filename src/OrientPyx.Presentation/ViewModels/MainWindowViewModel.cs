@@ -538,10 +538,18 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     // Imports a competition archive as a new competition (File → Import competition). Available even
     // with no competition open; on success we land on the selection screen with the list refreshed.
     [RelayCommand]
-    private async Task ImportCompetitionAsync()
+    private Task ImportCompetitionAsync() => AfterImportAsync(_archiveFlow.ImportAsync);
+
+    /// <summary>
+    /// Imports an archive file the app was launched with (a double-clicked <c>.opyx</c>) — the same flow as
+    /// File → Import competition, starting from the given file instead of the open-file dialog.
+    /// </summary>
+    public Task ImportCompetitionFileAsync(string path) => AfterImportAsync(() => _archiveFlow.ImportFileAsync(path));
+
+    private async Task AfterImportAsync(Func<Task<BusinessLogic.Models.EventSummary?>> import)
     {
         IsSettingsOpen = false;
-        var imported = await _archiveFlow.ImportAsync();
+        var imported = await import();
         if (imported is null)
             return;
 

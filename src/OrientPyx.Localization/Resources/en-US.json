@@ -1557,6 +1557,7 @@
   "ImportEvent.ImportAsNew": "Import as new",
   "ImportEvent.BadArchive": "The selected file is not an OrientPyx competition archive.",
   "ImportEvent.Error": "Could not import the competition.",
+  "ImportEvent.InUse": "Could not overwrite the competition: it is open in another OrientPyx window. Close the other windows and import again. The existing competition was not changed.",
 
   "Common.Close": "Close",
   "Help.Tooltip": "Help: what this screen is and how to use it",

@@ -22,4 +22,10 @@ public interface IEventArchiveFlow
     /// imported competition on success, or null when cancelled / on a bad archive.
     /// </summary>
     Task<EventSummary?> ImportAsync();
+
+    /// <summary>
+    /// Imports the given archive file (e.g. one double-clicked in Explorer) — the same flow as
+    /// <see cref="ImportAsync"/> minus the open-file dialog.
+    /// </summary>
+    Task<EventSummary?> ImportFileAsync(string path);
 }

@@ -55,7 +55,18 @@ public partial class App : Application
             desktop.MainWindow = mainWindow;
 
             // Restore the last session (or show the picker) once the UI is up.
-            _ = mainViewModel.InitializeAsync();
+            var initialized = mainViewModel.InitializeAsync();
+
+            // Launched by double-clicking a competition archive: once the window is up and the startup
+            // screen settled, run the regular import flow on that file (its dialogs need a shown owner).
+            if (Program.StartupArchivePath is { } archivePath)
+            {
+                mainWindow.Opened += async (_, _) =>
+                {
+                    await initialized;
+                    await mainViewModel.ImportCompetitionFileAsync(archivePath);
+                };
+            }
 
             // On the very first launch after a Velopack install/update, greet the user and confirm
             // where the app and their (update-safe) competition data live. Shown once, non-blocking.

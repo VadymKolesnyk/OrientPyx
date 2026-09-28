@@ -25,6 +25,12 @@ internal static class Program
     /// </summary>
     internal static bool IsFirstRun { get; private set; }
 
+    /// <summary>
+    /// The competition archive (<c>.opyx</c>) this launch was asked to open — set when the user double-clicks
+    /// one in Explorer. The UI imports it once it is up (see <c>App</c>). Null on a normal launch.
+    /// </summary>
+    internal static string? StartupArchivePath { get; private set; }
+
     // Avalonia configuration; don't use any Avalonia, third-party APIs or any
     // SynchronizationContext-reliant code before AppMain is called.
     [STAThread]
@@ -34,9 +40,18 @@ internal static class Program
         // and exits the process before the UI is ever built. On a normal launch it returns immediately.
         // OnFirstRun fires on the first launch Velopack triggers right after an install/update — we just
         // record it here (no UI exists yet) and surface the welcome window once the UI is up.
-        VelopackApp.Build()
-            .OnFirstRun(_ => IsFirstRun = true)
-            .Run();
+        var velopack = VelopackApp.Build().OnFirstRun(_ => IsFirstRun = true);
+        // The (Windows-only) install/update/uninstall hooks also (un)register the .opyx file association.
+        if (OperatingSystem.IsWindows())
+        {
+            velopack = velopack
+                .OnAfterInstallFastCallback(_ => FileAssociation.Register(Environment.ProcessPath))
+                .OnAfterUpdateFastCallback(_ => FileAssociation.Register(Environment.ProcessPath))
+                .OnBeforeUninstallFastCallback(_ => FileAssociation.Unregister());
+        }
+        velopack.Run();
+
+        StartupArchivePath = FileAssociation.FindArchiveArgument(args);
 
         // Installed builds keep competition data in a stable per-user folder so it survives auto-updates
         // (which replace the application directory wholesale). No-op for an in-place dev/xcopy build.
@@ -87,6 +102,10 @@ internal static class Program
             var updateExe = Path.Combine(Directory.GetParent(appDir)?.FullName ?? appDir, "Update.exe");
             if (!File.Exists(updateExe))
                 return;
+
+            // Re-assert the .opyx association on every installed launch, so installs made before it existed
+            // pick it up. Dev builds never register (the association belongs to the installed app).
+            FileAssociation.Register(Environment.ProcessPath);
 
             var root = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

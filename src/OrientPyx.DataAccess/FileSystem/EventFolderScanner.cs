@@ -28,6 +28,10 @@ public sealed class EventFolderScanner : IEventFolderScanner
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            // Dot-folders are the archive import's own staging/backup copies, never competitions.
+            if (Path.GetFileName(folder).StartsWith('.'))
+                continue;
+
             var dbPath = AppDatabasePaths.GetEventDatabaseFilePath(folder);
             if (!File.Exists(dbPath))
                 continue;

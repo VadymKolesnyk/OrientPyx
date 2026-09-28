@@ -120,7 +120,9 @@ public sealed class EventArchiveService : IEventArchiveService
             if (!overwrite)
                 throw new InvalidOperationException($"A competition with identifier '{identifier}' already exists.");
             // Replacing: extract to a temp folder first, then swap, so a failed/partial extract can't
-            // wipe the existing competition.
+            // wipe the existing competition. Drop this process's pooled handles on its event.db first —
+            // the competition list scan leaves them open, and Windows won't move a folder holding them.
+            await _eventStore.ReleaseAsync(folderPath, cancellationToken);
         }
 
         var sharedData = await Task.Run(() => ExtractInto(archivePath, folderPath, cancellationToken), cancellationToken);
@@ -203,9 +205,7 @@ public sealed class EventArchiveService : IEventArchiveService
                 entry.ExtractToFile(targetPath, overwrite: true);
             }
 
-            if (Directory.Exists(destinationFolder))
-                Directory.Delete(destinationFolder, recursive: true);
-            Directory.Move(stagingFolder, destinationFolder);
+            ReplaceFolder(stagingFolder, destinationFolder);
             return sharedData;
         }
         catch
@@ -213,6 +213,49 @@ public sealed class EventArchiveService : IEventArchiveService
             if (Directory.Exists(stagingFolder))
                 Directory.Delete(stagingFolder, recursive: true);
             throw;
+        }
+    }
+
+    // Moves stagingFolder into destinationFolder's place. An existing destination is first moved aside as a
+    // whole rather than deleted in place: a recursive delete removes files one by one and fails midway on a
+    // file another instance holds open (event.db), leaving a half-wiped competition. A folder move is
+    // all-or-nothing, so if anything inside is in use the existing competition stays intact.
+    private static void ReplaceFolder(string stagingFolder, string destinationFolder)
+    {
+        if (!Directory.Exists(destinationFolder))
+        {
+            Directory.Move(stagingFolder, destinationFolder);
+            return;
+        }
+
+        var parent = Path.GetDirectoryName(destinationFolder)!;
+        var backupFolder = Path.Combine(parent, $".replaced-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.Move(destinationFolder, backupFolder);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new EventFolderInUseException($"Competition folder '{destinationFolder}' is in use.", ex);
+        }
+
+        try
+        {
+            Directory.Move(stagingFolder, destinationFolder);
+        }
+        catch
+        {
+            Directory.Move(backupFolder, destinationFolder);
+            throw;
+        }
+
+        try
+        {
+            Directory.Delete(backupFolder, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The new competition is in place; a leftover hidden backup folder is harmless.
         }
     }
 
