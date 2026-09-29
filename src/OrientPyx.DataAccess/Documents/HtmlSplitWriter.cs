@@ -57,6 +57,7 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
         sb.Append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, ")
           .Append("maximum-scale=1, user-scalable=no\">\n");
         sb.Append("<title>").Append(Esc(document.Title)).Append("</title>\n");
+        sb.Append(HtmlFavicon.LinkTag);
         sb.Append("<style>\n").Append(Css).Append("</style>\n");
         sb.Append("</head>\n<body>\n");
 

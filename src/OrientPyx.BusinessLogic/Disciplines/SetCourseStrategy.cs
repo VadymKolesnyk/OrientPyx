@@ -74,9 +74,10 @@ public sealed class SetCourseStrategy : DisciplineStrategyBase
     /// Ordered (set-course) splits as two parallel lists — <b>passage</b> (every punch, in chip order,
     /// nothing dropped) and <b>expected</b> (the prescribed course, each flagged taken or missing).
     /// <list type="bullet">
-    ///   <item><see cref="PassagePunch.OnCourse"/> — set when the punch advances the course, by the same
-    ///   greedy subsequence match the status check uses. It skips past a missed control or a foreign
-    ///   punch, so one missing КП does not off-course every later control.</item>
+    ///   <item><see cref="PassagePunch.OnCourse"/> — set when the punch advances the course, by
+    ///   an optimal (longest) subsequence alignment against the course. It skips past a missed control or
+    ///   a foreign punch, so one missing КП does not off-course every later control, and an early stray
+    ///   punch of a later КП (1 5 2 3 4 5 6) does not jump ahead and mark the controls between as missed.</item>
     ///   <item>Course leg/pace — only for a <i>contiguous</i> on-course control (its prescribed
     ///   predecessor was taken), measured from that control, extras in between ignored. Left empty after
     ///   a missed КП, for an off-course punch, and for the finish of an incomplete course: that time

@@ -178,7 +178,7 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
     /// Builds the ordered (set-course-style) splits view for a prescribed <paramref name="expected"/> control
     /// order — shared by the set-course discipline (which passes <c>context.ExpectedControls</c>) and the
     /// scatter discipline (which passes the auto-detected variant's controls). The <b>passage</b> keeps every
-    /// punch in chip order, each flagged on-course by a greedy <b>subsequence</b> match against
+    /// punch in chip order, each flagged on-course by an optimal <b>subsequence</b> alignment against
     /// <paramref name="expected"/> (a missed КП in the middle does not off-course every later control). The
     /// <b>course leg/pace</b> is filled only for a contiguous on-course control (its prescribed predecessor was
     /// taken), measured from that previous on-course control; every row additionally carries a <b>display</b>
@@ -191,7 +191,6 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
         string variantCode = "")
     {
         var matched = new bool[expected.Count];
-        var ei = 0;                  // next prescribed control still to be taken
         DateTimeOffset? prevOnCourse = context.StartTime;
         var prevOnCoursePoint = context.StartCoord;
         var prevOnCourseMap = context.StartMap;
@@ -208,21 +207,16 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
         passage.Add(new PassagePunch(0, string.Empty, OnCourse: false,
             context.StartTime, Leg: null, Elapsed: TimeSpan.Zero, PassageKind.Start));
 
-        foreach (var punch in context.Punches)
+        var assignment = AlignToCourse(context.Punches, expected);
+
+        for (var pi = 0; pi < context.Punches.Count; pi++)
         {
+            var punch = context.Punches[pi];
             var code = punch.ControlCode.Trim();
             if (code.Length == 0)
                 continue;
 
-            var matchedIndex = -1;
-            for (var j = ei; j < expected.Count; j++)
-            {
-                if (string.Equals(code, expected[j].Trim(), StringComparison.OrdinalIgnoreCase))
-                {
-                    matchedIndex = j;
-                    break;
-                }
-            }
+            var matchedIndex = assignment[pi];
             var onCourse = matchedIndex >= 0;
 
             var elapsed = context.StartTime is { } s && punch.Time is { } t2 ? t2 - s : (TimeSpan?)null;
@@ -243,7 +237,6 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
             if (onCourse)
             {
                 matched[matchedIndex] = true;
-                ei = matchedIndex + 1;
                 taken++;
             }
 
@@ -304,6 +297,49 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
             ExpectedCount = expected.Count,
             VariantCode = variantCode
         };
+    }
+
+    /// <summary>
+    /// Assigns each punch the prescribed position it takes (or -1 when it is an extra), maximising the number
+    /// of prescribed controls taken in order — a longest-common-subsequence alignment. A greedy walk driven by
+    /// the punches would let an early stray punch of a later control (1 5 2 3 4 5 6) jump ahead and mark
+    /// everything in between as missed; the alignment instead ignores that stray and uses the real visit.
+    /// Among equally good alignments it takes the earliest punch of each control, matching the status check.
+    /// </summary>
+    private static int[] AlignToCourse(IReadOnlyList<ChipPunch> punches, IReadOnlyList<string> expected)
+    {
+        var n = punches.Count;
+        var m = expected.Count;
+        var codes = punches.Select(p => p.ControlCode.Trim()).ToArray();
+        var course = expected.Select(c => c.Trim()).ToArray();
+
+        bool Same(int i, int j) =>
+            codes[i].Length > 0 && string.Equals(codes[i], course[j], StringComparison.OrdinalIgnoreCase);
+
+        // best[i, j] = most prescribed controls takeable from punch i onwards against course position j onwards.
+        var best = new int[n + 1, m + 1];
+        for (var i = n - 1; i >= 0; i--)
+            for (var j = m - 1; j >= 0; j--)
+                best[i, j] = Same(i, j)
+                    ? Math.Max(best[i + 1, j + 1] + 1, Math.Max(best[i + 1, j], best[i, j + 1]))
+                    : Math.Max(best[i + 1, j], best[i, j + 1]);
+
+        var assignment = new int[n];
+        Array.Fill(assignment, -1);
+        for (int i = 0, j = 0; i < n && j < m;)
+        {
+            if (Same(i, j) && best[i, j] == best[i + 1, j + 1] + 1)
+            {
+                assignment[i] = j;
+                i++;
+                j++;
+            }
+            else if (best[i + 1, j] == best[i, j])
+                i++;   // this punch is an extra
+            else
+                j++;   // this prescribed control is missed
+        }
+        return assignment;
     }
 
     // --- Shared leg geometry (used by the ordered set-course and rogaine layouts)

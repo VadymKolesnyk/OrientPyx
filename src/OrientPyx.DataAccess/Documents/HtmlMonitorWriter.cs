@@ -35,6 +35,7 @@ public sealed class HtmlMonitorWriter : IMonitorHtmlWriter
         sb.Append("<meta charset=\"utf-8\">\n");
         sb.Append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
         sb.Append("<title>").Append(Esc(document.Title)).Append("</title>\n");
+        sb.Append(HtmlFavicon.LinkTag);
         sb.Append("<style>\n").Append(Css).Append("</style>\n");
         sb.Append("</head>\n<body>\n");
 
