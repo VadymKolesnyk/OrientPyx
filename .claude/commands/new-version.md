@@ -1,10 +1,10 @@
 ---
 description: Cut and publish a new OrientPyx release — bump version, commit changelog, tag, build the Velopack package, and upload to GitHub Releases.
-argument-hint: "[version]  (optional, e.g. 0.2.0 — defaults to patch-bumping the latest tag)"
+argument-hint: "(no args — you will be asked which segment to bump)"
 ---
 
-Cut and publish a new OrientPyx release. The requested version is: **$ARGUMENTS**
-(if empty, patch-bump the latest release — e.g. 0.1.5 → 0.1.6).
+Cut and publish a new OrientPyx release. Extra arguments (if any): **$ARGUMENTS**
+The version bump is **always chosen by the user** via `AskUserQuestion` in Step 1.
 
 You are releasing this app to end users, so treat this as an outward-facing action:
 follow every step in order, verify as you go, and **stop and report** if any step fails
@@ -27,9 +27,16 @@ instead of pushing a half-finished release. Do not skip the build.
 
 - Read the current version from `src/OrientPyx.Presentation/OrientPyx.Presentation.csproj`
   (`<Version>`) and the latest tag: `git tag --sort=-v:refname | head -1`.
-- If the user passed a version in `$ARGUMENTS`, use it (strip any leading `v`).
-- Otherwise, patch-bump the **latest** of {csproj version, latest tag} — increment the
-  third (patch) segment by 1. E.g. `0.1.5` → `0.1.6`.
+- **Always ask** the user which segment to bump — even if `$ARGUMENTS` contains a
+  version. Call `AskUserQuestion` with exactly three options, computed from the base
+  version (the latest of {csproj version, latest tag}), patch listed **first** and marked
+  as the default:
+  1. `Patch — <X.Y.Z+1> (Recommended)` — bump the 3rd segment (fixes/small changes).
+  2. `Minor — <X.Y+1.0>` — bump the 2nd segment, reset patch to 0 (new features).
+  3. `Major — <X+1.0.0>` — bump the 1st segment, reset minor and patch to 0.
+  Show the concrete resulting version in each label (e.g. `0.5.2 → 0.5.3`). If the user
+  picks "Other" and types an explicit version, use that (strip any leading `v`).
+  Do not continue until the user has answered.
 - **Validate** the new version:
   - It is a valid `MAJOR.MINOR.PATCH` semver.
   - It is strictly greater than the latest existing tag (Velopack requires this for
