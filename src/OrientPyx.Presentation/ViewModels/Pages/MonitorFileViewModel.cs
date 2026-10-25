@@ -45,7 +45,7 @@ public sealed partial class MonitorFileViewModel : ObservableObject
         _scrollSpeed = Math.Max(0, model.ScrollSpeed);
         _enabled = model.Enabled;
 
-        var selected = model.GroupNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var selected = model.GroupNames.ToHashSet(TextKey.Comparer);
         BuildGroupToggles(selected);
 
         // Keep the group toggle list in sync if the day's groups change while the page is open.
@@ -248,7 +248,7 @@ public sealed partial class MonitorFileViewModel : ObservableObject
     private void OnAvailableGroupsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         // Preserve the current ticks across a refresh of the available-group list.
-        var selected = Groups.Where(g => g.IsSelected).Select(g => g.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var selected = Groups.Where(g => g.IsSelected).Select(g => g.Name).ToHashSet(TextKey.Comparer);
         BuildGroupToggles(selected);
         RequestPreviewRefresh();
     }

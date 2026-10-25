@@ -199,7 +199,7 @@ internal sealed class ColumnFilterPopup
         {
             var value = check.Tag as string ?? string.Empty;
             check.IsVisible = q.Length == 0
-                || value.Contains(q, System.StringComparison.CurrentCultureIgnoreCase);
+                || TextSearch.Contains(value, q);
         }
     }
 

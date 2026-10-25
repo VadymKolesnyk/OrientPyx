@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using OrientPyx.BusinessLogic.Models;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
 
@@ -12,7 +13,7 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 /// </summary>
 public sealed class RentalChipRegistry
 {
-    private HashSet<string> _numbers = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _numbers = new(TextKey.Comparer);
 
     /// <summary>Raised whenever the set of numbers changes (reset, add, or remove).</summary>
     public event EventHandler? Changed;
@@ -26,7 +27,7 @@ public sealed class RentalChipRegistry
     /// <summary>Replaces the whole set (e.g. after a reload) and notifies observers.</summary>
     public void Reset(IEnumerable<string> numbers)
     {
-        _numbers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        _numbers = new HashSet<string>(TextKey.Comparer);
         foreach (var n in numbers)
         {
             var trimmed = (n ?? string.Empty).Trim();

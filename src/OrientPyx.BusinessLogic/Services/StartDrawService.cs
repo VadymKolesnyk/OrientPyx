@@ -147,7 +147,7 @@ public sealed class StartDrawService : IStartDrawService
     {
         var key = KeyOf(p, separation);
         // A blank key is treated as "no group", so it never clashes with anything.
-        return key.Length > 0 && string.Equals(key, lastKey, StringComparison.OrdinalIgnoreCase);
+        return key.Length > 0 && TextKey.Same(key, lastKey);
     }
 
     private static string KeyOf(DrawParticipant p, DrawSeparationField separation) => separation switch

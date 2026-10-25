@@ -1048,7 +1048,7 @@ public sealed class EventStore : IEventStore
         var chipsInUse = target
             .Select(p => (p.Chip ?? string.Empty).Trim())
             .Where(c => c.Length > 0)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .ToHashSet(TextKey.Comparer);
 
         // The groups already on the target day. A copied member's group that is missing here gets its own
         // GroupDaySettings row (blank course fields) so the group genuinely runs on the target day.
@@ -1665,7 +1665,7 @@ public sealed class EventStore : IEventStore
         {
             var trimmed = name.Trim();
             if (trimmed.Length == 0) return null;
-            var existing = groups.FirstOrDefault(g => string.Equals(g.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+            var existing = groups.FirstOrDefault(g => TextKey.Same(g.Name, trimmed));
             if (existing is null)
             {
                 var (min, max) = Group.DeriveAgeWindow(trimmed, startYear);
@@ -1716,8 +1716,8 @@ public sealed class EventStore : IEventStore
 
         var byFsouCode = existingParticipants
             .Where(p => !string.IsNullOrWhiteSpace(p.FsouCode))
-            .GroupBy(p => p.FsouCode.Trim(), StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            .GroupBy(p => p.FsouCode.Trim(), TextKey.Comparer)
+            .ToDictionary(g => g.Key, g => g.First(), TextKey.Comparer);
         var byName = existingParticipants
             .Where(p => !string.IsNullOrWhiteSpace(p.FullName))
             .GroupBy(p => ParticipantNameKey.Of(p.FullName), StringComparer.OrdinalIgnoreCase)
@@ -1921,7 +1921,7 @@ public sealed class EventStore : IEventStore
     {
         var trimmed = name.Trim();
         if (trimmed.Length == 0) return null;
-        var existing = cache.FirstOrDefault(e => string.Equals(NameOf(e), trimmed, StringComparison.OrdinalIgnoreCase));
+        var existing = cache.FirstOrDefault(e => TextKey.Same(NameOf(e), trimmed));
         if (existing is null)
         {
             existing = create(trimmed);

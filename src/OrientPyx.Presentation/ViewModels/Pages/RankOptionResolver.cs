@@ -1,3 +1,4 @@
+using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
@@ -28,7 +29,7 @@ internal static class RankOptionResolver
             return (sharedOptions, sharedOptions[0]);
 
         var match = sharedOptions.FirstOrDefault(
-            o => !o.IsUnknown && string.Equals(o.Value, rank, StringComparison.CurrentCultureIgnoreCase));
+            o => !o.IsUnknown && TextKey.Same(o.Value, rank));
         if (match is not null)
             return (sharedOptions, match);
 

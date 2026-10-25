@@ -952,8 +952,8 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
 
         // Group the day's rows by group, in the snapshot's group order.
         var byGroup = snapshot.Rows
-            .GroupBy(r => r.GroupName, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+            .GroupBy(r => r.GroupName, OrientPyx.BusinessLogic.Models.TextKey.Comparer)
+            .ToDictionary(g => g.Key, g => g.ToList(), OrientPyx.BusinessLogic.Models.TextKey.Comparer);
 
         var remaining = PreviewTotalRowCap;
         foreach (var group in snapshot.Groups)

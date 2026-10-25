@@ -97,7 +97,7 @@ public sealed class WinnersPrintBuilder : IWinnersPrintBuilder
     {
         var entries = new List<PlacedEntry>();
         foreach (var team in rows.Where(r => r.Team.Length > 0)
-                     .GroupBy(r => r.Team, StringComparer.CurrentCultureIgnoreCase))
+                     .GroupBy(r => r.Team, TextKey.Comparer))
         {
             var lead = team.First();
             if (lead.Result.Place is { } place)

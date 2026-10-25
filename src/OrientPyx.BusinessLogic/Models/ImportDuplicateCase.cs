@@ -39,13 +39,12 @@ public sealed record ImportDuplicateCandidate(
     public bool LooksLikeSamePerson(ImportDuplicateRow row) =>
         (BirthYear is null || row.BirthYear is null || BirthYear == row.BirthYear)
         && (FsouCode.Length == 0 || row.FsouCode.Length == 0
-            || string.Equals(FsouCode, row.FsouCode, StringComparison.OrdinalIgnoreCase));
+            || TextKey.Same(FsouCode, row.FsouCode));
 }
 
 /// <summary>Shared full-name key used to match athletes by «Прізвище Ім'я».</summary>
 public static class ParticipantNameKey
 {
-    /// <summary>Whitespace-normalised full name; compare case-insensitively.</summary>
-    public static string Of(string? name) => string.Join(' ',
-        (name ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    /// <summary>The name's <see cref="TextKey"/> (whitespace-normalised, case- and look-alike-letter-folded).</summary>
+    public static string Of(string? name) => TextKey.Of(name);
 }

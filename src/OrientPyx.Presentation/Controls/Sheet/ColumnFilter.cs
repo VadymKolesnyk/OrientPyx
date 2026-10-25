@@ -87,19 +87,19 @@ public sealed class SheetFilter
 
     private bool MatchesCondition(string value)
     {
-        const StringComparison ci = StringComparison.CurrentCultureIgnoreCase;
         // Text conditions are layout-tolerant: the typed term is expanded (wrong keyboard layout, s/i→ы)
         // and the condition holds if it holds for ANY variant (for the negative DoesNotContain, ALL).
+        // Look-alike Latin/Cyrillic letters match too (TextSearch compares by TextKey as well).
         var variants = TextSearch.Variants(Text);
         return Condition switch
         {
             SheetFilterCondition.IsEmpty => string.IsNullOrWhiteSpace(value),
             SheetFilterCondition.IsNotEmpty => !string.IsNullOrWhiteSpace(value),
-            SheetFilterCondition.Contains => AnyVariant(variants, v => value.Contains(v, ci)),
-            SheetFilterCondition.DoesNotContain => !AnyVariant(variants, v => value.Contains(v, ci)),
-            SheetFilterCondition.Equals => AnyVariant(variants, v => value.Equals(v, ci)),
-            SheetFilterCondition.StartsWith => AnyVariant(variants, v => value.StartsWith(v, ci)),
-            SheetFilterCondition.EndsWith => AnyVariant(variants, v => value.EndsWith(v, ci)),
+            SheetFilterCondition.Contains => AnyVariant(variants, v => TextSearch.Contains(value, v)),
+            SheetFilterCondition.DoesNotContain => !AnyVariant(variants, v => TextSearch.Contains(value, v)),
+            SheetFilterCondition.Equals => AnyVariant(variants, v => TextSearch.Same(value, v)),
+            SheetFilterCondition.StartsWith => AnyVariant(variants, v => TextSearch.StartsWith(value, v)),
+            SheetFilterCondition.EndsWith => AnyVariant(variants, v => TextSearch.EndsWith(value, v)),
             _ => true
         };
     }

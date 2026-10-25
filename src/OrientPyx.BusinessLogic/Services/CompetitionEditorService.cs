@@ -163,7 +163,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         // Rental chips: a chip is "handed out" when its number is held by at least one participant on any
         // day. Match the holder map's case-insensitive trimmed-number keying.
-        var heldNumbers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var heldNumbers = new HashSet<string>(TextKey.Comparer);
         foreach (var link in allLinks)
         {
             var chip = link.Chip.Trim();
@@ -642,7 +642,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         // Match on name, case-insensitively.
         var groups = await _eventStore.GetGroupsAsync(FolderPath, cancellationToken);
-        var group = groups.FirstOrDefault(g => string.Equals(g.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+        var group = groups.FirstOrDefault(g => TextKey.Same(g.Name, trimmed));
         if (group is null)
         {
             var (min, max) = await DeriveAgeWindowAsync(trimmed, cancellationToken);
@@ -706,7 +706,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         {
             var groups = await _eventStore.GetGroupsAsync(FolderPath, cancellationToken);
             var collides = groups.Any(g =>
-                g.Id != row.GroupId && string.Equals(g.Name, target, StringComparison.OrdinalIgnoreCase));
+                g.Id != row.GroupId && TextKey.Same(g.Name, target));
             if (!collides)
                 await _eventStore.UpdateGroupAsync(FolderPath, new Group { Id = row.GroupId, Name = target }, cancellationToken);
         }
@@ -812,8 +812,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
         var groupsByName = groups
-            .GroupBy(g => g.Name.Trim(), StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            .GroupBy(g => g.Name.Trim(), TextKey.Comparer)
+            .ToDictionary(g => g.Key, g => g.First(), TextKey.Comparer);
         var startYear = await GetCompetitionStartYearAsync(folder, cancellationToken);
 
         var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
@@ -832,7 +832,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         // Collapse duplicate course names within the file (keep the first), so a repeated course
         // does not create a second group or fight itself for the same day row.
-        var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenNames = new HashSet<string>(TextKey.Comparer);
 
         foreach (var course in data.Courses)
         {
@@ -996,7 +996,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var number = (chip.Number ?? string.Empty).Trim();
         var chips = await _eventStore.GetRentalChipsAsync(FolderPath, cancellationToken);
         var collides = number.Length > 0 && chips.Any(c =>
-            c.Id != chip.Id && string.Equals(c.Number.Trim(), number, StringComparison.OrdinalIgnoreCase));
+            c.Id != chip.Id && TextKey.Same(c.Number.Trim(), number));
         if (collides)
             number = chips.First(c => c.Id == chip.Id).Number; // revert to the stored number
 
@@ -1022,7 +1022,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // Group every (chip → participant) assignment by chip number (case-insensitive). The same
         // participant may hold a chip on several days; dedupe by participant id so a name appears once.
         // A blank chip or a link whose participant has gone missing is skipped.
-        var holders = new Dictionary<string, (List<string> Names, HashSet<Guid> Seen)>(StringComparer.OrdinalIgnoreCase);
+        var holders = new Dictionary<string, (List<string> Names, HashSet<Guid> Seen)>(TextKey.Comparer);
         foreach (var link in links)
         {
             var number = link.Chip.Trim();
@@ -1041,7 +1041,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return holders.ToDictionary(
             kvp => kvp.Key,
             kvp => string.Join(", ", kvp.Value.Names),
-            StringComparer.OrdinalIgnoreCase);
+            TextKey.Comparer);
     }
 
     public async Task<RentalChipHoldersByDay> GetRentalChipHoldersByDayAsync(CancellationToken cancellationToken = default)
@@ -1058,7 +1058,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         // chip → one name list per day. A chip is unique per day, but a stray duplicate is joined rather
         // than hidden so the grid still shows it. Blank chips and orphaned links are skipped.
-        var holders = new Dictionary<string, List<string>[]>(StringComparer.OrdinalIgnoreCase);
+        var holders = new Dictionary<string, List<string>[]>(TextKey.Comparer);
         foreach (var link in links)
         {
             var number = link.Chip.Trim();
@@ -1079,7 +1079,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var byChip = holders.ToDictionary(
             kvp => kvp.Key,
             kvp => (IReadOnlyList<string>)kvp.Value.Select(names => string.Join(", ", names)).ToList(),
-            StringComparer.OrdinalIgnoreCase);
+            TextKey.Comparer);
         return new RentalChipHoldersByDay(days.Select(d => d.Number).ToList(), byChip);
     }
 
@@ -1105,7 +1105,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var existing = await _eventStore.GetRentalChipsAsync(folder, cancellationToken);
         var existingNumbers = new HashSet<string>(
             existing.Select(c => c.Number.Trim()),
-            StringComparer.OrdinalIgnoreCase);
+            TextKey.Comparer);
 
         // Keep the digit width: "0042" ⇒ "0043", not "43".
         var width = start.Length;
@@ -1139,7 +1139,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var existing = await _eventStore.GetRentalChipsAsync(folder, cancellationToken);
         var existingNumbers = new HashSet<string>(
             existing.Select(c => c.Number.Trim()),
-            StringComparer.OrdinalIgnoreCase);
+            TextKey.Comparer);
         var trimmedNote = (note ?? string.Empty).Trim();
 
         // The readout is a raw log: collapse duplicate numbers and add only the ones we don't have.
@@ -1189,7 +1189,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         // Match on name, case-insensitively.
         var regions = await _eventStore.GetRegionsAsync(FolderPath, cancellationToken);
-        var region = regions.FirstOrDefault(r => string.Equals(r.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+        var region = regions.FirstOrDefault(r => TextKey.Same(r.Name, trimmed));
         if (region is null)
         {
             region = new Region { Name = trimmed };
@@ -1207,7 +1207,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var name = (region.Name ?? string.Empty).Trim();
         var regions = await _eventStore.GetRegionsAsync(FolderPath, cancellationToken);
         var collides = name.Length > 0 && regions.Any(r =>
-            r.Id != region.Id && string.Equals(r.Name.Trim(), name, StringComparison.OrdinalIgnoreCase));
+            r.Id != region.Id && TextKey.Same(r.Name.Trim(), name));
         if (collides || name.Length == 0)
             name = regions.FirstOrDefault(r => r.Id == region.Id)?.Name ?? name;
 
@@ -1279,7 +1279,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             return null;
 
         var clubs = await _eventStore.GetClubsAsync(FolderPath, cancellationToken);
-        var club = clubs.FirstOrDefault(c => string.Equals(c.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+        var club = clubs.FirstOrDefault(c => TextKey.Same(c.Name, trimmed));
         if (club is null)
         {
             club = new Club { Name = trimmed };
@@ -1295,7 +1295,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var name = (club.Name ?? string.Empty).Trim();
         var clubs = await _eventStore.GetClubsAsync(FolderPath, cancellationToken);
         var collides = name.Length > 0 && clubs.Any(c =>
-            c.Id != club.Id && string.Equals(c.Name.Trim(), name, StringComparison.OrdinalIgnoreCase));
+            c.Id != club.Id && TextKey.Same(c.Name.Trim(), name));
         if (collides || name.Length == 0)
             name = clubs.FirstOrDefault(c => c.Id == club.Id)?.Name ?? name;
 
@@ -1364,7 +1364,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             return null;
 
         var dusshes = await _eventStore.GetDusshesAsync(FolderPath, cancellationToken);
-        var dussh = dusshes.FirstOrDefault(d => string.Equals(d.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+        var dussh = dusshes.FirstOrDefault(d => TextKey.Same(d.Name, trimmed));
         if (dussh is null)
         {
             dussh = new Dussh { Name = trimmed };
@@ -1380,7 +1380,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var name = (dussh.Name ?? string.Empty).Trim();
         var dusshes = await _eventStore.GetDusshesAsync(FolderPath, cancellationToken);
         var collides = name.Length > 0 && dusshes.Any(d =>
-            d.Id != dussh.Id && string.Equals(d.Name.Trim(), name, StringComparison.OrdinalIgnoreCase));
+            d.Id != dussh.Id && TextKey.Same(d.Name.Trim(), name));
         if (collides || name.Length == 0)
             name = dusshes.FirstOrDefault(d => d.Id == dussh.Id)?.Name ?? name;
 
@@ -1626,7 +1626,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
         var number = (row.Number ?? string.Empty).Trim();
         var numberCollides = number.Length > 0 && participants.Any(p =>
-            p.Id != row.ParticipantId && string.Equals(p.Number.Trim(), number, StringComparison.OrdinalIgnoreCase));
+            p.Id != row.ParticipantId && TextKey.Same(p.Number.Trim(), number));
         if (numberCollides)
             number = participants.FirstOrDefault(p => p.Id == row.ParticipantId)?.Number ?? number;
 
@@ -1655,7 +1655,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
         var chip = (row.Chip ?? string.Empty).Trim();
         var chipCollides = chip.Length > 0 && links.Any(l =>
-            l.Id != row.LinkId && string.Equals(l.Chip.Trim(), chip, StringComparison.OrdinalIgnoreCase));
+            l.Id != row.LinkId && TextKey.Same(l.Chip.Trim(), chip));
         if (chipCollides)
             chip = links.FirstOrDefault(l => l.Id == row.LinkId)?.Chip ?? chip;
 
@@ -1726,7 +1726,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // chip — the cell reverts on the next reload (matches UpdateParticipantDayRowAsync).
         var trimmed = (chip ?? string.Empty).Trim();
         var collides = trimmed.Length > 0 && links.Any(l =>
-            l.Id != existing.Id && string.Equals(l.Chip.Trim(), trimmed, StringComparison.OrdinalIgnoreCase));
+            l.Id != existing.Id && TextKey.Same(l.Chip.Trim(), trimmed));
         if (collides)
             trimmed = existing.Chip;
 
@@ -1804,7 +1804,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             ? Array.Empty<FinishReadout>() as IReadOnlyList<FinishReadout>
             : await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
         var latest = readouts
-            .Where(r => string.Equals(r.ChipNumber.Trim(), chip, StringComparison.OrdinalIgnoreCase))
+            .Where(r => TextKey.Same(r.ChipNumber.Trim(), chip))
             .OrderByDescending(r => r.Order)
             .FirstOrDefault();
 
@@ -2220,7 +2220,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var dusshName = dusshes.ToDictionary(d => d.Id, d => d.Name);
         // The rental-chip pool as trimmed numbers, so a chip counts as "own" (bold) only when it's NOT rented.
         var rentalNumbers = new HashSet<string>(
-            rentalChips.Select(c => c.Number.Trim()).Where(n => n.Length > 0), StringComparer.OrdinalIgnoreCase);
+            rentalChips.Select(c => c.Number.Trim()).Where(n => n.Length > 0), TextKey.Comparer);
 
         // The per-day membership links for the requested scope: one day (day mode) or every day (roster mode).
         // In roster mode the distinct across-days group/chip values are joined with " / ", matching the roster.
@@ -2280,7 +2280,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 .Select(d => startByDay.TryGetValue(d.Id, out var s) ? s : string.Empty)
                 .ToList();
 
-            var distinctChips = chipValues.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var distinctChips = chipValues.Distinct(TextKey.Comparer).ToList();
             // Own (bold) when the participant holds any chip that is NOT in the rental pool. Sort key = the
             // smallest chip number they hold (numeric so "9" < "80"; a non-numeric chip sorts just before the
             // chip-less rows). Null when they hold no chip at all.
@@ -2297,7 +2297,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 Number = p.Number,
                 FullName = p.FullName,
                 BirthDate = p.BirthDate,
-                Group = string.Join(" / ", groupValues.Distinct(StringComparer.CurrentCultureIgnoreCase)),
+                Group = string.Join(" / ", groupValues.Distinct(TextKey.Comparer)),
                 Chip = string.Join(" / ", distinctChips),
                 StartTimes = startTimes,
                 Region = region,
@@ -2380,11 +2380,12 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         // One summary entry per (participant, group): a participant who ran different groups on different days
         // is summed separately in each group, over only the days they ran in it. The per-day result is keyed by
-        // day id. A link with no group is skipped.
+        // day id. A link with no group is skipped. Look-alike duplicates («M12» / «М12») count as one group.
         var orderedDays = days.OrderBy(d => d.Number).ToList();
+        var canonical = CanonicalGroups(groups);
         var linksByParticipantGroup = links
             .Where(l => l.GroupId is not null)
-            .GroupBy(l => (l.ParticipantId, GroupId: l.GroupId!.Value));
+            .GroupBy(l => (l.ParticipantId, GroupId: CanonicalGroupId(canonical, l.GroupId!.Value)));
 
         // Group order: follow the group entity order (mirrors the day grid). Build a per-group member list.
         var groupOrder = groups.Select((g, i) => (g.Id, i)).ToDictionary(t => t.Id, t => t.i);
@@ -2616,7 +2617,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             folder, dayId, settingsByGroup, dayDefault, inputs.StartFinishCodes, inputs.DisabledCodes, cancellationToken);
 
         // Latest read-out per chip (the "last read-out" rule), so a re-read chip uses its newest punches.
-        var latestByChip = new Dictionary<string, FinishReadout>(StringComparer.OrdinalIgnoreCase);
+        var latestByChip = new Dictionary<string, FinishReadout>(TextKey.Comparer);
         foreach (var r in readouts)
         {
             var key = r.ChipNumber.Trim();
@@ -2805,7 +2806,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     {
         var mates = links.Where(l =>
             l.GroupId == groupId &&
-            string.Equals(TeamKeyFor(l, teamByParticipant), teamKey, StringComparison.OrdinalIgnoreCase)).ToList();
+            TextKey.Same(TeamKeyFor(l, teamByParticipant), teamKey)).ToList();
 
         HashSet<string>? common = null;
         foreach (var mate in mates)
@@ -2886,7 +2887,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var teamByParticipant = participants.ToDictionary(p => p.Id, p => p.Team.Trim());
 
         // Latest read-out per chip (the "last read-out" rule): highest Order wins on a repeated chip.
-        var latestByChip = new Dictionary<string, FinishReadout>(StringComparer.OrdinalIgnoreCase);
+        var latestByChip = new Dictionary<string, FinishReadout>(TextKey.Comparer);
         foreach (var r in readouts)
         {
             var key = r.ChipNumber.Trim();
@@ -3142,14 +3143,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var (minParticipants, minRegions, countForRank) = conditions;
 
         var ranks = await _appStore.GetRanksAsync(cancellationToken);
-        // Key on a normalised rank name so a participant's rank still matches the seeded rank when the two use
-        // look-alike letters (the Roman numerals I/II/III are Latin in the seed but often arrive as Cyrillic
-        // «І» from a UOF/XML import — visually identical, different code points — which otherwise scores 0).
-        var pointsByRankName = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        // Matched by TextKey so a participant's rank still finds the seeded rank when the two use look-alike
+        // letters (the Roman numerals I/II/III are Latin in the seed but often arrive as Cyrillic «І» from a
+        // UOF/XML import — visually identical, different code points — which otherwise scores 0).
+        var pointsByRankName = new Dictionary<string, double>(TextKey.Comparer);
         foreach (var r in ranks)
-            pointsByRankName[NormalizeRankName(r.Name)] = r.Points;
+            pointsByRankName[r.Name] = r.Points;
 
-        var rankByParticipant = participants.ToDictionary(p => p.Id, p => NormalizeRankName(p.Rank));
+        var rankByParticipant = participants.ToDictionary(p => p.Id, p => p.Rank ?? string.Empty);
         var regionByParticipant = participants.ToDictionary(p => p.Id, p => p.RegionId);
 
         // Distinct regions are counted across the WHOLE day (every participant running it), not per group —
@@ -3257,27 +3258,26 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         }
     }
 
-    // Normalises a rank name for matching: trims, then folds the Cyrillic «І» that looks identical to the Latin
-    // «I» used in the seeded rank names (I / II / III / I-ю …). Ukrainian rank strings carry the Roman numerals
-    // as Cyrillic «І» (U+0406) far more often than Latin «I» (U+0049) — visually identical, different code
-    // points — so without this fold an imported «ІІ» розряд would miss the seeded «II» and score 0. The «-ю»
-    // junior suffix is already Cyrillic on both sides, so it needs no fold. Comparison is otherwise
-    // case-insensitive (the dictionary uses OrdinalIgnoreCase).
-    private static string NormalizeRankName(string? name)
+    // Groups whose names share a TextKey («M12» / «М12») are one group entered twice — typically typed in another
+    // keyboard layout on another day. Cross-day views (the summary) treat them as one: each id maps to the first
+    // such group in group order. A blank-named group maps to itself.
+    private static Dictionary<Guid, Group> CanonicalGroups(IReadOnlyList<Group> groups)
     {
-        var trimmed = (name ?? string.Empty).Trim();
-        if (trimmed.Length == 0)
-            return trimmed;
-        var chars = trimmed.ToCharArray();
-        for (var i = 0; i < chars.Length; i++)
-            chars[i] = chars[i] switch
-            {
-                'І' => 'I',   // U+0406 Cyrillic capital І → Latin I
-                'і' => 'I',   // U+0456 Cyrillic small і → Latin I
-                _ => chars[i]
-            };
-        return new string(chars);
+        var firstByKey = new Dictionary<string, Group>(StringComparer.Ordinal);
+        var result = new Dictionary<Guid, Group>(groups.Count);
+        foreach (var g in groups)
+        {
+            var key = TextKey.Of(g.Name);
+            if (key.Length > 0 && !firstByKey.TryAdd(key, g))
+                result[g.Id] = firstByKey[key];
+            else
+                result[g.Id] = g;
+        }
+        return result;
     }
+
+    private static Guid CanonicalGroupId(IReadOnlyDictionary<Guid, Group> canonical, Guid groupId) =>
+        canonical.TryGetValue(groupId, out var g) ? g.Id : groupId;
 
     // The trimmed team name for a member's participant; empty when the participant has no team (поза
     // конкурсом for rogaine).
@@ -3758,7 +3758,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 pointsByCode[cp.Code.Trim()] = pts;
 
         // A chip on a day is unique (enforced when assigning), so first match by trimmed chip wins.
-        var holderByChip = new Dictionary<string, ParticipantDay>(StringComparer.OrdinalIgnoreCase);
+        var holderByChip = new Dictionary<string, ParticipantDay>(TextKey.Comparer);
         foreach (var link in links)
         {
             var key = link.Chip.Trim();
@@ -3774,7 +3774,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // don't reappear with it. Non-rental (own) chips are never collected.
         var rentalChipSet = new HashSet<string>(
             (await _eventStore.GetRentalChipsAsync(folder, cancellationToken)).Select(c => c.Number.Trim()),
-            StringComparer.OrdinalIgnoreCase);
+            TextKey.Comparer);
         var currentDayNumber = _session.CurrentDay.Number;
         var allDays = await _eventStore.GetDaysAsync(folder, cancellationToken);
         var dayNumberById = allDays.ToDictionary(d => d.Id, d => d.Number);
@@ -3894,7 +3894,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         var mates = links.Where(l =>
             l.GroupId == link.GroupId &&
-            string.Equals(TeamKeyFor(l, teamByParticipant), teamKey, StringComparison.OrdinalIgnoreCase)).ToList();
+            TextKey.Same(TeamKeyFor(l, teamByParticipant), teamKey)).ToList();
 
         // A поза конкурсом member's punches don't count toward the team total, so they don't shape the
         // common-controls annotation either. Drop them unless the whole team is поза конкурсом (then there
@@ -3904,7 +3904,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             mates = scoring;
 
         var readouts = await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
-        var latestByChip = new Dictionary<string, FinishReadout>(StringComparer.OrdinalIgnoreCase);
+        var latestByChip = new Dictionary<string, FinishReadout>(TextKey.Comparer);
         foreach (var r in readouts)
         {
             var key = r.ChipNumber.Trim();
@@ -3958,7 +3958,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // order, all flagged off-course — so the operator can read the route an unknown chip took.
         var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
         var link = links.FirstOrDefault(l =>
-            string.Equals(l.Chip.Trim(), readout.ChipNumber.Trim(), StringComparison.OrdinalIgnoreCase));
+            TextKey.Same(l.Chip.Trim(), readout.ChipNumber.Trim()));
 
         var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
         var settingsByGroup = settings.ToDictionary(s => s.GroupId);
@@ -4075,13 +4075,13 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // Rental-chip flag: the printout says "орендований чіп" for a chip in the competition's rental set.
         var rentalChips = await _eventStore.GetRentalChipsAsync(FolderPath, cancellationToken);
         var isRental = rentalChips.Any(c =>
-            string.Equals(c.Number.Trim(), row.ChipNumber.Trim(), StringComparison.OrdinalIgnoreCase));
+            TextKey.Same(c.Number.Trim(), row.ChipNumber.Trim()));
 
         // Manual bonus («Бонус») the judge set on this runner's day record, if any: it corrects the score the
         // same way the result columns do, so the slip prints the summed total and spells the bonus out.
         var links = await _eventStore.GetParticipantDaysAsync(FolderPath, CurrentDayId, cancellationToken);
         var bonus = links.FirstOrDefault(l =>
-            string.Equals(l.Chip.Trim(), row.ChipNumber.Trim(), StringComparison.OrdinalIgnoreCase))?.Bonus;
+            TextKey.Same(l.Chip.Trim(), row.ChipNumber.Trim()))?.Bonus;
 
         var status = row.Status switch
         {
@@ -4471,7 +4471,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         {
             var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
             var addedChips = new HashSet<string>(
-                toAdd.Select(r => r.ChipNumber.Trim()), StringComparer.OrdinalIgnoreCase);
+                toAdd.Select(r => r.ChipNumber.Trim()), TextKey.Comparer);
             foreach (var link in links)
             {
                 if (link.ResultStatusOverride != FinishStatus.Dns)
@@ -4539,7 +4539,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             .ToList();
 
         var holder = links.FirstOrDefault(l =>
-            string.Equals(l.Chip.Trim(), readout.ChipNumber.Trim(), StringComparison.OrdinalIgnoreCase));
+            TextKey.Same(l.Chip.Trim(), readout.ChipNumber.Trim()));
 
         // Lookups for the modal's "create a new participant" form: the day's groups (the one mandatory
         // field besides ПІБ) plus the competition's regions / clubs / ДЮСШ and the app-level rank names.
@@ -4583,8 +4583,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             // new-participant form can flag a duplicate as it is typed and name who holds it.
             TakenNumbers = participants
                 .Where(p => p.Number.Trim().Length > 0)
-                .GroupBy(p => p.Number.Trim(), StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First().FullName, StringComparer.OrdinalIgnoreCase)
+                .GroupBy(p => p.Number.Trim(), TextKey.Comparer)
+                .ToDictionary(g => g.Key, g => g.First().FullName, TextKey.Comparer)
         };
     }
 
@@ -4630,7 +4630,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // the computed status. Resolved AFTER any reassignment so it lands on the final holder.
         var holders = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
         var holder = holders.FirstOrDefault(l =>
-            string.Equals(l.Chip.Trim(), readout.ChipNumber, StringComparison.OrdinalIgnoreCase));
+            TextKey.Same(l.Chip.Trim(), readout.ChipNumber));
         if (holder is not null)
             await SetParticipantDayResultStatusAsync(holder.ParticipantId, dayId, edit.ManualStatus, cancellationToken);
     }
@@ -4648,7 +4648,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var existing = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
         var number = (data.Number ?? string.Empty).Trim();
         if (number.Length > 0 && existing.Any(p =>
-                string.Equals(p.Number.Trim(), number, StringComparison.OrdinalIgnoreCase)))
+                TextKey.Same(p.Number.Trim(), number)))
             number = string.Empty;
 
         var participant = new Participant
@@ -4730,7 +4730,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
         var holder = links.FirstOrDefault(l =>
             l.ParticipantId != excludeParticipantId &&
-            string.Equals(l.Chip.Trim(), trimmed, StringComparison.OrdinalIgnoreCase));
+            TextKey.Same(l.Chip.Trim(), trimmed));
         if (holder is null)
             return null;
 
@@ -4757,7 +4757,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         {
             var other = links.FirstOrDefault(l =>
                 l.Id != target.Id &&
-                string.Equals(l.Chip.Trim(), trimmed, StringComparison.OrdinalIgnoreCase));
+                TextKey.Same(l.Chip.Trim(), trimmed));
             if (other is not null)
             {
                 await _eventStore.UpdateParticipantDayAsync(folder, new ParticipantDay
@@ -4806,7 +4806,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         var other = links.FirstOrDefault(l =>
             l.Id != target.Id &&
-            string.Equals(l.Chip.Trim(), trimmed, StringComparison.OrdinalIgnoreCase));
+            TextKey.Same(l.Chip.Trim(), trimmed));
         if (other is null)
             return null;
 
@@ -4841,7 +4841,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var folder = FolderPath;
         var chips = await _eventStore.GetRentalChipsAsync(folder, cancellationToken);
         var existing = chips.FirstOrDefault(c =>
-            string.Equals(c.Number.Trim(), trimmed, StringComparison.OrdinalIgnoreCase));
+            TextKey.Same(c.Number.Trim(), trimmed));
 
         if (existing is not null)
         {
@@ -4882,7 +4882,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // A number colliding with a different participant is dropped, keeping the stored number.
         var number = (row.Number ?? string.Empty).Trim();
         var collides = number.Length > 0 && participants.Any(p =>
-            p.Id != row.ParticipantId && string.Equals(p.Number.Trim(), number, StringComparison.OrdinalIgnoreCase));
+            p.Id != row.ParticipantId && TextKey.Same(p.Number.Trim(), number));
         if (collides)
             number = participants.FirstOrDefault(p => p.Id == row.ParticipantId)?.Number ?? number;
 
@@ -4983,11 +4983,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         var byName = participants
             .Where(p => ParticipantNameKey.Of(p.FullName).Length > 0)
-            .ToLookup(p => ParticipantNameKey.Of(p.FullName), StringComparer.OrdinalIgnoreCase);
+            .ToLookup(p => ParticipantNameKey.Of(p.FullName), TextKey.Comparer);
         var byCode = participants
             .Where(p => !string.IsNullOrWhiteSpace(p.FsouCode))
-            .GroupBy(p => p.FsouCode.Trim(), StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            .GroupBy(p => p.FsouCode.Trim(), TextKey.Comparer)
+            .ToDictionary(g => g.Key, g => g.First(), TextKey.Comparer);
         var linksByParticipant = links.ToLookup(l => l.ParticipantId);
         var matchByName = scope.LinkField == ParticipantLinkField.FullName;
 
@@ -5016,7 +5016,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 continue;
             var src = data.Participants[i];
             var group = groups.FirstOrDefault(g =>
-                string.Equals(g.Name, src.Group.Trim(), StringComparison.OrdinalIgnoreCase));
+                TextKey.Same(g.Name, src.Group.Trim()));
             var nameKey = ParticipantNameKey.Of(src.FullName);
             if (group is null || nameKey.Length == 0)
                 continue; // a group the competition doesn't have yet can't have been run before
@@ -5152,8 +5152,17 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // Reuse the protocol data: it already computes one section per group with each member's result.
         var data = await GetResultProtocolDataAsync(dayId, cancellationToken);
 
+        // The frontend sums days («Сума») by group NAME, so look-alike duplicates («M12» on one day, «М12» on
+        // another) are published under one canonical name — the first such group in group order.
+        var allGroups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var canonicalName = new Dictionary<string, string>(TextKey.Comparer);
+        foreach (var g in allGroups)
+            canonicalName.TryAdd(g.Name, g.Name.Trim());
+        string OnlineGroupName(string name) => canonicalName.TryGetValue(name, out var n) ? n : name;
+
         var groups = data.Groups
-            .Select(g => new OnlineGroup(g.Name, g.DistanceKm, g.ControlCount, g.Order))
+            .Select(g => new OnlineGroup(OnlineGroupName(g.Name), g.DistanceKm, g.ControlCount, g.Order))
+            .DistinctBy(g => g.Name, TextKey.Comparer)
             .ToList();
 
         // The frontend keys results by (event, bib, day) with bib an integer, so a participant with no
@@ -5185,7 +5194,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 var res = r.Result;
                 rows.Add(new OnlineResultRow(
                     Bib: bib,
-                    GroupName: g.Name,
+                    GroupName: OnlineGroupName(g.Name),
                     FullName: r.FullName,
                     Team: r.Team,
                     Club: r.ClubName,
@@ -5285,7 +5294,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var subtitle = !string.IsNullOrWhiteSpace(info?.Name) ? info!.Name : _session.CurrentEvent.Name;
 
         // Pre-compute, per group, the leader's clean result so the «Відставання» (gap) column can be filled.
-        var groupsByName = data.Groups.ToDictionary(g => g.Name, StringComparer.OrdinalIgnoreCase);
+        var groupsByName = data.Groups.ToDictionary(g => g.Name, TextKey.Comparer);
 
         var columns = settings!.EffectiveColumns; // one shared column layout for every file
         var documents = new List<MonitorFileDocument>(files.Count);
@@ -5314,7 +5323,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var data = await GetResultProtocolDataAsync(dayId, cancellationToken);
         var info = await _eventStore.GetCompetitionInfoAsync(FolderPath, cancellationToken);
         var subtitle = !string.IsNullOrWhiteSpace(info?.Name) ? info!.Name : _session.CurrentEvent.Name;
-        var groupsByName = data.Groups.ToDictionary(g => g.Name, StringComparer.OrdinalIgnoreCase);
+        var groupsByName = data.Groups.ToDictionary(g => g.Name, TextKey.Comparer);
 
         return BuildMonitorDocument(file, columns, data, groupsByName, subtitle, labels);
     }
@@ -5338,7 +5347,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         ArgumentNullException.ThrowIfNull(columns);
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(labels);
-        var groupsByName = source.Data.Groups.ToDictionary(g => g.Name, StringComparer.OrdinalIgnoreCase);
+        var groupsByName = source.Data.Groups.ToDictionary(g => g.Name, TextKey.Comparer);
         return BuildMonitorDocument(file, columns, source.Data, groupsByName, source.Subtitle, labels);
     }
 

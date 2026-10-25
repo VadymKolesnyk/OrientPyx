@@ -236,7 +236,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         // Teamed rows grouped by team name; teamless rows handled separately at the end.
         var teams = rows
             .Where(r => r.Team.Length > 0)
-            .GroupBy(r => r.Team, StringComparer.CurrentCultureIgnoreCase)
+            .GroupBy(r => r.Team, TextKey.Comparer)
             .OrderBy(g => g.Min(r => r.Result.Place) is { } p ? p : int.MaxValue)
             .ThenByDescending(g => g.Max(r => r.Result.Score) ?? 0)
             .ThenBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase)

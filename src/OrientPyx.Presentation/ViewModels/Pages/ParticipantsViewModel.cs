@@ -1028,7 +1028,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         {
             if (other.ParticipantId == keepParticipantId)
                 continue;
-            if (string.Equals((other.Chip ?? string.Empty).Trim(), chip, StringComparison.OrdinalIgnoreCase))
+            if (OrientPyx.BusinessLogic.Models.TextKey.Same((other.Chip ?? string.Empty).Trim(), chip))
             {
                 other.SetChipSilently(handBack);
                 other.MarkChipCommitted(handBack);
@@ -1570,7 +1570,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         var notes = pool
             .Select(c => (c.Note ?? string.Empty).Trim())
             .Where(n => n.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct(OrientPyx.BusinessLogic.Models.TextKey.Comparer)
             .OrderBy(n => n, StringComparer.CurrentCulture)
             .ToList();
         var options = new List<ChipNoteOption> { ChipNoteOption.All(Localization.Get("Participants.AssignChips.AllChips")) };
@@ -1619,7 +1619,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             .Where(c => result.IsRange
                 ? rangeNumbers!.Contains((c.Number ?? string.Empty).Trim())
                 : result.Note is null
-                    || string.Equals((c.Note ?? string.Empty).Trim(), result.Note, StringComparison.OrdinalIgnoreCase))
+                    || OrientPyx.BusinessLogic.Models.TextKey.Same((c.Note ?? string.Empty).Trim(), result.Note))
             .Select(c => (c.Number ?? string.Empty).Trim())
             .Where(number => number.Length > 0 && !used.Contains(number))
             .OrderBy(number => number, StringComparer.Ordinal));
@@ -1686,7 +1686,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 ? kvp.Value[dayIndex].Length > 0
                 : kvp.Value.Any(name => name.Length > 0))
             .Select(kvp => kvp.Key)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .ToHashSet(OrientPyx.BusinessLogic.Models.TextKey.Comparer);
     }
 
     // The exact chip numbers a "starting from a number" range would produce — the same width-preserving
@@ -1694,7 +1694,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // pool to just this range after it has been added. Returns empty for an unparsable start / count ≤ 0.
     private static HashSet<string> RangeChipNumbers(string startNumber, int count)
     {
-        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var set = new HashSet<string>(OrientPyx.BusinessLogic.Models.TextKey.Comparer);
         if (count <= 0 || startNumber.Length == 0 || !ulong.TryParse(startNumber, out var first))
             return set;
 
@@ -2150,7 +2150,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 row.SelectedDussh = row.DusshOptions.FirstOrDefault(o => !o.IsAdd && o.Id == r.Id) ?? row.DusshOptions[0];
                 break;
             case "Rank":
-                row.SelectedRank = row.RankOptions.FirstOrDefault(o => string.Equals(o.Value, r.Text, StringComparison.OrdinalIgnoreCase)) ?? row.RankOptions[0];
+                row.SelectedRank = row.RankOptions.FirstOrDefault(o => OrientPyx.BusinessLogic.Models.TextKey.Same(o.Value, r.Text)) ?? row.RankOptions[0];
                 break;
             case "Coach": row.Coach = r.Text ?? string.Empty; break;
             case "Representative": row.Representative = r.Text ?? string.Empty; break;
@@ -2188,7 +2188,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 row.SelectedDussh = row.DusshOptions.FirstOrDefault(o => !o.IsAdd && o.Id == r.Id) ?? row.DusshOptions[0];
                 break;
             case "Rank":
-                row.SelectedRank = row.RankOptions.FirstOrDefault(o => string.Equals(o.Value, r.Text, StringComparison.OrdinalIgnoreCase)) ?? row.RankOptions[0];
+                row.SelectedRank = row.RankOptions.FirstOrDefault(o => OrientPyx.BusinessLogic.Models.TextKey.Same(o.Value, r.Text)) ?? row.RankOptions[0];
                 break;
             case "Coach": row.Coach = r.Text ?? string.Empty; break;
             case "Representative": row.Representative = r.Text ?? string.Empty; break;
@@ -2432,7 +2432,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             foreach (var cell in row.Days)
             {
                 if (cell.DayId == dayId && cell.IsMember &&
-                    string.Equals((cell.Chip ?? string.Empty).Trim(), chip, StringComparison.OrdinalIgnoreCase))
+                    OrientPyx.BusinessLogic.Models.TextKey.Same((cell.Chip ?? string.Empty).Trim(), chip))
                 {
                     cell.SetChipSilently(handBack);
                     cell.MarkChipCommitted(handBack);

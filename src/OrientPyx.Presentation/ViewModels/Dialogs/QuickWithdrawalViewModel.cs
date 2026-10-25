@@ -41,7 +41,7 @@ public sealed partial class QuickWithdrawalViewModel : ObservableObject
         Localization = localization;
         LayoutStore = layoutStore;
 
-        _byNumber = new Dictionary<string, QuickWithdrawalMember>(StringComparer.OrdinalIgnoreCase);
+        _byNumber = new Dictionary<string, QuickWithdrawalMember>(TextKey.Comparer);
         foreach (var m in data.Members)
         {
             var key = (m.Number ?? string.Empty).Trim();

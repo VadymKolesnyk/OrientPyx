@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using OrientPyx.BusinessLogic.Models;
 
 namespace OrientPyx.Presentation.Controls;
 
@@ -18,8 +19,9 @@ namespace OrientPyx.Presentation.Controls;
 ///    they want a sound Ukrainian has no dedicated key for), an extra Cyrillic transliteration in which
 ///    those become the Russian «ы» — e.g. «Bikov» → «Быков» alongside the plain «Біков».
 ///
-/// A cell/label matches the query when it contains ANY of the variants (case-insensitive). Building the
-/// variants once per query keeps per-row matching to a handful of ordinal substring checks.
+/// A cell/label matches the query when it contains ANY of the variants — case-insensitively, or after both are
+/// reduced to their <see cref="TextKey"/> (so Latin/Cyrillic look-alike letters match: «M12» finds «М12»).
+/// Building the variants once per query keeps per-row matching to a handful of substring checks.
 /// </summary>
 public static class TextSearch
 {
@@ -84,12 +86,46 @@ public static class TextSearch
     {
         if (string.IsNullOrEmpty(query))
             return true;
+        return ContainsAny(text, Variants(query));
+    }
+
+    /// <summary>True when <paramref name="text"/> contains any of the (already built) <paramref name="variants"/>.</summary>
+    public static bool ContainsAny(string? text, IReadOnlyList<string> variants)
+    {
         var haystack = text ?? string.Empty;
-        foreach (var variant in Variants(query))
+        string? folded = null;
+        foreach (var variant in variants)
+        {
             if (haystack.Contains(variant, StringComparison.CurrentCultureIgnoreCase))
                 return true;
+            folded ??= TextKey.Of(haystack);
+            if (folded.Contains(TextKey.Of(variant), StringComparison.Ordinal))
+                return true;
+        }
         return false;
     }
+
+    // The single-variant checks below match case-insensitively OR once both sides are reduced to their
+    // TextKey, so a Latin «M12» also finds a Cyrillic «М12» (look-alike letters, stray whitespace).
+
+    /// <summary>True when <paramref name="text"/> contains <paramref name="variant"/>.</summary>
+    public static bool Contains(string text, string variant) =>
+        text.Contains(variant, StringComparison.CurrentCultureIgnoreCase)
+        || TextKey.Of(text).Contains(TextKey.Of(variant), StringComparison.Ordinal);
+
+    /// <summary>True when <paramref name="text"/> equals <paramref name="variant"/>.</summary>
+    public static bool Same(string text, string variant) =>
+        text.Equals(variant, StringComparison.CurrentCultureIgnoreCase) || TextKey.Same(text, variant);
+
+    /// <summary>True when <paramref name="text"/> starts with <paramref name="variant"/>.</summary>
+    public static bool StartsWith(string text, string variant) =>
+        text.StartsWith(variant, StringComparison.CurrentCultureIgnoreCase)
+        || TextKey.Of(text).StartsWith(TextKey.Of(variant), StringComparison.Ordinal);
+
+    /// <summary>True when <paramref name="text"/> ends with <paramref name="variant"/>.</summary>
+    public static bool EndsWith(string text, string variant) =>
+        text.EndsWith(variant, StringComparison.CurrentCultureIgnoreCase)
+        || TextKey.Of(text).EndsWith(TextKey.Of(variant), StringComparison.Ordinal);
 
     // Re-key a string through a layout table. Characters absent from the table (digits, spaces, shared
     // punctuation) pass through unchanged. Casing is preserved by mapping the lowercase form and

@@ -38,7 +38,7 @@ public sealed class EventSharedDataService : IEventSharedDataService
         var rankNames = (await _eventStore.GetParticipantsAsync(eventFolderPath, cancellationToken))
             .Select(p => (p.Rank ?? string.Empty).Trim())
             .Where(n => n.Length > 0)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .ToHashSet(TextKey.Comparer);
         var ranks = (await _appStore.GetRanksAsync(cancellationToken))
             .Where(r => rankNames.Contains(r.Name.Trim()))
             .Select(r => new SharedRank(r.Name, r.Points))
@@ -71,7 +71,7 @@ public sealed class EventSharedDataService : IEventSharedDataService
 
             // Seeded rules get a fresh id on every install, so the same rule usually exists under another id.
             var same = local.Where(r => SameDefinition(r, rule)).ToList();
-            var match = same.FirstOrDefault(r => string.Equals(r.Name, rule.Name, StringComparison.OrdinalIgnoreCase))
+            var match = same.FirstOrDefault(r => TextKey.Same(r.Name, rule.Name))
                         ?? same.FirstOrDefault();
             if (match is not null)
             {
@@ -121,7 +121,7 @@ public sealed class EventSharedDataService : IEventSharedDataService
     {
         var names = (await _appStore.GetRanksAsync(cancellationToken))
             .Select(r => r.Name.Trim())
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .ToHashSet(TextKey.Comparer);
         var added = 0;
         foreach (var rank in ranks)
         {
@@ -151,7 +151,7 @@ public sealed class EventSharedDataService : IEventSharedDataService
         name = (name ?? string.Empty).Trim();
         if (name.Length == 0)
             return name;
-        var set = taken.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var set = taken.ToHashSet(TextKey.Comparer);
         if (!set.Contains(name))
             return name;
         for (var i = 2; ; i++)

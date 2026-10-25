@@ -169,7 +169,7 @@ public sealed partial class ChipsViewModel : PageViewModelBase
     // load and after each number edit; blank numbers never count as duplicates.
     private void RefreshDuplicates()
     {
-        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var counts = new Dictionary<string, int>(OrientPyx.BusinessLogic.Models.TextKey.Comparer);
         foreach (var row in Chips)
         {
             var number = (row.Number ?? string.Empty).Trim();

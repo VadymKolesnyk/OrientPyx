@@ -854,10 +854,8 @@ public sealed class SheetTable : TemplatedControl
             {
                 if (!col.Filterable)
                     continue;
-                var cell = CellText(col, row);
-                foreach (var variant in _searchVariants)
-                    if (cell.IndexOf(variant, StringComparison.CurrentCultureIgnoreCase) >= 0)
-                        return true;
+                if (TextSearch.ContainsAny(CellText(col, row), _searchVariants))
+                    return true;
             }
         return false;
     }
@@ -3409,7 +3407,7 @@ public sealed class SheetTable : TemplatedControl
             if (option is null)
                 continue;
             var label = ReadPath(option, column.ComboLabelPath!) as string;
-            if (label is null || !string.Equals(label.Trim(), value, StringComparison.CurrentCultureIgnoreCase))
+            if (label is null || !TextKey.Same(label.Trim(), value))
                 continue;
             if (match is not null)
                 return null; // ambiguous — two options share this label
