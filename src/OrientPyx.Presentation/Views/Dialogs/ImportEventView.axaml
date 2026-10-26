@@ -51,6 +51,11 @@
                 <TextBlock Text="{Binding Message}" TextWrapping="Wrap"
                            Foreground="{DynamicResource TextPrimary}" />
 
+                <!-- Plugins the archive needs that are missing here: a warning, the import stays allowed. -->
+                <TextBlock Text="{Binding MissingPluginsText}" TextWrapping="Wrap"
+                           Foreground="{DynamicResource DangerBrush}"
+                           IsVisible="{Binding HasMissingPlugins}" />
+
                 <!-- New-identifier field, only shown on a conflict -->
                 <StackPanel Spacing="6" IsVisible="{Binding IdentifierExists}">
                     <TextBlock Text="{Binding Localization[ImportEvent.NewName]}" Classes="label" />

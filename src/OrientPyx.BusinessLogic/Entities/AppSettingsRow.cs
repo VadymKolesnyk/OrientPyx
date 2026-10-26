@@ -97,6 +97,9 @@ public class AppSettingsRow
     /// </summary>
     public int ReadoutType { get; set; } = 0;
 
+    /// <summary>Ids of the plugins the user switched off, as a JSON string array (Р-12). Blank = none.</summary>
+    public string DisabledPluginsJson { get; set; } = string.Empty;
+
     /// <summary>
     /// UI language culture name (e.g. "uk-UA", "en-US") the app restores on startup. Blank until the user
     /// picks a language on the Settings page; when blank the built-in default (uk-UA) is used.

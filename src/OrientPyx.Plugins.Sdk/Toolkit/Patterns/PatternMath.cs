@@ -1,4 +1,4 @@
-namespace OrientPyx.BusinessLogic.Disciplines.CoursePattern;
+namespace OrientPyx.Plugins.Sdk.Toolkit.Patterns;
 
 /// <summary>
 /// Combinatorial helpers used to enumerate (and count) the concrete passage orders a pattern allows: an

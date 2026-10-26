@@ -1,4 +1,5 @@
-﻿using OrientPyx.BusinessLogic.Entities;
+using OrientPyx.BusinessLogic.Disciplines;
+using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Models;
 
@@ -673,6 +674,16 @@ public interface ICompetitionEditorService
         bool clearFirst,
         ParticipantImportScope scope,
         CancellationToken cancellationToken = default);
+
+    /// <summary>The settings of a (plugin) discipline on a day: definitions plus effective values (saved, else
+    /// default; day-scoped from the day, competition-scoped from the competition, Р-11). Null with no competition.</summary>
+    Task<DisciplineSettingsData?> GetDisciplineSettingsAsync(Guid dayId, DisciplineId disciplineId, CancellationToken cancellationToken = default);
+
+    /// <summary>The disciplines in use on a day: its default plus every group override, distinct.</summary>
+    Task<IReadOnlyList<DisciplineId>> GetDayDisciplinesAsync(Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>Saves a discipline's settings; values are coerced to each setting's type and split by scope.</summary>
+    Task SaveDisciplineSettingsAsync(Guid dayId, DisciplineId disciplineId, IReadOnlyDictionary<string, object?> values, CancellationToken cancellationToken = default);
 
     /// <summary> Loads the current competition's online-publish settings (slug, displayed title/subtitle,
     /// standings / points flags, enabled). When the competition has no row yet, returns defaults seeded from

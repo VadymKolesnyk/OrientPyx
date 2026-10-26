@@ -107,6 +107,25 @@ public sealed class AppStore : IAppStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<string?> GetDisabledPluginsJsonAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        return row?.DisabledPluginsJson;
+    }
+
+    public async Task SaveDisabledPluginsJsonAsync(string json, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+            db.Settings.Add(new AppSettingsRow { Id = 1, DisabledPluginsJson = json });
+        else
+            row.DisabledPluginsJson = json;
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<int?> GetReadoutTypeAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);

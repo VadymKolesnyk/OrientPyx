@@ -25,6 +25,14 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
 
     public virtual bool AwardsRanks => true;
 
+    public virtual string? PluginId => null;
+
+    public virtual IReadOnlyList<SettingDef> Settings => [];
+
+    public virtual IReadOnlyList<ResultColumnDef> ResultColumns => [];
+
+    public virtual IReadOnlyList<string> RequiredFields => [];
+
     public virtual bool UsesControlPointPoints => false;
 
     /// <summary>
@@ -60,25 +68,11 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
     /// Places the group's OK, in-competition results (Р-8): a scoring format orders by score desc then time
     /// asc, every other format by time asc. Equal keys share a place; the next place skips the ties.
     /// </summary>
-    public virtual void Rank(RankingContext context)
+    public virtual void Rank(GroupRankingContext context)
     {
-        var ordered = context.Entries
-            .OrderByDescending(r => r.Scored ? r.Score : 0)
-            .ThenBy(r => r.Time)
-            .ToList();
-
-        var place = 0;
-        var seen = 0;
-        (int Score, TimeSpan Time)? prev = null;
-        foreach (var r in ordered)
-        {
-            seen++;
-            var key = (r.Scored ? r.Score : 0, r.Time);
-            if (prev is null || prev.Value.Score != key.Item1 || prev.Value.Time != key.Item2)
-                place = seen; // a new (worse) key takes the running position; ties keep the prior place
-            prev = key;
+        var order = Ranking.ByScoreThenTime<RankEntry>(r => r.Scored ? r.Score : 0, r => r.Time);
+        foreach (var (r, place) in Ranking.AssignPlaces(context.Entries, order))
             context.Results[r.LinkId] = context.Results[r.LinkId] with { Place = place };
-        }
     }
 
     // Pairs an assigned start time-of-day with the read-out finish's date, so the time-limit check
@@ -221,7 +215,7 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
         passage.Add(new PassagePunch(0, string.Empty, OnCourse: false,
             context.StartTime, Leg: null, Elapsed: TimeSpan.Zero, PassageKind.Start));
 
-        var assignment = AlignToCourse(context.Punches, expected);
+        var assignment = CourseMatcher.AlignOrder(context.Punches.Select(p => p.ControlCode).ToList(), expected);
 
         for (var pi = 0; pi < context.Punches.Count; pi++)
         {
@@ -311,49 +305,6 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
             ExpectedCount = expected.Count,
             VariantCode = variantCode
         };
-    }
-
-    /// <summary>
-    /// Assigns each punch the prescribed position it takes (or -1 when it is an extra), maximising the number
-    /// of prescribed controls taken in order — a longest-common-subsequence alignment. A greedy walk driven by
-    /// the punches would let an early stray punch of a later control (1 5 2 3 4 5 6) jump ahead and mark
-    /// everything in between as missed; the alignment instead ignores that stray and uses the real visit.
-    /// Among equally good alignments it takes the earliest punch of each control, matching the status check.
-    /// </summary>
-    private static int[] AlignToCourse(IReadOnlyList<ChipPunch> punches, IReadOnlyList<string> expected)
-    {
-        var n = punches.Count;
-        var m = expected.Count;
-        var codes = punches.Select(p => p.ControlCode.Trim()).ToArray();
-        var course = expected.Select(c => c.Trim()).ToArray();
-
-        bool Same(int i, int j) =>
-            codes[i].Length > 0 && string.Equals(codes[i], course[j], StringComparison.OrdinalIgnoreCase);
-
-        // best[i, j] = most prescribed controls takeable from punch i onwards against course position j onwards.
-        var best = new int[n + 1, m + 1];
-        for (var i = n - 1; i >= 0; i--)
-            for (var j = m - 1; j >= 0; j--)
-                best[i, j] = Same(i, j)
-                    ? Math.Max(best[i + 1, j + 1] + 1, Math.Max(best[i + 1, j], best[i, j + 1]))
-                    : Math.Max(best[i + 1, j], best[i, j + 1]);
-
-        var assignment = new int[n];
-        Array.Fill(assignment, -1);
-        for (int i = 0, j = 0; i < n && j < m;)
-        {
-            if (Same(i, j) && best[i, j] == best[i + 1, j + 1] + 1)
-            {
-                assignment[i] = j;
-                i++;
-                j++;
-            }
-            else if (best[i + 1, j] == best[i, j])
-                i++;   // this punch is an extra
-            else
-                j++;   // this prescribed control is missed
-        }
-        return assignment;
     }
 
     // --- Shared leg geometry (used by the ordered set-course and rogaine layouts)

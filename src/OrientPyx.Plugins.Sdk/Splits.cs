@@ -1,7 +1,4 @@
-using OrientPyx.BusinessLogic.Enums;
-using OrientPyx.BusinessLogic.Interfaces;
-
-namespace OrientPyx.BusinessLogic.Models;
+namespace OrientPyx.Plugins.Sdk;
 
 /// <summary>
 /// Everything a discipline needs to build the passage/splits view for one selected read-out, all as

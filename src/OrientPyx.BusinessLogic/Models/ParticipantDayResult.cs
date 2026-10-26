@@ -117,6 +117,10 @@ public sealed record ParticipantDayResult(
     /// column key. Empty for the built-in disciplines.</summary>
     public IReadOnlyDictionary<string, object?> Extra { get; init; } = EmptyExtra;
 
+    /// <summary>Why a discipline rule withheld this OK result from ranking (e.g. a missing coefficient, Р-48): no
+    /// place and no points, the time still shows. Null when it is ranked normally.</summary>
+    public string? UnrankedReason { get; init; }
+
     private static readonly IReadOnlyDictionary<string, object?> EmptyExtra = new Dictionary<string, object?>();
 }
 

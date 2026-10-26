@@ -271,7 +271,7 @@ public sealed partial class MonitorFileViewModel : ObservableObject
     /// Fills <see cref="Preview"/> from a freshly-built monitor document for this file (its visible columns +
     /// the day's group sections), so the preview shows exactly what the HTML screen will. Called by the host VM
     /// whenever the file is selected or a column/group changes. The preview's column <c>Key</c> is the stable
-    /// <see cref="ResultColumnDef.Key"/>, so a header drag maps back to the editor's column list.
+    /// <see cref="ResultColumnInfo.Key"/>, so a header drag maps back to the editor's column list.
     /// </summary>
     // The preview is a MOCK-UP, not the full screen — cap the total body rows so the visual tree the table
     // control builds stays small and rebuilds fast (the real HTML shows everyone). A per-group cap keeps every
@@ -299,7 +299,7 @@ public sealed partial class MonitorFileViewModel : ObservableObject
 
         foreach (var col in document.Columns)
         {
-            var def = ResultColumnDef.All.FirstOrDefault(d => d.Column == col.Column);
+            var def = ResultColumnInfo.All.FirstOrDefault(d => d.Column == col.Column);
             var key = def?.Key ?? col.Column.ToString();
             Preview.Columns.Add(new MonitorPreviewColumn(key, col.Header, col.Column));
         }
@@ -322,7 +322,7 @@ public sealed partial class MonitorFileViewModel : ObservableObject
     }
 
     /// <summary>Moves a column next to another in the SHARED column list (drag-reorder from the preview header).
-    /// Keys are the stable <see cref="ResultColumnDef.Key"/>; resolved against ALL columns so hidden ones don't
+    /// Keys are the stable <see cref="ResultColumnInfo.Key"/>; resolved against ALL columns so hidden ones don't
     /// skew the destination. Reordering raises the shared editor's Changed, which re-renders every file's
     /// preview — the column order is shared across all files.</summary>
     public void MoveColumnByKey(string draggedKey, string targetKey, bool insertAfter)

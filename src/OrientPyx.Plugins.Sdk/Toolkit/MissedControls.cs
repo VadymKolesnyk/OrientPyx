@@ -1,6 +1,6 @@
-using OrientPyx.BusinessLogic.Disciplines.CoursePattern;
+using OrientPyx.Plugins.Sdk.Toolkit.Patterns;
 
-namespace OrientPyx.BusinessLogic.Disciplines;
+namespace OrientPyx.Plugins.Sdk.Toolkit;
 
 /// <summary>
 /// The full list of missed controls for an MP run (Р-52a): the required controls left out of the
@@ -63,7 +63,7 @@ internal static class MissedControls
     /// <paramref name="ignored"/> (the day's disabled controls) count as satisfied and are never missed.
     /// </summary>
     public static IReadOnlyList<string> ForPattern(
-        CoursePattern.CoursePattern pattern, IReadOnlyList<string> punched, IReadOnlySet<string> ignored)
+        CoursePattern pattern, IReadOnlyList<string> punched, IReadOnlySet<string> ignored)
     {
         var solver = new PatternSolver(punched, ignored);
         var n = punched.Count;

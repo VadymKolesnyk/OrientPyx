@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using OrientPyx.BusinessLogic.Disciplines;
@@ -515,6 +515,19 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     /// <summary>Awarded sports rank / «Виконаний розряд» (Додаток 89); blank when none.</summary>
     public string AwardedRankText => ResultText.AwardedRank(_result);
     /// <summary>Raw place for sorting (max when unplaced, so OK results sort to the top).</summary>
+    /// <summary>A plugin discipline's result values as display text, by column key (empty when none).</summary>
+    public ResultExtrasView ResultExtras => new(_result, _resultColumns);
+
+    // The plugin result columns that format ResultExtras (set by the page for the shown day).
+    private IReadOnlyList<ResultColumnDef> _resultColumns = [];
+
+    /// <summary>Sets the plugin result columns used to format <see cref="ResultExtras"/>.</summary>
+    public void SetResultColumns(IReadOnlyList<ResultColumnDef> columns)
+    {
+        _resultColumns = columns;
+        OnPropertyChanged(nameof(ResultExtras));
+    }
+
     public int PlaceSort => _result.Place ?? int.MaxValue;
     public int ScoreSort => _result.Score ?? -1;
     /// <summary>Raw points for sorting (min when none, so awarded points sort together).</summary>
@@ -870,6 +883,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         OnPropertyChanged(nameof(ScoreTooltip));
         OnPropertyChanged(nameof(PointsText));
         OnPropertyChanged(nameof(AwardedRankText));
+        OnPropertyChanged(nameof(ResultExtras));
         OnPropertyChanged(nameof(PlaceSort));
         OnPropertyChanged(nameof(ScoreSort));
         OnPropertyChanged(nameof(PointsSort));

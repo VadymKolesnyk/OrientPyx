@@ -1,6 +1,4 @@
-using OrientPyx.BusinessLogic.Enums;
-
-namespace OrientPyx.BusinessLogic.Models;
+namespace OrientPyx.Plugins.Sdk;
 
 /// <summary>
 /// Everything a discipline needs to derive a participant's finish status from one read-out, all as
@@ -48,6 +46,15 @@ public sealed class FinishContext
     /// strategy picks the best-matching variant from these and judges the runner against it.
     /// </summary>
     public IReadOnlyList<ScatterVariantData> ScatterVariants { get; init; } = [];
+
+    /// <summary>The discipline's effective settings for the runner's day.</summary>
+    public SettingValues Settings { get; init; } = SettingValues.Empty;
+
+    /// <summary>True when a time limit is set and the actual time (finish − start) exceeds it.</summary>
+    public bool IsOverTime =>
+        TimeLimit is { } limit && StartTime is { } start && FinishTime is { } finish && finish - start > limit;
+
+    public T Setting<T>(string key) => Settings.Get<T>(key);
 }
 
 /// <summary>

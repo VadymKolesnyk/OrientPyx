@@ -18,11 +18,16 @@ src/
   OrientPyx.BusinessLogic/   Entities, models, enums, discipline strategies, service interfaces + implementations
   OrientPyx.DataAccess/      EF Core + SQLite: app & event DbContexts, stores, events-folder scanner
   OrientPyx.Localization/    ILocalizationService + JSON resource dictionaries (uk-UA default, en-US)
+  OrientPyx.Plugins.Sdk/     Plugin contract + shared pure algorithms (toolkit); no dependencies
+plugins/
+  OrientPyx.Plugins.sln      Separate solution for plugins (built into artifacts/plugins/<Name>/)
+  Directory.Build.props      Shared plugin settings: net10.0, SDK referenced with Private=false
+  MissedControlPenalty/      «Штраф замість зняття» test plugin
 ```
 
 ## Architecture rules
 
-Three layers plus a shared localization library.
+Three layers plus a shared localization library and the plugin SDK.
 
 - **Presentation** — Avalonia views, ViewModels, navigation, startup, DI wiring.
   No business rules, no file/database logic.
@@ -33,14 +38,24 @@ Three layers plus a shared localization library.
 - **DataAccess** — persistence and infrastructure. EF Core and SQLite live here and
   nowhere else. References BusinessLogic.
 - **Localization** — pure .NET, no UI dependency, usable from any layer.
+- **Plugins.Sdk** — the plugin contract (`IOrientPyxPlugin`, `Discipline`, contexts, columns, settings, fields)
+  and the toolkit (`Toolkit/`: course patterns, `CourseMatcher`, `VariantMatcher`, `Punches`, `Ranking`, `Age`,
+  `TimeFormat`, `TextKey`, `CourseOrder`) plus the shared simple types (`FinishStatus`, `FinishContext`,
+  `FinishStatusResult`, `SplitsView`…, `ControlPointType`, `ChipPunch`, `GeoPoint`/`MapPoint`). **No dependencies,
+  no knowledge of EF / files / UI — only the contract and pure algorithms.** Everything in it is public API with
+  compatibility obligations: add only what is stable. Its `AssemblyVersion` is set explicitly (`1.0.0.0`) and is
+  the plugin API version — never tie it to the app's `Version`. The three app projects import its namespaces
+  globally (`<Using>` in their `.csproj`).
 
 ### Dependency direction
 
 ```
 Presentation  -> BusinessLogic, DataAccess, Localization
 DataAccess    -> BusinessLogic
+BusinessLogic -> Plugins.Sdk
+Plugins.Sdk   -> (none)
 Localization  -> (none)
-BusinessLogic -> (none)
+plugins       -> Plugins.Sdk (only)
 ```
 
 Never introduce a dependency that points the other way (e.g. BusinessLogic must not
@@ -100,7 +115,7 @@ Everything that varies by competition type lives behind `IDisciplineStrategy`
 (`BusinessLogic/Disciplines/`), one implementation per discipline id, resolved through
 `IDisciplineStrategyProvider`. A discipline's identity is the string struct `DisciplineId` (built-ins
 `SetCourse`, `ScoreByCount`, `ScoreByTime`, `Rogaine`, `Mixed`, `Scatter` — equal to the former enum names, so
-stored values are unchanged; plugin ids will be `"<pluginId>.<name>"`). An id with no registered strategy resolves
+stored values are unchanged; plugin ids are `"<pluginId>.<name>"`). An id with no registered strategy resolves
 to `UnknownDisciplineStrategy` (judged like a set course, no places/points/ranks, `IsUnknown` for the banner) —
 never an exception. Shared code asks the strategy — grid columns, control count, `Competitors`
 (`CompetitorModel.Individual` / `Team` = rogaine), `UsesCourseVariants` (scatter), `UsesCoursePattern` (mixed only),
@@ -117,6 +132,36 @@ in `RogaineStrategy.Rank`) → points (formula uses `AdjustedTime`) → ranks (a
 when it has one. `FinishStatusResult.Missed` lists every missed control (maximum match, `MissedControls`); status
 and `Detail` still come from the greedy checks. Debug builds have «Файл → (Debug) Знімок результатів…» (JSON of
 every day's results) + `scripts/diff-results.ps1` to prove a refactoring left results unchanged.
+
+### Plugins
+
+A plugin is a DLL with one `IOrientPyxPlugin`; it registers `Discipline` subclasses (each `BasedOn` a built-in —
+the format's structure comes from it, the plugin overrides rules: `EvaluateFinish`, `BuildSplits`, `ResolveStart`,
+`AdjustTime`, `Rank`, `AwardsRanks`, `Columns`, `Settings`), participant fields and translated strings.
+- **Loading** (`DataAccess/Plugins/`): `PluginCatalog : IPluginCatalog` scans (Debug) `<repo>/artifacts/plugins`,
+  `<app dir>/plugins`, `<data root>/plugins` — a later folder wins on a duplicate id (Р-12). Each plugin gets its own
+  `PluginLoadContext`; the SDK always resolves from the default context. Loading is lazy and happens right after
+  the app DB is migrated (`PluginStartup.RegisterStrings` in `App.axaml.cs`), because the disabled list lives in
+  `AppSettingsRow.DisabledPluginsJson`. Any failure → `PluginLoadError` (shown on Settings → «Плагіни»); the app
+  always starts. No hot reload.
+- **Adapter** (`BusinessLogic/Disciplines/Plugins/`): `DisciplineStrategyProvider` wraps each enabled plugin
+  discipline in a `PluginDisciplineStrategy` over its `BasedOn` built-in (`base.*` runs the built-in through
+  `IDisciplineHost` with the contexts the core built). Every call into plugin code is guarded: on an exception the
+  built-in result is used, logged, and `PluginRuntimeErrors.FirstFailure` shows one banner per plugin per session.
+- **Strings**: a plugin's keys resolve as `"<pluginId>.<key>"` via `ILocalizationService.AddOverlay`; a key with no
+  translation falls back to en-US, then to the bare key (so plain text works).
+- **Settings** (Р-11): `PluginSettingsRow(EventDayId?, DisciplineId, Json)` in `event.db` — a day row for
+  `SettingScope.Day` values, a no-day row for `SettingScope.Competition`; `DisciplineSettings.Resolve` merges them
+  with the defaults. «Налаштування дисципліни…» (days page row, groups toolbar) → `IDisciplineSettingsFlow` →
+  auto-form dialog; saving re-points the session so pages recompute. The snapshot carries the rows
+  (`EventDaySnapshot.DisciplineSettings`) so the calculator and the read-out log see the same values.
+- **Results**: a plugin's `ResultRow.Set` values land in `ParticipantDayResult.Extra` and show as extra day-grid
+  columns (`ResultExtras[key]`); `MarkUnranked` → `ParticipantDayResult.UnrankedReason` (no place, no points).
+- **Unknown discipline** (plugin missing/disabled): `UnknownDisciplineStrategy` + the «Потрібен плагін» banner
+  above the page (`PluginNoticeViewModel`). `.opyx` export writes `plugins.json` (required plugins); import warns
+  about missing ones but proceeds.
+- **Release**: `build/publish.ps1` builds `plugins/OrientPyx.Plugins.sln` and copies `artifacts/plugins/*` into the
+  package's `plugins\` folder. Build plugins locally with `dotnet build plugins/OrientPyx.Plugins.sln`.
 
 Notable formats: **Mixed** (змішаний) judges against a course *pattern* (`<seq>` ordered runs,
 `[N …]` any-of blocks, nesting) like a set course. **Scatter** (розсіювання) has several valid
@@ -209,7 +254,8 @@ Do not reintroduce `EnsureCreated` — it is incompatible with migrations.
 ## What NOT to do
 
 Do not add: test projects, Clean Architecture / CQRS / MediatR, Docker, or authentication.
-Keep the app lightweight and the four-layer structure above intact. (The Supabase online-results
+Keep the app lightweight and the four layers + plugin SDK structure above intact (no new projects besides
+plugins under `plugins/`; plugins reference only the SDK). (The Supabase online-results
 publisher below is the one exception to "no cloud sync" — it is publish-only and stays confined to
 DataAccess.)
 

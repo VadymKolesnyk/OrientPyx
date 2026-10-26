@@ -1,4 +1,4 @@
-namespace OrientPyx.BusinessLogic.Enums;
+namespace OrientPyx.Plugins.Sdk;
 
 /// <summary>Kind of a control point. Stored as a string in the event database.</summary>
 public enum ControlPointType

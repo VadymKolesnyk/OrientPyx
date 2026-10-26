@@ -21,7 +21,8 @@ internal static class FinishEvaluator
         IReadOnlySet<string> startFinishCodes,
         IReadOnlySet<string> disabledCodes,
         DisciplineId dayDefault,
-        IReadOnlyDictionary<Guid, IReadOnlyList<ScatterVariantData>> variantsByGroup)
+        IReadOnlyDictionary<Guid, IReadOnlyList<ScatterVariantData>> variantsByGroup,
+        Func<IDisciplineStrategy, SettingValues>? settingsOf = null)
     {
         GroupDaySettings? gs = link.GroupId is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
         var strategy = strategies.For(gs?.DisciplineOverride ?? dayDefault);
@@ -53,7 +54,8 @@ internal static class FinishEvaluator
             RequiredControlCount = gs?.RequiredControlCount,
             ScatterVariants = link.GroupId is { } vgid && variantsByGroup.TryGetValue(vgid, out var vs)
                 ? vs
-                : NoScatterVariants
+                : NoScatterVariants,
+            Settings = settingsOf?.Invoke(strategy) ?? SettingValues.Empty
         };
 
         return (strategy.EvaluateFinish(context), start);

@@ -71,6 +71,11 @@ public interface IAppStore
 
     /// <summary>Returns the stored readout format (0 = SPORTident, 1 = Sport Time), or null when never set
     /// (caller applies the default, SPORTident).</summary>
+    /// <summary>The disabled plugin ids as stored (a JSON array); null when never saved.</summary>
+    Task<string?> GetDisabledPluginsJsonAsync(CancellationToken cancellationToken = default);
+
+    Task SaveDisabledPluginsJsonAsync(string json, CancellationToken cancellationToken = default);
+
     Task<int?> GetReadoutTypeAsync(CancellationToken cancellationToken = default);
 
     Task SaveReadoutTypeAsync(int readoutType, CancellationToken cancellationToken = default);

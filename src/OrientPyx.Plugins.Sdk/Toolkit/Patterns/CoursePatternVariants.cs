@@ -1,4 +1,4 @@
-namespace OrientPyx.BusinessLogic.Disciplines.CoursePattern;
+namespace OrientPyx.Plugins.Sdk.Toolkit.Patterns;
 
 /// <summary>
 /// One concrete passage order the pattern allows — a flat list of control codes in the order they must be

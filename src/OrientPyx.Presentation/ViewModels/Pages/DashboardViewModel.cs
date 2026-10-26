@@ -1,3 +1,4 @@
+using OrientPyx.BusinessLogic.Disciplines;
 using System.Collections.ObjectModel;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -67,6 +68,8 @@ public sealed class DashboardStatusBadge
 /// </summary>
 public sealed partial class DashboardViewModel : PageViewModelBase
 {
+    private readonly IDisciplineStrategyProvider _disciplineStrategies;
+
     private readonly ICompetitionEditorService _editor;
     private readonly ISessionService _session;
     private readonly IBusyService _busy;
@@ -101,9 +104,11 @@ public sealed partial class DashboardViewModel : PageViewModelBase
         ILocalizationService localization,
         ICompetitionEditorService editor,
         ISessionService session,
-        IBusyService busy)
+        IBusyService busy,
+        IDisciplineStrategyProvider disciplineStrategies)
         : base(localization)
     {
+        _disciplineStrategies = disciplineStrategies;
         _editor = editor;
         _session = session;
         _busy = busy;
@@ -159,7 +164,7 @@ public sealed partial class DashboardViewModel : PageViewModelBase
     public event EventHandler<DashboardQuickAction>? QuickActionRequested;
 
     /// <summary>Localized name of the current day's discipline (вид змагань).</summary>
-    public string DisciplineName => Localization.Get("Discipline.Type." + Info.CurrentDayDiscipline);
+    public string DisciplineName => DisciplineLabels.Of(_disciplineStrategies.For(Info.CurrentDayDiscipline), Localization);
 
     /// <summary>"День {N}" header for the current-day card.</summary>
     public string DayLabel => string.Format(Localization.Get("Dashboard.Today.Day"), Info.CurrentDayNumber);

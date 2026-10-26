@@ -86,6 +86,24 @@
 
     <DockPanel LastChildFill="True" Background="{DynamicResource SurfacePage}">
 
+        <!-- Plugin banners: a missing plugin for the active day (Р-2) and a plugin failure notice (Р-3). -->
+        <StackPanel DockPanel.Dock="Top">
+            <Border Background="{DynamicResource DangerBrush}" Padding="28,8"
+                    IsVisible="{Binding PluginNotices.HasMissing}">
+                <TextBlock Text="{Binding PluginNotices.MissingText}" Foreground="White" TextWrapping="Wrap" />
+            </Border>
+            <Border Background="{DynamicResource DangerBrush}" Padding="28,8"
+                    IsVisible="{Binding PluginNotices.HasFailure}">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Classes="ghost small" Foreground="White"
+                            Content="{Binding Localization[Common.Close]}"
+                            Command="{Binding PluginNotices.DismissFailureCommand}" />
+                    <TextBlock Text="{Binding PluginNotices.FailureText}" Foreground="White"
+                               TextWrapping="Wrap" VerticalAlignment="Center" />
+                </DockPanel>
+            </Border>
+        </StackPanel>
+
         <!-- Content. No outer ScrollViewer here: it would hand the page infinite height, which
              breaks a DataGrid (it then renders all rows and loses its own horizontal/vertical
              scrollbars). Instead the padded Border fills the area with a bounded height, so grid

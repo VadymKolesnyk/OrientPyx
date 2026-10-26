@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using OrientPyx.BusinessLogic.Disciplines.CoursePattern;
+using OrientPyx.Plugins.Sdk.Toolkit.Patterns;
 using OrientPyx.Localization;
 
 namespace OrientPyx.Presentation.ViewModels.Dialogs;

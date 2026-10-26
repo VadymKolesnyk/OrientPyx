@@ -17,6 +17,11 @@ public sealed class JsonLocalizationService : ILocalizationService
     private readonly Dictionary<string, IReadOnlyDictionary<string, string>> _byCulture = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyDictionary<string, string> _current = new Dictionary<string, string>();
 
+    // Plugin strings: culture → full key ("<prefix>.<key>") → text, plus the registered prefixes.
+    private readonly Dictionary<string, Dictionary<string, string>> _overlays = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _overlayPrefixes = new(StringComparer.Ordinal);
+    private const string FallbackCultureName = "en-US";
+
     public JsonLocalizationService()
     {
         LoadAllCultures();
@@ -47,7 +52,41 @@ public sealed class JsonLocalizationService : ILocalizationService
         if (string.IsNullOrEmpty(key))
             return string.Empty;
 
-        return _current.TryGetValue(key, out var value) ? value : key;
+        if (_current.TryGetValue(key, out var value))
+            return value;
+        return _overlayPrefixes.Count > 0 ? GetOverlay(key) : key;
+    }
+
+    public void AddOverlay(string culture, string prefix, IReadOnlyDictionary<string, string> strings)
+    {
+        if (string.IsNullOrWhiteSpace(prefix))
+            return;
+
+        _overlayPrefixes.Add(prefix);
+        if (!_overlays.TryGetValue(culture, out var dict))
+            _overlays[culture] = dict = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (key, text) in strings)
+            dict[prefix + "." + key] = text;
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+    }
+
+    // A plugin key: current culture, else en-US, else the text after the prefix (a plain-text label).
+    private string GetOverlay(string key)
+    {
+        if (_overlays.TryGetValue(CurrentCulture.Name, out var current) && current.TryGetValue(key, out var text))
+            return text;
+        if (_overlays.TryGetValue(FallbackCultureName, out var fallback) && fallback.TryGetValue(key, out text))
+            return text;
+
+        var dot = key.IndexOf('.');
+        while (dot > 0)
+        {
+            if (_overlayPrefixes.Contains(key[..dot]))
+                return key[(dot + 1)..];
+            dot = key.IndexOf('.', dot + 1);
+        }
+        return key;
     }
 
     public void SetLanguage(CultureInfo culture)

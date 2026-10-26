@@ -34,7 +34,7 @@ public sealed class UnknownDisciplineStrategy : DisciplineStrategyBase
     public override SplitsView BuildSplits(SplitsContext context) => _fallback.BuildSplits(context);
 
     /// <summary>No places for an unknown discipline (Р-2).</summary>
-    public override void Rank(RankingContext context)
+    public override void Rank(GroupRankingContext context)
     {
     }
 }

@@ -88,7 +88,8 @@ git push origin v<version>
 ## Step 6 — Build + upload the Velopack release
 
 `build/releases/` already holds the previous `.nupkg` packages, so Velopack can build a
-delta. Run the existing publish script, which builds, packs, and uploads in one shot:
+delta. Run the existing publish script, which builds, packs, and uploads in one shot (it also builds
+`plugins/OrientPyx.Plugins.sln` and ships the standard plugins in the package's `plugins\` folder):
 
 ```powershell
 $env:GITHUB_TOKEN = (gh auth token)

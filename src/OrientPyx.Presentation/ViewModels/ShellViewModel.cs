@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
 using OrientPyx.Presentation.ViewModels.Pages;
+using OrientPyx.Presentation.ViewModels.Shared;
 
 namespace OrientPyx.Presentation.ViewModels;
 
@@ -18,15 +19,19 @@ public sealed partial class ShellViewModel : ViewModelBase
     [ObservableProperty]
     private PageViewModelBase? _selectedPage;
 
-    public ShellViewModel(INavigationService navigation, ILocalizationService localization)
+    public ShellViewModel(INavigationService navigation, ILocalizationService localization, PluginNoticeViewModel pluginNotices)
     {
         _navigation = navigation;
+        PluginNotices = pluginNotices;
         Localization = localization;
         Pages = navigation.Pages;
         _selectedPage = navigation.CurrentPage;
     }
 
     public ILocalizationService Localization { get; }
+
+    /// <summary>The «Потрібен плагін» / plugin-failure banners above the page.</summary>
+    public PluginNoticeViewModel PluginNotices { get; }
 
     public ReadOnlyObservableCollection<PageViewModelBase> Pages { get; }
 

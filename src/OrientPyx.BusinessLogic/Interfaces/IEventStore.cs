@@ -1,4 +1,5 @@
-﻿using OrientPyx.BusinessLogic.Entities;
+using OrientPyx.BusinessLogic.Disciplines;
+using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Models;
 
@@ -409,6 +410,14 @@ public interface IEventStore
     Task<string?> GetOnlinePublishJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
     Task SaveOnlinePublishJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default);
+
+    /// <summary>Every saved discipline-settings row of the competition (day rows and competition rows, Р-11).</summary>
+    Task<IReadOnlyList<PluginSettingsRow>> GetDisciplineSettingsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>Upserts the settings JSON of <paramref name="disciplineId"/> for <paramref name="dayId"/> (null = the
+    /// competition-scoped row).</summary>
+    Task SaveDisciplineSettingsAsync(
+        string eventFolderPath, Guid? dayId, DisciplineId disciplineId, string json, CancellationToken cancellationToken = default);
 
     /// <summary>Competition-level; null when none is stored.</summary>
     Task<string?> GetMonitorJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default);

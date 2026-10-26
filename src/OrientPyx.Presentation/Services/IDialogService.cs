@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Presentation.ViewModels.Dialogs;
 
@@ -54,6 +54,10 @@ public interface IDialogService : INotifyPropertyChanged
 
     /// <summary>Returns the chosen new number.</summary>
     Task<int?> ShowChangeDayNumberAsync(ChangeDayNumberViewModel dialog);
+
+    /// <summary>Returns the edited settings per discipline, or null on cancel.</summary>
+    Task<IReadOnlyDictionary<BusinessLogic.Disciplines.DisciplineId, IReadOnlyDictionary<string, object?>>?> ShowDisciplineSettingsAsync(
+        DisciplineSettingsViewModel dialog);
 
     /// <summary>An export could not overwrite its target (another program holds it open); offers a
     /// different name. Returns the chosen file name, no path.</summary>

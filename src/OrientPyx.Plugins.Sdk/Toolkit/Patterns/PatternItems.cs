@@ -1,4 +1,4 @@
-namespace OrientPyx.BusinessLogic.Disciplines.CoursePattern;
+namespace OrientPyx.Plugins.Sdk.Toolkit.Patterns;
 
 /// <summary>
 /// Mutable walk state shared by the pattern items while matching one runner's punches. <see cref="Pos"/>

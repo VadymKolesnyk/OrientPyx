@@ -94,7 +94,8 @@ public sealed class EventArchiveFlow : IEventArchiveFlow
             _localization,
             preview.Identifier,
             preview.IdentifierExists,
-            candidate => _archive.IsIdentifierAvailableAsync(candidate)));
+            candidate => _archive.IsIdentifierAvailableAsync(candidate),
+            preview.MissingPlugins));
         if (decision is null)
             return null; // cancelled
 

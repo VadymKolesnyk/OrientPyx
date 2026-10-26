@@ -1,4 +1,4 @@
-namespace OrientPyx.BusinessLogic.Disciplines;
+namespace OrientPyx.Plugins.Sdk;
 
 /// <summary>Who a discipline's result belongs to (see <see cref="IDisciplineStrategy.Competitors"/>).</summary>
 public enum CompetitorModel

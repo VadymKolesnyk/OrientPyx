@@ -26,6 +26,9 @@ public static class DataAccessServiceCollectionExtensions
         // Per-launch diagnostic log under ./events/logs (actions + exceptions).
         services.AddSingleton<IActivityLog, FileActivityLog>();
 
+        // Plugins (DLLs from the plugins folders), loaded on first use — after the app DB is migrated.
+        services.AddSingleton<IPluginCatalog, Plugins.PluginCatalog>();
+
         // EventStore opens per-competition databases on demand; it holds no shared state.
         services.AddSingleton<IEventStore, EventStore>();
         services.AddSingleton<IEventFolderScanner, EventFolderScanner>();

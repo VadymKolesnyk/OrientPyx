@@ -42,6 +42,9 @@ public sealed record EventDaySnapshot
     /// <summary>The day's scatter variants (every group), in <c>Order</c>.</summary>
     public IReadOnlyList<ScatterVariant> ScatterVariants { get; init; } = [];
 
+    /// <summary>Saved discipline settings that apply to the day: its own rows plus the competition-scoped ones.</summary>
+    public IReadOnlyList<PluginSettingsRow> DisciplineSettings { get; init; } = [];
+
     /// <summary>Competition metadata (name, organisation, officials); null when none is stored yet.</summary>
     public CompetitionInfo? Info { get; init; }
 }

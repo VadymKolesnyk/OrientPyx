@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using OrientPyx.BusinessLogic.DependencyInjection;
 using OrientPyx.DataAccess.DependencyInjection;
 using OrientPyx.Localization.DependencyInjection;
@@ -33,6 +33,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<IStatementFlow, StatementFlow>();
         services.AddSingleton<IWinnersPrintFlow, WinnersPrintFlow>();
         services.AddSingleton<IEventArchiveFlow, EventArchiveFlow>();
+        services.AddSingleton<IDisciplineSettingsFlow, DisciplineSettingsFlow>();
         services.AddSingleton<ResultsDebugSnapshot>();
         services.AddSingleton<IFileReadoutPoller, FileReadoutPoller>();
         services.AddSingleton<IBackgroundActivityService, BackgroundActivityService>();
@@ -44,6 +45,7 @@ public static class PresentationServiceCollectionExtensions
         // Root + gating view models
         services.AddSingleton<MainWindowViewModel>();
         services.AddSingleton<ShellViewModel>();
+        services.AddSingleton<ViewModels.Shared.PluginNoticeViewModel>();
         services.AddSingleton<EventSelectionViewModel>();
         services.AddSingleton<CreateEventViewModel>();
 

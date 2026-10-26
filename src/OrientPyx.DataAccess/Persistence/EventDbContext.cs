@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Entities;
@@ -39,6 +39,7 @@ public class EventDbContext : DbContext
     public DbSet<OnlinePublishSettingsRow> OnlinePublishSettings => Set<OnlinePublishSettingsRow>();
     public DbSet<MonitorSettingsRow> MonitorSettings => Set<MonitorSettingsRow>();
     public DbSet<DrawSettingsRow> DrawSettings => Set<DrawSettingsRow>();
+    public DbSet<PluginSettingsRow> PluginSettings => Set<PluginSettingsRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -151,5 +152,14 @@ public class EventDbContext : DbContext
         // load and the per-group replace; Order sorts them (A before B).
         modelBuilder.Entity<ScatterVariant>()
             .HasIndex(v => new { v.EventDayId, v.GroupId });
+
+        // Discipline settings (Р-11): one row per (day, discipline); the competition-scoped row has no day.
+        modelBuilder.Entity<PluginSettingsRow>()
+            .Property(r => r.DisciplineId)
+            .HasConversion(disciplineId);
+
+        modelBuilder.Entity<PluginSettingsRow>()
+            .HasIndex(r => new { r.EventDayId, r.DisciplineId })
+            .IsUnique();
     }
 }

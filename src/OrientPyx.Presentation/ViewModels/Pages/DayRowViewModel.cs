@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Disciplines;
@@ -110,7 +110,14 @@ public sealed partial class DayRowViewModel : ObservableObject
 
     partial void OnDateChanged(DateTimeOffset? value) => IsDirty = true;
     partial void OnVenueChanged(string value) => IsDirty = true;
-    partial void OnSelectedDisciplineChanged(DisciplineTypeOption value) => IsDirty = true;
+    partial void OnSelectedDisciplineChanged(DisciplineTypeOption value)
+    {
+        IsDirty = true;
+        OnPropertyChanged(nameof(HasDisciplineSettings));
+    }
+
+    /// <summary>True when the day's discipline declares settings (shows «Налаштування дисципліни…»).</summary>
+    public bool HasDisciplineSettings => SelectedDiscipline.Strategy.Settings.Count > 0;
 
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e)
         => OnPropertyChanged(nameof(NumberLabel));

@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -262,9 +262,13 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         private set => SetProperty(ref _dayBands, value);
     }
 
+    // The plugin result columns of the disciplines used on the shown day (see LoadAsync).
+    private IReadOnlyList<ResultColumnDef> _dayResultColumns = [];
+
     private void RebuildDayBands()
         => DayBands = new Controls.DayColumnBuilder(Localization)
-            .Build(ShowTeamColumn, ShowScoreColumn, Discounts, RaisedFeeEnabled, PaymentPerDay, _dayBands);
+            .Build(ShowTeamColumn, ShowScoreColumn, Discounts, RaisedFeeEnabled, PaymentPerDay, _dayBands,
+                _dayResultColumns);
 
     // The day grid's «Оплата» column binds a different property in each mode, so the bands must be rebuilt
     // when the mode changes (the roster table rebuilds itself off its own PaymentPerDay binding).
@@ -687,11 +691,21 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             _dayUsesScore =
                 _strategies.For(day.DefaultDiscipline).UsesControlPointPoints
                 || dayGroups.Any(g => _strategies.For(g.DisciplineOverride ?? day.DefaultDiscipline).UsesControlPointPoints);
+            // A plugin discipline's own result columns (e.g. «Штраф»), once per key, for every discipline in use.
+            _dayResultColumns = new[] { day.DefaultDiscipline }
+                .Concat(dayGroups.Select(g => g.DisciplineOverride ?? day.DefaultDiscipline))
+                .Distinct()
+                .SelectMany(id => _strategies.For(id).ResultColumns)
+                .DistinctBy(c => c.Key)
+                .ToList();
+            foreach (var participant in Participants)
+                participant.SetResultColumns(_dayResultColumns);
         }
         else
         {
             _dayUsesTeam = false;
             _dayUsesScore = false;
+            _dayResultColumns = [];
         }
 
         OnPropertyChanged(nameof(ShowTeamColumn));
@@ -759,6 +773,13 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     }
 
     private ParticipantDayRowViewModel CreateDayRow(ParticipantDayRow row, IReadOnlyList<GroupOption> groupOptions)
+    {
+        var vm = NewDayRow(row, groupOptions);
+        vm.SetResultColumns(_dayResultColumns);
+        return vm;
+    }
+
+    private ParticipantDayRowViewModel NewDayRow(ParticipantDayRow row, IReadOnlyList<GroupOption> groupOptions)
         => new(row, groupOptions, _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Discounts, _feeContext, Localization, _strategies,
             RequestRowSave, LeaveDay, RequestDayRowChipChange,
             RequestDayRowRegionChange, RequestDayRowAddRegion,
@@ -1028,7 +1049,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         {
             if (other.ParticipantId == keepParticipantId)
                 continue;
-            if (OrientPyx.BusinessLogic.Models.TextKey.Same((other.Chip ?? string.Empty).Trim(), chip))
+            if (OrientPyx.Plugins.Sdk.Toolkit.TextKey.Same((other.Chip ?? string.Empty).Trim(), chip))
             {
                 other.SetChipSilently(handBack);
                 other.MarkChipCommitted(handBack);
@@ -1570,7 +1591,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         var notes = pool
             .Select(c => (c.Note ?? string.Empty).Trim())
             .Where(n => n.Length > 0)
-            .Distinct(OrientPyx.BusinessLogic.Models.TextKey.Comparer)
+            .Distinct(OrientPyx.Plugins.Sdk.Toolkit.TextKey.Comparer)
             .OrderBy(n => n, StringComparer.CurrentCulture)
             .ToList();
         var options = new List<ChipNoteOption> { ChipNoteOption.All(Localization.Get("Participants.AssignChips.AllChips")) };
@@ -1619,7 +1640,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             .Where(c => result.IsRange
                 ? rangeNumbers!.Contains((c.Number ?? string.Empty).Trim())
                 : result.Note is null
-                    || OrientPyx.BusinessLogic.Models.TextKey.Same((c.Note ?? string.Empty).Trim(), result.Note))
+                    || OrientPyx.Plugins.Sdk.Toolkit.TextKey.Same((c.Note ?? string.Empty).Trim(), result.Note))
             .Select(c => (c.Number ?? string.Empty).Trim())
             .Where(number => number.Length > 0 && !used.Contains(number))
             .OrderBy(number => number, StringComparer.Ordinal));
@@ -1686,7 +1707,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 ? kvp.Value[dayIndex].Length > 0
                 : kvp.Value.Any(name => name.Length > 0))
             .Select(kvp => kvp.Key)
-            .ToHashSet(OrientPyx.BusinessLogic.Models.TextKey.Comparer);
+            .ToHashSet(OrientPyx.Plugins.Sdk.Toolkit.TextKey.Comparer);
     }
 
     // The exact chip numbers a "starting from a number" range would produce — the same width-preserving
@@ -1694,7 +1715,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // pool to just this range after it has been added. Returns empty for an unparsable start / count ≤ 0.
     private static HashSet<string> RangeChipNumbers(string startNumber, int count)
     {
-        var set = new HashSet<string>(OrientPyx.BusinessLogic.Models.TextKey.Comparer);
+        var set = new HashSet<string>(OrientPyx.Plugins.Sdk.Toolkit.TextKey.Comparer);
         if (count <= 0 || startNumber.Length == 0 || !ulong.TryParse(startNumber, out var first))
             return set;
 
@@ -2150,7 +2171,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 row.SelectedDussh = row.DusshOptions.FirstOrDefault(o => !o.IsAdd && o.Id == r.Id) ?? row.DusshOptions[0];
                 break;
             case "Rank":
-                row.SelectedRank = row.RankOptions.FirstOrDefault(o => OrientPyx.BusinessLogic.Models.TextKey.Same(o.Value, r.Text)) ?? row.RankOptions[0];
+                row.SelectedRank = row.RankOptions.FirstOrDefault(o => OrientPyx.Plugins.Sdk.Toolkit.TextKey.Same(o.Value, r.Text)) ?? row.RankOptions[0];
                 break;
             case "Coach": row.Coach = r.Text ?? string.Empty; break;
             case "Representative": row.Representative = r.Text ?? string.Empty; break;
@@ -2188,7 +2209,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 row.SelectedDussh = row.DusshOptions.FirstOrDefault(o => !o.IsAdd && o.Id == r.Id) ?? row.DusshOptions[0];
                 break;
             case "Rank":
-                row.SelectedRank = row.RankOptions.FirstOrDefault(o => OrientPyx.BusinessLogic.Models.TextKey.Same(o.Value, r.Text)) ?? row.RankOptions[0];
+                row.SelectedRank = row.RankOptions.FirstOrDefault(o => OrientPyx.Plugins.Sdk.Toolkit.TextKey.Same(o.Value, r.Text)) ?? row.RankOptions[0];
                 break;
             case "Coach": row.Coach = r.Text ?? string.Empty; break;
             case "Representative": row.Representative = r.Text ?? string.Empty; break;
@@ -2432,7 +2453,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             foreach (var cell in row.Days)
             {
                 if (cell.DayId == dayId && cell.IsMember &&
-                    OrientPyx.BusinessLogic.Models.TextKey.Same((cell.Chip ?? string.Empty).Trim(), chip))
+                    OrientPyx.Plugins.Sdk.Toolkit.TextKey.Same((cell.Chip ?? string.Empty).Trim(), chip))
                 {
                     cell.SetChipSilently(handBack);
                     cell.MarkChipCommitted(handBack);

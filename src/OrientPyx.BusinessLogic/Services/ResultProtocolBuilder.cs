@@ -337,7 +337,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
     private static string ResultCell(ParticipantDayResult r)
     {
         if (r.Status == FinishStatus.Ok)
-            return r.ResultTime is { } e && e >= TimeSpan.Zero ? e.ToString("h\\:mm\\:ss") : string.Empty;
+            return TimeFormat.Result(r.ResultTime);
         return ShortCode(r.Status);
     }
 

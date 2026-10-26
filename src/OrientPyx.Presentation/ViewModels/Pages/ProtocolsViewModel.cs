@@ -1,3 +1,4 @@
+using OrientPyx.BusinessLogic.Disciplines;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using Avalonia.Threading;
@@ -28,6 +29,8 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 /// </summary>
 public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPreviewHost
 {
+    private readonly IDisciplineStrategyProvider _disciplineStrategies;
+
     private readonly ICompetitionEditorService _editor;
     private readonly ISessionService _session;
     private readonly IAppSettingsService _appSettings;
@@ -64,9 +67,11 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         IWinnersPrintBuilder winnersBuilder,
         IWinnersPrintFlow winnersPrint,
         IBusyService busy,
-        IExportFileSaver fileSaver)
+        IExportFileSaver fileSaver,
+        IDisciplineStrategyProvider disciplineStrategies)
         : base(localization)
     {
+        _disciplineStrategies = disciplineStrategies;
         _editor = editor;
         _session = session;
         _appSettings = appSettings;
@@ -321,7 +326,7 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
 
         // Competition type ("тип дистанції"): the day's default discipline, localized. No competition-level
         // equivalent, so blank when no day is selected.
-        CompetitionTypePlaceholder = day is { } ? Localization.Get("Discipline.Type." + day.DefaultDiscipline) : string.Empty;
+        CompetitionTypePlaceholder = day is { } ? DisciplineLabels.Of(_disciplineStrategies.For(day.DefaultDiscipline), Localization) : string.Empty;
     }
 
     // The first of the candidates that is non-blank (trimmed), or empty when none is.

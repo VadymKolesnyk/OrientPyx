@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrientPyx.DataAccess", "src
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrientPyx.Presentation", "src\OrientPyx.Presentation\OrientPyx.Presentation.csproj", "{815CBCF6-CC4A-491C-8E1A-83E5B2A1FBB8}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrientPyx.Plugins.Sdk", "src\OrientPyx.Plugins.Sdk\OrientPyx.Plugins.Sdk.csproj", "{F75CA936-29C2-47D0-B906-71932EA761D4}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -71,6 +73,18 @@ Global
 		{815CBCF6-CC4A-491C-8E1A-83E5B2A1FBB8}.Release|x64.Build.0 = Release|Any CPU
 		{815CBCF6-CC4A-491C-8E1A-83E5B2A1FBB8}.Release|x86.ActiveCfg = Release|Any CPU
 		{815CBCF6-CC4A-491C-8E1A-83E5B2A1FBB8}.Release|x86.Build.0 = Release|Any CPU
+		{F75CA936-29C2-47D0-B906-71932EA761D4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F75CA936-29C2-47D0-B906-71932EA761D4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F75CA936-29C2-47D0-B906-71932EA761D4}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F75CA936-29C2-47D0-B906-71932EA761D4}.Debug|x64.Build.0 = Debug|Any CPU
+		{F75CA936-29C2-47D0-B906-71932EA761D4}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F75CA936-29C2-47D0-B906-71932EA761D4}.Debug|x86.Build.0 = Debug|Any CPU
+		{F75CA936-29C2-47D0-B906-71932EA761D4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F75CA936-29C2-47D0-B906-71932EA761D4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F75CA936-29C2-47D0-B906-71932EA761D4}.Release|x64.ActiveCfg = Release|Any CPU
+		{F75CA936-29C2-47D0-B906-71932EA761D4}.Release|x64.Build.0 = Release|Any CPU
+		{F75CA936-29C2-47D0-B906-71932EA761D4}.Release|x86.ActiveCfg = Release|Any CPU
+		{F75CA936-29C2-47D0-B906-71932EA761D4}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -80,5 +94,6 @@ Global
 		{9ABB414E-740A-4BD0-9C74-56C090608082} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{A9A189B2-8F6E-4111-816C-EEFA3E976FAE} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{815CBCF6-CC4A-491C-8E1A-83E5B2A1FBB8} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{F75CA936-29C2-47D0-B906-71932EA761D4} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

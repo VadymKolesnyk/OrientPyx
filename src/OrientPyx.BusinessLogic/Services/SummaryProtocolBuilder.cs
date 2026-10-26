@@ -456,8 +456,7 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         r?.Points is { } pts ? PointsTable.Format(pts) : "0.00";
 
     // "00:10:30" — two-digit-hour result time, matching the printed summary sheet.
-    private static string FormatTimeSpan(TimeSpan t) =>
-        $"{(int)t.TotalHours:00}:{t.Minutes:00}:{t.Seconds:00}";
+    private static string FormatTimeSpan(TimeSpan t) => TimeFormat.TotalHours(t);
 
     private static string FormatTime(double seconds) => FormatTimeSpan(TimeSpan.FromSeconds(Math.Round(seconds)));
 

@@ -15,6 +15,7 @@ public sealed partial class SettingsViewModel : PageViewModelBase
     private readonly IUiScaleService _uiScale;
     private readonly IBusyService _busy;
     private readonly IUpdateService _updates;
+    private readonly IPluginCatalog _plugins;
 
     [ObservableProperty]
     private string _eventsPath = string.Empty;
@@ -55,9 +56,11 @@ public sealed partial class SettingsViewModel : PageViewModelBase
         IAppSettingsService settings,
         IUiScaleService uiScale,
         IBusyService busy,
-        IUpdateService updates)
+        IUpdateService updates,
+        IPluginCatalog plugins)
         : base(localization)
     {
+        _plugins = plugins;
         _settings = settings;
         _uiScale = uiScale;
         _busy = busy;
@@ -65,6 +68,63 @@ public sealed partial class SettingsViewModel : PageViewModelBase
         _ = LoadPathsAsync();
         _ = LoadOnlineAsync();
         _ = LoadReadoutTypeAsync();
+        LoadPlugins();
+    }
+
+    // --- Plugins (Р-12): loaded at startup; switching one on/off applies after a restart.
+
+    public System.Collections.ObjectModel.ObservableCollection<PluginItemViewModel> Plugins { get; } = [];
+
+    public bool HasPlugins => Plugins.Count > 0;
+
+    /// <summary>Shown after a plugin was switched on or off in this session.</summary>
+    [ObservableProperty]
+    private bool _pluginsRestartNeeded;
+
+    private void LoadPlugins()
+    {
+        Plugins.Clear();
+        foreach (var p in _plugins.Plugins)
+        {
+            var details = string.IsNullOrWhiteSpace(p.Info.Author) ? p.Info.Version : $"{p.Info.Version} · {p.Info.Author}";
+            Plugins.Add(new PluginItemViewModel(p.Info.Id, p.Info.Name, details, p.Folder,
+                Localization.Get(p.Enabled ? "Page.Settings.Plugins.Loaded" : "Page.Settings.Plugins.Disabled"),
+                isError: false, p.Enabled, OnPluginToggled));
+        }
+        foreach (var e in _plugins.Errors)
+            Plugins.Add(new PluginItemViewModel(e.PluginId ?? string.Empty, e.PluginId ?? System.IO.Path.GetFileName(e.Path),
+                string.Empty, e.Path, string.Format(Localization.Get("Page.Settings.Plugins.Error"), e.Message),
+                isError: true, enabled: false, onToggled: null));
+        OnPropertyChanged(nameof(HasPlugins));
+    }
+
+    private async void OnPluginToggled(PluginItemViewModel item)
+    {
+        var disabled = Plugins.Where(p => !p.IsError && !p.Enabled).Select(p => p.Id).ToList();
+        PluginsRestartNeeded = true;
+        try
+        {
+            await _busy.RunAsync(() => _settings.SaveDisabledPluginsAsync(disabled));
+        }
+        catch (Exception)
+        {
+            // The busy service already logged and reported it.
+        }
+    }
+
+    [RelayCommand]
+    private void OpenPluginsFolder()
+    {
+        var folder = _plugins.UserFolder;
+        try
+        {
+            System.IO.Directory.CreateDirectory(folder);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(folder) { UseShellExecute = true });
+        }
+        catch (Exception)
+        {
+            // Opening Explorer is best-effort.
+        }
     }
 
     // --- Updates

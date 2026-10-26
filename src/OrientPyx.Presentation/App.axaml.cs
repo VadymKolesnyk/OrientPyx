@@ -44,6 +44,10 @@ public partial class App : Application
 
         services.InitializeOrientPyxDatabase();
 
+        // Load the plugins (needs the migrated app DB for the disabled list) and register their strings —
+        // DataAccess loads them but does not know the localization service.
+        PluginStartup.RegisterStrings(services);
+
         // Expose the scale service app-wide so any View can bind scaled font sizes
         // ({Binding TitleFontSize, Source={StaticResource UiScale}}).
         Resources["UiScale"] = services.GetRequiredService<IUiScaleService>();

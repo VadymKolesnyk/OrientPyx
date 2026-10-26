@@ -1,4 +1,4 @@
-using OrientPyx.BusinessLogic.Disciplines.CoursePattern;
+using OrientPyx.Plugins.Sdk.Toolkit.Patterns;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
@@ -8,7 +8,7 @@ namespace OrientPyx.BusinessLogic.Disciplines;
 /// <summary>
 /// Mixed course (змішаний): the course order is a <b>pattern</b> that mixes a prescribed order with
 /// free-choice sections — an ordered run <c>&lt;41 42&gt;</c>, an "any N of" block <c>[2 45 46 47]</c>,
-/// and nesting (see <see cref="CoursePattern.CoursePattern"/>). It is judged like a set course but against
+/// and nesting (see <see cref="CoursePattern"/>). It is judged like a set course but against
 /// the pattern: every required control must be present in a valid order, extra/foreign punches ignored.
 /// The control count is the number of punches the pattern requires; the splits render the actual passage
 /// against the prescribed pattern, each punch flagged on/off course by whether the pattern consumed it.
@@ -35,7 +35,7 @@ public sealed class MixedStrategy : DisciplineStrategyBase
 
     /// <summary>The control count is what the pattern actually requires — every control in an ordered
     /// section, plus N for each <c>[N …]</c> block — not the raw token count.</summary>
-    public override int ControlCount(string courseOrder) => CoursePattern.CoursePattern.Parse(courseOrder).RequiredCount;
+    public override int ControlCount(string courseOrder) => CoursePattern.Parse(courseOrder).RequiredCount;
 
     /// <summary>
     /// Same priority as a set course — DNF &gt; MP &gt; OVT &gt; OK:
@@ -53,18 +53,17 @@ public sealed class MixedStrategy : DisciplineStrategyBase
         if (context.FinishTime is null)
             return FinishStatusResult.Of(FinishStatus.Dnf);
 
-        var pattern = CoursePattern.CoursePattern.Parse(context.CourseOrderText);
+        var pattern = CoursePattern.Parse(context.CourseOrderText);
         var ignored = IgnoredCodes(context.ExpectedControls, pattern);
-        var ok = pattern.Match(context.PunchedControls, ignored, out _, out var firstMissing);
-        if (!ok)
+        var match = CourseMatcher.MatchPattern(pattern, context.PunchedControls, ignored);
+        if (!match.Ok)
         {
-            var missed = MissedControls.ForPattern(pattern, context.PunchedControls, ignored);
             // The greedy match said MP but the maximum match is complete: a greedy-walk weakness, kept as is
             // (the status must not change here) but logged so it can be fixed separately.
-            if (missed.Count == 0)
+            if (match.Missed.Count == 0)
                 System.Diagnostics.Debug.WriteLine(
                     $"[Mixed] greedy MP but full maximum match: '{context.CourseOrderText}' / '{string.Join(' ', context.PunchedControls)}'");
-            return new FinishStatusResult(FinishStatus.Mp, firstMissing) { Missed = missed };
+            return new FinishStatusResult(FinishStatus.Mp, match.FirstMissing ?? string.Empty) { Missed = match.Missed };
         }
 
         if (context.TimeLimit is { } limit && context.StartTime is { } start
@@ -85,7 +84,7 @@ public sealed class MixedStrategy : DisciplineStrategyBase
     /// </summary>
     public override SplitsView BuildSplits(SplitsContext context)
     {
-        var pattern = CoursePattern.CoursePattern.Parse(context.CourseOrderText);
+        var pattern = CoursePattern.Parse(context.CourseOrderText);
         var ignoredExpected = IgnoredCodes(context.ExpectedControls, pattern);
         var ignored = context.DisabledControls.Count > 0 || ignoredExpected.Count > 0
             ? new HashSet<string>(context.DisabledControls, StringComparer.OrdinalIgnoreCase)
@@ -173,7 +172,7 @@ public sealed class MixedStrategy : DisciplineStrategyBase
     // i.e. the day's disabled («проблемні») controls that appear in this course. Comparing the pattern's
     // codes against the flattened list recovers them without the strategy needing the day's full disabled set.
     private static IReadOnlySet<string> IgnoredCodes(
-        IReadOnlyList<string> expectedControls, CoursePattern.CoursePattern pattern)
+        IReadOnlyList<string> expectedControls, CoursePattern pattern)
     {
         var kept = new HashSet<string>(expectedControls.Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);
         var ignored = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

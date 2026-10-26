@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace OrientPyx.BusinessLogic.Models;
+namespace OrientPyx.Plugins.Sdk.Toolkit;
 
 /// <summary>
 /// The one way user-entered names (groups, regions, clubs, teams, ranks, chip/bib numbers …) are matched.

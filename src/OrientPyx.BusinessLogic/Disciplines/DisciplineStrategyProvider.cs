@@ -1,3 +1,4 @@
+using OrientPyx.BusinessLogic.Disciplines.Plugins;
 using OrientPyx.BusinessLogic.Interfaces;
 
 namespace OrientPyx.BusinessLogic.Disciplines;
@@ -15,6 +16,17 @@ public sealed class DisciplineStrategyProvider : IDisciplineStrategyProvider
     private readonly Lock _gate = new();
 
     public DisciplineStrategyProvider(IEnumerable<IDisciplineStrategy> strategies, ICourseDistanceCalculator distance)
+        : this(strategies, distance, plugins: null, errors: null, log: null)
+    {
+    }
+
+    /// <summary>
+    /// Built-ins plus the enabled plugins' disciplines (after the built-ins, in plugin order). A plugin discipline
+    /// is wrapped in a <see cref="PluginDisciplineStrategy"/> over its <see cref="Discipline.BasedOn"/> built-in.
+    /// </summary>
+    public DisciplineStrategyProvider(
+        IEnumerable<IDisciplineStrategy> strategies, ICourseDistanceCalculator distance,
+        IPluginCatalog? plugins, PluginRuntimeErrors? errors, IActivityLog? log)
     {
         _distance = distance;
         // The first registration wins on a duplicate id, so a plugin can never shadow a built-in (the
@@ -28,6 +40,25 @@ public sealed class DisciplineStrategyProvider : IDisciplineStrategyProvider
             byId[s.Id] = s;
             all.Add(s);
         }
+        if (plugins is not null && errors is not null)
+        {
+            var builtins = byId.ToDictionary(kv => kv.Key, kv => kv.Value);
+            foreach (var plugin in plugins.Plugins.Where(p => p.Enabled))
+                foreach (var discipline in plugin.Disciplines)
+                {
+                    var id = new DisciplineId(discipline.Id);
+                    var basedOnId = new DisciplineId(discipline.BasedOn.ToString());
+                    if (byId.ContainsKey(id) || !builtins.TryGetValue(basedOnId, out var basedOn))
+                    {
+                        log?.Info($"Plugin '{plugin.Info.Id}': discipline '{id.Value}' skipped (duplicate id or no built-in '{basedOnId.Value}').");
+                        continue;
+                    }
+                    var strategy = new PluginDisciplineStrategy(discipline, plugin.Info.Id, basedOn, errors);
+                    byId[id] = strategy;
+                    all.Add(strategy);
+                }
+        }
+
         _byId = byId;
         All = all;
     }

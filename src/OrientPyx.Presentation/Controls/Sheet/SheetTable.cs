@@ -1717,12 +1717,15 @@ public sealed class SheetTable : TemplatedControl
                 return null;
             var segment = rawSegment;
             int? index = null;
+            string? key = null;
             var bracket = segment.IndexOf('[');
             if (bracket >= 0 && segment.EndsWith(']'))
             {
                 var inner = segment.Substring(bracket + 1, segment.Length - bracket - 2);
                 if (int.TryParse(inner, out var idx))
                     index = idx;
+                else
+                    key = inner;   // a string indexer, e.g. ResultExtras[penalty]
                 segment = segment.Substring(0, bracket);
             }
 
@@ -1734,6 +1737,8 @@ public sealed class SheetTable : TemplatedControl
 
             if (index is { } i && current is System.Collections.IList list)
                 current = i >= 0 && i < list.Count ? list[i] : null;
+            else if (key is not null && current is not null)
+                current = current.GetType().GetProperty("Item", [typeof(string)])?.GetValue(current, [key]);
         }
         return current;
     }

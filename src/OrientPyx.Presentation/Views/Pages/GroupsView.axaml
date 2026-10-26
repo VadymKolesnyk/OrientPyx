@@ -54,6 +54,15 @@
                         <TextBlock Text="{Binding Localization[Groups.RecalcAge]}" />
                     </StackPanel>
                 </Button>
+                <Button Command="{Binding EditDisciplineSettingsCommand}" Classes="ghost"
+                        Margin="0,0,8,8"
+                        IsVisible="{Binding HasDisciplineSettings}"
+                        ToolTip.Tip="{Binding Localization[Dialog.DisciplineSettings.Hint]}">
+                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                        <controls:Icon Kind="SquarePen" Size="15" />
+                        <TextBlock Text="{Binding Localization[Dialog.DisciplineSettings.Open]}" />
+                    </StackPanel>
+                </Button>
                 <Button Command="{Binding PullAllGroupsCommand}" Classes="ghost"
                         Margin="0,0,8,8"
                         IsEnabled="{Binding !IsDayLocked}"

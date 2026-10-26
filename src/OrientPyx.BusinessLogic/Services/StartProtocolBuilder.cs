@@ -238,7 +238,7 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
     private static TimeSpan WholeMinute(TimeSpan t) => TimeSpan.FromMinutes(Math.Floor(t.TotalMinutes));
 
     // The minute caption on the judges' sheet reads as a full time-of-day band ("11:01:00").
-    private static string FormatMinute(TimeSpan t) => t.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
+    private static string FormatMinute(TimeSpan t) => TimeFormat.Clock(t);
 
     private static string Cell(StartProtocolColumn column, StartProtocolRow row, int sequence) => column switch
     {

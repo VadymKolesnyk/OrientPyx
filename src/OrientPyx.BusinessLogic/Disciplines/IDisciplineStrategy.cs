@@ -37,6 +37,18 @@ public interface IDisciplineStrategy
     /// groups page previews and validates — mixed only.</summary>
     bool UsesCoursePattern { get; }
 
+    /// <summary>The plugin that contributes this discipline; null for a built-in one.</summary>
+    string? PluginId { get; }
+
+    /// <summary>The discipline's settings («Налаштування дисципліни…»); empty for the built-ins.</summary>
+    IReadOnlyList<SettingDef> Settings { get; }
+
+    /// <summary>Extra result columns, read from <see cref="ParticipantDayResult.Extra"/>; empty for the built-ins.</summary>
+    IReadOnlyList<ResultColumnDef> ResultColumns { get; }
+
+    /// <summary>Participant field keys the discipline needs; empty for the built-ins.</summary>
+    IReadOnlyList<string> RequiredFields { get; }
+
     /// <summary>True when results of this discipline may earn a sports rank («виконаний розряд», Р-7).</summary>
     bool AwardsRanks { get; }
 
@@ -109,8 +121,8 @@ public interface IDisciplineStrategy
 
     /// <summary>
     /// Places the group's competitors (Р-8): writes <see cref="ParticipantDayResult.Place"/> (and, for a team
-    /// format, the team score) into <see cref="RankingContext.Results"/>. Default: score ↓ then time ↑, equal
+    /// format, the team score) into <see cref="GroupRankingContext.Results"/>. Default: score ↓ then time ↑, equal
     /// results share a place and the next place skips.
     /// </summary>
-    void Rank(RankingContext context);
+    void Rank(GroupRankingContext context);
 }

@@ -172,7 +172,7 @@ public sealed class RogaineStrategy : DisciplineStrategyBase
     /// but does NOT count toward the team score or drop the team if non-OK; only when EVERY member is поза
     /// конкурсом does the whole team go unplaced (rules 1–5).
     /// </summary>
-    public override void Rank(RankingContext context)
+    public override void Rank(GroupRankingContext context)
     {
         var members = context.TeamMembers;
         if (members.Count == 0)

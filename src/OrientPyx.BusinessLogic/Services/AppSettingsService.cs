@@ -224,6 +224,15 @@ public sealed class AppSettingsService : IAppSettingsService
         return _appStore.SaveOnlineApiSettingsAsync(settings, cancellationToken);
     }
 
+    public async Task<IReadOnlySet<string>> GetDisabledPluginsAsync(CancellationToken cancellationToken = default)
+    {
+        var json = await _appStore.GetDisabledPluginsJsonAsync(cancellationToken);
+        return PluginIdList.Parse(json);
+    }
+
+    public Task SaveDisabledPluginsAsync(IEnumerable<string> pluginIds, CancellationToken cancellationToken = default)
+        => _appStore.SaveDisabledPluginsJsonAsync(PluginIdList.Serialize(pluginIds), cancellationToken);
+
     public async Task<ReadoutType> GetReadoutTypeAsync(CancellationToken cancellationToken = default)
     {
         var stored = await _appStore.GetReadoutTypeAsync(cancellationToken);

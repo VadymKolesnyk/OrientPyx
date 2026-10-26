@@ -56,6 +56,20 @@ dotnet publish $project `
     -o $publishDir
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed." }
 
+# --- 2b. Build the standard plugins and ship them in <app dir>\plugins -----------------------------
+# No -p:Version here: the plugins keep their own versions, and the SDK keeps its explicit AssemblyVersion.
+Write-Host "Building plugins..." -ForegroundColor Cyan
+$pluginsSln = Join-Path $repoRoot 'plugins/OrientPyx.Plugins.sln'
+$pluginsOut = Join-Path $repoRoot 'artifacts/plugins'
+if (Test-Path $pluginsOut) { Remove-Item $pluginsOut -Recurse -Force }
+dotnet build $pluginsSln -c Release
+if ($LASTEXITCODE -ne 0) { throw "Plugin build failed." }
+$publishPlugins = Join-Path $publishDir 'plugins'
+New-Item -ItemType Directory -Path $publishPlugins -Force | Out-Null
+Get-ChildItem $pluginsOut -Directory | ForEach-Object {
+    Copy-Item $_.FullName -Destination $publishPlugins -Recurse -Force
+}
+
 # --- 3. Pack with Velopack (installer + update package + deltas) -----------------------------------
 Write-Host "Packing Velopack release $Version..." -ForegroundColor Cyan
 vpk pack `

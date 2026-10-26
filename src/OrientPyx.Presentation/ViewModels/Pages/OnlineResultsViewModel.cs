@@ -869,7 +869,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
     private CancellationTokenSource? _previewDebounceCts;
 
     /// <summary>Moves a column next to another in the editor's list (drag-reorder from the preview header). Keys
-    /// are the stable <see cref="ResultColumnDef.Key"/>. The editor's Changed then re-renders the preview.</summary>
+    /// are the stable <see cref="ResultColumnInfo.Key"/>. The editor's Changed then re-renders the preview.</summary>
     public void MoveColumnByKey(string draggedKey, string targetKey, bool insertAfter)
     {
         var dragged = Columns.Columns.FirstOrDefault(c => c.Key == draggedKey);
@@ -952,8 +952,8 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
 
         // Group the day's rows by group, in the snapshot's group order.
         var byGroup = snapshot.Rows
-            .GroupBy(r => r.GroupName, OrientPyx.BusinessLogic.Models.TextKey.Comparer)
-            .ToDictionary(g => g.Key, g => g.ToList(), OrientPyx.BusinessLogic.Models.TextKey.Comparer);
+            .GroupBy(r => r.GroupName, OrientPyx.Plugins.Sdk.Toolkit.TextKey.Comparer)
+            .ToDictionary(g => g.Key, g => g.ToList(), OrientPyx.Plugins.Sdk.Toolkit.TextKey.Comparer);
 
         var remaining = PreviewTotalRowCap;
         foreach (var group in snapshot.Groups)

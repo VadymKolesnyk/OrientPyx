@@ -1,4 +1,4 @@
-namespace OrientPyx.BusinessLogic.Disciplines.CoursePattern;
+namespace OrientPyx.Plugins.Sdk.Toolkit.Patterns;
 
 /// <summary>
 /// A structural problem found while parsing a course pattern. Layer-neutral: carries a <see cref="Kind"/>

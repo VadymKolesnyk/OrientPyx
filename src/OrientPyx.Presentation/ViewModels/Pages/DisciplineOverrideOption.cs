@@ -35,7 +35,7 @@ public sealed partial class DisciplineOverrideOption : ObservableObject
         get
         {
             if (_strategy is not null)
-                return DisciplineLabels.Of(_strategy, _localization);
+                return DisciplineLabels.Of(_strategy, _localization, markPlugin: true);
 
             // The "(default)" sentinel: name the day's default discipline when known.
             if (_dayDefault is null)

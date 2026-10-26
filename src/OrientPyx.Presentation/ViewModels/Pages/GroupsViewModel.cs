@@ -1,10 +1,10 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientPyx.BusinessLogic.Disciplines;
-using OrientPyx.BusinessLogic.Disciplines.CoursePattern;
+using OrientPyx.Plugins.Sdk.Toolkit.Patterns;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Interfaces;
@@ -32,6 +32,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     private readonly IDisciplineStrategyProvider _strategies;
     private readonly IDialogService _dialogs;
     private readonly IAppStore _appStore;
+    private readonly IDisciplineSettingsFlow _disciplineSettings;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
 
     // Used to debounce the competition-level settings strip (course-setter + default points rule).
@@ -53,10 +54,12 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         IDialogService dialogs,
         IAppStore appStore,
         ITableLayoutStore layoutStore,
-        IDayLockService dayLock)
+        IDayLockService dayLock,
+        IDisciplineSettingsFlow disciplineSettings)
         : base(localization)
     {
         UseDayLock(dayLock);
+        _disciplineSettings = disciplineSettings;
         LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
@@ -548,8 +551,21 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         _ = RefreshScatterEditorAsync();
     }
 
+    /// <summary>True when a discipline used on the day declares settings — shows «Налаштування дисципліни…».</summary>
+    public bool HasDisciplineSettings =>
+        _session.CurrentDay is { } day
+        && _disciplineSettings.HasSettings(Groups.Select(g => g.EffectiveDiscipline).Append(day.DefaultDiscipline));
+
+    [RelayCommand]
+    private async Task EditDisciplineSettingsAsync()
+    {
+        if (_session.CurrentDay is { } day)
+            await _disciplineSettings.EditAsync(day);
+    }
+
     private void RaiseColumnVisibility()
     {
+        OnPropertyChanged(nameof(HasDisciplineSettings));
         OnPropertyChanged(nameof(ShowRequiredCountColumn));
         OnPropertyChanged(nameof(ShowPenaltyColumn));
         ColumnsChanged?.Invoke(this, EventArgs.Empty);

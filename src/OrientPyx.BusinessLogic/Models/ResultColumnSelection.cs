@@ -5,7 +5,7 @@ namespace OrientPyx.BusinessLogic.Models;
 /// <summary>
 /// A user-chosen, ordered set of result columns — the column layout for one results surface (an online
 /// publish, or one monitor file). Stored as a plain list of stable column keys (see
-/// <see cref="ResultColumnDef.Key"/>) in display order. A column not present in the list is hidden; an
+/// <see cref="ResultColumnInfo.Key"/>) in display order. A column not present in the list is hidden; an
 /// unknown key (a column removed since the config was saved) is ignored on read.
 /// </summary>
 public sealed record ResultColumnSelection(
@@ -23,15 +23,15 @@ public sealed record ResultColumnSelection(
     public static ResultColumnSelection None { get; } = new([]);
 
     /// <summary>Resolves the keys to their column definitions in order, dropping unknown/duplicate keys.</summary>
-    public IReadOnlyList<ResultColumnDef> Resolve()
+    public IReadOnlyList<ResultColumnInfo> Resolve()
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var result = new List<ResultColumnDef>(Keys.Count);
+        var result = new List<ResultColumnInfo>(Keys.Count);
         foreach (var key in Keys)
         {
             if (!seen.Add(key))
                 continue;
-            if (ResultColumnDef.ByKey(key) is { } def)
+            if (ResultColumnInfo.ByKey(key) is { } def)
                 result.Add(def);
         }
         return result;

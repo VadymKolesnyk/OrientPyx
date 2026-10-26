@@ -39,7 +39,7 @@ public sealed partial class OnlinePreviewViewModel : ObservableObject
     public void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);
 }
 
-/// <summary>One visible column in the online preview: its stable key (<see cref="ResultColumnDef.Key"/>, the drag
+/// <summary>One visible column in the online preview: its stable key (<see cref="ResultColumnInfo.Key"/>, the drag
 /// payload), its header text, the result-column kind (drives left/centre alignment), and whether it is also shown
 /// on the small (phone) screen — a column with <see cref="ShownOnSmall"/> = false gets a "phone-hidden" badge so
 /// the effect of the toggle is visible in the preview.</summary>

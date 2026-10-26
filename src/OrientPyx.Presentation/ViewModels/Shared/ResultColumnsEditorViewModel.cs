@@ -42,7 +42,7 @@ public sealed partial class ResultColumnsEditorViewModel : ObservableObject
         Columns.Clear();
         foreach (var def in chosen)
             Columns.Add(MakeItem(def, isChecked: true));
-        foreach (var def in ResultColumnDef.All.Where(d => !chosenKeys.Contains(d.Key)))
+        foreach (var def in ResultColumnInfo.All.Where(d => !chosenKeys.Contains(d.Key)))
             Columns.Add(MakeItem(def, isChecked: false));
     }
 
@@ -50,7 +50,7 @@ public sealed partial class ResultColumnsEditorViewModel : ObservableObject
     public ResultColumnSelection BuildSelection() =>
         new(Columns.Where(c => c.IsChecked).Select(c => c.Key).ToList());
 
-    private ResultColumnItem MakeItem(ResultColumnDef def, bool isChecked)
+    private ResultColumnItem MakeItem(ResultColumnInfo def, bool isChecked)
     {
         var item = new ResultColumnItem(def, _localization.Get(def.LabelKey)) { IsChecked = isChecked };
         item.PropertyChanged += (_, e) =>
@@ -121,13 +121,13 @@ public sealed partial class ResultColumnsEditorViewModel : ObservableObject
 /// <summary>One row in the <see cref="ResultColumnsEditorViewModel"/>: a column, its (live-localized) label, and whether it is shown.</summary>
 public sealed partial class ResultColumnItem : ObservableObject
 {
-    public ResultColumnItem(ResultColumnDef definition, string label)
+    public ResultColumnItem(ResultColumnInfo definition, string label)
     {
         Definition = definition;
         _label = label;
     }
 
-    public ResultColumnDef Definition { get; }
+    public ResultColumnInfo Definition { get; }
 
     public string Key => Definition.Key;
 

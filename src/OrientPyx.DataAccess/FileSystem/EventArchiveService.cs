@@ -18,12 +18,19 @@ public sealed class EventArchiveService : IEventArchiveService
     // own files under the archive's top-level folder. Read on import, never extracted into the folder.
     private const string SharedDataEntryName = "app-shared.json";
 
+    // The plugins the competition's disciplines come from ({"requiredPlugins":[{id, version, disciplines}]}), so an
+    // import can warn when one is missing here. Read on preview, never extracted into the folder.
+    private const string PluginsEntryName = "plugins.json";
+
     private readonly IAppSettingsService _settings;
     private readonly IEventStore _eventStore;
     private readonly IEventSharedDataService _sharedData;
+    private readonly IPluginCatalog _plugins;
 
-    public EventArchiveService(IAppSettingsService settings, IEventStore eventStore, IEventSharedDataService sharedData)
+    public EventArchiveService(
+        IAppSettingsService settings, IEventStore eventStore, IEventSharedDataService sharedData, IPluginCatalog plugins)
     {
+        _plugins = plugins;
         _settings = settings;
         _eventStore = eventStore;
         _sharedData = sharedData;
@@ -57,6 +64,8 @@ public sealed class EventArchiveService : IEventArchiveService
         await _eventStore.CheckpointAsync(folderPath, cancellationToken);
 
         var sharedJson = JsonSerializer.Serialize(await _sharedData.CollectAsync(folderPath, cancellationToken));
+        var pluginsJson = JsonSerializer.Serialize(
+            new PluginManifest(await RequiredPluginsAsync(folderPath, cancellationToken)));
 
         // Zip the whole folder as a single top-level entry named after the identifier, so the identifier
         // is recoverable on import. Overwrite any existing file at the destination. File I/O is blocking,
@@ -89,16 +98,25 @@ public sealed class EventArchiveService : IEventArchiveService
             var sharedEntry = zip.CreateEntry($"{identifier}/{SharedDataEntryName}", CompressionLevel.Optimal);
             using (var writer = new StreamWriter(sharedEntry.Open()))
                 writer.Write(sharedJson);
+
+            var pluginsEntry = zip.CreateEntry($"{identifier}/{PluginsEntryName}", CompressionLevel.Optimal);
+            using (var writer = new StreamWriter(pluginsEntry.Open()))
+                writer.Write(pluginsJson);
         }, cancellationToken);
     }
 
     public async Task<EventArchivePreview> PreviewImportAsync(string archivePath, CancellationToken cancellationToken = default)
     {
         var identifier = await Task.Run(() => ReadArchiveIdentifier(archivePath), cancellationToken);
+        var required = await Task.Run(() => ReadRequiredPlugins(archivePath), cancellationToken);
 
         var eventsPath = (await _settings.GetPathsAsync(cancellationToken)).EventsPath;
         var exists = Directory.Exists(Path.Combine(eventsPath, identifier));
-        return new EventArchivePreview(identifier, exists);
+        var available = _plugins.Plugins.Where(p => p.Enabled).Select(p => p.Info.Id).ToHashSet(StringComparer.Ordinal);
+        return new EventArchivePreview(identifier, exists)
+        {
+            MissingPlugins = required.Where(r => !available.Contains(r.Id)).ToList()
+        };
     }
 
     public async Task<EventArchiveImportResult> ImportAsync(
@@ -195,6 +213,8 @@ public sealed class EventArchiveService : IEventArchiveService
                     sharedData = ReadSharedData(entry);
                     continue;
                 }
+                if (string.Equals(relative, PluginsEntryName, StringComparison.OrdinalIgnoreCase))
+                    continue;
 
                 var targetPath = Path.GetFullPath(Path.Combine(stagingFolder, relative));
                 // Guard against zip-slip: a crafted entry with ".." must not escape the staging folder.
@@ -256,6 +276,52 @@ public sealed class EventArchiveService : IEventArchiveService
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // The new competition is in place; a leftover hidden backup folder is harmless.
+        }
+    }
+
+    private sealed record PluginManifest(IReadOnlyList<RequiredPlugin> RequiredPlugins);
+
+    // The non-built-in disciplines of every day and group, grouped by the plugin that provides them (its id from
+    // the catalog when loaded here, else the id's prefix before the first dot).
+    private async Task<IReadOnlyList<RequiredPlugin>> RequiredPluginsAsync(string folderPath, CancellationToken cancellationToken)
+    {
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var day in await _eventStore.GetDaysAsync(folderPath, cancellationToken))
+        {
+            used.Add(day.DefaultDiscipline.Value);
+            foreach (var gs in await _eventStore.GetGroupDaySettingsAsync(folderPath, day.Id, cancellationToken))
+                if (gs.DisciplineOverride is { } o)
+                    used.Add(o.Value);
+        }
+
+        var builtins = Enum.GetNames<BuiltinDiscipline>().ToHashSet(StringComparer.Ordinal);
+        return used
+            .Where(id => !builtins.Contains(id))
+            .Select(id =>
+            {
+                var plugin = _plugins.Plugins.FirstOrDefault(p => p.Disciplines.Any(d => d.Id == id));
+                return (PluginId: plugin?.Info.Id ?? id.Split('.')[0], Version: plugin?.Info.Version ?? string.Empty, Id: id);
+            })
+            .GroupBy(x => x.PluginId)
+            .Select(g => new RequiredPlugin(g.Key, g.First().Version, g.Select(x => x.Id).Order(StringComparer.Ordinal).ToList()))
+            .ToList();
+    }
+
+    private static IReadOnlyList<RequiredPlugin> ReadRequiredPlugins(string archivePath)
+    {
+        try
+        {
+            using var zip = ZipFile.OpenRead(archivePath);
+            var entry = zip.Entries.FirstOrDefault(e =>
+                string.Equals(Path.GetFileName(e.FullName), PluginsEntryName, StringComparison.OrdinalIgnoreCase));
+            if (entry is null)
+                return [];
+            using var stream = entry.Open();
+            return JsonSerializer.Deserialize<PluginManifest>(stream)?.RequiredPlugins ?? [];
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or InvalidDataException)
+        {
+            return []; // a damaged manifest must not block importing the competition itself
         }
     }
 

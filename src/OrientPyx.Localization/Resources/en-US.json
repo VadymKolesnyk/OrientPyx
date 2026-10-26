@@ -1680,5 +1680,22 @@
   "Help.Settings.Title": "Settings",
   "Help.Settings.What": "General application settings: interface size, language, data paths, split printing and the online-service connection keys.",
   "Help.Settings.Why": "Here you set the parameters shared across all competitions and independent of the selected day.",
-  "Help.Settings.How": "Change the interface size with the slider and the language — they apply immediately.\nSet the folders for data (./data) and competitions (./events) as needed.\nEnter the online-service keys (URL, key) for publishing results.\n«Close» returns to the working screen."
+  "Help.Settings.How": "Change the interface size with the slider and the language — they apply immediately.\nSet the folders for data (./data) and competitions (./events) as needed.\nEnter the online-service keys (URL, key) for publishing results.\n«Close» returns to the working screen.",
+  "Discipline.PluginSuffix": "(plugin)",
+  "Dialog.DisciplineSettings.Title": "Discipline settings",
+  "Dialog.DisciplineSettings.Open": "Discipline settings…",
+  "Dialog.DisciplineSettings.Hint": "Settings of the (plugin) disciplines used on this day",
+  "Dialog.DisciplineSettings.CompetitionScope": "for the whole competition",
+  "Page.Settings.Plugins.Title": "Plugins",
+  "Page.Settings.Plugins.Hint": "Plugins add new competition types. Put your own plugins into the plugins folder (each in its own subfolder). Changes take effect after restarting the application.",
+  "Page.Settings.Plugins.None": "No plugins found.",
+  "Page.Settings.Plugins.Loaded": "Loaded",
+  "Page.Settings.Plugins.Disabled": "Disabled",
+  "Page.Settings.Plugins.Error": "Not loaded: {0}",
+  "Page.Settings.Plugins.Enabled": "Enabled",
+  "Page.Settings.Plugins.OpenFolder": "Open plugins folder",
+  "Page.Settings.Plugins.Restart": "Changes take effect after a restart.",
+  "Banner.MissingPlugin": "Plugin «{1}» is required for discipline {0}. Punches are checked as a set course; there are no places, points or ranks.",
+  "Banner.PluginFailed": "Plugin «{0}» failed — results were computed by the «{1}» rules. See the activity log for details.",
+  "ImportEvent.MissingPlugins": "The competition uses plugins that are missing or disabled here: {0}. You can import it, but those disciplines will not be scored until the plugin is installed."
 }

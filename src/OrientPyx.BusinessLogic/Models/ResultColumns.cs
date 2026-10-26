@@ -4,7 +4,7 @@ namespace OrientPyx.BusinessLogic.Models;
 /// The set of columns a per-group results table can show, shared by the online live-results publish
 /// (<see cref="OnlinePublishSettings"/>) and the on-screen monitor (<see cref="MonitorSettings"/>). Every
 /// value maps onto a field already present on <see cref="OnlineResultRow"/>, so the same computed snapshot
-/// drives both surfaces. The string key (<see cref="ResultColumnDef"/>) is what is stored in the JSON config
+/// drives both surfaces. The string key (<see cref="ResultColumnInfo"/>) is what is stored in the JSON config
 /// and — for the online side — sent to the frontend's <c>display_config</c>, so it must stay stable.
 /// </summary>
 public enum ResultColumn
@@ -42,11 +42,11 @@ public enum ResultColumn
 /// frontend's <c>display_config</c>) and the localization key for its header label. The catalogue
 /// (<see cref="All"/>) is the single source of truth for what columns exist and their default order.
 /// </summary>
-public sealed record ResultColumnDef(ResultColumn Column, string Key, string LabelKey)
+public sealed record ResultColumnInfo(ResultColumn Column, string Key, string LabelKey)
 {
     /// <summary>Every available column, in the natural default order. Keys mirror the spectator frontend's
     /// own column ids (rk / full_name / bib / …), so the online publish can hand them through unchanged.</summary>
-    public static readonly IReadOnlyList<ResultColumnDef> All =
+    public static readonly IReadOnlyList<ResultColumnInfo> All =
     [
         new(ResultColumn.Place,      "rk",          "ResultColumn.Place"),
         new(ResultColumn.FullName,   "full_name",   "ResultColumn.FullName"),
@@ -65,6 +65,6 @@ public sealed record ResultColumnDef(ResultColumn Column, string Key, string Lab
 
     /// <summary>Looks up a column by its stable key, or null when the key is unknown (e.g. a removed column
     /// in an old saved config).</summary>
-    public static ResultColumnDef? ByKey(string key) =>
+    public static ResultColumnInfo? ByKey(string key) =>
         All.FirstOrDefault(d => string.Equals(d.Key, key, StringComparison.OrdinalIgnoreCase));
 }

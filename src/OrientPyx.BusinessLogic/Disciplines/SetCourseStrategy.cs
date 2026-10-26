@@ -44,27 +44,9 @@ public sealed class SetCourseStrategy : DisciplineStrategyBase
 
         // Order check: every expected control must appear, in order, within the punches. Extras between
         // them are skipped (subsequence match), so a foreign punch never breaks an otherwise-correct run.
-        var p = 0;
-        var punched = context.PunchedControls;
-        foreach (var expected in context.ExpectedControls)
-        {
-            var found = false;
-            while (p < punched.Count)
-            {
-                if (string.Equals(punched[p].Trim(), expected.Trim(), StringComparison.OrdinalIgnoreCase))
-                {
-                    p++;
-                    found = true;
-                    break;
-                }
-                p++;
-            }
-            if (!found)
-                return new FinishStatusResult(FinishStatus.Mp, expected.Trim())
-                {
-                    Missed = MissedControls.ForOrder(context.ExpectedControls, punched)
-                };
-        }
+        var match = CourseMatcher.MatchOrder(context.ExpectedControls, context.PunchedControls);
+        if (!match.Ok)
+            return new FinishStatusResult(FinishStatus.Mp, match.FirstMissing!) { Missed = match.Missed };
 
         if (context.TimeLimit is { } limit && context.StartTime is { } start
             && context.FinishTime.Value - start > limit)

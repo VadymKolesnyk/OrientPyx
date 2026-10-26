@@ -560,7 +560,7 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
     // ILocalizationService). Column headers come from the shared column catalogue.
     private MonitorLabels BuildLabels()
     {
-        var headers = ResultColumnDef.All.ToDictionary(
+        var headers = ResultColumnInfo.All.ToDictionary(
             d => d.Column, d => Localization.Get(d.LabelKey));
         return new MonitorLabels(
             ColumnHeaders: headers,

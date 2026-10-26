@@ -74,7 +74,7 @@ public sealed partial class OnlineColumnsEditorViewModel : ObservableObject
         new(Columns.Select(c => new OnlineColumnConfig(c.Key, c.Lg, c.Sm)).ToList(),
             SeparateDsqLarge, SeparateDsqSmall);
 
-    private OnlineColumnItem MakeItem(ResultColumnDef def, bool lg, bool sm)
+    private OnlineColumnItem MakeItem(ResultColumnInfo def, bool lg, bool sm)
     {
         var item = new OnlineColumnItem(def, _localization.Get(def.LabelKey)) { Lg = lg, Sm = sm };
         item.PropertyChanged += (_, e) =>
@@ -152,13 +152,13 @@ public sealed partial class OnlineColumnsEditorViewModel : ObservableObject
 /// whether it is shown on the large (<see cref="Lg"/>) and small (<see cref="Sm"/>) screen.</summary>
 public sealed partial class OnlineColumnItem : ObservableObject
 {
-    public OnlineColumnItem(ResultColumnDef definition, string label)
+    public OnlineColumnItem(ResultColumnInfo definition, string label)
     {
         Definition = definition;
         _label = label;
     }
 
-    public ResultColumnDef Definition { get; }
+    public ResultColumnInfo Definition { get; }
 
     public string Key => Definition.Key;
 

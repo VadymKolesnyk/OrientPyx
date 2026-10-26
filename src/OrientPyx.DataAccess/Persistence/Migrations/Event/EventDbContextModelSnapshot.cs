@@ -613,6 +613,31 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.ToTable("ParticipantDiscounts");
                 });
 
+            modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.PluginSettingsRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisciplineId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("EventDayId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Json")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventDayId", "DisciplineId")
+                        .IsUnique();
+
+                    b.ToTable("PluginSettings");
+                });
+
             modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.Region", b =>
                 {
                     b.Property<Guid>("Id")

@@ -1,3 +1,4 @@
+using OrientPyx.BusinessLogic.Models;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientPyx.Localization;
@@ -31,9 +32,11 @@ public sealed partial class ImportEventViewModel : ObservableObject
         ILocalizationService localization,
         string archiveIdentifier,
         bool identifierExists,
-        Func<string, Task<bool>> isAvailableAsync)
+        Func<string, Task<bool>> isAvailableAsync,
+        IReadOnlyList<RequiredPlugin>? missingPlugins = null)
     {
         Localization = localization;
+        _missingPlugins = missingPlugins ?? [];
         ArchiveIdentifier = archiveIdentifier;
         IdentifierExists = identifierExists;
         _isAvailableAsync = isAvailableAsync;
@@ -61,6 +64,16 @@ public sealed partial class ImportEventViewModel : ObservableObject
 
     /// <summary>True when the identifier is free, so a plain confirm is all that's needed.</summary>
     public bool IdentifierFree => !IdentifierExists;
+
+    private readonly IReadOnlyList<RequiredPlugin> _missingPlugins;
+
+    /// <summary>The warning about plugins the archive needs that are not available here; empty when none.</summary>
+    public string MissingPluginsText => _missingPlugins.Count == 0
+        ? string.Empty
+        : string.Format(Localization.Get("ImportEvent.MissingPlugins"),
+            string.Join(", ", _missingPlugins.Select(p => string.IsNullOrEmpty(p.Version) ? p.Id : $"{p.Id} {p.Version}")));
+
+    public bool HasMissingPlugins => _missingPlugins.Count > 0;
 
     public string Title => Localization.Get("ImportEvent.Title");
 

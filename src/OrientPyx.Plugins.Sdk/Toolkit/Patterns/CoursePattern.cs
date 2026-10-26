@@ -1,4 +1,4 @@
-namespace OrientPyx.BusinessLogic.Disciplines.CoursePattern;
+namespace OrientPyx.Plugins.Sdk.Toolkit.Patterns;
 
 /// <summary>
 /// A parsed «mixed» course-order pattern (вид «змішаний»). The pattern language — ported from the

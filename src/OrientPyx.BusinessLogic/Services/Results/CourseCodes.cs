@@ -1,3 +1,4 @@
+using OrientPyx.Plugins.Sdk.Toolkit.Patterns;
 using System.Globalization;
 using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Entities;
@@ -19,10 +20,7 @@ internal static class CourseCodes
                 .Select(c => c.Code.Trim()),
             StringComparer.OrdinalIgnoreCase);
 
-    internal static IEnumerable<string> SplitCodes(string? text) =>
-        string.IsNullOrWhiteSpace(text)
-            ? []
-            : text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    internal static IEnumerable<string> SplitCodes(string? text) => Punches.Split(text);
 
     // The control codes referenced by a course order, in reading order (duplicates kept). For a plain order
     // ("S1 31 32 F") this is just the tokens; for a «mixed» order <b>pattern</b> ("&lt;41 42&gt; [2 45 46]")
@@ -33,7 +31,7 @@ internal static class CourseCodes
             ? []
             : courseOrder.IndexOfAny(['<', '[']) < 0
                 ? SplitCodes(courseOrder).ToList()
-                : Disciplines.CoursePattern.CoursePattern.Parse(courseOrder).ControlCodes.ToList();
+                : CoursePattern.Parse(courseOrder).ControlCodes.ToList();
 
     // The day's disabled («проблемні») control codes (trimmed), case-insensitive. These are dropped from the
     // prescribed/allowed course wherever it is required, so a runner missing one is not penalised and a scored

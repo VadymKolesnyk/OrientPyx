@@ -31,7 +31,8 @@ public sealed class DayColumnBuilder
         IReadOnlyList<EntryFeeDiscount> discounts,
         bool raisedFeeEnabled,
         bool paymentPerDay,
-        IReadOnlyList<SheetBand>? previous)
+        IReadOnlyList<SheetBand>? previous,
+        IReadOnlyList<ResultColumnDef>? resultColumns = null)
     {
         var bands = new List<SheetBand>();
 
@@ -110,6 +111,16 @@ public sealed class DayColumnBuilder
                 sortPath: nameof(ParticipantDayRowViewModel.ScoreSort), fixedWidth: 70);
             scoreBand.Columns[0].ToolTipPath = nameof(ParticipantDayRowViewModel.ScoreTooltip);
             bands.Add(scoreBand);
+        }
+
+        // A plugin discipline's own result columns, read-only, values from the result's Extra. The header is
+        // already a localization key (the plugin's strings are registered under its id).
+        foreach (var column in resultColumns ?? [])
+        {
+            var band = Identity(SheetCellKind.RowResultText, column.Label,
+                $"{nameof(ParticipantDayRowViewModel.ResultExtras)}[{column.Key}]");
+            band.Columns[0].Key = "result:" + column.Key;
+            bands.Add(band);
         }
 
         // Ranking points («Очки»), computed from the group's effective points rule — shown on every day

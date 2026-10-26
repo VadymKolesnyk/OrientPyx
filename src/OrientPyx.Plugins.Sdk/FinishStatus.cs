@@ -1,4 +1,4 @@
-namespace OrientPyx.BusinessLogic.Enums;
+namespace OrientPyx.Plugins.Sdk;
 
 /// <summary>
 /// The outcome of a participant's run on a day, derived from their read-out (and, later, settable

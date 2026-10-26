@@ -176,6 +176,16 @@ public partial class CompetitionDaysView : UserControl
             [ToolTip.TipProperty] = _vm.Localization.Get("CompetitionDays.ChangeNumber.Hint")
         };
 
+        var settings = new Button
+        {
+            Classes = { "ghost", "small" },
+            Command = _vm.EditDisciplineSettingsCommand,
+            [!Button.ContentProperty] = new Binding("Localization[Dialog.DisciplineSettings.Open]"),
+            [!Button.CommandParameterProperty] = new Binding(),
+            [!Visual.IsVisibleProperty] = new Binding(nameof(DayRowViewModel.HasDisciplineSettings)),
+            [ToolTip.TipProperty] = _vm.Localization.Get("Dialog.DisciplineSettings.Hint")
+        };
+
         // Click confirms before deleting; Ctrl+Click deletes immediately. Off for the active day and
         // for a closed one.
         var delete = new Button
@@ -203,7 +213,7 @@ public partial class CompetitionDaysView : UserControl
             Spacing = 6,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(10, 0),
-            Children = { save, changeNumber, delete }
+            Children = { save, changeNumber, settings, delete }
         };
     }
 

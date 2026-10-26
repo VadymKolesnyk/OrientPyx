@@ -38,7 +38,7 @@ public sealed partial class MonitorPreviewViewModel : ObservableObject
     public void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);
 }
 
-/// <summary>One visible column in the monitor preview: its stable key (<see cref="ResultColumnDef.Key"/>, the
+/// <summary>One visible column in the monitor preview: its stable key (<see cref="ResultColumnInfo.Key"/>, the
 /// drag payload), its header text, and the result-column kind (drives left/centre alignment, mirroring the
 /// HTML <c>c-name</c>/<c>c-num</c>/<c>c-place</c> classes).</summary>
 public sealed record MonitorPreviewColumn(string Key, string Header, ResultColumn Column);

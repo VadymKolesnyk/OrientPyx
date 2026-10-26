@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
@@ -47,5 +47,10 @@
     <Company>OrientPyx</Company>
     <Authors>OrientPyx</Authors>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="OrientPyx.Plugins.Sdk" />
+    <Using Include="OrientPyx.Plugins.Sdk.Toolkit" />
+  </ItemGroup>
 
 </Project>

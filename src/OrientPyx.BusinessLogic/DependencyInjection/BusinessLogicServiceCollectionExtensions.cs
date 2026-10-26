@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using OrientPyx.BusinessLogic.Disciplines;
+using OrientPyx.BusinessLogic.Disciplines.Plugins;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Services;
 
@@ -25,7 +26,14 @@ public static class BusinessLogicServiceCollectionExtensions
         services.AddSingleton<IDisciplineStrategy, RogaineStrategy>();
         services.AddSingleton<IDisciplineStrategy, MixedStrategy>();
         services.AddSingleton<IDisciplineStrategy, ScatterStrategy>();
-        services.AddSingleton<IDisciplineStrategyProvider, DisciplineStrategyProvider>();
+        // Plugin disciplines (from IPluginCatalog, loaded in DataAccess) are added after the built-ins.
+        services.AddSingleton<PluginRuntimeErrors>();
+        services.AddSingleton<IDisciplineStrategyProvider>(sp => new DisciplineStrategyProvider(
+            sp.GetServices<IDisciplineStrategy>(),
+            sp.GetRequiredService<ICourseDistanceCalculator>(),
+            sp.GetService<IPluginCatalog>(),
+            sp.GetRequiredService<PluginRuntimeErrors>(),
+            sp.GetService<IActivityLog>()));
 
         // IOF XML import (shared by control-point and course/group imports)
         services.AddSingleton<IIofXmlParser, IofXmlParser>();

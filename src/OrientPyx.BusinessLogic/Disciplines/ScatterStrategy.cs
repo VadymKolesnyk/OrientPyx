@@ -51,16 +51,13 @@ public sealed class ScatterStrategy : DisciplineStrategyBase
         // No configured variants: fall back to a plain set-course check against the expected controls so a
         // mis-configured scatter group still yields a sensible status rather than always OK.
         var variants = context.ScatterVariants;
-        var expected = variants.Count > 0
-            ? SelectBestVariant(variants, context.PunchedControls).Variant.Controls
-            : context.ExpectedControls;
-
-        var firstMissing = FirstMissing(expected, context.PunchedControls);
-        if (firstMissing is not null)
-            return new FinishStatusResult(FinishStatus.Mp, firstMissing)
-            {
-                Missed = MissedControls.ForOrder(expected, context.PunchedControls)
-            };
+        var match = variants.Count > 0
+            ? VariantMatcher.Best(variants, context.PunchedControls) is var best
+                ? new MatchResult(best.Ok, best.FirstMissing, best.Missed)
+                : null!
+            : CourseMatcher.MatchOrder(context.ExpectedControls, context.PunchedControls);
+        if (!match.Ok)
+            return new FinishStatusResult(FinishStatus.Mp, match.FirstMissing!) { Missed = match.Missed };
 
         if (context.TimeLimit is { } limit && context.StartTime is { } start
             && context.FinishTime.Value - start > limit)
@@ -82,84 +79,7 @@ public sealed class ScatterStrategy : DisciplineStrategyBase
             return BuildOrderedSplits(context, context.ExpectedControls, _distance);
 
         var punched = context.Punches.Select(p => p.ControlCode.Trim()).Where(c => c.Length > 0).ToList();
-        var best = SelectBestVariant(variants, punched);
+        var best = VariantMatcher.Best(variants, punched);
         return BuildOrderedSplits(context, best.Variant.Controls, _distance, best.Variant.Code);
     }
-
-    /// <summary>
-    /// Picks the variant a runner ran, from their punched control codes. Every variant is scored by how far
-    /// its prescribed order is satisfied as an in-order subsequence of the punches: <c>Depth</c> = required
-    /// controls matched, <c>Consumed</c> = how many punches the greedy walk advanced through, and
-    /// <c>FirstMissing</c> = the first required control it could not place (null = the whole variant matched).
-    /// Selection: a fully-matched variant wins over a partial one; among equally-good matches prefer the one
-    /// that consumed the most punches, then the first-defined (lowest <c>Order</c> in the list). This yields
-    /// the "best match, most controls" rule for full matches and the "closest variant" for the MP fallback.
-    /// </summary>
-    private static (ScatterVariantData Variant, int Depth, int Consumed, string? FirstMissing) SelectBestVariant(
-        IReadOnlyList<ScatterVariantData> variants, IReadOnlyList<string> punched)
-    {
-        (ScatterVariantData Variant, int Depth, int Consumed, string? FirstMissing)? best = null;
-
-        foreach (var variant in variants)
-        {
-            var (depth, consumed, firstMissing) = ScoreVariant(variant.Controls, punched);
-            var candidate = (variant, depth, consumed, firstMissing);
-
-            if (best is not { } b || IsBetter(candidate, b))
-                best = candidate;
-        }
-
-        // variants is never empty at the call sites, but guard anyway.
-        return best ?? (variants[0], 0, 0, variants[0].Controls.Count > 0 ? variants[0].Controls[0] : null);
-    }
-
-    // A candidate is better when: it is a full match and the incumbent is not; or both have the same match
-    // completeness and it satisfied more controls; or equal depth but consumed more punches. Order in the list
-    // (first-defined) breaks any remaining tie by virtue of the incumbent being kept on a non-strict win.
-    private static bool IsBetter(
-        (ScatterVariantData Variant, int Depth, int Consumed, string? FirstMissing) candidate,
-        (ScatterVariantData Variant, int Depth, int Consumed, string? FirstMissing) incumbent)
-    {
-        var candidateFull = candidate.FirstMissing is null;
-        var incumbentFull = incumbent.FirstMissing is null;
-        if (candidateFull != incumbentFull)
-            return candidateFull;
-
-        if (candidate.Depth != incumbent.Depth)
-            return candidate.Depth > incumbent.Depth;
-
-        return candidate.Consumed > incumbent.Consumed;
-    }
-
-    // Greedy in-order subsequence walk of one variant's controls over the punches: returns how many prescribed
-    // controls were satisfied (Depth), how far into the punch list the walk reached (Consumed), and the first
-    // control it could not satisfy (FirstMissing, null when all were). Mirrors SetCourseStrategy.EvaluateFinish.
-    private static (int Depth, int Consumed, string? FirstMissing) ScoreVariant(
-        IReadOnlyList<string> expected, IReadOnlyList<string> punched)
-    {
-        var p = 0;
-        var depth = 0;
-        foreach (var control in expected)
-        {
-            var found = false;
-            while (p < punched.Count)
-            {
-                var isMatch = string.Equals(punched[p].Trim(), control.Trim(), StringComparison.OrdinalIgnoreCase);
-                p++;
-                if (isMatch)
-                {
-                    found = true;
-                    break;
-                }
-            }
-            if (!found)
-                return (depth, p, control.Trim());
-            depth++;
-        }
-        return (depth, p, null);
-    }
-
-    // The first expected control not present, in order, within the punches (null when the whole order matches).
-    private static string? FirstMissing(IReadOnlyList<string> expected, IReadOnlyList<string> punched) =>
-        ScoreVariant(expected, punched).FirstMissing;
 }

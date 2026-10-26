@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
+using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Interfaces;
@@ -895,11 +896,14 @@ public sealed class EventStore : IEventStore
             .Where(r => r.EventDayId == dayId).OrderBy(r => r.Order).ToListAsync(cancellationToken);
         var scatterVariants = await db.ScatterVariants.AsNoTracking()
             .Where(v => v.EventDayId == dayId).OrderBy(v => v.Order).ToListAsync(cancellationToken);
+        var disciplineSettings = await db.PluginSettings.AsNoTracking()
+            .Where(s => s.EventDayId == dayId || s.EventDayId == null).ToListAsync(cancellationToken);
 
         return new EventDaySnapshot
         {
             FinishReadouts = readouts,
             ScatterVariants = scatterVariants,
+            DisciplineSettings = disciplineSettings,
             Links = links,
             Participants = participants,
             Groups = groups,
@@ -1606,6 +1610,29 @@ public sealed class EventStore : IEventStore
             {
                 row.Json = json;
             }
+            await db.SaveChangesAsync(cancellationToken);
+        });
+    }
+
+    public async Task<IReadOnlyList<PluginSettingsRow>> GetDisciplineSettingsAsync(
+        string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.PluginSettings.AsNoTracking().ToListAsync(cancellationToken);
+    }
+
+    public async Task SaveDisciplineSettingsAsync(
+        string eventFolderPath, Guid? dayId, DisciplineId disciplineId, string json, CancellationToken cancellationToken = default)
+    {
+        // One row per (day, discipline); the same read-then-insert-or-update retry as the protocol templates.
+        await UpsertWithUniqueRetryAsync(eventFolderPath, async db =>
+        {
+            var row = await db.PluginSettings
+                .FirstOrDefaultAsync(r => r.EventDayId == dayId && r.DisciplineId == disciplineId, cancellationToken);
+            if (row is null)
+                db.PluginSettings.Add(new PluginSettingsRow { EventDayId = dayId, DisciplineId = disciplineId, Json = json });
+            else
+                row.Json = json;
             await db.SaveChangesAsync(cancellationToken);
         });
     }

@@ -1,4 +1,4 @@
-namespace OrientPyx.BusinessLogic.Disciplines;
+namespace OrientPyx.Plugins.Sdk.Toolkit;
 
 /// <summary>Flat control counting for a free-text course order (no pattern brackets).</summary>
 public static class CourseOrder

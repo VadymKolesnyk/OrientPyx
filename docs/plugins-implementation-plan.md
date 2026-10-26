@@ -1,7 +1,7 @@
 # OrientPyx — implementation plan: плагіни, додаткові поля, естафета
 
 > Спека: [`plugins-plan.md`](plugins-plan.md) (що і навіщо). Цей документ — **як і в якому порядку**: кроки розміром
-> з один коміт/PR, конкретні файли, перевірка. Статус: **фаза 0–1 виконана** (2026-10-26). Оновлено: 2026-10-26 (звірено з кодом).
+> з один коміт/PR, конкретні файли, перевірка. Статус: **фази 0–2 виконано** (2026-10-26). Оновлено: 2026-10-26 (звірено з кодом).
 
 ## 0. Правила виконання
 
@@ -525,15 +525,15 @@ day-grid, рядки етапів. Невідомий ключ — ігнору�
 - [x] 1.2 `Competitors`, `UsesCourseVariants`, `UsesCoursePattern` (лише Mixed), `CourseOrder.CountControls`; прибрати порівняння з дисциплінами
 - [x] 1.3 Знімок + `DayResultsAppData`; `DayResultsCalculator`; `ResolveStart`, `AdjustTime`, `Rank`, `AwardsRanks` у стратегіях
 - [x] 1.4 `Extra`, `AdjustedTime`, `FinishStatusResult.Missed` (LCS / шаблон, Р-52a); CLAUDE.md (Disciplines)
-- [ ] 2.1 Проєкт `OrientPyx.Plugins.Sdk` (явний `AssemblyVersion`), перенесення типів; CLAUDE.md (структура)
-- [ ] 2.2 Toolkit: `Punches`, `CourseOrder`, `CourseMatcher`, `VariantMatcher`, `Ranking`, `Age`, `TimeFormat`
-- [ ] 2.3 Контракт плагіна
-- [ ] 2.4 `PluginDisciplineStrategy`, `DisciplineHost`, ізоляція винятків
-- [ ] 2.5 Завантажувач, `PluginsDisabled`
-- [ ] 2.6 `PluginSettingsRow` (області Day/Competition) + автоформа
-- [ ] 2.7 UI: випадайки, «Налаштування дисципліни…», сторінка «Плагіни», банер, локалізація плагінів
-- [ ] 2.8 `.opyx`-метадані, `plugins/`, крок у `build/publish.ps1`
-- [ ] 2.9 Плагін «Штраф замість зняття» (заданий + змішаний; OVT після MP → OK)
+- [x] 2.1 Проєкт `OrientPyx.Plugins.Sdk` (явний `AssemblyVersion`), перенесення типів; CLAUDE.md (структура)
+- [x] 2.2 Toolkit: `Punches`, `CourseOrder`, `CourseMatcher`, `VariantMatcher`, `Ranking`, `Age`, `TimeFormat`
+- [x] 2.3 Контракт плагіна
+- [x] 2.4 `PluginDisciplineStrategy`, `DisciplineHost`, ізоляція винятків
+- [x] 2.5 Завантажувач, `PluginsDisabled`
+- [x] 2.6 `PluginSettingsRow` (області Day/Competition) + автоформа
+- [x] 2.7 UI: випадайки, «Налаштування дисципліни…», сторінка «Плагіни», банер, локалізація плагінів
+- [x] 2.8 `.opyx`-метадані, `plugins/`, крок у `build/publish.ps1`
+- [x] 2.9 Плагін «Штраф замість зняття» (заданий + змішаний; OVT після MP → OK)
 - [ ] 3.1 `CustomFieldDef`, `ParticipantFieldValue`, каскад
 - [ ] 3.2 Сервіс полів, `Fields` у рядках таблиць
 - [ ] 3.3 UI полів, колонки мандатки/day-grid

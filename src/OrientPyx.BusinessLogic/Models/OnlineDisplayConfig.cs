@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace OrientPyx.BusinessLogic.Models;
 
 /// <summary>
-/// One column's online-display setting: its stable key (see <see cref="ResultColumnDef.Key"/>) and whether it
+/// One column's online-display setting: its stable key (see <see cref="ResultColumnInfo.Key"/>) and whether it
 /// is shown on the large (venue / desktop) screen and on the small (phone) screen. Mirrors the spectator
 /// frontend's per-column <c>{ key, order, lg, sm }</c> shape (see <c>web/src/types.ts → ColumnConfig</c>); the
 /// order comes from the column's position in <see cref="OnlineDisplayConfig.Columns"/>.
@@ -62,10 +62,10 @@ public sealed record OnlineDisplayConfig(
         {
             if (!seen.Add(c.Key))
                 continue;
-            if (ResultColumnDef.ByKey(c.Key) is { } def)
+            if (ResultColumnInfo.ByKey(c.Key) is { } def)
                 result.Add(new OnlineResolvedColumn(def, c.Lg, c.Sm));
         }
-        foreach (var def in ResultColumnDef.All.Where(d => !seen.Contains(d.Key)))
+        foreach (var def in ResultColumnInfo.All.Where(d => !seen.Contains(d.Key)))
             result.Add(new OnlineResolvedColumn(def, Lg: false, Sm: false));
         return result;
     }
@@ -79,7 +79,7 @@ public sealed record OnlineDisplayConfig(
 }
 
 /// <summary>A resolved online column: its definition plus its large/small-screen visibility.</summary>
-public sealed record OnlineResolvedColumn(ResultColumnDef Def, bool Lg, bool Sm)
+public sealed record OnlineResolvedColumn(ResultColumnInfo Def, bool Lg, bool Sm)
 {
     /// <summary>True when the column is shown on at least one screen (so it's part of the published set).</summary>
     public bool Visible => Lg || Sm;

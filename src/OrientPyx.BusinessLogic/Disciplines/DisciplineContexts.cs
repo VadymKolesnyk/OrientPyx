@@ -3,44 +3,6 @@ using OrientPyx.BusinessLogic.Models;
 
 namespace OrientPyx.BusinessLogic.Disciplines;
 
-/// <summary>What <see cref="IDisciplineStrategy.ResolveStart"/> needs to decide where a runner's time starts.</summary>
-public sealed class StartContext
-{
-    /// <summary>The chip's own start box from the read-out; null when none was punched.</summary>
-    public DateTimeOffset? ChipStart { get; init; }
-
-    /// <summary>The assigned start (time of day, from the draw / manual entry); null when none.</summary>
-    public TimeSpan? AssignedStart { get; init; }
-
-    /// <summary>The read-out's finish time — supplies the date for <see cref="AssignedStart"/>.</summary>
-    public DateTimeOffset? FinishTime { get; init; }
-}
-
-/// <summary>What <see cref="IDisciplineStrategy.AdjustTime"/> sees for one OK result.</summary>
-public sealed class AdjustContext
-{
-    /// <summary>The runner's participant-day link.</summary>
-    public required ParticipantDay Link { get; init; }
-
-    /// <summary>The competition-level participant (name, birth date, club…); null if it could not be resolved.</summary>
-    public Participant? Participant { get; init; }
-
-    /// <summary>The group's day settings, when the runner has a group.</summary>
-    public GroupDaySettings? Settings { get; init; }
-
-    /// <summary>The actual result time (finish − start).</summary>
-    public required TimeSpan Time { get; init; }
-
-    /// <summary>The finish judgement the time belongs to (status, detail, full list of missed controls).</summary>
-    public FinishStatusResult Finish { get; init; }
-
-    /// <summary>The competition day's date (Р-46: the day's date, else the earliest finish, else today).</summary>
-    public DateOnly Date { get; init; }
-
-    /// <summary>Discipline-specific values for this result; becomes <see cref="ParticipantDayResult.Extra"/>.</summary>
-    public required IDictionary<string, object?> Extra { get; init; }
-}
-
 /// <summary>One placeable individual result handed to <see cref="IDisciplineStrategy.Rank"/>: OK, in competition.</summary>
 /// <param name="Scored">True when the discipline scores points (then <paramref name="Score"/> ranks first).</param>
 /// <param name="Time">The (adjusted) result time; <see cref="TimeSpan.MaxValue"/> when not positive.</param>
@@ -70,9 +32,18 @@ public sealed record TeamMemberEntry(
 /// placeable results in <see cref="Entries"/>; a team discipline gets every member in <see cref="TeamMembers"/>.
 /// The strategy writes places (and team scores) back into <see cref="Results"/>.
 /// </summary>
-public sealed class RankingContext
+public sealed class GroupRankingContext
 {
     public Guid? GroupId { get; init; }
+
+    /// <summary>The group's name (for a plugin's ranking context).</summary>
+    public string GroupName { get; init; } = string.Empty;
+
+    /// <summary>The discipline's effective settings on the day.</summary>
+    public SettingValues DisciplineSettings { get; init; } = SettingValues.Empty;
+
+    /// <summary>Participant views by link id (for a plugin's ranking context).</summary>
+    public IReadOnlyDictionary<Guid, ParticipantView> Participants { get; init; } = new Dictionary<Guid, ParticipantView>();
 
     public GroupDaySettings? Settings { get; init; }
 

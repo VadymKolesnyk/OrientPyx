@@ -478,8 +478,8 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         var code = string.IsNullOrWhiteSpace(cp.Code) ? "—" : cp.Code.Trim();
         return cp.Type switch
         {
-            BusinessLogic.Enums.ControlPointType.Start => $"{code} ({Localization.Get("ControlPoints.Type.Start")})",
-            BusinessLogic.Enums.ControlPointType.Finish => $"{code} ({Localization.Get("ControlPoints.Type.Finish")})",
+            OrientPyx.Plugins.Sdk.ControlPointType.Start => $"{code} ({Localization.Get("ControlPoints.Type.Start")})",
+            OrientPyx.Plugins.Sdk.ControlPointType.Finish => $"{code} ({Localization.Get("ControlPoints.Type.Finish")})",
             _ => code
         };
     }

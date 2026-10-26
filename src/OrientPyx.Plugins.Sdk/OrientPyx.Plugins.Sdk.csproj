@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The plugin SDK: the plugin contract + the shared pure algorithms (toolkit). No package references and
+       no knowledge of EF / files / UI. Plugins reference ONLY this assembly. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- The assembly version IS the plugin API version and must not follow the app's release version:
+         build/publish.ps1 passes -p:Version=<app version> globally, which would otherwise stamp 0.x here and
+         make plugins built against 1.0.0.0 fail to load (FileLoadException). Bump only on an API change. -->
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+  </PropertyGroup>
+
+</Project>

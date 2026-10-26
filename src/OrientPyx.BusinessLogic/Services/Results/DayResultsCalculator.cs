@@ -28,7 +28,8 @@ internal sealed class DayResultsCalculator
     /// <summary>One link after the evaluate stage — what the later stages need about it.</summary>
     private sealed record Evaluated(
         ParticipantDay Link, IDisciplineStrategy Strategy, GroupDaySettings? Settings,
-        FinishStatusResult Finish, bool HasReadout, TimeSpan? Elapsed, HashSet<string>? PunchedAllowed);
+        FinishStatusResult Finish, bool HasReadout, TimeSpan? Elapsed, HashSet<string>? PunchedAllowed,
+        FinishReadout? Readout = null);
 
     /// <param name="rankCalcs">When non-null, receives the per-group rank-award derivation built by the ranks
     /// pass — used only by the results protocol to print its explanatory line.</param>
@@ -53,6 +54,17 @@ internal sealed class DayResultsCalculator
         foreach (var cp in controlPoints)
             if (cp.Points is { } pts)
                 pointsByCode[cp.Code.Trim()] = pts;
+
+        // Each discipline's effective settings on the day (Р-11), resolved once per discipline.
+        var settingsByDiscipline = new Dictionary<DisciplineId, SettingValues>();
+        SettingValues SettingsOf(IDisciplineStrategy strategy)
+        {
+            if (!settingsByDiscipline.TryGetValue(strategy.Id, out var values))
+                settingsByDiscipline[strategy.Id] = values =
+                    DisciplineSettings.Resolve(strategy, snapshot.DisciplineSettings, day.Id);
+            return values;
+        }
+        var views = new ParticipantViews(snapshot);
 
         // Team name per participant — the team lives on the participant (competition-level), not on the
         // per-day link, so resolve it once for the team ranking below.
@@ -98,7 +110,8 @@ internal sealed class DayResultsCalculator
             }
 
             var (finish, resolvedStart) = FinishEvaluator.Evaluate(
-                _strategies, readout, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup);
+                _strategies, readout, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup,
+                SettingsOf);
             var computed = finish.Status;
             var status = link.ResultStatusOverride ?? computed;
 
@@ -143,7 +156,7 @@ internal sealed class DayResultsCalculator
             // The elapsed time (finish − start) feeds a team's over-time penalty (max member time) and
             // tie-break (last finisher).
             var elapsed = resolvedStart is { } rs2 && readout.FinishTime is { } f2 ? f2 - rs2 : (TimeSpan?)null;
-            evaluated.Add(new Evaluated(link, strategy, gs, finish, HasReadout: true, elapsed, punchedAllowed));
+            evaluated.Add(new Evaluated(link, strategy, gs, finish, HasReadout: true, elapsed, punchedAllowed, readout));
         }
 
         // (c) Adjust: the discipline may correct an OK result's time (Р-6). Built-ins leave it unchanged, in
@@ -155,25 +168,35 @@ internal sealed class DayResultsCalculator
             if (result.Status != FinishStatus.Ok || result.ResultTime is not { } time)
                 continue;
 
-            var extra = new Dictionary<string, object?>();
+            var row = new ResultRow
+            {
+                Id = e.Link.Id,
+                Participant = views.For(e.Link.ParticipantId),
+                Status = result.Status,
+                Time = time,
+                AdjustedTime = time,
+                Score = result.Score,
+                OutOfCompetition = result.OutOfCompetition,
+                Punches = CourseCodes.SplitCodes(e.Readout?.Punches).Where(c => !startFinishCodes.Contains(c)).ToList(),
+                Missed = result.Missed
+            };
             var adjusted = e.Strategy.AdjustTime(new AdjustContext
             {
-                Link = e.Link,
-                Participant = participantById.GetValueOrDefault(e.Link.ParticipantId),
-                Settings = e.Settings,
+                Participant = row.Participant,
                 Time = time,
-                Finish = e.Finish,
                 Date = dayDate,
-                Extra = extra
+                Row = row,
+                Settings = SettingsOf(e.Strategy)
             });
 
             var changed = adjusted != time;
-            if (!changed && extra.Count == 0)
+            if (!changed && row.Values.Count == 0 && row.UnrankedReason is null)
                 continue;
             results[e.Link.Id] = result with
             {
                 AdjustedTime = changed ? RoundToSecond(adjusted) : time,
-                Extra = extra.Count > 0 ? extra : result.Extra
+                Extra = row.Values.Count > 0 ? new Dictionary<string, object?>(row.Values) : result.Extra,
+                UnrankedReason = row.UnrankedReason
             };
         }
 
@@ -181,11 +204,14 @@ internal sealed class DayResultsCalculator
         // results; a team discipline gets every member (the team pass decides who is placed).
         var byGroup = new Dictionary<Guid, (Guid? GroupId, IDisciplineStrategy Strategy, GroupDaySettings? Settings,
             List<RankEntry> Entries, List<TeamMemberEntry> Members)>();
+        var participantsByLink = new Dictionary<Guid, ParticipantView>();
+        var groupNames = snapshot.Groups.ToDictionary(g => g.Id, g => g.Name);
         foreach (var e in evaluated)
         {
             var key = e.Link.GroupId ?? Guid.Empty;
             if (!byGroup.TryGetValue(key, out var bucket))
                 byGroup[key] = bucket = (e.Link.GroupId, e.Strategy, e.Settings, [], []);
+            participantsByLink[e.Link.Id] = views.For(e.Link.ParticipantId);
 
             var link = e.Link;
             var result = results[link.Id];
@@ -204,15 +230,19 @@ internal sealed class DayResultsCalculator
             // Only OK results are placed; a non-positive result time can't be ranked by time. A поза
             // конкурсом runner is NOT placed and does NOT occupy a position — they are left out of the
             // ranking entirely so the in-competition runners are placed as if they were absent.
-            else if (e.HasReadout && result.Status == FinishStatus.Ok && !link.OutOfCompetition)
+            else if (e.HasReadout && result.Status == FinishStatus.Ok && !link.OutOfCompetition
+                     && result.UnrankedReason is null)
                 bucket.Entries.Add(new RankEntry(link.Id, result.Score is not null, result.Score ?? 0,
                     result.AdjustedTime is { } t && t > TimeSpan.Zero ? t : TimeSpan.MaxValue));
         }
 
         foreach (var (_, bucket) in byGroup)
-            bucket.Strategy.Rank(new RankingContext
+            bucket.Strategy.Rank(new GroupRankingContext
             {
                 GroupId = bucket.GroupId,
+                GroupName = bucket.GroupId is { } g && groupNames.TryGetValue(g, out var gn) ? gn : string.Empty,
+                DisciplineSettings = SettingsOf(bucket.Strategy),
+                Participants = participantsByLink,
                 Settings = bucket.Settings,
                 Entries = bucket.Entries,
                 TeamMembers = bucket.Members,
@@ -354,7 +384,7 @@ internal sealed class DayResultsCalculator
             foreach (var (linkId, result) in members)
             {
                 // Only a clean, in-competition finish earns points.
-                if (result.Status != FinishStatus.Ok || result.OutOfCompetition)
+                if (result.Status != FinishStatus.Ok || result.OutOfCompetition || result.UnrankedReason is not null)
                     continue;
 
                 var input = new PointsRuleInput(

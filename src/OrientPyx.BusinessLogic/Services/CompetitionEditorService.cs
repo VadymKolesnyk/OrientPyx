@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Enums;
@@ -3269,7 +3269,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             if (holderByChip.TryGetValue(r.ChipNumber.Trim(), out var link) && byId.TryGetValue(link.ParticipantId, out var p))
             {
                 var group = link.GroupId is { } gid && groupName.TryGetValue(gid, out var gn) ? gn : string.Empty;
-                var (status, detail, detailKind, resolvedStart) = EvaluateFinish(r, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup);
+                var (status, detail, detailKind, resolvedStart) = EvaluateFinish(r, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup,
+                    s => DisciplineSettings.Resolve(s, snapshot.DisciplineSettings, dayId));
                 // A judge's manual status override wins over the computed one (and clears its detail).
                 if (r.ManualStatus is { } manual)
                 {
@@ -3710,11 +3711,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return list;
     }
 
-    // Layer-neutral duration formatting matching the splits panel: "m:ss" under an hour, "h:mm:ss" above,
-    // blank for null/negative.
-    private static string FormatDuration(TimeSpan? span) => span is { } s && s >= TimeSpan.Zero
-        ? (s.TotalHours >= 1 ? s.ToString("h\\:mm\\:ss") : s.ToString("m\\:ss"))
-        : string.Empty;
+    private static string FormatDuration(TimeSpan? span) => TimeFormat.Duration(span);
 
     // Distance in whole metres (unit lives in the header); blank for null/zero. Used for both the per-leg
     // column and the course total on the header line.
@@ -3746,10 +3743,12 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         HashSet<string> startFinishCodes,
         HashSet<string> disabledCodes,
         DisciplineId dayDefault,
-        IReadOnlyDictionary<Guid, IReadOnlyList<ScatterVariantData>> variantsByGroup)
+        IReadOnlyDictionary<Guid, IReadOnlyList<ScatterVariantData>> variantsByGroup,
+        Func<IDisciplineStrategy, SettingValues>? settingsOf = null)
     {
         var (result, start) = FinishEvaluator.Evaluate(
-            _strategies, readout, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup);
+            _strategies, readout, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup,
+            settingsOf);
         return (result.Status, result.Detail, result.DetailKind, start);
     }
 
@@ -4395,6 +4394,63 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return cases;
     }
 
+    // ── Discipline (plugin) settings (Р-11)
+
+    public async Task<DisciplineSettingsData?> GetDisciplineSettingsAsync(
+        Guid dayId, DisciplineId disciplineId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return null;
+
+        var strategy = _strategies.For(disciplineId);
+        if (strategy.Settings.Count == 0)
+            return new DisciplineSettingsData(disciplineId, strategy.PluginId, [], new Dictionary<string, object?>());
+
+        var rows = await _eventStore.GetDisciplineSettingsAsync(FolderPath, cancellationToken);
+        var values = DisciplineSettings.Resolve(strategy, rows, dayId);
+        return new DisciplineSettingsData(disciplineId, strategy.PluginId, strategy.Settings,
+            strategy.Settings.ToDictionary(d => d.Key, d => values[d.Key]));
+    }
+
+    public async Task<IReadOnlyList<DisciplineId>> GetDayDisciplinesAsync(Guid dayId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return [];
+
+        var folder = FolderPath;
+        var day = (await _eventStore.GetDaysAsync(folder, cancellationToken)).FirstOrDefault(d => d.Id == dayId);
+        if (day is null)
+            return [];
+
+        var overrides = (await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken))
+            .Select(s => s.DisciplineOverride)
+            .OfType<DisciplineId>();
+        return new[] { day.DefaultDiscipline }.Concat(overrides).Distinct().ToList();
+    }
+
+    public async Task SaveDisciplineSettingsAsync(
+        Guid dayId, DisciplineId disciplineId, IReadOnlyDictionary<string, object?> values,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        if (_session.CurrentEvent is null)
+            return;
+
+        var defs = _strategies.For(disciplineId).Settings;
+        var coerced = defs.ToDictionary(d => d.Key, d => values.TryGetValue(d.Key, out var v) ? DisciplineSettings.Coerce(v, d) : null);
+
+        // Day-scoped values go to the day's row, competition-scoped ones to the row without a day (Р-11); the
+        // results are computed on read, so every page that reloads sees the new values.
+        var daySettings = defs.Where(d => d.Scope == SettingScope.Day).ToList();
+        var competitionSettings = defs.Where(d => d.Scope == SettingScope.Competition).ToList();
+        if (daySettings.Count > 0)
+            await _eventStore.SaveDisciplineSettingsAsync(FolderPath, dayId, disciplineId,
+                DisciplineSettings.Serialize(coerced, daySettings), cancellationToken);
+        if (competitionSettings.Count > 0)
+            await _eventStore.SaveDisciplineSettingsAsync(FolderPath, null, disciplineId,
+                DisciplineSettings.Serialize(coerced, competitionSettings), cancellationToken);
+    }
+
     // ── Online live-results publishing
 
     public async Task<OnlinePublishSettings?> GetOnlinePublishSettingsAsync(CancellationToken cancellationToken = default)
@@ -4795,14 +4851,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         _ => res.HasReadout ? string.Empty : labels.StatusRunning,
     };
 
-    private static string FormatSpan(TimeSpan? t) =>
-        t is { } v ? (v.TotalHours >= 1
-            ? v.ToString(@"h\:mm\:ss", CultureInfo.InvariantCulture)
-            : v.ToString(@"m\:ss", CultureInfo.InvariantCulture))
-        : string.Empty;
+    private static string FormatSpan(TimeSpan? t) => TimeFormat.Span(t);
 
-    private static string FormatClock(TimeSpan? t) =>
-        t is { } v ? v.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture) : string.Empty;
+    private static string FormatClock(TimeSpan? t) => TimeFormat.Clock(t);
 
     public Task<IReadOnlyList<ChipPriceOverride>> GetChipPriceOverridesAsync(CancellationToken cancellationToken = default)
     {
