@@ -19,7 +19,10 @@ public sealed class MixedStrategy : DisciplineStrategyBase
 
     public MixedStrategy(ICourseDistanceCalculator distance) => _distance = distance;
 
-    public override DisciplineType Type => DisciplineType.Mixed;
+    public override DisciplineId Id => DisciplineId.Mixed;
+
+    /// <summary>The course order is a pattern — the groups page previews and validates it.</summary>
+    public override bool UsesCoursePattern => true;
 
     /// <summary>Judged against a prescribed pattern — the draw warns on a shared opening control.</summary>
     public override bool ChecksStartControlClash => true;
@@ -54,7 +57,15 @@ public sealed class MixedStrategy : DisciplineStrategyBase
         var ignored = IgnoredCodes(context.ExpectedControls, pattern);
         var ok = pattern.Match(context.PunchedControls, ignored, out _, out var firstMissing);
         if (!ok)
-            return new FinishStatusResult(FinishStatus.Mp, firstMissing);
+        {
+            var missed = MissedControls.ForPattern(pattern, context.PunchedControls, ignored);
+            // The greedy match said MP but the maximum match is complete: a greedy-walk weakness, kept as is
+            // (the status must not change here) but logged so it can be fixed separately.
+            if (missed.Count == 0)
+                System.Diagnostics.Debug.WriteLine(
+                    $"[Mixed] greedy MP but full maximum match: '{context.CourseOrderText}' / '{string.Join(' ', context.PunchedControls)}'");
+            return new FinishStatusResult(FinishStatus.Mp, firstMissing) { Missed = missed };
+        }
 
         if (context.TimeLimit is { } limit && context.StartTime is { } start
             && context.FinishTime.Value - start > limit)

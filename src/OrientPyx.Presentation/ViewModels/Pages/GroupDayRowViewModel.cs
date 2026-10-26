@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Enums;
@@ -21,7 +21,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     private readonly Guid _settingsId;
     private readonly Guid _groupId;
     private readonly int _order;
-    private readonly DisciplineType _dayDefaultDiscipline;
+    private readonly DisciplineId _dayDefaultDiscipline;
     private readonly int _participantCount;
     private readonly IDisciplineStrategyProvider _strategies;
     private readonly Action<GroupDayRowViewModel> _requestSave;
@@ -133,9 +133,12 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         // "(default: <day default>)" sentinel first, then one option per registered discipline.
         DisciplineOptions =
         [
-            new DisciplineOverrideOption(null, localization, row.DayDefaultDiscipline),
-            .. strategies.All.Select(s => new DisciplineOverrideOption(s.Type, localization))
+            new DisciplineOverrideOption(null, localization, strategies.For(row.DayDefaultDiscipline)),
+            .. strategies.All.Select(s => new DisciplineOverrideOption(s, localization))
         ];
+        // A stored override with no registered strategy (a missing plugin) still shows as itself.
+        if (row.DisciplineOverride is { } stored && DisciplineOptions.All(o => o.Value != stored))
+            DisciplineOptions = [.. DisciplineOptions, new DisciplineOverrideOption(strategies.For(stored), localization)];
 
         _name = row.Name;
         _courseOrder = row.CourseOrder;
@@ -205,12 +208,15 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     public IReadOnlyList<RankLevelOption> RankLevelOptions { get; }
 
     /// <summary>Effective discipline = the per-group override, or the day default when none is set.</summary>
-    public DisciplineType EffectiveDiscipline => SelectedDiscipline.Value ?? _dayDefaultDiscipline;
+    public DisciplineId EffectiveDiscipline => SelectedDiscipline.Value ?? _dayDefaultDiscipline;
 
     private IDisciplineStrategy Strategy => _strategies.For(EffectiveDiscipline);
 
     /// <summary>True when this is a scatter («розсіювання») group — its discipline is Scatter.</summary>
-    public bool IsScatter => EffectiveDiscipline == DisciplineType.Scatter;
+    public bool IsScatter => Strategy.UsesCourseVariants;
+
+    /// <summary>True when the course order is a «mixed» pattern (previewed and validated on the page).</summary>
+    public bool UsesCoursePattern => Strategy.UsesCoursePattern;
 
     /// <summary>
     /// What the grid's course-order cell shows: for a scatter group, «N варіантів дистанції» (there is no
@@ -305,6 +311,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         OnPropertyChanged(nameof(UsesPenalty));
         OnPropertyChanged(nameof(UsesTimeLimit));
         OnPropertyChanged(nameof(IsScatter));
+        OnPropertyChanged(nameof(UsesCoursePattern));
         OnPropertyChanged(nameof(CourseOrderDisplay));
         OnPropertyChanged(nameof(CanEditCourseOrderInline));
 

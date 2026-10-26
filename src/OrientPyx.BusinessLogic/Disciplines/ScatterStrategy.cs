@@ -23,7 +23,10 @@ public sealed class ScatterStrategy : DisciplineStrategyBase
 
     public ScatterStrategy(ICourseDistanceCalculator distance) => _distance = distance;
 
-    public override DisciplineType Type => DisciplineType.Scatter;
+    public override DisciplineId Id => DisciplineId.Scatter;
+
+    /// <summary>The course is the group's set of variants (one <see cref="ScatterVariant"/> row each).</summary>
+    public override bool UsesCourseVariants => true;
 
     /// <summary>Each variant is a prescribed order — the draw warns on a shared opening control across variants.</summary>
     public override bool ChecksStartControlClash => true;
@@ -54,7 +57,10 @@ public sealed class ScatterStrategy : DisciplineStrategyBase
 
         var firstMissing = FirstMissing(expected, context.PunchedControls);
         if (firstMissing is not null)
-            return new FinishStatusResult(FinishStatus.Mp, firstMissing);
+            return new FinishStatusResult(FinishStatus.Mp, firstMissing)
+            {
+                Missed = MissedControls.ForOrder(expected, context.PunchedControls)
+            };
 
         if (context.TimeLimit is { } limit && context.StartTime is { } start
             && context.FinishTime.Value - start > limit)

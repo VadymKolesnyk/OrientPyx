@@ -73,6 +73,7 @@
   "Menu.File.ChangeEvent": "Change competition",
   "Menu.File.ExportEvent": "Export competition…",
   "Menu.File.ImportEvent": "Import competition…",
+  "Menu.File.DebugResultsSnapshot": "(Debug) Results snapshot…",
   "Menu.File.Exit": "Exit",
   "Menu.Competition": "Competition",
   "Menu.Competition.Info": "Information",
@@ -1348,6 +1349,7 @@
   "Discipline.Type.Rogaine": "Rogaine",
   "Discipline.Type.Mixed": "Mixed",
   "Discipline.Type.Scatter": "Scatter",
+  "Discipline.Type.Unknown": "Unknown discipline ({0}) — plugin required",
 
   "CoursePattern.Help.Button": "How to set the order?",
   "CoursePattern.Help.Title": "Control order (mixed discipline)",

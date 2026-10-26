@@ -1,46 +1,47 @@
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
-using OrientPyx.BusinessLogic.Enums;
+using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.Localization;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
 
 /// <summary>
 /// A selectable discipline override with its localized label, used as a ComboBox item for a group's
-/// per-day discipline. A null <see cref="Value"/> is the "(default)" sentinel meaning the group
-/// inherits the day's default discipline; its label also names that default, e.g.
-/// "(default: Rogaine)". The label re-resolves when the language changes.
+/// per-day discipline. A null strategy is the "(default)" sentinel meaning the group inherits the day's
+/// default discipline; its label also names that default, e.g. "(default: Rogaine)". The label
+/// re-resolves when the language changes.
 /// </summary>
 public sealed partial class DisciplineOverrideOption : ObservableObject
 {
     private readonly ILocalizationService _localization;
-    private readonly DisciplineType? _dayDefault;
+    private readonly IDisciplineStrategy? _strategy;
+    private readonly IDisciplineStrategy? _dayDefault;
 
     public DisciplineOverrideOption(
-        DisciplineType? value,
+        IDisciplineStrategy? strategy,
         ILocalizationService localization,
-        DisciplineType? dayDefault = null)
+        IDisciplineStrategy? dayDefault = null)
     {
-        Value = value;
+        _strategy = strategy;
         _dayDefault = dayDefault;
         _localization = localization;
         _localization.PropertyChanged += OnLocalizationChanged;
     }
 
-    public DisciplineType? Value { get; }
+    public DisciplineId? Value => _strategy?.Id;
 
     public string Label
     {
         get
         {
-            if (Value is not null)
-                return _localization.Get("Discipline.Type." + Value);
+            if (_strategy is not null)
+                return DisciplineLabels.Of(_strategy, _localization);
 
             // The "(default)" sentinel: name the day's default discipline when known.
             if (_dayDefault is null)
                 return _localization.Get("Groups.Discipline.Default");
 
-            var defaultName = _localization.Get("Discipline.Type." + _dayDefault);
+            var defaultName = DisciplineLabels.Of(_dayDefault, _localization);
             return string.Format(_localization.Get("Groups.Discipline.DefaultNamed"), defaultName);
         }
     }

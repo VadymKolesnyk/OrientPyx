@@ -889,9 +889,17 @@ public sealed class EventStore : IEventStore
         var days = await db.Days.AsNoTracking()
             .OrderBy(d => d.Number).ToListAsync(cancellationToken);
         var info = await db.Competition.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        // Read-outs and scatter variants feed the day's result computation, which must see the same rows as
+        // the links above (a read-out landing between two separate reads would otherwise mix snapshots).
+        var readouts = await db.FinishReadouts.AsNoTracking()
+            .Where(r => r.EventDayId == dayId).OrderBy(r => r.Order).ToListAsync(cancellationToken);
+        var scatterVariants = await db.ScatterVariants.AsNoTracking()
+            .Where(v => v.EventDayId == dayId).OrderBy(v => v.Order).ToListAsync(cancellationToken);
 
         return new EventDaySnapshot
         {
+            FinishReadouts = readouts,
+            ScatterVariants = scatterVariants,
             Links = links,
             Participants = participants,
             Groups = groups,

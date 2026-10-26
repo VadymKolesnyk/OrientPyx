@@ -102,6 +102,22 @@ public sealed record ParticipantDayResult(
     /// conditions (too few participants / regions). See <c>RankQualificationEvaluator</c>.
     /// </summary>
     public string? AwardedRank { get; init; }
+
+    /// <summary>
+    /// The result time the runner is ranked by: <see cref="ResultTime"/> after the discipline's time adjustment
+    /// (Р-6), rounded to a whole second when the discipline changed it. Equal to <see cref="ResultTime"/> for the
+    /// built-in disciplines. Points by formula use it (Р-9); ranks use the actual <see cref="ResultTime"/> (Р-7).
+    /// </summary>
+    public TimeSpan? AdjustedTime { get; init; }
+
+    /// <summary>Every required control the run missed (Р-52a); empty unless an ordered course gave MP.</summary>
+    public IReadOnlyList<string> Missed { get; init; } = [];
+
+    /// <summary>Discipline-specific values for this result (e.g. a plugin's penalty), keyed by the discipline's
+    /// column key. Empty for the built-in disciplines.</summary>
+    public IReadOnlyDictionary<string, object?> Extra { get; init; } = EmptyExtra;
+
+    private static readonly IReadOnlyDictionary<string, object?> EmptyExtra = new Dictionary<string, object?>();
 }
 
 /// <summary>One control's contribution to the «Бали» total: the control code and its point value.</summary>

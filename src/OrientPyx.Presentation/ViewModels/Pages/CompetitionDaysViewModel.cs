@@ -1,7 +1,8 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
@@ -24,6 +25,7 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
     // Held directly rather than through UseDayLock: that binds the page to the SESSION's day, and this
     // page shows every day at once — each row's lock is its own.
     private readonly IDayLockService _dayLock;
+    private readonly IDisciplineStrategyProvider _strategies;
 
     public CompetitionDaysViewModel(
         ILocalizationService localization,
@@ -33,9 +35,11 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         IDialogService dialogs,
         ITableLayoutStore layoutStore,
         IDayLockService dayLock,
-        IActivityLog log)
+        IActivityLog log,
+        IDisciplineStrategyProvider strategies)
         : base(localization)
     {
+        _strategies = strategies;
         _dayLock = dayLock;
         LayoutStore = layoutStore;
         _editor = editor;
@@ -97,7 +101,7 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         Days.Clear();
         SelectedRow = null;
         foreach (var day in days)
-            Days.Add(new DayRowViewModel(day, day.Number == activeNumber, Localization, venuePlaceholder));
+            Days.Add(new DayRowViewModel(day, day.Number == activeNumber, Localization, _strategies, venuePlaceholder));
     }
 
     [RelayCommand]

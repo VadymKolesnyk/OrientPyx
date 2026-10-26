@@ -1,8 +1,11 @@
 ﻿using System.Globalization;
+using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
+using OrientPyx.BusinessLogic.Services.Results;
+using static OrientPyx.BusinessLogic.Services.Results.CourseCodes;
 
 namespace OrientPyx.BusinessLogic.Services;
 
@@ -17,6 +20,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     private readonly IAppStore _appStore;
     private readonly ICourseDistanceCalculator _distance;
     private readonly Disciplines.IDisciplineStrategyProvider _strategies;
+    private readonly DayResultsCalculator _calculator;
     private readonly IEntryFeeCalculator _entryFees;
 
     public CompetitionEditorService(
@@ -32,6 +36,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         _appStore = appStore;
         _distance = distance;
         _strategies = strategies;
+        _calculator = new DayResultsCalculator(strategies);
         _entryFees = entryFees;
     }
 
@@ -43,8 +48,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         _session.CurrentDay?.Id
         ?? throw new InvalidOperationException("No competition day is currently selected.");
 
-    private DisciplineType CurrentDayDefaultDiscipline =>
-        _session.CurrentDay?.DefaultDiscipline ?? DisciplineType.SetCourse;
+    private DisciplineId CurrentDayDefaultDiscipline =>
+        _session.CurrentDay?.DefaultDiscipline ?? DisciplineId.SetCourse;
 
     /// <summary>
     /// Refuses the write when the day is closed for editing. Every per-day write goes through this,
@@ -562,12 +567,11 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // variants down to the control-count of its LONGEST variant — the grid's control-count cell
         // reports that for a scatter group (the single-order field is unused for scatter).
         var scatterVariants = await _eventStore.GetScatterVariantsAsync(FolderPath, CurrentDayId, cancellationToken);
-        var counter = _strategies.For(DisciplineType.Scatter);
         var scatterByGroup = scatterVariants
             .GroupBy(v => v.GroupId)
             .ToDictionary(
                 g => g.Key,
-                g => (Count: g.Count(), MaxControls: g.Max(v => counter.ControlCount(v.CourseOrder))));
+                g => (Count: g.Count(), MaxControls: g.Max(v => CourseOrder.CountControls(v.CourseOrder))));
 
         var rows = new List<GroupDayRow>(settings.Count);
         foreach (var s in settings)
@@ -833,7 +837,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // scatter course at all, so it must not inherit the day's Scatter default — it is forced to «Заданий
         // напрямок» (SetCourse) and reported. On a non-Scatter day a single-order course simply clears its
         // override (day default applies).
-        var dayIsScatter = CurrentDayDefaultDiscipline == DisciplineType.Scatter;
+        var dayIsScatter = _strategies.For(CurrentDayDefaultDiscipline).UsesCourseVariants;
 
         // Collapse duplicate course names within the file (keep the first), so a repeated course
         // does not create a second group or fight itself for the same day row.
@@ -855,9 +859,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             // override (the day default applies).
             var scatterFallbackHere = !isScatter && dayIsScatter;
             var disciplineOverride =
-                isScatter ? DisciplineType.Scatter
-                : scatterFallbackHere ? DisciplineType.SetCourse
-                : (DisciplineType?)null;
+                isScatter ? DisciplineId.Scatter
+                : scatterFallbackHere ? DisciplineId.SetCourse
+                : (DisciplineId?)null;
             var courseOrder = string.Join(' ', course.ControlCodes.Select(c => c.Trim()).Where(c => c.Length > 0));
             var distanceKm = ComputeDistance(course.ControlCodes, coordsByCode, mapByCode, data.MapScale);
 
@@ -1507,8 +1511,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         // Per day, keyed by link id — the roster spans all days.
         var resultsByDay = new Dictionary<Guid, IReadOnlyDictionary<Guid, ParticipantDayResult>>(days.Count);
+        var appData = await LoadDayResultsAppDataAsync(withRanks: true, cancellationToken);
         foreach (var day in days)
-            resultsByDay[day.Id] = await ComputeDayResultsAsync(folder, day, cancellationToken);
+            resultsByDay[day.Id] = await ComputeDayResultsAsync(folder, day, cancellationToken, appData: appData);
 
         // Keyed for per-cell lookup.
         var linkByKey = links.ToDictionary(l => (l.ParticipantId, l.EventDayId));
@@ -2077,7 +2082,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         countExcluded.UnionWith(DisabledCodesOf(controlPoints));
 
         var rankCalcs = new Dictionary<Guid, GroupRankCalculation>();
-        var results = await ComputeDayResultsAsync(folder, day, cancellationToken, rankCalcs);
+        var results = await ComputeDayResultsAsync(folder, day, cancellationToken, rankCalcs, snapshot);
 
         // Bucket each member's row under its group; a member with no group is skipped (a protocol is by group).
         var rowsByGroup = new Dictionary<Guid, List<ResultProtocolRow>>();
@@ -2111,14 +2116,14 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
             var discipline = s.DisciplineOverride ?? day.DefaultDiscipline;
             var strategy = _strategies.For(discipline);
-            var isTeam = strategy.Type == DisciplineType.Rogaine;
+            var isTeam = strategy.Competitors == CompetitorModel.Team;
 
             // Control count: blank order ⇒ unknown (null). For the «mixed» pattern the count is what the
             // pattern requires (via the strategy), not a flat token count; other disciplines count the
             // running controls minus the day's start/finish codes.
             var controlCount = string.IsNullOrWhiteSpace(s.CourseOrder)
                 ? (int?)null
-                : discipline == DisciplineType.Mixed
+                : strategy.UsesCoursePattern
                     ? strategy.ControlCount(s.CourseOrder)
                     : CountCourseControls(s.CourseOrder, countExcluded);
             var rows = rowsByGroup.TryGetValue(s.GroupId, out var b) ? b : [];
@@ -2380,8 +2385,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         // Computed run results per day, keyed by participant-day link id (the summary spans all days).
         var resultsByDay = new Dictionary<Guid, IReadOnlyDictionary<Guid, ParticipantDayResult>>(days.Count);
+        var appData = await LoadDayResultsAppDataAsync(withRanks: true, cancellationToken);
         foreach (var day in days)
-            resultsByDay[day.Id] = await ComputeDayResultsAsync(folder, day, cancellationToken);
+            resultsByDay[day.Id] = await ComputeDayResultsAsync(folder, day, cancellationToken, appData: appData);
 
         // One summary entry per (participant, group): a participant who ran different groups on different days
         // is summed separately in each group, over only the days they ran in it. The per-day result is keyed by
@@ -2654,7 +2660,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             var strategy = _strategies.For(discipline);
 
             IReadOnlySet<string>? teamCommon = null;
-            if (strategy.Type == DisciplineType.Rogaine)
+            if (strategy.Competitors == CompetitorModel.Team)
             {
                 var team = teamByParticipant.TryGetValue(link.ParticipantId, out var t) ? t : string.Empty;
                 var cacheKey = (gid, team);
@@ -2699,7 +2705,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             // Scatter («розсіювання») has no single prescribed column set — every runner runs a different order —
             // so it uses the per-runner passage shape (the same rogaine-style «Scored» table, without points),
             // where each runner writes their own passing order into positional КП columns.
-            var isScatter = strategy.Type == DisciplineType.Scatter;
+            var isScatter = strategy.UsesCourseVariants;
             var layout = isScored || isScatter ? SplitsLayout.Scored : SplitsLayout.Ordered;
 
             // Disabled («проблемні») controls are dropped from the export's column header / count too, so the
@@ -2764,7 +2770,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     // Builds one member's SplitsView from the pre-loaded day inputs and their group/readout (the same context
     // GetFinishSplitsAsync assembles for a single readout, factored to run per member without re-querying).
     private SplitsView BuildSplitsForLink(
-        DaySplitInputs inputs, GroupDaySettings? gs, DisciplineType discipline,
+        DaySplitInputs inputs, GroupDaySettings? gs, DisciplineId discipline,
         ParticipantDay link, FinishReadout readout, IReadOnlySet<string>? teamCommon,
         IReadOnlyList<ScatterVariantData> scatterVariants)
     {
@@ -2773,7 +2779,12 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var punches = DecodePunchTimes(readout.PunchTimes)
             .Where(p => !inputs.StartFinishCodes.Contains(p.ControlCode.Trim()))
             .ToList();
-        var start = readout.StartTime ?? CombineWithFinishDate(link.StartTime, readout.FinishTime);
+        var start = _strategies.For(discipline).ResolveStart(new StartContext
+        {
+            ChipStart = readout.StartTime,
+            AssignedStart = link.StartTime,
+            FinishTime = readout.FinishTime
+        });
 
         var context = new SplitsContext
         {
@@ -2850,417 +2861,56 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     }
 
     /// <summary>
-    /// Computes each participant's result on one day from the finish read-outs, keyed by the
-    /// participant-day link id. Reuses the finish-evaluation pipeline (<see cref="EvaluateFinish"/>) and
-    /// the scored splits tally (for rogaine «Бали»), then ranks the OK results within each group. A chip
-    /// read more than once on the day resolves to its <b>latest</b> read-out (highest <c>Order</c>).
+    /// Computes each participant's result on one day, keyed by the participant-day link id — see
+    /// <see cref="DayResultsCalculator"/>. Reads the day as ONE snapshot (links, read-outs, settings, control
+    /// points, variants) unless the caller already holds one, so the result rows always agree with the rows the
+    /// caller builds from the same snapshot.
     /// </summary>
     /// <param name="rankCalcs">When non-null, receives the per-group rank-award derivation built by the ranks
     /// pass — used only by the results protocol to print its explanatory line. Null on every other caller.</param>
+    /// <param name="snapshot">The day's snapshot when the caller already read it; null = read it here.</param>
+    /// <param name="appData">The app-level inputs when the caller already read them (multi-day views).</param>
     private async Task<IReadOnlyDictionary<Guid, ParticipantDayResult>> ComputeDayResultsAsync(
         string folder, EventDay day, CancellationToken cancellationToken,
-        Dictionary<Guid, GroupRankCalculation>? rankCalcs = null)
+        Dictionary<Guid, GroupRankCalculation>? rankCalcs = null,
+        EventDaySnapshot? snapshot = null,
+        DayResultsAppData? appData = null)
     {
-        var dayId = day.Id;
-        var links = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
-        var readouts = await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
-        if (links.Count == 0)
+        snapshot ??= await _eventStore.GetDaySnapshotAsync(folder, day.Id, cancellationToken);
+        if (snapshot.Links.Count == 0)
             return new Dictionary<Guid, ParticipantDayResult>();
 
-        var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
-        var settingsByGroup = settings.ToDictionary(s => s.GroupId);
-        var controlPoints = await _eventStore.GetControlPointsAsync(folder, dayId, cancellationToken);
-        var startFinishCodes = new HashSet<string>(
-            controlPoints
-                .Where(c => c.Type is ControlPointType.Start or ControlPointType.Finish)
-                .Select(c => c.Code.Trim()),
-            StringComparer.OrdinalIgnoreCase);
-        var disabledCodes = DisabledCodesOf(controlPoints);
-        var dayDefault = day.DefaultDiscipline;
-        var variantsByGroup = await LoadScatterVariantsAsync(
-            folder, dayId, settingsByGroup, dayDefault, startFinishCodes, disabledCodes, cancellationToken);
+        var needRanks = snapshot.GroupDaySettings.Any(s => s.RankLevel != GroupRankLevel.None);
+        if (appData is null || (needRanks && !appData.HasRankData))
+            appData = await LoadDayResultsAppDataAsync(needRanks, cancellationToken);
 
-        // Per-control point values, positions and map scale — needed only to tally rogaine «Бали».
-        var pointsByCode = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var cp in controlPoints)
-            if (cp.Points is { } pts)
-                pointsByCode[cp.Code.Trim()] = pts;
-
-        // Team name per participant — rogaine is a team format and the team lives on the participant
-        // (competition-level), not on the per-day link, so resolve it once for the team ranking below.
-        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
-        var teamByParticipant = participants.ToDictionary(p => p.Id, p => p.Team.Trim());
-
-        // Latest read-out per chip (the "last read-out" rule): highest Order wins on a repeated chip.
-        var latestByChip = new Dictionary<string, FinishReadout>(TextKey.Comparer);
-        foreach (var r in readouts)
-        {
-            var key = r.ChipNumber.Trim();
-            if (key.Length == 0)
-                continue;
-            if (!latestByChip.TryGetValue(key, out var cur) || r.Order > cur.Order)
-                latestByChip[key] = r;
-        }
-
-        // First pass: evaluate every member with a chip that was read. Carry the group id and the sort
-        // keys (result time, score) so the second pass can rank within each group. Rogaine members are
-        // ranked as teams instead (see the team pass), so they go into `teamMembers`, not `ranking`.
-        var results = new Dictionary<Guid, ParticipantDayResult>(links.Count);
-        var ranking = new List<(Guid LinkId, Guid? GroupId, bool Scored, int Score, TimeSpan Time)>();
-        var teamMembers = new List<TeamMember>();
-        foreach (var link in links)
-        {
-            GroupDaySettings? gs0 = link.GroupId is { } gid0 && settingsByGroup.TryGetValue(gid0, out var s0) ? s0 : null;
-            var discipline0 = gs0?.DisciplineOverride ?? dayDefault;
-            var isRogaine = _strategies.For(discipline0).Type == DisciplineType.Rogaine;
-
-            var chip = link.Chip.Trim();
-            if (chip.Length == 0 || !latestByChip.TryGetValue(chip, out var readout))
-            {
-                // No read-out for this member's chip — but a manual override still shows a status. An "OK"
-                // override is meaningless without a result (OK is the all-clear for someone who ran), so it
-                // resolves to blank — matching how SetParticipantDayResultStatusAsync normalizes it.
-                var noReadOverride = link.ResultStatusOverride == FinishStatus.Ok ? null : link.ResultStatusOverride;
-                // No read-out ⇒ nothing to compute, so "auto" resolves to blank (FinishStatus.None).
-                results[link.Id] = new ParticipantDayResult(
-                    null, null, noReadOverride ?? FinishStatus.None, noReadOverride, FinishStatus.None,
-                    null, null, null, HasReadout: false);
-                // A rogaine member with no read-out makes their team incomplete — record it so the team
-                // earns no place until every IN-COMPETITION member has finished. A поза конкурсом member who
-                // never read out does NOT drop the team (RankRogaineTeams excludes them from the OK check).
-                if (isRogaine)
-                    teamMembers.Add(TeamMember.Incomplete(
-                        link.Id, link.GroupId, TeamKeyFor(link, teamByParticipant), link.OutOfCompetition, link.Bonus));
-                continue;
-            }
-
-            var (computed, _, _, resolvedStart) = EvaluateFinish(readout, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup);
-            var status = link.ResultStatusOverride ?? computed;
-
-            // Did this runner actually go out on course? A start box, a finish box, or at least one control
-            // punch all say yes; only a wholly empty read-out says no. The start/finish marker codes are
-            // dropped from the punch list so a chip carrying nothing but those isn't mistaken for a КП.
-            var wasOnCourse = readout.StartTime is not null
-                || readout.FinishTime is not null
-                || SplitCodes(readout.Punches).Any(c => !startFinishCodes.Contains(c));
-
-            var resultTime = status == FinishStatus.Ok && resolvedStart is { } rs && readout.FinishTime is { } f
-                ? f - rs
-                : (TimeSpan?)null;
-
-            GroupDaySettings? gs = gs0;
-            var discipline = discipline0;
-            HashSet<string>? punchedAllowed = null;
-            int? score = null;
-            if (_strategies.For(discipline).UsesControlPointPoints)
-            {
-                var detail = ScoreDetailFor(readout, gs, startFinishCodes, disabledCodes, pointsByCode, discipline, resolvedStart);
-                // Fold in the judge's points correction («бонус»): the personal score is the computed net
-                // plus this member's own bonus. For a teamed rogaine runner the team pass below replaces
-                // this Score with the team net (which folds in the team-min bonus instead).
-                score = detail.Net + (link.Bonus ?? 0);
-                punchedAllowed = detail.Punched;
-            }
-
-            results[link.Id] = new ParticipantDayResult(
-                readout.StartTime, readout.FinishTime, status, link.ResultStatusOverride, computed, resultTime, Place: null, score, HasReadout: true)
-            {
-                // Personal breakdown (the controls this chip scored). For a teamed rogaine runner the team
-                // pass replaces this with the team's common controls so the tooltip matches the team Бали.
-                ScoreBreakdown = punchedAllowed is { } pa ? ScoreLines(pa, pointsByCode) : [],
-                Bonus = link.Bonus,
-                WasOnCourse = wasOnCourse,
-                // Personal-discipline поза конкурсом ⇒ marked «П/К», never placed (and excluded from `ranking`
-                // below so it doesn't shift the others). Rogaine поза конкурсом is the team pass's job.
-                OutOfCompetition = !isRogaine && link.OutOfCompetition
-            };
-
-            if (isRogaine)
-            {
-                // Rogaine: collect the member for the team tally. The elapsed time (finish − start) feeds
-                // both the team's over-time penalty (max member time) and the tie-break (last finisher);
-                // the bonus feeds the team-min points correction.
-                var elapsed = resolvedStart is { } rs2 && readout.FinishTime is { } f2 ? f2 - rs2 : (TimeSpan?)null;
-                teamMembers.Add(new TeamMember(
-                    link.Id, link.GroupId, TeamKeyFor(link, teamByParticipant), link.OutOfCompetition,
-                    status == FinishStatus.Ok, punchedAllowed ?? [], elapsed, gs, discipline, link.Bonus));
-            }
-            // Only OK results are placed; a non-positive result time can't be ranked by time. A поза
-            // конкурсом runner is NOT placed and does NOT occupy a position — they are left out of the
-            // ranking entirely so the in-competition runners are placed as if they were absent.
-            else if (status == FinishStatus.Ok && !link.OutOfCompetition)
-                ranking.Add((link.Id, link.GroupId, score is not null,
-                    score ?? 0, resultTime is { } t && t > TimeSpan.Zero ? t : TimeSpan.MaxValue));
-        }
-
-        // Second pass: rank within each group. Rogaine (scored) orders by score desc then time asc;
-        // every other format by time asc. Equal keys share a place; the next place skips the ties.
-        foreach (var group in ranking.GroupBy(r => r.GroupId))
-        {
-            var ordered = group
-                .OrderByDescending(r => r.Scored ? r.Score : 0)
-                .ThenBy(r => r.Time)
-                .ToList();
-
-            var place = 0;
-            var seen = 0;
-            (int Score, TimeSpan Time)? prev = null;
-            foreach (var r in ordered)
-            {
-                seen++;
-                var key = (r.Scored ? r.Score : 0, r.Time);
-                if (prev is null || prev.Value.Score != key.Item1 || prev.Value.Time != key.Item2)
-                    place = seen; // a new (worse) key takes the running position; ties keep the prior place
-                prev = key;
-                results[r.LinkId] = results[r.LinkId] with { Place = place };
-            }
-        }
-
-        // Rogaine team pass: score and place by team, then stamp the team's Бали/Місце onto every member.
-        RankRogaineTeams(teamMembers, pointsByCode, results);
-
-        // Points pass: award «Очки» from each group's effective points rule (its override, else the
-        // competition default), keyed off the place/time/score just computed.
-        await AwardPointsAsync(folder, links, settingsByGroup, info: null, results, cancellationToken);
-
-        // Ranks pass: award «виконаний розряд» (Додаток 89) per group from its rank level, the course rank
-        // (sum of the members' current-rank points) and the result-vs-leader percentage.
-        await AwardRanksAsync(links, settingsByGroup, participants, dayDefault, results, cancellationToken, rankCalcs);
-
+#if DEBUG
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+#endif
+        var results = _calculator.Compute(day, snapshot, appData, rankCalcs);
+#if DEBUG
+        System.Diagnostics.Debug.WriteLine(
+            $"[Results] day {day.Number}: {snapshot.Links.Count} links in {watch.ElapsedMilliseconds} ms");
+#endif
         return results;
     }
 
-    /// <summary>
-    /// Awards «Очки» (ranking points) for every member, per group, from the group's effective points rule
-    /// (its per-day override, else the competition default). Stamps <see cref="ParticipantDayResult.Points"/>
-    /// onto each result. A group with no effective rule, and any non-rankable member, is left blank.
-    ///
-    /// A <see cref="PointsRuleKind.Table"/> rule keys off the member's place; a formula rule additionally
-    /// references the group leader's time/score (the placed runner whose place is 1) and the group counts
-    /// (registered / started / finished), so those are resolved once per group. Points rules live in the app database (shared across
-    /// competitions); the per-group / competition-default assignment lives in the event database.
-    /// </summary>
-    private async Task AwardPointsAsync(
-        string folder,
-        IReadOnlyList<ParticipantDay> links,
-        IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup,
-        CompetitionInfo? info,
-        Dictionary<Guid, ParticipantDayResult> results,
-        CancellationToken cancellationToken)
+    // The app-database inputs of the results computation. The rank tables are read only when some group
+    // awards ranks, so a day without ranks never touches them (as before the calculator existed).
+    private async Task<DayResultsAppData> LoadDayResultsAppDataAsync(bool withRanks, CancellationToken cancellationToken)
     {
         var rules = await _appStore.GetPointsRulesAsync(cancellationToken);
-        if (rules.Count == 0)
-            return;
-        var ruleById = rules.ToDictionary(r => r.Id);
+        if (!withRanks)
+            return new DayResultsAppData { PointsRules = rules };
 
-        info ??= await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken);
-        var defaultRuleId = info?.DefaultPointsRuleId;
-
-        // The members of each group, paired with their computed result, so points can be ranked per group.
-        var membersByGroup = new Dictionary<Guid, List<(Guid LinkId, ParticipantDayResult Result)>>();
-        foreach (var link in links)
+        return new DayResultsAppData
         {
-            if (link.GroupId is not { } gid || !results.TryGetValue(link.Id, out var result))
-                continue;
-            if (!membersByGroup.TryGetValue(gid, out var list))
-                membersByGroup[gid] = list = [];
-            list.Add((link.Id, result));
-        }
-
-        foreach (var (groupId, members) in membersByGroup)
-        {
-            // Effective rule: the group's override, else the competition default. A group override of
-            // Guid.Empty is an explicit "no points" choice — score nothing, never fall back to the default.
-            // Unknown ids likewise award nothing.
-            var ruleId = settingsByGroup.TryGetValue(groupId, out var gs) && gs.PointsRuleId is { } o
-                ? o
-                : defaultRuleId;
-            if (ruleId is not { } id || id == Guid.Empty || !ruleById.TryGetValue(id, out var rule))
-                continue;
-
-            // Group context the formula references: the leader (place 1) time/score and the three group
-            // counts — N (everyone registered in the group), N_с (those who actually ran, i.e. whose chip
-            // read-out shows a start box, a finish box or at least one control punch) and N_ф (those who
-            // finished with a valid result: status OK). N_с deliberately does NOT key off ActualStart: on a
-            // mass or assigned start there is no start punch at all, which would leave it at 0 for the whole
-            // group. NONE of the three counts a поза конкурсом runner: such a runner is not part of the
-            // group's standings, so they inflate neither the entry list nor the started/finished counts. A
-            // table rule ignores all of this and keys off place only.
-            var inCompetition = members.Where(m => !m.Result.OutOfCompetition).ToList();
-            var placed = members.Where(m => m.Result.Place is not null).ToList();
-            var groupSize = inCompetition.Count;
-            var startedCount = inCompetition.Count(m => m.Result.WasOnCourse);
-            var finishedCount = inCompetition.Count(m => m.Result.Status == FinishStatus.Ok);
-            var leader = placed.FirstOrDefault(m => m.Result.Place == 1).Result;
-            var leaderTime = leader?.ResultTime?.TotalSeconds;
-            var leaderScore = leader?.Score;
-
-            foreach (var (linkId, result) in members)
-            {
-                // Only a clean, in-competition finish earns points (a поза конкурсом runner, a problem
-                // status, or a no-result member is left blank).
-                if (result.Status != FinishStatus.Ok || result.OutOfCompetition)
-                    continue;
-
-                var input = new PointsRuleInput(
-                    Place: result.Place,
-                    ResultTimeSeconds: result.ResultTime?.TotalSeconds,
-                    Score: result.Score,
-                    LeaderTimeSeconds: leaderTime,
-                    LeaderScore: leaderScore,
-                    GroupSize: groupSize,
-                    StartedCount: startedCount,
-                    FinishedCount: finishedCount);
-                var points = PointsRuleEvaluator.Evaluate(rule, input);
-                if (points is not null)
-                    results[linkId] = results[linkId] with { Points = points };
-            }
-        }
-    }
-
-    /// <summary>
-    /// Awards «виконаний розряд» (Додаток 89, simplified) for every member, per group. A group whose level
-    /// is <see cref="GroupRankLevel.None"/> awards nothing; a group failing the validity conditions (fewer
-    /// placed members than the configured minimum, or fewer distinct regions) likewise awards nothing for
-    /// anyone. Otherwise the course rank is the sum of the current-rank point values of the first N participants
-    /// BY PLACE (the top finishers, N configurable default 12; from the seeded <c>SportRank</c> set); the top <c>MasterCount</c> placed runners get «МСУ»
-    /// (adult groups only); the rest are awarded from the editable qualification table by their result as a
-    /// percentage of the group leader's (time for time-based disciplines, score for point-scoring ones).
-    /// </summary>
-    /// <param name="rankCalcs">When non-null, receives the per-group rank-award derivation (course class, course
-    /// rank, attainable ranks with their % thresholds + implied cut-offs) for every group that actually awards a
-    /// rank — used by the results protocol to print the explanatory line. Null on the normal results path.</param>
-    private async Task AwardRanksAsync(
-        IReadOnlyList<ParticipantDay> links,
-        IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup,
-        IReadOnlyList<Participant> participants,
-        DisciplineType dayDefault,
-        Dictionary<Guid, ParticipantDayResult> results,
-        CancellationToken cancellationToken,
-        Dictionary<Guid, GroupRankCalculation>? rankCalcs = null)
-    {
-        // Any group awarding a rank short-circuits the load; otherwise we never touch the app DB here.
-        if (!settingsByGroup.Values.Any(s => s.RankLevel != GroupRankLevel.None))
-            return;
-
-        var rows = await _appStore.GetRankQualificationAsync(cancellationToken);
-        var conditions = await _appStore.GetRankConditionsAsync(cancellationToken) ?? (3, 8, 12);
-        var (minParticipants, minRegions, countForRank) = conditions;
-
-        var ranks = await _appStore.GetRanksAsync(cancellationToken);
-        // Matched by TextKey so a participant's rank still finds the seeded rank when the two use look-alike
-        // letters (the Roman numerals I/II/III are Latin in the seed but often arrive as Cyrillic «І» from a
-        // UOF/XML import — visually identical, different code points — which otherwise scores 0).
-        var pointsByRankName = new Dictionary<string, double>(TextKey.Comparer);
-        foreach (var r in ranks)
-            pointsByRankName[r.Name] = r.Points;
-
-        var rankByParticipant = participants.ToDictionary(p => p.Id, p => p.Rank ?? string.Empty);
-        var regionByParticipant = participants.ToDictionary(p => p.Id, p => p.RegionId);
-
-        // Distinct regions are counted across the WHOLE day (every participant running it), not per group —
-        // the «не менше восьми областей» condition is competition-wide. When it fails, NO group awards a rank.
-        var dayRegions = links
-            .Select(l => regionByParticipant.TryGetValue(l.ParticipantId, out var rid) ? rid : null)
-            .Where(rid => rid is not null)
-            .Distinct()
-            .Count();
-        if (dayRegions < minRegions)
-            return;
-
-        // The members of each group, paired with their computed result (mirrors AwardPointsAsync).
-        var membersByGroup = new Dictionary<Guid, List<(ParticipantDay Link, ParticipantDayResult Result)>>();
-        foreach (var link in links)
-        {
-            if (link.GroupId is not { } gid || !results.TryGetValue(link.Id, out var result))
-                continue;
-            if (!membersByGroup.TryGetValue(gid, out var list))
-                membersByGroup[gid] = list = [];
-            list.Add((link, result));
-        }
-
-        foreach (var (groupId, members) in membersByGroup)
-        {
-            if (!settingsByGroup.TryGetValue(groupId, out var gs) || gs.RankLevel == GroupRankLevel.None)
-                continue;
-            var level = gs.RankLevel;
-
-            // Per-group validity (Додаток 89, п.7 — «не менше трьох»): too few participants ⇒ no ranks
-            // for this group. (The distinct-regions condition is checked competition-wide above.)
-            if (members.Count < minParticipants)
-                continue;
-
-            // Course rank: take the first N participants BY PLACE (the top finishers, not the highest-ranked),
-            // N configurable (default 12), and sum their CURRENT-rank point values. Members with a place come
-            // first by ascending place; the unplaced (DNS/DSQ/поза конкурсом — no place) sort last so they only
-            // fill the count after every placed runner. This mirrors the protocol's «перші N за місцем» rule.
-            var rank = (int)Math.Floor(members
-                .OrderBy(m => m.Result.Place ?? int.MaxValue)
-                .Take(countForRank)
-                .Select(m => rankByParticipant.TryGetValue(m.Link.ParticipantId, out var rn)
-                    && pointsByRankName.TryGetValue(rn, out var pts) ? pts : 0.0)
-                .Sum());
-
-            var discipline = gs.DisciplineOverride ?? dayDefault;
-            var pointsBased = _strategies.For(discipline).UsesControlPointPoints;
-
-            // Group leader (place 1) context the percentage is measured against.
-            var placed = members.Where(m => m.Result.Place is not null).ToList();
-            var leader = placed.FirstOrDefault(m => m.Result.Place == 1).Result;
-            var leaderTime = leader?.ResultTime?.TotalSeconds;
-            var leaderScore = leader?.Score;
-
-            var masterCount = level == GroupRankLevel.Adult ? gs.MasterCount ?? 0 : 0;
-
-            // The derivation line for the protocol: the applicable bracket's attainable ranks (highest first),
-            // each with its % threshold and the cut-off it implies against the leader's result. Only built when
-            // a leader's reference result exists (no leader ⇒ no percentages to show).
-            if (rankCalcs is not null &&
-                RankQualificationEvaluator.ApplicableRow(rows, rank, level) is { } bracket)
-            {
-                var leaderRef = pointsBased ? leaderScore : leaderTime;
-                if (leaderRef is { } reference && reference > 0)
-                {
-                    var attainable = RankQualificationEvaluator.AttainableRanks(bracket, level, pointsBased);
-                    if (attainable.Count > 0)
-                    {
-                        var entries = attainable
-                            .Select(a => new RankCalculationEntry(
-                                a.Name, a.Percent,
-                                CutoffTimeSeconds: pointsBased ? null : reference * a.Percent / 100.0,
-                                CutoffScore: pointsBased ? (int)Math.Round(reference * a.Percent / 100.0) : null))
-                            .ToList();
-                        rankCalcs[groupId] = new GroupRankCalculation(
-                            CourseClass: attainable[0].Name, Rank: rank, Entries: entries);
-                    }
-                }
-            }
-
-            foreach (var (link, result) in members)
-            {
-                // Only a clean, in-competition finish can earn a rank.
-                if (result.Status != FinishStatus.Ok || result.OutOfCompetition)
-                    continue;
-
-                // Master sporta: the top-N placed runners (adult groups only).
-                if (masterCount > 0 && result.Place is { } place && place <= masterCount)
-                {
-                    results[link.Id] = results[link.Id] with { AwardedRank = RankQualificationEvaluator.Master };
-                    continue;
-                }
-
-                // The rest: the qualification table, keyed off the result as a % of the leader's.
-                double? percent = pointsBased
-                    ? (leaderScore is { } ls && ls > 0 && result.Score is { } sc ? (double)sc / ls * 100.0 : null)
-                    : (leaderTime is { } lt && lt > 0 && result.ResultTime is { } rt ? rt.TotalSeconds / lt * 100.0 : null);
-                if (percent is not { } pct)
-                    continue;
-
-                var awarded = RankQualificationEvaluator.Award(rows, rank, level, pointsBased, pct);
-                if (awarded is not null)
-                    results[link.Id] = results[link.Id] with { AwardedRank = awarded };
-            }
-        }
+            PointsRules = rules,
+            HasRankData = true,
+            RankQualification = await _appStore.GetRankQualificationAsync(cancellationToken),
+            RankConditions = await _appStore.GetRankConditionsAsync(cancellationToken) ?? (3, 8, 12),
+            Ranks = await _appStore.GetRanksAsync(cancellationToken)
+        };
     }
 
     // Groups whose names share a TextKey («M12» / «М12») are one group entered twice — typically typed in another
@@ -3284,219 +2934,18 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     private static Guid CanonicalGroupId(IReadOnlyDictionary<Guid, Group> canonical, Guid groupId) =>
         canonical.TryGetValue(groupId, out var g) ? g.Id : groupId;
 
-    // The trimmed team name for a member's participant; empty when the participant has no team (поза
-    // конкурсом for rogaine).
-    private static string TeamKeyFor(ParticipantDay link, IReadOnlyDictionary<Guid, string> teamByParticipant)
-        => teamByParticipant.TryGetValue(link.ParticipantId, out var t) ? t : string.Empty;
-
-    /// <summary>
-    /// One rogaine member's contribution to the team tally. A team is the members sharing the same
-    /// (<see cref="GroupId"/>, <see cref="TeamKey"/>) on the day. <see cref="Ok"/> false (a problem status,
-    /// or — via <see cref="Incomplete"/> — no read-out at all) makes the whole team unplaced (rules 1/3);
-    /// <see cref="Punched"/> is this member's set of visited allowed controls (intersected across the team
-    /// for the team score, rule 2); <see cref="Elapsed"/> feeds the team penalty (max time, rule 2) and the
-    /// tie-break (last finisher, rule 5).
-    /// </summary>
-    private sealed record TeamMember(
-        Guid LinkId, Guid? GroupId, string TeamKey, bool OutOfCompetition, bool Ok,
-        IReadOnlySet<string> Punched, TimeSpan? Elapsed, GroupDaySettings? Settings, DisciplineType Discipline,
-        int? Bonus)
-    {
-        /// <summary>A member with no read-out: present in the team but not finished, so the team is incomplete
-        /// (unless they are поза конкурсом, in which case they don't drop the team).</summary>
-        public static TeamMember Incomplete(Guid linkId, Guid? groupId, string teamKey, bool outOfCompetition, int? bonus) =>
-            new(linkId, groupId, teamKey, outOfCompetition, Ok: false,
-                Punched: new HashSet<string>(StringComparer.OrdinalIgnoreCase), Elapsed: null, Settings: null,
-                Discipline: DisciplineType.Rogaine, Bonus: bonus);
-    }
-
-    // Ranks rogaine members by team and writes the team's net «Бали» and place onto every member.
-    // A control scores for the team only when every IN-COMPETITION member punched it (intersection); the
-    // over-time penalty is computed once from the team's largest member time (all members, поза конкурсом
-    // included); the team time (tie-break) is the last finisher. A member with no team is поза конкурсом
-    // (kept teamless, no place). A «поза конкурсом» member stays in the team and earns the team's Бали/Місце
-    // but does NOT count toward the team score or drop the team if non-OK; only when EVERY member is поза
-    // конкурсом does the whole team go unplaced (rules 1–5).
-    private void RankRogaineTeams(
-        List<TeamMember> members,
-        IReadOnlyDictionary<string, int> pointsByCode,
-        Dictionary<Guid, ParticipantDayResult> results)
-    {
-        if (members.Count == 0)
-            return;
-
-        // Members with no team run поза конкурсом — keep their personal score, no place. (Done by simply
-        // not ranking them; their result already has Place == null.) Members WITH a team stay in the team
-        // even when поза конкурсом — they just don't count toward the score (filtered to `scoring` below).
-        var teams = members
-            .Where(m => m.TeamKey.Length > 0)
-            .GroupBy(m => (m.GroupId, m.TeamKey));
-
-        // Each ranked team carries its net score and tie-break time, grouped back by GroupId for placing.
-        var ranked = new List<(Guid? GroupId, int Net, TimeSpan Time, List<Guid> LinkIds)>();
-        foreach (var team in teams)
-        {
-            var roster = team.ToList();
-            var linkIds = roster.Select(m => m.LinkId).ToList();
-
-            // The members who actually count toward the team result. A «поза конкурсом» runner is on the
-            // team (still shown, still gets the team place) but is excluded from the score/OK checks below.
-            var scoring = roster.Where(m => !m.OutOfCompetition).ToList();
-
-            // When EVERY member is поза конкурсом the whole team runs поза конкурсом — no place.
-            if (scoring.Count == 0)
-                continue;
-
-            // Rule 1/3: a team with any unfinished or non-OK IN-COMPETITION member is not placed (still
-            // keeps personal Бали). A поза конкурсом member's status never drops the team.
-            if (scoring.Any(m => !m.Ok))
-                continue;
-
-            // Rule 2: a control scores only when every in-competition member punched it — the intersection
-            // of their sets. A поза конкурсом member's punches do not count toward the team total.
-            var common = new HashSet<string>(scoring[0].Punched, StringComparer.OrdinalIgnoreCase);
-            for (var i = 1; i < scoring.Count; i++)
-                common.IntersectWith(scoring[i].Punched);
-            var gross = common.Sum(code => pointsByCode.TryGetValue(code, out var p) ? p : 0);
-
-            // Rule 2: one over-time penalty per team, measured from the largest member time — including a
-            // поза конкурсом member (their time still counts toward the team penalty / tie-break). Reuse the
-            // strategy's penalty math by feeding it a synthetic read-out whose elapsed = the max time.
-            var maxElapsed = roster.Select(m => m.Elapsed).Max();
-            var settings = scoring.Select(m => m.Settings).FirstOrDefault(s => s is not null);
-            var afterPenalty = ApplyTeamPenalty(gross, maxElapsed, settings, scoring[0].Discipline);
-
-            // Points correction («бонус»): the smallest bonus ENTERED by an in-competition team member (an
-            // un-entered member does not drag it to 0). Null when nobody entered one ⇒ no correction.
-            var teamBonus = scoring.Select(m => m.Bonus).Where(b => b.HasValue).Select(b => b!.Value).DefaultIfEmpty().Min();
-            var teamBonusOrNull = scoring.Any(m => m.Bonus.HasValue) ? teamBonus : (int?)null;
-            var net = afterPenalty + teamBonus;
-
-            // Rule 5: tie-break by the last finisher's time (the largest member time).
-            var time = maxElapsed is { } e && e > TimeSpan.Zero ? e : TimeSpan.MaxValue;
-            ranked.Add((team.Key.GroupId, net, time, linkIds));
-
-            // The team's net Бали shows on every member row, with the per-control breakdown (the common
-            // controls), the over-time penalty and the points correction for the «Бали» tooltip.
-            var breakdown = ScoreLines(common, pointsByCode);
-            var penalty = gross - afterPenalty;
-            foreach (var id in linkIds)
-                results[id] = results[id] with
-                {
-                    Score = net,
-                    ScoreBreakdown = breakdown,
-                    ScoreGross = penalty > 0 ? gross : null,
-                    ScorePenalty = penalty > 0 ? penalty : null,
-                    Bonus = teamBonusOrNull
-                };
-        }
-
-        // Place teams within each group: net desc, then team time asc; ties share a place, next skips ties.
-        foreach (var group in ranked.GroupBy(r => r.GroupId))
-        {
-            var ordered = group.OrderByDescending(r => r.Net).ThenBy(r => r.Time).ToList();
-            var place = 0;
-            var seen = 0;
-            (int Net, TimeSpan Time)? prev = null;
-            foreach (var team in ordered)
-            {
-                seen++;
-                var key = (team.Net, team.Time);
-                if (prev is null || prev.Value.Net != key.Net || prev.Value.Time != key.Time)
-                    place = seen;
-                prev = key;
-                foreach (var id in team.LinkIds)
-                    results[id] = results[id] with { Place = place };
-            }
-        }
-    }
-
-    // Turns a set of scored control codes into ordered ScoreLines (ascending control number, then text)
-    // each carrying its point value — the per-control «Бали» breakdown shown in the column tooltip.
-    private static IReadOnlyList<ScoreLine> ScoreLines(
-        IReadOnlySet<string> codes, IReadOnlyDictionary<string, int> pointsByCode)
-        => codes
-            .OrderBy(c => long.TryParse(c, out var n) ? n : long.MaxValue)
-            .ThenBy(c => c, StringComparer.OrdinalIgnoreCase)
-            .Select(c => new ScoreLine(c, pointsByCode.TryGetValue(c, out var p) ? p : 0))
-            .ToList();
-
-    // The team's net «Бали» after the over-time penalty, computed by the discipline strategy so the
-    // rounding/floor rules stay in one place. Feeds it a synthetic context whose finish − start equals the
-    // team's largest member time and whose gross is the intersection total (modelled as one control worth
-    // `gross`), so BuildSplits applies the same penalty it does per chip.
-    private int ApplyTeamPenalty(int gross, TimeSpan? maxElapsed, GroupDaySettings? settings, DisciplineType discipline)
-    {
-        if (maxElapsed is not { } elapsed || settings?.TimeLimitSeconds is null)
-            return gross; // no resolvable time or no limit ⇒ no penalty
-
-        var start = DateTimeOffset.UnixEpoch;
-        var context = new SplitsContext
-        {
-            ExpectedControls = ["__team__"],
-            Punches = [new ChipPunch("__team__", start)],
-            PointsByCode = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { ["__team__"] = gross },
-            StartTime = start,
-            FinishTime = start + elapsed,
-            TimeLimit = TimeSpan.FromSeconds(settings.TimeLimitSeconds.Value),
-            PenaltyPerMinute = settings.PenaltyPerMinute
-        };
-        return _strategies.For(discipline).BuildSplits(context).TotalPoints;
-    }
-
     // Total «Бали» (points) for a read-out on a point-scoring day: the scored splits tally over the
-    // group's allowed controls. Mirrors the SplitsContext the finish-splits panel builds, minus the
-    // geometry (distance/pace) it doesn't need.
+    // group's allowed controls (see DayResultsCalculator.ScoreDetail).
     private int ScoreFor(
         FinishReadout readout,
         GroupDaySettings? gs,
         HashSet<string> startFinishCodes,
         HashSet<string> disabledCodes,
         IReadOnlyDictionary<string, int> pointsByCode,
-        DisciplineType discipline,
+        DisciplineId discipline,
         DateTimeOffset? resolvedStart)
-        => ScoreDetailFor(readout, gs, startFinishCodes, disabledCodes, pointsByCode, discipline, resolvedStart).Net;
-
-    // The personal score plus the set of allowed controls the chip actually punched (first punch each),
-    // used by the rogaine team tally (a control scores for the team only when every member's set has it).
-    private (int Net, HashSet<string> Punched) ScoreDetailFor(
-        FinishReadout readout,
-        GroupDaySettings? gs,
-        HashSet<string> startFinishCodes,
-        HashSet<string> disabledCodes,
-        IReadOnlyDictionary<string, int> pointsByCode,
-        DisciplineType discipline,
-        DateTimeOffset? resolvedStart)
-    {
-        var expected = CourseControls(gs?.CourseOrder, startFinishCodes, disabledCodes);
-        var punches = DecodePunchTimes(readout.PunchTimes)
-            .Where(p => !startFinishCodes.Contains(p.ControlCode.Trim()))
-            .ToList();
-        var context = new SplitsContext
-        {
-            ExpectedControls = expected,
-            Punches = punches,
-            PointsByCode = pointsByCode,
-            // The resolved start (chip read-out start, else the assigned start paired with the finish date)
-            // — the same start the finish evaluation uses — so the over-time penalty measures real elapsed.
-            StartTime = resolvedStart,
-            FinishTime = readout.FinishTime,
-            TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
-            PenaltyPerMinute = gs?.PenaltyPerMinute
-        };
-        var net = _strategies.For(discipline).BuildSplits(context).TotalPoints;
-
-        // The allowed controls this chip visited (intersection of punched and allowed), for the team tally.
-        var allowed = new HashSet<string>(expected.Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);
-        var punched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var p in punches)
-        {
-            var code = p.ControlCode.Trim();
-            if (code.Length > 0 && allowed.Contains(code))
-                punched.Add(code);
-        }
-        return (net, punched);
-    }
+        => DayResultsCalculator.ScoreDetail(
+            _strategies.For(discipline), readout, gs, startFinishCodes, disabledCodes, pointsByCode, resolvedStart).Net;
 
     public async Task<DrawPrepData> GetDrawPrepDataAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
@@ -3577,7 +3026,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 continue;
             }
 
-            if (discipline == DisciplineType.Scatter
+            if (_strategies.For(discipline).UsesCourseVariants
                 && variantsByGroup.TryGetValue(s.GroupId, out var variants) && variants.Count > 0)
             {
                 // Scatter: several valid orders. The opening controls are the first control of each variant
@@ -3800,7 +3249,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // Computed per-group placement (keyed by link id) so each known row can show the runner's place in
         // their group; the same ranking the participant tables use. A place is only assigned to an OK,
         // in-competition result — null otherwise.
-        var placeByLink = await ComputeDayResultsAsync(folder, _session.CurrentDay, cancellationToken);
+        var placeByLink = await ComputeDayResultsAsync(folder, _session.CurrentDay, cancellationToken, snapshot: snapshot);
 
         // Each group's leader time (the place-1 OK result), so a placed runner's «Відставання» is their
         // result time minus it. Only time-based results carry a ResultTime; a scoring day leaves it null,
@@ -4009,7 +3458,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // the whole team punched so the passage/course can mark the ones that count for the team. Null for
         // a non-rogaine row, an unknown chip or a teamless runner (no annotation shown).
         IReadOnlySet<string>? teamCommon = null;
-        if (link is not null && _strategies.For(discipline).Type == DisciplineType.Rogaine)
+        if (link is not null && _strategies.For(discipline).Competitors == CompetitorModel.Team)
             teamCommon = await TeamCommonControlsAsync(
                 folder, dayId, link, links, settingsByGroup, startFinishCodes, disabledCodes, cancellationToken);
 
@@ -4030,7 +3479,13 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var punches = DecodePunchTimes(readout.PunchTimes)
             .Where(p => !startFinishCodes.Contains(p.ControlCode.Trim()))
             .ToList();
-        var start = readout.StartTime ?? CombineWithFinishDate(link?.StartTime, readout.FinishTime);
+        var start = (link is null ? _strategies.For(DisciplineId.SetCourse) : _strategies.For(discipline))
+            .ResolveStart(new StartContext
+            {
+                ChipStart = readout.StartTime,
+                AssignedStart = link?.StartTime,
+                FinishTime = readout.FinishTime
+            });
 
         var context = new SplitsContext
         {
@@ -4060,7 +3515,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         // always use the ordered (set-course) layout: with no prescribed controls it degrades to a flat
         // list of every punch in chip order — the raw passage, which is what's wanted for an unknown chip
         // (the scored layout would instead drop every punch as "not an allowed control" and show nothing).
-        var strategy = link is null ? _strategies.For(DisciplineType.SetCourse) : _strategies.For(discipline);
+        var strategy = link is null ? _strategies.For(DisciplineId.SetCourse) : _strategies.For(discipline);
         return strategy.BuildSplits(context);
     }
 
@@ -4282,130 +3737,40 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             ? r.TotalSeconds / (double)totalKm
             : null;
 
-    // Builds the FinishContext for one read-out + its holder and asks the group's discipline strategy
-    // for the status. Start time is the chip's read-out start when present, else the assigned start.
-    // Also returns the resolved start so the caller can derive the finish − start elapsed duration.
+    // Judges one read-out against its holder's group (see FinishEvaluator) and returns the status parts plus
+    // the resolved start so the caller can derive the finish − start elapsed duration.
     private (FinishStatus Status, string Detail, FinishDetailKind DetailKind, DateTimeOffset? ResolvedStartTime) EvaluateFinish(
         FinishReadout readout,
         ParticipantDay link,
         IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup,
         HashSet<string> startFinishCodes,
         HashSet<string> disabledCodes,
-        DisciplineType dayDefault,
+        DisciplineId dayDefault,
         IReadOnlyDictionary<Guid, IReadOnlyList<ScatterVariantData>> variantsByGroup)
     {
-        GroupDaySettings? gs = link.GroupId is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
-        var discipline = gs?.DisciplineOverride ?? dayDefault;
-
-        // Expected = course-order codes minus the day's start/finish controls AND its disabled («проблемні»)
-        // controls, so missing a disabled control is never an MP. Punched keeps disabled codes — a chip may
-        // still have punched one; for a set course it just reads as an extra, for a scored one it's ignored
-        // because it's no longer in the allowed set. We only drop the start/finish boxes from the punches.
-        var expected = CourseControls(gs?.CourseOrder, startFinishCodes, disabledCodes);
-        var punched = SplitCodes(readout.Punches).Where(c => !startFinishCodes.Contains(c)).ToList();
-
-        // Start = chip read-out start when present, else the assigned start (a time-of-day) paired with
-        // the finish's date so finish − start is a meaningful duration.
-        var start = readout.StartTime ?? CombineWithFinishDate(link.StartTime, readout.FinishTime);
-
-        var context = new FinishContext
-        {
-            ExpectedControls = expected,
-            CourseOrderText = gs?.CourseOrder ?? string.Empty,
-            PunchedControls = punched,
-            StartTime = start,
-            FinishTime = readout.FinishTime,
-            TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
-            RequiredControlCount = gs?.RequiredControlCount,
-            ScatterVariants = link.GroupId is { } vgid && variantsByGroup.TryGetValue(vgid, out var vs)
-                ? vs
-                : NoScatterVariants
-        };
-
-        var result = _strategies.For(discipline).EvaluateFinish(context);
+        var (result, start) = FinishEvaluator.Evaluate(
+            _strategies, readout, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup);
         return (result.Status, result.Detail, result.DetailKind, start);
     }
 
-    // Pairs an assigned start time-of-day with the read-out finish's date, so the time-limit check
-    // compares two same-day timestamps. Null when either part is missing.
-    private static DateTimeOffset? CombineWithFinishDate(TimeSpan? startOfDay, DateTimeOffset? finish) =>
-        startOfDay is { } t && finish is { } f ? new DateTimeOffset(f.Date + t, f.Offset) : null;
-
-    private static IEnumerable<string> SplitCodes(string? text) =>
-        string.IsNullOrWhiteSpace(text)
-            ? []
-            : text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-    // The control codes referenced by a course order, in reading order (duplicates kept). For a plain order
-    // ("S1 31 32 F") this is just the tokens; for a «mixed» order <b>pattern</b> ("&lt;41 42&gt; [2 45 46]")
-    // it flattens the &lt;…&gt;/[N …] blocks to their leaf controls (the bracket/amount tokens are not codes).
-    // Every course-order consumer routes through this so a pattern is never mistaken for literal tokens.
-    private static List<string> CourseOrderCodes(string? courseOrder) =>
-        string.IsNullOrWhiteSpace(courseOrder)
-            ? []
-            : courseOrder.IndexOfAny(['<', '[']) < 0
-                ? SplitCodes(courseOrder).ToList()
-                : Disciplines.CoursePattern.CoursePattern.Parse(courseOrder).ControlCodes.ToList();
-
-    // The day's disabled («проблемні») control codes (trimmed), case-insensitive. These are dropped from the
-    // prescribed/allowed course wherever it is required, so a runner missing one is not penalised and a scored
-    // control no longer counts.
-    private static HashSet<string> DisabledCodesOf(IReadOnlyList<ControlPoint> controlPoints) =>
-        new(controlPoints.Where(c => c.IsDisabled).Select(c => c.Code.Trim()),
-            StringComparer.OrdinalIgnoreCase);
-
-    // The prescribed course codes minus the day's start/finish markers AND its disabled controls, in order —
-    // the canonical "controls that must be visited / are allowed" list every scoring/status/splits path uses.
-    private static List<string> CourseControls(
-        string? courseOrder, IReadOnlySet<string> startFinishCodes, IReadOnlySet<string> disabledCodes) =>
-        CourseOrderCodes(courseOrder)
-            .Where(c => !startFinishCodes.Contains(c) && !disabledCodes.Contains(c))
-            .ToList();
-
-    // The disabled («проблемні») controls that actually appear in a given group's course order (start/finish
-    // markers aside), so the splits view lists only the ones relevant to that course as «вимкнено».
-    private static HashSet<string> DisabledInCourse(
-        string? courseOrder, IReadOnlySet<string> startFinishCodes, IReadOnlySet<string> disabledCodes) =>
-        new(CourseOrderCodes(courseOrder).Where(c => !startFinishCodes.Contains(c) && disabledCodes.Contains(c)),
-            StringComparer.OrdinalIgnoreCase);
-
-    // Loads the day's scatter («розсіювання») variants, keyed by group id, ready for the discipline strategy:
-    // only groups whose effective discipline is Scatter are included, and each variant's order is reduced to
-    // its required controls the same way ExpectedControls is (start/finish + disabled dropped), preserving the
-    // A-before-B order. Empty for a day with no scatter group, so the non-scatter paths pay a single query.
+    // Loads the day's scatter («розсіювання») variants, keyed by group id, ready for the discipline strategy
+    // (see FinishEvaluator.BuildScatterVariants). Empty for a day with no variant group, so the other paths
+    // pay no query.
     private async Task<Dictionary<Guid, IReadOnlyList<ScatterVariantData>>> LoadScatterVariantsAsync(
         string folder, Guid dayId,
         IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup,
-        DisciplineType dayDefault,
+        DisciplineId dayDefault,
         IReadOnlySet<string> startFinishCodes,
         IReadOnlySet<string> disabledCodes,
         CancellationToken cancellationToken)
     {
-        var result = new Dictionary<Guid, IReadOnlyList<ScatterVariantData>>();
-
-        // Skip the query entirely when no group on the day runs scatter.
-        var anyScatter = settingsByGroup.Values.Any(s => (s.DisciplineOverride ?? dayDefault) == DisciplineType.Scatter);
-        if (!anyScatter)
-            return result;
+        if (!FinishEvaluator.AnyUsesCourseVariants(_strategies, settingsByGroup, dayDefault))
+            return [];
 
         var rows = await _eventStore.GetScatterVariantsAsync(folder, dayId, cancellationToken);
-        foreach (var byGroup in rows.GroupBy(v => v.GroupId))
-        {
-            if (!settingsByGroup.TryGetValue(byGroup.Key, out var gs)
-                || (gs.DisciplineOverride ?? dayDefault) != DisciplineType.Scatter)
-                continue;
-
-            result[byGroup.Key] = byGroup
-                .OrderBy(v => v.Order)
-                .Select(v => new ScatterVariantData(
-                    v.Code, CourseControls(v.CourseOrder, startFinishCodes, disabledCodes)))
-                .ToList();
-        }
-
-        return result;
+        return FinishEvaluator.BuildScatterVariants(
+            _strategies, rows, settingsByGroup, dayDefault, startFinishCodes, disabledCodes);
     }
-
-    private static readonly IReadOnlyList<ScatterVariantData> NoScatterVariants = [];
 
     public async Task<FinishReadoutImportResult> ImportFinishReadoutsAsync(ChipReadData data, CancellationToken cancellationToken = default)
     {
@@ -4690,39 +4055,6 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             record.StartTime?.UtcTicks.ToString(CultureInfo.InvariantCulture) ?? "-",
             record.FinishTime?.UtcTicks.ToString(CultureInfo.InvariantCulture) ?? "-",
             EncodePunchTimes(record.Punches));
-    }
-
-    // Serializes punches as comma-separated "code@ticks" (UTC ticks, "-" for an unknown time), the
-    // form stored in FinishReadout.PunchTimes and reused inside the content key.
-    private static string EncodePunchTimes(IEnumerable<ChipPunch> punches) =>
-        string.Join(",", punches.Select(p =>
-            $"{p.ControlCode.Trim()}@{p.Time?.UtcTicks.ToString(CultureInfo.InvariantCulture) ?? "-"}"));
-
-    // Reverses EncodePunchTimes back into a punch list (codes + times) for the splits view. Tokens that
-    // can't be parsed are skipped; a "-" time becomes null.
-    private static IReadOnlyList<ChipPunch> DecodePunchTimes(string? encoded)
-    {
-        if (string.IsNullOrWhiteSpace(encoded))
-            return [];
-
-        var list = new List<ChipPunch>();
-        foreach (var token in encoded.Split(',', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var at = token.LastIndexOf('@');
-            if (at <= 0)
-                continue;
-            var code = token[..at].Trim();
-            var timePart = token[(at + 1)..];
-            DateTimeOffset? time = timePart != "-" && long.TryParse(timePart, NumberStyles.Integer,
-                CultureInfo.InvariantCulture, out var ticks)
-                // Ticks are UTC, so the reconstructed stamp must be converted back to local time rather
-                // than left at offset 0 — otherwise it renders shifted by the local UTC offset wherever it
-                // is shown as a bare time of day, and the edit modal would then save that shifted value.
-                ? new DateTimeOffset(ticks, TimeSpan.Zero).ToLocalTime()
-                : null;
-            list.Add(new ChipPunch(code, time));
-        }
-        return list;
     }
 
     public async Task<string?> FindChipHolderAsync(Guid dayId, string chip, Guid excludeParticipantId, CancellationToken cancellationToken = default)

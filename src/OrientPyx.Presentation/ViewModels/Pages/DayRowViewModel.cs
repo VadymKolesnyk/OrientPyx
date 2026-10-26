@@ -1,7 +1,7 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using OrientPyx.BusinessLogic.Entities;
-using OrientPyx.BusinessLogic.Enums;
+using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.Localization;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
@@ -61,7 +61,7 @@ public sealed partial class DayRowViewModel : ObservableObject
     public bool CanSave => IsDirty && !IsLocked;
 
     public DayRowViewModel(EventDay day, bool isActive, ILocalizationService localization,
-        string venuePlaceholder = "")
+        IDisciplineStrategyProvider strategies, string venuePlaceholder = "")
     {
         _id = day.Id;
         _createdAt = day.CreatedAt;
@@ -71,9 +71,7 @@ public sealed partial class DayRowViewModel : ObservableObject
         VenuePlaceholder = venuePlaceholder;
         Localization = localization;
 
-        DisciplineOptions = Enum.GetValues<DisciplineType>()
-            .Select(t => new DisciplineTypeOption(t, localization))
-            .ToList();
+        DisciplineOptions = DisciplineTypeOption.ListFor(strategies, localization, day.DefaultDiscipline);
         _selectedDiscipline = DisciplineOptions.First(o => o.Value == day.DefaultDiscipline);
 
         _isActive = isActive;

@@ -73,6 +73,7 @@
   "Menu.File.ChangeEvent": "Змінити змагання",
   "Menu.File.ExportEvent": "Експорт змагань…",
   "Menu.File.ImportEvent": "Імпорт змагань…",
+  "Menu.File.DebugResultsSnapshot": "(Debug) Знімок результатів…",
   "Menu.File.Exit": "Вихід",
   "Menu.Competition": "Змагання",
   "Menu.Competition.Info": "Інформація",
@@ -1254,6 +1255,7 @@
   "Discipline.Type.Rogaine": "Рогейн",
   "Discipline.Type.Mixed": "Змішаний",
   "Discipline.Type.Scatter": "Розсіювання",
+  "Discipline.Type.Unknown": "Невідома дисципліна ({0}) — потрібен плагін",
 
   "CoursePattern.Help.Button": "Як задавати порядок?",
   "CoursePattern.Help.Title": "Порядок проходження (змішаний вид)",

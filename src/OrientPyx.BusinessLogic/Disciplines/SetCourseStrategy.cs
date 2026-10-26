@@ -15,7 +15,7 @@ public sealed class SetCourseStrategy : DisciplineStrategyBase
 
     public SetCourseStrategy(ICourseDistanceCalculator distance) => _distance = distance;
 
-    public override DisciplineType Type => DisciplineType.SetCourse;
+    public override DisciplineId Id => DisciplineId.SetCourse;
 
     /// <summary>A prescribed order — the draw warns on a shared opening control.</summary>
     public override bool ChecksStartControlClash => true;
@@ -60,7 +60,10 @@ public sealed class SetCourseStrategy : DisciplineStrategyBase
                 p++;
             }
             if (!found)
-                return new FinishStatusResult(FinishStatus.Mp, expected.Trim());
+                return new FinishStatusResult(FinishStatus.Mp, expected.Trim())
+                {
+                    Missed = MissedControls.ForOrder(context.ExpectedControls, punched)
+                };
         }
 
         if (context.TimeLimit is { } limit && context.StartTime is { } start

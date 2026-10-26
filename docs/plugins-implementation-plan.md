@@ -1,7 +1,7 @@
 # OrientPyx — implementation plan: плагіни, додаткові поля, естафета
 
 > Спека: [`plugins-plan.md`](plugins-plan.md) (що і навіщо). Цей документ — **як і в якому порядку**: кроки розміром
-> з один коміт/PR, конкретні файли, перевірка. Статус: **не розпочато.** Оновлено: 2026-10-26 (звірено з кодом).
+> з один коміт/PR, конкретні файли, перевірка. Статус: **фаза 0–1 виконана** (2026-10-26). Оновлено: 2026-10-26 (звірено з кодом).
 
 ## 0. Правила виконання
 
@@ -520,11 +520,11 @@ day-grid, рядки етапів. Невідомий ключ — ігнору�
 
 ## Чекліст
 
-- [ ] 0.1 Debug-знімок результатів + знімки 3 змагань
-- [ ] 1.1 `DisciplineId`, `UnknownDisciplineStrategy`
-- [ ] 1.2 `Competitors`, `UsesCourseVariants`, `UsesCoursePattern` (лише Mixed), `CourseOrder.CountControls`; прибрати порівняння з дисциплінами
-- [ ] 1.3 Знімок + `DayResultsAppData`; `DayResultsCalculator`; `ResolveStart`, `AdjustTime`, `Rank`, `AwardsRanks` у стратегіях
-- [ ] 1.4 `Extra`, `AdjustedTime`, `FinishStatusResult.Missed` (LCS / шаблон, Р-52a); CLAUDE.md (Disciplines)
+- [x] 0.1 Debug-знімок результатів (інструмент готовий; знімки 3 реальних змагань знімає користувач)
+- [x] 1.1 `DisciplineId`, `UnknownDisciplineStrategy`
+- [x] 1.2 `Competitors`, `UsesCourseVariants`, `UsesCoursePattern` (лише Mixed), `CourseOrder.CountControls`; прибрати порівняння з дисциплінами
+- [x] 1.3 Знімок + `DayResultsAppData`; `DayResultsCalculator`; `ResolveStart`, `AdjustTime`, `Rank`, `AwardsRanks` у стратегіях
+- [x] 1.4 `Extra`, `AdjustedTime`, `FinishStatusResult.Missed` (LCS / шаблон, Р-52a); CLAUDE.md (Disciplines)
 - [ ] 2.1 Проєкт `OrientPyx.Plugins.Sdk` (явний `AssemblyVersion`), перенесення типів; CLAUDE.md (структура)
 - [ ] 2.2 Toolkit: `Punches`, `CourseOrder`, `CourseMatcher`, `VariantMatcher`, `Ranking`, `Age`, `TimeFormat`
 - [ ] 2.3 Контракт плагіна

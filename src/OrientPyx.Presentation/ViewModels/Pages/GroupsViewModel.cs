@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -69,7 +69,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         {
             OnPropertyChanged(nameof(SelectedCourseHeader));
             RefreshPatternPreview();
-            if (SelectedGroup is { } sg && sg.EffectiveDiscipline == DisciplineType.Scatter)
+            if (SelectedGroup is { } sg && sg.IsScatter)
                 ScatterHeader = string.Format(Localization.Get("Groups.Scatter.Header"), sg.ScatterVariantCount);
         };
         // Singleton VM: when the competition/day changes, drop the previous event's rows so the
@@ -226,7 +226,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         ScatterVariants.Clear();
 
         var row = SelectedGroup;
-        if (row is null || row.EffectiveDiscipline != DisciplineType.Scatter)
+        if (row is null || !row.IsScatter)
         {
             _scatterGroupId = null;
             IsScatterEditorVisible = false;
@@ -311,8 +311,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
                 .Where(r => !string.IsNullOrWhiteSpace(r.Code) || !string.IsNullOrWhiteSpace(r.CourseOrder))
                 .ToList();
             var count = kept.Count;
-            var counter = _strategies.For(DisciplineType.Scatter);
-            var maxControls = kept.Count > 0 ? kept.Max(r => counter.ControlCount(r.CourseOrder)) : 0;
+            var maxControls = kept.Count > 0 ? kept.Max(r => CourseOrder.CountControls(r.CourseOrder)) : 0;
             var target = Groups.FirstOrDefault(g => g.GroupId == groupId);
             if (target is not null)
             {
@@ -335,7 +334,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     private void RefreshPatternPreview()
     {
         var row = SelectedGroup;
-        if (row is null || row.EffectiveDiscipline != DisciplineType.Mixed)
+        if (row is null || !row.UsesCoursePattern)
         {
             IsPatternPreviewVisible = false;
             IsPatternValid = true;

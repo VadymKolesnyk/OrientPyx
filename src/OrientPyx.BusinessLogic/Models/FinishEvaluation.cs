@@ -36,7 +36,7 @@ public sealed class FinishContext
     /// <summary>
     /// The minimum number of allowed controls a runner must take to be classified — the group's
     /// «мін. к-сть КП» for a free-choice-by-count day. Null when the group set none, which the
-    /// <see cref="Enums.DisciplineType.ScoreByCount"/> strategy reads as "every allowed control is
+    /// «за вибором по кількості КП» strategy reads as "every allowed control is
     /// required". Ignored by the other disciplines.
     /// </summary>
     public int? RequiredControlCount { get; init; }
@@ -61,7 +61,20 @@ public sealed class FinishContext
 public readonly record struct FinishStatusResult(
     FinishStatus Status, string Detail, FinishDetailKind DetailKind = FinishDetailKind.MissingControl)
 {
+    private readonly IReadOnlyList<string>? _missed;
+
     public static FinishStatusResult Of(FinishStatus status) => new(status, string.Empty);
+
+    /// <summary>
+    /// Every required control the run is missing, by the maximum in-order match (Р-52a) — not just the first
+    /// one named in <see cref="Detail"/>. Filled for an <see cref="FinishStatus.Mp"/> on an ordered course (set
+    /// course, mixed, scatter); empty otherwise.
+    /// </summary>
+    public IReadOnlyList<string> Missed
+    {
+        get => _missed ?? [];
+        init => _missed = value;
+    }
 }
 
 /// <summary>How a <see cref="FinishStatusResult.Detail"/> should be worded by the UI.</summary>

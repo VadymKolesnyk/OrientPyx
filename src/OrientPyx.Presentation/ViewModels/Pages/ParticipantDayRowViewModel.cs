@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using OrientPyx.BusinessLogic.Disciplines;
@@ -26,7 +26,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private readonly Guid _dayId;
     private readonly Guid _participantId;
     private readonly int _order;
-    private readonly DisciplineType _dayDefaultDiscipline;
+    private readonly DisciplineId _dayDefaultDiscipline;
     private readonly IDisciplineStrategyProvider _strategies;
     private readonly Action<ParticipantDayRowViewModel> _requestSave;
     private readonly Action<ParticipantDayRowViewModel> _requestLeaveDay;

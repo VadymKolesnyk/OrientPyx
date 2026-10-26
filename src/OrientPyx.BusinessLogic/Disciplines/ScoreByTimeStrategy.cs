@@ -8,7 +8,7 @@ namespace OrientPyx.BusinessLogic.Disciplines;
 /// </summary>
 public sealed class ScoreByTimeStrategy : DisciplineStrategyBase
 {
-    public override DisciplineType Type => DisciplineType.ScoreByTime;
+    public override DisciplineId Id => DisciplineId.ScoreByTime;
 
     public override bool UsesControlPointPoints => true;
 

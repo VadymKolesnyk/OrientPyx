@@ -1,3 +1,4 @@
+using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Enums;
 
 namespace OrientPyx.BusinessLogic.Models;
@@ -53,7 +54,7 @@ public sealed record ParticipantDayRow(
     // The judge's points correction («бонус») for this day; null = none. Editable on point-scoring days,
     // already folded into Result.Score by ComputeDayResultsAsync.
     int? Bonus,
-    DisciplineType DayDefaultDiscipline,
+    DisciplineId DayDefaultDiscipline,
     // Computed run result for this day (read-only except Status, which a judge may override). See
     // ParticipantDayResult; Empty when the chip was never read.
     ParticipantDayResult Result);

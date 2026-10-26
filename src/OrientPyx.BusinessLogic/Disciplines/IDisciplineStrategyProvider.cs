@@ -1,5 +1,3 @@
-using OrientPyx.BusinessLogic.Enums;
-
 namespace OrientPyx.BusinessLogic.Disciplines;
 
 /// <summary>
@@ -9,8 +7,9 @@ namespace OrientPyx.BusinessLogic.Disciplines;
 /// </summary>
 public interface IDisciplineStrategyProvider
 {
-    /// <summary>Returns the strategy for the given type. Throws if no strategy is registered.</summary>
-    IDisciplineStrategy For(DisciplineType type);
+    /// <summary>Returns the strategy for the given id; an unknown id yields an
+    /// <see cref="UnknownDisciplineStrategy"/> placeholder (never throws, Р-2).</summary>
+    IDisciplineStrategy For(DisciplineId id);
 
     /// <summary>All registered strategies (e.g. to build the discipline selection list).</summary>
     IReadOnlyList<IDisciplineStrategy> All { get; }

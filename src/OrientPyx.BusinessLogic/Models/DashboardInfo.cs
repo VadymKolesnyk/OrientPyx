@@ -1,3 +1,4 @@
+using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Enums;
 
 namespace OrientPyx.BusinessLogic.Models;
@@ -33,7 +34,7 @@ public sealed class DashboardInfo
     public string CurrentDayDate { get; init; } = string.Empty;
 
     /// <summary>The current day's default discipline (вид змагань); the VM localizes its name.</summary>
-    public DisciplineType CurrentDayDiscipline { get; init; }
+    public DisciplineId CurrentDayDiscipline { get; init; }
 
     // --- Participants & groups
     /// <summary>Total participants in the competition (across all days).</summary>

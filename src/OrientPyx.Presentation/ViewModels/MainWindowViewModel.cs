@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -97,8 +97,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         IBusyService busy,
         IDialogService dialogs,
         IBackgroundActivityService activities,
-        Services.IEventArchiveFlow archiveFlow)
+        Services.IEventArchiveFlow archiveFlow,
+        Services.ResultsDebugSnapshot resultsSnapshot)
     {
+        _resultsSnapshot = resultsSnapshot;
         _session = session;
         _navigation = navigation;
         _selection = selection;
@@ -524,6 +526,25 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]
     private Task ChangeEventAsync() => ChangeEventInternalAsync();
 
+    private readonly Services.ResultsDebugSnapshot _resultsSnapshot;
+
+    /// <summary>True in a Debug build — shows developer-only menu items (results snapshot).</summary>
+#if DEBUG
+    public bool IsDebugBuild => true;
+#else
+    public bool IsDebugBuild => false;
+#endif
+
+    // Debug: writes the computed results of every day to events/<id>/_debug/results-*.json for diffing.
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task WriteResultsSnapshotAsync()
+    {
+        var path = await _resultsSnapshot.WriteAsync();
+        // Developer tool: reveal the written file in Explorer rather than a localized dialog.
+        if (path is not null && OperatingSystem.IsWindows())
+            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\"");
+    }
+
     // Exports the currently-open competition to a single archive file (File → Export competition).
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]
     private async Task ExportCompetitionAsync()
@@ -592,6 +613,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         ChangeEventCommand.NotifyCanExecuteChanged();
         ExportCompetitionCommand.NotifyCanExecuteChanged();
+        WriteResultsSnapshotCommand.NotifyCanExecuteChanged();
         OpenCompetitionInfoCommand.NotifyCanExecuteChanged();
         OpenCompetitionDaysCommand.NotifyCanExecuteChanged();
         OpenControlPointsCommand.NotifyCanExecuteChanged();

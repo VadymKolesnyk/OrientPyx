@@ -36,6 +36,12 @@ public sealed record EventDaySnapshot
 
     public IReadOnlyList<EventDay> Days { get; init; } = [];
 
+    /// <summary>The day's chip read-outs, in log order (<c>Order</c>).</summary>
+    public IReadOnlyList<FinishReadout> FinishReadouts { get; init; } = [];
+
+    /// <summary>The day's scatter variants (every group), in <c>Order</c>.</summary>
+    public IReadOnlyList<ScatterVariant> ScatterVariants { get; init; } = [];
+
     /// <summary>Competition metadata (name, organisation, officials); null when none is stored yet.</summary>
     public CompetitionInfo? Info { get; init; }
 }

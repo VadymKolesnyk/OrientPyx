@@ -200,6 +200,9 @@ internal sealed class SequenceItem : IPatternItem
 
     public SequenceItem(IReadOnlyList<IPatternItem> items) => _items = items;
 
+    /// <summary>The ordered children.</summary>
+    public IReadOnlyList<IPatternItem> Items => _items;
+
     public int RequiredCount => _items.Sum(x => x.RequiredCount);
     public string ErrorIfEmpty => _items.Count > 0 ? _items[0].ErrorIfEmpty : string.Empty;
 
@@ -294,6 +297,9 @@ internal sealed class AnyOfItem : IPatternItem
     }
 
     public int Amount { get; }
+
+    /// <summary>The options, in writing order.</summary>
+    public IReadOnlyList<IPatternItem> Items => _items;
 
     public int RequiredCount => Amount;
     public string ErrorIfEmpty => _items.Count > 0 ? _items[0].ErrorIfEmpty : string.Empty;

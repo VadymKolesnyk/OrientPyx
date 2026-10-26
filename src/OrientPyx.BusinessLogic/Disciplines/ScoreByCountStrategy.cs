@@ -11,7 +11,7 @@ namespace OrientPyx.BusinessLogic.Disciplines;
 /// </summary>
 public sealed class ScoreByCountStrategy : DisciplineStrategyBase
 {
-    public override DisciplineType Type => DisciplineType.ScoreByCount;
+    public override DisciplineId Id => DisciplineId.ScoreByCount;
 
     public override bool UsesColumn(GroupColumn column) => column switch
     {

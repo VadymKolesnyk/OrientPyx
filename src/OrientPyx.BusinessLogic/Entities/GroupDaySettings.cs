@@ -1,3 +1,4 @@
+using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Enums;
 
 namespace OrientPyx.BusinessLogic.Entities;
@@ -29,7 +30,7 @@ public class GroupDaySettings
     /// Overrides the day's <see cref="EventDay.DefaultDiscipline"/> for this group when set;
     /// null means the group inherits the day default. Persisted as a string in the database.
     /// </summary>
-    public DisciplineType? DisciplineOverride { get; set; }
+    public DisciplineId? DisciplineOverride { get; set; }
 
     /// <summary>Time limit (контрольний час) in seconds; optional. Applies to every discipline.</summary>
     public int? TimeLimitSeconds { get; set; }

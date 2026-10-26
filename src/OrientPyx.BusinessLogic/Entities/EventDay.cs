@@ -1,3 +1,4 @@
+using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Enums;
 
 namespace OrientPyx.BusinessLogic.Entities;
@@ -17,7 +18,7 @@ public class EventDay
     public string Venue { get; set; } = string.Empty;
 
     /// <summary>Default competition type for all groups on this day (groups may override later).</summary>
-    public DisciplineType DefaultDiscipline { get; set; } = DisciplineType.SetCourse;
+    public DisciplineId DefaultDiscipline { get; set; } = DisciplineId.SetCourse;
 
     /// <summary>
     /// True when the day is closed for editing. A locked day still reads, computes, prints and

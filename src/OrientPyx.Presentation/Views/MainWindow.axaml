@@ -267,6 +267,9 @@
                           Command="{Binding ExportCompetitionCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.File.ImportEvent]}"
                           Command="{Binding ImportCompetitionCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.File.DebugResultsSnapshot]}"
+                          IsVisible="{Binding IsDebugBuild}"
+                          Command="{Binding WriteResultsSnapshotCommand}" />
                 <Separator />
                 <MenuItem Header="{Binding Localization[Menu.File.Exit]}"
                           Command="{Binding ExitCommand}" />

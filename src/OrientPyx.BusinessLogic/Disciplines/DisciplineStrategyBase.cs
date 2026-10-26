@@ -11,9 +11,19 @@ namespace OrientPyx.BusinessLogic.Disciplines;
 /// </summary>
 public abstract class DisciplineStrategyBase : IDisciplineStrategy
 {
-    public abstract DisciplineType Type { get; }
+    public abstract DisciplineId Id { get; }
 
-    public string NameKey => "Discipline.Type." + Type;
+    public virtual string NameKey => "Discipline.Type." + Id.Value;
+
+    public virtual bool IsUnknown => false;
+
+    public virtual CompetitorModel Competitors => CompetitorModel.Individual;
+
+    public virtual bool UsesCourseVariants => false;
+
+    public virtual bool UsesCoursePattern => false;
+
+    public virtual bool AwardsRanks => true;
 
     public virtual bool UsesControlPointPoints => false;
 
@@ -36,41 +46,45 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
     /// <summary>By default no participant column is discipline-specific; concrete strategies opt in.</summary>
     public virtual bool UsesParticipantColumn(ParticipantColumn column) => false;
 
+    /// <summary>Flat count of the course order's control points (see <see cref="CourseOrder.CountControls"/>).</summary>
+    public virtual int ControlCount(string courseOrder) => CourseOrder.CountControls(courseOrder);
+
+    /// <summary>Chip start box, else the assigned start time paired with the finish's date (Р-5).</summary>
+    public virtual DateTimeOffset? ResolveStart(StartContext context) =>
+        context.ChipStart ?? CombineWithFinishDate(context.AssignedStart, context.FinishTime);
+
+    /// <summary>Built-in disciplines leave the time as it is.</summary>
+    public virtual TimeSpan AdjustTime(AdjustContext context) => context.Time;
+
     /// <summary>
-    /// Counts control points in a free-text course order, skipping start/finish markers. A token is
-    /// treated as a start/finish marker when it begins with a start/finish letter — Latin S/F or the
-    /// Cyrillic С(старт)/Ф(фініш), case-insensitive — and is not purely numeric (e.g. "S1", "F",
-    /// "Start", "С1", "Ф1"); everything else counts as a control point. Markers in any position are
-    /// skipped, so a start/finish that appears mid-order (physically not punched) is not counted.
+    /// Places the group's OK, in-competition results (Р-8): a scoring format orders by score desc then time
+    /// asc, every other format by time asc. Equal keys share a place; the next place skips the ties.
     /// </summary>
-    public virtual int ControlCount(string courseOrder)
+    public virtual void Rank(RankingContext context)
     {
-        if (string.IsNullOrWhiteSpace(courseOrder))
-            return 0;
+        var ordered = context.Entries
+            .OrderByDescending(r => r.Scored ? r.Score : 0)
+            .ThenBy(r => r.Time)
+            .ToList();
 
-        var count = 0;
-        foreach (var token in courseOrder.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+        var place = 0;
+        var seen = 0;
+        (int Score, TimeSpan Time)? prev = null;
+        foreach (var r in ordered)
         {
-            if (IsStartOrFinish(token))
-                continue;
-            count++;
+            seen++;
+            var key = (r.Scored ? r.Score : 0, r.Time);
+            if (prev is null || prev.Value.Score != key.Item1 || prev.Value.Time != key.Item2)
+                place = seen; // a new (worse) key takes the running position; ties keep the prior place
+            prev = key;
+            context.Results[r.LinkId] = context.Results[r.LinkId] with { Place = place };
         }
-        return count;
     }
 
-    private static bool IsStartOrFinish(string token)
-    {
-        // Start/finish letters: Latin S/F and the Cyrillic С (старт, U+0421) / Ф (фініш, U+0424) that
-        // Ukrainian OCAD exports use (e.g. "С1"/"Ф1"). Note the Cyrillic С is a distinct code point from
-        // the Latin C, so it is listed explicitly.
-        var first = token[0];
-        if (first is not ('S' or 's' or 'F' or 'f' or 'С' or 'с' or 'Ф' or 'ф'))
-            return false;
-
-        // "31" stays a control point; "S1"/"F"/"Start"/"С1"/"Ф1" are markers. Purely numeric tokens never
-        // reach here (they don't start with a marker letter), so any non-numeric marker-lettered token is a marker.
-        return !ulong.TryParse(token, out _);
-    }
+    // Pairs an assigned start time-of-day with the read-out finish's date, so the time-limit check
+    // compares two same-day timestamps. Null when either part is missing.
+    internal static DateTimeOffset? CombineWithFinishDate(TimeSpan? startOfDay, DateTimeOffset? finish) =>
+        startOfDay is { } t && finish is { } f ? new DateTimeOffset(f.Date + t, f.Offset) : null;
 
     /// <summary>
     /// No finish evaluation by default — the score formats don't judge by order/finish-punch and will

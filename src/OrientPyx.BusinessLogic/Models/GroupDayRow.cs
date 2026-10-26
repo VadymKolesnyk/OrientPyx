@@ -1,3 +1,4 @@
+using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Enums;
 
 namespace OrientPyx.BusinessLogic.Models;
@@ -15,8 +16,8 @@ public sealed record GroupDayRow(
     string Name,
     string CourseOrder,
     decimal? DistanceKm,
-    DisciplineType? DisciplineOverride,
-    DisciplineType DayDefaultDiscipline,
+    DisciplineId? DisciplineOverride,
+    DisciplineId DayDefaultDiscipline,
     int? TimeLimitSeconds,
     int? RequiredControlCount,
     decimal? PenaltyPerMinute,

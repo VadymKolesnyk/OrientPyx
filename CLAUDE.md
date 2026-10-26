@@ -97,12 +97,26 @@ instances over the same `./data`, and runtime state must not be shared through i
 ## Disciplines (strategy, not switch)
 
 Everything that varies by competition type lives behind `IDisciplineStrategy`
-(`BusinessLogic/Disciplines/`), one implementation per `DisciplineType`
-(`SetCourse`, `ScoreByCount`, `ScoreByTime`, `Rogaine`, `Mixed`, `Scatter`), resolved
-through `IDisciplineStrategyProvider`. Shared code asks the strategy — which grid columns
-apply, control count, over-time penalty, `EvaluateFinish`, `BuildSplits` — instead of
-switching on the enum. **Adding a format = one new strategy class + one DI registration**
-(`BusinessLogicServiceCollectionExtensions`); do not reintroduce `switch (type)` in shared code.
+(`BusinessLogic/Disciplines/`), one implementation per discipline id, resolved through
+`IDisciplineStrategyProvider`. A discipline's identity is the string struct `DisciplineId` (built-ins
+`SetCourse`, `ScoreByCount`, `ScoreByTime`, `Rogaine`, `Mixed`, `Scatter` — equal to the former enum names, so
+stored values are unchanged; plugin ids will be `"<pluginId>.<name>"`). An id with no registered strategy resolves
+to `UnknownDisciplineStrategy` (judged like a set course, no places/points/ranks, `IsUnknown` for the banner) —
+never an exception. Shared code asks the strategy — grid columns, control count, `Competitors`
+(`CompetitorModel.Individual` / `Team` = rogaine), `UsesCourseVariants` (scatter), `UsesCoursePattern` (mixed only),
+`AwardsRanks`, `EvaluateFinish`, `BuildSplits`, `ResolveStart`, `AdjustTime`, `Rank` — instead of comparing against
+a specific id. **Adding a format = one new strategy class + one DI registration**
+(`BusinessLogicServiceCollectionExtensions`); do not reintroduce `switch`/`==` on a discipline in shared code.
+
+Day results are computed by `Services/Results/DayResultsCalculator` (internal, no DB access) from one
+`EventDaySnapshot` (now carrying the day's read-outs and scatter variants, read in the same transaction) plus
+`DayResultsAppData` (points rules, rank tables). Stages: competitors → start + finish status (`FinishEvaluator`) →
+`AdjustTime` (changed times rounded to a second; built-ins unchanged) → `Rank` per group (rogaine team ranking lives
+in `RogaineStrategy.Rank`) → points (formula uses `AdjustedTime`) → ranks (actual time, only if `AwardsRanks`).
+`CompetitionEditorService.ComputeDayResultsAsync` only reads the snapshot and calls it — pass the caller's snapshot
+when it has one. `FinishStatusResult.Missed` lists every missed control (maximum match, `MissedControls`); status
+and `Detail` still come from the greedy checks. Debug builds have «Файл → (Debug) Знімок результатів…» (JSON of
+every day's results) + `scripts/diff-results.ps1` to prove a refactoring left results unchanged.
 
 Notable formats: **Mixed** (змішаний) judges against a course *pattern* (`<seq>` ordered runs,
 `[N …]` any-of blocks, nesting) like a set course. **Scatter** (розсіювання) has several valid

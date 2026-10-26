@@ -1,4 +1,4 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using OrientPyx.BusinessLogic.DependencyInjection;
 using OrientPyx.DataAccess.DependencyInjection;
 using OrientPyx.Localization.DependencyInjection;
@@ -33,6 +33,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<IStatementFlow, StatementFlow>();
         services.AddSingleton<IWinnersPrintFlow, WinnersPrintFlow>();
         services.AddSingleton<IEventArchiveFlow, EventArchiveFlow>();
+        services.AddSingleton<ResultsDebugSnapshot>();
         services.AddSingleton<IFileReadoutPoller, FileReadoutPoller>();
         services.AddSingleton<IBackgroundActivityService, BackgroundActivityService>();
         services.AddSingleton<ITableLayoutStore, TableLayoutStore>();

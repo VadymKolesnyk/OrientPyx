@@ -29,6 +29,9 @@ public sealed class CoursePattern
 
     private CoursePattern(IPatternItem root) => _root = root;
 
+    /// <summary>The parsed tree (a control, an ordered run, or an "any N of" block).</summary>
+    internal IPatternItem Root => _root;
+
     /// <summary>All control codes referenced anywhere in the pattern (leaves), in reading order, with
     /// duplicates kept. Excludes the optional leading/trailing start/finish markers.</summary>
     public IReadOnlyList<string> ControlCodes { get; private set; } = [];

@@ -4,7 +4,7 @@ using OrientPyx.BusinessLogic.Models;
 namespace OrientPyx.BusinessLogic.Disciplines;
 
 /// <summary>
-/// Encapsulates everything that varies by competition type (<see cref="DisciplineType"/>). Each
+/// Encapsulates everything that varies by competition type (<see cref="DisciplineId"/>). Each
 /// format is a separate implementation, resolved from <see cref="IDisciplineStrategyProvider"/>;
 /// shared code asks the strategy instead of switching on the enum, so adding a new format means
 /// adding one class and one DI registration — nothing else changes (Open/Closed).
@@ -16,7 +16,29 @@ namespace OrientPyx.BusinessLogic.Disciplines;
 public interface IDisciplineStrategy
 {
     /// <summary>The competition type this strategy implements.</summary>
-    DisciplineType Type { get; }
+    DisciplineId Id { get; }
+
+    /// <summary>True only for the placeholder that stands in for a discipline whose implementation is not
+    /// available (a missing / disabled plugin, Р-2). Drives the «Потрібен плагін» banner.</summary>
+    bool IsUnknown { get; }
+
+    /// <summary>
+    /// Who a result belongs to: one runner (<see cref="CompetitorModel.Individual"/>) or a team whose members'
+    /// punches are scored together (<see cref="CompetitorModel.Team"/>, rogaine). Shared code asks this instead
+    /// of comparing against a specific discipline.
+    /// </summary>
+    CompetitorModel Competitors { get; }
+
+    /// <summary>True when the group's course is a set of alternative orders (variants) stored per (day, group)
+    /// rather than the single course-order string — scatter.</summary>
+    bool UsesCourseVariants { get; }
+
+    /// <summary>True when the course order is a «mixed» pattern (<c>&lt;…&gt;</c>, <c>[N: …]</c>) that the
+    /// groups page previews and validates — mixed only.</summary>
+    bool UsesCoursePattern { get; }
+
+    /// <summary>True when results of this discipline may earn a sports rank («виконаний розряд», Р-7).</summary>
+    bool AwardsRanks { get; }
 
     /// <summary>
     /// Localization key for this discipline's display name, e.g. <c>"Discipline.Type.Rogaine"</c>.
@@ -72,4 +94,23 @@ public interface IDisciplineStrategy
     /// and a running total (<see cref="SplitsLayout.Scored"/>).
     /// </summary>
     SplitsView BuildSplits(SplitsContext context);
+
+    /// <summary>
+    /// The start a runner's time is measured from (Р-5). Default: the chip's start box, else the assigned
+    /// start time paired with the finish date. Also used for the time-limit check.
+    /// </summary>
+    DateTimeOffset? ResolveStart(StartContext context);
+
+    /// <summary>
+    /// Adjusts an OK result's time before ranking (Р-6) — e.g. a penalty or a coefficient. Default: unchanged.
+    /// A changed value is rounded to a whole second by the caller.
+    /// </summary>
+    TimeSpan AdjustTime(AdjustContext context);
+
+    /// <summary>
+    /// Places the group's competitors (Р-8): writes <see cref="ParticipantDayResult.Place"/> (and, for a team
+    /// format, the team score) into <see cref="RankingContext.Results"/>. Default: score ↓ then time ↑, equal
+    /// results share a place and the next place skips.
+    /// </summary>
+    void Rank(RankingContext context);
 }

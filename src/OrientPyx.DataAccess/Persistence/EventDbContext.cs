@@ -1,4 +1,6 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Entities;
 
 namespace OrientPyx.DataAccess.Persistence;
@@ -47,14 +49,16 @@ public class EventDbContext : DbContext
             .Property(cp => cp.Type)
             .HasConversion<string>();
 
+        // A discipline id persists as its string (the built-in ids equal the former enum names).
+        var disciplineId = new ValueConverter<DisciplineId, string>(id => id.Value, s => new DisciplineId(s));
         modelBuilder.Entity<EventDay>()
             .Property(d => d.DefaultDiscipline)
-            .HasConversion<string>();
+            .HasConversion(disciplineId);
 
         // Nullable enum: null persists as NULL (= inherit the day's default discipline).
         modelBuilder.Entity<GroupDaySettings>()
             .Property(g => g.DisciplineOverride)
-            .HasConversion<string>();
+            .HasConversion(disciplineId);
 
         // The group's rank level (Додаток 89) persists as its string name.
         modelBuilder.Entity<GroupDaySettings>()

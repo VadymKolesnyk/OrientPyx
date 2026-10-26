@@ -1,6 +1,8 @@
+using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
+using OrientPyx.BusinessLogic.Services.Results;
 
 namespace OrientPyx.BusinessLogic.Disciplines;
 
@@ -14,9 +16,12 @@ public sealed class RogaineStrategy : DisciplineStrategyBase
 
     public RogaineStrategy(ICourseDistanceCalculator distance) => _distance = distance;
 
-    public override DisciplineType Type => DisciplineType.Rogaine;
+    public override DisciplineId Id => DisciplineId.Rogaine;
 
     public override bool UsesControlPointPoints => true;
+
+    /// <summary>Rogaine competitors run as teams (members sharing a team name in a group).</summary>
+    public override CompetitorModel Competitors => CompetitorModel.Team;
 
     /// <summary>Rogaine deducts 1 бал per started minute over the time limit unless the group sets another rate.</summary>
     public override decimal? DefaultPenaltyPerMinute => 1m;
@@ -156,5 +161,131 @@ public sealed class RogaineStrategy : DisciplineStrategyBase
             VisitedCount = scored.Count,
             ExpectedCount = allowed.Count
         };
+    }
+
+    /// <summary>
+    /// Ranks rogaine members by team and writes the team's net «Бали» and place onto every member.
+    /// A control scores for the team only when every IN-COMPETITION member punched it (intersection); the
+    /// over-time penalty is computed once from the team's largest member time (all members, поза конкурсом
+    /// included); the team time (tie-break) is the last finisher. A member with no team is поза конкурсом
+    /// (kept teamless, no place). A «поза конкурсом» member stays in the team and earns the team's Бали/Місце
+    /// but does NOT count toward the team score or drop the team if non-OK; only when EVERY member is поза
+    /// конкурсом does the whole team go unplaced (rules 1–5).
+    /// </summary>
+    public override void Rank(RankingContext context)
+    {
+        var members = context.TeamMembers;
+        if (members.Count == 0)
+            return;
+
+        var pointsByCode = context.PointsByCode;
+        var results = context.Results;
+
+        // Members with no team run поза конкурсом — keep their personal score, no place. (Done by simply
+        // not ranking them; their result already has Place == null.) Members WITH a team stay in the team
+        // even when поза конкурсом — they just don't count toward the score (filtered to `scoring` below).
+        var teams = members
+            .Where(m => m.TeamKey.Length > 0)
+            .GroupBy(m => (m.GroupId, m.TeamKey));
+
+        // Each ranked team carries its net score and tie-break time, grouped back by GroupId for placing.
+        var ranked = new List<(Guid? GroupId, int Net, TimeSpan Time, List<Guid> LinkIds)>();
+        foreach (var team in teams)
+        {
+            var roster = team.ToList();
+            var linkIds = roster.Select(m => m.LinkId).ToList();
+
+            // The members who actually count toward the team result. A «поза конкурсом» runner is on the
+            // team (still shown, still gets the team place) but is excluded from the score/OK checks below.
+            var scoring = roster.Where(m => !m.OutOfCompetition).ToList();
+
+            // When EVERY member is поза конкурсом the whole team runs поза конкурсом — no place.
+            if (scoring.Count == 0)
+                continue;
+
+            // Rule 1/3: a team with any unfinished or non-OK IN-COMPETITION member is not placed (still
+            // keeps personal Бали). A поза конкурсом member's status never drops the team.
+            if (scoring.Any(m => !m.Ok))
+                continue;
+
+            // Rule 2: a control scores only when every in-competition member punched it — the intersection
+            // of their sets. A поза конкурсом member's punches do not count toward the team total.
+            var common = new HashSet<string>(scoring[0].Punched, StringComparer.OrdinalIgnoreCase);
+            for (var i = 1; i < scoring.Count; i++)
+                common.IntersectWith(scoring[i].Punched);
+            var gross = common.Sum(code => pointsByCode.TryGetValue(code, out var p) ? p : 0);
+
+            // Rule 2: one over-time penalty per team, measured from the largest member time — including a
+            // поза конкурсом member (their time still counts toward the team penalty / tie-break). Reuse the
+            // splits penalty math by feeding it a synthetic read-out whose elapsed = the max time.
+            var maxElapsed = roster.Select(m => m.Elapsed).Max();
+            var settings = scoring.Select(m => m.Settings).FirstOrDefault(s => s is not null);
+            var afterPenalty = ApplyTeamPenalty(gross, maxElapsed, settings);
+
+            // Points correction («бонус»): the smallest bonus ENTERED by an in-competition team member (an
+            // un-entered member does not drag it to 0). Null when nobody entered one ⇒ no correction.
+            var teamBonus = scoring.Select(m => m.Bonus).Where(b => b.HasValue).Select(b => b!.Value).DefaultIfEmpty().Min();
+            var teamBonusOrNull = scoring.Any(m => m.Bonus.HasValue) ? teamBonus : (int?)null;
+            var net = afterPenalty + teamBonus;
+
+            // Rule 5: tie-break by the last finisher's time (the largest member time).
+            var time = maxElapsed is { } e && e > TimeSpan.Zero ? e : TimeSpan.MaxValue;
+            ranked.Add((team.Key.GroupId, net, time, linkIds));
+
+            // The team's net Бали shows on every member row, with the per-control breakdown (the common
+            // controls), the over-time penalty and the points correction for the «Бали» tooltip.
+            var breakdown = CourseCodes.ScoreLines(common, pointsByCode);
+            var penalty = gross - afterPenalty;
+            foreach (var id in linkIds)
+                results[id] = results[id] with
+                {
+                    Score = net,
+                    ScoreBreakdown = breakdown,
+                    ScoreGross = penalty > 0 ? gross : null,
+                    ScorePenalty = penalty > 0 ? penalty : null,
+                    Bonus = teamBonusOrNull
+                };
+        }
+
+        // Place teams within each group: net desc, then team time asc; ties share a place, next skips ties.
+        foreach (var group in ranked.GroupBy(r => r.GroupId))
+        {
+            var ordered = group.OrderByDescending(r => r.Net).ThenBy(r => r.Time).ToList();
+            var place = 0;
+            var seen = 0;
+            (int Net, TimeSpan Time)? prev = null;
+            foreach (var team in ordered)
+            {
+                seen++;
+                var key = (team.Net, team.Time);
+                if (prev is null || prev.Value.Net != key.Net || prev.Value.Time != key.Time)
+                    place = seen;
+                prev = key;
+                foreach (var id in team.LinkIds)
+                    results[id] = results[id] with { Place = place };
+            }
+        }
+    }
+
+    // The team's net «Бали» after the over-time penalty, computed by the splits builder so the rounding/floor
+    // rules stay in one place. Feeds it a synthetic context whose finish − start equals the team's largest
+    // member time and whose gross is the intersection total (modelled as one control worth `gross`).
+    private int ApplyTeamPenalty(int gross, TimeSpan? maxElapsed, GroupDaySettings? settings)
+    {
+        if (maxElapsed is not { } elapsed || settings?.TimeLimitSeconds is null)
+            return gross; // no resolvable time or no limit ⇒ no penalty
+
+        var start = DateTimeOffset.UnixEpoch;
+        var context = new SplitsContext
+        {
+            ExpectedControls = ["__team__"],
+            Punches = [new ChipPunch("__team__", start)],
+            PointsByCode = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { ["__team__"] = gross },
+            StartTime = start,
+            FinishTime = start + elapsed,
+            TimeLimit = TimeSpan.FromSeconds(settings.TimeLimitSeconds.Value),
+            PenaltyPerMinute = settings.PenaltyPerMinute
+        };
+        return BuildSplits(context).TotalPoints;
     }
 }
