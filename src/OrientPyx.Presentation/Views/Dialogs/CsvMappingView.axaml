@@ -93,6 +93,7 @@
 
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                               VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
                     <ItemsControl ItemsSource="{Binding Fields}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="dialogs:CsvFieldMapping">
@@ -115,6 +116,24 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <!-- «+ Нове додаткове поле…»: picking a file column adds a row for a new additional field
+                         named after that column, already mapped to it. -->
+                    <Grid ColumnDefinitions="160,*" Margin="0,8,0,3">
+                        <TextBlock Grid.Column="0" Text="{Binding NewFieldLabel}"
+                                   Classes="label" VerticalAlignment="Center"
+                                   TextWrapping="Wrap" Margin="0,0,12,0" />
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding NewFieldColumns}"
+                                  SelectedItem="{Binding NewFieldColumn, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="dialogs:CsvColumnOption">
+                                    <TextBlock Text="{Binding Label}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </Grid>
+                    </StackPanel>
                 </ScrollViewer>
 
             </DockPanel>

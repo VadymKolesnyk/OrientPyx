@@ -13,11 +13,17 @@ public sealed partial class StatementColumnItemViewModel : ObservableObject
 {
     private readonly ILocalizationService _localization;
     private readonly string _captionKey;
+    // An additional field's own name (not a localization key); null for a built-in column.
+    private readonly string? _fixedCaption;
 
-    public StatementColumnItemViewModel(StatementColumn column, string captionKey, bool visible, ILocalizationService localization)
+    public StatementColumnItemViewModel(
+        StatementColumn column, string captionKey, bool visible, ILocalizationService localization,
+        string? fieldKey = null, string? fixedCaption = null)
     {
         Column = column;
+        FieldKey = fieldKey;
         _captionKey = captionKey;
+        _fixedCaption = fixedCaption;
         _visible = visible;
         _localization = localization;
         _localization.PropertyChanged += (_, _) => OnPropertyChanged(nameof(Caption));
@@ -25,12 +31,18 @@ public sealed partial class StatementColumnItemViewModel : ObservableObject
 
     public StatementColumn Column { get; }
 
+    /// <summary>The additional field's key for a <see cref="StatementColumn.Field"/> column; null otherwise.</summary>
+    public string? FieldKey { get; }
+
+    /// <summary>The column's identity in the list (same as <see cref="StatementColumnSetting.Key"/>).</summary>
+    public string Key => ToSetting().Key;
+
     /// <summary>Localized column caption, re-raised on language change.</summary>
-    public string Caption => _localization.Get(_captionKey);
+    public string Caption => _fixedCaption ?? _localization.Get(_captionKey);
 
     [ObservableProperty]
     private bool _visible;
 
     /// <summary>Snapshots this item back into the persisted setting.</summary>
-    public StatementColumnSetting ToSetting() => new() { Column = Column, Visible = Visible };
+    public StatementColumnSetting ToSetting() => new() { Column = Column, FieldKey = FieldKey, Visible = Visible };
 }

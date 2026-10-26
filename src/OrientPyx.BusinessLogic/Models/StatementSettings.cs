@@ -9,6 +9,14 @@ public sealed class StatementColumnSetting
 {
     public StatementColumn Column { get; set; }
 
+    /// <summary>For <see cref="StatementColumn.Field"/>: the additional field's key; null otherwise.</summary>
+    public string? FieldKey { get; set; }
+
+    /// <summary>The identity of the column in the list (and the preview's drag key): the enum name, or
+    /// <c>field.&lt;key&gt;</c> for an additional field.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string Key => Column == StatementColumn.Field ? CustomField.ColumnPrefix + FieldKey : Column.ToString();
+
     /// <summary>Whether this column is printed. A hidden column keeps its place in the order for later.</summary>
     public bool Visible { get; set; } = true;
 }

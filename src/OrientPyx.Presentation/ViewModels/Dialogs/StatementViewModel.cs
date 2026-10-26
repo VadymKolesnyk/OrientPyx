@@ -214,13 +214,23 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         // append any absent column (visible) in enum order.
         var present = settings.Columns.Select(c => c.Column).ToHashSet();
         foreach (StatementColumn column in Enum.GetValues<StatementColumn>())
-            if (present.Add(column))
+            if (column != StatementColumn.Field && present.Add(column))
                 settings.Columns.Add(new StatementColumnSetting { Column = column, Visible = true });
+
+        // One entry per additional field of the competition: a deleted field's entry is dropped, a new field is
+        // appended hidden (the user ticks it in).
+        var fieldLabels = _data.Fields.ToDictionary(f => f.Key, f => f.Value);
+        settings.Columns.RemoveAll(c => c.Column == StatementColumn.Field && (c.FieldKey is null || !fieldLabels.ContainsKey(c.FieldKey)));
+        var presentFields = settings.Columns.Where(c => c.Column == StatementColumn.Field).Select(c => c.FieldKey!).ToHashSet();
+        foreach (var (key, _) in _data.Fields)
+            if (presentFields.Add(key))
+                settings.Columns.Add(new StatementColumnSetting { Column = StatementColumn.Field, FieldKey = key, Visible = false });
 
         Columns.Clear();
         foreach (var c in settings.Columns)
         {
-            var item = new StatementColumnItemViewModel(c.Column, CaptionKey(c.Column), c.Visible, Localization);
+            var item = new StatementColumnItemViewModel(c.Column, CaptionKey(c.Column), c.Visible, Localization,
+                c.FieldKey, c.FieldKey is { } fk ? fieldLabels[fk] : null);
             item.PropertyChanged += (_, e) =>
             {
                 if (e.PropertyName == nameof(StatementColumnItemViewModel.Visible))
@@ -247,11 +257,8 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
 
     public void MoveColumnByKey(string draggedKey, string targetKey, bool insertAfter)
     {
-        if (!Enum.TryParse<StatementColumn>(draggedKey, out var dragged) ||
-            !Enum.TryParse<StatementColumn>(targetKey, out var target))
-            return;
-        var from = IndexOf(dragged);
-        var targetIndex = IndexOf(target);
+        var from = IndexOf(draggedKey);
+        var targetIndex = IndexOf(targetKey);
         if (from < 0 || targetIndex < 0 || from == targetIndex)
             return;
 
@@ -267,10 +274,10 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         AutoSave();
     }
 
-    private int IndexOf(StatementColumn column)
+    private int IndexOf(string key)
     {
         for (var i = 0; i < Columns.Count; i++)
-            if (Columns[i].Column == column)
+            if (Columns[i].Key == key)
                 return i;
         return -1;
     }
@@ -329,13 +336,15 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         // column except «Старт», which expands to one column per day (all keyed "Start" so a drag reorders the
         // whole block). Kept parallel to the document's expanded header/wrap/shrink lists.
         var keys = new List<string>();
-        foreach (var c in settings.Columns.Where(c => c.Visible).Select(c => c.Column))
+        var fieldKeys = _data.Fields.Select(f => f.Key).ToHashSet();
+        foreach (var c in settings.Columns.Where(c => c.Visible
+                     && (c.Column != StatementColumn.Field || c.FieldKey is { } k && fieldKeys.Contains(k))))
         {
-            if (c == StatementColumn.Start)
+            if (c.Column == StatementColumn.Start)
                 for (var d = 0; d < _data.DayLabels.Count; d++)
-                    keys.Add(c.ToString());
+                    keys.Add(c.Key);
             else
-                keys.Add(c.ToString());
+                keys.Add(c.Key);
         }
         if (keys.Count == 0)
             keys.Add(StatementColumn.FullName.ToString());

@@ -50,4 +50,8 @@ public sealed class UofParticipant
 
     /// <summary>1-based day numbers the athlete runs (from ProgEvent). Empty means no days listed.</summary>
     public IReadOnlyList<int> DayNumbers { get; init; } = [];
+
+    /// <summary>Additional-field values by field key, as read from the file (normalised by the import, Р-18/Р-19).
+    /// A blank value is "no information" and never clears a stored one. Empty for UOF files.</summary>
+    public IReadOnlyDictionary<string, string> Fields { get; init; } = new Dictionary<string, string>();
 }

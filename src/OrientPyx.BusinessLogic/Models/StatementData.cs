@@ -16,6 +16,10 @@ public sealed record StatementData(
     IReadOnlyList<string> DayLabels)
 {
     public static StatementData Empty { get; } = new([], []);
+
+    /// <summary>The competition's additional fields (key → name), in display order — the selectable
+    /// <see cref="StatementColumn.Field"/> columns.</summary>
+    public IReadOnlyList<KeyValuePair<string, string>> Fields { get; init; } = [];
 }
 
 /// <summary>
@@ -49,6 +53,9 @@ public sealed class StatementRow
     public string Representative { get; init; } = string.Empty;
     public string FsouCode { get; init; } = string.Empty;
     public string Note { get; init; } = string.Empty;
+
+    /// <summary>The participant's additional-field values by key.</summary>
+    public IReadOnlyDictionary<string, string> Fields { get; init; } = new Dictionary<string, string>();
 
     /// <summary>True when the participant holds at least one chip that is NOT a rental chip (their own chip).
     /// Own-chip rows sort after rental-chip rows and print the chip cell in bold. False when the participant has

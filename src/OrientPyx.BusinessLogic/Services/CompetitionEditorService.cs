@@ -13,7 +13,7 @@ namespace OrientPyx.BusinessLogic.Services;
 /// Default <see cref="ICompetitionEditorService"/>: resolves the current competition's folder
 /// from the session and delegates persistence to <see cref="IEventStore"/>.
 /// </summary>
-public sealed class CompetitionEditorService : ICompetitionEditorService
+public sealed partial class CompetitionEditorService : ICompetitionEditorService
 {
     private readonly ISessionService _session;
     private readonly IEventStore _eventStore;
@@ -22,6 +22,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
     private readonly Disciplines.IDisciplineStrategyProvider _strategies;
     private readonly DayResultsCalculator _calculator;
     private readonly IEntryFeeCalculator _entryFees;
+    private readonly IPluginCatalog? _plugins;
 
     public CompetitionEditorService(
         ISessionService session,
@@ -29,8 +30,10 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         IAppStore appStore,
         ICourseDistanceCalculator distance,
         Disciplines.IDisciplineStrategyProvider strategies,
-        IEntryFeeCalculator entryFees)
+        IEntryFeeCalculator entryFees,
+        IPluginCatalog? plugins = null)
     {
+        _plugins = plugins;
         _session = session;
         _eventStore = eventStore;
         _appStore = appStore;
@@ -308,6 +311,9 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         ArgumentNullException.ThrowIfNull(day);
         await EnsureDayEditableAsync(day.Id, cancellationToken);
         await _eventStore.UpdateDayAsync(FolderPath, day, cancellationToken);
+        // A plugin discipline chosen for the first time brings its participant fields (Р-17).
+        if (_strategies.For(day.DefaultDiscipline).PluginId is not null)
+            await EnsurePluginFieldsAsync(cancellationToken);
     }
 
     public async Task DeleteDayAsync(Guid dayId, CancellationToken cancellationToken = default)
@@ -742,6 +748,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             RankLevel = row.RankLevel,
             MasterCount = row.MasterCount
         }, cancellationToken);
+        if (row.DisciplineOverride is { } overrideId && _strategies.For(overrideId).PluginId is not null)
+            await EnsurePluginFieldsAsync(cancellationToken);
         return false;
     }
 
@@ -1462,6 +1470,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         // Keyed by participant-day link id.
         var results = await ComputeDayResultsAsync(folder, _session.CurrentDay, cancellationToken);
+        var fieldValues = await LoadFieldValuesAsync(folder, cancellationToken);
 
         var rows = new List<ParticipantDayRow>(links.Count);
         foreach (var link in links)
@@ -1483,7 +1492,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             rows.Add(ToRow(link, participant, groupName, regionName, clubName, dusshName,
                 paymentPerDay ? link.PaysRaisedFee : participant.PaysRaisedFee,
                 fees.SelectedDiscountIds(participant.Id),
-                fees.Total(participant, memberDays), otherDays, result, paymentPerDay));
+                fees.Total(participant, memberDays), otherDays, result, paymentPerDay)
+                with { Fields = FieldsOf(fieldValues, participant.Id) });
         }
         return rows;
     }
@@ -1517,6 +1527,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
 
         // Keyed for per-cell lookup.
         var linkByKey = links.ToDictionary(l => (l.ParticipantId, l.EventDayId));
+        var fieldValues = await LoadFieldValuesAsync(folder, cancellationToken);
 
         var rows = new List<ParticipantRosterRow>(participants.Count);
         foreach (var participant in participants)
@@ -1564,7 +1575,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 participant.PaysRaisedFee,
                 fees.SelectedDiscountIds(participant.Id),
                 fees.Total(participant, memberDays),
-                cells));
+                cells) { Fields = FieldsOf(fieldValues, participant.Id) });
         }
         return rows;
     }
@@ -2222,6 +2233,8 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
         var dusshes = await _eventStore.GetDusshesAsync(folder, cancellationToken);
         var rentalChips = await _eventStore.GetRentalChipsAsync(folder, cancellationToken);
+        var fieldDefs = await _eventStore.GetCustomFieldDefsAsync(folder, cancellationToken);
+        var fieldValues = await LoadFieldValuesAsync(folder, cancellationToken);
 
         var byParticipant = participants.ToDictionary(p => p.Id);
         var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
@@ -2319,13 +2332,17 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
                 Representative = p.Representative,
                 FsouCode = p.FsouCode,
                 Note = p.Note,
+                Fields = FieldsOf(fieldValues, p.Id),
                 HasChip = distinctChips.Count > 0,
                 HasOwnChip = hasOwnChip,
                 ChipSortKey = chipSortKey
             });
         }
 
-        return new StatementData(rows, dayLabels);
+        return new StatementData(rows, dayLabels)
+        {
+            Fields = fieldDefs.Select(f => new KeyValuePair<string, string>(f.Key, f.Label)).ToList()
+        };
     }
 
     public async Task<StatementSettings?> GetStatementSettingsAsync(CancellationToken cancellationToken = default)

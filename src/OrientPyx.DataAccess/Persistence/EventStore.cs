@@ -754,6 +754,10 @@ public sealed class EventStore : IEventStore
         await db.ParticipantDiscounts
             .Where(p => p.ParticipantId == participantId)
             .ExecuteDeleteAsync(cancellationToken);
+        // Additional-field values are keyed by participant by convention only too (Р-16).
+        await db.ParticipantFieldValues
+            .Where(v => v.ParticipantId == participantId)
+            .ExecuteDeleteAsync(cancellationToken);
 
         db.Participants.Remove(existing);
         await db.SaveChangesAsync(cancellationToken);
@@ -765,6 +769,7 @@ public sealed class EventStore : IEventStore
         // Drop the per-day links and discount links first, then the participants themselves.
         await db.ParticipantDays.ExecuteDeleteAsync(cancellationToken);
         await db.ParticipantDiscounts.ExecuteDeleteAsync(cancellationToken);
+        await db.ParticipantFieldValues.ExecuteDeleteAsync(cancellationToken);
         return await db.Participants.ExecuteDeleteAsync(cancellationToken);
     }
 
@@ -898,12 +903,15 @@ public sealed class EventStore : IEventStore
             .Where(v => v.EventDayId == dayId).OrderBy(v => v.Order).ToListAsync(cancellationToken);
         var disciplineSettings = await db.PluginSettings.AsNoTracking()
             .Where(s => s.EventDayId == dayId || s.EventDayId == null).ToListAsync(cancellationToken);
+        // Additional-field values feed the discipline rules (ParticipantView.Field, e.g. «Стать»).
+        var fieldValues = await db.ParticipantFieldValues.AsNoTracking().ToListAsync(cancellationToken);
 
         return new EventDaySnapshot
         {
             FinishReadouts = readouts,
             ScatterVariants = scatterVariants,
             DisciplineSettings = disciplineSettings,
+            FieldValues = fieldValues,
             Links = links,
             Participants = participants,
             Groups = groups,
@@ -1637,6 +1645,106 @@ public sealed class EventStore : IEventStore
         });
     }
 
+    public async Task<IReadOnlyList<CustomFieldDef>> GetCustomFieldDefsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var fields = await db.CustomFields.AsNoTracking().ToListAsync(cancellationToken);
+        return fields.OrderBy(f => f.Order).ThenBy(f => f.Label, StringComparer.CurrentCultureIgnoreCase).ToList();
+    }
+
+    public async Task<bool> AddCustomFieldDefAsync(string eventFolderPath, CustomFieldDef field, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        if (await db.CustomFields.AnyAsync(f => f.Key == field.Key, cancellationToken))
+            return false;
+        db.CustomFields.Add(field);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            // Another instance added the same key in between (plugin fields are ensured from several places).
+            return false;
+        }
+    }
+
+    public async Task UpdateCustomFieldDefAsync(string eventFolderPath, CustomFieldDef field, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var existing = await db.CustomFields.FirstOrDefaultAsync(f => f.Key == field.Key, cancellationToken);
+        if (existing is null)
+            return;
+        existing.Label = field.Label;
+        existing.Kind = field.Kind;
+        existing.OptionsJson = field.OptionsJson;
+        existing.Order = field.Order;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteCustomFieldDefAsync(string eventFolderPath, string key, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.ParticipantFieldValues.Where(v => v.Key == key).ExecuteDeleteAsync(cancellationToken);
+        await db.CustomFields.Where(f => f.Key == key).ExecuteDeleteAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ParticipantFieldValue>> GetParticipantFieldValuesAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.ParticipantFieldValues.AsNoTracking().ToListAsync(cancellationToken);
+    }
+
+    public async Task SetParticipantFieldValueAsync(
+        string eventFolderPath, Guid participantId, string key, string value, CancellationToken cancellationToken = default)
+    {
+        await UpsertWithUniqueRetryAsync(eventFolderPath, async db =>
+        {
+            var row = await db.ParticipantFieldValues
+                .FirstOrDefaultAsync(v => v.ParticipantId == participantId && v.Key == key, cancellationToken);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                if (row is not null)
+                    db.ParticipantFieldValues.Remove(row);
+            }
+            else if (row is null)
+            {
+                db.ParticipantFieldValues.Add(new ParticipantFieldValue { ParticipantId = participantId, Key = key, Value = value });
+            }
+            else
+            {
+                row.Value = value;
+            }
+            await db.SaveChangesAsync(cancellationToken);
+        });
+    }
+
+    public async Task<string?> GetImportMappingJsonAsync(string eventFolderPath, string headerSetHash, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.ImportMappings.AsNoTracking()
+            .Where(r => r.HeaderSetHash == headerSetHash)
+            .Select(r => r.Json)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task SaveImportMappingJsonAsync(
+        string eventFolderPath, string headerSetHash, string json, CancellationToken cancellationToken = default)
+    {
+        await UpsertWithUniqueRetryAsync(eventFolderPath, async db =>
+        {
+            var row = await db.ImportMappings.FirstOrDefaultAsync(r => r.HeaderSetHash == headerSetHash, cancellationToken);
+            if (row is null)
+                db.ImportMappings.Add(new ImportMappingRow { HeaderSetHash = headerSetHash, Json = json });
+            else
+                row.Json = json;
+            await db.SaveChangesAsync(cancellationToken);
+        });
+    }
+
     public async Task<string?> GetMonitorJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
@@ -1731,6 +1839,8 @@ public sealed class EventStore : IEventStore
             else
             {
                 await db.ParticipantDays.ExecuteDeleteAsync(cancellationToken);
+                await db.ParticipantDiscounts.ExecuteDeleteAsync(cancellationToken);
+                await db.ParticipantFieldValues.ExecuteDeleteAsync(cancellationToken);
                 await db.Participants.ExecuteDeleteAsync(cancellationToken);
             }
             progress?.Report(ImportProgress.Of(ImportStage.Cleared));
@@ -1824,6 +1934,16 @@ public sealed class EventStore : IEventStore
             .GroupBy(l => l.ParticipantId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        // Additional fields: the competition's definitions (to normalise values, Р-18/Р-19) and the stored values,
+        // tracked so the single SaveChanges below writes them with the rest of the import.
+        var fieldDefs = (await db.CustomFields.AsNoTracking().ToListAsync(cancellationToken))
+            .Select(CustomField.From)
+            .ToDictionary(f => f.Key);
+        var fieldValues = fieldDefs.Count == 0 || (!currentDayOnly && clearFirst)
+            ? new Dictionary<(Guid, string), ParticipantFieldValue>()
+            : (await db.ParticipantFieldValues.ToListAsync(cancellationToken))
+                .ToDictionary(v => (v.ParticipantId, v.Key));
+
         var added = 0;
         var updated = 0;
         var processed = 0;
@@ -1868,6 +1988,7 @@ public sealed class EventStore : IEventStore
             var srcPayment = (src.Payment ?? string.Empty).Trim();
             var hasPayment = srcPayment.Length > 0;
 
+            var isNewParticipant = participant is null;
             if (participant is null)
             {
                 participant = new Participant
@@ -1939,6 +2060,29 @@ public sealed class EventStore : IEventStore
                 if (!paymentPerDay && hasPayment && Update(ParticipantUpdateFields.Payment))
                     participant.Payment = srcPayment;
                 updated++;
+            }
+
+            // Additional-field values: a blank cell never clears a stored value (Р-19); an unknown field key is skipped.
+            foreach (var (fieldKey, raw) in src.Fields)
+            {
+                if (!fieldDefs.TryGetValue(fieldKey, out var def))
+                    continue;
+                var value = def.Normalize(raw);
+                if (value.Length == 0)
+                    continue;
+                if (fieldValues.TryGetValue((participant.Id, fieldKey), out var stored))
+                {
+                    // A day-scoped import fills a blank but does not rewrite an existing athlete's shared value
+                    // (the same rule it applies to the built-in identity fields it was not told to update).
+                    if (!currentDayOnly || isNewParticipant)
+                        stored.Value = value;
+                }
+                else
+                {
+                    var row = new ParticipantFieldValue { ParticipantId = participant.Id, Key = fieldKey, Value = value };
+                    db.ParticipantFieldValues.Add(row);
+                    fieldValues[(participant.Id, fieldKey)] = row;
+                }
             }
 
             var group = ResolveGroup(src.Group);

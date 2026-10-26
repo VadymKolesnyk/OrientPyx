@@ -159,6 +159,17 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
         Saved = true;
     }
 
+    /// <summary>Opens the «Додаткові поля» modal (the competition's additional participant fields, Р-13).</summary>
+    [RelayCommand]
+    private async Task EditCustomFieldsAsync()
+    {
+        if (_session.CurrentEvent is null)
+            return;
+        var dialog = new CustomFieldsViewModel(Localization, _editor, _busy);
+        await dialog.LoadAsync();
+        await _dialogs.ShowCustomFieldsAsync(dialog);
+    }
+
     /// <summary>
     /// Opens the rename modal and applies the chosen identifier: the catalog moves the competition
     /// folder and rewrites the identifier in its database, then the session is re-pointed at the new

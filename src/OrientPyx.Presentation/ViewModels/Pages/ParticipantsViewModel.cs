@@ -265,10 +265,59 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // The plugin result columns of the disciplines used on the shown day (see LoadAsync).
     private IReadOnlyList<ResultColumnDef> _dayResultColumns = [];
 
+    /// <summary>
+    /// The competition's additional participant fields (Р-13): one column each in both tables (the roster binds it,
+    /// the day grid bakes it into <see cref="DayBands"/>). Reloaded with the page and after the fields dialog.
+    /// </summary>
+    [ObservableProperty]
+    private IReadOnlyList<CustomField> _customFields = [];
+
+    partial void OnCustomFieldsChanged(IReadOnlyList<CustomField> value) => RebuildDayBands();
+
     private void RebuildDayBands()
         => DayBands = new Controls.DayColumnBuilder(Localization)
             .Build(ShowTeamColumn, ShowScoreColumn, Discounts, RaisedFeeEnabled, PaymentPerDay, _dayBands,
-                _dayResultColumns);
+                _dayResultColumns, CustomFields);
+
+    // Builds a row's additional-field cells from the loaded values.
+    private ParticipantFieldsViewModel FieldsFor(Guid participantId, IReadOnlyDictionary<string, string> values)
+        => new(participantId, CustomFields, values, RequestFieldSave);
+
+    // An additional-field edit: persist it (normalised, Р-18/Р-19) and show what was stored. Text cells commit on
+    // leaving the cell, so there is no keystroke storm to debounce.
+    private void RequestFieldSave(Guid participantId, ParticipantFieldCellViewModel cell)
+    {
+        var key = cell.Key;
+        var value = cell.Value;
+        _ = SaveFieldAsync();
+
+        async Task SaveFieldAsync()
+        {
+            try
+            {
+                var stored = await Task.Run(() => _editor.SetParticipantFieldAsync(participantId, key, value));
+                if (cell.Value == value)
+                    cell.ApplySaved(stored);
+            }
+            catch
+            {
+                // never crash the UI over an autosave
+            }
+        }
+    }
+
+    /// <summary>Opens the «Додаткові поля» dialog (add / rename / delete fields); reloads the page after.</summary>
+    [RelayCommand]
+    private async Task EditCustomFieldsAsync()
+    {
+        if (_session.CurrentEvent is null)
+            return;
+        var dialog = new CustomFieldsViewModel(Localization, _editor, _busy);
+        await dialog.LoadAsync();
+        await _dialogs.ShowCustomFieldsAsync(dialog);
+        if (dialog.Changed)
+            await LoadAsync();
+    }
 
     // The day grid's «Оплата» column binds a different property in each mode, so the bands must be rebuilt
     // when the mode changes (the roster table rebuilds itself off its own PaymentPerDay binding).
@@ -501,6 +550,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
         // Entry-fee inputs: the discount set + the fee snapshot used to compute each row's total.
         await RefreshFeeDataAsync(hasEvent);
+
+        // The additional fields, before any row is built (each row gets one cell per field).
+        CustomFields = hasEvent ? await _busy.RunAsync(() => _editor.GetCustomFieldsAsync()) : [];
 
         _lockedDayIds = days.Where(d => d.IsLocked).Select(d => d.Id).ToHashSet();
 
@@ -780,6 +832,13 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     }
 
     private ParticipantDayRowViewModel NewDayRow(ParticipantDayRow row, IReadOnlyList<GroupOption> groupOptions)
+    {
+        var vm = NewDayRowCore(row, groupOptions);
+        vm.Fields = FieldsFor(row.ParticipantId, row.Fields);
+        return vm;
+    }
+
+    private ParticipantDayRowViewModel NewDayRowCore(ParticipantDayRow row, IReadOnlyList<GroupOption> groupOptions)
         => new(row, groupOptions, _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Discounts, _feeContext, Localization, _strategies,
             RequestRowSave, LeaveDay, RequestDayRowChipChange,
             RequestDayRowRegionChange, RequestDayRowAddRegion,
@@ -806,6 +865,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             RequestRosterRowClubChange, RequestRosterRowAddClub,
             RequestRosterRowDusshChange, RequestRosterRowAddDussh,
             RequestRosterRaisedFeeChange, RequestRosterDiscountChange);
+
+        rosterRow.Fields = FieldsFor(row.ParticipantId, row.Fields);
 
         // Mark the closed days before the row goes live, so a locked cell never accepts a first edit.
         rosterRow.ApplyDayLocks(_lockedDayIds);

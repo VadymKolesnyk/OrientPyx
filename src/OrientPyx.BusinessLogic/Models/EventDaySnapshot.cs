@@ -45,6 +45,9 @@ public sealed record EventDaySnapshot
     /// <summary>Saved discipline settings that apply to the day: its own rows plus the competition-scoped ones.</summary>
     public IReadOnlyList<PluginSettingsRow> DisciplineSettings { get; init; } = [];
 
+    /// <summary>Every participant's additional-field values (participant-level, Р-13).</summary>
+    public IReadOnlyList<ParticipantFieldValue> FieldValues { get; init; } = [];
+
     /// <summary>Competition metadata (name, organisation, officials); null when none is stored yet.</summary>
     public CompetitionInfo? Info { get; init; }
 }

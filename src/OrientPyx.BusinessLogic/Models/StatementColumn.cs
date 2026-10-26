@@ -59,5 +59,9 @@ public enum StatementColumn
     FsouCode,
 
     /// <summary>Free note («Примітка»).</summary>
-    Note
+    Note,
+
+    /// <summary>An additional participant field (Р-13); which one is <see cref="StatementColumnSetting.FieldKey"/>.
+    /// The settings list holds one entry per field of the competition.</summary>
+    Field
 }

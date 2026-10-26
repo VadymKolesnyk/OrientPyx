@@ -101,6 +101,13 @@ public class AppSettingsRow
     public string DisabledPluginsJson { get; set; } = string.Empty;
 
     /// <summary>
+    /// Application-default CSV/Excel column mappings, as a JSON object keyed by header-set hash (each value maps an
+    /// import target key to a header caption). Seeds a competition that has no mapping of its own for that file
+    /// layout. Blank = none.
+    /// </summary>
+    public string ImportMappingsJson { get; set; } = string.Empty;
+
+    /// <summary>
     /// UI language culture name (e.g. "uk-UA", "en-US") the app restores on startup. Blank until the user
     /// picks a language on the Settings page; when blank the built-in default (uk-UA) is used.
     /// </summary>

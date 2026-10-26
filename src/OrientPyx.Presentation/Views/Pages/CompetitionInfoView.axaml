@@ -131,6 +131,13 @@
             <Button Content="{Binding Localization[CompetitionInfo.Save]}"
                     Command="{Binding SaveCommand}"
                     Classes="accent" />
+            <!-- The competition's additional participant fields (Р-13), edited in a modal. -->
+            <Button Command="{Binding EditCustomFieldsCommand}" Classes="ghost">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <controls:Icon Kind="Tag" Size="15" />
+                    <TextBlock Text="{Binding Localization[CustomFields.Menu]}" />
+                </StackPanel>
+            </Button>
             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                         IsVisible="{Binding Saved}">
                 <controls:Icon Kind="Check" Size="17"

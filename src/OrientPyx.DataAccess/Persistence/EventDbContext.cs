@@ -40,6 +40,9 @@ public class EventDbContext : DbContext
     public DbSet<MonitorSettingsRow> MonitorSettings => Set<MonitorSettingsRow>();
     public DbSet<DrawSettingsRow> DrawSettings => Set<DrawSettingsRow>();
     public DbSet<PluginSettingsRow> PluginSettings => Set<PluginSettingsRow>();
+    public DbSet<CustomFieldDef> CustomFields => Set<CustomFieldDef>();
+    public DbSet<ParticipantFieldValue> ParticipantFieldValues => Set<ParticipantFieldValue>();
+    public DbSet<ImportMappingRow> ImportMappings => Set<ImportMappingRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -160,6 +163,18 @@ public class EventDbContext : DbContext
 
         modelBuilder.Entity<PluginSettingsRow>()
             .HasIndex(r => new { r.EventDayId, r.DisciplineId })
+            .IsUnique();
+
+        // Additional participant fields (Р-13): keyed by their stable key; one value per (participant, field).
+        // ParticipantId is a foreign key by convention only (like ParticipantDay), so the store deletes the values
+        // together with the participant / the field.
+        modelBuilder.Entity<CustomFieldDef>().HasKey(f => f.Key);
+        modelBuilder.Entity<ParticipantFieldValue>().HasKey(v => new { v.ParticipantId, v.Key });
+        modelBuilder.Entity<ParticipantFieldValue>().HasIndex(v => v.Key);
+
+        // The last CSV/Excel column mapping per header set.
+        modelBuilder.Entity<ImportMappingRow>()
+            .HasIndex(r => r.HeaderSetHash)
             .IsUnique();
     }
 }

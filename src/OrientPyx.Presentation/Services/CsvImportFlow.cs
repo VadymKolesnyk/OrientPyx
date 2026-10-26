@@ -82,19 +82,40 @@ public sealed class CsvImportFlow : ICsvImportFlow
 
         var file = outcome.Data!;
         var scope = _session.CurrentDay is { } day ? new ImportScopeChoice(day.Number) : null;
+        // The competition's additional fields (each a mapping target) and the mapping last confirmed for a file
+        // with the same headers (the competition's own, else the app default).
+        var headerHash = ImportMapping.HeaderSetHash(file.Header);
+        var (fields, templateJson) = await _busy.RunAsync(async () =>
+            (await _editor.GetCustomFieldsAsync(), await _editor.GetImportMappingAsync(headerHash)));
+        var template = templateJson is null ? null : ImportMapping.Parse(templateJson);
         var mapping = await _dialogs.ShowCsvMappingAsync(
-            new CsvMappingViewModel(_localization, file.Header, file.Rows.Count, scope));
+            new CsvMappingViewModel(_localization, file.Header, file.Rows.Count, scope, fields, template));
         if (mapping is null)
             return false; // cancelled
 
+        // «+ Нове додаткове поле…»: create each new field (named after its column) and map it under its key.
+        var map = new Dictionary<ImportTarget, int>(mapping.Map);
+        foreach (var newField in mapping.NewFields)
+        {
+            var created = await _busy.RunAsync(() => _editor.AddCustomFieldAsync(newField.Label, CustomFieldKind.Text, []));
+            if (created is not null)
+                map[ImportTarget.Field(created.Key)] = newField.ColumnIndex;
+        }
+
+        // Remember this mapping for the next file with the same headers.
+        var remembered = map
+            .Where(kv => kv.Value >= 0 && kv.Value < file.Header.Count)
+            .ToDictionary(kv => kv.Key.Key, kv => file.Header[kv.Value]);
+        await _busy.RunAsync(() => _editor.SaveImportMappingAsync(headerHash, ImportMapping.Serialize(remembered)));
+
         // A name is required to create a participant; without that column there is nothing to import.
-        if (!mapping.Map.ContainsKey(CsvParticipantField.FullName))
+        if (!map.ContainsKey(ImportTarget.FullName))
         {
             await ShowErrorAsync("CsvImport.NoName");
             return false;
         }
 
-        var data = BuildData(file, mapping.Map, days);
+        var data = BuildData(file, map, days);
         if (data.Participants.Count == 0)
         {
             await ShowErrorAsync("CsvImport.NoRows");
@@ -115,7 +136,7 @@ public sealed class CsvImportFlow : ICsvImportFlow
     // Turns the mapped CSV rows into participant data. Every athlete runs on all existing days.
     private static UofParticipantData BuildData(
         CsvParticipantData file,
-        IReadOnlyDictionary<CsvParticipantField, int> map,
+        IReadOnlyDictionary<ImportTarget, int> map,
         IReadOnlyList<EventDay> days)
     {
         var dayNumbers = days.Select(d => d.Number).OrderBy(n => n).ToList();
@@ -123,43 +144,56 @@ public sealed class CsvImportFlow : ICsvImportFlow
 
         foreach (var row in file.Rows)
         {
-            var name = Cell(row, map, CsvParticipantField.FullName);
+            var name = Cell(row, map, ImportTarget.FullName);
             // Skip rows with no name — they can't become a participant.
             if (name.Length == 0)
                 continue;
 
-            var chip = Cell(row, map, CsvParticipantField.Chip);
+            var chip = Cell(row, map, ImportTarget.Chip);
             if (chip is "0")
                 chip = string.Empty;
 
             participants.Add(new UofParticipant
             {
                 FullName = name,
-                Number = Cell(row, map, CsvParticipantField.Number),
-                Team = Cell(row, map, CsvParticipantField.Team),
-                BirthDate = ParseDate(Cell(row, map, CsvParticipantField.BirthDate)),
-                Region = Cell(row, map, CsvParticipantField.Region),
-                Club = Cell(row, map, CsvParticipantField.Club),
-                Dussh = Cell(row, map, CsvParticipantField.Dussh),
-                Group = Cell(row, map, CsvParticipantField.Group),
+                Number = Cell(row, map, ImportTarget.Number),
+                Team = Cell(row, map, ImportTarget.Team),
+                BirthDate = ParseDate(Cell(row, map, ImportTarget.BirthDate)),
+                Region = Cell(row, map, ImportTarget.Region),
+                Club = Cell(row, map, ImportTarget.Club),
+                Dussh = Cell(row, map, ImportTarget.Dussh),
+                Group = Cell(row, map, ImportTarget.Group),
                 Chip = chip,
-                Rank = Cell(row, map, CsvParticipantField.Rank),
-                Representative = Cell(row, map, CsvParticipantField.Representative),
-                FsouCode = Cell(row, map, CsvParticipantField.FsouCode),
-                IsFsouMember = ParseBool(Cell(row, map, CsvParticipantField.IsFsouMember)),
-                Payment = Cell(row, map, CsvParticipantField.Payment),
-                Coach = Cell(row, map, CsvParticipantField.Coach),
-                DayNumbers = dayNumbers
+                Rank = Cell(row, map, ImportTarget.Rank),
+                Representative = Cell(row, map, ImportTarget.Representative),
+                FsouCode = Cell(row, map, ImportTarget.FsouCode),
+                IsFsouMember = ParseBool(Cell(row, map, ImportTarget.IsFsouMember)),
+                Payment = Cell(row, map, ImportTarget.Payment),
+                Coach = Cell(row, map, ImportTarget.Coach),
+                DayNumbers = dayNumbers,
+                Fields = FieldCells(row, map)
             });
         }
 
         return new UofParticipantData { Participants = participants };
     }
 
+    // The additional-field cells of a row, by field key (normalised by the import, Р-18/Р-19).
+    private static IReadOnlyDictionary<string, string> FieldCells(
+        IReadOnlyList<string> row,
+        IReadOnlyDictionary<ImportTarget, int> map)
+    {
+        var fields = new Dictionary<string, string>();
+        foreach (var (target, i) in map)
+            if (target.FieldKey is { Length: > 0 } key && i >= 0 && i < row.Count)
+                fields[key] = row[i].Trim();
+        return fields;
+    }
+
     private static string Cell(
         IReadOnlyList<string> row,
-        IReadOnlyDictionary<CsvParticipantField, int> map,
-        CsvParticipantField field)
+        IReadOnlyDictionary<ImportTarget, int> map,
+        ImportTarget field)
     {
         if (map.TryGetValue(field, out var i) && i >= 0 && i < row.Count)
             return row[i].Trim();

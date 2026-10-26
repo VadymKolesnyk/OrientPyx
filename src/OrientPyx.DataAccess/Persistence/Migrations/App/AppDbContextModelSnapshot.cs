@@ -37,6 +37,10 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.App
                     b.Property<double>("FontScale")
                         .HasColumnType("REAL");
 
+                    b.Property<string>("ImportMappingsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Language")
                         .IsRequired()
                         .HasColumnType("TEXT");

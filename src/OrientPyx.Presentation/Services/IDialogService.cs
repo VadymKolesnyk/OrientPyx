@@ -49,6 +49,9 @@ public interface IDialogService : INotifyPropertyChanged
     /// «participant → status» assignments on save; empty when nothing was entered.</summary>
     Task<IReadOnlyList<QuickWithdrawalAssignment>?> ShowQuickWithdrawalAsync(QuickWithdrawalViewModel dialog);
 
+    /// <summary>Shows the «Додаткові поля» modal (edits are saved as they are made); completes when it is closed.</summary>
+    Task ShowCustomFieldsAsync(CustomFieldsViewModel dialog);
+
     /// <summary>Returns the rewritten course data — one course per split group.</summary>
     Task<IofCourseData?> ShowSplitGroupsAsync(SplitGroupsViewModel dialog);
 

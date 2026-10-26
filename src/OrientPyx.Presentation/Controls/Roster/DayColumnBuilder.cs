@@ -32,7 +32,8 @@ public sealed class DayColumnBuilder
         bool raisedFeeEnabled,
         bool paymentPerDay,
         IReadOnlyList<SheetBand>? previous,
-        IReadOnlyList<ResultColumnDef>? resultColumns = null)
+        IReadOnlyList<ResultColumnDef>? resultColumns = null,
+        IReadOnlyList<BusinessLogic.Models.CustomField>? customFields = null)
     {
         var bands = new List<SheetBand>();
 
@@ -82,6 +83,9 @@ public sealed class DayColumnBuilder
 
         if (showTeam)
             bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Team", nameof(ParticipantDayRowViewModel.Team)));
+
+        // The competition's additional participant fields (Р-13), one column each.
+        CustomFieldColumns.Append(bands, customFields, _loc);
 
         // Result columns (computed from the finish read-outs). Actual start / finish / result time / place
         // are read-only; status is an editable override. «Бали» (score) only on a point-scoring day.

@@ -1697,5 +1697,27 @@
   "Page.Settings.Plugins.Restart": "Зміни набудуть чинності після перезапуску.",
   "Banner.MissingPlugin": "Потрібен плагін «{1}» для дисципліни {0}. Відмітки перевіряються як у заданому напрямку; місць, очок і розрядів немає.",
   "Banner.PluginFailed": "Плагін «{0}» дав помилку — результати пораховано за правилами «{1}». Подробиці — у журналі дій.",
-  "ImportEvent.MissingPlugins": "Змагання використовує плагіни, яких тут немає або їх вимкнено: {0}. Імпорт можливий, але ці дисципліни не рахуватимуться, доки плагін не встановлено."
+  "ImportEvent.MissingPlugins": "Змагання використовує плагіни, яких тут немає або їх вимкнено: {0}. Імпорт можливий, але ці дисципліни не рахуватимуться, доки плагін не встановлено.",
+
+  "CustomFields.Menu": "Додаткові поля…",
+  "CustomFields.Title": "Додаткові поля учасника",
+  "CustomFields.Hint": "Власні поля змагання — одне значення на учасника для всіх днів. Кожне поле стає колонкою в мандатці й таблиці дня, ціллю імпорту з CSV/Excel і колонкою експорту та відомості.",
+  "CustomFields.Add": "Додати поле",
+  "CustomFields.Close": "Готово",
+  "CustomFields.Delete": "Видалити",
+  "CustomFields.DeleteConfirm": "Видалити поле «{0}» і значення цього поля в усіх учасників?",
+  "CustomFields.PluginLocked": "Це поле плагіна: його не можна видалити, поки дисципліна плагіна використовується в змаганні.",
+  "CustomFields.NewField": "Нове поле",
+  "CustomFields.Source.User": "користувач",
+  "CustomFields.Source.Plugin": "плагін {0}",
+  "CustomFields.Kind.Text": "Текст",
+  "CustomFields.Kind.Number": "Число",
+  "CustomFields.Kind.Bool": "Так/ні",
+  "CustomFields.Kind.Choice": "Вибір зі списку",
+  "CustomFields.Col.Label": "Назва",
+  "CustomFields.Col.Kind": "Тип",
+  "CustomFields.Col.Options": "Варіанти (= синоніми)",
+  "CustomFields.Col.Source": "Джерело",
+  "CustomFields.OptionsPlaceholder": "Ч = M, Чол; Ж = F, Жін",
+  "CsvImport.NewField": "+ Нове додаткове поле…"
 }

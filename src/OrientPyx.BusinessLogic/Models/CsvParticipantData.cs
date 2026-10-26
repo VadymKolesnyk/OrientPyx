@@ -17,26 +17,45 @@ public sealed class CsvParticipantData
 }
 
 /// <summary>
-/// The participant fields a CSV column can be mapped to. Mirrors the importable fields of
-/// <see cref="UofParticipant"/> so a mapped CSV row can be turned into one. <see cref="None"/> means
-/// "do not import this field"; it is the default for any of our fields the user leaves unmapped.
+/// What a CSV/Excel column can be mapped to: one of the built-in participant fields (the static instances below,
+/// keyed by their historic names), an additional field (<c>field.&lt;key&gt;</c>, see <see cref="Field"/>), or — from
+/// the relay phase — a relay target (<c>relay.*</c>). A record keyed by a string so new kinds of target need no enum
+/// change and a saved mapping template survives new targets being added.
 /// </summary>
-public enum CsvParticipantField
+public sealed record ImportTarget(string Key)
 {
-    None = 0,
-    FullName,
-    Number,
-    BirthDate,
-    Group,
-    Team,
-    Region,
-    Club,
-    Dussh,
-    Chip,
-    Rank,
-    Representative,
-    FsouCode,
-    IsFsouMember,
-    Payment,
-    Coach
+    public static readonly ImportTarget FullName = new(nameof(FullName));
+    public static readonly ImportTarget Number = new(nameof(Number));
+    public static readonly ImportTarget BirthDate = new(nameof(BirthDate));
+    public static readonly ImportTarget Group = new(nameof(Group));
+    public static readonly ImportTarget Team = new(nameof(Team));
+    public static readonly ImportTarget Region = new(nameof(Region));
+    public static readonly ImportTarget Club = new(nameof(Club));
+    public static readonly ImportTarget Dussh = new(nameof(Dussh));
+    public static readonly ImportTarget Chip = new(nameof(Chip));
+    public static readonly ImportTarget Rank = new(nameof(Rank));
+    public static readonly ImportTarget Representative = new(nameof(Representative));
+    public static readonly ImportTarget FsouCode = new(nameof(FsouCode));
+    public static readonly ImportTarget IsFsouMember = new(nameof(IsFsouMember));
+    public static readonly ImportTarget Payment = new(nameof(Payment));
+    public static readonly ImportTarget Coach = new(nameof(Coach));
+
+    /// <summary>The built-in targets in the order the mapping modal lists them; FullName leads (it is required).</summary>
+    public static IReadOnlyList<ImportTarget> Builtins { get; } =
+    [
+        FullName, Number, BirthDate, Group, Team, Region, Club, Dussh, Chip, Rank, Representative, FsouCode,
+        IsFsouMember, Payment, Coach
+    ];
+
+    /// <summary>The target of an additional participant field.</summary>
+    public static ImportTarget Field(string fieldKey) => new(CustomField.ColumnPrefix + fieldKey);
+
+    /// <summary>The additional field's key when this targets one; null otherwise.</summary>
+    public string? FieldKey => Key.StartsWith(CustomField.ColumnPrefix, StringComparison.Ordinal)
+        ? Key[CustomField.ColumnPrefix.Length..]
+        : null;
+
+    public bool IsBuiltin => Builtins.Contains(this);
+
+    public override string ToString() => Key;
 }

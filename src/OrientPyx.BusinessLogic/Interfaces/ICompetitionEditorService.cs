@@ -786,6 +786,40 @@ public interface ICompetitionEditorService
     Task UpdateEntryFeeDiscountAsync(EntryFeeDiscount discount, CancellationToken cancellationToken = default);
 
     Task DeleteEntryFeeDiscountAsync(Guid discountId, CancellationToken cancellationToken = default);
+
+    // ── Additional participant fields (Р-13…Р-19)
+
+    /// <summary>The competition's additional participant fields in display order (plugin fields of disciplines in
+    /// use are created first, Р-17). Empty without a competition.</summary>
+    Task<IReadOnlyList<CustomField>> GetCustomFieldsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Creates a user field; its key is generated from the label (Р-14) and made unique. Null when the
+    /// label is blank or no competition is selected.</summary>
+    Task<CustomField?> AddCustomFieldAsync(
+        string label, CustomFieldKind kind, IReadOnlyList<ChoiceOption> options, CancellationToken cancellationToken = default);
+
+    /// <summary>Saves a field's label, kind, options and order (the key never changes).</summary>
+    Task UpdateCustomFieldAsync(CustomField field, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes a field and all its values (Р-15). False when it is a plugin's field whose discipline is
+    /// still used in the competition (nothing deleted).</summary>
+    Task<bool> DeleteCustomFieldAsync(string key, CancellationToken cancellationToken = default);
+
+    /// <summary>True when the field belongs to a plugin whose discipline the competition uses (cannot be deleted).</summary>
+    Task<bool> IsCustomFieldLockedAsync(string key, CancellationToken cancellationToken = default);
+
+    /// <summary>Stores one participant's value of a field (normalised, Р-18/Р-19; blank deletes it). Returns the
+    /// stored value.</summary>
+    Task<string> SetParticipantFieldAsync(Guid participantId, string key, string? value, CancellationToken cancellationToken = default);
+
+    /// <summary>Creates the participant fields declared by the plugins whose disciplines the competition uses (Р-17).</summary>
+    Task EnsurePluginFieldsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>The saved column mapping for a CSV/Excel header set: the competition's own, else the app default.</summary>
+    Task<string?> GetImportMappingAsync(string headerSetHash, CancellationToken cancellationToken = default);
+
+    /// <summary>Remembers a confirmed column mapping for the competition and as the application default.</summary>
+    Task SaveImportMappingAsync(string headerSetHash, string json, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Outcome of a participant import, for reporting back to the user.</summary>

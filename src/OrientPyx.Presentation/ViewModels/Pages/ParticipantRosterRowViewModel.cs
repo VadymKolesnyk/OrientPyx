@@ -180,6 +180,10 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
 
     public Guid ParticipantId => _participantId;
 
+    /// <summary>The participant's additional fields (Р-13), bound by the <c>field.&lt;key&gt;</c> columns as
+    /// <c>Fields[key].Text</c> etc. Set by the page right after the row is built.</summary>
+    public ParticipantFieldsViewModel Fields { get; set; } = ParticipantFieldsViewModel.Empty;
+
     /// <summary>Per-discount checkboxes, one per discount column in build order (FSOU-member first).</summary>
     public ObservableCollection<DiscountFlagViewModel> DiscountFlags { get; }
 

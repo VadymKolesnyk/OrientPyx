@@ -471,6 +471,10 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     /// <summary>Parent participant id; needed for the cascade-delete check on removal.</summary>
     public Guid ParticipantId => _participantId;
 
+    /// <summary>The participant's additional fields (Р-13), bound by the <c>field.&lt;key&gt;</c> columns as
+    /// <c>Fields[key].Text</c> etc. Set by the page right after the row is built.</summary>
+    public ParticipantFieldsViewModel Fields { get; set; } = ParticipantFieldsViewModel.Empty;
+
     /// <summary>Group choices for this day (id + name). The day grid offers only real groups — no
     /// "не участвує" sentinel — since a participant shown here is always a day member (leave the day
     /// via the row's delete button instead).</summary>

@@ -193,6 +193,35 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.ToTable("ControlPoints");
                 });
 
+            modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.CustomFieldDef", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OptionsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("CustomFields");
+                });
+
             modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.DrawSettingsRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -435,6 +464,28 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.ToTable("GroupDaySettings");
                 });
 
+            modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.ImportMappingRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("HeaderSetHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Json")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HeaderSetHash")
+                        .IsUnique();
+
+                    b.ToTable("ImportMappings");
+                });
+
             modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.MonitorSettingsRow", b =>
                 {
                     b.Property<int>("Id")
@@ -611,6 +662,25 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.HasIndex("ParticipantId");
 
                     b.ToTable("ParticipantDiscounts");
+                });
+
+            modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.ParticipantFieldValue", b =>
+                {
+                    b.Property<Guid>("ParticipantId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Key")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ParticipantId", "Key");
+
+                    b.HasIndex("Key");
+
+                    b.ToTable("ParticipantFieldValues");
                 });
 
             modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.PluginSettingsRow", b =>

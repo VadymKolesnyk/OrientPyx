@@ -262,6 +262,15 @@
                                          persisted, so the caption flips between "показати"/"сховати". -->
                                     <!-- Sits outside the lock-gated panel above: it changes the page's
                                          view, not the day's data, so it stays usable on a closed day. -->
+                                    <!-- The competition's additional participant fields (add / rename / delete). Not
+                                         gated by the day lock: fields are competition-level, not day data. -->
+                                    <Button Command="{Binding EditCustomFieldsCommand}" Classes="menu"
+                                            HorizontalAlignment="Stretch">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <controls:Icon Kind="Tag" Size="16" />
+                                            <TextBlock Text="{Binding Localization[CustomFields.Menu]}" />
+                                        </StackPanel>
+                                    </Button>
                                     <Button Command="{Binding ToggleRosterCommand}" Classes="menu"
                                             HorizontalAlignment="Stretch"
                                             IsVisible="{Binding CanToggleRoster}">
@@ -327,6 +336,7 @@
                                       PaymentPerDay="{Binding PaymentPerDay}"
                                       ShowTeam="{Binding RosterShowsTeam}"
                                       ShowScore="{Binding RosterShowsScore}"
+                                      CustomFields="{Binding CustomFields}"
                                       StatusInfo="{Binding StatusInfo}"
                                       ToggleBlockCommand="{Binding ToggleBlockCommand}"
                                       RentalChips="{Binding RentalChips}"

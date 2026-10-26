@@ -76,6 +76,11 @@ public interface IAppStore
 
     Task SaveDisabledPluginsJsonAsync(string json, CancellationToken cancellationToken = default);
 
+    /// <summary>The app-default CSV/Excel column mappings (JSON keyed by header-set hash); null/blank when none.</summary>
+    Task<string?> GetImportMappingsJsonAsync(CancellationToken cancellationToken = default);
+
+    Task SaveImportMappingsJsonAsync(string json, CancellationToken cancellationToken = default);
+
     Task<int?> GetReadoutTypeAsync(CancellationToken cancellationToken = default);
 
     Task SaveReadoutTypeAsync(int readoutType, CancellationToken cancellationToken = default);

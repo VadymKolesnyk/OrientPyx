@@ -57,7 +57,12 @@ public sealed record ParticipantDayRow(
     DisciplineId DayDefaultDiscipline,
     // Computed run result for this day (read-only except Status, which a judge may override). See
     // ParticipantDayResult; Empty when the chip was never read.
-    ParticipantDayResult Result);
+    ParticipantDayResult Result)
+{
+    /// <summary>The participant's additional-field values by field key (participant-level, Р-13). Read-only here;
+    /// edits go through <c>ICompetitionEditorService.SetParticipantFieldAsync</c>.</summary>
+    public IReadOnlyDictionary<string, string> Fields { get; init; } = new Dictionary<string, string>();
+}
 
 /// <summary>One participating day's fee inputs: which day it is, the group assigned (null = none), the
 /// chip held and whether the raised (late) fee is flagged for that day (per-day payment mode only). The

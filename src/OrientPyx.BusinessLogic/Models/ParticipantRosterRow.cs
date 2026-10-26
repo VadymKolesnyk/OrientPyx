@@ -31,7 +31,12 @@ public sealed record ParticipantRosterRow(
     bool PaysRaisedFee,
     IReadOnlyList<Guid> SelectedDiscountIds,
     decimal TotalEntryFee,
-    IReadOnlyList<RosterDayCell> Days);
+    IReadOnlyList<RosterDayCell> Days)
+{
+    /// <summary>The participant's additional-field values by field key (participant-level, Р-13). Read-only here;
+    /// edits go through <c>ICompetitionEditorService.SetParticipantFieldAsync</c>.</summary>
+    public IReadOnlyDictionary<string, string> Fields { get; init; } = new Dictionary<string, string>();
+}
 
 /// <summary>
 /// One participant's standing on one day in the roster view. <see cref="IsMember"/> false (and a

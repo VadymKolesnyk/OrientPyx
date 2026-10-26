@@ -29,6 +29,7 @@ namespace OrientPyx.Presentation.Controls;
 internal sealed class LazyTextCell : LazyEditCell
 {
     private static readonly BoolToOpacityConverter DimConverter = new();
+    private static readonly BoolToDangerBrushConverter DangerConverter = new();
 
     private readonly string _editPath;
     private readonly SheetTextOptions _options;
@@ -69,6 +70,10 @@ internal sealed class LazyTextCell : LazyEditCell
             Label[!IsEnabledProperty] = new Binding(enabled);
         if (options.OpacityPath is { } opacity)
             Label[!OpacityProperty] = new Binding(opacity) { Converter = DimConverter };
+        // A per-row "invalid value" flag tints the resting label red (e.g. an additional field's value outside
+        // its choice list, Р-18).
+        if (options.DangerPath is { } danger)
+            Label[!TextBlock.ForegroundProperty] = new Binding(danger) { Converter = DangerConverter };
         if (options.RentalChips is { } registry)
         {
             // Same registry the editor uses; bold-red the label when the number isn't a rental chip.
@@ -233,6 +238,9 @@ internal sealed class SheetTextOptions
     public string? EnabledPath { get; init; }
     public string? OpacityPath { get; init; }
     public bool CommitOnLostFocus { get; init; }
+
+    /// <summary>Optional bool path: when true the resting label is tinted red (DangerBrush).</summary>
+    public string? DangerPath { get; init; }
 
     /// <summary>
     /// The rental-chip set used to bold-red a non-rental number on both the editor and the resting

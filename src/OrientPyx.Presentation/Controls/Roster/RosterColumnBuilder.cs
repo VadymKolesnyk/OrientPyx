@@ -63,7 +63,8 @@ public sealed class RosterColumnBuilder
         bool showTeam,
         bool showScore,
         bool paymentPerDay,
-        IReadOnlyList<SheetBand>? previous)
+        IReadOnlyList<SheetBand>? previous,
+        IReadOnlyList<BusinessLogic.Models.CustomField>? customFields = null)
     {
         var bands = new List<SheetBand>(Identity.Length + blocks.Count + 2);
 
@@ -112,6 +113,9 @@ public sealed class RosterColumnBuilder
             DayColumnBuilder.ConfigureComboPaste(col);
             bands.Add(new SheetBand(SheetBand.BandKind.Identity, [col]) { Header = col.Header });
         }
+
+        // The competition's additional participant fields (Р-13), after the identity columns.
+        CustomFieldColumns.Append(bands, customFields, _loc);
 
         // With a single day there is nothing to group: a "block" would be one "День 1" column under a
         // band label with a pointless collapse toggle. Render each field as a plain identity column

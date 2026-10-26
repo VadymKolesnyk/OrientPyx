@@ -21,27 +21,28 @@ public sealed class StatementBuilder : IStatementBuilder
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(labels);
 
-        // The visible logical columns in the configured order.
+        // The visible logical columns in the configured order (an additional field only while it still exists).
+        var fieldLabels = data.Fields.ToDictionary(f => f.Key, f => f.Value);
         var logical = settings.Columns
-            .Where(c => c.Visible)
-            .Select(c => c.Column)
+            .Where(c => c.Visible && (c.Column != StatementColumn.Field || c.FieldKey is { } k && fieldLabels.ContainsKey(k)))
+            .Select(c => (c.Column, c.FieldKey))
             .ToList();
         // Always have at least the name column, so a stripped-empty config still produces a usable table.
         if (logical.Count == 0)
-            logical.Add(StatementColumn.FullName);
+            logical.Add((StatementColumn.FullName, null));
 
         // Expand into a PHYSICAL column plan: every logical column is one physical column except «Старт», which
         // becomes one column per day (day index ≥ 0). A single-day block collapses to one plain «Старт» column.
         // dayIndex indexes into StatementRow.StartTimes / data.DayLabels; -1 for every non-start column.
         var dayCount = data.DayLabels.Count;
         var plan = new List<PlanColumn>(logical.Count);
-        foreach (var c in logical)
+        foreach (var (c, fieldKey) in logical)
         {
             if (c == StatementColumn.Start && dayCount > 0)
                 for (var d = 0; d < dayCount; d++)
                     plan.Add(new PlanColumn(c, d));
             else if (c != StatementColumn.Start)
-                plan.Add(new PlanColumn(c, -1));
+                plan.Add(new PlanColumn(c, -1, fieldKey));
             // A «Старт» column with no days at all contributes nothing (dayCount == 0).
         }
         if (plan.Count == 0)
@@ -56,6 +57,7 @@ public sealed class StatementBuilder : IStatementBuilder
         var headers = plan
             .Select(p => p.DayIndex >= 0
                 ? StartHeader(p.DayIndex)
+                : p.FieldKey is { } key ? fieldLabels[key]
                 : labels.ColumnHeaders.TryGetValue(p.Column, out var h) ? h : p.Column.ToString())
             .ToList();
 
@@ -84,7 +86,11 @@ public sealed class StatementBuilder : IStatementBuilder
         foreach (var row in ordered)
         {
             seq++;
-            var cells = plan.Select(p => Cell(p.Column, row, seq, p.DayIndex)).ToList();
+            var cells = plan
+                .Select(p => p.FieldKey is { } key
+                    ? row.Fields.TryGetValue(key, out var value) ? value : string.Empty
+                    : Cell(p.Column, row, seq, p.DayIndex))
+                .ToList();
 
             // Bold only the chip cell, and only for an own chip (rental prints normal). Built lazily — most
             // rows are rental, so a null mask (all normal) is the common case.
@@ -140,6 +146,7 @@ public sealed class StatementBuilder : IStatementBuilder
         StatementColumn.Team => true,
         StatementColumn.Representative => true,
         StatementColumn.Note => true,
+        StatementColumn.Field => true,
         _ => false
     };
 
@@ -191,5 +198,5 @@ public sealed class StatementBuilder : IStatementBuilder
     /// <summary>One physical output column: the logical <see cref="StatementColumn"/> it renders and, for a
     /// per-day «Старт» sub-column, which day it is (index into <see cref="StatementData.DayLabels"/> /
     /// <see cref="StatementRow.StartTimes"/>). <see cref="DayIndex"/> is -1 for every non-start column.</summary>
-    private readonly record struct PlanColumn(StatementColumn Column, int DayIndex);
+    private readonly record struct PlanColumn(StatementColumn Column, int DayIndex, string? FieldKey = null);
 }

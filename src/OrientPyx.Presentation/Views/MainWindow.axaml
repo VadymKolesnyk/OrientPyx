@@ -52,6 +52,9 @@
         <DataTemplate DataType="dialogs:QuickWithdrawalViewModel">
             <dialogViews:QuickWithdrawalView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:CustomFieldsViewModel">
+            <dialogViews:CustomFieldsView />
+        </DataTemplate>
         <DataTemplate DataType="dialogs:SplitGroupsViewModel">
             <dialogViews:SplitGroupsView />
         </DataTemplate>

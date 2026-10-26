@@ -1697,5 +1697,27 @@
   "Page.Settings.Plugins.Restart": "Changes take effect after a restart.",
   "Banner.MissingPlugin": "Plugin «{1}» is required for discipline {0}. Punches are checked as a set course; there are no places, points or ranks.",
   "Banner.PluginFailed": "Plugin «{0}» failed — results were computed by the «{1}» rules. See the activity log for details.",
-  "ImportEvent.MissingPlugins": "The competition uses plugins that are missing or disabled here: {0}. You can import it, but those disciplines will not be scored until the plugin is installed."
+  "ImportEvent.MissingPlugins": "The competition uses plugins that are missing or disabled here: {0}. You can import it, but those disciplines will not be scored until the plugin is installed.",
+
+  "CustomFields.Menu": "Additional fields…",
+  "CustomFields.Title": "Additional participant fields",
+  "CustomFields.Hint": "The competition's own fields — one value per participant for all days. Each field becomes a column in the roster and the day table, a CSV/Excel import target and an export and statement column.",
+  "CustomFields.Add": "Add field",
+  "CustomFields.Close": "Done",
+  "CustomFields.Delete": "Delete",
+  "CustomFields.DeleteConfirm": "Delete the field «{0}» and its value for every participant?",
+  "CustomFields.PluginLocked": "This is a plugin's field: it cannot be deleted while the plugin's discipline is used in the competition.",
+  "CustomFields.NewField": "New field",
+  "CustomFields.Source.User": "user",
+  "CustomFields.Source.Plugin": "plugin {0}",
+  "CustomFields.Kind.Text": "Text",
+  "CustomFields.Kind.Number": "Number",
+  "CustomFields.Kind.Bool": "Yes/no",
+  "CustomFields.Kind.Choice": "Choice from list",
+  "CustomFields.Col.Label": "Name",
+  "CustomFields.Col.Kind": "Type",
+  "CustomFields.Col.Options": "Options (= synonyms)",
+  "CustomFields.Col.Source": "Source",
+  "CustomFields.OptionsPlaceholder": "M = Male, Man; F = Female, Woman",
+  "CsvImport.NewField": "+ New additional field…"
 }

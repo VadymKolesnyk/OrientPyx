@@ -113,6 +113,10 @@ public sealed class SheetTable : TemplatedControl
     public static readonly StyledProperty<bool> ShowTeamProperty =
         AvaloniaProperty.Register<SheetTable, bool>(nameof(ShowTeam));
 
+    /// <summary>Roster auto-build only; the competition's additional participant fields (one column each).</summary>
+    public static readonly StyledProperty<IReadOnlyList<BusinessLogic.Models.CustomField>?> CustomFieldsProperty =
+        AvaloniaProperty.Register<SheetTable, IReadOnlyList<BusinessLogic.Models.CustomField>?>(nameof(CustomFields));
+
     /// <summary>Roster auto-build only; point-scoring days.</summary>
     public static readonly StyledProperty<bool> ShowScoreProperty =
         AvaloniaProperty.Register<SheetTable, bool>(nameof(ShowScore));
@@ -257,6 +261,12 @@ public sealed class SheetTable : TemplatedControl
         set => SetValue(ShowTeamProperty, value);
     }
 
+    public IReadOnlyList<BusinessLogic.Models.CustomField>? CustomFields
+    {
+        get => GetValue(CustomFieldsProperty);
+        set => SetValue(CustomFieldsProperty, value);
+    }
+
     public bool ShowScore
     {
         get => GetValue(ShowScoreProperty);
@@ -365,7 +375,7 @@ public sealed class SheetTable : TemplatedControl
             change.Property == ToggleRentalChipCommandProperty ||
             change.Property == DiscountsProperty || change.Property == RaisedFeeEnabledProperty ||
             change.Property == ShowTeamProperty || change.Property == ShowScoreProperty ||
-            change.Property == PaymentPerDayProperty)
+            change.Property == PaymentPerDayProperty || change.Property == CustomFieldsProperty)
         {
             Rebuild();
         }
@@ -483,7 +493,8 @@ public sealed class SheetTable : TemplatedControl
             if (Days is null || Blocks is null)
                 return;
             var builder = new RosterColumnBuilder(Localization);
-            _bands = builder.Build(Days, AsList(Blocks), Discounts ?? [], RaisedFeeEnabled, ShowTeam, ShowScore, PaymentPerDay, _bands);
+            _bands = builder.Build(Days, AsList(Blocks), Discounts ?? [], RaisedFeeEnabled, ShowTeam, ShowScore, PaymentPerDay, _bands,
+                CustomFields);
         }
 
         // Apply any user reorder (drag), keyed by a stable band signature so it survives rebuilds.
@@ -3478,8 +3489,13 @@ public sealed class SheetTable : TemplatedControl
             return target.GetType().GetProperty(segment, BindingFlags.Public | BindingFlags.Instance)?.GetValue(target);
 
         var name = segment[..bracket];
-        if (!int.TryParse(segment[(bracket + 1)..].TrimEnd(']'), out var index))
-            return null;
+        var inner = segment[(bracket + 1)..].TrimEnd(']');
+        if (!int.TryParse(inner, out var index))
+        {
+            // A string indexer, e.g. "Fields[gender]" (an additional participant field).
+            var keyed = target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance)?.GetValue(target);
+            return keyed?.GetType().GetProperty("Item", [typeof(string)])?.GetValue(keyed, [inner]);
+        }
         var list = target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance)?.GetValue(target);
         if (list is IList items && index >= 0 && index < items.Count)
             return items[index];

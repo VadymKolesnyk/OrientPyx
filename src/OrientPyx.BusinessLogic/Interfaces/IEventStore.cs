@@ -419,6 +419,31 @@ public interface IEventStore
     Task SaveDisciplineSettingsAsync(
         string eventFolderPath, Guid? dayId, DisciplineId disciplineId, string json, CancellationToken cancellationToken = default);
 
+    /// <summary>The competition's additional participant fields, in display order.</summary>
+    Task<IReadOnlyList<CustomFieldDef>> GetCustomFieldDefsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds a field; false (nothing written) when a field with the same key already exists.</summary>
+    Task<bool> AddCustomFieldDefAsync(string eventFolderPath, CustomFieldDef field, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates a field's label, kind, options and order (the key never changes, Р-14).</summary>
+    Task UpdateCustomFieldDefAsync(string eventFolderPath, CustomFieldDef field, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes a field together with every participant's value of it (Р-15), in one transaction.</summary>
+    Task DeleteCustomFieldDefAsync(string eventFolderPath, string key, CancellationToken cancellationToken = default);
+
+    /// <summary>Every stored additional-field value of the competition.</summary>
+    Task<IReadOnlyList<ParticipantFieldValue>> GetParticipantFieldValuesAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    /// <summary>Sets one participant's value of a field; a blank value deletes the stored one.</summary>
+    Task SetParticipantFieldValueAsync(
+        string eventFolderPath, Guid participantId, string key, string value, CancellationToken cancellationToken = default);
+
+    /// <summary>The saved CSV/Excel column mapping for a header set; null when none.</summary>
+    Task<string?> GetImportMappingJsonAsync(string eventFolderPath, string headerSetHash, CancellationToken cancellationToken = default);
+
+    Task SaveImportMappingJsonAsync(
+        string eventFolderPath, string headerSetHash, string json, CancellationToken cancellationToken = default);
+
     /// <summary>Competition-level; null when none is stored.</summary>
     Task<string?> GetMonitorJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
