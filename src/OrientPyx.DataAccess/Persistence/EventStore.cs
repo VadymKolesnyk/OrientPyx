@@ -309,6 +309,68 @@ public sealed class EventStore : IEventStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task MergeGroupAsync(string eventFolderPath, Guid sourceGroupId, Guid targetGroupId, CancellationToken cancellationToken = default)
+    {
+        if (sourceGroupId == targetGroupId)
+            return;
+
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var source = await db.Groups.FirstOrDefaultAsync(g => g.Id == sourceGroupId, cancellationToken);
+        var target = await db.Groups.FirstOrDefaultAsync(g => g.Id == targetGroupId, cancellationToken);
+        if (source is null || target is null)
+            return;
+
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // Day membership: a day the target doesn't run on takes the source's settings as-is; a day both
+        // run on keeps the target's settings and drops the source's.
+        var targetDays = await db.GroupDaySettings
+            .Where(s => s.GroupId == targetGroupId)
+            .Select(s => s.EventDayId)
+            .ToListAsync(cancellationToken);
+        var sourceSettings = await db.GroupDaySettings
+            .Where(s => s.GroupId == sourceGroupId)
+            .ToListAsync(cancellationToken);
+        foreach (var settings in sourceSettings)
+        {
+            if (targetDays.Contains(settings.EventDayId))
+                db.GroupDaySettings.Remove(settings);
+            else
+                settings.GroupId = targetGroupId;
+        }
+
+        // Scatter variants follow the same rule, per day.
+        var targetVariantDays = await db.ScatterVariants
+            .Where(v => v.GroupId == targetGroupId)
+            .Select(v => v.EventDayId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        var sourceVariants = await db.ScatterVariants
+            .Where(v => v.GroupId == sourceGroupId)
+            .ToListAsync(cancellationToken);
+        foreach (var variant in sourceVariants)
+        {
+            if (targetVariantDays.Contains(variant.EventDayId))
+                db.ScatterVariants.Remove(variant);
+            else
+                variant.GroupId = targetGroupId;
+        }
+
+        // Group-level fields the target lacks are taken from the source.
+        target.EntryFee ??= source.EntryFee;
+        target.MinBirthYear ??= source.MinBirthYear;
+        target.MaxBirthYear ??= source.MaxBirthYear;
+
+        db.Groups.Remove(source);
+        await db.SaveChangesAsync(cancellationToken);
+
+        await db.ParticipantDays
+            .Where(pd => pd.GroupId == sourceGroupId)
+            .ExecuteUpdateAsync(s => s.SetProperty(pd => pd.GroupId, (Guid?)targetGroupId), cancellationToken);
+
+        await tx.CommitAsync(cancellationToken);
+    }
+
     public async Task UpdateGroupEntryFeeAsync(string eventFolderPath, Guid groupId, decimal? entryFee, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);

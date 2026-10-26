@@ -768,7 +768,11 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             // ToRow() reads VM state, so snapshot it here (UI thread) before offloading the
             // synchronous SQLite write to the pool. Autosave bypasses the busy overlay on purpose.
             var dto = row.ToRow();
-            await Task.Run(() => _editor.UpdateGroupDayRowAsync(dto, token), token);
+            var merged = await Task.Run(() => _editor.UpdateGroupDayRowAsync(dto, token), token);
+
+            // Renamed onto an existing group ⇒ this row was folded into it; reload to show the merged group.
+            if (merged)
+                await LoadAsync();
         }
         catch (OperationCanceledException)
         {

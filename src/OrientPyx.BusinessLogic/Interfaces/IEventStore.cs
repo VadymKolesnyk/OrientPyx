@@ -90,6 +90,12 @@ public interface IEventStore
 
     Task DeleteGroupAsync(string eventFolderPath, Guid groupId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Folds the source group into the target in one transaction: participants and day settings move over
+    /// (on a day both groups run, the target's settings win), then the source group is deleted.
+    /// </summary>
+    Task MergeGroupAsync(string eventFolderPath, Guid sourceGroupId, Guid targetGroupId, CancellationToken cancellationToken = default);
+
     /// <summary>Entry fee is shared across all days.</summary>
     Task UpdateGroupEntryFeeAsync(string eventFolderPath, Guid groupId, decimal? entryFee, CancellationToken cancellationToken = default);
 

@@ -694,21 +694,25 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
         return await GetGroupDayRowsAsync(cancellationToken);
     }
 
-    public async Task UpdateGroupDayRowAsync(GroupDayRow row, CancellationToken cancellationToken = default)
+    public async Task<bool> UpdateGroupDayRowAsync(GroupDayRow row, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(row);
         await EnsureDayEditableAsync(CurrentDayId, cancellationToken);
 
-        // Rename the group (affects every day it runs on). Ignore empty names and collisions with a
-        // different group, keeping the previous name — the row text reverts on the next reload.
+        // Rename the group (affects every day it runs on); empty names are ignored. A name that matches
+        // another group (TextKey — so a Latin/Cyrillic look-alike counts too) merges this group into it.
         var target = (row.Name ?? string.Empty).Trim();
         if (target.Length > 0)
         {
             var groups = await _eventStore.GetGroupsAsync(FolderPath, cancellationToken);
-            var collides = groups.Any(g =>
+            var other = groups.FirstOrDefault(g =>
                 g.Id != row.GroupId && TextKey.Same(g.Name, target));
-            if (!collides)
-                await _eventStore.UpdateGroupAsync(FolderPath, new Group { Id = row.GroupId, Name = target }, cancellationToken);
+            if (other is not null)
+            {
+                await _eventStore.MergeGroupAsync(FolderPath, row.GroupId, other.Id, cancellationToken);
+                return true;
+            }
+            await _eventStore.UpdateGroupAsync(FolderPath, new Group { Id = row.GroupId, Name = target }, cancellationToken);
         }
 
         // The age window is a group-level field (shared across days) but edited from this per-day grid, so
@@ -734,6 +738,7 @@ public sealed class CompetitionEditorService : ICompetitionEditorService
             RankLevel = row.RankLevel,
             MasterCount = row.MasterCount
         }, cancellationToken);
+        return false;
     }
 
     public async Task<int> RecalculateGroupAgeWindowsAsync(CancellationToken cancellationToken = default)

@@ -127,9 +127,10 @@ public interface ICompetitionEditorService
     /// <summary>
     /// Persists an edited group-day row: renames the group (affects all days) and saves the day's
     /// course order, distance, and discipline override. A rename to a name already used by another
-    /// group is ignored (the previous name is kept).
+    /// group (matched via <see cref="Models.TextKey"/>) merges this group into that one instead — its
+    /// participants and day settings move over — and returns true so the caller reloads.
     /// </summary>
-    Task UpdateGroupDayRowAsync(GroupDayRow row, CancellationToken cancellationToken = default);
+    Task<bool> UpdateGroupDayRowAsync(GroupDayRow row, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Recomputes every competition group's birth-year window from its name and the competition start
