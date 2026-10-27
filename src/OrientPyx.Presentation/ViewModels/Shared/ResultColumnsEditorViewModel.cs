@@ -36,19 +36,42 @@ public sealed partial class ResultColumnsEditorViewModel : ObservableObject
     public void Load(ResultColumnSelection? selection)
     {
         var sel = selection ?? ResultColumnSelection.Default;
-        var chosen = sel.Resolve();
+        _loaded = sel;
+        var chosen = sel.Resolve(_extras);
         var chosenKeys = chosen.Select(d => d.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // A chosen key no column answers to (another day's plugin column, a deleted field) is kept and saved back.
+        _unresolvedKeys = sel.Keys
+            .Where(k => !chosenKeys.Contains(k))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         Columns.Clear();
         foreach (var def in chosen)
             Columns.Add(MakeItem(def, isChecked: true));
-        foreach (var def in ResultColumnInfo.All.Where(d => !chosenKeys.Contains(d.Key)))
+        foreach (var def in ResultColumnInfo.All.Concat(_extras).Where(d => !chosenKeys.Contains(d.Key)))
             Columns.Add(MakeItem(def, isChecked: false));
     }
 
-    /// <summary>The current selection: the checked columns, in their current order.</summary>
+    /// <summary>
+    /// The extra columns (plugin columns, additional fields — §10.2) the shown day offers, listed after the fixed
+    /// ones (monitor only). Reloads the list from the current selection; a no-op when the set is unchanged.
+    /// </summary>
+    public void SetExtraColumns(IReadOnlyList<ResultColumnInfo> extras)
+    {
+        if (extras.Select(e => e.Key).SequenceEqual(_extras.Select(e => e.Key), StringComparer.Ordinal))
+            return;
+        var current = Columns.Count > 0 ? BuildSelection() : _loaded;
+        _extras = extras;
+        Load(current);
+    }
+
+    /// <summary>The current selection: the checked columns, in their current order (plus any kept unresolved key).</summary>
     public ResultColumnSelection BuildSelection() =>
-        new(Columns.Where(c => c.IsChecked).Select(c => c.Key).ToList());
+        new(Columns.Where(c => c.IsChecked).Select(c => c.Key).Concat(_unresolvedKeys).ToList());
+
+    private IReadOnlyList<ResultColumnInfo> _extras = [];
+    private IReadOnlyList<string> _unresolvedKeys = [];
+    private ResultColumnSelection? _loaded;
 
     private ResultColumnItem MakeItem(ResultColumnInfo def, bool isChecked)
     {

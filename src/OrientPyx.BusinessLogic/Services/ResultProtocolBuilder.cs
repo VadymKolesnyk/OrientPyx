@@ -20,32 +20,38 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(labels);
 
-        // The visible columns in the configured order — drives both the header row and each cell row.
+        // The visible columns in the configured order — drives both the header row and each cell row. An extra
+        // column (plugin / additional field, §10.2) the day does not have is skipped, not an error.
+        var extras = data.ExtraColumns.ToDictionary(e => e.Key, StringComparer.Ordinal);
         var columns = settings.Columns
             .Where(c => c.Visible)
-            .Select(c => c.Column)
+            .Select(c => c.Column != ProtocolColumn.Extra
+                ? new Col(c.Column, null)
+                : c.Key is { } key && extras.TryGetValue(key, out var extra) ? new Col(ProtocolColumn.Extra, extra) : (Col?)null)
+            .OfType<Col>()
             .ToList();
         // Always have at least the name column, so a stripped-empty config still produces a usable table.
         if (columns.Count == 0)
-            columns.Add(ProtocolColumn.FullName);
+            columns.Add(new Col(ProtocolColumn.FullName, null));
 
         var headers = columns
-            .Select(c => labels.ColumnHeaders.TryGetValue(c, out var h) ? h : c.ToString())
+            .Select(c => c.Extra is { } e ? labels.Translate?.Invoke(e.LabelKey) ?? e.LabelKey
+                : labels.ColumnHeaders.TryGetValue(c.Column, out var h) ? h : c.Column.ToString())
             .ToList();
 
         // Parallel short captions — the renderer falls back to these for a column too narrow for the full one.
         // Blank when no abbreviation is configured (the renderer then keeps the full caption).
         var shortHeaders = columns
-            .Select(c => labels.ColumnHeadersShort is { } s && s.TryGetValue(c, out var h) ? h : string.Empty)
+            .Select(c => c.Extra is null && labels.ColumnHeadersShort is { } s && s.TryGetValue(c.Column, out var h) ? h : string.Empty)
             .ToList();
 
         // Per-column body-wrap flags (parallel to the columns) — free-text columns may wrap; short-code columns
         // stay on one line. See ColumnBodyWraps.
-        var bodyWrap = columns.Select(ColumnBodyWraps).ToList();
+        var bodyWrap = columns.Select(c => c.Extra is { } e ? !e.IsNumeric : ColumnBodyWraps(c.Column)).ToList();
 
         // Per-column shrink priority (parallel to the columns) — drives which columns give up width first when the
         // table is too wide for the page. See ShrinkPriority.
-        var shrinkPriority = columns.Select(ShrinkPriority).ToList();
+        var shrinkPriority = columns.Select(c => c.Extra is { } e ? (e.IsNumeric ? 1 : 3) : ShrinkPriority(c.Column)).ToList();
 
         var sections = new List<ResultProtocolSection>(data.Groups.Count);
         foreach (var group in data.Groups.OrderBy(g => g.Order))
@@ -61,7 +67,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
                 ? BuildRelayRows(relayTeams, group.Rows, columns, labels)
                 : group.IsTeam
                     ? BuildTeamRows(group.Rows, columns, leader)
-                    : BuildPersonalRows(group.Rows, columns, leader);
+                    : BuildPersonalRows(group.Rows, columns, leader, labels);
 
             sections.Add(new ResultProtocolSection
             {
@@ -77,7 +83,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
                     labels.CourseSetterLabel, group.CourseSetter, group.CourseSetterCategory),
                 // The rank-derivation line is shown only when the group awards a rank AND the «виконаний розряд»
                 // column is in the visible set — so it explains a column the reader can actually see.
-                RankCalculationText = columns.Contains(ProtocolColumn.AwardedRank)
+                RankCalculationText = columns.Any(c => c.Column == ProtocolColumn.AwardedRank)
                     ? FormatRankCalculation(group.RankCalculation, labels)
                     : string.Empty,
                 Rows = rows
@@ -211,7 +217,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
     // A personal (non-team) section: placed finishers first by ascending place, then everyone else by name
     // (the classic protocol order), each as one numbered participant row.
     private static List<ResultProtocolBodyRow> BuildPersonalRows(
-        IReadOnlyList<ResultProtocolRow> rows, IReadOnlyList<ProtocolColumn> columns, TimeSpan? leader)
+        IReadOnlyList<ResultProtocolRow> rows, IReadOnlyList<Col> columns, TimeSpan? leader, ProtocolLabels labels)
     {
         var ordered = rows
             .OrderBy(r => r.Result.Place is { } p ? p : int.MaxValue)
@@ -223,7 +229,9 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         foreach (var row in ordered)
         {
             seq++;
-            body.Add(new ResultProtocolBodyRow(columns.Select(c => Cell(c, row, seq, leader)).ToList()));
+            body.Add(new ResultProtocolBodyRow(columns
+                .Select(c => c.Column == ProtocolColumn.FullName ? NameWithNote(row, labels) : Cell(c, row, seq, leader))
+                .ToList()));
         }
         return body;
     }
@@ -232,7 +240,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
     // team name), and emit a bold team-caption row (carrying the team place/score) above each team's member
     // rows. Teamless runners (поза конкурсом) are listed last, each as their own caption-less row.
     private static List<ResultProtocolBodyRow> BuildTeamRows(
-        IReadOnlyList<ResultProtocolRow> rows, IReadOnlyList<ProtocolColumn> columns, TimeSpan? leader)
+        IReadOnlyList<ResultProtocolRow> rows, IReadOnlyList<Col> columns, TimeSpan? leader)
     {
         var body = new List<ResultProtocolBodyRow>();
 
@@ -275,7 +283,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
     // time, cumulative). Runners of the group who are on no team (Р-22 «без команди») are listed last.
     private static List<ResultProtocolBodyRow> BuildRelayRows(
         IReadOnlyList<RelayProtocolTeam> teams, IReadOnlyList<ResultProtocolRow> rows,
-        IReadOnlyList<ProtocolColumn> columns, ProtocolLabels labels)
+        IReadOnlyList<Col> columns, ProtocolLabels labels)
     {
         var leader = teams
             .Where(t => t.Result is { Place: not null, Time: not null })
@@ -309,10 +317,10 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         return body;
     }
 
-    private static string RelayTeamCell(ProtocolColumn column, RelayProtocolTeam team, int seq, TimeSpan? leader)
+    private static string RelayTeamCell(Col column, RelayProtocolTeam team, int seq, TimeSpan? leader)
     {
         var r = team.Result;
-        return column switch
+        return column.Column switch
         {
             ProtocolColumn.Sequence => seq.ToString(CultureInfo.InvariantCulture),
             ProtocolColumn.Number => team.Number.ToString(CultureInfo.InvariantCulture),
@@ -333,11 +341,11 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
     }
 
     private static string RelayLegCell(
-        ProtocolColumn column, RelayProtocolTeam team, RelayProtocolLeg leg, ProtocolLabels labels)
+        Col column, RelayProtocolTeam team, RelayProtocolLeg leg, ProtocolLabels labels)
     {
         var runner = leg.Runner;
         var result = runner?.Result.Leg ?? team.Result?.Legs.FirstOrDefault(l => l.Leg == leg.Leg);
-        switch (column)
+        switch (column.Column)
         {
             case ProtocolColumn.Number:
                 return RelayBib.Format(team.Number, leg.Leg);
@@ -352,6 +360,8 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
                     marks.Add(labels.RelayNoCourseMark);
                 if (result is { Restarted: true } && labels.RelayRestartMark.Length > 0)
                     marks.Add(labels.RelayRestartMark);
+                if (UnrankedNote(runner.Result, labels) is { } note)
+                    marks.Add(note);
                 return marks.Count > 0 ? $"{runner.FullName} ({string.Join(", ", marks)})" : runner.FullName;
             case ProtocolColumn.Result:
                 if (result is null || runner is null)
@@ -378,7 +388,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
     // A team caption row's cell: the team name in the name column, the team place/score/result in theirs,
     // the team sequence in the №-column; the per-person columns (birth, club, coach…) are blank on the caption.
     private static string TeamCell(
-        ProtocolColumn column, ResultProtocolRow lead, string teamName, int teamSeq, TimeSpan? leader) => column switch
+        Col column, ResultProtocolRow lead, string teamName, int teamSeq, TimeSpan? leader) => column.Column switch
     {
         ProtocolColumn.Sequence => teamSeq.ToString(CultureInfo.InvariantCulture),
         ProtocolColumn.FullName => teamName,
@@ -392,7 +402,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
 
     // A team member's cell: the per-person identity columns, but no place/score/sequence (those belong to the
     // team caption above). The member still shows their own result time/status for reference.
-    private static string MemberCell(ProtocolColumn column, ResultProtocolRow row, TimeSpan? leader) => column switch
+    private static string MemberCell(Col column, ResultProtocolRow row, TimeSpan? leader) => column.Column switch
     {
         ProtocolColumn.Sequence => string.Empty,
         ProtocolColumn.Place => string.Empty,
@@ -404,7 +414,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
     };
 
     private static string Cell(
-        ProtocolColumn column, ResultProtocolRow row, int sequence, TimeSpan? leader) => column switch
+        Col column, ResultProtocolRow row, int sequence, TimeSpan? leader) => column.Column switch
     {
         ProtocolColumn.Sequence => sequence.ToString(CultureInfo.InvariantCulture),
         ProtocolColumn.Number => row.Number,
@@ -421,8 +431,23 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         ProtocolColumn.Points => row.Result.Points is { } pts ? PointsTable.Format(pts) : string.Empty,
         ProtocolColumn.AwardedRank => row.Result.AwardedRank ?? string.Empty,
         ProtocolColumn.Gap => GapCell(row.Result, leader),
+        ProtocolColumn.Extra => column.Extra?.Format(row.Result, row.Fields) ?? string.Empty,
         _ => string.Empty
     };
+
+    // A resolved protocol column: a built-in one, or an extra column the day has (§10.2).
+    private readonly record struct Col(ProtocolColumn Column, ExtraResultColumn? Extra);
+
+    // The note a discipline rule left on an OK result it withheld from ranking (Р-48: «K не визначено»); null when
+    // there is none. A relay runner without a team is listed apart and needs no note.
+    private static string? UnrankedNote(ParticipantDayResult result, ProtocolLabels labels) =>
+        result.UnrankedReason is { } reason && reason != Results.DayResultsCalculator.RelayNoTeamReason
+            ? labels.Translate?.Invoke(reason) ?? reason
+            : null;
+
+    // The runner's name with the unranked note after it («Іваненко Іван (K не визначено)»).
+    private static string NameWithNote(ResultProtocolRow row, ProtocolLabels labels) =>
+        UnrankedNote(row.Result, labels) is { } note ? $"{row.FullName} ({note})" : row.FullName;
 
     // The «Відставання» column: the loss to the group leader as "+h:mm:ss", shown only for a placed result
     // whose time exceeds the leader's. The leader themselves, an unplaced run (DNS/MP/поза конкурсом) and a

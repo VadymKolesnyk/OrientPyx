@@ -279,6 +279,8 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
                 ct.ThrowIfCancellationRequested();
                 _previewSource = source;
                 _previewSourceDay = day.Id;
+                // The day's extra columns (plugin / fields, §10.2) join the column picker.
+                Columns.SetExtraColumns(source?.Data.ExtraColumns.Select(ResultColumnInfo.ForExtra).ToList() ?? []);
             }
 
             if (_previewSource is null || !ReferenceEquals(file, SelectedFile))
@@ -572,7 +574,8 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
             StatusOvt: "OVT",
             StatusDnf: "DNF",
             StatusDsq: "DSQ",
-            StatusRunning: Localization.Get("Monitor.Status.Running"));
+            StatusRunning: Localization.Get("Monitor.Status.Running"),
+            Translate: Localization.Get);
     }
 
     // --- Top-bar background activity

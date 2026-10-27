@@ -62,6 +62,10 @@ public interface IDialogService : INotifyPropertyChanged
     Task<IReadOnlyDictionary<BusinessLogic.Disciplines.DisciplineId, IReadOnlyDictionary<string, object?>>?> ShowDisciplineSettingsAsync(
         DisciplineSettingsViewModel dialog);
 
+    /// <summary>Shows the table editor of a table setting over the dialog on screen (which comes back after);
+    /// returns the edited table, or null on cancel.</summary>
+    Task<TableValue?> ShowSettingTableAsync(SettingTableViewModel dialog);
+
     /// <summary>An export could not overwrite its target (another program holds it open); offers a
     /// different name. Returns the chosen file name, no path.</summary>
     Task<string?> ShowFileLockedAsync(FileLockedViewModel dialog);

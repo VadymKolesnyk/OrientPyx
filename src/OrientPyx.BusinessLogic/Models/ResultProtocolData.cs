@@ -13,6 +13,9 @@ public sealed record ResultProtocolData(
     /// <summary>Back-compat overload: no officials configured.</summary>
     public ResultProtocolData(IReadOnlyList<ResultProtocolGroup> Groups)
         : this(Groups, ProtocolOfficialsData.None) { }
+
+    /// <summary>The day's extra result columns (plugin columns, additional fields) a template may pick (§10.2).</summary>
+    public IReadOnlyList<ExtraResultColumn> ExtraColumns { get; init; } = [];
 }
 
 /// <summary>
@@ -121,4 +124,10 @@ public sealed record ResultProtocolRow(
     string Rank,
     /// <summary>Team name (rogaine); blank for a personal discipline or a teamless runner.</summary>
     string Team,
-    ParticipantDayResult Result);
+    ParticipantDayResult Result)
+{
+    /// <summary>The participant's additional field values by key (for the «field.*» extra columns).</summary>
+    public IReadOnlyDictionary<string, string> Fields { get; init; } = NoFields;
+
+    private static readonly IReadOnlyDictionary<string, string> NoFields = new Dictionary<string, string>();
+}

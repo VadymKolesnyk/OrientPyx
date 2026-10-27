@@ -299,8 +299,7 @@ public sealed partial class MonitorFileViewModel : ObservableObject
 
         foreach (var col in document.Columns)
         {
-            var def = ResultColumnInfo.All.FirstOrDefault(d => d.Column == col.Column);
-            var key = def?.Key ?? col.Column.ToString();
+            var key = col.Key.Length > 0 ? col.Key : col.Column.ToString();
             Preview.Columns.Add(new MonitorPreviewColumn(key, col.Header, col.Column));
         }
 

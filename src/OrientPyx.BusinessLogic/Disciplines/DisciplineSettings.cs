@@ -71,7 +71,7 @@ public static class DisciplineSettings
         var output = new Dictionary<string, object?>();
         foreach (var def in defs)
             if (values.TryGetValue(def.Key, out var value))
-                output[def.Key] = value;
+                output[def.Key] = value is TableValue table ? table.Rows : value;
         return JsonSerializer.Serialize(output);
     }
 
@@ -84,6 +84,7 @@ public static class DisciplineSettings
             SettingKind.Int => ToDecimal(value) is { } d ? (int)Math.Round(Clamp(d, def)) : null,
             SettingKind.Decimal => ToDecimal(value) is { } d ? Clamp(d, def) : null,
             SettingKind.Bool => value is bool b ? b : bool.TryParse(value.ToString(), out var pb) ? pb : null,
+            SettingKind.Table => value as TableValue,
             _ => value.ToString()
         }
     };
@@ -93,8 +94,30 @@ public static class DisciplineSettings
         SettingKind.Int => e.ValueKind == JsonValueKind.Number && e.TryGetDecimal(out var i) ? (int)Math.Round(i) : null,
         SettingKind.Decimal => e.ValueKind == JsonValueKind.Number && e.TryGetDecimal(out var d) ? d : null,
         SettingKind.Bool => e.ValueKind is JsonValueKind.True or JsonValueKind.False ? e.GetBoolean() : null,
+        SettingKind.Table => e.ValueKind == JsonValueKind.Array ? ReadTable(e) : null,
         _ => e.ValueKind == JsonValueKind.String ? e.GetString() : null
     };
+
+    // A table: an array of row objects, each cell a string (a number cell written by hand is read as its text).
+    private static TableValue ReadTable(JsonElement e)
+    {
+        var rows = new List<IReadOnlyDictionary<string, string?>>();
+        foreach (var row in e.EnumerateArray())
+        {
+            if (row.ValueKind != JsonValueKind.Object)
+                continue;
+            var cells = new Dictionary<string, string?>(StringComparer.Ordinal);
+            foreach (var cell in row.EnumerateObject())
+                cells[cell.Name] = cell.Value.ValueKind switch
+                {
+                    JsonValueKind.String => cell.Value.GetString(),
+                    JsonValueKind.Number => cell.Value.GetRawText(),
+                    _ => null
+                };
+            rows.Add(cells);
+        }
+        return new TableValue(rows);
+    }
 
     private static decimal? ToDecimal(object value) => value switch
     {

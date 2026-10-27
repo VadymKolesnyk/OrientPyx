@@ -12,6 +12,25 @@ public enum ColumnKind
 /// text; <see cref="Value"/> reads the value from a result row.</summary>
 public sealed record ResultColumnDef(string Key, string Label, ColumnKind Kind, Func<ResultRow, object?> Value, string? Format = null)
 {
+    /// <summary>Optional: true when the row's value needs attention (the cell is shown in red, e.g. a missing
+    /// coefficient).</summary>
+    public Func<ResultRow, bool>? Problem { get; init; }
+
+    /// <summary>Whether <paramref name="row"/>'s cell is flagged by <see cref="Problem"/> (false on any error).</summary>
+    public bool IsProblem(ResultRow row)
+    {
+        if (Problem is null)
+            return false;
+        try
+        {
+            return Problem(row);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     /// <summary>The value of <paramref name="row"/> as display text (empty for null).</summary>
     public string FormatValue(ResultRow row)
     {
@@ -38,12 +57,15 @@ public sealed record ResultColumnDef(string Key, string Label, ColumnKind Kind, 
 /// <summary>Factories for <see cref="ResultColumnDef"/>.</summary>
 public static class Column
 {
-    public static ResultColumnDef Number(string key, string label, Func<ResultRow, object?> value, string? format = null) =>
-        new(key, label, ColumnKind.Number, value, format);
+    public static ResultColumnDef Number(string key, string label, Func<ResultRow, object?> value, string? format = null,
+        Func<ResultRow, bool>? problem = null) =>
+        new(key, label, ColumnKind.Number, value, format) { Problem = problem };
 
-    public static ResultColumnDef Time(string key, string label, Func<ResultRow, object?> value) =>
-        new(key, label, ColumnKind.Time, value);
+    public static ResultColumnDef Time(string key, string label, Func<ResultRow, object?> value,
+        Func<ResultRow, bool>? problem = null) =>
+        new(key, label, ColumnKind.Time, value) { Problem = problem };
 
-    public static ResultColumnDef Text(string key, string label, Func<ResultRow, object?> value) =>
-        new(key, label, ColumnKind.Text, value);
+    public static ResultColumnDef Text(string key, string label, Func<ResultRow, object?> value,
+        Func<ResultRow, bool>? problem = null) =>
+        new(key, label, ColumnKind.Text, value) { Problem = problem };
 }

@@ -1,4 +1,5 @@
 using OrientPyx.BusinessLogic.Disciplines;
+using OrientPyx.BusinessLogic.Disciplines.Plugins;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Models;
@@ -215,7 +216,7 @@ internal sealed partial class DayResultsCalculator
             {
                 AdjustedTime = changed ? RoundToSecond(adjusted) : time,
                 Extra = row.Values.Count > 0 ? new Dictionary<string, object?>(row.Values) : result.Extra,
-                UnrankedReason = row.UnrankedReason
+                UnrankedReason = QualifiedReason(e.Strategy, row.UnrankedReason)
             };
         }
 
@@ -291,6 +292,11 @@ internal sealed partial class DayResultsCalculator
     }
 
     // Р-6: an adjusted time is rounded to a whole second, half up.
+    // A plugin's unranked reason is one of its own string keys; qualify it with the plugin id so the protocol can
+    // show it through the plugin's strings («K не визначено», Р-48).
+    private static string? QualifiedReason(IDisciplineStrategy strategy, string? reason) =>
+        reason is null || strategy.PluginId is not { } pluginId ? reason : PluginStrings.Key(pluginId, reason);
+
     private static TimeSpan RoundToSecond(TimeSpan time) =>
         TimeSpan.FromSeconds(Math.Round(time.TotalSeconds, MidpointRounding.AwayFromZero));
 

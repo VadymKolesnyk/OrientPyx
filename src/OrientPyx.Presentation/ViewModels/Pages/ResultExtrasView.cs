@@ -30,3 +30,21 @@ public sealed class ResultExtrasView
         }
     }
 }
+
+/// <summary>Whether a plugin result column flags this result's value, by column key (false for an unknown key).</summary>
+public sealed class ResultProblemsView
+{
+    private readonly ParticipantDayResult _result;
+    private readonly IReadOnlyList<ResultColumnDef> _columns;
+
+    public ResultProblemsView(ParticipantDayResult result, IReadOnlyList<ResultColumnDef> columns)
+    {
+        _result = result;
+        _columns = columns;
+    }
+
+    public bool this[string key] =>
+        _result.Extra.Count > 0
+        && _columns.FirstOrDefault(c => c.Key == key) is { } column
+        && column.IsProblem(new ResultRow(new Dictionary<string, object?>(_result.Extra)));
+}

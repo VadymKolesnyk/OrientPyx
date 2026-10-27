@@ -550,8 +550,8 @@ day-grid, рядки етапів. Невідомий ключ — ігнору�
 - [x] 5.1a Варіанти-шаблони (`VariantMatcher` через `CourseMatcher`)
 - [x] 5.2 ByLeg / ByBib
 - [x] 5.3 TeamSet + `TeamCourseAssignment`
-- [ ] 6.1 Табличні налаштування
-- [ ] 6.2 Динамічні колонки
-- [ ] 6.3 Плагін «Зважена естафета» + `RangeTable`, `MarkUnranked`
+- [x] 6.1 Табличні налаштування (`Setting.Table`/`TableValue`, редактор-таблиця поверх модалки налаштувань)
+- [x] 6.2 Динамічні колонки (`ExtraResultColumn`: Word-протокол + прев'ю, монітор, day-grid; онлайн — фаза 7)
+- [x] 6.3 Плагін «Зважена естафета» + `RangeTable`, `MarkUnranked`
 - [ ] 7.1–7.4 Онлайн-контракт, фронтенд, підсумковий, монітор/спліти
 - [ ] 8 `docs/plugin-api.md`

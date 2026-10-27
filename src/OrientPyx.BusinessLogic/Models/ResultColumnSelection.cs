@@ -23,8 +23,10 @@ public sealed record ResultColumnSelection(
     public static ResultColumnSelection None { get; } = new([]);
 
     /// <summary>Resolves the keys to their column definitions in order, dropping unknown/duplicate keys.</summary>
-    public IReadOnlyList<ResultColumnInfo> Resolve()
+    public IReadOnlyList<ResultColumnInfo> Resolve(IEnumerable<ResultColumnInfo>? extras = null)
     {
+        var extraByKey = (extras ?? []).GroupBy(e => e.Key, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var result = new List<ResultColumnInfo>(Keys.Count);
         foreach (var key in Keys)
@@ -33,6 +35,8 @@ public sealed record ResultColumnSelection(
                 continue;
             if (ResultColumnInfo.ByKey(key) is { } def)
                 result.Add(def);
+            else if (extraByKey.TryGetValue(key, out var extra))
+                result.Add(extra);
         }
         return result;
     }

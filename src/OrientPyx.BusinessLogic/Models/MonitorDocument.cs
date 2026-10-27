@@ -41,10 +41,19 @@ public sealed record MonitorLabels(
     string StatusOvt,
     string StatusDnf,
     string StatusDsq,
-    string StatusRunning);
+    string StatusRunning,
+    /// <summary>Resolves an extra column's label key (§10.2); null ⇒ the key is shown as is.</summary>
+    Func<string, string>? Translate = null);
 
 /// <summary>One rendered column: its result-column id (for cell alignment hints) and its header label.</summary>
-public sealed record MonitorColumn(ResultColumn Column, string Header);
+public sealed record MonitorColumn(ResultColumn Column, string Header)
+{
+    /// <summary>The column's stable key (the built-in key, or the extra key for <see cref="ResultColumn.Extra"/>).</summary>
+    public string Key { get; init; } = string.Empty;
+
+    /// <summary>For <see cref="ResultColumn.Extra"/>: the extra column the cells come from.</summary>
+    public ExtraResultColumn? Extra { get; init; }
+}
 
 /// <summary>One group section on a monitor page: the group caption and its ordered rows.</summary>
 public sealed record MonitorGroup(string Name, string Caption, IReadOnlyList<MonitorRow> Cells);

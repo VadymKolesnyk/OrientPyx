@@ -62,7 +62,8 @@ public sealed class DisciplineSettingsFlow : IDisciplineSettingsFlow
             return;
 
         var dialog = new DisciplineSettingsViewModel(
-            _localization, string.Format(_localization.Get("Dashboard.Today.Day"), day.Number), sections);
+            _localization, string.Format(_localization.Get("Dashboard.Today.Day"), day.Number), sections,
+            (pluginId, def, value) => _dialogs.ShowSettingTableAsync(new SettingTableViewModel(_localization, pluginId, def, value)));
         var edited = await _dialogs.ShowDisciplineSettingsAsync(dialog);
         if (edited is null)
             return;

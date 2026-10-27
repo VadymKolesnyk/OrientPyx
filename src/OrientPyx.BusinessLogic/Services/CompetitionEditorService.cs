@@ -2098,6 +2098,13 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var results = await ComputeDayResultsAsync(
             folder, day, cancellationToken, rankCalcs, snapshot, teamResults: teamResults);
 
+        // Additional field values per participant (the «field.*» extra columns, §10.2).
+        var fieldsByParticipant = snapshot.FieldValues
+            .GroupBy(v => v.ParticipantId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyDictionary<string, string>)g
+                .GroupBy(v => v.Key, StringComparer.Ordinal)
+                .ToDictionary(v => v.Key, v => v.First().Value, StringComparer.Ordinal));
+
         // Bucket each member's row under its group; a member with no group is skipped (a protocol is by group).
         var rowsByGroup = new Dictionary<Guid, List<ResultProtocolRow>>();
         var rowByLink = new Dictionary<Guid, ResultProtocolRow>();
@@ -2118,7 +2125,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             }
             var protocolRow = new ResultProtocolRow(
                 result.LegBib ?? p.Number, p.FullName, p.BirthDate, club, region, dussh, p.Coach, p.Rank,
-                p.Team.Trim(), result);
+                p.Team.Trim(), result)
+            {
+                Fields = fieldsByParticipant.TryGetValue(p.Id, out var fv) ? fv : new Dictionary<string, string>()
+            };
             bucket.Add(protocolRow);
             rowByLink[link.Id] = protocolRow;
         }
@@ -2156,7 +2166,13 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 rankCalc, relayTeams));
         }
 
-        return new ResultProtocolData(sections, OfficialsFrom(info));
+        var fieldDefs = await _eventStore.GetCustomFieldDefsAsync(folder, cancellationToken);
+        var disciplines = new[] { day.DefaultDiscipline }
+            .Concat(settings.Select(s => s.DisciplineOverride ?? day.DefaultDiscipline));
+        return new ResultProtocolData(sections, OfficialsFrom(info))
+        {
+            ExtraColumns = ExtraResultColumn.ForDay(_strategies, disciplines, fieldDefs.Select(CustomField.From))
+        };
     }
 
     // The relay group's teams for the start protocols (Р-36): each team with leg 1's start — the runner's drawn
@@ -4966,8 +4982,13 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         MonitorFile file, ResultColumnSelection columnSelection, ResultProtocolData data,
         IReadOnlyDictionary<string, ResultProtocolGroup> groupsByName, string subtitle, MonitorLabels labels)
     {
-        var columns = columnSelection.Resolve()
-            .Select(d => new MonitorColumn(d.Column, labels.ColumnHeaders.GetValueOrDefault(d.Column, d.Key)))
+        // The chosen columns; an extra column (plugin / field, §10.2) shows when the day has it.
+        var extras = data.ExtraColumns.ToDictionary(e => e.Key, StringComparer.Ordinal);
+        var columns = columnSelection.Resolve(data.ExtraColumns.Select(ResultColumnInfo.ForExtra))
+            .Select(d => d.Column == ResultColumn.Extra
+                ? new MonitorColumn(d.Column, labels.Translate?.Invoke(d.LabelKey) ?? d.LabelKey)
+                    { Key = d.Key, Extra = extras[d.Key] }
+                : new MonitorColumn(d.Column, labels.ColumnHeaders.GetValueOrDefault(d.Column, d.Key)) { Key = d.Key })
             .ToList();
 
         // The chosen groups in day order; an empty selection means "all groups of the day".
@@ -5047,6 +5068,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 ResultColumn.Status => StatusText(res, labels),
                 ResultColumn.Points => res.Points?.ToString("0.##", CultureInfo.InvariantCulture)
                     ?? res.Score?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                ResultColumn.Extra => col.Extra?.Format(res, r.Fields) ?? string.Empty,
                 _ => string.Empty,
             });
 

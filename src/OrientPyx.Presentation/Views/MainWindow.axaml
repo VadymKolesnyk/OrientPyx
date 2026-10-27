@@ -61,6 +61,9 @@
         <DataTemplate DataType="dialogs:DisciplineSettingsViewModel">
             <dialogViews:DisciplineSettingsView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:SettingTableViewModel">
+            <dialogViews:SettingTableView />
+        </DataTemplate>
         <DataTemplate DataType="dialogs:ChangeDayNumberViewModel">
             <dialogViews:ChangeDayNumberView />
         </DataTemplate>

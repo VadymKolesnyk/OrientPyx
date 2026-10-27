@@ -79,7 +79,7 @@ public sealed class HtmlMonitorWriter : IMonitorHtmlWriter
 
         sb.Append("<table>\n<thead>\n<tr>\n");
         foreach (var col in columns)
-            sb.Append("<th class=\"").Append(CssClass(col.Column)).Append("\">")
+            sb.Append("<th class=\"").Append(CssClass(col)).Append("\">")
               .Append(Esc(col.Header)).Append("</th>\n");
         sb.Append("</tr>\n</thead>\n<tbody>\n");
 
@@ -89,7 +89,7 @@ public sealed class HtmlMonitorWriter : IMonitorHtmlWriter
             for (var c = 0; c < columns.Count; c++)
             {
                 var value = c < row.Values.Count ? row.Values[c] : string.Empty;
-                sb.Append("<td class=\"").Append(CssClass(columns[c].Column)).Append("\">")
+                sb.Append("<td class=\"").Append(CssClass(columns[c])).Append("\">")
                   .Append(Esc(value)).Append("</td>\n");
             }
             sb.Append("</tr>\n");
@@ -168,8 +168,9 @@ public sealed class HtmlMonitorWriter : IMonitorHtmlWriter
     }
 
     // Column → CSS class, for per-column alignment (numbers/times centred, names left-aligned).
-    private static string CssClass(ResultColumn column) => column switch
+    private static string CssClass(MonitorColumn column) => column.Column switch
     {
+        ResultColumn.Extra => column.Extra is { IsNumeric: false } ? "c-name" : "c-num",
         ResultColumn.FullName or ResultColumn.Team or ResultColumn.Club or ResultColumn.Region => "c-name",
         ResultColumn.Place => "c-place",
         _ => "c-num",

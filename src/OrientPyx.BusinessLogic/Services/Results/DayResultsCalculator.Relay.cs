@@ -153,8 +153,8 @@ internal sealed partial class DayResultsCalculator
 
             var (result, row) = EvaluateLeg(input, link, gs, team.GroupId, strategy, leg, start, useLegStart: true,
                 pending: pending, course: legCourses is null ? null : legCourse ?? LegCourse.Undetermined);
-            if (row?.UnrankedReason is { } reason)
-                unranked ??= reason;
+            if (row is not null && result.UnrankedReason is { } reason)
+                unranked ??= reason;   // Р-48: a leg withheld from ranking withholds the team
 
             cumulative = cumulative is { } c && result.AdjustedTime is { } at ? c + at : null;
             var legResult = new RelayLegResult(leg, link.Id, link.ParticipantId, start, readout?.FinishTime,
@@ -395,7 +395,7 @@ internal sealed partial class DayResultsCalculator
         {
             AdjustedTime = changed ? RoundToSecond(adjusted) : time,
             Extra = row.Values.Count > 0 ? new Dictionary<string, object?>(row.Values) : result.Extra,
-            UnrankedReason = row.UnrankedReason
+            UnrankedReason = QualifiedReason(strategy, row.UnrankedReason)
         }, row);
     }
 

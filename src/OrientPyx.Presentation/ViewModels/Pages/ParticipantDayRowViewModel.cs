@@ -522,6 +522,9 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     /// <summary>A plugin discipline's result values as display text, by column key (empty when none).</summary>
     public ResultExtrasView ResultExtras => new(_result, _resultColumns);
 
+    /// <summary>Whether a plugin flags a result value, by column key (the cell is tinted red, e.g. «K не визначено»).</summary>
+    public ResultProblemsView ResultProblems => new(_result, _resultColumns);
+
     // The plugin result columns that format ResultExtras (set by the page for the shown day).
     private IReadOnlyList<ResultColumnDef> _resultColumns = [];
 
@@ -530,6 +533,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     {
         _resultColumns = columns;
         OnPropertyChanged(nameof(ResultExtras));
+        OnPropertyChanged(nameof(ResultProblems));
     }
 
     public int PlaceSort => _result.Place ?? int.MaxValue;
@@ -906,6 +910,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         OnPropertyChanged(nameof(PointsText));
         OnPropertyChanged(nameof(AwardedRankText));
         OnPropertyChanged(nameof(ResultExtras));
+        OnPropertyChanged(nameof(ResultProblems));
         OnPropertyChanged(nameof(PlaceSort));
         OnPropertyChanged(nameof(RelayTeamText));
         OnPropertyChanged(nameof(RelayTeamSort));

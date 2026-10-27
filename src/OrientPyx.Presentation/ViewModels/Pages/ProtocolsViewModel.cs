@@ -282,17 +282,40 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
             .ToDictionary(c => c.Column, c => c.Visible);
         var present = settings.Columns.Select(c => c.Column).ToHashSet();
         foreach (ProtocolColumn column in Enum.GetValues<ProtocolColumn>())
-            if (present.Add(column))
+            if (column != ProtocolColumn.Extra && present.Add(column))
                 settings.Columns.Add(new ProtocolColumnSetting
                 {
                     Column = column,
                     Visible = !defaultVisible.TryGetValue(column, out var vis) || vis
                 });
 
+        // Extra columns (§10.2): the day's plugin columns and additional fields. One the template lacks is appended
+        // — a plugin column shown (it is what the discipline is about), a field hidden. One the template has but
+        // the day does not (another day's plugin, a deleted field) is kept aside unseen and saved back as it was.
+        var extras = (_previewData?.ExtraColumns ?? []).ToDictionary(e => e.Key, StringComparer.Ordinal);
+        var presentExtras = settings.Columns
+            .Where(c => c.Column == ProtocolColumn.Extra && c.Key is not null)
+            .Select(c => c.Key!)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var extra in extras.Values.Where(e => !presentExtras.Contains(e.Key)))
+            settings.Columns.Add(new ProtocolColumnSetting
+            {
+                Column = ProtocolColumn.Extra,
+                Key = extra.Key,
+                Visible = extra.Plugin is not null
+            });
+        _unavailableExtras = settings.Columns
+            .Where(c => c.Column == ProtocolColumn.Extra && (c.Key is null || !extras.ContainsKey(c.Key)))
+            .ToList();
+
         Columns.Clear();
         foreach (var c in settings.Columns)
         {
-            var item = new ProtocolColumnItemViewModel(c.Column, CaptionKey(c.Column), c.Visible, Localization);
+            if (c.Column == ProtocolColumn.Extra && (c.Key is null || !extras.ContainsKey(c.Key)))
+                continue;
+            var item = c.Column == ProtocolColumn.Extra
+                ? new ProtocolColumnItemViewModel(c.Column, extras[c.Key!].LabelKey, c.Visible, Localization, c.Key)
+                : new ProtocolColumnItemViewModel(c.Column, CaptionKey(c.Column), c.Visible, Localization);
             // Toggling a column's visibility re-renders the preview live and auto-saves to the current day.
             item.PropertyChanged += (_, e) =>
             {
@@ -384,11 +407,8 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
     /// </summary>
     public void MoveColumnByKey(string draggedKey, string targetKey, bool insertAfter)
     {
-        if (!Enum.TryParse<ProtocolColumn>(draggedKey, out var dragged) ||
-            !Enum.TryParse<ProtocolColumn>(targetKey, out var target))
-            return;
-        var from = IndexOf(dragged);
-        var targetIndex = IndexOf(target);
+        var from = IndexOf(draggedKey);
+        var targetIndex = IndexOf(targetKey);
         if (from < 0 || targetIndex < 0 || from == targetIndex)
             return;
 
@@ -406,13 +426,16 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         AutoSave();
     }
 
-    private int IndexOf(ProtocolColumn column)
+    private int IndexOf(string columnKey)
     {
         for (var i = 0; i < Columns.Count; i++)
-            if (Columns[i].Column == column)
+            if (Columns[i].ColumnKey == columnKey)
                 return i;
         return -1;
     }
+
+    // Template entries for extra columns the selected day does not have, saved back unchanged (see ApplySettings).
+    private List<ProtocolColumnSetting> _unavailableExtras = [];
 
     // Auto-saves the current template to the SELECTED DAY on every change (column reorder/visibility, header
     // text, orientation). Fire-and-forget off the UI thread; guarded so it doesn't fire while a template is
@@ -476,11 +499,16 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         var document = _builder.Build(data, settings, BuildLabels());
 
         Preview.Columns.Clear();
-        var visible = settings.Columns.Where(c => c.Visible).Select(c => c.Column).ToList();
+        // The builder's visible set: an extra column the day lacks is skipped, as the builder does.
+        var dayExtras = data.ExtraColumns.Select(e => e.Key).ToHashSet(StringComparer.Ordinal);
+        var visible = settings.Columns
+            .Where(c => c.Visible && (c.Column != ProtocolColumn.Extra || c.Key is { } k && dayExtras.Contains(k)))
+            .Select(c => c.ColumnKey)
+            .ToList();
         if (visible.Count == 0)
-            visible.Add(ProtocolColumn.FullName); // mirrors the builder's "always one column" guard
+            visible.Add(ProtocolColumnSetting.KeyOf(ProtocolColumn.FullName, null)); // mirrors the builder's "always one column" guard
         for (var i = 0; i < visible.Count && i < document.ColumnHeaders.Count; i++)
-            Preview.Columns.Add(new ProtocolPreviewColumn(visible[i].ToString(), document.ColumnHeaders[i],
+            Preview.Columns.Add(new ProtocolPreviewColumn(visible[i], document.ColumnHeaders[i],
                 i < document.ColumnHeadersShort.Count ? document.ColumnHeadersShort[i] : string.Empty,
                 i < document.ColumnBodyWrap.Count && document.ColumnBodyWrap[i],
                 i < document.ColumnShrinkPriority.Count ? document.ColumnShrinkPriority[i] : 1));
@@ -530,7 +558,7 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         Venue = Venue?.Trim() ?? string.Empty,
         CompetitionType = CompetitionType?.Trim() ?? string.Empty,
         DateText = DateText?.Trim() ?? string.Empty,
-        Columns = Columns.Select(c => c.ToSetting()).ToList()
+        Columns = Columns.Select(c => c.ToSetting()).Concat(_unavailableExtras).ToList()
     };
 
     // The settings used to BUILD the document (preview + export): the saved template with each blank header
@@ -612,7 +640,7 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
     {
         var headers = new Dictionary<ProtocolColumn, string>();
         var shortHeaders = new Dictionary<ProtocolColumn, string>();
-        foreach (ProtocolColumn column in Enum.GetValues<ProtocolColumn>())
+        foreach (ProtocolColumn column in Enum.GetValues<ProtocolColumn>().Where(c => c != ProtocolColumn.Extra))
         {
             headers[column] = Localization.Get(CaptionKey(column));
             if (ShortCaptionKey(column) is { } key)
@@ -640,7 +668,8 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
             RelayPendingMark: Localization.Get("Relay.Pending"),
             RelayVacantLeg: Localization.Get("Protocols.Relay.VacantLeg"),
             RelayCourseMark: Localization.Get("Relay.CourseOf"),
-            RelayNoCourseMark: Localization.Get("Relay.NoCourse"));
+            RelayNoCourseMark: Localization.Get("Relay.NoCourse"),
+            Translate: Localization.Get);
     }
 
     // The short (abbreviated) caption key for a column, or null when the column has no abbreviation (its full

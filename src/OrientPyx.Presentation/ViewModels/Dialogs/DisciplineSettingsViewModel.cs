@@ -19,14 +19,15 @@ public sealed partial class DisciplineSettingsViewModel : ObservableObject
 
     public DisciplineSettingsViewModel(
         ILocalizationService localization, string dayTitle,
-        IEnumerable<(string Title, DisciplineSettingsData Data)> disciplines)
+        IEnumerable<(string Title, DisciplineSettingsData Data)> disciplines,
+        Func<string?, SettingDef, TableValue, Task<TableValue?>>? editTable = null)
     {
         Localization = localization;
         DayTitle = dayTitle;
         Sections = disciplines
             .Select(d => new DisciplineSettingsSection(d.Data.DisciplineId, d.Title,
                 d.Data.Definitions.Select(def => new SettingItemViewModel(localization, d.Data.PluginId, def,
-                    d.Data.Values.GetValueOrDefault(def.Key))).ToList()))
+                    d.Data.Values.GetValueOrDefault(def.Key), editTable)).ToList()))
             .ToList();
     }
 
@@ -55,10 +56,18 @@ public sealed record DisciplineSettingsSection(DisciplineId DisciplineId, string
 public sealed partial class SettingItemViewModel : ObservableObject
 {
     private readonly SettingDef _def;
+    private readonly ILocalizationService _localization;
+    private readonly string? _pluginId;
+    private readonly Func<string?, SettingDef, TableValue, Task<TableValue?>>? _editTable;
 
-    public SettingItemViewModel(ILocalizationService localization, string? pluginId, SettingDef def, object? value)
+    public SettingItemViewModel(
+        ILocalizationService localization, string? pluginId, SettingDef def, object? value,
+        Func<string?, SettingDef, TableValue, Task<TableValue?>>? editTable = null)
     {
         _def = def;
+        _localization = localization;
+        _pluginId = pluginId;
+        _editTable = editTable;
         Label = localization.Get(pluginId is null ? def.Label : PluginStrings.Key(pluginId, def.Label));
         ScopeNote = def.Scope == SettingScope.Competition ? localization.Get("Dialog.DisciplineSettings.CompetitionScope") : string.Empty;
         Choices = def.Choices;
@@ -73,6 +82,9 @@ public sealed partial class SettingItemViewModel : ObservableObject
                 break;
             case SettingKind.Bool:
                 _flag = value is true || (value is null && def.DefaultValue is true);
+                break;
+            case SettingKind.Table:
+                _table = value as TableValue ?? def.DefaultValue as TableValue ?? TableValue.Empty;
                 break;
             default:
                 _text = value?.ToString() ?? def.DefaultValue?.ToString() ?? string.Empty;
@@ -97,6 +109,16 @@ public sealed partial class SettingItemViewModel : ObservableObject
 
     public bool IsChoice => _def.Kind == SettingKind.Choice;
 
+    public bool IsTable => _def.Kind == SettingKind.Table;
+
+    // A table setting's current rows (edited in its own sheet, see EditTable).
+    private TableValue _table = TableValue.Empty;
+
+    public string EditTableLabel => _localization.Get("Dialog.DisciplineSettings.EditTable");
+
+    /// <summary>«13 рядків» next to a table setting's edit button.</summary>
+    public string TableSummary => string.Format(_localization.Get("Dialog.DisciplineSettings.TableRows"), _table.Rows.Count);
+
     public IReadOnlyList<string> Choices { get; }
 
     [ObservableProperty]
@@ -114,8 +136,18 @@ public sealed partial class SettingItemViewModel : ObservableObject
         SettingKind.Int => (int)Number,
         SettingKind.Decimal => DisciplineSettings.Coerce(Text, _def),
         SettingKind.Bool => Flag,
+        SettingKind.Table => _table,
         _ => Text
     };
+
+    [RelayCommand]
+    private async Task EditTableAsync()
+    {
+        if (_editTable is null || await _editTable(_pluginId, _def, _table) is not { } edited)
+            return;
+        _table = edited;
+        OnPropertyChanged(nameof(TableSummary));
+    }
 
     [RelayCommand]
     private void Increment()

@@ -198,6 +198,24 @@ public sealed partial class DialogService : ObservableObject, IDialogService
         }
     }
 
+    public async Task<TableValue?> ShowSettingTableAsync(SettingTableViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        // Nested over the settings dialog: one dialog shows at a time, so the caller's comes back afterwards.
+        var previous = Current;
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = previous;
+        }
+    }
+
     public async Task<int?> ShowChangeDayNumberAsync(ChangeDayNumberViewModel dialog)
     {
         ArgumentNullException.ThrowIfNull(dialog);

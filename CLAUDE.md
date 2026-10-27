@@ -155,8 +155,20 @@ the format's structure comes from it, the plugin overrides rules: `EvaluateFinis
   with the defaults. «Налаштування дисципліни…» (days page row, groups toolbar) → `IDisciplineSettingsFlow` →
   auto-form dialog; saving re-points the session so pages recompute. The snapshot carries the rows
   (`EventDaySnapshot.DisciplineSettings`) so the calculator and the read-out log see the same values.
+- **Table settings**: `Setting.Table(key, label, columns, TableValue default)` — rows of text cells keyed by column
+  key, stored as a JSON array; edited in `SettingTableView` shown over the settings dialog
+  (`IDialogService.ShowSettingTableAsync` restores the previous dialog). `Toolkit.RangeTable` reads a «range × key →
+  number» table (nearest row outside the ranges, last row open — Р-47).
 - **Results**: a plugin's `ResultRow.Set` values land in `ParticipantDayResult.Extra` and show as extra day-grid
-  columns (`ResultExtras[key]`); `MarkUnranked` → `ParticipantDayResult.UnrankedReason` (no place, no points).
+  columns (`ResultExtras[key]`, red tint when `ResultColumnDef.Problem` says so); `MarkUnranked` →
+  `ParticipantDayResult.UnrankedReason` qualified as `"<pluginId>.<reason>"` (no place, no points; on a relay leg the
+  whole team; the protocol prints the translated reason after the name).
+- **Extra result columns** (§10.2): `ExtraResultColumn` (BusinessLogic/Models) — plugin columns keyed
+  `"<pluginId>.<key>"` and additional fields keyed `"field.<key>"`, listed per day in
+  `ResultProtocolData.ExtraColumns`. The Word protocol stores them as `ProtocolColumn.Extra` + `ProtocolColumnSetting.Key`
+  (built-ins keep the enum, so old templates read unchanged; `ColumnKey` = `builtin.<Name>` | extra key); the monitor
+  as `ResultColumn.Extra` keys in `ResultColumnSelection`. A stored extra key the day lacks is skipped on build and
+  kept on save. The online publish keeps the fixed columns only (the frontend knows no others).
 - **Unknown discipline** (plugin missing/disabled): `UnknownDisciplineStrategy` + the «Потрібен плагін» banner
   above the page (`PluginNoticeViewModel`). `.opyx` export writes `plugins.json` (required plugins); import warns
   about missing ones but proceeds.

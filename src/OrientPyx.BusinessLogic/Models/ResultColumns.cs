@@ -35,6 +35,9 @@ public enum ResultColumn
     Status,
     /// <summary>Ranking points / rogaine score («Очки»/«Бали»).</summary>
     Points,
+    /// <summary>An extra column — a plugin's column or an additional field (§10.2); identified by its key.
+    /// Monitor only: the online frontend knows the fixed columns alone.</summary>
+    Extra,
 }
 
 /// <summary>
@@ -67,4 +70,7 @@ public sealed record ResultColumnInfo(ResultColumn Column, string Key, string La
     /// in an old saved config).</summary>
     public static ResultColumnInfo? ByKey(string key) =>
         All.FirstOrDefault(d => string.Equals(d.Key, key, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The column entry of an extra column (its key is the extra key, its label the extra's label key).</summary>
+    public static ResultColumnInfo ForExtra(ExtraResultColumn extra) => new(ResultColumn.Extra, extra.Key, extra.LabelKey);
 }

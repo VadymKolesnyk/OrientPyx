@@ -14,9 +14,11 @@ public sealed partial class ProtocolColumnItemViewModel : ObservableObject
     private readonly ILocalizationService _localization;
     private readonly string _captionKey;
 
-    public ProtocolColumnItemViewModel(ProtocolColumn column, string captionKey, bool visible, ILocalizationService localization)
+    public ProtocolColumnItemViewModel(
+        ProtocolColumn column, string captionKey, bool visible, ILocalizationService localization, string? key = null)
     {
         Column = column;
+        Key = key;
         _captionKey = captionKey;
         _visible = visible;
         _localization = localization;
@@ -25,6 +27,12 @@ public sealed partial class ProtocolColumnItemViewModel : ObservableObject
 
     public ProtocolColumn Column { get; }
 
+    /// <summary>The extra column's key for <see cref="ProtocolColumn.Extra"/>; null for a built-in column.</summary>
+    public string? Key { get; }
+
+    /// <summary>The column's string identity (see <see cref="ProtocolColumnSetting.ColumnKey"/>).</summary>
+    public string ColumnKey => ProtocolColumnSetting.KeyOf(Column, Key);
+
     /// <summary>Localized column caption, re-raised on language change.</summary>
     public string Caption => _localization.Get(_captionKey);
 
@@ -32,5 +40,5 @@ public sealed partial class ProtocolColumnItemViewModel : ObservableObject
     private bool _visible;
 
     /// <summary>Snapshots this item back into the persisted setting.</summary>
-    public ProtocolColumnSetting ToSetting() => new() { Column = Column, Visible = Visible };
+    public ProtocolColumnSetting ToSetting() => new() { Column = Column, Visible = Visible, Key = Key };
 }

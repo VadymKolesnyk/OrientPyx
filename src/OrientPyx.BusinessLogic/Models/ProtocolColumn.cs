@@ -54,5 +54,9 @@ public enum ProtocolColumn
     AwardedRank,
 
     /// <summary>Relay: the cumulative team time after a leg («Наростаючий», Р-32). Blank outside the relay legs.</summary>
-    Cumulative
+    Cumulative,
+
+    /// <summary>An extra column (a plugin's column or an additional participant field), identified by
+    /// <see cref="ProtocolColumnSetting.Key"/> (§10.2).</summary>
+    Extra
 }

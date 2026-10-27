@@ -19,7 +19,10 @@ public enum SettingKind
     Decimal,
     Bool,
     Text,
-    Choice
+    Choice,
+
+    /// <summary>A table of rows (see <see cref="TableValue"/>), edited in its own sheet.</summary>
+    Table
 }
 
 /// <summary>A discipline setting. <see cref="Label"/> is a key of the plugin's strings or plain text.</summary>
@@ -31,6 +34,9 @@ public sealed record SettingDef(string Key, string Label, SettingKind Kind, obje
 
     /// <summary>The options of a <see cref="SettingKind.Choice"/> setting.</summary>
     public IReadOnlyList<string> Choices { get; init; } = [];
+
+    /// <summary>The columns of a <see cref="SettingKind.Table"/> setting.</summary>
+    public IReadOnlyList<TableColumnDef> Columns { get; init; } = [];
 }
 
 /// <summary>Factories for <see cref="SettingDef"/>.</summary>
@@ -55,6 +61,14 @@ public static class Setting
         new(key, label, SettingKind.Choice, defaultValue ?? (options.Count > 0 ? options[0] : string.Empty), scope)
         {
             Choices = options
+        };
+
+    /// <summary>A table setting: rows of cells under <paramref name="columns"/>, e.g. a coefficient table.</summary>
+    public static SettingDef Table(string key, string label, IReadOnlyList<TableColumnDef> columns, TableValue defaultValue,
+        SettingScope scope = SettingScope.Day) =>
+        new(key, label, SettingKind.Table, defaultValue, scope)
+        {
+            Columns = columns
         };
 }
 

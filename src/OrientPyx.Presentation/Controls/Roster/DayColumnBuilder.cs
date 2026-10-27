@@ -13,6 +13,10 @@ namespace OrientPyx.Presentation.Controls;
 /// </summary>
 public sealed class DayColumnBuilder
 {
+    // The tint of a plugin result cell the plugin flags (ResultColumnDef.Problem) — the duplicate-chip red.
+    private static readonly Avalonia.Media.ISolidColorBrush ProblemBrush =
+        new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(0x55, 0xDC, 0x26, 0x26));
+
     private readonly ILocalizationService _loc;
 
     public DayColumnBuilder(ILocalizationService localization)
@@ -134,6 +138,12 @@ public sealed class DayColumnBuilder
             var band = Identity(SheetCellKind.RowResultText, column.Label,
                 $"{nameof(ParticipantDayRowViewModel.ResultExtras)}[{column.Key}]");
             band.Columns[0].Key = "result:" + column.Key;
+            if (column.Problem is not null)
+            {
+                // A value the plugin flags (e.g. a coefficient it could not determine, Р-48) is tinted red.
+                band.Columns[0].CellBackgroundPath = $"{nameof(ParticipantDayRowViewModel.ResultProblems)}[{column.Key}]";
+                band.Columns[0].CellBackgroundBrush = ProblemBrush;
+            }
             bands.Add(band);
         }
 

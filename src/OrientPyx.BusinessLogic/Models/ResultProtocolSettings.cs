@@ -21,6 +21,19 @@ public sealed class ProtocolColumnSetting
 
     /// <summary>Whether this column is printed. A hidden column keeps its place in the order for later.</summary>
     public bool Visible { get; set; } = true;
+
+    /// <summary>For <see cref="ProtocolColumn.Extra"/>: the extra column's key (<c>"field.&lt;key&gt;"</c> or
+    /// <c>"&lt;pluginId&gt;.&lt;key&gt;"</c>, see <see cref="ExtraResultColumn"/>); null for a built-in column.</summary>
+    public string? Key { get; set; }
+
+    /// <summary>The column's string identity: <c>"builtin.&lt;Name&gt;"</c> for a built-in column, the extra key
+    /// otherwise. Saved templates keep storing the enum, so old JSON reads unchanged.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string ColumnKey => KeyOf(Column, Key);
+
+    /// <summary>The string identity of a column (see <see cref="ColumnKey"/>).</summary>
+    public static string KeyOf(ProtocolColumn column, string? extraKey) =>
+        column == ProtocolColumn.Extra ? extraKey ?? string.Empty : "builtin." + column;
 }
 
 /// <summary>

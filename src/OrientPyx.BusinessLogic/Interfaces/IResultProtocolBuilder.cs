@@ -52,4 +52,7 @@ public sealed record ProtocolLabels(
     /// <summary>Relay: the leg's named course after the runner ("дистанція {0}", Р-44).</summary>
     string RelayCourseMark = "",
     /// <summary>Relay: no course could be assigned to the leg ("дистанцію не призначено", Р-41).</summary>
-    string RelayNoCourseMark = "");
+    string RelayNoCourseMark = "",
+    /// <summary>Resolves a localization key: the header of an extra column (§10.2) and a discipline's unranked
+    /// note (Р-48). Null ⇒ the key is shown as is.</summary>
+    Func<string, string>? Translate = null);
