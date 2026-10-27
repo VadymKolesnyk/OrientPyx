@@ -85,7 +85,13 @@ public sealed class HtmlMonitorWriter : IMonitorHtmlWriter
 
         foreach (var row in group.Cells)
         {
-            sb.Append(row.Unplaced ? "<tr class=\"unplaced\">\n" : "<tr>\n");
+            var rowClasses = string.Join(' ', new[]
+            {
+                row.Unplaced ? "unplaced" : null,
+                row.Kind == MonitorRowKind.Team ? "team" : null,
+                row.Kind == MonitorRowKind.Leg ? "leg" : null,
+            }.Where(c => c is not null));
+            sb.Append(rowClasses.Length > 0 ? "<tr class=\"" + rowClasses + "\">\n" : "<tr>\n");
             for (var c = 0; c < columns.Count; c++)
             {
                 var value = c < row.Values.Count ? row.Values[c] : string.Empty;
@@ -219,6 +225,9 @@ public sealed class HtmlMonitorWriter : IMonitorHtmlWriter
         tbody tr:nth-child(odd){ background:var(--row); }
         tbody tr:nth-child(even){ background:var(--row2); }
         tbody tr.unplaced{ color:var(--dim); }
+        tbody tr.team{ font-weight:700; }
+        tbody tr.leg{ font-size:0.85em; }
+        tbody tr.leg td:first-child{ padding-left:1.6em; }
         td.c-name,th.c-name{ text-align:left; }
         td.c-num,th.c-num{ text-align:center; white-space:nowrap; }
         td.c-place,th.c-place{ text-align:center; width:3.2em; font-weight:700; }

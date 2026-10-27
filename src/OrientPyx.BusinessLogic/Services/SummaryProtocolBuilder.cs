@@ -148,8 +148,21 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         return explicitChoice?.Included ?? HasNonZeroResult(group, countedDays, settings.Mode == SummaryMode.ByPoints);
     }
 
+    // Р-39: a relay day counts «за очками» (every runner carries the team's points) but not «за часом» — a leg time
+    // is not a personal result. A day is a relay day for the group when any member's result on it is a relay leg.
+    private static IReadOnlyList<SummaryProtocolDay> AggregatedDays(
+        SummaryProtocolGroup group, IReadOnlyList<SummaryProtocolDay> countedDays, bool byPoints) =>
+        byPoints
+            ? countedDays
+            : countedDays
+                .Where(d => !group.Members.Any(m => m.ResultsByDay.TryGetValue(d.Id, out var r) && r.Team is not null))
+                .ToList();
+
     // Points mode: someone earned more than 0 points on a counted day. Time mode: someone has a clean result.
     private static bool HasNonZeroResult(SummaryProtocolGroup group, IReadOnlyList<SummaryProtocolDay> countedDays, bool byPoints) =>
+        HasNonZeroResultOn(group, AggregatedDays(group, countedDays, byPoints), byPoints);
+
+    private static bool HasNonZeroResultOn(SummaryProtocolGroup group, IReadOnlyList<SummaryProtocolDay> countedDays, bool byPoints) =>
         group.Members.Any(m => countedDays.Any(d =>
             m.ResultsByDay.TryGetValue(d.Id, out var r) &&
             (byPoints
@@ -260,6 +273,7 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         SummaryProtocolGroup group, IReadOnlyList<SummaryProtocolDay> countedDays,
         SummaryProtocolDay? priorityDay, SummaryProtocolSettings settings, bool byPoints)
     {
+        countedDays = AggregatedDays(group, countedDays, byPoints);
         var aggregates = group.Members
             .Select(m => BuildAggregate(m, countedDays, priorityDay, byPoints))
             .ToList();

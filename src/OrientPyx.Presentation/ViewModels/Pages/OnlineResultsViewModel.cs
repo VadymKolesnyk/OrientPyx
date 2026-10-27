@@ -569,7 +569,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         if (publish is null)
             return;
 
-        var snapshot = await _editor.GetOnlineResultsSnapshotAsync(day.Id, ct);
+        var snapshot = Localize(await _editor.GetOnlineResultsSnapshotAsync(day.Id, ct));
         await _publishGate.WaitAsync(ct);
         try
         {
@@ -605,8 +605,28 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
                 AppendLog(string.Format(Localization.Get("OnlineResults.Log.DuplicateNumbers"), day.Number, duplicates));
         }
 
+        if (snapshot.Teams.Count > 0)
+            AppendLog(string.Format(Localization.Get("OnlineResults.Log.Teams"), day.Number, snapshot.Teams.Count));
+        if (_publisher.TeamsUnsupported && !_teamsUnsupportedLogged)
+        {
+            _teamsUnsupportedLogged = true;
+            AppendLog(Localization.Get("OnlineResults.Log.TeamsUnsupported"));
+        }
+
         UpdateActivityStatus();
     }
+
+    // The «no relay_teams table» warning is logged once per app run.
+    private bool _teamsUnsupportedLogged;
+
+    // Plugin column labels of the relay legs arrive as localization keys; the spectator site gets the text.
+    private OnlineResultsSnapshot Localize(OnlineResultsSnapshot snapshot) =>
+        snapshot.ExtraColumns.Count == 0
+            ? snapshot
+            : snapshot with
+            {
+                ExtraColumns = snapshot.ExtraColumns.Select(c => c with { Label = Localization.Get(c.Label) }).ToList(),
+            };
 
     // The duplicate-number warning last logged, so it repeats only when the set changes.
     private string _lastDuplicates = string.Empty;
@@ -674,7 +694,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
 
                     foreach (var day in days)
                     {
-                        var snapshot = await _editor.GetOnlineResultsSnapshotAsync(day.Id);
+                        var snapshot = Localize(await _editor.GetOnlineResultsSnapshotAsync(day.Id));
                         await _publisher.PublishAsync(publish, _api, snapshot);
 
                         AppendLog(string.Format(

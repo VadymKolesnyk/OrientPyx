@@ -118,7 +118,7 @@ Everything that varies by competition type lives behind `IDisciplineStrategy`
 stored values are unchanged; plugin ids are `"<pluginId>.<name>"`). An id with no registered strategy resolves
 to `UnknownDisciplineStrategy` (judged like a set course, no places/points/ranks, `IsUnknown` for the banner) —
 never an exception. Shared code asks the strategy — grid columns, control count, `Competitors`
-(`CompetitorModel.Individual` / `Team` = rogaine), `UsesCourseVariants` (scatter), `UsesCoursePattern` (mixed only),
+(`CompetitorModel.Individual` / `Team` = rogaine / `TeamWithLegs` = relay), `UsesCourseVariants` (scatter), `UsesCoursePattern` (mixed only),
 `AwardsRanks`, `EvaluateFinish`, `BuildSplits`, `ResolveStart`, `AdjustTime`, `Rank` — instead of comparing against
 a specific id. **Adding a format = one new strategy class + one DI registration**
 (`BusinessLogicServiceCollectionExtensions`); do not reintroduce `switch`/`==` on a discipline in shared code.
@@ -134,6 +134,8 @@ and `Detail` still come from the greedy checks. Debug builds have «Файл →
 every day's results) + `scripts/diff-results.ps1` to prove a refactoring left results unchanged.
 
 ### Plugins
+
+Author-facing guide (contract, contexts, toolkit, versioning, examples): `docs/plugin-api.md`.
 
 A plugin is a DLL with one `IOrientPyxPlugin`; it registers `Discipline` subclasses (each `BasedOn` a built-in —
 the format's structure comes from it, the plugin overrides rules: `EvaluateFinish`, `BuildSplits`, `ResolveStart`,
@@ -168,7 +170,8 @@ the format's structure comes from it, the plugin overrides rules: `EvaluateFinis
   `ResultProtocolData.ExtraColumns`. The Word protocol stores them as `ProtocolColumn.Extra` + `ProtocolColumnSetting.Key`
   (built-ins keep the enum, so old templates read unchanged; `ColumnKey` = `builtin.<Name>` | extra key); the monitor
   as `ResultColumn.Extra` keys in `ResultColumnSelection`. A stored extra key the day lacks is skipped on build and
-  kept on save. The online publish keeps the fixed columns only (the frontend knows no others).
+  kept on save. The online `results` table keeps the fixed columns only (the frontend knows no others); relay legs
+  carry plugin columns in `relay_teams.legs[].extra` (`docs/online-snapshot.md`).
 - **Unknown discipline** (plugin missing/disabled): `UnknownDisciplineStrategy` + the «Потрібен плагін» banner
   above the page (`PluginNoticeViewModel`). `.opyx` export writes `plugins.json` (required plugins); import warns
   about missing ones but proceeds.
@@ -198,9 +201,24 @@ synonym → value via `TextKey`, number comma/dot), `IsInvalid` drives the red c
 `EnsurePluginFieldsAsync` (a plugin's `AddParticipantField` fields are created when its discipline is first used).
 Both participant tables add one `field.<key>` column per field (`Controls/Roster/CustomFieldColumns.cs`, binding the
 row's `Fields[key]` cell VM); export and the statement pick them up. CSV/Excel import maps onto `ImportTarget`
-(string-keyed: built-ins by their old enum names, `field.<key>`; relay targets later), remembers the last mapping per
+(string-keyed: built-ins by their old enum names, `field.<key>`, `relay.teamNumber|teamName|leg`), remembers the last mapping per
 header set (`ImportMappingRow` in `event.db`, app default in `AppSettingsRow.ImportMappingsJson`) and can create a new
 field from a file column («+ Нове додаткове поле…»).
+
+## Relay (естафета)
+
+Built-in discipline `DisciplineId.Relay` (`RelayStrategy`, `CompetitorModel.TeamWithLegs`; rules Р-20…Р-44 in
+`docs/plugins-plan.md`, worked examples in `docs/relay-scenarios.md`). `RelayTeam` (day + group, number unique per
+day) holds the team; a runner is placed on a leg via `ParticipantDay.RelayTeamId` + `Leg`; the leg number «100.2»
+is computed (`Toolkit.RelayBib`), never written to `Participant.Number`. Group settings: `LegCount`,
+`MassStartTime`, restarts (`RestartTimesJson`, `RestartRanking`), `CourseAssignmentMode`. The calculator's relay
+pass (`DayResultsCalculator.Relay.cs`) judges legs in sequence (leg N starts at leg N−1's finish or the restart),
+sums adjusted leg times, ranks teams and copies place/points to every member; `TeamDayResult` /
+`RelayLegResult` carry the team and leg results, `ParticipantDayResult.Team/Leg/LegBib` link a runner to them.
+Pages/outputs: «Команди» (teams + legs), day-grid team/leg columns, read-out log, result/start protocols
+(`ResultProtocolGroup.RelayTeams`, sub-rows), import (CSV `relay.*` targets, IOF `EntryList` `TeamEntry`), draw
+(a team is the unit, leg 1 gets the minute), monitor (`MonitorRowKind.Team/Leg`), HTML splits (leg start + leg
+course), summary («за очками» counts relay points; «за часом» skips relay days, Р-39), online (`relay_teams`).
 
 ## Editable tables (SheetTable)
 
@@ -326,4 +344,6 @@ the protocols show — and upserts it via `IResultPublisher`/`SupabaseResultPubl
 `OnlineApiSettings`). The **per-competition publish options** (slug, title, subtitle, standings/points flags) live
 per competition in `event.db` (`OnlinePublishSettingsRow`, JSON) via
 `ICompetitionEditorService.Get/SaveOnlinePublishSettingsAsync` (`OnlinePublishSettings`), seeded from the
-competition metadata. The service-role key never leaves the local app DB.)
+competition metadata. The service-role key never leaves the local app DB. Relay groups publish to a separate
+`relay_teams` table, never to `results`; a project without it just logs a warning — contract in
+`docs/online-snapshot.md`.)

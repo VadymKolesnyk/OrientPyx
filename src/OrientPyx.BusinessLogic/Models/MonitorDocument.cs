@@ -63,4 +63,16 @@ public sealed record MonitorGroup(string Name, string Caption, IReadOnlyList<Mon
 /// <see cref="MonitorDocument.Columns"/>) plus a flag marking an unplaced (DNS/MP/…) runner so the writer
 /// can grey the row out, mirroring the legacy monitor's shaded DNS rows.
 /// </summary>
-public sealed record MonitorRow(IReadOnlyList<string> Values, bool Unplaced);
+public sealed record MonitorRow(IReadOnlyList<string> Values, bool Unplaced)
+{
+    /// <summary>A relay group's team row or one of its leg rows (§11.4); <see cref="MonitorRowKind.Runner"/> otherwise.</summary>
+    public MonitorRowKind Kind { get; init; } = MonitorRowKind.Runner;
+}
+
+/// <summary>What a monitor row stands for: a runner (personal), or — in a relay group — a team and its legs under it.</summary>
+public enum MonitorRowKind
+{
+    Runner,
+    Team,
+    Leg,
+}

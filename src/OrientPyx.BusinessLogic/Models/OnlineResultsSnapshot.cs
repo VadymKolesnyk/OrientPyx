@@ -32,7 +32,53 @@ public sealed record OnlineResultsSnapshot(
 
     /// <summary>True when there is a day to publish.</summary>
     public bool HasData => PublishedDayNumber > 0;
+
+    /// <summary>Relay teams of the published day (§11.1) — one per team of a relay group, with its legs. Empty for a
+    /// day without relay groups, so a personal competition's snapshot is unchanged. A relay runner's leg number
+    /// («100.2») is not an integer bib, so relay groups publish through these rows, not through <see cref="Rows"/>.</summary>
+    public IReadOnlyList<OnlineTeamRow> Teams { get; init; } = [];
+
+    /// <summary>The plugin result columns carried by the legs' <see cref="OnlineLegRow.Extra"/>, in display order:
+    /// key + label (a localization key until the caller translates it, see <c>docs/online-snapshot.md</c>).</summary>
+    public IReadOnlyList<OnlineExtraColumn> ExtraColumns { get; init; } = [];
 }
+
+/// <summary>One extra (plugin) result column of the relay legs: its stable key and its spectator-facing label.</summary>
+public sealed record OnlineExtraColumn(string Key, string Label);
+
+/// <summary>One relay team on the published day (§11.1): identity, computed team result and its legs in order.</summary>
+public sealed record OnlineTeamRow(
+    string GroupName,
+    int Number,
+    string Name,
+    string Club,
+    string Region,
+    /// <summary>Team place in the group; null when unplaced (not OK, «поза конкурсом», unranked).</summary>
+    int? Place,
+    /// <summary>Team time Σ adjusted leg times (Р-32); null until every leg has a time.</summary>
+    TimeSpan? Time,
+    FinishStatus Status,
+    bool OutOfCompetition,
+    bool Restarted,
+    decimal? Points,
+    IReadOnlyList<OnlineLegRow> Legs);
+
+/// <summary>One leg of an <see cref="OnlineTeamRow"/>; a leg nobody runs has a blank <see cref="FullName"/>.</summary>
+public sealed record OnlineLegRow(
+    int Leg,
+    /// <summary>The leg number «100.2» (Р-23).</summary>
+    string Bib,
+    string FullName,
+    string Birth,
+    /// <summary>The leg's course code (Р-44), or null when the group runs one course.</summary>
+    string? Course,
+    TimeSpan? LegTime,
+    TimeSpan? Cumulative,
+    FinishStatus Status,
+    bool Pending,
+    bool Restarted,
+    /// <summary>Plugin column values by <see cref="OnlineExtraColumn.Key"/>, already formatted.</summary>
+    IReadOnlyDictionary<string, string> Extra);
 
 /// <summary>One competition day for the frontend's day switcher: its number and a human label (e.g. "30 травня").</summary>
 public sealed record OnlineDay(int Number, string Label);

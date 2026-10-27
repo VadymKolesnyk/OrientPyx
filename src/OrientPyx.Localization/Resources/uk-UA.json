@@ -725,6 +725,8 @@
   "OnlineResults.Log": "Журнал",
   "OnlineResults.Log.CopyAll": "Копіювати журнал",
   "OnlineResults.Log.Tick": "День {0}: учасників {1}, результатів {2}",
+  "OnlineResults.Log.Teams": "День {0}: команд естафети {1}",
+  "OnlineResults.Log.TeamsUnsupported": "Увага: на сервері немає таблиці relay_teams — команди естафети не публікуються (див. docs/online-snapshot.md). Особисті результати публікуються як звичайно.",
   "OnlineResults.Log.SkippedNoNumber": "Увага: {0} учасник(ів) без номера не відправлено — на сайті вони не з'являться, доки не отримають стартовий номер.",
   "OnlineResults.Log.Error": "Помилка: {0}",
   "OnlineResults.Log.Error.NoDns": "Немає з'єднання з інтернетом (не вдалося знайти сервер). Перевірте Wi-Fi або мобільний інтернет — публікація продовжиться автоматично.",

@@ -51,7 +51,13 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
         _ownsHttp = ownsHttp;
     }
 
-    public void ResetMetadata() => _metaSent.Clear();
+    public void ResetMetadata()
+    {
+        _metaSent.Clear();
+        TeamsUnsupported = false;
+    }
+
+    public bool TeamsUnsupported { get; private set; }
 
     public async Task PublishAsync(
         OnlinePublishSettings publish,
@@ -98,6 +104,22 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
             {
                 await PushAsync(api, "results", "event,bib,day",
                     BuildResultRows(publish, snapshot), cancellationToken);
+            }
+
+            // 4) Relay teams (§11.1) — every tick, into their own table so the personal-results schema and the
+            // frontend that reads it stay untouched. A project without that table (older frontend) answers 4xx:
+            // remember it and keep publishing personal results rather than failing every tick.
+            if (snapshot.Teams.Count > 0 && !TeamsUnsupported)
+            {
+                try
+                {
+                    await PushAsync(api, "relay_teams", "event,day,num",
+                        BuildTeamRows(publish, snapshot), cancellationToken);
+                }
+                catch (PublishException ex) when (ex.Kind == PublishFailureKind.BadRequest)
+                {
+                    TeamsUnsupported = true;
+                }
             }
         }
         catch (OperationCanceledException)
@@ -218,16 +240,67 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
         return rows;
     }
 
-    // Maps OrientPyx's FinishStatus + readout state onto the spectator status vocabulary the frontend
-    // understands (finished / finished_pending / running / dsq / dns).
-    private static string MapStatus(OnlineResultRow r) => r.Status switch
+    // One relay_teams row per team: the team result plus its legs and the plugin column labels as jsonb, so the
+    // frontend can render a team with its legs from one row (contract: docs/online-snapshot.md).
+    private static List<Dictionary<string, object?>> BuildTeamRows(
+        OnlinePublishSettings p, OnlineResultsSnapshot snapshot)
     {
-        FinishStatus.Ok when r.Place is not null => "finished",
-        FinishStatus.Ok => "finished_pending",     // valid run, place not assigned yet
+        var columns = snapshot.ExtraColumns
+            .Select(c => new Dictionary<string, object?> { ["key"] = c.Key, ["label"] = c.Label })
+            .ToList();
+        return snapshot.Teams.Select(t =>
+        {
+            var anyRead = t.Legs.Any(l => l.Status != FinishStatus.None);
+            var status = MapStatus(t.Status, t.Place, anyRead);
+            return new Dictionary<string, object?>
+            {
+                ["event"] = p.Slug,
+                ["day"] = snapshot.PublishedDayNumber,
+                ["num"] = t.Number,
+                ["grp"] = t.GroupName,
+                ["name"] = NullIfEmpty(t.Name),
+                ["club"] = NullIfEmpty(t.Club),
+                ["region"] = NullIfEmpty(t.Region),
+                ["rk"] = t.OutOfCompetition ? null : t.Place,
+                ["result_time"] = FormatTime(t.Time),
+                ["result_seconds"] = t.Time is { } tt ? (int)tt.TotalSeconds : (int?)null,
+                ["points"] = t.Points,
+                ["status"] = status,
+                ["reason"] = status == "dsq" ? StatusReason(t.Status) : null,
+                ["out_of_competition"] = t.OutOfCompetition,
+                ["restarted"] = t.Restarted,
+                ["columns"] = columns,
+                ["legs"] = t.Legs.Select(l => new Dictionary<string, object?>
+                {
+                    ["leg"] = l.Leg,
+                    ["bib"] = l.Bib,
+                    ["full_name"] = NullIfEmpty(l.FullName),
+                    ["birth"] = NullIfEmpty(l.Birth),
+                    ["course"] = NullIfEmpty(l.Course),
+                    ["leg_time"] = FormatTime(l.LegTime),
+                    ["cumulative"] = FormatTime(l.Cumulative),
+                    ["status"] = l.Pending ? "pending" : MapStatus(l.Status, place: 1, l.Status != FinishStatus.None),
+                    ["reason"] = StatusReason(l.Status),
+                    ["restarted"] = l.Restarted,
+                    ["extra"] = l.Extra,
+                }).ToList(),
+                ["updated_at"] = DateTime.UtcNow.ToString("o"),
+            };
+        }).ToList();
+    }
+
+    private static string MapStatus(FinishStatus status, int? place, bool hasReadout) => status switch
+    {
+        FinishStatus.Ok when place is not null => "finished",
+        FinishStatus.Ok => "finished_pending",
         FinishStatus.Mp or FinishStatus.Ovt or FinishStatus.Dnf or FinishStatus.Dsq => "dsq",
         FinishStatus.Dns => "dns",
-        _ => r.HasReadout ? "finished_pending" : "running",
+        _ => hasReadout ? "finished_pending" : "running",
     };
+
+    // Maps OrientPyx's FinishStatus + readout state onto the spectator status vocabulary the frontend
+    // understands (finished / finished_pending / running / dsq / dns).
+    private static string MapStatus(OnlineResultRow r) => MapStatus(r.Status, r.Place, r.HasReadout);
 
     // The short reason shown next to a DSQ result on the frontend ("MP", "OVT"…).
     private static string? StatusReason(FinishStatus status) => status switch
@@ -269,6 +342,24 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
             throw new ArgumentException("Slug is required.", nameof(slug));
 
         _metaSent.Clear();
+
+        // Relay teams (§11.1) live in an optional table — a project without it answers 4xx, which is fine here.
+        if (!TeamsUnsupported)
+        {
+            var teamsUrl = $"{api.SupabaseUrl.TrimEnd('/')}/rest/v1/relay_teams?event=eq.{Uri.EscapeDataString(slug)}";
+            using var teamsReq = new HttpRequestMessage(HttpMethod.Delete, teamsUrl);
+            teamsReq.Headers.TryAddWithoutValidation("apikey", api.ServiceRoleKey);
+            teamsReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", api.ServiceRoleKey);
+            teamsReq.Headers.TryAddWithoutValidation("Prefer", "return=minimal");
+            try
+            {
+                await SendAsync(teamsReq, "relay_teams", cancellationToken);
+            }
+            catch (PublishException ex) when (ex.Kind == PublishFailureKind.BadRequest)
+            {
+                TeamsUnsupported = true;
+            }
+        }
 
         // Children first: results and groups hang off (event, day), days off the event. The events row itself
         // stays — the next publish upserts it anyway, and the frontend keeps a valid competition meanwhile.

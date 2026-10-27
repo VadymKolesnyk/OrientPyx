@@ -819,6 +819,8 @@
   "OnlineResults.Log": "Log",
   "OnlineResults.Log.CopyAll": "Copy log",
   "OnlineResults.Log.Tick": "Day {0}: participants {1}, results {2}",
+  "OnlineResults.Log.Teams": "Day {0}: relay teams {1}",
+  "OnlineResults.Log.TeamsUnsupported": "Warning: the server has no relay_teams table — relay teams are not published (see docs/online-snapshot.md). Personal results are published as usual.",
   "OnlineResults.Log.SkippedNoNumber": "Warning: {0} participant(s) without a number were not sent — they won't appear on the site until they get a start number.",
   "OnlineResults.Log.Error": "Error: {0}",
   "OnlineResults.Log.Error.NoDns": "No internet connection (server not found). Check Wi-Fi or mobile data — publishing resumes automatically.",

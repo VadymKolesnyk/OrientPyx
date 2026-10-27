@@ -31,6 +31,13 @@ public interface IResultPublisher
     void ResetMetadata();
 
     /// <summary>
+    /// True once the service rejected the relay-teams table (§11.1, <c>relay_teams</c> — missing on a project set
+    /// up for the older frontend). Teams are then no longer sent until <see cref="ResetMetadata"/>; personal
+    /// results keep publishing normally.
+    /// </summary>
+    bool TeamsUnsupported { get; }
+
+    /// <summary>
     /// Deletes everything published for the competition <paramref name="slug"/> (result rows, groups and days)
     /// from the online service and forgets the uploaded metadata, so the next <see cref="PublishAsync"/> calls
     /// rebuild it from scratch. Throws <see cref="PublishException"/> on a transport / server error.
