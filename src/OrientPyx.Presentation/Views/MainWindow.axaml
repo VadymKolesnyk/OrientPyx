@@ -290,6 +290,8 @@
                           Command="{Binding OpenGroupsCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Competition.Chips]}"
                           Command="{Binding OpenChipsCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Competition.RelayTeams]}"
+                          Command="{Binding OpenRelayTeamsCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Competition.ControlPoints]}"
                           Command="{Binding OpenControlPointsCommand}" />
                 <Separator />

@@ -46,4 +46,18 @@ public sealed record FinishReadoutRow(
     TimeSpan? Gap = null,
     bool CollectRentalChip = false,
     bool IsManualStatus = false,
-    FinishDetailKind StatusDetailKind = FinishDetailKind.MissingControl);
+    FinishDetailKind StatusDetailKind = FinishDetailKind.MissingControl)
+{
+    /// <summary>Relay: the runner's team number; null outside a relay (then the relay fields below are unused).</summary>
+    public int? RelayTeamNumber { get; init; }
+
+    public string RelayTeamName { get; init; } = string.Empty;
+
+    public int? RelayLeg { get; init; }
+
+    /// <summary>Relay: the leg started from the group's restart (Р-29).</summary>
+    public bool RelayRestarted { get; init; }
+
+    /// <summary>Relay: «очікує» — the previous leg has no finish and there is no restart (Р-30).</summary>
+    public bool RelayPending { get; init; }
+}

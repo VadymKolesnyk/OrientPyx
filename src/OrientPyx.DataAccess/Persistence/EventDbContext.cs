@@ -43,6 +43,7 @@ public class EventDbContext : DbContext
     public DbSet<CustomFieldDef> CustomFields => Set<CustomFieldDef>();
     public DbSet<ParticipantFieldValue> ParticipantFieldValues => Set<ParticipantFieldValue>();
     public DbSet<ImportMappingRow> ImportMappings => Set<ImportMappingRow>();
+    public DbSet<RelayTeam> RelayTeams => Set<RelayTeam>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -171,6 +172,23 @@ public class EventDbContext : DbContext
         modelBuilder.Entity<CustomFieldDef>().HasKey(f => f.Key);
         modelBuilder.Entity<ParticipantFieldValue>().HasKey(v => new { v.ParticipantId, v.Key });
         modelBuilder.Entity<ParticipantFieldValue>().HasIndex(v => v.Key);
+
+        // Relay (Р-20, Р-21): a team number is unique within the day; a leg of a team holds at most one runner.
+        modelBuilder.Entity<RelayTeam>()
+            .HasIndex(t => new { t.EventDayId, t.Number })
+            .IsUnique();
+
+        modelBuilder.Entity<RelayTeam>()
+            .Property(t => t.StatusOverride)
+            .HasConversion<string>();
+
+        modelBuilder.Entity<ParticipantDay>()
+            .HasIndex(p => new { p.RelayTeamId, p.Leg })
+            .IsUnique();
+
+        modelBuilder.Entity<GroupDaySettings>()
+            .Property(g => g.RestartRanking)
+            .HasConversion<string>();
 
         // The last CSV/Excel column mapping per header set.
         modelBuilder.Entity<ImportMappingRow>()

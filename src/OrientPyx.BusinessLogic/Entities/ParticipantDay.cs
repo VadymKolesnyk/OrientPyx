@@ -66,5 +66,12 @@ public class ParticipantDay
     /// </summary>
     public FinishStatus? ResultStatusOverride { get; set; }
 
+    /// <summary>The relay team this runner runs for on the day (Р-21); null outside a relay. On a relay day the
+    /// runner's <see cref="GroupId"/> is kept equal to the team's group (Р-22).</summary>
+    public Guid? RelayTeamId { get; set; }
+
+    /// <summary>The leg (1…<c>LegCount</c>) this runner runs in <see cref="RelayTeamId"/>; null outside a relay.</summary>
+    public int? Leg { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

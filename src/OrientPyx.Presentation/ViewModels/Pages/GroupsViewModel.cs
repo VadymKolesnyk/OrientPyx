@@ -541,7 +541,10 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         // Show/hide the scatter variants editor when the selected group's discipline switches to/from Scatter.
         if (ReferenceEquals(sender, SelectedGroup)
             && e.PropertyName == nameof(GroupDayRowViewModel.EffectiveDiscipline))
+        {
             _ = RefreshScatterEditorAsync();
+            _ = RefreshRelayEditorAsync();
+        }
     }
 
     // Refresh the previews/editors whenever the selected group changes.
@@ -549,6 +552,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     {
         RefreshPatternPreview();
         _ = RefreshScatterEditorAsync();
+        _ = RefreshRelayEditorAsync();
     }
 
     /// <summary>True when a discipline used on the day declares settings — shows «Налаштування дисципліни…».</summary>

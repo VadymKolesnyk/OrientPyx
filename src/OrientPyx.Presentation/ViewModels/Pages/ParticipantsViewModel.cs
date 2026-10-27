@@ -277,7 +277,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private void RebuildDayBands()
         => DayBands = new Controls.DayColumnBuilder(Localization)
             .Build(ShowTeamColumn, ShowScoreColumn, Discounts, RaisedFeeEnabled, PaymentPerDay, _dayBands,
-                _dayResultColumns, CustomFields);
+                _dayResultColumns, CustomFields, _dayUsesRelay);
 
     // Builds a row's additional-field cells from the loaded values.
     private ParticipantFieldsViewModel FieldsFor(Guid participantId, IReadOnlyDictionary<string, string> values)
@@ -410,6 +410,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     /// <summary>The team column is shown when the current real day's discipline uses it (rogaine) or
     /// any group on that day overrides to a team discipline.</summary>
     public bool ShowTeamColumn => _dayUsesTeam;
+
+    // True when the shown day runs a relay in some group (the team / leg / «100.2» columns).
+    private bool _dayUsesRelay;
 
     // Cached roster-wide flag: true when ANY day (its default discipline or any group's override) uses
     // teams. The roster spans all days, so its team column appears whenever teams apply anywhere.
@@ -739,6 +742,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 _strategies.For(day.DefaultDiscipline).UsesParticipantColumn(BusinessLogic.Enums.ParticipantColumn.Team)
                 || dayGroups.Any(g => _strategies.For(g.DisciplineOverride ?? day.DefaultDiscipline)
                     .UsesParticipantColumn(BusinessLogic.Enums.ParticipantColumn.Team));
+            // Relay columns (team / leg / «100.2») when the day or any group runs a relay.
+            _dayUsesRelay =
+                _strategies.For(day.DefaultDiscipline).Competitors == CompetitorModel.TeamWithLegs
+                || dayGroups.Any(g => _strategies.For(g.DisciplineOverride ?? day.DefaultDiscipline).Competitors
+                    == CompetitorModel.TeamWithLegs);
             // «Бали» applies when the day's discipline scores points, or any group overrides to one.
             _dayUsesScore =
                 _strategies.For(day.DefaultDiscipline).UsesControlPointPoints
@@ -756,6 +764,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         else
         {
             _dayUsesTeam = false;
+            _dayUsesRelay = false;
             _dayUsesScore = false;
             _dayResultColumns = [];
         }

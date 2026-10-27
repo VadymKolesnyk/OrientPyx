@@ -448,4 +448,31 @@ public interface IEventStore
     Task<string?> GetMonitorJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
     Task SaveMonitorJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default);
+
+    // --- Relay teams (Р-20…Р-22)
+
+    /// <summary>The day's relay teams, by number.</summary>
+    Task<IReadOnlyList<RelayTeam>> GetRelayTeamsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
+
+    Task AddRelayTeamsAsync(string eventFolderPath, IReadOnlyList<RelayTeam> teams, CancellationToken cancellationToken = default);
+
+    /// <summary>Updates number/name/club/region/«П/К»/status override and the group (the runners follow, Р-22).</summary>
+    Task UpdateRelayTeamAsync(string eventFolderPath, RelayTeam team, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes a team and frees its legs (the runners stay on the day).</summary>
+    Task DeleteRelayTeamAsync(string eventFolderPath, Guid teamId, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes every team of a group on a day (the group left the day), freeing their legs.</summary>
+    Task DeleteRelayTeamsForGroupDayAsync(string eventFolderPath, Guid dayId, Guid groupId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Puts a runner (participant-day link of the team's day) on a leg — or, with a null link, clears the leg. The
+    /// leg's previous runner and the runner's previous leg are freed; the runner takes the team's group (Р-22).
+    /// </summary>
+    Task<bool> AssignRelayLegAsync(string eventFolderPath, Guid teamId, int leg, Guid? linkId, CancellationToken cancellationToken = default);
+
+    /// <summary>Saves a relay group's settings (legs, mass start, restarts, restart ranking).</summary>
+    Task UpdateRelaySettingsAsync(
+        string eventFolderPath, Guid settingsId, int? legCount, TimeSpan? massStartTime, string restartTimesJson,
+        RelayRestartRanking restartRanking, CancellationToken cancellationToken = default);
 }

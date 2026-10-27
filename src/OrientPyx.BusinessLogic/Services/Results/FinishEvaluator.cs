@@ -22,9 +22,13 @@ internal static class FinishEvaluator
         IReadOnlySet<string> disabledCodes,
         DisciplineId dayDefault,
         IReadOnlyDictionary<Guid, IReadOnlyList<ScatterVariantData>> variantsByGroup,
-        Func<IDisciplineStrategy, SettingValues>? settingsOf = null)
+        Func<IDisciplineStrategy, SettingValues>? settingsOf = null,
+        RelayLegStart? relayLeg = null,
+        Guid? groupId = null)
     {
-        GroupDaySettings? gs = link.GroupId is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
+        // A relay leg is judged in its team's group (Р-22), which the caller passes explicitly.
+        var effectiveGroup = groupId ?? link.GroupId;
+        GroupDaySettings? gs = effectiveGroup is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
         var strategy = strategies.For(gs?.DisciplineOverride ?? dayDefault);
 
         // Expected = course-order codes minus the day's start/finish controls AND its disabled («проблемні»)
@@ -36,12 +40,16 @@ internal static class FinishEvaluator
 
         // Start = chip read-out start when present, else the assigned start (a time-of-day) paired with
         // the finish's date so finish − start is a meaningful duration — the discipline decides (Р-5).
-        var start = strategy.ResolveStart(new StartContext
-        {
-            ChipStart = readout.StartTime,
-            AssignedStart = link.StartTime,
-            FinishTime = readout.FinishTime
-        });
+        // A relay leg's start is decided by the leg sequence (previous finish / restart, Р-28, Р-29), not by the
+        // runner's own punches.
+        var start = relayLeg is { } rl
+            ? rl.Start
+            : strategy.ResolveStart(new StartContext
+            {
+                ChipStart = readout.StartTime,
+                AssignedStart = link.StartTime,
+                FinishTime = readout.FinishTime
+            });
 
         var context = new FinishContext
         {
@@ -50,9 +58,10 @@ internal static class FinishEvaluator
             PunchedControls = punched,
             StartTime = start,
             FinishTime = readout.FinishTime,
-            TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
+            // A relay's time limit applies to the team (Р-31), never to one leg.
+            TimeLimit = relayLeg is null && gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
             RequiredControlCount = gs?.RequiredControlCount,
-            ScatterVariants = link.GroupId is { } vgid && variantsByGroup.TryGetValue(vgid, out var vs)
+            ScatterVariants = effectiveGroup is { } vgid && variantsByGroup.TryGetValue(vgid, out var vs)
                 ? vs
                 : NoScatterVariants,
             Settings = settingsOf?.Invoke(strategy) ?? SettingValues.Empty
@@ -60,6 +69,9 @@ internal static class FinishEvaluator
 
         return (strategy.EvaluateFinish(context), start);
     }
+
+    /// <summary>A relay leg's start as decided by the leg sequence (see <see cref="Evaluate"/>).</summary>
+    public sealed record RelayLegStart(DateTimeOffset? Start);
 
     /// <summary>
     /// The day's scatter variants keyed by group id, ready for the strategy: only groups whose discipline uses

@@ -26,6 +26,7 @@ public static class BusinessLogicServiceCollectionExtensions
         services.AddSingleton<IDisciplineStrategy, RogaineStrategy>();
         services.AddSingleton<IDisciplineStrategy, MixedStrategy>();
         services.AddSingleton<IDisciplineStrategy, ScatterStrategy>();
+        services.AddSingleton<IDisciplineStrategy, RelayStrategy>();
         // Plugin disciplines (from IPluginCatalog, loaded in DataAccess) are added after the built-ins.
         services.AddSingleton<PluginRuntimeErrors>();
         services.AddSingleton<IDisciplineStrategyProvider>(sp => new DisciplineStrategyProvider(

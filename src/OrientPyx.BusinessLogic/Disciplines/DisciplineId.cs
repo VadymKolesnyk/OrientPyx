@@ -36,6 +36,9 @@ public readonly struct DisciplineId : IEquatable<DisciplineId>, IComparable<Disc
     /// <summary>Scatter (розсіювання): several valid orders per group, auto-detected per runner.</summary>
     public static readonly DisciplineId Scatter = new("Scatter");
 
+    /// <summary>Relay (естафета): teams of runners on consecutive legs; leg N starts from leg N−1's finish.</summary>
+    public static readonly DisciplineId Relay = new("Relay");
+
     public bool Equals(DisciplineId other) => string.Equals(Value, other.Value, StringComparison.Ordinal);
 
     public override bool Equals(object? obj) => obj is DisciplineId other && Equals(other);

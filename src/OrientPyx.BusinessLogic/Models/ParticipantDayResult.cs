@@ -121,6 +121,16 @@ public sealed record ParticipantDayResult(
     /// place and no points, the time still shows. Null when it is ranked normally.</summary>
     public string? UnrankedReason { get; init; }
 
+    /// <summary>Relay: the team this runner ran for (Р-21); null outside a relay. Its place/points are the
+    /// runner's <see cref="Place"/>/<see cref="Points"/>.</summary>
+    public TeamDayResult? Team { get; init; }
+
+    /// <summary>Relay: this runner's leg (start, leg time, cumulative, restart / pending); null outside a relay.</summary>
+    public RelayLegResult? Leg { get; init; }
+
+    /// <summary>Relay: the leg number «100.2» shown instead of the participant number (Р-23); null outside a relay.</summary>
+    public string? LegBib => Team is { } t && Leg is { } l ? t.Bib(l.Leg) : null;
+
     private static readonly IReadOnlyDictionary<string, object?> EmptyExtra = new Dictionary<string, object?>();
 }
 

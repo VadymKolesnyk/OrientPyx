@@ -76,5 +76,19 @@ public class GroupDaySettings
     /// </summary>
     public int? MasterCount { get; set; }
 
+    /// <summary>Relay: the number of legs (етапів) per team; null = not a relay / not set (treated as 1).</summary>
+    public int? LegCount { get; set; }
+
+    /// <summary>Relay: the mass start of leg 1 (time of day) when a runner has neither a start punch nor an
+    /// assigned start (Р-27).</summary>
+    public TimeSpan? MassStartTime { get; set; }
+
+    /// <summary>Relay: restart times by leg (JSON object «leg → hh:mm:ss», legs 2…N), Р-29. Blank = none.
+    /// Read and written through <c>RelayRestartTimes</c>.</summary>
+    public string RestartTimesJson { get; set; } = string.Empty;
+
+    /// <summary>Relay: how a team that used a restart is ranked (Р-35).</summary>
+    public RelayRestartRanking RestartRanking { get; set; } = RelayRestartRanking.AfterClean;
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

@@ -820,6 +820,33 @@ public interface ICompetitionEditorService
 
     /// <summary>Remembers a confirmed column mapping for the competition and as the application default.</summary>
     Task SaveImportMappingAsync(string headerSetHash, string json, CancellationToken cancellationToken = default);
+
+    // --- Relay teams (Р-20…Р-26), current session day
+
+    /// <summary>True when the current day's default discipline or some group's runs a relay.</summary>
+    Task<bool> CurrentDayHasRelayAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>The «Команди» page: relay groups of the day, their teams with legs and computed results, and the
+    /// competition's participants as candidate runners.</summary>
+    Task<RelayTeamsData> GetRelayTeamsDataAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>A relay group's settings on the current day; null when the group doesn't run it.</summary>
+    Task<RelayGroupSettings?> GetRelayGroupSettingsAsync(Guid groupId, CancellationToken cancellationToken = default);
+
+    Task SaveRelayGroupSettingsAsync(RelayGroupSettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>«Масове створення команд»: <paramref name="count"/> teams numbered from <paramref name="firstNumber"/>
+    /// (taken numbers skipped). Returns how many were created.</summary>
+    Task<int> CreateRelayTeamsAsync(Guid groupId, int count, int firstNumber, CancellationToken cancellationToken = default);
+
+    /// <summary>Saves a team's own fields; false when the number is taken on the day (Р-20) or not positive.</summary>
+    Task<bool> UpdateRelayTeamAsync(RelayTeamEdit edit, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes a team; its runners stay on the day without a leg.</summary>
+    Task DeleteRelayTeamAsync(Guid teamId, CancellationToken cancellationToken = default);
+
+    /// <summary>Puts a participant on a leg (adding them to the day when needed) or, with null, clears the leg.</summary>
+    Task<bool> AssignRelayLegAsync(Guid teamId, int leg, Guid? participantId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Outcome of a participant import, for reporting back to the user.</summary>

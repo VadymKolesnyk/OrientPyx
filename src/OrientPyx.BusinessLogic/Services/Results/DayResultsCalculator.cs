@@ -19,7 +19,7 @@ namespace OrientPyx.BusinessLogic.Services.Results;
 /// Results are keyed by participant-day link id. A chip read more than once on the day resolves to its
 /// <b>latest</b> read-out (highest <c>Order</c>).
 /// </summary>
-internal sealed class DayResultsCalculator
+internal sealed partial class DayResultsCalculator
 {
     private readonly IDisciplineStrategyProvider _strategies;
 
@@ -33,9 +33,12 @@ internal sealed class DayResultsCalculator
 
     /// <param name="rankCalcs">When non-null, receives the per-group rank-award derivation built by the ranks
     /// pass — used only by the results protocol to print its explanatory line.</param>
+    /// <param name="teamResults">When non-null, receives the day's relay team results keyed by team id (the same
+    /// instances the runners' <see cref="ParticipantDayResult.Team"/> point to).</param>
     public Dictionary<Guid, ParticipantDayResult> Compute(
         EventDay day, EventDaySnapshot snapshot, DayResultsAppData app,
-        Dictionary<Guid, GroupRankCalculation>? rankCalcs = null)
+        Dictionary<Guid, GroupRankCalculation>? rankCalcs = null,
+        Dictionary<Guid, TeamDayResult>? teamResults = null)
     {
         var links = snapshot.Links;
         if (links.Count == 0)
@@ -64,8 +67,6 @@ internal sealed class DayResultsCalculator
                     DisciplineSettings.Resolve(strategy, snapshot.DisciplineSettings, day.Id);
             return values;
         }
-        var views = new ParticipantViews(snapshot);
-
         // Team name per participant — the team lives on the participant (competition-level), not on the
         // per-day link, so resolve it once for the team ranking below.
         var participants = snapshot.Participants;
@@ -84,6 +85,8 @@ internal sealed class DayResultsCalculator
         }
 
         var results = new Dictionary<Guid, ParticipantDayResult>(links.Count);
+        var relayTeamsById = snapshot.RelayTeams.ToDictionary(t => t.Id);
+        var relayLinks = new List<ParticipantDay>();
 
         // (a) + (b): competitors and evaluation.
         var evaluated = new List<Evaluated>(links.Count);
@@ -91,6 +94,14 @@ internal sealed class DayResultsCalculator
         {
             GroupDaySettings? gs = link.GroupId is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
             var strategy = _strategies.For(gs?.DisciplineOverride ?? dayDefault);
+            // A relay runner (their team's group runs a relay, Р-22) or a runner of a relay group: evaluated by the
+            // relay pass below, legs in order.
+            if (RelayTeamOf(link, relayTeamsById, settingsByGroup, dayDefault) is not null
+                || strategy.Competitors == CompetitorModel.TeamWithLegs)
+            {
+                relayLinks.Add(link);
+                continue;
+            }
             var isTeam = strategy.Competitors == CompetitorModel.Team;
 
             var chip = link.Chip.Trim();
@@ -162,6 +173,14 @@ internal sealed class DayResultsCalculator
         // (c) Adjust: the discipline may correct an OK result's time (Р-6). Built-ins leave it unchanged, in
         // which case AdjustedTime stays exactly ResultTime (no rounding).
         var dayDate = DayDate(day, snapshot.FinishReadouts);
+
+        // Relay (b)+(c): every team's legs in order, adjusted per leg.
+        var views = new ParticipantViews(snapshot);
+        var relayInput = new RelayInputs(day, snapshot, settingsByGroup, variantsByGroup, startFinishCodes, disabledCodes,
+            latestByChip, SettingsOf, views, dayDate);
+        var teams = relayLinks.Count > 0 || snapshot.RelayTeams.Count > 0
+            ? EvaluateRelay(relayInput, relayLinks, results)
+            : [];
         foreach (var e in evaluated)
         {
             var result = results[e.Link.Id];
@@ -249,15 +268,25 @@ internal sealed class DayResultsCalculator
                 PointsByCode = pointsByCode,
                 Results = results
             });
+        if (teams.Count > 0)
+        {
+            foreach (var link in relayLinks)
+                participantsByLink[link.Id] = views.For(link.ParticipantId);
+            RankRelay(relayInput, teams, results, participantsByLink);
+        }
 
         // (e) Points pass: award «Очки» from each group's effective points rule (its override, else the
         // competition default), keyed off the place/time/score just computed.
         AwardPoints(links, settingsByGroup, dayDefault, snapshot.Info, app, results);
+        AwardRelayPoints(relayInput, app, teams, results);
 
         // Ranks pass: award «виконаний розряд» (Додаток 89) per group from its rank level, the course rank
         // (sum of the members' current-rank points) and the result-vs-leader percentage.
         AwardRanks(links, settingsByGroup, participants, dayDefault, app, results, rankCalcs);
 
+        if (teamResults is not null)
+            foreach (var (id, team) in teams)
+                teamResults[id] = team;
         return results;
     }
 
@@ -363,7 +392,9 @@ internal sealed class DayResultsCalculator
                 : defaultRuleId;
             if (ruleId is not { } id || id == Guid.Empty || !ruleById.TryGetValue(id, out var rule))
                 continue;
-            if (_strategies.For(gs?.DisciplineOverride ?? dayDefault).IsUnknown)
+            var pointsStrategy = _strategies.For(gs?.DisciplineOverride ?? dayDefault);
+            // A relay scores the team's place instead (AwardRelayPoints, Р-37).
+            if (pointsStrategy.IsUnknown || pointsStrategy.Competitors == CompetitorModel.TeamWithLegs)
                 continue;
 
             // Group context the formula references: the leader (place 1) time/score and the three group
@@ -462,7 +493,8 @@ internal sealed class DayResultsCalculator
             if (!settingsByGroup.TryGetValue(groupId, out var gs) || gs.RankLevel == GroupRankLevel.None)
                 continue;
             var strategy = _strategies.For(gs.DisciplineOverride ?? dayDefault);
-            if (!strategy.AwardsRanks)
+            // Р-38: never a rank for a relay, whatever a plugin says.
+            if (!strategy.AwardsRanks || strategy.Competitors == CompetitorModel.TeamWithLegs)
                 continue;
             var level = gs.RankLevel;
 

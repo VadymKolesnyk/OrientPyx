@@ -8,5 +8,9 @@ public enum CompetitorModel
 
     /// <summary>Runners sharing a team name in a group are scored and placed together, without an order of
     /// legs (rogaine).</summary>
-    Team
+    Team,
+
+    /// <summary>A team whose members run one after another, each on their own leg (relay): leg N starts from
+    /// the finish of leg N−1 and the team's time is the sum of the leg times.</summary>
+    TeamWithLegs
 }

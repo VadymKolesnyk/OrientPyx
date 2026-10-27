@@ -437,6 +437,12 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.Property<Guid>("GroupId")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("LegCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<TimeSpan?>("MassStartTime")
+                        .HasColumnType("TEXT");
+
                     b.Property<int?>("MasterCount")
                         .HasColumnType("INTEGER");
 
@@ -455,6 +461,14 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
 
                     b.Property<int?>("RequiredControlCount")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("RestartRanking")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RestartTimesJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
 
                     b.Property<int?>("TimeLimitSeconds")
                         .HasColumnType("INTEGER");
@@ -606,6 +620,9 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.Property<Guid?>("GroupId")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("Leg")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Order")
                         .HasColumnType("INTEGER");
 
@@ -622,6 +639,9 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.Property<bool>("PaysRaisedFee")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid?>("RelayTeamId")
+                        .HasColumnType("TEXT");
+
                     b.Property<int?>("ResultStatusOverride")
                         .HasColumnType("INTEGER");
 
@@ -635,6 +655,9 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.HasIndex("ParticipantId");
 
                     b.HasIndex("EventDayId", "ParticipantId")
+                        .IsUnique();
+
+                    b.HasIndex("RelayTeamId", "Leg")
                         .IsUnique();
 
                     b.ToTable("ParticipantDays");
@@ -727,6 +750,48 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                         .IsUnique();
 
                     b.ToTable("Regions");
+                });
+
+            modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.RelayTeam", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ClubId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EventDayId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("OutOfCompetition")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("RegionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StatusOverride")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventDayId", "Number")
+                        .IsUnique();
+
+                    b.ToTable("RelayTeams");
                 });
 
             modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.RentalChip", b =>

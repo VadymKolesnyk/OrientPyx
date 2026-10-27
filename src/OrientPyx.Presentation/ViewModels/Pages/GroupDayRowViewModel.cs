@@ -215,6 +215,9 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     /// <summary>True when this is a scatter («розсіювання») group — its discipline is Scatter.</summary>
     public bool IsScatter => Strategy.UsesCourseVariants;
 
+    /// <summary>True when the group runs a relay (teams on consecutive legs) — the page shows the relay settings.</summary>
+    public bool IsRelay => Strategy.Competitors == CompetitorModel.TeamWithLegs;
+
     /// <summary>True when the course order is a «mixed» pattern (previewed and validated on the page).</summary>
     public bool UsesCoursePattern => Strategy.UsesCoursePattern;
 
@@ -311,6 +314,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         OnPropertyChanged(nameof(UsesPenalty));
         OnPropertyChanged(nameof(UsesTimeLimit));
         OnPropertyChanged(nameof(IsScatter));
+        OnPropertyChanged(nameof(IsRelay));
         OnPropertyChanged(nameof(UsesCoursePattern));
         OnPropertyChanged(nameof(CourseOrderDisplay));
         OnPropertyChanged(nameof(CanEditCourseOrderInline));

@@ -48,6 +48,9 @@ public sealed record EventDaySnapshot
     /// <summary>Every participant's additional-field values (participant-level, Р-13).</summary>
     public IReadOnlyList<ParticipantFieldValue> FieldValues { get; init; } = [];
 
+    /// <summary>The day's relay teams (Р-20), by number.</summary>
+    public IReadOnlyList<RelayTeam> RelayTeams { get; init; } = [];
+
     /// <summary>Competition metadata (name, organisation, officials); null when none is stored yet.</summary>
     public CompetitionInfo? Info { get; init; }
 }

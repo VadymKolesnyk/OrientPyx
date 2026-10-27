@@ -95,9 +95,14 @@ public sealed class PluginDisciplineStrategy : IDisciplineStrategy
     {
         // A plugin that keeps the built-in ranking (or a team format, whose ranking is structural) runs the
         // built-in pass directly, on the host's own data.
-        if (!_overridesRank || Competitors != CompetitorModel.Individual)
+        if (!_overridesRank || Competitors == CompetitorModel.Team)
         {
             _basedOn.Rank(context);
+            return;
+        }
+        if (Competitors == CompetitorModel.TeamWithLegs)
+        {
+            RankTeams(context);
             return;
         }
 
@@ -141,6 +146,70 @@ public sealed class PluginDisciplineStrategy : IDisciplineStrategy
             context.Results[row.Id] = context.Results[row.Id] with { Place = row.Place };
     }
 
+    /// <summary>A relay plugin's own ranking: one row per team (time = Σ adjusted legs) plus its leg rows.</summary>
+    private void RankTeams(GroupRankingContext context)
+    {
+        var teams = context.RelayTeams.Select(t => context.TeamResults[t.TeamId]).Select(team =>
+        {
+            var row = new ResultRow(new Dictionary<string, object?>(team.Extra))
+            {
+                Id = team.TeamId,
+                Status = team.Status,
+                Time = team.ActualTime,
+                AdjustedTime = team.Time,
+                OutOfCompetition = team.OutOfCompetition
+            };
+            if (team.UnrankedReason is { } reason)
+                row.MarkUnranked(reason);
+            var members = team.Legs.Select(l => l.LinkId is { } id && context.Results.TryGetValue(id, out var r)
+                ? new ResultRow(new Dictionary<string, object?>(r.Extra))
+                {
+                    Id = id,
+                    Participant = context.Participants.GetValueOrDefault(id),
+                    Status = r.Status,
+                    Time = r.ResultTime,
+                    AdjustedTime = r.AdjustedTime,
+                    OutOfCompetition = r.OutOfCompetition,
+                    Missed = r.Missed
+                }
+                : null).ToList();
+            return new TeamCompetitor
+            {
+                Row = row, Number = team.Number, Name = team.Name, Members = members, Restarted = team.Restarted
+            };
+        }).ToList();
+
+        var rows = teams.Select(t => t.Row).ToList();
+        var sdk = new RankingContext
+        {
+            Group = context.GroupName,
+            Competitors = rows,
+            Finished = rows.Where(r => r.Status == FinishStatus.Ok && !r.OutOfCompetition
+                                       && r.UnrankedReason is null && r.AdjustedTime is not null).ToList(),
+            Teams = teams,
+            Settings = context.DisciplineSettings,
+            HostState = context
+        };
+
+        try
+        {
+            _discipline.Rank(sdk);
+        }
+        catch (Exception ex)
+        {
+            Report(nameof(Discipline.Rank), ex);
+            _basedOn.Rank(context);
+            return;
+        }
+
+        foreach (var row in rows)
+            context.TeamResults[row.Id] = context.TeamResults[row.Id] with
+            {
+                Place = row.Place,
+                Extra = row.Values.Count > 0 ? new Dictionary<string, object?>(row.Values) : context.TeamResults[row.Id].Extra
+            };
+    }
+
     private T Guard<T>(string member, Func<T> call, Func<T> fallback)
     {
         try
@@ -178,7 +247,9 @@ public sealed class PluginDisciplineStrategy : IDisciplineStrategy
             {
                 basedOn.Rank(host);
                 foreach (var row in context.Competitors)
-                    row.Place = host.Results.TryGetValue(row.Id, out var r) ? r.Place : null;
+                    row.Place = host.Results.TryGetValue(row.Id, out var r) ? r.Place
+                        : host.TeamResults.TryGetValue(row.Id, out var t) ? t.Place
+                        : null;
                 return;
             }
 

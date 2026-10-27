@@ -47,6 +47,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly FinishReadViewModel _finishRead;
     private readonly ParticipantsViewModel _participants;
     private readonly RegionsViewModel _regions;
+    private readonly RelayTeamsViewModel _relayTeams;
     private readonly ClubsViewModel _clubs;
     private readonly DusshViewModel _dussh;
     private readonly RanksViewModel _ranks;
@@ -78,6 +79,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         FinishReadViewModel finishRead,
         ParticipantsViewModel participants,
         RegionsViewModel regions,
+        RelayTeamsViewModel relayTeams,
         ClubsViewModel clubs,
         DusshViewModel dussh,
         RanksViewModel ranks,
@@ -117,6 +119,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _finishRead = finishRead;
         _participants = participants;
         _regions = regions;
+        _relayTeams = relayTeams;
         _clubs = clubs;
         _dussh = dussh;
         _ranks = ranks;
@@ -177,7 +180,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         foreach (var page in new PageViewModelBase[]
                  {
                      _dashboard, _competitionInfo, _competitionDays, _controlPoints, _groups, _chips,
-                     _finishRead, _participants, _regions, _clubs, _dussh, _ranks, _points, _entryFees,
+                     _finishRead, _participants, _relayTeams, _regions, _clubs, _dussh, _ranks, _points, _entryFees,
                      _protocols, _summaryProtocols, _startProtocols, _onlineResults, _monitorResults,
                      _splitsExport, _draw, _classicDraw, Settings,
                  })
@@ -294,6 +297,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     {
         await _finishRead.LoadAsync();
         _shell.SelectedPage = _finishRead;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenRelayTeamsAsync()
+    {
+        await _relayTeams.LoadAsync();
+        _shell.SelectedPage = _relayTeams;
     }
 
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]
@@ -622,6 +632,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenFinishReadCommand.NotifyCanExecuteChanged();
         OpenParticipantsCommand.NotifyCanExecuteChanged();
         OpenRegionsCommand.NotifyCanExecuteChanged();
+        OpenRelayTeamsCommand.NotifyCanExecuteChanged();
         OpenClubsCommand.NotifyCanExecuteChanged();
         OpenDusshCommand.NotifyCanExecuteChanged();
         OpenRanksCommand.NotifyCanExecuteChanged();

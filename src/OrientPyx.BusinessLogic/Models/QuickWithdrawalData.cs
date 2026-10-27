@@ -28,4 +28,8 @@ public sealed record QuickWithdrawalMember(
     string Number,
     string FullName,
     bool HasReadout,
-    FinishStatus? CurrentStatus);
+    FinishStatus? CurrentStatus)
+{
+    /// <summary>The relay leg number («100.2») on a relay day, also accepted as the number (Р-24); null otherwise.</summary>
+    public string? LegBib { get; init; }
+}

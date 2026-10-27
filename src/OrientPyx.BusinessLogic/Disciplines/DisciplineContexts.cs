@@ -53,6 +53,12 @@ public sealed class GroupRankingContext
     /// <summary>Every member of the group on the day (team disciplines only).</summary>
     public IReadOnlyList<TeamMemberEntry> TeamMembers { get; init; } = [];
 
+    /// <summary>The group's relay teams after the evaluate/adjust stages (relay disciplines only).</summary>
+    public IReadOnlyList<TeamDayResult> RelayTeams { get; init; } = [];
+
+    /// <summary>The day's relay team results keyed by team id, updated in place (places, «П/К»).</summary>
+    public IDictionary<Guid, TeamDayResult> TeamResults { get; init; } = new Dictionary<Guid, TeamDayResult>();
+
     /// <summary>The day's per-control point values.</summary>
     public IReadOnlyDictionary<string, int> PointsByCode { get; init; } = new Dictionary<string, int>();
 

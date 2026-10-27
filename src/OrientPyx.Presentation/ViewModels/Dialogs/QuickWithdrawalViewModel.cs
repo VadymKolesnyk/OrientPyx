@@ -48,6 +48,10 @@ public sealed partial class QuickWithdrawalViewModel : ObservableObject
             if (key.Length > 0)
                 _byNumber[key] = m;
         }
+        // Р-24: on a relay day the leg number («100.2») is accepted too; it never shadows a participant number.
+        foreach (var m in data.Members)
+            if (m.LegBib is { Length: > 0 } bib)
+                _byNumber.TryAdd(bib, m);
 
         Rows = [];
         // Seed rows for members that already carry a manual status override, so opening the dialog shows the

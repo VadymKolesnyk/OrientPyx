@@ -212,6 +212,47 @@
                         </Button>
                     </StackPanel>
                 </Grid>
+                <!-- Relay group settings (Р-27…Р-29, Р-35): legs, mass start of leg 1, a restart time per leg
+                     2…N and how a restarted team ranks. Shown only for a relay group; the course below is
+                     the leg course every leg runs. -->
+                <Border DockPanel.Dock="Top"
+                        IsVisible="{Binding IsRelayEditorVisible}"
+                        IsEnabled="{Binding !IsDayLocked}"
+                        Margin="0,0,0,8" Padding="10,7" CornerRadius="6"
+                        Background="{DynamicResource SurfaceSubtle}">
+                    <WrapPanel Orientation="Horizontal">
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,16,2">
+                            <TextBlock Text="{Binding Localization[Groups.Relay.LegCount]}" VerticalAlignment="Center" />
+                            <TextBox Width="60" Text="{Binding RelayLegCountText, Mode=TwoWay}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,16,2">
+                            <TextBlock Text="{Binding Localization[Groups.Relay.MassStart]}" VerticalAlignment="Center" />
+                            <TextBox Width="90" Text="{Binding RelayMassStartText, Mode=TwoWay}"
+                                     PlaceholderText="hh:mm:ss" />
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding RelayRestarts}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="pages:RelayRestartItemViewModel">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,16,2">
+                                        <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
+                                        <TextBox Width="90" Text="{Binding Text, Mode=TwoWay}" PlaceholderText="hh:mm:ss" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,16,2">
+                            <TextBlock Text="{Binding Localization[Groups.Relay.RestartRanking]}" VerticalAlignment="Center" />
+                            <ComboBox MinWidth="200"
+                                      ItemsSource="{Binding RelayRestartRankingOptions}"
+                                      SelectedItem="{Binding SelectedRelayRestartRanking, Mode=TwoWay}" />
+                        </StackPanel>
+                    </WrapPanel>
+                </Border>
                 <!-- Live validation of the «mixed» order pattern: a ✔ with the normalized "S … F" order
                      when valid, or a ✖ with the first structural error when not. Shown only for a
                      mixed-discipline group; the TextBox fills the space above. -->

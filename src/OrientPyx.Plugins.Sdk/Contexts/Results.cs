@@ -125,6 +125,13 @@ public sealed class RankingContext
 
     public SettingValues Settings { get; init; } = SettingValues.Empty;
 
+    /// <summary>
+    /// For a relay (<see cref="CompetitorModel.TeamWithLegs"/>): the teams of the group. Each team's
+    /// <see cref="TeamCompetitor.Row"/> is also in <see cref="Competitors"/> (and, when placeable, in
+    /// <see cref="Finished"/>), so <see cref="RankBy"/> places teams. Empty for an individual format.
+    /// </summary>
+    public IReadOnlyList<TeamCompetitor> Teams { get; init; } = [];
+
     /// <summary>The host's own ranking data (used by the built-in fallback).</summary>
     [EditorBrowsable(EditorBrowsableState.Never)]
     public object? HostState { get; init; }
@@ -139,4 +146,29 @@ public sealed class RankingContext
         foreach (var (row, place) in Ranking.AssignPlaces(Finished, order))
             row.Place = place;
     }
+}
+
+/// <summary>One relay team for ranking: its own result row (time = sum of the adjusted leg times) plus the leg
+/// rows in leg order (null for a leg nobody runs).</summary>
+public sealed class TeamCompetitor
+{
+    /// <summary>The team's result; its <see cref="ResultRow.Place"/> is the team's place.</summary>
+    public required ResultRow Row { get; init; }
+
+    /// <summary>The team number (100 in «100.2»).</summary>
+    public int Number { get; init; }
+
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>The leg results in leg order (index 0 = leg 1); null where the leg is not assigned.</summary>
+    public IReadOnlyList<ResultRow?> Members { get; init; } = [];
+
+    /// <summary>True when some leg started from a restart (Р-29).</summary>
+    public bool Restarted { get; init; }
+
+    public TimeSpan? Time => Row.AdjustedTime;
+
+    public FinishStatus Status => Row.Status;
+
+    public int? Place => Row.Place;
 }

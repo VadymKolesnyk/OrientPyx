@@ -81,7 +81,22 @@ public sealed class FinishReadRowViewModel
     public string FullName => _row.IsKnown ? _row.FullName : _localization.Get("FinishRead.Unknown");
 
     /// <summary>Group when known; otherwise blank.</summary>
-    public string GroupName => _row.GroupName;
+    public string GroupName => _row.RelayTeamNumber is { } team
+        ? _row.GroupName + " · " + RelaySuffix(team)
+        : _row.GroupName;
+
+    // Relay: «команда 100 «Назва», етап 2 · перезапуск / очікує» (Р-29, Р-30).
+    private string RelaySuffix(int team)
+    {
+        var text = string.Format(_localization.Get("FinishRead.Relay.TeamLeg"), team, _row.RelayLeg ?? 0);
+        if (_row.RelayTeamName.Length > 0)
+            text += " «" + _row.RelayTeamName + "»";
+        if (_row.RelayRestarted)
+            text += " · " + _localization.Get("Relay.Restart");
+        if (_row.RelayPending)
+            text += " · " + _localization.Get("Relay.Pending");
+        return text;
+    }
 
     /// <summary>Collected «Бали» for a point-scoring day; blank when the discipline doesn't score points.</summary>
     public string ScoreText => _row.Score is { } s ? s.ToString() : string.Empty;

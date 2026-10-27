@@ -533,6 +533,21 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     }
 
     public int PlaceSort => _result.Place ?? int.MaxValue;
+
+    // ── Relay (Р-22, Р-23): the team, the leg and the leg number «100.2», from the computed result.
+    /// <summary>The relay team number; blank outside a relay.</summary>
+    public string RelayTeamText => _result.Team?.Number.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+
+    public int RelayTeamSort => _result.Team?.Number ?? int.MaxValue;
+
+    /// <summary>The runner's leg; blank outside a relay.</summary>
+    public string RelayLegText => _result.Leg?.Leg.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+
+    /// <summary>The leg number «100.2»; blank outside a relay.</summary>
+    public string RelayBibText => _result.LegBib ?? string.Empty;
+
+    /// <summary>False for a relay runner: their group on the day is the team's (Р-22), changed on «Команди».</summary>
+    public bool IsGroupEditable => _result.Team is null;
     public int ScoreSort => _result.Score ?? -1;
     /// <summary>Raw points for sorting (min when none, so awarded points sort together).</summary>
     public decimal PointsSort => _result.Points ?? decimal.MinValue;
@@ -647,6 +662,9 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         OnPropertyChanged(nameof(AgeViolationTooltip));
 
         if (!_initialized)
+            return;
+        // A relay runner's group is the team's (Р-22): a paste / bulk edit never moves them.
+        if (!IsGroupEditable)
             return;
 
         // Selecting "не участвує" (the null sentinel) removes the participant from this day; any other
@@ -889,6 +907,11 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         OnPropertyChanged(nameof(AwardedRankText));
         OnPropertyChanged(nameof(ResultExtras));
         OnPropertyChanged(nameof(PlaceSort));
+        OnPropertyChanged(nameof(RelayTeamText));
+        OnPropertyChanged(nameof(RelayTeamSort));
+        OnPropertyChanged(nameof(RelayLegText));
+        OnPropertyChanged(nameof(RelayBibText));
+        OnPropertyChanged(nameof(IsGroupEditable));
         OnPropertyChanged(nameof(ScoreSort));
         OnPropertyChanged(nameof(PointsSort));
     }

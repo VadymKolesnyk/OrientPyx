@@ -780,6 +780,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     {
         await EnsureDayEditableAsync(CurrentDayId, cancellationToken);
 
+        await _eventStore.DeleteRelayTeamsForGroupDayAsync(FolderPath, CurrentDayId, groupId, cancellationToken);
         await _eventStore.DeleteGroupDaySettingsAsync(FolderPath, settingsId, cancellationToken);
 
         // A group that no longer runs on any day is removed entirely.
@@ -2891,7 +2892,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         string folder, EventDay day, CancellationToken cancellationToken,
         Dictionary<Guid, GroupRankCalculation>? rankCalcs = null,
         EventDaySnapshot? snapshot = null,
-        DayResultsAppData? appData = null)
+        DayResultsAppData? appData = null,
+        Dictionary<Guid, TeamDayResult>? teamResults = null)
     {
         snapshot ??= await _eventStore.GetDaySnapshotAsync(folder, day.Id, cancellationToken);
         if (snapshot.Links.Count == 0)
@@ -2904,7 +2906,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 #if DEBUG
         var watch = System.Diagnostics.Stopwatch.StartNew();
 #endif
-        var results = _calculator.Compute(day, snapshot, appData, rankCalcs);
+        var results = _calculator.Compute(day, snapshot, appData, rankCalcs, teamResults);
 #if DEBUG
         System.Diagnostics.Debug.WriteLine(
             $"[Results] day {day.Number}: {snapshot.Links.Count} links in {watch.ElapsedMilliseconds} ms");
@@ -3158,7 +3160,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 continue;
             var hasReadout = byLink.TryGetValue(link.Id, out var r) && r.HasReadout;
             members.Add(new QuickWithdrawalMember(
-                link.ParticipantId, p.Number, p.FullName, hasReadout, link.ResultStatusOverride));
+                link.ParticipantId, p.Number, p.FullName, hasReadout, link.ResultStatusOverride)
+            {
+                LegBib = r?.LegBib
+            });
         }
 
         // Order by numeric start number (unnumbered last), then by name — the natural search order.
@@ -3280,6 +3285,15 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 leaderTimeByGroup[gid] = lt;
         }
 
+        // The latest read-out of each chip — the one the results (and so a relay leg's sequence) are built from.
+        var latestOrderByChip = new Dictionary<string, int>(TextKey.Comparer);
+        foreach (var lr in readouts)
+        {
+            var key = lr.ChipNumber.Trim();
+            if (!latestOrderByChip.TryGetValue(key, out var o) || lr.Order > o)
+                latestOrderByChip[key] = lr.Order;
+        }
+
         var rows = new List<FinishReadoutRow>(readouts.Count);
         foreach (var r in readouts)
         {
@@ -3304,6 +3318,18 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     : null;
                 var result = placeByLink.TryGetValue(link.Id, out var pr) ? pr : null;
                 var place = result?.Place;
+                // A relay leg is judged in its sequence (start = previous leg's finish / restart, Р-28…Р-30), so the
+                // latest read-out of the chip shows the calculator's leg result instead of a lone evaluation.
+                var relayLeg = result?.Leg is { } rl && result.Team is not null
+                    && latestOrderByChip.TryGetValue(r.ChipNumber.Trim(), out var latestOrder) && latestOrder == r.Order ? rl : null;
+                if (relayLeg is not null && r.ManualStatus is null)
+                {
+                    status = relayLeg.Pending ? FinishStatus.None : result!.Computed;
+                    if (status == FinishStatus.Ok)
+                        detail = string.Empty;
+                    resolvedStart = relayLeg.Start;
+                    elapsed = !relayLeg.Pending && r.FinishTime is { } lf && relayLeg.Start is { } ls ? lf - ls : null;
+                }
                 // «Відставання»: loss to the group leader, for a placed OK result whose time exceeds the
                 // leader's (the leader themselves and non-placed rows show none).
                 TimeSpan? gap = place is not null && result?.ResultTime is { } rt
@@ -3318,9 +3344,16 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     && lastDayForHolderChip.TryGetValue((link.ParticipantId, chipKey.ToUpperInvariant()), out var lastNum)
                     && currentDayNumber >= lastNum;
                 rows.Add(new FinishReadoutRow(r.Id, r.Order, r.ChipNumber, r.StartTime, r.FinishTime,
-                    IsKnown: true, p.Number, p.FullName, group, status, detail, resolvedStart, elapsed, score, place, gap,
+                    IsKnown: true, result?.LegBib ?? p.Number, p.FullName, group, status, detail, resolvedStart, elapsed, score, place, gap,
                     CollectRentalChip: collect, IsManualStatus: r.ManualStatus is not null,
-                    StatusDetailKind: detailKind));
+                    StatusDetailKind: detailKind)
+                {
+                    RelayTeamNumber = result?.Team?.Number,
+                    RelayTeamName = result?.Team?.Name ?? string.Empty,
+                    RelayLeg = result?.Leg?.Leg,
+                    RelayRestarted = relayLeg?.Restarted ?? false,
+                    RelayPending = relayLeg?.Pending ?? false
+                });
             }
             else
             {
@@ -3504,6 +3537,15 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 AssignedStart = link?.StartTime,
                 FinishTime = readout.FinishTime
             });
+        // A relay leg's splits run from the leg's start in the sequence — the previous leg's finish or the
+        // restart (Р-28, Р-29) — for the chip's latest read-out, which the results are built from.
+        if (link?.RelayTeamId is not null && _strategies.For(discipline).Competitors == CompetitorModel.TeamWithLegs
+            && !readouts.Any(o => o.Order > readout.Order && TextKey.Same(o.ChipNumber.Trim(), readout.ChipNumber.Trim())))
+        {
+            var dayResults = await ComputeDayResultsAsync(folder, _session.CurrentDay, cancellationToken);
+            if (dayResults.TryGetValue(link.Id, out var legResult) && legResult.Leg is { } leg)
+                start = leg.Start;
+        }
 
         var context = new SplitsContext
         {
@@ -3912,13 +3954,19 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var byId = participants.ToDictionary(p => p.Id);
         var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
 
+        // A relay runner is offered under their leg number «100.2» (Р-24), so the judge picks the team and leg of
+        // an unknown chip by typing it.
+        var teamNumbers = (await _eventStore.GetRelayTeamsAsync(folder, dayId, cancellationToken)).ToDictionary(t => t.Id, t => t.Number);
         var options = new List<FinishReadoutParticipantOption>(links.Count);
         foreach (var link in links)
         {
             if (!byId.TryGetValue(link.ParticipantId, out var p))
                 continue;
             var group = link.GroupId is { } gid && groupName.TryGetValue(gid, out var gn) ? gn : string.Empty;
-            options.Add(new FinishReadoutParticipantOption(p.Id, p.Number, p.FullName, group));
+            var number = link.RelayTeamId is { } tid && link.Leg is { } leg && teamNumbers.TryGetValue(tid, out var tn)
+                ? RelayBib.Format(tn, leg)
+                : p.Number;
+            options.Add(new FinishReadoutParticipantOption(p.Id, number, p.FullName, group));
         }
         options = options
             .OrderBy(o => o.FullName, StringComparer.CurrentCultureIgnoreCase)

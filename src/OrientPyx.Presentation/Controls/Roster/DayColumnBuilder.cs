@@ -33,7 +33,8 @@ public sealed class DayColumnBuilder
         bool paymentPerDay,
         IReadOnlyList<SheetBand>? previous,
         IReadOnlyList<ResultColumnDef>? resultColumns = null,
-        IReadOnlyList<BusinessLogic.Models.CustomField>? customFields = null)
+        IReadOnlyList<BusinessLogic.Models.CustomField>? customFields = null,
+        bool showRelay = false)
     {
         var bands = new List<SheetBand>();
 
@@ -73,6 +74,15 @@ public sealed class DayColumnBuilder
         // This day's group (combo bound directly on the row) and chip (free text, unique per day).
         bands.Add(Identity(SheetCellKind.RowGroup, "Participants.Col.Group", path: string.Empty,
             sortPath: $"{nameof(ParticipantDayRowViewModel.SelectedGroup)}.{nameof(GroupOption.Label)}"));
+        // Relay day (Р-23): the runner's team, leg and leg number «100.2» — read-only, set on the «Команди» page.
+        // The leg number is searchable/filterable like any column, so «100.2» or «100» finds the runner/team (Р-24).
+        if (showRelay)
+        {
+            bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.RelayTeam", nameof(ParticipantDayRowViewModel.RelayTeamText),
+                sortPath: nameof(ParticipantDayRowViewModel.RelayTeamSort), fixedWidth: 90));
+            bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.RelayLeg", nameof(ParticipantDayRowViewModel.RelayLegText), fixedWidth: 60));
+            bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.RelayBib", nameof(ParticipantDayRowViewModel.RelayBibText), fixedWidth: 100));
+        }
         var chipBand = Identity(SheetCellKind.ChipText, "Participants.Col.Chip", nameof(ParticipantDayRowViewModel.Chip));
         chipBand.Columns[0].RentalChipColumn = true; // right-click offers the rental toggle
         bands.Add(chipBand);

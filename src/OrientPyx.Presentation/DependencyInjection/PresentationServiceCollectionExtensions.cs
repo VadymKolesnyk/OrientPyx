@@ -66,6 +66,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<FinishReadViewModel>();
         services.AddSingleton<ParticipantsViewModel>();
         services.AddSingleton<RegionsViewModel>();
+        services.AddSingleton<RelayTeamsViewModel>();
         services.AddSingleton<ClubsViewModel>();
         services.AddSingleton<DusshViewModel>();
         services.AddSingleton<RanksViewModel>();

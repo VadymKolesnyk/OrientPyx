@@ -63,7 +63,7 @@ internal sealed class RosterCellFactory
         SheetCellKind.StartTime => BuildDayStartTimeCell(column),
         SheetCellKind.OutOfCompetition => BuildDayOutOfCompetitionCell(column),
         SheetCellKind.DayRaisedFee => BuildDayRaisedFeeCell(column),
-        SheetCellKind.RowGroup => BuildGroupCombo(pathPrefix: string.Empty),
+        SheetCellKind.RowGroup => BuildDayGroupCombo(),
         SheetCellKind.RowRegion => BuildRegionCombo(),
         SheetCellKind.RowClub => BuildClubCombo(),
         SheetCellKind.RowDussh => BuildDusshCombo(),
@@ -457,6 +457,17 @@ internal sealed class RosterCellFactory
     // Each combo cell is a LazyComboCell: it shows the selected option's label and only builds the real
     // SearchableComboBox when the cell is entered (focus / click / keyboard). At 600 rows × N combo
     // columns this keeps the realised visual tree tiny — the combos were the dominant scroll/GC cost.
+
+    // The day grid's group cell: read-only for a relay runner, whose group is the team's (Р-22).
+    private LazyComboCell BuildDayGroupCombo()
+    {
+        var cell = BuildGroupCombo(pathPrefix: string.Empty);
+        cell.Bind(Avalonia.Controls.Control.IsEnabledProperty, new Avalonia.Data.Binding(nameof(ParticipantDayRowViewModel.IsGroupEditable))
+        {
+            FallbackValue = true
+        });
+        return cell;
+    }
 
     private LazyComboCell BuildGroupCombo(
         string pathPrefix,

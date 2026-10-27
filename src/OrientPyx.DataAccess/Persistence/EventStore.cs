@@ -12,7 +12,7 @@ namespace OrientPyx.DataAccess.Persistence;
 /// Ordered reads sort by <c>Order</c> alone — a stable, unique-per-day key (each add is max+1);
 /// there is deliberately no CreatedAt tie-break, since SQLite cannot ORDER BY a DateTimeOffset column.
 /// </summary>
-public sealed class EventStore : IEventStore
+public sealed partial class EventStore : IEventStore
 {
     public async Task EnsureCreatedAsync(string eventFolderPath, CancellationToken cancellationToken = default)
     {
@@ -169,6 +169,7 @@ public sealed class EventStore : IEventStore
             return;
 
         db.Days.Remove(existing);
+        db.RelayTeams.RemoveRange(db.RelayTeams.Where(t => t.EventDayId == dayId));
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -368,6 +369,11 @@ public sealed class EventStore : IEventStore
         await db.ParticipantDays
             .Where(pd => pd.GroupId == sourceGroupId)
             .ExecuteUpdateAsync(s => s.SetProperty(pd => pd.GroupId, (Guid?)targetGroupId), cancellationToken);
+
+        // Relay teams of the merged group move with their runners.
+        await db.RelayTeams
+            .Where(t => t.GroupId == sourceGroupId)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.GroupId, targetGroupId), cancellationToken);
 
         await tx.CommitAsync(cancellationToken);
     }
@@ -905,6 +911,8 @@ public sealed class EventStore : IEventStore
             .Where(s => s.EventDayId == dayId || s.EventDayId == null).ToListAsync(cancellationToken);
         // Additional-field values feed the discipline rules (ParticipantView.Field, e.g. «Стать»).
         var fieldValues = await db.ParticipantFieldValues.AsNoTracking().ToListAsync(cancellationToken);
+        var relayTeams = await db.RelayTeams.AsNoTracking()
+            .Where(t => t.EventDayId == dayId).OrderBy(t => t.Number).ToListAsync(cancellationToken);
 
         return new EventDaySnapshot
         {
@@ -912,6 +920,7 @@ public sealed class EventStore : IEventStore
             ScatterVariants = scatterVariants,
             DisciplineSettings = disciplineSettings,
             FieldValues = fieldValues,
+            RelayTeams = relayTeams,
             Links = links,
             Participants = participants,
             Groups = groups,
