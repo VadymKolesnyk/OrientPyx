@@ -71,11 +71,6 @@ public interface IAppStore
 
     /// <summary>Returns the stored readout format (0 = SPORTident, 1 = Sport Time), or null when never set
     /// (caller applies the default, SPORTident).</summary>
-    /// <summary>The disabled plugin ids as stored (a JSON array); null when never saved.</summary>
-    Task<string?> GetDisabledPluginsJsonAsync(CancellationToken cancellationToken = default);
-
-    Task SaveDisabledPluginsJsonAsync(string json, CancellationToken cancellationToken = default);
-
     /// <summary>The app-default CSV/Excel column mappings (JSON keyed by header-set hash); null/blank when none.</summary>
     Task<string?> GetImportMappingsJsonAsync(CancellationToken cancellationToken = default);
 

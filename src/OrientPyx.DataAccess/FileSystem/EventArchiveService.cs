@@ -112,7 +112,7 @@ public sealed class EventArchiveService : IEventArchiveService
 
         var eventsPath = (await _settings.GetPathsAsync(cancellationToken)).EventsPath;
         var exists = Directory.Exists(Path.Combine(eventsPath, identifier));
-        var available = _plugins.Plugins.Where(p => p.Enabled).Select(p => p.Info.Id).ToHashSet(StringComparer.Ordinal);
+        var available = _plugins.Plugins.Where(p => _plugins.IsEnabled(p.Info.Id)).Select(p => p.Info.Id).ToHashSet(StringComparer.Ordinal);
         return new EventArchivePreview(identifier, exists)
         {
             MissingPlugins = required.Where(r => !available.Contains(r.Id)).ToList()

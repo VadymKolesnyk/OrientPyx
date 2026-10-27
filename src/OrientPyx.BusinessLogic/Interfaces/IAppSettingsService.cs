@@ -64,11 +64,6 @@ public interface IAppSettingsService
 
     Task SaveOnlineApiSettingsAsync(OnlineApiSettings settings, CancellationToken cancellationToken = default);
 
-    /// <summary>Ids of the plugins the user switched off (Р-12); takes effect on the next launch.</summary>
-    Task<IReadOnlySet<string>> GetDisabledPluginsAsync(CancellationToken cancellationToken = default);
-
-    Task SaveDisabledPluginsAsync(IEnumerable<string> pluginIds, CancellationToken cancellationToken = default);
-
     /// <summary>Returns the configured timing-system readout format, defaulting to SPORTident when never set.</summary>
     Task<ReadoutType> GetReadoutTypeAsync(CancellationToken cancellationToken = default);
 

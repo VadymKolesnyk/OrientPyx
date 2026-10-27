@@ -58,12 +58,8 @@ public interface IDialogService : INotifyPropertyChanged
     /// <summary>Returns the chosen new number.</summary>
     Task<int?> ShowChangeDayNumberAsync(ChangeDayNumberViewModel dialog);
 
-    /// <summary>Returns the edited settings per discipline, or null on cancel.</summary>
-    Task<IReadOnlyDictionary<BusinessLogic.Disciplines.DisciplineId, IReadOnlyDictionary<string, object?>>?> ShowDisciplineSettingsAsync(
-        DisciplineSettingsViewModel dialog);
-
-    /// <summary>Shows the table editor of a table setting over the dialog on screen (which comes back after);
-    /// returns the edited table, or null on cancel.</summary>
+    /// <summary>Shows the table editor of a table setting (over the dialog on screen, if any, which comes back
+    /// after); returns the edited table, or null on cancel.</summary>
     Task<TableValue?> ShowSettingTableAsync(SettingTableViewModel dialog);
 
     /// <summary>An export could not overwrite its target (another program holds it open); offers a

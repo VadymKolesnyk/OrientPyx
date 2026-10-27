@@ -108,7 +108,7 @@ public sealed partial class CompetitionEditorService
         var defs = await _eventStore.GetCustomFieldDefsAsync(folder, cancellationToken);
         var keys = defs.Select(f => f.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var order = defs.Count == 0 ? 0 : defs.Max(f => f.Order);
-        foreach (var plugin in _plugins.Plugins.Where(p => p.Enabled && used.Contains(p.Info.Id)))
+        foreach (var plugin in _plugins.Plugins.Where(p => _plugins.IsEnabled(p.Info.Id) && used.Contains(p.Info.Id)))
         {
             foreach (var declared in plugin.Fields)
             {

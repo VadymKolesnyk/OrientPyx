@@ -22,7 +22,6 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
     private readonly IBusyService _busy;
     private readonly IDialogService _dialogs;
     private readonly IActivityLog _log;
-    private readonly IDisciplineSettingsFlow _disciplineSettings;
     // Held directly rather than through UseDayLock: that binds the page to the SESSION's day, and this
     // page shows every day at once — each row's lock is its own.
     private readonly IDayLockService _dayLock;
@@ -37,12 +36,10 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         ITableLayoutStore layoutStore,
         IDayLockService dayLock,
         IActivityLog log,
-        IDisciplineStrategyProvider strategies,
-        IDisciplineSettingsFlow disciplineSettings)
+        IDisciplineStrategyProvider strategies)
         : base(localization)
     {
         _strategies = strategies;
-        _disciplineSettings = disciplineSettings;
         _dayLock = dayLock;
         LayoutStore = layoutStore;
         _editor = editor;
@@ -143,14 +140,6 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
             await _busy.RunAsync(() => _session.SetCurrentDayAsync(updated));
         else
             await LoadAsync();
-    }
-
-    /// <summary>«Налаштування дисципліни…» for a day: every discipline used on it that declares settings.</summary>
-    [RelayCommand]
-    private async Task EditDisciplineSettingsAsync(DayRowViewModel? row)
-    {
-        if (row is not null)
-            await _disciplineSettings.EditAsync(row.ToEntity());
     }
 
     [RelayCommand]

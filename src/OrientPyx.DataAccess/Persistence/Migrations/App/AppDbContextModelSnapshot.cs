@@ -26,7 +26,7 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.App
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("DisabledPluginsJson")
+                    b.Property<string>("EnabledPluginsJson")
                         .IsRequired()
                         .HasColumnType("TEXT");
 

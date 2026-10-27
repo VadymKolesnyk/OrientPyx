@@ -33,7 +33,6 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<IStatementFlow, StatementFlow>();
         services.AddSingleton<IWinnersPrintFlow, WinnersPrintFlow>();
         services.AddSingleton<IEventArchiveFlow, EventArchiveFlow>();
-        services.AddSingleton<IDisciplineSettingsFlow, DisciplineSettingsFlow>();
         services.AddSingleton<ResultsDebugSnapshot>();
         services.AddSingleton<IFileReadoutPoller, FileReadoutPoller>();
         services.AddSingleton<IBackgroundActivityService, BackgroundActivityService>();
@@ -80,6 +79,8 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<SplitsExportViewModel>();
         services.AddSingleton<DrawViewModel>();
         services.AddSingleton<ClassicDrawViewModel>();
+        services.AddSingleton<PluginsViewModel>();
+        services.AddSingleton<PluginSettingsViewModel>();
 
         return services.BuildServiceProvider();
     }

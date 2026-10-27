@@ -6,12 +6,15 @@ namespace OrientPyx.BusinessLogic.Disciplines;
 /// <summary>
 /// Indexes the DI-registered strategies by their <see cref="IDisciplineStrategy.Id"/>. Adding a
 /// new discipline only requires registering its strategy; this provider needs no changes. An id with
-/// no registered strategy (e.g. a missing plugin) resolves to a cached <see cref="UnknownDisciplineStrategy"/>.
+/// no registered strategy (e.g. a missing plugin) — or one of a plugin that is switched off — resolves to a cached
+/// <see cref="UnknownDisciplineStrategy"/>. Switching a plugin on or off takes effect on the next lookup.
 /// </summary>
 public sealed class DisciplineStrategyProvider : IDisciplineStrategyProvider
 {
     private readonly IReadOnlyDictionary<DisciplineId, IDisciplineStrategy> _byId;
     private readonly ICourseDistanceCalculator _distance;
+    private readonly IPluginCatalog? _plugins;
+    private readonly IReadOnlyList<IDisciplineStrategy> _all;
     private readonly Dictionary<DisciplineId, IDisciplineStrategy> _unknown = [];
     private readonly Lock _gate = new();
 
@@ -21,14 +24,16 @@ public sealed class DisciplineStrategyProvider : IDisciplineStrategyProvider
     }
 
     /// <summary>
-    /// Built-ins plus the enabled plugins' disciplines (after the built-ins, in plugin order). A plugin discipline
-    /// is wrapped in a <see cref="PluginDisciplineStrategy"/> over its <see cref="Discipline.BasedOn"/> built-in.
+    /// Built-ins plus every loaded plugin's disciplines (after the built-ins, in plugin order); only the switched-on
+    /// plugins' ones are offered (<see cref="All"/>) and resolved (<see cref="For"/>). A plugin discipline is wrapped
+    /// in a <see cref="PluginDisciplineStrategy"/> over its <see cref="Discipline.BasedOn"/> built-in.
     /// </summary>
     public DisciplineStrategyProvider(
         IEnumerable<IDisciplineStrategy> strategies, ICourseDistanceCalculator distance,
         IPluginCatalog? plugins, PluginRuntimeErrors? errors, IActivityLog? log)
     {
         _distance = distance;
+        _plugins = plugins;
         // The first registration wins on a duplicate id, so a plugin can never shadow a built-in (the
         // built-ins are registered first; plugin ids are namespaced anyway).
         var byId = new Dictionary<DisciplineId, IDisciplineStrategy>();
@@ -43,7 +48,7 @@ public sealed class DisciplineStrategyProvider : IDisciplineStrategyProvider
         if (plugins is not null && errors is not null)
         {
             var builtins = byId.ToDictionary(kv => kv.Key, kv => kv.Value);
-            foreach (var plugin in plugins.Plugins.Where(p => p.Enabled))
+            foreach (var plugin in plugins.Plugins)
                 foreach (var discipline in plugin.Disciplines)
                 {
                     var id = new DisciplineId(discipline.Id);
@@ -60,14 +65,14 @@ public sealed class DisciplineStrategyProvider : IDisciplineStrategyProvider
         }
 
         _byId = byId;
-        All = all;
+        _all = all;
     }
 
-    public IReadOnlyList<IDisciplineStrategy> All { get; }
+    public IReadOnlyList<IDisciplineStrategy> All => _all.Where(IsAvailable).ToList();
 
     public IDisciplineStrategy For(DisciplineId id)
     {
-        if (_byId.TryGetValue(id, out var strategy))
+        if (_byId.TryGetValue(id, out var strategy) && IsAvailable(strategy))
             return strategy;
 
         lock (_gate)
@@ -77,4 +82,7 @@ public sealed class DisciplineStrategyProvider : IDisciplineStrategyProvider
             return unknown;
         }
     }
+
+    private bool IsAvailable(IDisciplineStrategy strategy) =>
+        strategy.PluginId is not { } pluginId || _plugins?.IsEnabled(pluginId) != false;
 }

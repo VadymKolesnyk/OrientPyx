@@ -181,23 +181,6 @@ public sealed partial class DialogService : ObservableObject, IDialogService
         }
     }
 
-    public async Task<IReadOnlyDictionary<BusinessLogic.Disciplines.DisciplineId, IReadOnlyDictionary<string, object?>>?> ShowDisciplineSettingsAsync(
-        DisciplineSettingsViewModel dialog)
-    {
-        ArgumentNullException.ThrowIfNull(dialog);
-
-        Current = dialog;
-        try
-        {
-            return await dialog.Completion;
-        }
-        finally
-        {
-            if (ReferenceEquals(Current, dialog))
-                Current = null;
-        }
-    }
-
     public async Task<TableValue?> ShowSettingTableAsync(SettingTableViewModel dialog)
     {
         ArgumentNullException.ThrowIfNull(dialog);

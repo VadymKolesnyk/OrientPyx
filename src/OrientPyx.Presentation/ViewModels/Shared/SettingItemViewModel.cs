@@ -6,51 +6,13 @@ using OrientPyx.BusinessLogic.Disciplines.Plugins;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
 
-namespace OrientPyx.Presentation.ViewModels.Dialogs;
+namespace OrientPyx.Presentation.ViewModels.Shared;
 
-/// <summary>
-/// «Налаштування дисципліни…»: an auto-built form over the settings of every discipline used on a day that has
-/// any (one section per discipline). Completes with the edited values per discipline, or null on cancel.
-/// </summary>
-public sealed partial class DisciplineSettingsViewModel : ObservableObject
+/// <summary>One discipline's settings on a plugin's settings page.</summary>
+public sealed record DisciplineSettingsSection(DisciplineId DisciplineId, string Title, string Note, IReadOnlyList<SettingItemViewModel> Items)
 {
-    private readonly TaskCompletionSource<IReadOnlyDictionary<DisciplineId, IReadOnlyDictionary<string, object?>>?> _completion =
-        new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-    public DisciplineSettingsViewModel(
-        ILocalizationService localization, string dayTitle,
-        IEnumerable<(string Title, DisciplineSettingsData Data)> disciplines,
-        Func<string?, SettingDef, TableValue, Task<TableValue?>>? editTable = null)
-    {
-        Localization = localization;
-        DayTitle = dayTitle;
-        Sections = disciplines
-            .Select(d => new DisciplineSettingsSection(d.Data.DisciplineId, d.Title,
-                d.Data.Definitions.Select(def => new SettingItemViewModel(localization, d.Data.PluginId, def,
-                    d.Data.Values.GetValueOrDefault(def.Key), editTable)).ToList()))
-            .ToList();
-    }
-
-    public ILocalizationService Localization { get; }
-
-    public string DayTitle { get; }
-
-    public IReadOnlyList<DisciplineSettingsSection> Sections { get; }
-
-    public Task<IReadOnlyDictionary<DisciplineId, IReadOnlyDictionary<string, object?>>?> Completion => _completion.Task;
-
-    [RelayCommand]
-    private void Confirm() =>
-        _completion.TrySetResult(Sections.ToDictionary(
-            s => s.DisciplineId,
-            s => (IReadOnlyDictionary<string, object?>)s.Items.ToDictionary(i => i.Key, i => i.Value)));
-
-    [RelayCommand]
-    private void Cancel() => _completion.TrySetResult(null);
+    public bool HasNote => Note.Length > 0;
 }
-
-/// <summary>One discipline's settings in the dialog.</summary>
-public sealed record DisciplineSettingsSection(DisciplineId DisciplineId, string Title, IReadOnlyList<SettingItemViewModel> Items);
 
 /// <summary>One setting row: a label and the editor for its kind (stepper, check box, text, choice).</summary>
 public sealed partial class SettingItemViewModel : ObservableObject

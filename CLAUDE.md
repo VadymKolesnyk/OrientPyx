@@ -143,19 +143,24 @@ the format's structure comes from it, the plugin overrides rules: `EvaluateFinis
 - **Loading** (`DataAccess/Plugins/`): `PluginCatalog : IPluginCatalog` scans (Debug) `<repo>/artifacts/plugins`,
   `<app dir>/plugins`, `<data root>/plugins` — a later folder wins on a duplicate id (Р-12). Each plugin gets its own
   `PluginLoadContext`; the SDK always resolves from the default context. Loading is lazy and happens right after
-  the app DB is migrated (`PluginStartup.RegisterStrings` in `App.axaml.cs`), because the disabled list lives in
-  `AppSettingsRow.DisabledPluginsJson`. Any failure → `PluginLoadError` (shown on Settings → «Плагіни»); the app
-  always starts. No hot reload.
-- **Adapter** (`BusinessLogic/Disciplines/Plugins/`): `DisciplineStrategyProvider` wraps each enabled plugin
-  discipline in a `PluginDisciplineStrategy` over its `BasedOn` built-in (`base.*` runs the built-in through
+  the app DB is migrated (`PluginStartup.RegisterStrings` in `App.axaml.cs`), because the switched-on list lives in
+  `AppSettingsRow.EnabledPluginsJson`. Every found plugin registers, but **stays off until switched on** on the
+  «Плагіни → Керування плагінами…» page (`PluginsViewModel`); `IPluginCatalog.IsEnabled`/`SetEnabledAsync`/`EnabledChanged`
+  switch it live (no restart: the provider, the type dropdowns, the banner and the menu follow). Any failure →
+  `PluginLoadError` (shown on that page); the app always starts. No hot reload of DLLs (a new file needs a restart).
+- **Adapter** (`BusinessLogic/Disciplines/Plugins/`): `DisciplineStrategyProvider` wraps each plugin
+  discipline in a `PluginDisciplineStrategy` (`All`/`For` skip the switched-off plugins' ones — `For` gives
+  `UnknownDisciplineStrategy`) over its `BasedOn` built-in (`base.*` runs the built-in through
   `IDisciplineHost` with the contexts the core built). Every call into plugin code is guarded: on an exception the
   built-in result is used, logged, and `PluginRuntimeErrors.FirstFailure` shows one banner per plugin per session.
 - **Strings**: a plugin's keys resolve as `"<pluginId>.<key>"` via `ILocalizationService.AddOverlay`; a key with no
   translation falls back to en-US, then to the bare key (so plain text works).
 - **Settings** (Р-11): `PluginSettingsRow(EventDayId?, DisciplineId, Json)` in `event.db` — a day row for
   `SettingScope.Day` values, a no-day row for `SettingScope.Competition`; `DisciplineSettings.Resolve` merges them
-  with the defaults. «Налаштування дисципліни…» (days page row, groups toolbar) → `IDisciplineSettingsFlow` →
-  auto-form dialog; saving re-points the session so pages recompute. The snapshot carries the rows
+  with the defaults. Edited on the plugin's own page: the top menu «Плагіни» lists one item per switched-on plugin
+  (built in `MainWindow.axaml.cs` from `MainWindowViewModel.PluginMenu`) → `PluginSettingsViewModel` (one singleton,
+  `PluginId` set before load): an auto-form card per discipline, day-scoped values for the day picked on the page;
+  saving re-points the session so pages recompute. The snapshot carries the rows
   (`EventDaySnapshot.DisciplineSettings`) so the calculator and the read-out log see the same values.
 - **Table settings**: `Setting.Table(key, label, columns, TableValue default)` — rows of text cells keyed by column
   key, stored as a JSON array; edited in `SettingTableView` shown over the settings dialog

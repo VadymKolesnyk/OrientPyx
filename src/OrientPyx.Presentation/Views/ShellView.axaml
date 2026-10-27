@@ -34,6 +34,12 @@
         <DataTemplate DataType="pages:ParticipantsViewModel">
             <views:ParticipantsView />
         </DataTemplate>
+        <DataTemplate DataType="pages:PluginsViewModel">
+            <views:PluginsView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:PluginSettingsViewModel">
+            <views:PluginSettingsView />
+        </DataTemplate>
         <DataTemplate DataType="pages:RelayTeamsViewModel">
             <views:RelayTeamsView />
         </DataTemplate>

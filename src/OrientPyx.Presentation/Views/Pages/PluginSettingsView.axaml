@@ -1,0 +1,113 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             xmlns:shared="using:OrientPyx.Presentation.ViewModels.Shared"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="820" d:DesignHeight="560"
+             x:Class="OrientPyx.Presentation.Views.Pages.PluginSettingsView"
+             x:DataType="pages:PluginSettingsViewModel">
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Heading (the plugin's name) + day picker + save -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="{Binding PluginName}" Classes="h1"
+                           FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+                <TextBlock Text="{Binding PluginDetails}" Classes="subtitle" TextWrapping="Wrap" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Localization[Page.PluginSettings.Saved]}" Classes="muted"
+                           VerticalAlignment="Center"
+                           IsVisible="{Binding Saved}" />
+                <Button Classes="help" Command="{Binding ShowHelpCommand}"
+                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                <controls:DaySelector VerticalAlignment="Center"
+                                      ShowDays="{Binding ShowDaySelector}"
+                                      IsVisible="{Binding ShowDaySelector}"
+                                      ShowLock="False"
+                                      IsDayLocked="{Binding IsDayLocked}"
+                                      ToggleLockCommand="{Binding ToggleDayLockCommand}"
+                                      LockTooltip="{Binding Localization[DayLock.Lock.Tooltip]}"
+                                      UnlockTooltip="{Binding Localization[DayLock.Unlock.Tooltip]}"
+                                      SearchWatermark="{Binding Localization[Common.Search]}"
+                                      DayOptions="{Binding DayOptions}"
+                                      SelectedDay="{Binding SelectedDay, Mode=TwoWay}" />
+                <Button Classes="accent" VerticalAlignment="Center"
+                        Command="{Binding SaveCommand}"
+                        IsEnabled="{Binding HasSections}"
+                        Content="{Binding Localization[Common.Save]}" />
+            </StackPanel>
+        </Grid>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="16" MaxWidth="720">
+
+                <Border Classes="card" Padding="22" IsVisible="{Binding !HasSections}">
+                    <TextBlock Text="{Binding Localization[Page.PluginSettings.None]}" Classes="muted"
+                               TextWrapping="Wrap" />
+                </Border>
+
+                <!-- One card per discipline of the plugin that declares settings -->
+                <ItemsControl ItemsSource="{Binding Sections}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Spacing="16" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="shared:DisciplineSettingsSection">
+                            <Border Classes="card" Padding="22">
+                                <StackPanel Spacing="10">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="{Binding Title}" Classes="h2"
+                                                   FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+                                        <TextBlock Text="{Binding Note}" Classes="muted" TextWrapping="Wrap"
+                                                   IsVisible="{Binding HasNote}" />
+                                    </StackPanel>
+                                    <ItemsControl ItemsSource="{Binding Items}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="shared:SettingItemViewModel">
+                                                <Grid ColumnDefinitions="*,Auto" Margin="0,4">
+                                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                                                        <TextBlock Text="{Binding Label}" TextWrapping="Wrap" />
+                                                        <TextBlock Text="{Binding ScopeNote}" Classes="muted" FontSize="11"
+                                                                   IsVisible="{Binding HasScopeNote}" />
+                                                    </StackPanel>
+                                                    <Panel Grid.Column="1" VerticalAlignment="Center">
+                                                        <!-- Integer: a custom +/- stepper, not NumericUpDown (its Windows
+                                                             automation peer crashes on spin). -->
+                                                        <StackPanel Orientation="Horizontal" Spacing="2" IsVisible="{Binding IsInt}">
+                                                            <Button Content="−" Command="{Binding DecrementCommand}" Classes="ghost stepper" />
+                                                            <TextBlock Text="{Binding Number}" MinWidth="44" VerticalAlignment="Center"
+                                                                       TextAlignment="Center" FontWeight="Medium" />
+                                                            <Button Content="+" Command="{Binding IncrementCommand}" Classes="ghost stepper" />
+                                                        </StackPanel>
+                                                        <TextBox Text="{Binding Text}" MinWidth="160" IsVisible="{Binding IsDecimalOrText}" />
+                                                        <CheckBox IsChecked="{Binding Flag}" IsVisible="{Binding IsBool}" />
+                                                        <ComboBox ItemsSource="{Binding Choices}" SelectedItem="{Binding Text}"
+                                                                  MinWidth="160" IsVisible="{Binding IsChoice}" />
+                                                        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsTable}">
+                                                            <TextBlock Text="{Binding TableSummary}" Classes="muted" VerticalAlignment="Center" />
+                                                            <Button Content="{Binding EditTableLabel}"
+                                                                    Command="{Binding EditTableCommand}" Classes="ghost" />
+                                                        </StackPanel>
+                                                    </Panel>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+            </StackPanel>
+        </ScrollViewer>
+
+    </DockPanel>
+
+</UserControl>

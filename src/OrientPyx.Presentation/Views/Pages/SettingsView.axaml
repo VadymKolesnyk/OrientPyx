@@ -182,52 +182,6 @@
             </StackPanel>
         </Border>
 
-        <!-- Plugins -->
-        <Border Classes="card" Padding="22">
-            <StackPanel Spacing="12">
-                <TextBlock Text="{Binding Localization[Page.Settings.Plugins.Title]}" Classes="h2"
-                           FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
-                <TextBlock Text="{Binding Localization[Page.Settings.Plugins.Hint]}" Classes="muted"
-                           TextWrapping="Wrap" />
-                <TextBlock Text="{Binding Localization[Page.Settings.Plugins.None]}" Classes="muted"
-                           IsVisible="{Binding !HasPlugins}" />
-                <ItemsControl ItemsSource="{Binding Plugins}" IsVisible="{Binding HasPlugins}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="pages:PluginItemViewModel">
-                            <Grid ColumnDefinitions="*,Auto" Margin="0,6">
-                                <StackPanel Grid.Column="0" Spacing="2">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                                        <TextBlock Text="{Binding Details}" Classes="muted" />
-                                    </StackPanel>
-                                    <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Classes="muted"
-                                               IsVisible="{Binding !IsError}" />
-                                    <TextBlock Text="{Binding Status}" TextWrapping="Wrap"
-                                               Foreground="{DynamicResource DangerBrush}"
-                                               IsVisible="{Binding IsError}" />
-                                    <TextBlock Text="{Binding Folder}" Classes="muted" FontSize="11"
-                                               TextWrapping="Wrap" />
-                                </StackPanel>
-                                <CheckBox Grid.Column="1" VerticalAlignment="Center"
-                                          Content="{Binding $parent[UserControl].((pages:SettingsViewModel)DataContext).Localization[Page.Settings.Plugins.Enabled]}"
-                                          IsChecked="{Binding Enabled, Mode=TwoWay}"
-                                          IsVisible="{Binding CanToggle}" />
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                    <Button Content="{Binding Localization[Page.Settings.Plugins.OpenFolder]}"
-                            Classes="ghost"
-                            Command="{Binding OpenPluginsFolderCommand}" />
-                    <TextBlock Text="{Binding Localization[Page.Settings.Plugins.Restart]}"
-                               Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Center"
-                               TextWrapping="Wrap"
-                               IsVisible="{Binding PluginsRestartNeeded}" />
-                </StackPanel>
-            </StackPanel>
-        </Border>
-
         <!-- Version & updates -->
         <Border Classes="card" Padding="22">
             <StackPanel Spacing="14">

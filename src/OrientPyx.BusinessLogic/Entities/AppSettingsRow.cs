@@ -97,8 +97,9 @@ public class AppSettingsRow
     /// </summary>
     public int ReadoutType { get; set; } = 0;
 
-    /// <summary>Ids of the plugins the user switched off, as a JSON string array (Р-12). Blank = none.</summary>
-    public string DisabledPluginsJson { get; set; } = string.Empty;
+    /// <summary>Ids of the plugins the user switched on («Плагіни»), as a JSON string array. Blank = none: a plugin
+    /// found in the plugin folders stays off until it is switched on.</summary>
+    public string EnabledPluginsJson { get; set; } = string.Empty;
 
     /// <summary>
     /// Application-default CSV/Excel column mappings, as a JSON object keyed by header-set hash (each value maps an

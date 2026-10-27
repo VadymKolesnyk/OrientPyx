@@ -17,7 +17,7 @@ internal sealed class PluginLoader
     public PluginLoader(IPluginSource source) => _source = source;
 
     public (IReadOnlyList<LoadedPlugin> Plugins, IReadOnlyList<PluginLoadError> Errors) Load(
-        IReadOnlyList<string> folders, IReadOnlySet<string> disabled)
+        IReadOnlyList<string> folders)
     {
         var byId = new Dictionary<string, LoadedPlugin>(StringComparer.Ordinal);
         var order = new List<string>();
@@ -26,7 +26,7 @@ internal sealed class PluginLoader
         foreach (var folder in folders)
             foreach (var path in _source.Candidates(folder))
             {
-                var plugin = TryLoad(path, disabled, errors);
+                var plugin = TryLoad(path, errors);
                 if (plugin is null)
                     continue;
                 if (!byId.ContainsKey(plugin.Info.Id))
@@ -37,7 +37,7 @@ internal sealed class PluginLoader
         return (order.Select(id => byId[id]).ToList(), errors);
     }
 
-    private static LoadedPlugin? TryLoad(string path, IReadOnlySet<string> disabled, List<PluginLoadError> errors)
+    private static LoadedPlugin? TryLoad(string path, List<PluginLoadError> errors)
     {
         string? id = null;
         try
@@ -56,14 +56,12 @@ internal sealed class PluginLoader
                 throw new InvalidOperationException(
                     $"Needs plugin API {info.MinApiVersion}, the application provides {ApiVersion.Current}.");
 
+            // Every plugin registers, on or off: switching one on later takes effect without a restart, and an off
+            // plugin's contributions are simply not used (IPluginCatalog.IsEnabled).
             var folder = Path.GetDirectoryName(Path.GetFullPath(path)) ?? path;
-            if (disabled.Contains(info.Id))
-                return new LoadedPlugin(info, folder, Enabled: false, [], [],
-                    new Dictionary<string, IReadOnlyDictionary<string, string>>());
-
             var builder = new Builder();
             plugin.Register(builder);
-            return new LoadedPlugin(info, folder, Enabled: true, builder.Disciplines, builder.Fields, builder.Strings);
+            return new LoadedPlugin(info, folder, builder.Disciplines, builder.Fields, builder.Strings);
         }
         catch (Exception ex)
         {

@@ -1,13 +1,14 @@
 namespace OrientPyx.BusinessLogic.Interfaces;
 
 /// <summary>
-/// The plugins found at startup (implemented in DataAccess, which loads the assemblies). A disabled plugin is listed
-/// with <see cref="LoadedPlugin.Enabled"/> false and contributes nothing; a plugin that failed to load is listed in
-/// <see cref="Errors"/>. Plugins are read once per launch — there is no hot reload.
+/// The plugins found at startup (implemented in DataAccess, which loads the assemblies) and which of them the user
+/// switched on («Плагіни»). Every plugin is off until switched on; switching takes effect at once — an off plugin
+/// contributes nothing (its disciplines resolve as unknown, its fields are not created). A plugin that failed to load
+/// is listed in <see cref="Errors"/>. The plugin files are read once per launch — there is no hot reload of DLLs.
 /// </summary>
 public interface IPluginCatalog
 {
-    /// <summary>Every plugin that loaded (enabled or disabled), one per id.</summary>
+    /// <summary>Every plugin that loaded (on or off), one per id.</summary>
     IReadOnlyList<LoadedPlugin> Plugins { get; }
 
     /// <summary>Plugins that could not be loaded, with the reason.</summary>
@@ -18,16 +19,23 @@ public interface IPluginCatalog
 
     /// <summary>The scanned folders, lowest priority first (Р-12).</summary>
     IReadOnlyList<string> Folders { get; }
+
+    /// <summary>True when the plugin is loaded and switched on.</summary>
+    bool IsEnabled(string pluginId);
+
+    /// <summary>Switches a plugin on or off and remembers the choice in the app database.</summary>
+    Task SetEnabledAsync(string pluginId, bool enabled, CancellationToken cancellationToken = default);
+
+    /// <summary>Raised after <see cref="SetEnabledAsync"/> changed a plugin's state.</summary>
+    event EventHandler? EnabledChanged;
 }
 
-/// <summary>A loaded plugin and what it contributes.</summary>
+/// <summary>A loaded plugin and what it contributes (whether it is switched on is <see cref="IPluginCatalog.IsEnabled"/>).</summary>
 /// <param name="Folder">The folder the plugin was loaded from.</param>
-/// <param name="Enabled">False when the user switched the plugin off (it then contributes nothing, Р-12).</param>
 /// <param name="Strings">Translated strings by culture name, then by the plugin's own key.</param>
 public sealed record LoadedPlugin(
     PluginInfo Info,
     string Folder,
-    bool Enabled,
     IReadOnlyList<Discipline> Disciplines,
     IReadOnlyList<ParticipantFieldDef> Fields,
     IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Strings);

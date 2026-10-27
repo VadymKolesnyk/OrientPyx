@@ -61,6 +61,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly SplitsExportViewModel _splitsExport;
     private readonly DrawViewModel _draw;
     private readonly ClassicDrawViewModel _classicDraw;
+    private readonly PluginsViewModel _plugins;
+    private readonly PluginSettingsViewModel _pluginSettings;
+    private readonly IPluginCatalog _pluginCatalog;
 
     public MainWindowViewModel(
         ISessionService session,
@@ -93,6 +96,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         SplitsExportViewModel splitsExport,
         DrawViewModel draw,
         ClassicDrawViewModel classicDraw,
+        PluginsViewModel plugins,
+        PluginSettingsViewModel pluginSettings,
+        IPluginCatalog pluginCatalog,
         ILocalizationService localization,
         IUiScaleService uiScale,
         IAppSettingsService appSettings,
@@ -133,6 +139,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _splitsExport = splitsExport;
         _draw = draw;
         _classicDraw = classicDraw;
+        _plugins = plugins;
+        _pluginSettings = pluginSettings;
+        _pluginCatalog = pluginCatalog;
         Localization = localization;
         _uiScale = uiScale;
         _appSettings = appSettings;
@@ -172,6 +181,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _monitorResults.NavigateToSelfRequested += async (_, _) => await OpenMonitorResultsAsync();
         // Dashboard quick-action buttons route through here (the dashboard owns no page-open commands).
         _dashboard.QuickActionRequested += async (_, action) => await OnDashboardQuickActionAsync(action);
+        // A plugin row's «Налаштування» opens that plugin's page; switching a plugin on/off rebuilds its menu items.
+        _plugins.OpenSettingsRequested += async (_, pluginId) => await OpenPluginSettingsAsync(pluginId);
+        _pluginCatalog.EnabledChanged += (_, _) => Dispatcher.UIThread.Post(RefreshPluginMenu);
+        RefreshPluginMenu();
         _session.SessionChanged += OnSessionChanged;
         Localization.PropertyChanged += (_, _) => OnPropertyChanged(nameof(WindowTitle));
 
@@ -182,7 +195,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                      _dashboard, _competitionInfo, _competitionDays, _controlPoints, _groups, _chips,
                      _finishRead, _participants, _relayTeams, _regions, _clubs, _dussh, _ranks, _points, _entryFees,
                      _protocols, _summaryProtocols, _startProtocols, _onlineResults, _monitorResults,
-                     _splitsExport, _draw, _classicDraw, Settings,
+                     _splitsExport, _draw, _classicDraw, _plugins, _pluginSettings, Settings,
                  })
         {
             page.HelpRequested += OnPageHelpRequested;
@@ -411,6 +424,36 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     {
         await _classicDraw.LoadAsync();
         _shell.SelectedPage = _classicDraw;
+    }
+
+    // ── «Плагіни» menu: the management page, then one item per switched-on plugin (its settings page).
+
+    /// <summary>The switched-on plugins, in catalog order — the dynamic part of the «Плагіни» menu (built by the view).</summary>
+    public ObservableCollection<PluginMenuEntry> PluginMenu { get; } = [];
+
+    private void RefreshPluginMenu()
+    {
+        PluginMenu.Clear();
+        foreach (var plugin in _pluginCatalog.Plugins.Where(p => _pluginCatalog.IsEnabled(p.Info.Id)))
+            PluginMenu.Add(new PluginMenuEntry(plugin.Info.Id, plugin.Info.Name));
+    }
+
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenPluginsAsync()
+    {
+        await _plugins.LoadAsync();
+        _shell.SelectedPage = _plugins;
+    }
+
+    // The plugin-settings page is one singleton VM reused for every plugin: set the plugin before loading.
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenPluginSettingsAsync(string? pluginId)
+    {
+        if (string.IsNullOrEmpty(pluginId))
+            return;
+        _pluginSettings.PluginId = pluginId;
+        await _pluginSettings.LoadAsync();
+        _shell.SelectedPage = _pluginSettings;
     }
 
     // Routes a dashboard quick-action to the matching page-open command (guarded by HasSelection like
@@ -647,6 +690,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenSplitsExportCommand.NotifyCanExecuteChanged();
         OpenDrawCommand.NotifyCanExecuteChanged();
         OpenClassicDrawCommand.NotifyCanExecuteChanged();
+        OpenPluginsCommand.NotifyCanExecuteChanged();
+        OpenPluginSettingsCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsEventSelected));
         OnPropertyChanged(nameof(WindowTitle));
 
@@ -679,3 +724,6 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             _dashboard.StartAutoRefresh();
     }
 }
+
+/// <summary>One switched-on plugin in the «Плагіни» menu.</summary>
+public sealed record PluginMenuEntry(string Id, string Name);

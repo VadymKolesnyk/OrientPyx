@@ -1,4 +1,4 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -40,8 +40,33 @@ public partial class MainWindow : Window, IArchiveFilePicker
         DataContextChanged += (_, _) =>
         {
             if (DataContext is MainWindowViewModel vm)
+            {
                 vm.ArchiveFlow.Picker = this;
+                vm.PluginMenu.CollectionChanged += (_, _) => BuildPluginMenu(vm);
+                BuildPluginMenu(vm);
+            }
         };
+    }
+
+    // The «Плагіни» menu mixes fixed items (declared in XAML) with one item per switched-on plugin, which a bound
+    // ItemsSource cannot do — so the plugin items are kept after the separator here.
+    private void BuildPluginMenu(MainWindowViewModel vm)
+    {
+        if (this.FindControl<MenuItem>("PluginsMenu") is not { } menu
+            || this.FindControl<Separator>("PluginsMenuSeparator") is not { } separator)
+            return;
+
+        var keep = menu.Items.IndexOf(separator) + 1;
+        while (menu.Items.Count > keep)
+            menu.Items.RemoveAt(keep);
+        foreach (var entry in vm.PluginMenu)
+            menu.Items.Add(new MenuItem
+            {
+                Header = entry.Name,
+                Command = vm.OpenPluginSettingsCommand,
+                CommandParameter = entry.Id,
+            });
+        separator.IsVisible = vm.PluginMenu.Count > 0;
     }
 
     private static readonly FilePickerFileType ArchiveFileType = new("OrientPyx")
