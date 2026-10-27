@@ -155,4 +155,7 @@ public sealed record ResultProtocolBodyRow(
     /// <summary>Optional per-cell bold mask parallel to <see cref="Cells"/>: a <c>true</c> at an index ⇒ that
     /// cell's text is drawn bold. Used by the participant statement to bold own (non-rental) chip cells; the
     /// protocols leave it null (no per-cell bolding). Missing/short ⇒ the cell is normal weight.</summary>
-    IReadOnlyList<bool>? BoldCells = null);
+    IReadOnlyList<bool>? BoldCells = null,
+    /// <summary>A second-level row under a caption row — a relay leg under its team. The renderers indent it and
+    /// draw it in a smaller font.</summary>
+    bool IsSubRow = false);

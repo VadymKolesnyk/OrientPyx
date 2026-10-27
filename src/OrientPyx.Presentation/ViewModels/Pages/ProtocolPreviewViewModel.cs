@@ -165,12 +165,16 @@ public sealed class ProtocolPreviewSection
 public sealed class ProtocolPreviewRow
 {
     public ProtocolPreviewRow(IReadOnlyList<string> cells, bool isTeamHeader,
-        IReadOnlyList<bool>? boldCells = null)
+        IReadOnlyList<bool>? boldCells = null, bool isSubRow = false)
     {
         Cells = cells;
         IsTeamHeader = isTeamHeader;
         BoldCells = boldCells;
+        IsSubRow = isSubRow;
     }
+
+    /// <summary>A second-level row (a relay leg under its team): indented, smaller font.</summary>
+    public bool IsSubRow { get; }
 
     public IReadOnlyList<string> Cells { get; }
 

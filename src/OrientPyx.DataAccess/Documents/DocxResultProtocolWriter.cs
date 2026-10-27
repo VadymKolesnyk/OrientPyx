@@ -206,7 +206,7 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
                 {
                     var noWrap = !(i < bodyWrap.Count && bodyWrap[i]);
                     tr.Append(Cell(i < row.Cells.Count ? row.Cells[i] : string.Empty, bold, boxed: false,
-                        columnWidths[i], noWrap));
+                        columnWidths[i], noWrap, subRow: row.IsSubRow, indent: row.IsSubRow && i == 0));
                 }
                 table.Append(tr);
             }
@@ -566,6 +566,7 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
 
     // Table font: 11 pt (half-points), used by both the header row and the data cells of every table.
     private const string TableFontHalfPoints = "22";
+    private const string SubRowFontHalfPoints = "19";
 
     private static Table BuildTable(IReadOnlyList<string> headers, IReadOnlyList<ResultProtocolBodyRow> rows,
         int[] columnWidths, IReadOnlyList<bool> bodyWrap, bool borders)
@@ -619,7 +620,7 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
                 // Per-cell bold (the statement's own-chip cells) OR'd with the whole-row team-caption bold.
                 var cellBold = rowBold || (row.BoldCells is { } mask && i < mask.Count && mask[i]);
                 tr.Append(Cell(i < row.Cells.Count ? row.Cells[i] : string.Empty, cellBold, boxed: false,
-                    columnWidths[i], noWrap));
+                    columnWidths[i], noWrap, subRow: row.IsSubRow, indent: row.IsSubRow && i == 0));
             }
             table.Append(tr);
         }
@@ -630,11 +631,24 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
     // One table cell. Font/size come from the document default (Times New Roman at the table size), so an
     // empty cell still renders correctly; the run only adds bold when needed. Only header cells are boxed —
     // <paramref name="boxed"/> draws a single border on all four sides; data cells stay border-less.
-    private static TableCell Cell(string text, bool bold, bool boxed, int widthTwips, bool noWrap)
+    // A sub-row (a relay leg under its team) is printed a size smaller; its first cell is indented.
+    private static TableCell Cell(string text, bool bold, bool boxed, int widthTwips, bool noWrap,
+        bool subRow = false, bool indent = false)
     {
         var run = new Run(new Text(text ?? string.Empty) { Space = SpaceProcessingModeValues.Preserve });
-        if (bold)
-            run.RunProperties = new RunProperties(new Bold());
+        if (bold || subRow)
+        {
+            // Run-property child order: <w:b> before <w:sz> (schema CT_RPr order).
+            var props = new RunProperties();
+            if (bold)
+                props.Append(new Bold());
+            if (subRow)
+            {
+                props.Append(new FontSize { Val = SubRowFontHalfPoints });
+                props.Append(new FontSizeComplexScript { Val = SubRowFontHalfPoints });
+            }
+            run.RunProperties = props;
+        }
 
         // The explicit cell width (Dxa) is required under a fixed table layout so the column keeps its
         // computed, group-equal width regardless of content. Child order follows the CT_TcPr schema:
@@ -651,7 +665,10 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
         if (noWrap)
             cellProps.Append(new NoWrap());
 
-        return new TableCell(cellProps, new Paragraph(run));
+        var paragraph = indent
+            ? new Paragraph(new ParagraphProperties(new Indentation { Left = "170" }), run)
+            : new Paragraph(run);
+        return new TableCell(cellProps, paragraph);
     }
 
     private static Paragraph CentredParagraph(string text, bool bold, int sizeHalfPoints)

@@ -2094,10 +2094,13 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         countExcluded.UnionWith(DisabledCodesOf(controlPoints));
 
         var rankCalcs = new Dictionary<Guid, GroupRankCalculation>();
-        var results = await ComputeDayResultsAsync(folder, day, cancellationToken, rankCalcs, snapshot);
+        var teamResults = new Dictionary<Guid, TeamDayResult>();
+        var results = await ComputeDayResultsAsync(
+            folder, day, cancellationToken, rankCalcs, snapshot, teamResults: teamResults);
 
         // Bucket each member's row under its group; a member with no group is skipped (a protocol is by group).
         var rowsByGroup = new Dictionary<Guid, List<ResultProtocolRow>>();
+        var rowByLink = new Dictionary<Guid, ResultProtocolRow>();
         foreach (var link in links)
         {
             if (link.GroupId is not { } gid || !byParticipant.TryGetValue(link.ParticipantId, out var p))
@@ -2113,8 +2116,11 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 bucket = [];
                 rowsByGroup[gid] = bucket;
             }
-            bucket.Add(new ResultProtocolRow(
-                p.Number, p.FullName, p.BirthDate, club, region, dussh, p.Coach, p.Rank, p.Team.Trim(), result));
+            var protocolRow = new ResultProtocolRow(
+                result.LegBib ?? p.Number, p.FullName, p.BirthDate, club, region, dussh, p.Coach, p.Rank,
+                p.Team.Trim(), result);
+            bucket.Add(protocolRow);
+            rowByLink[link.Id] = protocolRow;
         }
 
         // One section per group that runs on the day (a group with no members still appears, empty),
@@ -2142,12 +2148,87 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             // Course-setter: the group's per-day override wins; else fall back to the competition default.
             var (setter, setterCat) = ResolveCourseSetter(s, info);
             rankCalcs.TryGetValue(s.GroupId, out var rankCalc);
+            var relayTeams = strategy.Competitors == CompetitorModel.TeamWithLegs
+                ? RelayProtocolTeams(snapshot, s, teamResults, rowByLink, clubName, regionName)
+                : null;
             sections.Add(new ResultProtocolGroup(
                 name, s.Order, s.DistanceKm, controlCount, s.TimeLimitSeconds, isTeam, rows, setter, setterCat,
-                rankCalc));
+                rankCalc, relayTeams));
         }
 
         return new ResultProtocolData(sections, OfficialsFrom(info));
+    }
+
+    // The relay group's teams for the start protocols (Р-36): each team with leg 1's start — the runner's drawn
+    // start, else the group's mass start (Р-27) — and its runner rows by leg.
+    private static List<StartProtocolTeam> StartProtocolTeams(
+        EventDaySnapshot snapshot, GroupDaySettings settings, IReadOnlyDictionary<Guid, StartProtocolRow> rowByLink,
+        IReadOnlyDictionary<Guid, string> clubName, IReadOnlyDictionary<Guid, string> regionName)
+    {
+        var legCount = Math.Max(1, settings.LegCount ?? 1);
+        var linksByTeam = snapshot.Links
+            .Where(l => l.RelayTeamId is not null && l.Leg is not null)
+            .GroupBy(l => l.RelayTeamId!.Value)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var teams = new List<StartProtocolTeam>();
+        foreach (var team in snapshot.RelayTeams.Where(t => t.GroupId == settings.GroupId))
+        {
+            var members = linksByTeam.TryGetValue(team.Id, out var ms) ? ms : [];
+            var maxLeg = Math.Max(legCount, members.Select(m => m.Leg!.Value).DefaultIfEmpty(0).Max());
+            var legs = new List<StartProtocolLeg>(maxLeg);
+            for (var leg = 1; leg <= maxLeg; leg++)
+            {
+                var link = members.FirstOrDefault(m => m.Leg == leg);
+                legs.Add(new StartProtocolLeg(leg,
+                    link is not null && rowByLink.TryGetValue(link.Id, out var row) ? row : null));
+            }
+            var first = members.FirstOrDefault(m => m.Leg == 1);
+            teams.Add(new StartProtocolTeam(
+                team.Number,
+                team.Name,
+                team.ClubId is { } cid && clubName.TryGetValue(cid, out var cn) ? cn : string.Empty,
+                team.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty,
+                first?.StartTime ?? settings.MassStartTime,
+                legs));
+        }
+        return teams;
+    }
+
+    // The relay group's teams for the results protocol (Р-23): each team with its computed result and its runner
+    // rows by leg (1…LegCount, plus any leg assigned beyond it); a leg nobody runs gets an empty entry.
+    private static List<RelayProtocolTeam> RelayProtocolTeams(
+        EventDaySnapshot snapshot, GroupDaySettings settings, IReadOnlyDictionary<Guid, TeamDayResult> teamResults,
+        IReadOnlyDictionary<Guid, ResultProtocolRow> rowByLink,
+        IReadOnlyDictionary<Guid, string> clubName, IReadOnlyDictionary<Guid, string> regionName)
+    {
+        var legCount = Math.Max(1, settings.LegCount ?? 1);
+        var linksByTeam = snapshot.Links
+            .Where(l => l.RelayTeamId is not null && l.Leg is not null)
+            .GroupBy(l => l.RelayTeamId!.Value)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var teams = new List<RelayProtocolTeam>();
+        foreach (var team in snapshot.RelayTeams.Where(t => t.GroupId == settings.GroupId))
+        {
+            var members = linksByTeam.TryGetValue(team.Id, out var ms) ? ms : [];
+            var maxLeg = Math.Max(legCount, members.Select(m => m.Leg!.Value).DefaultIfEmpty(0).Max());
+            var legs = new List<RelayProtocolLeg>(maxLeg);
+            for (var leg = 1; leg <= maxLeg; leg++)
+            {
+                var link = members.FirstOrDefault(m => m.Leg == leg);
+                legs.Add(new RelayProtocolLeg(leg,
+                    link is not null && rowByLink.TryGetValue(link.Id, out var row) ? row : null));
+            }
+            teams.Add(new RelayProtocolTeam(
+                team.Number,
+                team.Name,
+                team.ClubId is { } cid && clubName.TryGetValue(cid, out var cn) ? cn : string.Empty,
+                team.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty,
+                teamResults.TryGetValue(team.Id, out var tr) ? tr : null,
+                legs));
+        }
+        return teams;
     }
 
     // Defensive guard for the day's participant links: keeps the FIRST link per participant, dropping any
@@ -2514,10 +2595,16 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var regionName = regions.ToDictionary(r => r.Id, r => r.Name);
         var clubName = clubs.ToDictionary(c => c.Id, c => c.Name);
         var dusshName = dusshes.ToDictionary(d => d.Id, d => d.Name);
+        var day = snapshot.Days.FirstOrDefault(d => d.Id == dayId);
+        if (day is null)
+            return new StartProtocolData([]);
 
         // Bucket each member's row under its group; a member with no group is skipped (a start protocol is
-        // built per group / per minute, and a runner without a group has no section to land in).
+        // built per group / per minute, and a runner without a group has no section to land in). A relay runner
+        // (on a team) is not a unit of their own — their row goes under the team (Р-36).
         var rowsByGroup = new Dictionary<Guid, List<StartProtocolRow>>();
+        var relayRowByLink = new Dictionary<Guid, StartProtocolRow>();
+        var teamNumberById = snapshot.RelayTeams.ToDictionary(t => t.Id, t => t.Number);
         foreach (var link in links)
         {
             if (link.GroupId is not { } gid || !byParticipant.TryGetValue(link.ParticipantId, out var p))
@@ -2533,6 +2620,13 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 bucket = [];
                 rowsByGroup[gid] = bucket;
             }
+            if (link.RelayTeamId is { } tid && link.Leg is { } leg && teamNumberById.TryGetValue(tid, out var teamNo))
+            {
+                relayRowByLink[link.Id] = new StartProtocolRow(
+                    link.StartTime, RelayBib.Format(teamNo, leg), p.FullName, p.BirthDate, club, region, dussh,
+                    p.Coach, p.Rank, link.Chip.Trim(), gname, p.Team.Trim());
+                continue;
+            }
             bucket.Add(new StartProtocolRow(
                 link.StartTime, p.Number, p.FullName, p.BirthDate, club, region, dussh, p.Coach, p.Rank,
                 link.Chip.Trim(), gname, p.Team.Trim()));
@@ -2546,7 +2640,11 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 continue;
             var rows = rowsByGroup.TryGetValue(s.GroupId, out var b) ? b : [];
             var (setter, setterCat) = ResolveCourseSetter(s, info);
-            sections.Add(new StartProtocolGroup(name, s.Order, rows, setter, setterCat));
+            var strategy = _strategies.For(s.DisciplineOverride ?? day.DefaultDiscipline);
+            var relayTeams = strategy.Competitors == CompetitorModel.TeamWithLegs
+                ? StartProtocolTeams(snapshot, s, relayRowByLink, clubName, regionName)
+                : null;
+            sections.Add(new StartProtocolGroup(name, s.Order, rows, setter, setterCat, relayTeams));
         }
 
         return new StartProtocolData(sections, OfficialsFrom(info));
@@ -3019,6 +3117,38 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             if (!membersByGroup.TryGetValue(gid, out var list))
                 membersByGroup[gid] = list = [];
             list.Add(new DrawParticipant(link.Id, p.Id, p.FullName, p.Number, region, club, p.Team));
+        }
+
+        // Relay groups (Р-36): the draw unit is the team, separated by the team's club/region; the drawn minute is
+        // written onto the leg-1 runner's link, so a team without a leg-1 runner is left out of the draw.
+        if (settings.Any(s => _strategies.For(s.DisciplineOverride ?? day.DefaultDiscipline).Competitors
+                == CompetitorModel.TeamWithLegs))
+        {
+            var teams = await _eventStore.GetRelayTeamsAsync(folder, dayId, cancellationToken);
+            var leg1ByTeam = links
+                .Where(l => l.RelayTeamId is not null && l.Leg == 1)
+                .GroupBy(l => l.RelayTeamId!.Value)
+                .ToDictionary(g => g.Key, g => g.First());
+            foreach (var s in settings.Where(s =>
+                         _strategies.For(s.DisciplineOverride ?? day.DefaultDiscipline).Competitors
+                         == CompetitorModel.TeamWithLegs))
+            {
+                var units = new List<DrawParticipant>();
+                foreach (var team in teams.Where(t => t.GroupId == s.GroupId).OrderBy(t => t.Number))
+                {
+                    if (!leg1ByTeam.TryGetValue(team.Id, out var leg1))
+                        continue;
+                    var number = team.Number.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    units.Add(new DrawParticipant(
+                        leg1.Id, leg1.ParticipantId,
+                        team.Name.Length > 0 ? team.Name : number,
+                        number,
+                        team.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty,
+                        team.ClubId is { } cid && clubName.TryGetValue(cid, out var cn) ? cn : string.Empty,
+                        team.Name));
+                }
+                membersByGroup[s.GroupId] = units;
+            }
         }
 
         // One DrawGroup per group on the day, in the day grid order, carrying the clash-check data the draw
@@ -4354,8 +4484,13 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             }
         }
 
+        // The days that run a relay group: a row's team/leg is applied there (Р-20).
+        var relayDays = data.Participants.Any(p => p.RelayTeamNumber is not null)
+            ? await RelayDayNumbersAsync(cancellationToken)
+            : [];
+
         return await _eventStore.ImportParticipantsBatchAsync(
-            FolderPath, data, clearFirst, daysCreated, scope, progress, cancellationToken);
+            FolderPath, data, clearFirst, daysCreated, scope, progress, cancellationToken, relayDays);
     }
 
     public async Task<IReadOnlyList<ImportDuplicateCase>> FindImportDuplicatesAsync(

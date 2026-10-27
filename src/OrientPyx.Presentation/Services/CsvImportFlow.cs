@@ -85,11 +85,12 @@ public sealed class CsvImportFlow : ICsvImportFlow
         // The competition's additional fields (each a mapping target) and the mapping last confirmed for a file
         // with the same headers (the competition's own, else the app default).
         var headerHash = ImportMapping.HeaderSetHash(file.Header);
-        var (fields, templateJson) = await _busy.RunAsync(async () =>
-            (await _editor.GetCustomFieldsAsync(), await _editor.GetImportMappingAsync(headerHash)));
+        var (fields, templateJson, relay) = await _busy.RunAsync(async () =>
+            (await _editor.GetCustomFieldsAsync(), await _editor.GetImportMappingAsync(headerHash),
+             await _editor.CurrentDayHasRelayAsync()));
         var template = templateJson is null ? null : ImportMapping.Parse(templateJson);
         var mapping = await _dialogs.ShowCsvMappingAsync(
-            new CsvMappingViewModel(_localization, file.Header, file.Rows.Count, scope, fields, template));
+            new CsvMappingViewModel(_localization, file.Header, file.Rows.Count, scope, fields, template, relay));
         if (mapping is null)
             return false; // cancelled
 
@@ -115,7 +116,7 @@ public sealed class CsvImportFlow : ICsvImportFlow
             return false;
         }
 
-        var data = BuildData(file, map, days);
+        var data = BuildData(file, map, days, relay);
         if (data.Participants.Count == 0)
         {
             await ShowErrorAsync("CsvImport.NoRows");
@@ -133,11 +134,14 @@ public sealed class CsvImportFlow : ICsvImportFlow
         return true;
     }
 
-    // Turns the mapped CSV rows into participant data. Every athlete runs on all existing days.
-    private static UofParticipantData BuildData(
+    // Turns the mapped CSV rows into participant data. Every athlete runs on all existing days. On a relay day the
+    // team comes from «Номер команди» (+ «Етап»), or from a leg number «100.2» in the number column, which then
+    // is not written as the participant's own number (Р-23).
+    internal static UofParticipantData BuildData(
         CsvParticipantData file,
         IReadOnlyDictionary<ImportTarget, int> map,
-        IReadOnlyList<EventDay> days)
+        IReadOnlyList<EventDay> days,
+        bool relay = false)
     {
         var dayNumbers = days.Select(d => d.Number).OrderBy(n => n).ToList();
         var participants = new List<UofParticipant>(file.Rows.Count);
@@ -153,10 +157,25 @@ public sealed class CsvImportFlow : ICsvImportFlow
             if (chip is "0")
                 chip = string.Empty;
 
+            var number = Cell(row, map, ImportTarget.Number);
+            int? teamNumber = null;
+            int? leg = int.TryParse(Cell(row, map, ImportTarget.RelayLeg), out var l) && l > 0 ? l : null;
+            if (RelayBib.TryParse(Cell(row, map, ImportTarget.RelayTeamNumber), out var t, out var tl) && t > 0)
+            {
+                teamNumber = t;
+                leg ??= tl;
+            }
+            else if (relay && RelayBib.TryParse(number, out t, out tl) && tl is not null && t > 0)
+            {
+                teamNumber = t;
+                leg ??= tl;
+                number = string.Empty;
+            }
+
             participants.Add(new UofParticipant
             {
                 FullName = name,
-                Number = Cell(row, map, ImportTarget.Number),
+                Number = number,
                 Team = Cell(row, map, ImportTarget.Team),
                 BirthDate = ParseDate(Cell(row, map, ImportTarget.BirthDate)),
                 Region = Cell(row, map, ImportTarget.Region),
@@ -171,7 +190,10 @@ public sealed class CsvImportFlow : ICsvImportFlow
                 Payment = Cell(row, map, ImportTarget.Payment),
                 Coach = Cell(row, map, ImportTarget.Coach),
                 DayNumbers = dayNumbers,
-                Fields = FieldCells(row, map)
+                Fields = FieldCells(row, map),
+                RelayTeamNumber = teamNumber,
+                RelayTeamName = Cell(row, map, ImportTarget.RelayTeamName),
+                RelayLeg = teamNumber is null ? null : leg
             });
         }
 

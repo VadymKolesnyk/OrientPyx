@@ -14,6 +14,21 @@ public sealed partial class CompetitionEditorService
         return IsRelay(CurrentDayDefaultDiscipline) || settings.Any(s => IsRelay(s.DisciplineOverride ?? CurrentDayDefaultDiscipline));
     }
 
+    // The numbers of the days that run at least one relay group (the day default or a group override).
+    private async Task<List<int>> RelayDayNumbersAsync(CancellationToken cancellationToken)
+    {
+        var folder = FolderPath;
+        var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        var result = new List<int>();
+        foreach (var day in days)
+        {
+            var settings = await _eventStore.GetGroupDaySettingsAsync(folder, day.Id, cancellationToken);
+            if (IsRelay(day.DefaultDiscipline) || settings.Any(s => IsRelay(s.DisciplineOverride ?? day.DefaultDiscipline)))
+                result.Add(day.Number);
+        }
+        return result;
+    }
+
     private bool IsRelay(Disciplines.DisciplineId id) =>
         _strategies.For(id).Competitors == CompetitorModel.TeamWithLegs;
 

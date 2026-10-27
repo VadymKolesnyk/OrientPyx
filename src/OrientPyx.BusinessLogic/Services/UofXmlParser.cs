@@ -15,6 +15,7 @@ namespace OrientPyx.BusinessLogic.Services;
 /// Field meanings: FIO=full name, Predst=representative, FOUCode=FSOU code, FSOU=membership flag,
 /// Birthday=dd.MM.yyyy, Qualification=rank, PAY=payment, Trener=coach (repeated), Region/Club/DUSSH=
 /// lookups, Group=group, Chip=chip ("0"=none), ProgEvent="1,2"=day numbers.
+/// An IOF 3.0 <c>&lt;EntryList&gt;</c> (relay <c>TeamEntry</c> included) is accepted too — see <see cref="IofEntryListReader"/>.
 /// </summary>
 public sealed class UofXmlParser : IUofXmlParser
 {
@@ -34,6 +35,9 @@ public sealed class UofXmlParser : IUofXmlParser
         }
 
         var root = doc.Root;
+        // An IOF 3.0 EntryList (incl. relay TeamEntry) goes through the same participant import.
+        if (root is not null && IofEntryListReader.IsEntryList(root))
+            return IofEntryListReader.Read(root);
         if (root is null || !LocalNameIs(root, "UOFData"))
             throw new UofXmlFormatException("The file is not a UOF participant document.");
 

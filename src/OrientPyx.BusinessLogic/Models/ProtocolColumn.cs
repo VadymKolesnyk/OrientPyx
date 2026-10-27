@@ -51,5 +51,8 @@ public enum ProtocolColumn
     Points,
 
     /// <summary>The awarded sports rank computed from the result («Виконаний розряд», Додаток 89).</summary>
-    AwardedRank
+    AwardedRank,
+
+    /// <summary>Relay: the cumulative team time after a leg («Наростаючий», Р-32). Blank outside the relay legs.</summary>
+    Cumulative
 }

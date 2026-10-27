@@ -1812,7 +1812,8 @@ public sealed partial class EventStore : IEventStore
         int daysCreated,
         ParticipantImportScope scope,
         IProgress<ImportProgress>? progress,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<int>? relayDayNumbers = null)
     {
         ArgumentNullException.ThrowIfNull(data);
         ArgumentNullException.ThrowIfNull(scope);
@@ -1820,6 +1821,9 @@ public sealed partial class EventStore : IEventStore
         var currentDayOnly = scope.Mode == ParticipantImportMode.CurrentDayOnly;
 
         await using var db = EventDbContextFactory.Create(eventFolderPath);
+        // One transaction for the whole import: the roster write and the relay legs assigned after it (which need
+        // their own saves so the unique (team, leg) index never sees a transient duplicate).
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
 
         progress?.Report(ImportProgress.Counted(ImportStage.Parsed, 0, data.Participants.Count));
 
@@ -1957,6 +1961,8 @@ public sealed partial class EventStore : IEventStore
         var updated = 0;
         var processed = 0;
         var total = data.Participants.Count;
+        var relayDays = relayDayNumbers is null ? new HashSet<int>() : new HashSet<int>(relayDayNumbers);
+        var relayRows = new List<RelayImportRow>();
 
         for (var rowIndex = 0; rowIndex < data.Participants.Count; rowIndex++)
         {
@@ -2144,6 +2150,11 @@ public sealed partial class EventStore : IEventStore
                     if (dayPayment is not null)
                         link.Payment = dayPayment;
                 }
+
+                if (src.RelayTeamNumber is { } teamNumber && relayDays.Contains(dayNumber))
+                    relayRows.Add(new RelayImportRow(
+                        priorLinks.First(x => x.EventDayId == day.Id), day.Id, group?.Id, teamNumber,
+                        src.RelayTeamName.Trim(), src.RelayLeg));
             }
 
             processed++;
@@ -2154,9 +2165,99 @@ public sealed partial class EventStore : IEventStore
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        if (relayRows.Count > 0)
+            await ImportRelayLegsAsync(db, relayRows, cancellationToken);
+        await tx.CommitAsync(cancellationToken);
         progress?.Report(ImportProgress.Of(ImportStage.Done));
 
         return new ParticipantImportResult(Added: added, Updated: updated, DaysCreated: daysCreated);
+    }
+
+    // One imported runner's relay entry on a day: the team (by number) and the leg (null ⇒ the next free one).
+    private sealed record RelayImportRow(
+        ParticipantDay Link, Guid DayId, Guid? GroupId, int TeamNumber, string TeamName, int? Leg);
+
+    // The relay part of an import (Р-20…Р-22): teams are matched by number on the day, else created in the row's
+    // group; each runner goes on their leg (the team's next free leg when the file names none), taking it from
+    // whoever held it; the runner's group on the day becomes the team's. Runs inside the import's transaction.
+    private static async Task ImportRelayLegsAsync(
+        EventDbContext db, List<RelayImportRow> rows, CancellationToken cancellationToken)
+    {
+        var dayIds = rows.Select(r => r.DayId).ToHashSet();
+        var teams = await db.RelayTeams.Where(t => dayIds.Contains(t.EventDayId)).ToListAsync(cancellationToken);
+        var teamByKey = teams.ToDictionary(t => (t.EventDayId, t.Number));
+
+        // 1. Teams: match by number, else create (a team needs a group — a row without one is skipped).
+        var resolved = new List<(RelayImportRow Row, RelayTeam Team)>(rows.Count);
+        foreach (var row in rows)
+        {
+            if (row.TeamNumber <= 0)
+                continue;
+            if (!teamByKey.TryGetValue((row.DayId, row.TeamNumber), out var team))
+            {
+                if (row.GroupId is not { } gid)
+                    continue;
+                team = new RelayTeam { EventDayId = row.DayId, GroupId = gid, Number = row.TeamNumber, Name = row.TeamName };
+                db.RelayTeams.Add(team);
+                teamByKey[(row.DayId, row.TeamNumber)] = team;
+            }
+            else if (team.Name.Length == 0 && row.TeamName.Length > 0)
+            {
+                team.Name = row.TeamName;
+            }
+            resolved.Add((row, team));
+        }
+        await db.SaveChangesAsync(cancellationToken);
+
+        // 2. Legs: an explicit leg wins; the rest take the team's next free leg (after the file's own legs).
+        var importedLinks = resolved.Select(r => r.Row.Link.Id).ToHashSet();
+        var teamIds = resolved.Select(r => r.Team.Id).ToHashSet();
+        var holders = await db.ParticipantDays
+            .Where(l => l.RelayTeamId != null && teamIds.Contains(l.RelayTeamId!.Value))
+            .ToListAsync(cancellationToken);
+        var taken = new Dictionary<Guid, HashSet<int>>();
+        foreach (var t in teamIds)
+            taken[t] = holders.Where(h => h.RelayTeamId == t && h.Leg is not null && !importedLinks.Contains(h.Id))
+                .Select(h => h.Leg!.Value).ToHashSet();
+        var target = new Dictionary<Guid, (Guid TeamId, int Leg)>();
+        foreach (var (row, team) in resolved.Where(r => r.Row.Leg is > 0))
+            if (target.Values.All(v => v != (team.Id, row.Leg!.Value)))
+                target[row.Link.Id] = (team.Id, row.Leg!.Value);
+        foreach (var (team, legs) in target.Values.GroupBy(v => v.TeamId).Select(g => (g.Key, g.Select(v => v.Leg))))
+            taken[team].UnionWith(legs);
+        foreach (var (row, team) in resolved.Where(r => !target.ContainsKey(r.Row.Link.Id)))
+        {
+            var leg = 1;
+            while (taken[team.Id].Contains(leg))
+                leg++;
+            taken[team.Id].Add(leg);
+            target[row.Link.Id] = (team.Id, leg);
+        }
+
+        // 3. Free every leg about to be (re)assigned and every imported runner's old leg, then assign — two saves.
+        var wanted = target.Values.ToHashSet();
+        foreach (var holder in holders.Where(h => h.Leg is { } l && wanted.Contains((h.RelayTeamId!.Value, l))))
+        {
+            holder.RelayTeamId = null;
+            holder.Leg = null;
+        }
+        var linkById = resolved.Select(r => r.Row.Link).DistinctBy(l => l.Id).ToDictionary(l => l.Id);
+        foreach (var link in linkById.Values)
+        {
+            link.RelayTeamId = null;
+            link.Leg = null;
+        }
+        await db.SaveChangesAsync(cancellationToken);
+
+        var groupByTeam = resolved.Select(r => r.Team).DistinctBy(t => t.Id).ToDictionary(t => t.Id, t => t.GroupId);
+        foreach (var (linkId, (teamId, leg)) in target)
+        {
+            var link = linkById[linkId];
+            link.RelayTeamId = teamId;
+            link.Leg = leg;
+            link.GroupId = groupByTeam[teamId];   // Р-22
+        }
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     // Whether this import is allowed to bring the «Оплата» column at all. All-days mode always may (its

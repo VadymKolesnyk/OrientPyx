@@ -55,7 +55,24 @@ public sealed record ResultProtocolGroup(
     /// <summary>The rank-award calculation summary for this group (Додаток 89), or null when the group awards
     /// no rank (level None, or the validity conditions fail). When present and the awarded-rank column is
     /// shown, the builder prints it as an explanatory line under the group's table.</summary>
-    GroupRankCalculation? RankCalculation = null);
+    GroupRankCalculation? RankCalculation = null,
+    /// <summary>Relay group (Р-23): the day's teams of the group with their runners by leg. When set, the builder
+    /// prints one team row (place, №, name, time, status) with its leg rows (100.1, runner, leg time, cumulative)
+    /// under it, instead of a per-person ranking. Null for a non-relay group.</summary>
+    IReadOnlyList<RelayProtocolTeam>? RelayTeams = null);
+
+/// <summary>One relay team in a protocol group: its identity, its computed result and one entry per leg.</summary>
+public sealed record RelayProtocolTeam(
+    int Number,
+    string Name,
+    string ClubName,
+    string RegionName,
+    TeamDayResult? Result,
+    IReadOnlyList<RelayProtocolLeg> Legs);
+
+/// <summary>One leg of a relay team in a protocol: the runner's row (with their leg result in
+/// <see cref="ParticipantDayResult.Leg"/>), or null when nobody runs the leg.</summary>
+public sealed record RelayProtocolLeg(int Leg, ResultProtocolRow? Runner);
 
 /// <summary>
 /// The rank-award calculation for one group, surfaced under its results table so the printed protocol shows

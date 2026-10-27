@@ -47,6 +47,18 @@ public sealed record ImportTarget(string Key)
         IsFsouMember, Payment, Coach
     ];
 
+    /// <summary>Relay team number (100 of «100.2»).</summary>
+    public static readonly ImportTarget RelayTeamNumber = new("relay.teamNumber");
+
+    /// <summary>Relay team name.</summary>
+    public static readonly ImportTarget RelayTeamName = new("relay.teamName");
+
+    /// <summary>Relay leg (2 of «100.2»).</summary>
+    public static readonly ImportTarget RelayLeg = new("relay.leg");
+
+    /// <summary>The relay targets, listed by the mapping modal when the day runs a relay.</summary>
+    public static IReadOnlyList<ImportTarget> Relay { get; } = [RelayTeamNumber, RelayTeamName, RelayLeg];
+
     /// <summary>The target of an additional participant field.</summary>
     public static ImportTarget Field(string fieldKey) => new(CustomField.ColumnPrefix + fieldKey);
 

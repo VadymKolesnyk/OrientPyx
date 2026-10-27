@@ -36,6 +36,7 @@ public sealed class ProtocolPreviewTable
     // Sized so the preview matches the .docx (13 pt body / ~40 rows per page). These run a touch larger than the
     // nominal .docx point sizes because the on-screen sheet reads smaller than the printed page at the same size.
     private const double BodyFontSize = 15.5;
+    private const double SubRowFontSize = 13.5;
     private const double CaptionFontSize = 17;
     private const double SubcaptionFontSize = 15.5;
 
@@ -212,7 +213,8 @@ public sealed class ProtocolPreviewTable
                     // Per-cell bold (the statement's own-chip cells) OR'd with the whole-row team-caption bold.
                     var cellBold = bodyRow.IsTeamHeader
                         || (bodyRow.BoldCells is { } mask && c < mask.Count && mask[c]);
-                    var cell = BuildBodyCell(text, cellBold, columns[c], boxed: gridded);
+                    var cell = BuildBodyCell(text, cellBold, columns[c], boxed: gridded,
+                        subRow: bodyRow.IsSubRow, firstColumn: c == 0);
                     WireDrag(cell); // drag anywhere in a column, not just its header
                     Grid.SetColumn(cell, c);
                     Grid.SetRow(cell, row);
@@ -613,13 +615,15 @@ public sealed class ProtocolPreviewTable
     // reordered by dragging anywhere in the column, not just its header. Free-text columns wrap long values to
     // the next line (no ellipsis), matching the printed protocol; short-code columns (рік, № з/п, результат,
     // місце, кваліфікація, номер) never wrap — their column is always sized for the longest value.
-    private static Border BuildBodyCell(string text, bool bold, ProtocolPreviewColumn col, bool boxed) => new()
+    // A sub-row (a relay leg under its team) is drawn smaller, its first cell indented.
+    private static Border BuildBodyCell(string text, bool bold, ProtocolPreviewColumn col, bool boxed,
+        bool subRow = false, bool firstColumn = false) => new()
     {
         // Boxed (banded judges' protocol): a full cell grid, like the printed sheet — adjacent borders overlap to
         // a single rule. Otherwise just a hairline under each row (no inner grid), so normal sections read clean.
         BorderBrush = boxed ? HeaderBorder : new SolidColorBrush(Color.FromRgb(0xE2, 0xE2, 0xE2)),
         BorderThickness = boxed ? new Thickness(0.8) : new Thickness(0, 0, 0, 0.5),
-        Padding = new Thickness(4, 1.5),
+        Padding = new Thickness(subRow && firstColumn ? 12 : 4, 1.5, 4, 1.5),
         // Transparent (non-null) background so the entire cell area is hit-testable — the drag works over the
         // blank part of a cell and over empty cells, not only over the text glyphs.
         Background = Brushes.Transparent,
@@ -630,7 +634,7 @@ public sealed class ProtocolPreviewTable
             Text = text,
             FontFamily = Serif,
             Foreground = Brushes.Black,
-            FontSize = BodyFontSize,
+            FontSize = subRow ? SubRowFontSize : BodyFontSize,
             FontWeight = bold ? FontWeight.Bold : FontWeight.Normal,
             VerticalAlignment = VerticalAlignment.Center,
             TextWrapping = col.BodyWraps ? TextWrapping.Wrap : TextWrapping.NoWrap

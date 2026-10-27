@@ -41,4 +41,6 @@ public sealed record StartProtocolLabels(
     /// <summary>Caption before the footer's generation timestamp ("Згенеровано").</summary>
     string FooterGeneratedLabel = "",
     /// <summary>Caption before the footer's page number ("Сторінка").</summary>
-    string FooterPageLabel = "");
+    string FooterPageLabel = "",
+    /// <summary>Relay: the name cell of a leg nobody runs ("— етап не призначено").</summary>
+    string RelayVacantLeg = "");

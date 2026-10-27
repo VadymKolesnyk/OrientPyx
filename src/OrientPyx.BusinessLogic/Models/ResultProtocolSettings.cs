@@ -88,5 +88,6 @@ public sealed class ResultProtocolSettings
         new() { Column = ProtocolColumn.AwardedRank, Visible = true },
         new() { Column = ProtocolColumn.Number, Visible = false },
         new() { Column = ProtocolColumn.Gap, Visible = false },
+        new() { Column = ProtocolColumn.Cumulative, Visible = false },
     ];
 }

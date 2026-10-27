@@ -338,6 +338,9 @@ public interface IEventStore
     /// coarse progress through <paramref name="progress"/> as it works. One <see cref="SaveChangesAsync"/>
     /// at the end keeps it fast for large files (instead of a transaction per row).
     /// </summary>
+    /// <remarks><paramref name="relayDayNumbers"/>: the days on which a row's relay team/leg is applied (the days running
+    /// a relay group). The teams are created/matched by number on the day and the legs assigned in the same
+    /// transaction.</remarks>
     Task<ParticipantImportResult> ImportParticipantsBatchAsync(
         string eventFolderPath,
         UofParticipantData data,
@@ -345,7 +348,8 @@ public interface IEventStore
         int daysCreated,
         ParticipantImportScope scope,
         IProgress<ImportProgress>? progress,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<int>? relayDayNumbers = null);
 
     /// <summary>Ordered by Order (read sequence).</summary>
     Task<IReadOnlyList<FinishReadout>> GetFinishReadoutsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);

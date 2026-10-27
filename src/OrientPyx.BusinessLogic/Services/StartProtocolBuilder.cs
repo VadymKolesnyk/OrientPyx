@@ -81,7 +81,8 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
         };
     }
 
-    // Regular: one section per group; members ordered by start time (drawn first, undrawn last), then name.
+    // Regular: one section per group; members ordered by start time (drawn first, undrawn last), then name. A
+    // relay group lists its teams instead (by leg 1's start, then number), each with its leg rows under it.
     private static List<ResultProtocolSection> BuildRegularSections(
         StartProtocolData data, IReadOnlyList<StartProtocolColumn> columns, StartProtocolLabels labels)
     {
@@ -89,21 +90,20 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
         foreach (var group in data.Groups.OrderBy(g => g.Order))
         {
             // Skip empty groups — a group with no members produces no useful section on the sheet.
-            if (group.Rows.Count == 0)
+            if (group.Rows.Count == 0 && group.RelayTeams is not { Count: > 0 })
                 continue;
 
-            var ordered = group.Rows
-                .OrderBy(r => r.StartTime ?? TimeSpan.MaxValue)
-                .ThenBy(r => r.FullName, StringComparer.CurrentCultureIgnoreCase)
+            var units = Units(group)
+                .OrderBy(u => u.Start ?? TimeSpan.MaxValue)
+                .ThenBy(u => u.Team is null ? 1 : 0)
+                .ThenBy(u => u.Team?.Number ?? 0)
+                .ThenBy(u => u.SortName, StringComparer.CurrentCultureIgnoreCase)
                 .ToList();
 
-            var body = new List<ResultProtocolBodyRow>(ordered.Count);
+            var body = new List<ResultProtocolBodyRow>(units.Count);
             var seq = 0;
-            foreach (var row in ordered)
-            {
-                seq++;
-                body.Add(new ResultProtocolBodyRow(columns.Select(c => Cell(c, row, seq)).ToList()));
-            }
+            foreach (var unit in units)
+                Emit(body, unit, columns, labels, ++seq);
 
             sections.Add(new ResultProtocolSection
             {
@@ -115,6 +115,64 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
         }
         return sections;
     }
+
+    // One line item of a start sheet: a runner, or a relay team (Р-36) with its legs.
+    private sealed record StartUnit(TimeSpan? Start, string SortName, StartProtocolRow? Row, StartProtocolTeam? Team,
+        string GroupName);
+
+    // A group's units: its relay teams (when it is a relay group) and every runner row not on a team.
+    private static IEnumerable<StartUnit> Units(StartProtocolGroup group)
+    {
+        if (group.RelayTeams is { } teams)
+            foreach (var team in teams)
+                yield return new StartUnit(team.StartTime, team.Name, null, team, group.Name);
+        foreach (var row in group.Rows)
+            yield return new StartUnit(row.StartTime, row.FullName, row, null, group.Name);
+    }
+
+    private static void Emit(List<ResultProtocolBodyRow> body, StartUnit unit,
+        IReadOnlyList<StartProtocolColumn> columns, StartProtocolLabels labels, int seq)
+    {
+        if (unit.Row is { } row)
+        {
+            body.Add(new ResultProtocolBodyRow(columns.Select(c => Cell(c, row, seq)).ToList()));
+            return;
+        }
+        var team = unit.Team!;
+        body.Add(new ResultProtocolBodyRow(
+            columns.Select(c => TeamCell(c, team, unit.GroupName, seq)).ToList(),
+            IsTeamHeader: true,
+            TeamName: team.Name));
+        foreach (var leg in team.Legs.OrderBy(l => l.Leg))
+            body.Add(new ResultProtocolBodyRow(
+                columns.Select(c => LegCell(c, team, leg, labels)).ToList(),
+                IsSubRow: true));
+    }
+
+    // A relay team's caption row: leg 1's start, the sequence, the team number, name, club, region and group.
+    private static string TeamCell(StartProtocolColumn column, StartProtocolTeam team, string groupName, int seq) => column switch
+    {
+        StartProtocolColumn.StartTime => team.StartTime is { } t ? t.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture) : string.Empty,
+        StartProtocolColumn.Sequence => seq.ToString(CultureInfo.InvariantCulture),
+        StartProtocolColumn.Number => team.Number.ToString(CultureInfo.InvariantCulture),
+        StartProtocolColumn.FullName => team.Name.Length > 0 ? team.Name : team.Number.ToString(CultureInfo.InvariantCulture),
+        StartProtocolColumn.Club => team.ClubName,
+        StartProtocolColumn.Region => team.RegionName,
+        StartProtocolColumn.Group => groupName,
+        StartProtocolColumn.Team => team.Name,
+        _ => string.Empty
+    };
+
+    // A leg row under its team: the leg number (100.1) and the runner's identity; the start lives on the team row.
+    private static string LegCell(StartProtocolColumn column, StartProtocolTeam team, StartProtocolLeg leg,
+        StartProtocolLabels labels) => column switch
+    {
+        StartProtocolColumn.Number => RelayBib.Format(team.Number, leg.Leg),
+        StartProtocolColumn.FullName => leg.Runner?.FullName ?? labels.RelayVacantLeg,
+        StartProtocolColumn.StartTime or StartProtocolColumn.Sequence or StartProtocolColumn.Group
+            or StartProtocolColumn.Team => string.Empty,
+        _ => leg.Runner is { } r ? Cell(column, r, 0) : string.Empty
+    };
 
     // Whether a column's BODY text may wrap. Free-text columns (name, club, region, sports school, coach,
     // group, team) wrap; the short-code columns (start time, № з/п, number, year, rank, chip, note) stay on
@@ -168,11 +226,12 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
     }
 
     // Judges: one section per start minute (across all groups), members ordered by name; undrawn runners
-    // form a trailing "no start time" section. A minute caption row is the section's GroupName.
+    // form a trailing "no start time" section. A minute caption row is the section's GroupName. On a relay day the
+    // unit is the team (Р-36): it sits under leg 1's start minute with its legs below it.
     private static List<ResultProtocolSection> BuildJudgesSections(
         StartProtocolData data, IReadOnlyList<StartProtocolColumn> columns, StartProtocolLabels labels)
     {
-        var all = data.Groups.SelectMany(g => g.Rows).ToList();
+        var all = data.Groups.SelectMany(Units).ToList();
 
         var sections = new List<ResultProtocolSection>();
 
@@ -181,24 +240,21 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
         // trailing undrawn section.
         var seq = 0;
 
-        // Drawn runners, grouped by whole-minute start, in time order.
+        // Drawn units, grouped by whole-minute start, in time order.
         var byMinute = all
-            .Where(r => r.StartTime is { } t && t >= TimeSpan.Zero)
-            .GroupBy(r => WholeMinute(r.StartTime!.Value))
+            .Where(u => u.Start is { } t && t >= TimeSpan.Zero)
+            .GroupBy(u => WholeMinute(u.Start!.Value))
             .OrderBy(g => g.Key);
 
         foreach (var minute in byMinute)
         {
             var ordered = minute
-                .OrderBy(r => r.FullName, StringComparer.CurrentCultureIgnoreCase)
+                .OrderBy(u => u.SortName, StringComparer.CurrentCultureIgnoreCase)
                 .ToList();
 
             var body = new List<ResultProtocolBodyRow>(ordered.Count);
-            foreach (var row in ordered)
-            {
-                seq++;
-                body.Add(new ResultProtocolBodyRow(columns.Select(c => Cell(c, row, seq)).ToList()));
-            }
+            foreach (var unit in ordered)
+                Emit(body, unit, columns, labels, ++seq);
 
             // The minute caption is a shaded full-width band (IsBanded) so it stands out above its runners.
             sections.Add(new ResultProtocolSection
@@ -209,19 +265,16 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
             });
         }
 
-        // Undrawn runners (no start time), last, by name — the sequence keeps counting from the drawn runners.
+        // Undrawn units (no start time), last, by name — the sequence keeps counting from the drawn ones.
         var undrawn = all
-            .Where(r => r.StartTime is null)
-            .OrderBy(r => r.FullName, StringComparer.CurrentCultureIgnoreCase)
+            .Where(u => u.Start is null)
+            .OrderBy(u => u.SortName, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
         if (undrawn.Count > 0)
         {
             var body = new List<ResultProtocolBodyRow>(undrawn.Count);
-            foreach (var row in undrawn)
-            {
-                seq++;
-                body.Add(new ResultProtocolBodyRow(columns.Select(c => Cell(c, row, seq)).ToList()));
-            }
+            foreach (var unit in undrawn)
+                Emit(body, unit, columns, labels, ++seq);
             sections.Add(new ResultProtocolSection
             {
                 GroupName = labels.NoStartTimeCaption,

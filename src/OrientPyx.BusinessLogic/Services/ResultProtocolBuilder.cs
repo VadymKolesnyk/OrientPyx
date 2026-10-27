@@ -51,15 +51,17 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         foreach (var group in data.Groups.OrderBy(g => g.Order))
         {
             // Skip empty groups — a group with no participants produces no useful section on the sheet.
-            if (group.Rows.Count == 0)
+            if (group.Rows.Count == 0 && group.RelayTeams is not { Count: > 0 })
                 continue;
 
             // The group leader's clean time — the reference the «Відставання» column is measured against.
             var leader = LeaderTime(group.Rows);
 
-            var rows = group.IsTeam
-                ? BuildTeamRows(group.Rows, columns, leader)
-                : BuildPersonalRows(group.Rows, columns, leader);
+            var rows = group.RelayTeams is { } relayTeams
+                ? BuildRelayRows(relayTeams, group.Rows, columns, labels)
+                : group.IsTeam
+                    ? BuildTeamRows(group.Rows, columns, leader)
+                    : BuildPersonalRows(group.Rows, columns, leader);
 
             sections.Add(new ResultProtocolSection
             {
@@ -140,6 +142,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         ProtocolColumn.FullName => 2,
         ProtocolColumn.Rank => 2,
         ProtocolColumn.AwardedRank => 2,
+        ProtocolColumn.Cumulative => 1,
         ProtocolColumn.Score => 2,
         ProtocolColumn.Club => 3,
         ProtocolColumn.Region => 3,
@@ -265,6 +268,105 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
             body.Add(new ResultProtocolBodyRow(columns.Select(c => MemberCell(c, row, leader)).ToList()));
 
         return body;
+    }
+
+    // A relay section (Р-23, §8.4): teams by place (placed first, then by number), each as a bold team row (place,
+    // team number, name, club/region, team time or status, points) followed by its leg rows (100.1, runner, leg
+    // time, cumulative). Runners of the group who are on no team (Р-22 «без команди») are listed last.
+    private static List<ResultProtocolBodyRow> BuildRelayRows(
+        IReadOnlyList<RelayProtocolTeam> teams, IReadOnlyList<ResultProtocolRow> rows,
+        IReadOnlyList<ProtocolColumn> columns, ProtocolLabels labels)
+    {
+        var leader = teams
+            .Where(t => t.Result is { Place: not null, Time: not null })
+            .Select(t => t.Result!.Time)
+            .DefaultIfEmpty(null)
+            .Min();
+
+        var body = new List<ResultProtocolBodyRow>();
+        var seq = 0;
+        foreach (var team in teams
+                     .OrderBy(t => t.Result?.Place ?? int.MaxValue)
+                     .ThenBy(t => t.Result is { Status: FinishStatus.Ok } ? 0 : 1)
+                     .ThenBy(t => t.Result?.Time ?? TimeSpan.MaxValue)
+                     .ThenBy(t => t.Number))
+        {
+            seq++;
+            body.Add(new ResultProtocolBodyRow(
+                columns.Select(c => RelayTeamCell(c, team, seq, leader)).ToList(),
+                IsTeamHeader: true,
+                TeamName: team.Name));
+            foreach (var leg in team.Legs.OrderBy(l => l.Leg))
+                body.Add(new ResultProtocolBodyRow(
+                    columns.Select(c => RelayLegCell(c, team, leg, labels)).ToList(),
+                    IsSubRow: true));
+        }
+
+        foreach (var row in rows.Where(r => r.Result.Team is null)
+                     .OrderBy(r => r.FullName, StringComparer.CurrentCultureIgnoreCase))
+            body.Add(new ResultProtocolBodyRow(columns.Select(c => MemberCell(c, row, null)).ToList()));
+
+        return body;
+    }
+
+    private static string RelayTeamCell(ProtocolColumn column, RelayProtocolTeam team, int seq, TimeSpan? leader)
+    {
+        var r = team.Result;
+        return column switch
+        {
+            ProtocolColumn.Sequence => seq.ToString(CultureInfo.InvariantCulture),
+            ProtocolColumn.Number => team.Number.ToString(CultureInfo.InvariantCulture),
+            ProtocolColumn.FullName => team.Name.Length > 0 ? team.Name : team.Number.ToString(CultureInfo.InvariantCulture),
+            ProtocolColumn.Club => team.ClubName,
+            ProtocolColumn.Region => team.RegionName,
+            ProtocolColumn.Result => r is null ? string.Empty
+                : r.Status == FinishStatus.Ok ? TimeFormat.Result(r.Time) : ShortCode(r.Status),
+            ProtocolColumn.Place => r?.Place is { } p ? p.ToString(CultureInfo.InvariantCulture)
+                : r is { OutOfCompetition: true } ? ParticipantDayResult.OutOfCompetitionMark
+                : string.Empty,
+            ProtocolColumn.Points => r?.Points is { } pts ? PointsTable.Format(pts) : string.Empty,
+            ProtocolColumn.Gap => r is { Place: not null, Time: { } t } && leader is { } lead && t > lead
+                ? "+" + (t - lead).ToString(@"h\:mm\:ss")
+                : string.Empty,
+            _ => string.Empty
+        };
+    }
+
+    private static string RelayLegCell(
+        ProtocolColumn column, RelayProtocolTeam team, RelayProtocolLeg leg, ProtocolLabels labels)
+    {
+        var runner = leg.Runner;
+        var result = runner?.Result.Leg ?? team.Result?.Legs.FirstOrDefault(l => l.Leg == leg.Leg);
+        switch (column)
+        {
+            case ProtocolColumn.Number:
+                return RelayBib.Format(team.Number, leg.Leg);
+            case ProtocolColumn.FullName:
+                if (runner is null)
+                    return labels.RelayVacantLeg;
+                return result is { Restarted: true } && labels.RelayRestartMark.Length > 0
+                    ? $"{runner.FullName} ({labels.RelayRestartMark})"
+                    : runner.FullName;
+            case ProtocolColumn.Result:
+                if (result is null || runner is null)
+                    return string.Empty;
+                if (result.Pending)
+                    return labels.RelayPendingMark;
+                return result.Status == FinishStatus.Ok
+                    ? TimeFormat.Result(result.AdjustedTime ?? result.LegTime)
+                    : ShortCode(result.Status);
+            case ProtocolColumn.Cumulative:
+                return result?.Cumulative is { } cum ? TimeFormat.Result(cum) : string.Empty;
+            case ProtocolColumn.Sequence:
+            case ProtocolColumn.Place:
+            case ProtocolColumn.Score:
+            case ProtocolColumn.Points:
+            case ProtocolColumn.Gap:
+            case ProtocolColumn.AwardedRank:
+                return string.Empty;
+            default:
+                return runner is null ? string.Empty : Cell(column, runner, 0, null);
+        }
     }
 
     // A team caption row's cell: the team name in the name column, the team place/score/result in theirs,

@@ -27,13 +27,15 @@ public sealed partial class CsvMappingViewModel : ObservableObject
     /// <param name="fields">The competition's additional participant fields (one mapping row each).</param>
     /// <param name="template">The last confirmed mapping for this header set (target key → header caption); null
     /// when there is none, in which case the columns are guessed from their headers.</param>
+    /// <param name="includeRelay">The day runs a relay: list the relay targets (team number / name / leg).</param>
     public CsvMappingViewModel(
         ILocalizationService localization,
         IReadOnlyList<string> header,
         int rowCount,
         ImportScopeChoice? scope = null,
         IReadOnlyList<CustomField>? fields = null,
-        IReadOnlyDictionary<string, string>? template = null)
+        IReadOnlyDictionary<string, string>? template = null,
+        bool includeRelay = false)
     {
         Localization = localization;
         RowCount = rowCount;
@@ -47,6 +49,7 @@ public sealed partial class CsvMappingViewModel : ObservableObject
 
         // One mapping row per target, each pre-selecting the remembered column, else its best header guess.
         var rows = ImportTarget.Builtins
+            .Concat(includeRelay ? ImportTarget.Relay : [])
             .Select(t => new CsvFieldMapping(Localization, t, columns,
                 Pick(t, template, header, columns, () => Guess(Hints(t), header, columns))))
             .ToList();
@@ -217,6 +220,9 @@ public sealed partial class CsvMappingViewModel : ObservableObject
         nameof(ImportTarget.IsFsouMember) => ["членфсоу", "членфоу", "fsou"],
         nameof(ImportTarget.Payment) => ["оплата", "сплата", "внесок", "payment", "pay"],
         nameof(ImportTarget.Coach) => ["тренер", "trener", "coach"],
+        "relay.teamNumber" => ["номеркоманди", "№команди", "teamno", "teamnumber", "teamnr"],
+        "relay.teamName" => ["назвакоманди", "teamname"],
+        "relay.leg" => ["етап", "leg"],
         _ => []
     };
 }

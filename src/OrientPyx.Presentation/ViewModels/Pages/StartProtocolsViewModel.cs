@@ -508,7 +508,7 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
             if (remaining <= 0)
                 break;
             var rows = section.Rows.Take(remaining)
-                .Select(r => new ProtocolPreviewRow(r.Cells, r.IsTeamHeader))
+                .Select(r => new ProtocolPreviewRow(r.Cells, r.IsTeamHeader, isSubRow: r.IsSubRow))
                 .ToList();
             remaining -= rows.Count;
             Preview.Sections.Add(new ProtocolPreviewSection(
@@ -603,7 +603,8 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
             ColumnHeadersShort: shortHeaders,
             FooterSoftwareName: Localization.Get("Protocols.Footer.Software"),
             FooterGeneratedLabel: Localization.Get("Protocols.Footer.Generated"),
-            FooterPageLabel: Localization.Get("Protocols.Footer.Page"));
+            FooterPageLabel: Localization.Get("Protocols.Footer.Page"),
+            RelayVacantLeg: Localization.Get("Protocols.Relay.VacantLeg"));
     }
 
     // The short (abbreviated) caption key for a column, or null when it has no abbreviation (already short).

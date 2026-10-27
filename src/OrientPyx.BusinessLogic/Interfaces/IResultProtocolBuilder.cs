@@ -42,4 +42,10 @@ public sealed record ProtocolLabels(
     /// <summary>Caption before the footer's generation timestamp ("Згенеровано").</summary>
     string FooterGeneratedLabel = "",
     /// <summary>Caption before the footer's page number ("Сторінка").</summary>
-    string FooterPageLabel = "");
+    string FooterPageLabel = "",
+    /// <summary>Relay: mark after a runner who started from a restart ("перезапуск", Р-29).</summary>
+    string RelayRestartMark = "",
+    /// <summary>Relay: the result cell of a leg that waits for the previous one ("очікує", Р-30).</summary>
+    string RelayPendingMark = "",
+    /// <summary>Relay: the name cell of a leg nobody runs ("— етап не призначено").</summary>
+    string RelayVacantLeg = "");

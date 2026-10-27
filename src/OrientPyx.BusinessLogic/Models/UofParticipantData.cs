@@ -48,6 +48,16 @@ public sealed class UofParticipant
     /// <summary>Chip number; blank when none (the file's "0"/empty is normalised to blank).</summary>
     public string Chip { get; init; } = string.Empty;
 
+    /// <summary>Relay: the team number the runner runs for (Р-20); null when the file names no team. Applied on the
+    /// import's relay days only.</summary>
+    public int? RelayTeamNumber { get; init; }
+
+    /// <summary>Relay: the team name (used when the team is created, or to fill a blank name).</summary>
+    public string RelayTeamName { get; init; } = string.Empty;
+
+    /// <summary>Relay: the runner's leg; null ⇒ the team's next free leg.</summary>
+    public int? RelayLeg { get; init; }
+
     /// <summary>1-based day numbers the athlete runs (from ProgEvent). Empty means no days listed.</summary>
     public IReadOnlyList<int> DayNumbers { get; init; } = [];
 

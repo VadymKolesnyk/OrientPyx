@@ -191,6 +191,7 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         ProtocolColumn.Score => "Protocols.Col.Score",
         ProtocolColumn.Points => "Protocols.Col.Points",
         ProtocolColumn.AwardedRank => "Protocols.Col.AwardedRank",
+        ProtocolColumn.Cumulative => "Protocols.Col.Cumulative",
         _ => "Protocols.Col.FullName"
     };
 
@@ -493,7 +494,7 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
             if (remaining <= 0)
                 break;
             var rows = section.Rows.Take(remaining)
-                .Select(r => new ProtocolPreviewRow(r.Cells, r.IsTeamHeader))
+                .Select(r => new ProtocolPreviewRow(r.Cells, r.IsTeamHeader, isSubRow: r.IsSubRow))
                 .ToList();
             remaining -= rows.Count;
             Preview.Sections.Add(new ProtocolPreviewSection(
@@ -634,7 +635,10 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
             RankPointsUnitLabel: Localization.Get("Protocols.RankCalc.PointsUnit"),
             FooterSoftwareName: Localization.Get("Protocols.Footer.Software"),
             FooterGeneratedLabel: Localization.Get("Protocols.Footer.Generated"),
-            FooterPageLabel: Localization.Get("Protocols.Footer.Page"));
+            FooterPageLabel: Localization.Get("Protocols.Footer.Page"),
+            RelayRestartMark: Localization.Get("Relay.Restart"),
+            RelayPendingMark: Localization.Get("Relay.Pending"),
+            RelayVacantLeg: Localization.Get("Protocols.Relay.VacantLeg"));
     }
 
     // The short (abbreviated) caption key for a column, or null when the column has no abbreviation (its full
