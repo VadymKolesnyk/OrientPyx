@@ -404,10 +404,47 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.ToTable("Groups");
                 });
 
+            modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.GroupCourseVariant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CourseOrder")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EventDayId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventDayId", "GroupId");
+
+                    b.ToTable("GroupCourseVariants");
+                });
+
             modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.GroupDaySettings", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CourseAssignmentMode")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<string>("CourseOrder")
@@ -440,6 +477,10 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.Property<int?>("LegCount")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("LegCoursesJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<TimeSpan?>("MassStartTime")
                         .HasColumnType("TEXT");
 
@@ -467,6 +508,10 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RestartTimesJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TeamCourseSet")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
@@ -498,6 +543,33 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                         .IsUnique();
 
                     b.ToTable("ImportMappings");
+                });
+
+            modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.LegCourseAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CourseKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EventDayId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Leg")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TeamNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventDayId", "TeamNumber", "Leg")
+                        .IsUnique();
+
+                    b.ToTable("LegCourseAssignments");
                 });
 
             modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.MonitorSettingsRow", b =>
@@ -761,6 +833,10 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.Property<Guid?>("ClubId")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("CourseSet")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
 
@@ -838,39 +914,6 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                         .IsUnique();
 
                     b.ToTable("ResultProtocolSettings");
-                });
-
-            modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.ScatterVariant", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CourseOrder")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("EventDayId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("GroupId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Order")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("EventDayId", "GroupId");
-
-                    b.ToTable("ScatterVariants");
                 });
 
             modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.StartProtocolSettingsRow", b =>

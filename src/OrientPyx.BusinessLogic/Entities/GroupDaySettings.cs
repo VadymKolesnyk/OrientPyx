@@ -90,5 +90,17 @@ public class GroupDaySettings
     /// <summary>Relay: how a team that used a restart is ranked (Р-35).</summary>
     public RelayRestartRanking RestartRanking { get; set; } = RelayRestartRanking.AfterClean;
 
+    /// <summary>Relay: how each leg gets its course (Р-41). The named courses are the group's
+    /// <see cref="GroupCourseVariant"/> rows.</summary>
+    public RelayCourseMode CourseAssignmentMode { get; set; } = RelayCourseMode.Group;
+
+    /// <summary>Relay <see cref="RelayCourseMode.ByLeg"/>: course code by leg (JSON object «leg → code»). Read and
+    /// written through <c>RelayLegCourses</c>.</summary>
+    public string LegCoursesJson { get; set; } = string.Empty;
+
+    /// <summary>Relay <see cref="RelayCourseMode.TeamSet"/>: the group's default course set, codes separated by
+    /// spaces («A B B»); a team's own <see cref="RelayTeam.CourseSet"/> overrides it.</summary>
+    public string TeamCourseSet { get; set; } = string.Empty;
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

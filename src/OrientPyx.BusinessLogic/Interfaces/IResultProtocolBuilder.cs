@@ -48,4 +48,8 @@ public sealed record ProtocolLabels(
     /// <summary>Relay: the result cell of a leg that waits for the previous one ("очікує", Р-30).</summary>
     string RelayPendingMark = "",
     /// <summary>Relay: the name cell of a leg nobody runs ("— етап не призначено").</summary>
-    string RelayVacantLeg = "");
+    string RelayVacantLeg = "",
+    /// <summary>Relay: the leg's named course after the runner ("дистанція {0}", Р-44).</summary>
+    string RelayCourseMark = "",
+    /// <summary>Relay: no course could be assigned to the leg ("дистанцію не призначено", Р-41).</summary>
+    string RelayNoCourseMark = "");

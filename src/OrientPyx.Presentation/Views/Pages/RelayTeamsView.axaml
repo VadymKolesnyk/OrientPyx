@@ -31,6 +31,10 @@
                                       SearchWatermark="{Binding Localization[Common.Search]}"
                                       DayOptions="{Binding DayOptions}"
                                       SelectedDay="{Binding SelectedDay, Mode=TwoWay}" />
+                <Button Classes="ghost" Margin="0,0,8,8" Click="OnImportCoursesClick"
+                        IsEnabled="{Binding HasRelayGroups}"
+                        ToolTip.Tip="{Binding Localization[RelayTeams.ImportCourses.Hint]}"
+                        Content="{Binding Localization[RelayTeams.ImportCourses]}" />
                 <Button Command="{Binding AddTeamCommand}" Classes="accent" Margin="0,0,8,8"
                         IsEnabled="{Binding HasRelayGroups}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
@@ -98,6 +102,15 @@
                                         <TextBlock Text="{Binding Header}" FontWeight="SemiBold" />
                                         <TextBlock Text="{Binding Runner}" TextWrapping="Wrap" />
                                         <TextBlock Text="{Binding ResultText}" Classes="muted" FontSize="12" />
+                                        <TextBlock Text="{Binding CourseText}" Classes="muted" FontSize="12"
+                                                   IsVisible="{Binding HasCourseText}" />
+                                        <!-- «За номером етапу» (Р-41): the course of this leg number. -->
+                                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,0,0"
+                                                    IsVisible="{Binding IsBibCourseEditable}">
+                                            <TextBlock VerticalAlignment="Center" FontSize="12"
+                                                       Text="{ReflectionBinding $parent[UserControl].DataContext.Localization[RelayTeams.Leg.Course]}" />
+                                            <TextBox Width="70" Text="{Binding BibCourseText, Mode=TwoWay}" PlaceholderText="A" />
+                                        </StackPanel>
                                     </StackPanel>
                                     <Button Grid.Column="1" Classes="ghost" Padding="8,2" Margin="6,0,0,0"
                                             VerticalAlignment="Center"

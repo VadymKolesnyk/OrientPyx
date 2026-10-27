@@ -142,7 +142,8 @@ public sealed record SplitPrintLabels(
     string ColDistance,
     string ColPace,
     string ColPoints,
-    string CorrectOrderTitle);
+    string CorrectOrderTitle,
+    string NoCourseDetailLabel = "");
 
 /// <summary>
 /// One printed passage row: the 1-based index (blank for start/finish markers), the control code, the

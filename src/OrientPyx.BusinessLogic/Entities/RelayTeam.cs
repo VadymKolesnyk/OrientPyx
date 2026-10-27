@@ -30,5 +30,9 @@ public class RelayTeam
     /// <summary>A judge's status ruling for the whole team (Р-33); null = computed from the legs.</summary>
     public FinishStatus? StatusOverride { get; set; }
 
+    /// <summary>Relay «набір на команду» (Р-41): the team's own course set, codes separated by spaces («A B»);
+    /// blank = the group's set (<see cref="GroupDaySettings.TeamCourseSet"/>).</summary>
+    public string CourseSet { get; set; } = string.Empty;
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

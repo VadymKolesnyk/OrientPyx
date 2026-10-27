@@ -1,5 +1,6 @@
 using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Entities;
+using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Models;
 
 namespace OrientPyx.BusinessLogic.Services.Results;
@@ -16,7 +17,7 @@ internal sealed partial class DayResultsCalculator
         EventDay Day,
         EventDaySnapshot Snapshot,
         IReadOnlyDictionary<Guid, GroupDaySettings> SettingsByGroup,
-        IReadOnlyDictionary<Guid, IReadOnlyList<ScatterVariantData>> VariantsByGroup,
+        IReadOnlyDictionary<Guid, IReadOnlyList<CourseVariantData>> VariantsByGroup,
         IReadOnlySet<string> StartFinishCodes,
         IReadOnlySet<string> DisabledCodes,
         IReadOnlyDictionary<string, FinishReadout> LatestByChip,
@@ -93,6 +94,8 @@ internal sealed partial class DayResultsCalculator
             if (link.Leg is { } leg && leg >= 1 && leg <= legCount)
                 byLeg.TryAdd(leg, link);
 
+        var legCourses = ResolveLegCourses(input, team, gs, legCount, byLeg, out var courseSetOpen);
+
         var legs = new List<RelayLegResult>(legCount);
         DateTimeOffset? previousFinish = null;
         DateTimeOffset? anyDate = byLeg.Values
@@ -104,10 +107,11 @@ internal sealed partial class DayResultsCalculator
 
         for (var leg = 1; leg <= legCount; leg++)
         {
+            var legCourse = legCourses?.GetValueOrDefault(leg);
             if (!byLeg.TryGetValue(leg, out var link))
             {
                 legs.Add(new RelayLegResult(leg, null, null, null, null, FinishStatus.None,
-                    null, null, null, Restarted: false, Pending: false));
+                    null, null, null, Restarted: false, Pending: false) { CourseCode = legCourse?.Course?.Code });
                 previousFinish = null;
                 cumulative = null;
                 continue;
@@ -148,13 +152,17 @@ internal sealed partial class DayResultsCalculator
             }
 
             var (result, row) = EvaluateLeg(input, link, gs, team.GroupId, strategy, leg, start, useLegStart: true,
-                pending: pending);
+                pending: pending, course: legCourses is null ? null : legCourse ?? LegCourse.Undetermined);
             if (row?.UnrankedReason is { } reason)
                 unranked ??= reason;
 
             cumulative = cumulative is { } c && result.AdjustedTime is { } at ? c + at : null;
             var legResult = new RelayLegResult(leg, link.Id, link.ParticipantId, start, readout?.FinishTime,
-                result.Status, result.ResultTime, result.AdjustedTime, cumulative, restarted, pending);
+                result.Status, result.ResultTime, result.AdjustedTime, cumulative, restarted, pending)
+            {
+                CourseCode = legCourse?.Course?.Code,
+                CourseUnassigned = legCourse is { Unassigned: true } && readout is not null
+            };
             legs.Add(legResult);
             results[link.Id] = result with { Leg = legResult };
             previousFinish = readout?.FinishTime;
@@ -168,9 +176,11 @@ internal sealed partial class DayResultsCalculator
             : (TimeSpan?)null;
         FinishStatus computed;
         if (assigned.Count > 0 && assigned.All(l => l.Status == FinishStatus.Ok))
-            computed = gs?.TimeLimitSeconds is { } limit && actual is { } a && a > TimeSpan.FromSeconds(limit)
-                ? FinishStatus.Ovt
-                : FinishStatus.Ok;
+            computed = courseSetOpen
+                ? FinishStatus.Mp   // Р-33: the course set is not closed
+                : gs?.TimeLimitSeconds is { } limit && actual is { } a && a > TimeSpan.FromSeconds(limit)
+                    ? FinishStatus.Ovt
+                    : FinishStatus.Ok;
         else
             computed = assigned.Count == 0
                 ? FinishStatus.None
@@ -190,8 +200,108 @@ internal sealed partial class DayResultsCalculator
             // Р-26: an incomplete team runs «поза конкурсом»; so does a team flagged as such or with a member who is.
             OutOfCompetition = team.OutOfCompetition || incomplete || anyOutOfCompetitionMember,
             Restarted = legs.Any(l => l.Restarted),
+            CourseSetOpen = courseSetOpen,
             UnrankedReason = unranked
         };
+    }
+
+    /// <summary>A leg's course: the named course, or none could be assigned (<see cref="Detail"/> = the missing code).</summary>
+    private sealed record LegCourse(CourseVariantData? Course, bool Unassigned, string Detail)
+    {
+        /// <summary>«Набір на команду» leg not read yet: no course determined (Р-43).</summary>
+        public static readonly LegCourse Undetermined = new(null, false, string.Empty);
+
+        public static LegCourse Missing(string? code) =>
+            new(null, true, string.IsNullOrWhiteSpace(code) ? "—" : code.Trim());
+    }
+
+    /// <summary>
+    /// The course of each leg (Р-40…Р-43), or null when the group runs its own course order on every leg
+    /// (<see cref="RelayCourseMode.Group"/>). <see cref="RelayCourseMode.ByLeg"/> / <see cref="RelayCourseMode.ByBib"/>
+    /// look the leg / leg number up; <see cref="RelayCourseMode.TeamSet"/> distributes the team's set over its read
+    /// legs with the least total penalty (<see cref="TeamCourseAssignment"/>), re-done from scratch every time.
+    /// <paramref name="setOpen"/>: the set cannot be closed (its size differs from the legs, or names an unknown course).
+    /// </summary>
+    private static Dictionary<int, LegCourse>? ResolveLegCourses(
+        RelayInputs input, RelayTeam team, GroupDaySettings? gs, int legCount,
+        IReadOnlyDictionary<int, ParticipantDay> byLeg, out bool setOpen)
+    {
+        setOpen = false;
+        var mode = gs?.CourseAssignmentMode ?? RelayCourseMode.Group;
+        if (mode == RelayCourseMode.Group)
+            return null;
+
+        var courses = new Dictionary<string, CourseVariantData>(TextKey.Comparer);
+        if (input.VariantsByGroup.TryGetValue(team.GroupId, out var variants))
+            foreach (var v in variants)
+                courses.TryAdd(v.Code.Trim(), v);
+
+        LegCourse ByCode(string? code) =>
+            code is not null && courses.TryGetValue(code.Trim(), out var c) ? new LegCourse(c, false, c.Code) : LegCourse.Missing(code);
+
+        var result = new Dictionary<int, LegCourse>();
+        switch (mode)
+        {
+            case RelayCourseMode.ByLeg:
+            {
+                var map = RelayLegCourses.Parse(gs!.LegCoursesJson);
+                for (var leg = 1; leg <= legCount; leg++)
+                    result[leg] = ByCode(map.GetValueOrDefault(leg));
+                break;
+            }
+            case RelayCourseMode.ByBib:
+            {
+                var map = input.Snapshot.LegCourseAssignments
+                    .Where(a => a.TeamNumber == team.Number)
+                    .GroupBy(a => a.Leg)
+                    .ToDictionary(g => g.Key, g => g.First().CourseKey);
+                for (var leg = 1; leg <= legCount; leg++)
+                    result[leg] = ByCode(map.GetValueOrDefault(leg));
+                break;
+            }
+            case RelayCourseMode.TeamSet:
+            {
+                var codes = RelayLegCourses.ParseSet(team.CourseSet);
+                if (codes.Count == 0)
+                    codes = RelayLegCourses.ParseSet(gs!.TeamCourseSet);
+                var slots = codes.Where(courses.ContainsKey).Select(c => courses[c]).ToList();
+                setOpen = slots.Count != codes.Count || slots.Count != legCount;
+
+                // Р-43: only read legs take a course; the penalty of a leg on a course is 0 when clean, else the
+                // controls it missed (Р-42) — never the scatter auto-detection score.
+                var readLegs = new List<(int Leg, IReadOnlyList<string> Punched)>();
+                for (var leg = 1; leg <= legCount; leg++)
+                    if (byLeg.TryGetValue(leg, out var link) && input.LatestByChip.TryGetValue(link.Chip.Trim(), out var readout))
+                        readLegs.Add((leg, CourseCodes.SplitCodes(readout.Punches)
+                            .Where(c => !input.StartFinishCodes.Contains(c)).ToList()));
+                if (readLegs.Count == 0)
+                    break;
+                if (slots.Count == 0)
+                {
+                    foreach (var (leg, _) in readLegs)
+                        result[leg] = LegCourse.Missing(null);
+                    break;
+                }
+
+                var penalties = readLegs
+                    .Select(l => (IReadOnlyList<int>)slots.Select(s => CoursePenalty(s, l.Punched)).ToList())
+                    .ToList();
+                var chosen = TeamCourseAssignment.Assign(penalties);
+                for (var i = 0; i < readLegs.Count; i++)
+                    result[readLegs[i].Leg] = chosen[i] is { } slot
+                        ? new LegCourse(slots[slot], false, slots[slot].Code)
+                        : LegCourse.Missing(null);
+                break;
+            }
+        }
+        return result;
+    }
+
+    // Р-42: 0 for a clean run of the course, else the missed controls (at least 1 for an MP).
+    private static int CoursePenalty(CourseVariantData course, IReadOnlyList<string> punched)
+    {
+        var match = VariantMatcher.Match(course, punched);
+        return match.Ok ? 0 : Math.Max(1, match.Missed.Count);
     }
 
     // Р-33: DSQ > MP > OVT > DNF > DNS > «очікує» (None) > OK.
@@ -212,7 +322,7 @@ internal sealed partial class DayResultsCalculator
     /// </summary>
     private (ParticipantDayResult Result, ResultRow? Row) EvaluateLeg(
         RelayInputs input, ParticipantDay link, GroupDaySettings? gs, Guid? groupId, IDisciplineStrategy strategy,
-        int legNumber, DateTimeOffset? start, bool useLegStart, bool pending = false)
+        int legNumber, DateTimeOffset? start, bool useLegStart, bool pending = false, LegCourse? course = null)
     {
         var readout = input.LatestByChip.TryGetValue(link.Chip.Trim(), out var r) ? r : null;
         if (readout is null)
@@ -236,7 +346,10 @@ internal sealed partial class DayResultsCalculator
             (finish, resolvedStart) = FinishEvaluator.Evaluate(
                 _strategies, readout, link, input.SettingsByGroup, input.StartFinishCodes, input.DisabledCodes,
                 input.Day.DefaultDiscipline, input.VariantsByGroup, input.SettingsOf,
-                useLegStart ? new FinishEvaluator.RelayLegStart(start) : null, groupId);
+                useLegStart
+                    ? new FinishEvaluator.RelayLegStart(start, course?.Course, course?.Unassigned ?? false, course?.Detail ?? string.Empty)
+                    : null,
+                groupId);
 
         var computed = finish.Status;
         var status = link.ResultStatusOverride ?? computed;
@@ -250,7 +363,9 @@ internal sealed partial class DayResultsCalculator
         {
             WasOnCourse = wasOnCourse,
             AdjustedTime = legTime,
-            Missed = finish.Missed
+            Missed = finish.Missed,
+            StatusDetail = finish.Detail,
+            StatusDetailKind = finish.DetailKind
         };
         if (legTime is not { } time)
             return (result, null);

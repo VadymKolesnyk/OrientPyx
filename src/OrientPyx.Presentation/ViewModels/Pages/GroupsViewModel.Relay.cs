@@ -33,6 +33,33 @@ public sealed partial class GroupsViewModel
     /// <summary>One restart-time box per leg 2…N.</summary>
     public ObservableCollection<RelayRestartItemViewModel> RelayRestarts { get; } = [];
 
+    // ── Leg courses (Р-40…Р-44): how each leg gets its course; the named courses are the variants table below.
+
+    [ObservableProperty]
+    private RelayCourseModeOption? _selectedRelayCourseMode;
+
+    /// <summary>«Набір на команду»: the group's default course set («A B»); a team's own set overrides it.</summary>
+    [ObservableProperty]
+    private string _relayTeamCourseSetText = string.Empty;
+
+    /// <summary>«За етапом»: one course-code box per leg.</summary>
+    public ObservableCollection<RelayLegCourseItemViewModel> RelayLegCourses { get; } = [];
+
+    // True while the selected relay group names its leg courses — the variants table then edits them.
+    private bool _relayNamedCourses;
+
+    public bool IsRelayByLeg => SelectedRelayCourseMode?.Value == RelayCourseMode.ByLeg;
+
+    public bool IsRelayByBib => SelectedRelayCourseMode?.Value == RelayCourseMode.ByBib;
+
+    public bool IsRelayTeamSet => SelectedRelayCourseMode?.Value == RelayCourseMode.TeamSet;
+
+    private IReadOnlyList<RelayCourseModeOption>? _relayCourseModeOptions;
+
+    // Built once: the combo matches its selection by reference.
+    public IReadOnlyList<RelayCourseModeOption> RelayCourseModeOptions => _relayCourseModeOptions ??=
+        Enum.GetValues<RelayCourseMode>().Select(m => new RelayCourseModeOption(m, Localization)).ToList();
+
     private IReadOnlyList<RelayRestartRankingOption>? _relayRankingOptions;
 
     // Built once: the combo matches its selection by reference.
@@ -45,6 +72,7 @@ public sealed partial class GroupsViewModel
         if (row is null || !row.IsRelay)
         {
             _relaySettings = null;
+            _relayNamedCourses = false;
             IsRelayEditorVisible = false;
             return;
         }
@@ -61,13 +89,53 @@ public sealed partial class GroupsViewModel
             RelayMassStartText = StartTimeFormat.Format(settings.MassStartTime);
             SelectedRelayRestartRanking = RelayRestartRankingOptions.First(o => o.Value == settings.RestartRanking);
             RebuildRestartItems(settings.LegCount, settings.RestartTimes);
+            SelectedRelayCourseMode = RelayCourseModeOptions.First(o => o.Value == settings.CourseMode);
+            RelayTeamCourseSetText = settings.TeamCourseSet;
+            RebuildLegCourseItems(settings.LegCount, settings.LegCourses ?? new Dictionary<int, string>());
         }
         finally
         {
             _suppressRelaySave = false;
         }
         IsRelayEditorVisible = true;
+        SyncRelayCourseEditor();
     }
+
+    // The variants table edits the relay's named courses whenever the mode uses them.
+    private void SyncRelayCourseEditor()
+    {
+        var named = SelectedRelayCourseMode is { Value: not RelayCourseMode.Group };
+        OnPropertyChanged(nameof(IsRelayByLeg));
+        OnPropertyChanged(nameof(IsRelayByBib));
+        OnPropertyChanged(nameof(IsRelayTeamSet));
+        if (named == _relayNamedCourses && IsScatterEditorVisible == (named || SelectedGroup?.IsScatter == true))
+            return;
+        _relayNamedCourses = named;
+        _ = RefreshScatterEditorAsync();
+    }
+
+    private void RebuildLegCourseItems(int legCount, IReadOnlyDictionary<int, string> courses)
+    {
+        foreach (var item in RelayLegCourses)
+            item.Changed -= QueueRelaySave;
+        RelayLegCourses.Clear();
+        for (var leg = 1; leg <= Math.Min(legCount, 50); leg++)
+        {
+            var item = new RelayLegCourseItemViewModel(leg, Localization, courses.TryGetValue(leg, out var c) ? c : string.Empty);
+            item.Changed += QueueRelaySave;
+            RelayLegCourses.Add(item);
+        }
+    }
+
+    partial void OnSelectedRelayCourseModeChanged(RelayCourseModeOption? value)
+    {
+        if (_suppressRelaySave)
+            return;
+        SyncRelayCourseEditor();
+        QueueRelaySave();
+    }
+
+    partial void OnRelayTeamCourseSetTextChanged(string value) => QueueRelaySave();
 
     private void RebuildRestartItems(int legCount, IReadOnlyDictionary<int, TimeSpan> times)
     {
@@ -91,6 +159,8 @@ public sealed partial class GroupsViewModel
         {
             var current = RelayRestarts.Where(r => r.Time is not null).ToDictionary(r => r.Leg, r => r.Time!.Value);
             RebuildRestartItems(legs, current);
+            var courses = RelayLegCourses.Where(c => c.Code.Length > 0).ToDictionary(c => c.Leg, c => c.Code);
+            RebuildLegCourseItems(legs, courses);
         }
         QueueRelaySave();
     }
@@ -112,7 +182,10 @@ public sealed partial class GroupsViewModel
             LegCount = legs,
             MassStartTime = massStart,
             RestartTimes = restarts,
-            RestartRanking = SelectedRelayRestartRanking?.Value ?? RelayRestartRanking.AfterClean
+            RestartRanking = SelectedRelayRestartRanking?.Value ?? RelayRestartRanking.AfterClean,
+            CourseMode = SelectedRelayCourseMode?.Value ?? RelayCourseMode.Group,
+            LegCourses = RelayLegCourses.Where(c => c.Code.Length > 0).ToDictionary(c => c.Leg, c => c.Code),
+            TeamCourseSet = RelayTeamCourseSetText ?? string.Empty
         };
         _relaySettings = updated;
 
@@ -160,6 +233,41 @@ public sealed partial class RelayRestartItemViewModel : ObservableObject
     public event Action? Changed;
 
     partial void OnTextChanged(string value) => Changed?.Invoke();
+}
+
+/// <summary>A course-code box for one relay leg («Етап N: дистанція»), <see cref="RelayCourseMode.ByLeg"/>.</summary>
+public sealed partial class RelayLegCourseItemViewModel : ObservableObject
+{
+    public RelayLegCourseItemViewModel(int leg, ILocalizationService localization, string code)
+    {
+        Leg = leg;
+        Label = string.Format(localization.Get("Groups.Relay.LegCourse"), leg);
+        _text = code;
+    }
+
+    public int Leg { get; }
+
+    public string Label { get; }
+
+    [ObservableProperty]
+    private string _text;
+
+    /// <summary>The trimmed course code; empty when blank.</summary>
+    public string Code => (Text ?? string.Empty).Trim();
+
+    public event Action? Changed;
+
+    partial void OnTextChanged(string value) => Changed?.Invoke();
+}
+
+/// <summary>A localized <see cref="RelayCourseMode"/> choice.</summary>
+public sealed class RelayCourseModeOption(RelayCourseMode value, ILocalizationService localization)
+{
+    public RelayCourseMode Value { get; } = value;
+
+    public string Label { get; } = localization.Get("Groups.Relay.CourseMode." + value);
+
+    public override string ToString() => Label;
 }
 
 /// <summary>A localized <see cref="RelayRestartRanking"/> choice.</summary>

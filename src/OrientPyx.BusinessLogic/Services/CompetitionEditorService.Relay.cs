@@ -1,4 +1,5 @@
 using OrientPyx.BusinessLogic.Entities;
+using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Models;
 
 namespace OrientPyx.BusinessLogic.Services;
@@ -42,10 +43,15 @@ public sealed partial class CompetitionEditorService
         var snapshot = await _eventStore.GetDaySnapshotAsync(folder, day.Id, cancellationToken);
         var groupNames = snapshot.Groups.ToDictionary(g => g.Id, g => g.Name);
 
+        var codesByGroup = CourseCodesByGroup(snapshot.CourseVariants);
         var groups = snapshot.GroupDaySettings
             .Where(s => IsRelay(s.DisciplineOverride ?? day.DefaultDiscipline))
-            .Select(s => ToRelaySettings(s, groupNames.TryGetValue(s.GroupId, out var n) ? n : string.Empty))
+            .Select(s => ToRelaySettings(s, groupNames.TryGetValue(s.GroupId, out var n) ? n : string.Empty,
+                codesByGroup.GetValueOrDefault(s.GroupId)))
             .ToList();
+        var bibCourses = snapshot.LegCourseAssignments
+            .GroupBy(a => (a.TeamNumber, a.Leg))
+            .ToDictionary(g => g.Key, g => g.First().CourseKey);
 
         var teamResults = new Dictionary<Guid, TeamDayResult>();
         await ComputeDayResultsAsync(folder, day, cancellationToken, snapshot: snapshot, teamResults: teamResults);
@@ -69,10 +75,11 @@ public sealed partial class CompetitionEditorService
                 var link = members.FirstOrDefault(m => m.Leg == leg);
                 var person = link is not null && participants.TryGetValue(link.ParticipantId, out var p) ? p : null;
                 legs.Add(new RelayLegRow(leg, link?.Id, link?.ParticipantId, person?.FullName ?? string.Empty,
-                    link?.Chip ?? string.Empty, result?.Legs.FirstOrDefault(l => l.Leg == leg)));
+                    link?.Chip ?? string.Empty, result?.Legs.FirstOrDefault(l => l.Leg == leg),
+                    bibCourses.GetValueOrDefault((team.Number, leg)) ?? string.Empty));
             }
             teams.Add(new RelayTeamRow(team.Id, team.GroupId, team.Number, team.Name, team.ClubId, team.RegionId,
-                team.OutOfCompetition, team.StatusOverride, legs, result));
+                team.OutOfCompetition, team.StatusOverride, legs, result, team.CourseSet));
         }
 
         var clubNames = snapshot.Clubs.ToDictionary(c => c.Id, c => c.Name);
@@ -99,7 +106,9 @@ public sealed partial class CompetitionEditorService
         if (gs is null)
             return null;
         var groups = await _eventStore.GetGroupsAsync(FolderPath, cancellationToken);
-        return ToRelaySettings(gs, groups.FirstOrDefault(g => g.Id == groupId)?.Name ?? string.Empty);
+        var variants = await _eventStore.GetCourseVariantsAsync(FolderPath, CurrentDayId, cancellationToken);
+        return ToRelaySettings(gs, groups.FirstOrDefault(g => g.Id == groupId)?.Name ?? string.Empty,
+            CourseCodesByGroup(variants).GetValueOrDefault(groupId));
     }
 
     public async Task SaveRelayGroupSettingsAsync(RelayGroupSettings settings, CancellationToken cancellationToken = default)
@@ -110,6 +119,12 @@ public sealed partial class CompetitionEditorService
             .ToDictionary(kv => kv.Key, kv => kv.Value);
         await _eventStore.UpdateRelaySettingsAsync(FolderPath, settings.SettingsId, Math.Clamp(settings.LegCount, 1, 50),
             settings.MassStartTime, RelayRestartTimes.Format(restarts), settings.RestartRanking, cancellationToken);
+        var legCourses = (settings.LegCourses ?? new Dictionary<int, string>())
+            .Where(kv => kv.Key >= 1 && kv.Key <= settings.LegCount)
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
+        await _eventStore.UpdateRelayCourseSettingsAsync(FolderPath, settings.SettingsId, settings.CourseMode,
+            RelayLegCourses.Format(legCourses), RelayLegCourses.FormatSet(RelayLegCourses.ParseSet(settings.TeamCourseSet)),
+            cancellationToken);
     }
 
     public async Task<int> CreateRelayTeamsAsync(Guid groupId, int count, int firstNumber, CancellationToken cancellationToken = default)
@@ -152,10 +167,37 @@ public sealed partial class CompetitionEditorService
             ClubId = edit.ClubId,
             RegionId = edit.RegionId,
             OutOfCompetition = edit.OutOfCompetition,
-            StatusOverride = edit.StatusOverride
+            StatusOverride = edit.StatusOverride,
+            CourseSet = RelayLegCourses.FormatSet(RelayLegCourses.ParseSet(edit.CourseSet))
         }, cancellationToken);
         return true;
     }
+
+    public async Task<int> SetLegCoursesAsync(IReadOnlyList<LegCourseEntry> entries, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null || _session.CurrentDay is null || entries.Count == 0)
+            return 0;
+        var dayId = CurrentDayId;
+        await EnsureDayEditableAsync(dayId, cancellationToken);
+        var rows = entries
+            .Where(e => e.TeamNumber > 0 && e.Leg >= 1)
+            .Select(e => new LegCourseAssignment
+            {
+                EventDayId = dayId, TeamNumber = e.TeamNumber, Leg = e.Leg, CourseKey = (e.CourseKey ?? string.Empty).Trim()
+            })
+            .ToList();
+        await _eventStore.UpsertLegCourseAssignmentsAsync(FolderPath, dayId, rows, cancellationToken);
+        return rows.Count(r => r.CourseKey.Length > 0);
+    }
+
+    public Task<int> ImportLegCoursesAsync(string content, CancellationToken cancellationToken = default) =>
+        SetLegCoursesAsync(LegCourseAssignmentReader.Read(content ?? string.Empty), cancellationToken);
+
+    // The named course codes of each group on the day, in their order.
+    private static Dictionary<Guid, IReadOnlyList<string>> CourseCodesByGroup(IReadOnlyList<GroupCourseVariant> variants) =>
+        variants.GroupBy(v => v.GroupId).ToDictionary(
+            g => g.Key,
+            g => (IReadOnlyList<string>)g.OrderBy(v => v.Order).Select(v => v.Code.Trim()).Where(c => c.Length > 0).ToList());
 
     public async Task DeleteRelayTeamAsync(Guid teamId, CancellationToken cancellationToken = default)
     {
@@ -180,7 +222,9 @@ public sealed partial class CompetitionEditorService
         return await _eventStore.AssignRelayLegAsync(folder, teamId, leg, linkId, cancellationToken);
     }
 
-    private static RelayGroupSettings ToRelaySettings(GroupDaySettings s, string groupName) => new(
+    private static RelayGroupSettings ToRelaySettings(
+        GroupDaySettings s, string groupName, IReadOnlyList<string>? courseCodes) => new(
         s.Id, s.GroupId, groupName, Math.Max(1, s.LegCount ?? 1), s.MassStartTime,
-        RelayRestartTimes.Parse(s.RestartTimesJson), s.RestartRanking);
+        RelayRestartTimes.Parse(s.RestartTimesJson), s.RestartRanking,
+        s.CourseAssignmentMode, RelayLegCourses.Parse(s.LegCoursesJson), s.TeamCourseSet, courseCodes ?? []);
 }

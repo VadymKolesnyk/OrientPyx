@@ -546,10 +546,10 @@ day-grid, рядки етапів. Невідомий ключ — ігнору�
 - [x] 4.5 Протоколи результатів і стартовий
 - [x] 4.6 Імпорт CSV / IOF `TeamEntry`
 - [x] 4.7 Жеребкування команд
-- [ ] 5.1 `GroupCourseVariant`
-- [ ] 5.1a Варіанти-шаблони (`VariantMatcher` через `CourseMatcher`)
-- [ ] 5.2 ByLeg / ByBib
-- [ ] 5.3 TeamSet + `TeamCourseAssignment`
+- [x] 5.1 `GroupCourseVariant`
+- [x] 5.1a Варіанти-шаблони (`VariantMatcher` через `CourseMatcher`)
+- [x] 5.2 ByLeg / ByBib
+- [x] 5.3 TeamSet + `TeamCourseAssignment`
 - [ ] 6.1 Табличні налаштування
 - [ ] 6.2 Динамічні колонки
 - [ ] 6.3 Плагін «Зважена естафета» + `RangeTable`, `MarkUnranked`

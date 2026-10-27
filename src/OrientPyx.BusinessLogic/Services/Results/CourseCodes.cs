@@ -103,7 +103,7 @@ internal static class CourseCodes
             .Select(c => new ScoreLine(c, pointsByCode.TryGetValue(c, out var p) ? p : 0))
             .ToList();
 
-    internal static readonly IReadOnlyList<ScatterVariantData> NoScatterVariants = [];
+    internal static readonly IReadOnlyList<CourseVariantData> NoCourseVariants = [];
 
     // The trimmed team name for a member's participant; empty when the participant has no team (поза
     // конкурсом for a team format).

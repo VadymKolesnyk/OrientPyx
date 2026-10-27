@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientPyx.BusinessLogic.Entities;
+using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
@@ -80,6 +81,12 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
 
     public bool HasRelayGroups => GroupOptions.Count > 0;
 
+    /// <summary>Some relay group of the day gives its teams a course set (Р-41) — the «Набір дистанцій» column shows.</summary>
+    public bool ShowCourseSetColumn { get; private set; }
+
+    /// <summary>Raised when the set of team columns may have changed; the view rebuilds its bands.</summary>
+    public event EventHandler? ColumnsChanged;
+
     public IReadOnlyList<ClubOption> ClubOptions { get; private set; } = [];
 
     public IReadOnlyList<RegionOption> RegionOptions { get; private set; } = [];
@@ -138,8 +145,14 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
 
         GroupOptions.Clear();
         foreach (var g in data.Groups)
-            GroupOptions.Add(new RelayGroupOption(g.GroupId, g.GroupName, g.LegCount));
+            GroupOptions.Add(new RelayGroupOption(g.GroupId, g.GroupName, g.LegCount, g.CourseMode, g.TeamCourseSet));
         OnPropertyChanged(nameof(HasRelayGroups));
+        var showSet = GroupOptions.Any(g => g.CourseMode == RelayCourseMode.TeamSet);
+        if (showSet != ShowCourseSetColumn)
+        {
+            ShowCourseSetColumn = showSet;
+            ColumnsChanged?.Invoke(this, EventArgs.Empty);
+        }
         BulkGroup = GroupOptions.FirstOrDefault(o => o.GroupId == BulkGroup?.GroupId) ?? GroupOptions.FirstOrDefault();
 
         var selectedId = SelectedTeam?.Id;
@@ -165,8 +178,63 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
         Legs.Clear();
         if (SelectedTeam is not { } team)
             return;
+        var mode = GroupOptions.FirstOrDefault(g => g.GroupId == team.Model.GroupId)?.CourseMode ?? RelayCourseMode.Group;
         foreach (var leg in team.Model.Legs)
-            Legs.Add(new RelayLegRowViewModel(team.Model, leg, Localization));
+            Legs.Add(new RelayLegRowViewModel(team.Model, leg, Localization, mode, QueueLegCourseSave));
+    }
+
+    // «За номером етапу» (Р-41): a typed leg course is saved after a short pause.
+    private void QueueLegCourseSave(RelayLegRowViewModel leg)
+    {
+        if (IsDayLocked)
+            return;
+        var key = leg.SaveKey;
+        CancelTimer(key);
+        var cts = new CancellationTokenSource();
+        _saveTimers[key] = cts;
+        _ = SaveAsync();
+
+        async Task SaveAsync()
+        {
+            try
+            {
+                await Task.Delay(SaveDebounce, cts.Token);
+                var entry = new LegCourseEntry(leg.TeamNumber, leg.Leg, leg.BibCourseText ?? string.Empty);
+                await Task.Run(() => _editor.SetLegCoursesAsync([entry], cts.Token), cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (DayLockedException)
+            {
+            }
+        }
+    }
+
+    /// <summary>
+    /// Imports leg-number courses (IOF <c>TeamCourseAssignment</c> or «100.2;B» lines) from a file's text the view
+    /// read, then reloads; reports how many were stored.
+    /// </summary>
+    public async Task ImportLegCoursesAsync(string content)
+    {
+        if (!await EnsureDayEditableAsync())
+            return;
+        int count;
+        try
+        {
+            count = await _busy.RunAsync(() => _editor.ImportLegCoursesAsync(content));
+        }
+        catch (FormatException)
+        {
+            await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(Localization,
+                titleKey: "RelayTeams.ImportCourses.Title", messageKey: "RelayTeams.ImportCourses.Invalid",
+                confirmKey: "Common.Ok") { IsMessage = true });
+            return;
+        }
+        await LoadAsync();
+        await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(Localization,
+            titleKey: "RelayTeams.ImportCourses.Title", messageKey: "RelayTeams.ImportCourses.Done",
+            confirmKey: "Common.Ok") { IsMessage = true, MessageArgs = [count] });
     }
 
     partial void OnRunnerQueryChanged(string value) => RefreshRunnerMatches();
@@ -301,13 +369,20 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
 }
 
 /// <summary>A relay group of the day (combo option).</summary>
-public sealed class RelayGroupOption(Guid groupId, string name, int legCount)
+public sealed class RelayGroupOption(
+    Guid groupId, string name, int legCount, RelayCourseMode courseMode = RelayCourseMode.Group, string teamCourseSet = "")
 {
     public Guid GroupId { get; } = groupId;
 
     public string Label { get; } = name;
 
     public int LegCount { get; } = legCount;
+
+    /// <summary>How the group's legs get their courses (Р-41).</summary>
+    public RelayCourseMode CourseMode { get; } = courseMode;
+
+    /// <summary>The group's default course set («A B») for <see cref="RelayCourseMode.TeamSet"/>.</summary>
+    public string TeamCourseSet { get; } = teamCourseSet;
 
     public override string ToString() => Label;
 }
@@ -335,6 +410,7 @@ public sealed partial class RelayTeamRowViewModel : ObservableObject
         _selectedClub = clubs.FirstOrDefault(c => c.Id == model.ClubId) ?? clubs[0];
         _selectedRegion = regions.FirstOrDefault(r => r.Id == model.RegionId) ?? regions[0];
         _outOfCompetition = model.OutOfCompetition;
+        _courseSetText = model.CourseSet;
         StatusOptions = FinishStatusOptions.Build(localization, model.Result?.Computed ?? FinishStatus.None);
         _selectedStatus = FinishStatusOptions.Select(StatusOptions, model.StatusOverride);
         _initialized = true;
@@ -375,6 +451,13 @@ public sealed partial class RelayTeamRowViewModel : ObservableObject
     [ObservableProperty]
     private FinishStatusOption _selectedStatus;
 
+    /// <summary>«Набір на команду» (Р-41): the team's own course set («A B»); blank = the group's.</summary>
+    [ObservableProperty]
+    private string _courseSetText;
+
+    /// <summary>The group's set shown as the placeholder of a blank team set.</summary>
+    public string CourseSetPlaceholder => SelectedGroup?.TeamCourseSet is { Length: > 0 } set ? set : "—";
+
     /// <summary>The typed number is taken by another team of the day (Р-20).</summary>
     [ObservableProperty]
     private bool _numberError;
@@ -399,7 +482,7 @@ public sealed partial class RelayTeamRowViewModel : ObservableObject
             || SelectedGroup is null)
             return null;
         return new RelayTeamEdit(Id, SelectedGroup.GroupId, number, Name ?? string.Empty,
-            SelectedClub.Id, SelectedRegion.Id, OutOfCompetition, SelectedStatus.Status);
+            SelectedClub.Id, SelectedRegion.Id, OutOfCompetition, SelectedStatus.Status, CourseSetText ?? string.Empty);
     }
 
     partial void OnNumberTextChanged(string value) => QueueSave();
@@ -409,6 +492,7 @@ public sealed partial class RelayTeamRowViewModel : ObservableObject
     partial void OnSelectedRegionChanged(RegionOption value) => QueueSave();
     partial void OnOutOfCompetitionChanged(bool value) => QueueSave();
     partial void OnSelectedStatusChanged(FinishStatusOption value) => QueueSave();
+    partial void OnCourseSetTextChanged(string value) => QueueSave();
 
     private void QueueSave()
     {
@@ -418,11 +502,40 @@ public sealed partial class RelayTeamRowViewModel : ObservableObject
 }
 
 /// <summary>One leg of the selected team in the legs panel.</summary>
-public sealed class RelayLegRowViewModel(RelayTeamRow team, RelayLegRow leg, ILocalizationService localization)
+public sealed partial class RelayLegRowViewModel(
+    RelayTeamRow team, RelayLegRow leg, ILocalizationService localization, RelayCourseMode courseMode,
+    Action<RelayLegRowViewModel> saveBibCourse) : ObservableObject
 {
     public Guid TeamId { get; } = team.Id;
 
+    public int TeamNumber { get; } = team.Number;
+
     public int Leg { get; } = leg.Leg;
+
+    /// <summary>A stable key for this leg's debounced course save.</summary>
+    public Guid SaveKey { get; } = new(team.Id.ToByteArray().Select((b, i) => i == 15 ? (byte)(b ^ leg.Leg) : b).ToArray());
+
+    /// <summary>«За номером етапу» (Р-41): the leg number's course is typed here.</summary>
+    public bool IsBibCourseEditable { get; } = courseMode == RelayCourseMode.ByBib;
+
+    [ObservableProperty]
+    private string _bibCourseText = leg.BibCourse;
+
+    partial void OnBibCourseTextChanged(string value) => saveBibCourse(this);
+
+    /// <summary>The leg's course (Р-44): «дистанція B», «дистанцію не призначено» or — in a team set before the
+    /// leg is read — «не визначено» (Р-43); blank when the group runs one course.</summary>
+    public string CourseText { get; } = courseMode == RelayCourseMode.Group
+        ? string.Empty
+        : leg.Result?.CourseCode is { Length: > 0 } code
+            ? string.Format(localization.Get("Relay.CourseOf"), code)
+            : leg.Result is { CourseUnassigned: true }
+                ? localization.Get("Relay.NoCourse")
+                : courseMode == RelayCourseMode.TeamSet
+                    ? localization.Get("Relay.CourseUndetermined")
+                    : string.Empty;
+
+    public bool HasCourseText => CourseText.Length > 0;
 
     public Guid? ParticipantId { get; } = leg.ParticipantId;
 
@@ -456,6 +569,8 @@ public static class RelayText
             parts.Add(loc.Get("Relay.Incomplete"));
         if (r.Restarted)
             parts.Add(loc.Get("Relay.WithRestart"));
+        if (r.CourseSetOpen)
+            parts.Add(loc.Get("Relay.CourseSetOpen"));
         return string.Join(" · ", parts);
     }
 

@@ -49,8 +49,8 @@ internal sealed partial class DayResultsCalculator
         var startFinishCodes = CourseCodes.StartFinishCodesOf(controlPoints);
         var disabledCodes = CourseCodes.DisabledCodesOf(controlPoints);
         var dayDefault = day.DefaultDiscipline;
-        var variantsByGroup = FinishEvaluator.BuildScatterVariants(
-            _strategies, snapshot.ScatterVariants, settingsByGroup, dayDefault, startFinishCodes, disabledCodes);
+        var variantsByGroup = FinishEvaluator.BuildCourseVariants(
+            _strategies, snapshot.CourseVariants, settingsByGroup, dayDefault, startFinishCodes, disabledCodes);
 
         // Per-control point values — needed only to tally «Бали».
         var pointsByCode = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);

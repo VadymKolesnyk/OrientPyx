@@ -8,7 +8,7 @@ namespace OrientPyx.Plugins.Sdk;
 /// visited (start/finish markers removed by the caller); <see cref="Punches"/> are the chip's actual
 /// punches with their times (start/finish markers already excluded), in read order.
 /// </summary>
-public sealed class SplitsContext
+public sealed record SplitsContext
 {
     /// <summary>Control codes prescribed by the course, in order (no start/finish markers, with any
     /// disabled «проблемні» controls already removed by the caller — see <see cref="DisabledControls"/>).</summary>
@@ -93,7 +93,7 @@ public sealed class SplitsContext
     /// Populated only for a scatter group; empty otherwise. The scatter strategy picks the best-matching variant
     /// and builds the ordered passage against it.
     /// </summary>
-    public IReadOnlyList<ScatterVariantData> ScatterVariants { get; init; } = [];
+    public IReadOnlyList<CourseVariantData> CourseVariants { get; init; } = [];
 }
 
 /// <summary>How the splits panel should render — chosen by the discipline.</summary>
@@ -114,7 +114,7 @@ public enum SplitsLayout
 /// <see cref="Scored"/> renders <see cref="Entries"/> plus <see cref="TotalPoints"/>. Collections that
 /// don't apply to the active layout are empty.
 /// </summary>
-public sealed class SplitsView
+public sealed record SplitsView
 {
     public required SplitsLayout Layout { get; init; }
 

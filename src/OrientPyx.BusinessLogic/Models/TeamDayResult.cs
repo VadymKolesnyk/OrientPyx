@@ -30,6 +30,10 @@ public sealed record TeamDayResult(
     /// <summary>Fewer runners assigned than the group's leg count (Р-26).</summary>
     public bool Incomplete { get; init; }
 
+    /// <summary>«Набір на команду»: the team's course set does not match its legs, so it cannot be closed (Р-41,
+    /// Р-33) — the team is never OK.</summary>
+    public bool CourseSetOpen { get; init; }
+
     /// <summary>Some leg started from a restart (Р-29) — «з перезапуском».</summary>
     public bool Restarted { get; init; }
 
@@ -68,4 +72,12 @@ public sealed record RelayLegResult(
     TimeSpan? AdjustedTime,
     TimeSpan? Cumulative,
     bool Restarted,
-    bool Pending);
+    bool Pending)
+{
+    /// <summary>The leg's named course (Р-44, «Етап 2 — дистанція B»); null when the group runs one course for all
+    /// legs, or — in a «набір на команду» — while the leg is not read yet («не визначено», Р-43).</summary>
+    public string? CourseCode { get; init; }
+
+    /// <summary>The group names its leg courses but none could be assigned to this leg (Р-41).</summary>
+    public bool CourseUnassigned { get; init; }
+}

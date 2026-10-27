@@ -13,19 +13,24 @@ namespace OrientPyx.BusinessLogic.Disciplines;
 /// order) and marked <see cref="FinishStatus.Mp"/> with the first control that variant was missing. The splits
 /// render the ordered passage against the detected variant, tagged with its <see cref="SplitsView.VariantCode"/>.
 ///
-/// The variants come from the day's <see cref="ScatterVariant"/> rows (per group), reduced to their required
-/// controls and delivered on the context's <c>ScatterVariants</c>. With no variants (a mis-configured group)
+/// The variants come from the day's <see cref="GroupCourseVariant"/> rows (per group), reduced to their required
+/// controls and delivered on the context's <c>CourseVariants</c>. With no variants (a mis-configured group)
 /// it degrades gracefully to a plain set-course judgement against the context's <c>ExpectedControls</c>.
 /// </summary>
 public sealed class ScatterStrategy : DisciplineStrategyBase
 {
     private readonly ICourseDistanceCalculator _distance;
+    private readonly MixedStrategy _pattern;
 
-    public ScatterStrategy(ICourseDistanceCalculator distance) => _distance = distance;
+    public ScatterStrategy(ICourseDistanceCalculator distance)
+    {
+        _distance = distance;
+        _pattern = new MixedStrategy(distance);
+    }
 
     public override DisciplineId Id => DisciplineId.Scatter;
 
-    /// <summary>The course is the group's set of variants (one <see cref="ScatterVariant"/> row each).</summary>
+    /// <summary>The course is the group's set of variants (one <see cref="GroupCourseVariant"/> row each).</summary>
     public override bool UsesCourseVariants => true;
 
     /// <summary>Each variant is a prescribed order — the draw warns on a shared opening control across variants.</summary>
@@ -50,7 +55,7 @@ public sealed class ScatterStrategy : DisciplineStrategyBase
 
         // No configured variants: fall back to a plain set-course check against the expected controls so a
         // mis-configured scatter group still yields a sensible status rather than always OK.
-        var variants = context.ScatterVariants;
+        var variants = context.CourseVariants;
         var match = variants.Count > 0
             ? VariantMatcher.Best(variants, context.PunchedControls) is var best
                 ? new MatchResult(best.Ok, best.FirstMissing, best.Missed)
@@ -74,12 +79,22 @@ public sealed class ScatterStrategy : DisciplineStrategyBase
     /// </summary>
     public override SplitsView BuildSplits(SplitsContext context)
     {
-        var variants = context.ScatterVariants;
+        var variants = context.CourseVariants;
         if (variants.Count == 0)
             return BuildOrderedSplits(context, context.ExpectedControls, _distance);
 
         var punched = context.Punches.Select(p => p.ControlCode.Trim()).Where(c => c.Length > 0).ToList();
         var best = VariantMatcher.Best(variants, punched);
+        if (best.Variant.IsPattern)
+        {
+            // A pattern variant (Р-40) has no single order: render it the «mixed» way against its own pattern.
+            var view = _pattern.BuildSplits(context with
+            {
+                CourseOrderText = best.Variant.CourseOrderText,
+                ExpectedControls = best.Variant.Controls
+            });
+            return view with { VariantCode = best.Variant.Code };
+        }
         return BuildOrderedSplits(context, best.Variant.Controls, _distance, best.Variant.Code);
     }
 }

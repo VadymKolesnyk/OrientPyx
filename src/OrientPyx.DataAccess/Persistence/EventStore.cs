@@ -170,6 +170,7 @@ public sealed partial class EventStore : IEventStore
 
         db.Days.Remove(existing);
         db.RelayTeams.RemoveRange(db.RelayTeams.Where(t => t.EventDayId == dayId));
+        db.LegCourseAssignments.RemoveRange(db.LegCourseAssignments.Where(a => a.EventDayId == dayId));
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -342,18 +343,18 @@ public sealed partial class EventStore : IEventStore
         }
 
         // Scatter variants follow the same rule, per day.
-        var targetVariantDays = await db.ScatterVariants
+        var targetVariantDays = await db.GroupCourseVariants
             .Where(v => v.GroupId == targetGroupId)
             .Select(v => v.EventDayId)
             .Distinct()
             .ToListAsync(cancellationToken);
-        var sourceVariants = await db.ScatterVariants
+        var sourceVariants = await db.GroupCourseVariants
             .Where(v => v.GroupId == sourceGroupId)
             .ToListAsync(cancellationToken);
         foreach (var variant in sourceVariants)
         {
             if (targetVariantDays.Contains(variant.EventDayId))
-                db.ScatterVariants.Remove(variant);
+                db.GroupCourseVariants.Remove(variant);
             else
                 variant.GroupId = targetGroupId;
         }
@@ -470,30 +471,30 @@ public sealed partial class EventStore : IEventStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<ScatterVariant>> GetScatterVariantsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<GroupCourseVariant>> GetCourseVariantsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
-        return await db.ScatterVariants
+        return await db.GroupCourseVariants
             .AsNoTracking()
             .Where(v => v.EventDayId == dayId)
             .OrderBy(v => v.Order)
             .ToListAsync(cancellationToken);
     }
 
-    public async Task ReplaceScatterVariantsForGroupAsync(string eventFolderPath, Guid dayId, Guid groupId, IReadOnlyList<ScatterVariant> variants, CancellationToken cancellationToken = default)
+    public async Task ReplaceCourseVariantsForGroupAsync(string eventFolderPath, Guid dayId, Guid groupId, IReadOnlyList<GroupCourseVariant> variants, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
 
         // Clear the group's existing variants for the day, then insert the new set — one transaction so a
         // re-import never leaves a mix of old and new orders. An empty list simply clears them.
-        var existing = await db.ScatterVariants
+        var existing = await db.GroupCourseVariants
             .Where(v => v.EventDayId == dayId && v.GroupId == groupId)
             .ToListAsync(cancellationToken);
         if (existing.Count > 0)
-            db.ScatterVariants.RemoveRange(existing);
+            db.GroupCourseVariants.RemoveRange(existing);
 
         if (variants.Count > 0)
-            db.ScatterVariants.AddRange(variants);
+            db.GroupCourseVariants.AddRange(variants);
 
         await db.SaveChangesAsync(cancellationToken);
     }
@@ -905,7 +906,7 @@ public sealed partial class EventStore : IEventStore
         // the links above (a read-out landing between two separate reads would otherwise mix snapshots).
         var readouts = await db.FinishReadouts.AsNoTracking()
             .Where(r => r.EventDayId == dayId).OrderBy(r => r.Order).ToListAsync(cancellationToken);
-        var scatterVariants = await db.ScatterVariants.AsNoTracking()
+        var scatterVariants = await db.GroupCourseVariants.AsNoTracking()
             .Where(v => v.EventDayId == dayId).OrderBy(v => v.Order).ToListAsync(cancellationToken);
         var disciplineSettings = await db.PluginSettings.AsNoTracking()
             .Where(s => s.EventDayId == dayId || s.EventDayId == null).ToListAsync(cancellationToken);
@@ -913,14 +914,17 @@ public sealed partial class EventStore : IEventStore
         var fieldValues = await db.ParticipantFieldValues.AsNoTracking().ToListAsync(cancellationToken);
         var relayTeams = await db.RelayTeams.AsNoTracking()
             .Where(t => t.EventDayId == dayId).OrderBy(t => t.Number).ToListAsync(cancellationToken);
+        var legCourses = await db.LegCourseAssignments.AsNoTracking()
+            .Where(a => a.EventDayId == dayId).ToListAsync(cancellationToken);
 
         return new EventDaySnapshot
         {
             FinishReadouts = readouts,
-            ScatterVariants = scatterVariants,
+            CourseVariants = scatterVariants,
             DisciplineSettings = disciplineSettings,
             FieldValues = fieldValues,
             RelayTeams = relayTeams,
+            LegCourseAssignments = legCourses,
             Links = links,
             Participants = participants,
             Groups = groups,

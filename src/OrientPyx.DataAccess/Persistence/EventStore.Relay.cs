@@ -39,6 +39,7 @@ public sealed partial class EventStore
         existing.RegionId = team.RegionId;
         existing.OutOfCompetition = team.OutOfCompetition;
         existing.StatusOverride = team.StatusOverride;
+        existing.CourseSet = team.CourseSet;
         if (existing.GroupId != team.GroupId)
         {
             existing.GroupId = team.GroupId;
@@ -57,6 +58,48 @@ public sealed partial class EventStore
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
         await ReleaseLegsAsync(db, p => p.RelayTeamId == teamId, cancellationToken);
         await db.RelayTeams.Where(t => t.Id == teamId).ExecuteDeleteAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<LegCourseAssignment>> GetLegCourseAssignmentsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        return await db.LegCourseAssignments.AsNoTracking()
+            .Where(a => a.EventDayId == dayId)
+            .OrderBy(a => a.TeamNumber).ThenBy(a => a.Leg)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task UpsertLegCourseAssignmentsAsync(string eventFolderPath, Guid dayId, IReadOnlyList<LegCourseAssignment> assignments, CancellationToken cancellationToken = default)
+    {
+        if (assignments.Count == 0)
+            return;
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+        var existing = (await db.LegCourseAssignments.Where(a => a.EventDayId == dayId).ToListAsync(cancellationToken))
+            .ToDictionary(a => (a.TeamNumber, a.Leg));
+        foreach (var assignment in assignments)
+        {
+            var key = (assignment.TeamNumber, assignment.Leg);
+            var code = assignment.CourseKey.Trim();
+            if (existing.TryGetValue(key, out var row))
+            {
+                if (code.Length == 0)
+                {
+                    db.LegCourseAssignments.Remove(row);
+                    existing.Remove(key);
+                }
+                else
+                    row.CourseKey = code;
+            }
+            else if (code.Length > 0 && assignment.TeamNumber > 0 && assignment.Leg >= 1)
+            {
+                row = new LegCourseAssignment { EventDayId = dayId, TeamNumber = assignment.TeamNumber, Leg = assignment.Leg, CourseKey = code };
+                db.LegCourseAssignments.Add(row);
+                existing[key] = row;
+            }
+        }
+        await db.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
     }
 
@@ -116,6 +159,20 @@ public sealed partial class EventStore
         existing.MassStartTime = massStartTime;
         existing.RestartTimesJson = restartTimesJson;
         existing.RestartRanking = restartRanking;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateRelayCourseSettingsAsync(
+        string eventFolderPath, Guid settingsId, RelayCourseMode mode, string legCoursesJson, string teamCourseSet,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var existing = await db.GroupDaySettings.FirstOrDefaultAsync(s => s.Id == settingsId, cancellationToken);
+        if (existing is null)
+            return;
+        existing.CourseAssignmentMode = mode;
+        existing.LegCoursesJson = legCoursesJson;
+        existing.TeamCourseSet = teamCourseSet;
         await db.SaveChangesAsync(cancellationToken);
     }
 

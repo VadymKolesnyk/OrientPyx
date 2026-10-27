@@ -199,7 +199,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     // replaces the group's variant set; the grid's «N варіантів дистанції» cell is kept live off the count.
 
     private CancellationTokenSource? _scatterSaveCts;
-    // Guards the save trigger while LoadScatterVariants seeds the rows.
+    // Guards the save trigger while LoadCourseVariants seeds the rows.
     private bool _suppressScatterSave;
     // The group whose variants are currently loaded into the editor (so a save targets the right group even
     // after the selection changed).
@@ -209,48 +209,56 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     [ObservableProperty]
     private bool _isScatterEditorVisible;
 
+    /// <summary>The variants table edits a relay group's named leg courses (Р-40) rather than scatter orders.</summary>
+    [ObservableProperty]
+    private bool _isRelayCoursesEditor;
+
     /// <summary>Caption above the scatter variants editor, e.g. «Варіанти розсіювання — 2».</summary>
     [ObservableProperty]
     private string _scatterHeader = string.Empty;
 
     /// <summary>The editable scatter variant rows for the selected group (Код + Дистанція).</summary>
-    public ObservableCollection<ScatterVariantRowViewModel> ScatterVariants { get; } = [];
+    public ObservableCollection<CourseVariantRowViewModel> CourseVariants { get; } = [];
 
     /// <summary>True when the selected scatter group has no variants yet (shows the empty hint).</summary>
-    public bool HasNoScatterVariants => ScatterVariants.Count == 0;
+    public bool HasNoCourseVariants => CourseVariants.Count == 0;
 
     // Rebuilds the scatter editor from the selected group. Hidden (and cleared) unless the selected group is
     // a scatter-discipline group; otherwise loads its variants off the DB into editable rows.
     private async Task RefreshScatterEditorAsync()
     {
         // Detach the old rows' change handlers before clearing.
-        foreach (var v in ScatterVariants)
+        foreach (var v in CourseVariants)
             v.Changed -= OnScatterRowChanged;
-        ScatterVariants.Clear();
+        CourseVariants.Clear();
 
         var row = SelectedGroup;
-        if (row is null || !row.IsScatter)
+        // A relay group whose legs take named courses (Р-40) edits them in the same table.
+        var relayCourses = row is { IsRelay: true } && _relayNamedCourses;
+        if (row is null || !(row.IsScatter || relayCourses))
         {
             _scatterGroupId = null;
             IsScatterEditorVisible = false;
-            OnPropertyChanged(nameof(HasNoScatterVariants));
+            IsRelayCoursesEditor = false;
+            OnPropertyChanged(nameof(HasNoCourseVariants));
             return;
         }
 
         IsScatterEditorVisible = true;
+        IsRelayCoursesEditor = relayCourses;
         _scatterGroupId = row.GroupId;
         ScatterHeader = string.Format(Localization.Get("Groups.Scatter.Header"), row.ScatterVariantCount);
 
-        var variants = await _editor.GetScatterVariantsAsync(row.GroupId);
+        var variants = await _editor.GetCourseVariantsAsync(row.GroupId);
 
         _suppressScatterSave = true;
         try
         {
             foreach (var v in variants)
             {
-                var vm = new ScatterVariantRowViewModel(v.Code, v.CourseOrder);
+                var vm = new CourseVariantRowViewModel(v.Code, v.CourseOrder, DescribeVariant);
                 vm.Changed += OnScatterRowChanged;
-                ScatterVariants.Add(vm);
+                CourseVariants.Add(vm);
             }
         }
         finally
@@ -258,27 +266,27 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             _suppressScatterSave = false;
         }
 
-        OnPropertyChanged(nameof(HasNoScatterVariants));
+        OnPropertyChanged(nameof(HasNoCourseVariants));
     }
 
     [RelayCommand]
     private void AddScatterVariant()
     {
-        var vm = new ScatterVariantRowViewModel(string.Empty, string.Empty);
+        var vm = new CourseVariantRowViewModel(string.Empty, string.Empty, DescribeVariant);
         vm.Changed += OnScatterRowChanged;
-        ScatterVariants.Add(vm);
-        OnPropertyChanged(nameof(HasNoScatterVariants));
+        CourseVariants.Add(vm);
+        OnPropertyChanged(nameof(HasNoCourseVariants));
         QueueScatterSave();
     }
 
     [RelayCommand]
-    private void RemoveScatterVariant(ScatterVariantRowViewModel? row)
+    private void RemoveScatterVariant(CourseVariantRowViewModel? row)
     {
         if (row is null)
             return;
         row.Changed -= OnScatterRowChanged;
-        ScatterVariants.Remove(row);
-        OnPropertyChanged(nameof(HasNoScatterVariants));
+        CourseVariants.Remove(row);
+        OnPropertyChanged(nameof(HasNoCourseVariants));
         QueueScatterSave();
     }
 
@@ -302,11 +310,11 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             await Task.Delay(SaveDebounce, token);
 
             // Snapshot the editor rows (UI thread) before the SQLite write.
-            var rows = ScatterVariants
-                .Select(v => new ScatterVariantRow(v.Code, v.CourseOrder))
+            var rows = CourseVariants
+                .Select(v => new CourseVariantRow(v.Code, v.CourseOrder))
                 .ToList();
 
-            await Task.Run(() => _editor.SaveScatterVariantsAsync(groupId, rows, token), token);
+            await Task.Run(() => _editor.SaveCourseVariantsAsync(groupId, rows, token), token);
 
             // Keep the grid's «N варіантів дистанції» cell in sync with the saved (non-blank) count, and its
             // control-count cell with the LONGEST variant (that's what a scatter group reports there).
@@ -314,7 +322,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
                 .Where(r => !string.IsNullOrWhiteSpace(r.Code) || !string.IsNullOrWhiteSpace(r.CourseOrder))
                 .ToList();
             var count = kept.Count;
-            var maxControls = kept.Count > 0 ? kept.Max(r => CourseOrder.CountControls(r.CourseOrder)) : 0;
+            var maxControls = kept.Count > 0 ? kept.Max(r => CourseOrder.CountCourseControls(r.CourseOrder)) : 0;
             var target = Groups.FirstOrDefault(g => g.GroupId == groupId);
             if (target is not null)
             {
@@ -351,6 +359,15 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         PatternPreviewText = pattern.IsValid
             ? pattern.NormalizedOrder()
             : DescribeError(pattern.Errors[0]);
+    }
+
+    // The validation cell of a course variant (Р-40): «✓» for a valid order / pattern, else the first error.
+    private string DescribeVariant(string courseOrder)
+    {
+        if (string.IsNullOrWhiteSpace(courseOrder))
+            return string.Empty;
+        var pattern = CoursePattern.Parse(courseOrder, _startCode, _finishCode);
+        return pattern.IsValid ? "✓" : "✕ " + DescribeError(pattern.Errors[0]);
     }
 
     // Maps a parse error to a localized, human-readable message (with the offending token spliced in).
@@ -550,6 +567,8 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     // Refresh the previews/editors whenever the selected group changes.
     partial void OnSelectedGroupChanged(GroupDayRowViewModel? value)
     {
+        // The relay's named-courses flag belongs to the previous group until its settings reload.
+        _relayNamedCourses = false;
         RefreshPatternPreview();
         _ = RefreshScatterEditorAsync();
         _ = RefreshRelayEditorAsync();
@@ -815,13 +834,22 @@ public sealed partial class GroupsViewModel : PageViewModelBase
 /// "A") and the variant's <see cref="CourseOrder"/> string. Raises <see cref="Changed"/> on any edit so the
 /// page can debounce-save the whole set.
 /// </summary>
-public sealed partial class ScatterVariantRowViewModel : ObservableObject
+public sealed partial class CourseVariantRowViewModel : ObservableObject
 {
-    public ScatterVariantRowViewModel(string code, string courseOrder)
+    private readonly Func<string, string> _describe;
+
+    public CourseVariantRowViewModel(string code, string courseOrder, Func<string, string> describe)
     {
         _code = code;
         _courseOrder = courseOrder;
+        _describe = describe;
     }
+
+    /// <summary>The order / pattern check (Р-40): «✓», or the first structural error.</summary>
+    public string Check => _describe(CourseOrder);
+
+    /// <summary>True when the course has a structural error (red check cell).</summary>
+    public bool HasError => Check.StartsWith('✕');
 
     /// <summary>Raised whenever the code or course order is edited.</summary>
     public event Action? Changed;
@@ -833,5 +861,10 @@ public sealed partial class ScatterVariantRowViewModel : ObservableObject
     private string _courseOrder;
 
     partial void OnCodeChanged(string value) => Changed?.Invoke();
-    partial void OnCourseOrderChanged(string value) => Changed?.Invoke();
+    partial void OnCourseOrderChanged(string value)
+    {
+        OnPropertyChanged(nameof(Check));
+        OnPropertyChanged(nameof(HasError));
+        Changed?.Invoke();
+    }
 }

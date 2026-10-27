@@ -21,7 +21,7 @@ public class EventDbContext : DbContext
     public DbSet<ControlPoint> ControlPoints => Set<ControlPoint>();
     public DbSet<Group> Groups => Set<Group>();
     public DbSet<GroupDaySettings> GroupDaySettings => Set<GroupDaySettings>();
-    public DbSet<ScatterVariant> ScatterVariants => Set<ScatterVariant>();
+    public DbSet<GroupCourseVariant> GroupCourseVariants => Set<GroupCourseVariant>();
     public DbSet<RentalChip> RentalChips => Set<RentalChip>();
     public DbSet<Region> Regions => Set<Region>();
     public DbSet<Club> Clubs => Set<Club>();
@@ -44,6 +44,7 @@ public class EventDbContext : DbContext
     public DbSet<ParticipantFieldValue> ParticipantFieldValues => Set<ParticipantFieldValue>();
     public DbSet<ImportMappingRow> ImportMappings => Set<ImportMappingRow>();
     public DbSet<RelayTeam> RelayTeams => Set<RelayTeam>();
+    public DbSet<LegCourseAssignment> LegCourseAssignments => Set<LegCourseAssignment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -154,7 +155,7 @@ public class EventDbContext : DbContext
 
         // Scatter («розсіювання») variants: several per (day, group). Non-unique index speeds the per-day
         // load and the per-group replace; Order sorts them (A before B).
-        modelBuilder.Entity<ScatterVariant>()
+        modelBuilder.Entity<GroupCourseVariant>()
             .HasIndex(v => new { v.EventDayId, v.GroupId });
 
         // Discipline settings (Р-11): one row per (day, discipline); the competition-scoped row has no day.
@@ -189,6 +190,15 @@ public class EventDbContext : DbContext
         modelBuilder.Entity<GroupDaySettings>()
             .Property(g => g.RestartRanking)
             .HasConversion<string>();
+
+        // Relay leg courses (Р-41): the mode is stored by name; one course per leg number of the day.
+        modelBuilder.Entity<GroupDaySettings>()
+            .Property(g => g.CourseAssignmentMode)
+            .HasConversion<string>();
+
+        modelBuilder.Entity<LegCourseAssignment>()
+            .HasIndex(a => new { a.EventDayId, a.TeamNumber, a.Leg })
+            .IsUnique();
 
         // The last CSV/Excel column mapping per header set.
         modelBuilder.Entity<ImportMappingRow>()

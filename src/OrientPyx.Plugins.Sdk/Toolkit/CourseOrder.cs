@@ -25,6 +25,15 @@ public static class CourseOrder
         return count;
     }
 
+    /// <summary>
+    /// The controls a named course requires (Р-40): a plain order is counted flat (<see cref="CountControls"/>), a
+    /// «mixed» pattern by what it requires (an ordered run in full, N for an <c>[N: …]</c> block).
+    /// </summary>
+    public static int CountCourseControls(string? courseOrder) =>
+        CourseVariantData.IsPatternText(courseOrder)
+            ? Patterns.CoursePattern.Parse(courseOrder).RequiredCount
+            : CountControls(courseOrder);
+
     private static bool IsStartOrFinish(string token)
     {
         // Start/finish letters: Latin S/F and the Cyrillic С (старт, U+0421) / Ф (фініш, U+0424) that

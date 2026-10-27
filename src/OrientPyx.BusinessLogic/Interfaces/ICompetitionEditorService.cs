@@ -101,11 +101,11 @@ public interface ICompetitionEditorService
 
     /// <summary>Loads a group's scatter («розсіювання») variants for the current day, in order (Code + raw
     /// course order). Empty when the group has none.</summary>
-    Task<IReadOnlyList<ScatterVariantRow>> GetScatterVariantsAsync(Guid groupId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<CourseVariantRow>> GetCourseVariantsAsync(Guid groupId, CancellationToken cancellationToken = default);
 
     /// <summary>Replaces a group's scatter variants for the current day with <paramref name="variants"/>
     /// (order = list order). An empty list clears them. Blank-code/blank-order rows are dropped by the service.</summary>
-    Task SaveScatterVariantsAsync(Guid groupId, IReadOnlyList<ScatterVariantRow> variants, CancellationToken cancellationToken = default);
+    Task SaveCourseVariantsAsync(Guid groupId, IReadOnlyList<CourseVariantRow> variants, CancellationToken cancellationToken = default);
 
     /// <summary>Every group regardless of day, ordered by name.</summary>
     Task<IReadOnlyList<Group>> GetGroupsAsync(CancellationToken cancellationToken = default);
@@ -847,6 +847,19 @@ public interface ICompetitionEditorService
 
     /// <summary>Puts a participant on a leg (adding them to the day when needed) or, with null, clears the leg.</summary>
     Task<bool> AssignRelayLegAsync(Guid teamId, int leg, Guid? participantId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets the courses of leg numbers on the current day (<see cref="RelayCourseMode.ByBib"/>, Р-41) — typed on the
+    /// «Команди» page or imported (IOF <c>TeamCourseAssignment</c>, CSV «Номер етапу; Дистанція»). Returns how many
+    /// were stored.
+    /// </summary>
+    Task<int> SetLegCoursesAsync(IReadOnlyList<LegCourseEntry> entries, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Imports leg-number courses from a file's text — IOF 3.0 <c>CourseData</c> with <c>TeamCourseAssignment</c>, or
+    /// lines «100.2;B» / «100;2;B». Returns how many were stored; throws <see cref="FormatException"/> on broken XML.
+    /// </summary>
+    Task<int> ImportLegCoursesAsync(string content, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Outcome of a participant import, for reporting back to the user.</summary>

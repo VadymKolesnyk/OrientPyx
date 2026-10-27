@@ -7,7 +7,7 @@ namespace OrientPyx.BusinessLogic.Entities;
 /// group's own <c>GroupDaySettings.CourseOrder</c> keeps the first variant for display/distance, while the
 /// full set of orders lives here so a set-course string never has to encode several sequences.
 /// </summary>
-public class ScatterVariant
+public class GroupCourseVariant
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 

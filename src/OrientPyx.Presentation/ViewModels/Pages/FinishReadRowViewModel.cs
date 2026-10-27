@@ -91,6 +91,8 @@ public sealed class FinishReadRowViewModel
         var text = string.Format(_localization.Get("FinishRead.Relay.TeamLeg"), team, _row.RelayLeg ?? 0);
         if (_row.RelayTeamName.Length > 0)
             text += " «" + _row.RelayTeamName + "»";
+        if (_row.RelayCourseCode is { Length: > 0 } course)
+            text += " · " + string.Format(_localization.Get("Relay.CourseOf"), course);
         if (_row.RelayRestarted)
             text += " · " + _localization.Get("Relay.Restart");
         if (_row.RelayPending)
@@ -144,9 +146,12 @@ public sealed class FinishReadRowViewModel
     // The MP detail worded per the strategy's detail kind (the count format never says "wrong order",
     // since a free-choice course judges no order).
     private string FormattedDetail() => string.Format(
-        _localization.Get(_row.StatusDetailKind == FinishDetailKind.ControlCount
-            ? "FinishRead.Status.CountDetail"
-            : "FinishRead.Status.MpDetail"),
+        _localization.Get(_row.StatusDetailKind switch
+        {
+            FinishDetailKind.ControlCount => "FinishRead.Status.CountDetail",
+            FinishDetailKind.CourseNotAssigned => "FinishRead.Status.NoCourseDetail",
+            _ => "FinishRead.Status.MpDetail"
+        }),
         _row.StatusDetail);
 
     /// <summary>

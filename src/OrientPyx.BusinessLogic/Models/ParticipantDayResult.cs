@@ -128,6 +128,13 @@ public sealed record ParticipantDayResult(
     /// <summary>Relay: this runner's leg (start, leg time, cumulative, restart / pending); null outside a relay.</summary>
     public RelayLegResult? Leg { get; init; }
 
+    /// <summary>Relay: the MP detail of the leg as judged in its sequence against its own course (Р-41) — what the
+    /// read-out log shows; empty otherwise.</summary>
+    public string StatusDetail { get; init; } = string.Empty;
+
+    /// <summary>How <see cref="StatusDetail"/> reads.</summary>
+    public FinishDetailKind StatusDetailKind { get; init; } = FinishDetailKind.MissingControl;
+
     /// <summary>Relay: the leg number «100.2» shown instead of the participant number (Р-23); null outside a relay.</summary>
     public string? LegBib => Team is { } t && Leg is { } l ? t.Bib(l.Leg) : null;
 

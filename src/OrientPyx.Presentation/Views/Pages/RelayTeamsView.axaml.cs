@@ -1,3 +1,4 @@
+using Avalonia.Platform.Storage;
 using System;
 using System.ComponentModel;
 using Avalonia.Controls;
@@ -62,10 +63,44 @@ public partial class RelayTeamsView : UserControl
             return;
         _vm.Localization.PropertyChanged += OnLocalizationChanged;
         _vm.FocusGridRequested += OnFocusGridRequested;
+        _vm.ColumnsChanged += OnColumnsChanged;
         BuildBands();
     }
 
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => BuildBands();
+
+    private void OnColumnsChanged(object? sender, EventArgs e) => BuildBands();
+
+    // «Імпорт дистанцій етапів»: an IOF CourseData (TeamCourseAssignment) or a «100.2;B» table (Р-41).
+    private async void OnImportCoursesClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_vm is null || Avalonia.Controls.TopLevel.GetTopLevel(this) is not { } topLevel)
+            return;
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = _vm.Localization.Get("RelayTeams.ImportCourses.Title"),
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new Avalonia.Platform.Storage.FilePickerFileType(_vm.Localization.Get("RelayTeams.ImportCourses.FileType"))
+                {
+                    Patterns = ["*.xml", "*.csv", "*.txt"]
+                }
+            ]
+        });
+        if (files.Count == 0 || files[0].TryGetLocalPath() is not { } path)
+            return;
+        string content;
+        try
+        {
+            content = await System.IO.File.ReadAllTextAsync(path);
+        }
+        catch (System.IO.IOException)
+        {
+            return;
+        }
+        await _vm.ImportLegCoursesAsync(content);
+    }
 
     private void OnFocusGridRequested(object? sender, EventArgs e)
         => Avalonia.Threading.Dispatcher.UIThread.Post(() => Sheet.Focus());
@@ -76,7 +111,7 @@ public partial class RelayTeamsView : UserControl
         if (_vm is null)
             return;
 
-        Sheet.Bands = new SheetColumnBuilder(_vm.Localization)
+        var builder = new SheetColumnBuilder(_vm.Localization)
             .Text("RelayTeams.Col.Number", nameof(RelayTeamRowViewModel.NumberText),
                   editPath: nameof(RelayTeamRowViewModel.NumberText), minWidth: 80,
                   mask: SheetColumnBuilder.NumericMask.Integer)
@@ -95,7 +130,13 @@ public partial class RelayTeamsView : UserControl
                    nameof(RelayTeamRowViewModel.RegionOptions),
                    nameof(RelayTeamRowViewModel.SelectedRegion),
                    nameof(RegionOption.Label), minWidth: 150)
-            .Check("RelayTeams.Col.OutOfCompetition", nameof(RelayTeamRowViewModel.OutOfCompetition))
+            .Check("RelayTeams.Col.OutOfCompetition", nameof(RelayTeamRowViewModel.OutOfCompetition));
+        // «Набір на команду» (Р-41): the team's own course set, when some group uses team sets.
+        if (_vm.ShowCourseSetColumn)
+            builder.Text("RelayTeams.Col.CourseSet", nameof(RelayTeamRowViewModel.CourseSetText),
+                  editPath: nameof(RelayTeamRowViewModel.CourseSetText), minWidth: 110,
+                  placeholderPath: nameof(RelayTeamRowViewModel.CourseSetPlaceholder));
+        Sheet.Bands = builder
             .Combo("RelayTeams.Col.StatusOverride",
                    nameof(RelayTeamRowViewModel.StatusOptions),
                    nameof(RelayTeamRowViewModel.SelectedStatus),
@@ -115,6 +156,7 @@ public partial class RelayTeamsView : UserControl
         {
             _vm.Localization.PropertyChanged -= OnLocalizationChanged;
             _vm.FocusGridRequested -= OnFocusGridRequested;
+            _vm.ColumnsChanged -= OnColumnsChanged;
         }
         _vm = null;
     }

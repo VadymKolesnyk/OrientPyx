@@ -344,9 +344,15 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
             case ProtocolColumn.FullName:
                 if (runner is null)
                     return labels.RelayVacantLeg;
-                return result is { Restarted: true } && labels.RelayRestartMark.Length > 0
-                    ? $"{runner.FullName} ({labels.RelayRestartMark})"
-                    : runner.FullName;
+                // «ПІБ (дистанція B, перезапуск)» — the leg's course (Р-44) and its restart (Р-29).
+                var marks = new List<string>(2);
+                if (result?.CourseCode is { Length: > 0 } course && labels.RelayCourseMark.Length > 0)
+                    marks.Add(string.Format(CultureInfo.CurrentCulture, labels.RelayCourseMark, course));
+                else if (result is { CourseUnassigned: true } && labels.RelayNoCourseMark.Length > 0)
+                    marks.Add(labels.RelayNoCourseMark);
+                if (result is { Restarted: true } && labels.RelayRestartMark.Length > 0)
+                    marks.Add(labels.RelayRestartMark);
+                return marks.Count > 0 ? $"{runner.FullName} ({string.Join(", ", marks)})" : runner.FullName;
             case ProtocolColumn.Result:
                 if (result is null || runner is null)
                     return string.Empty;

@@ -165,9 +165,14 @@ the format's structure comes from it, the plugin overrides rules: `EvaluateFinis
 
 Notable formats: **Mixed** (змішаний) judges against a course *pattern* (`<seq>` ordered runs,
 `[N …]` any-of blocks, nesting) like a set course. **Scatter** (розсіювання) has several valid
-orders (variants) per (day, group) stored in the dedicated `ScatterVariant` event-DB table;
-each runner's variant is auto-detected from their read-out (best-matching order) and then judged
-like a set course against it.
+orders (variants) per (day, group) stored in the `GroupCourseVariant` event-DB table (renamed from
+`ScatterVariant`); each runner's variant is auto-detected from their read-out (best-matching order,
+`Toolkit.VariantMatcher`) and then judged like a set course against it. A variant may also be a mixed
+pattern (matched through `CourseMatcher`, never expanded into orders). **Relay** (естафета) legs run the
+group's course, or — per `GroupDaySettings.CourseAssignmentMode` (Р-41) — a named course from the same
+`GroupCourseVariant` rows: `ByLeg` (leg → code, `LegCoursesJson`), `ByBib` (`LegCourseAssignment` per leg
+number, typed on «Команди» or imported from IOF `TeamCourseAssignment` / CSV), `TeamSet` (a course set per
+team/group distributed over the read legs by `Toolkit.TeamCourseAssignment`, least missed controls, Р-42).
 
 ## Additional participant fields
 

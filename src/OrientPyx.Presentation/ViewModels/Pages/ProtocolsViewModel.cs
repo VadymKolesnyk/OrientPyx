@@ -638,7 +638,9 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
             FooterPageLabel: Localization.Get("Protocols.Footer.Page"),
             RelayRestartMark: Localization.Get("Relay.Restart"),
             RelayPendingMark: Localization.Get("Relay.Pending"),
-            RelayVacantLeg: Localization.Get("Protocols.Relay.VacantLeg"));
+            RelayVacantLeg: Localization.Get("Protocols.Relay.VacantLeg"),
+            RelayCourseMark: Localization.Get("Relay.CourseOf"),
+            RelayNoCourseMark: Localization.Get("Relay.NoCourse"));
     }
 
     // The short (abbreviated) caption key for a column, or null when the column has no abbreviation (its full

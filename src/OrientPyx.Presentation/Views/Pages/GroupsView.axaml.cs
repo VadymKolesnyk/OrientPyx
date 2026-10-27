@@ -149,12 +149,15 @@ public partial class GroupsView : UserControl
             return;
 
         ScatterSheet.Bands = new SheetColumnBuilder(_vm.Localization)
-            .Text("Groups.Scatter.Col.Code", nameof(ScatterVariantRowViewModel.Code),
-                  editPath: nameof(ScatterVariantRowViewModel.Code), width: 120,
+            .Text("Groups.Scatter.Col.Code", nameof(CourseVariantRowViewModel.Code),
+                  editPath: nameof(CourseVariantRowViewModel.Code), width: 120,
                   placeholder: "A")
-            .Text("Groups.Scatter.Col.Order", nameof(ScatterVariantRowViewModel.CourseOrder),
-                  editPath: nameof(ScatterVariantRowViewModel.CourseOrder), minWidth: 240,
+            .Text("Groups.Scatter.Col.Order", nameof(CourseVariantRowViewModel.CourseOrder),
+                  editPath: nameof(CourseVariantRowViewModel.CourseOrder), minWidth: 240,
                   placeholder: "S1 31 32 33 F")
+            // Р-40: a variant is an order or a «mixed» pattern — the check flags a structural error.
+            .Text("Groups.Scatter.Col.Check", nameof(CourseVariantRowViewModel.Check), minWidth: 120,
+                  placeholder: string.Empty)
             .DeleteAction(OnScatterDeleteButton, "Groups.Scatter.Remove")
             .Bands;
     }
@@ -170,7 +173,7 @@ public partial class GroupsView : UserControl
     // set autosaves, so a mistaken delete is trivially undone by re-adding).
     private void OnScatterDeleteRequested(object? sender, SheetDeleteEventArgs e)
     {
-        if (_vm is null || e.Row is not ScatterVariantRowViewModel row)
+        if (_vm is null || e.Row is not CourseVariantRowViewModel row)
             return;
         _vm.RemoveScatterVariantCommand.Execute(row);
     }
@@ -178,7 +181,7 @@ public partial class GroupsView : UserControl
     // Scatter variants table: the per-row delete button.
     private void OnScatterDeleteButton(object row)
     {
-        if (_vm is null || row is not ScatterVariantRowViewModel variant)
+        if (_vm is null || row is not CourseVariantRowViewModel variant)
             return;
         _vm.RemoveScatterVariantCommand.Execute(variant);
     }

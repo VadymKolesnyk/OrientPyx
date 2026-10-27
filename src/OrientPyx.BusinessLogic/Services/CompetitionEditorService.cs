@@ -572,12 +572,12 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         // «N варіантів дистанції» instead of a single order for a scatter group. Also fold each group's
         // variants down to the control-count of its LONGEST variant — the grid's control-count cell
         // reports that for a scatter group (the single-order field is unused for scatter).
-        var scatterVariants = await _eventStore.GetScatterVariantsAsync(FolderPath, CurrentDayId, cancellationToken);
+        var scatterVariants = await _eventStore.GetCourseVariantsAsync(FolderPath, CurrentDayId, cancellationToken);
         var scatterByGroup = scatterVariants
             .GroupBy(v => v.GroupId)
             .ToDictionary(
                 g => g.Key,
-                g => (Count: g.Count(), MaxControls: g.Max(v => CourseOrder.CountControls(v.CourseOrder))));
+                g => (Count: g.Count(), MaxControls: g.Max(v => CourseOrder.CountCourseControls(v.CourseOrder))));
 
         var rows = new List<GroupDayRow>(settings.Count);
         foreach (var s in settings)
@@ -595,20 +595,20 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         return rows;
     }
 
-    public async Task<IReadOnlyList<ScatterVariantRow>> GetScatterVariantsAsync(Guid groupId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<CourseVariantRow>> GetCourseVariantsAsync(Guid groupId, CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null || _session.CurrentDay is null)
             return [];
 
-        var rows = await _eventStore.GetScatterVariantsAsync(FolderPath, CurrentDayId, cancellationToken);
+        var rows = await _eventStore.GetCourseVariantsAsync(FolderPath, CurrentDayId, cancellationToken);
         return rows
             .Where(v => v.GroupId == groupId)
             .OrderBy(v => v.Order)
-            .Select(v => new ScatterVariantRow(v.Code, v.CourseOrder))
+            .Select(v => new CourseVariantRow(v.Code, v.CourseOrder))
             .ToList();
     }
 
-    public async Task SaveScatterVariantsAsync(Guid groupId, IReadOnlyList<ScatterVariantRow> variants, CancellationToken cancellationToken = default)
+    public async Task SaveCourseVariantsAsync(Guid groupId, IReadOnlyList<CourseVariantRow> variants, CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null || _session.CurrentDay is null)
             return;
@@ -618,7 +618,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
         var order = 0;
         var rows = variants
-            .Select(v => new ScatterVariant
+            .Select(v => new GroupCourseVariant
             {
                 EventDayId = dayId,
                 GroupId = groupId,
@@ -630,7 +630,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             .Where(v => v.Code.Length > 0 || v.CourseOrder.Length > 0)
             .ToList();
 
-        await _eventStore.ReplaceScatterVariantsForGroupAsync(FolderPath, dayId, groupId, rows, cancellationToken);
+        await _eventStore.ReplaceCourseVariantsForGroupAsync(FolderPath, dayId, groupId, rows, cancellationToken);
     }
 
     public Task<IReadOnlyList<Group>> GetGroupsAsync(CancellationToken cancellationToken = default)
@@ -895,7 +895,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 existing.DistanceKm = distanceKm;
                 existing.DisciplineOverride = disciplineOverride;
                 await _eventStore.UpdateGroupDaySettingsAsync(folder, existing, cancellationToken);
-                await SaveScatterVariantsAsync(folder, dayId, group.Id, course, cancellationToken);
+                await SaveCourseVariantsAsync(folder, dayId, group.Id, course, cancellationToken);
                 if (scatterFallbackHere)
                     scatterFallback.Add(name);
                 updated++;
@@ -913,7 +913,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 };
                 await _eventStore.AddGroupDaySettingsAsync(folder, row, cancellationToken);
                 settingsByGroupId[group.Id] = row;
-                await SaveScatterVariantsAsync(folder, dayId, group.Id, course, cancellationToken);
+                await SaveCourseVariantsAsync(folder, dayId, group.Id, course, cancellationToken);
                 if (scatterFallbackHere)
                     scatterFallback.Add(name);
                 added++;
@@ -927,15 +927,15 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     // A scatter course (more than one variant) writes one row per variant, coded and ordered as parsed; a
     // non-scatter course clears the group's variants (so re-importing a formerly-scatter group as a normal
     // course leaves no stale orders behind).
-    private Task SaveScatterVariantsAsync(
+    private Task SaveCourseVariantsAsync(
         string folder, Guid dayId, Guid groupId, IofCourse course, CancellationToken cancellationToken)
     {
-        var rows = new List<ScatterVariant>();
+        var rows = new List<GroupCourseVariant>();
         if (course.Variants.Count > 1)
         {
             var order = 0;
             foreach (var v in course.Variants)
-                rows.Add(new ScatterVariant
+                rows.Add(new GroupCourseVariant
                 {
                     EventDayId = dayId,
                     GroupId = groupId,
@@ -945,7 +945,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 });
         }
 
-        return _eventStore.ReplaceScatterVariantsForGroupAsync(folder, dayId, groupId, rows, cancellationToken);
+        return _eventStore.ReplaceCourseVariantsForGroupAsync(folder, dayId, groupId, rows, cancellationToken);
     }
 
     // Maps a course's running control codes to their positions and sums the straight-line distance.
@@ -2740,7 +2740,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         // Shared per-day geometry/points/codes used to build every member's splits (mirrors the inputs the
         // single-readout GetFinishSplitsAsync assembles, but loaded once for the whole day).
         var inputs = BuildDaySplitInputs(controlPoints);
-        var variantsByGroup = await LoadScatterVariantsAsync(
+        var variantsByGroup = await LoadCourseVariantsAsync(
             folder, dayId, settingsByGroup, dayDefault, inputs.StartFinishCodes, inputs.DisabledCodes, cancellationToken);
 
         // Latest read-out per chip (the "last read-out" rule), so a re-read chip uses its newest punches.
@@ -2791,7 +2791,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 }
             }
 
-            var scatterVariants = variantsByGroup.TryGetValue(gid, out var gv) ? gv : NoScatterVariants;
+            var scatterVariants = variantsByGroup.TryGetValue(gid, out var gv) ? gv : NoCourseVariants;
             var splits = BuildSplitsForLink(inputs, gs, discipline, link, readout, teamCommon, scatterVariants);
             var result = results.TryGetValue(link.Id, out var rr) ? rr : ParticipantDayResult.Empty;
 
@@ -2888,7 +2888,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     private SplitsView BuildSplitsForLink(
         DaySplitInputs inputs, GroupDaySettings? gs, DisciplineId discipline,
         ParticipantDay link, FinishReadout readout, IReadOnlySet<string>? teamCommon,
-        IReadOnlyList<ScatterVariantData> scatterVariants)
+        IReadOnlyList<CourseVariantData> scatterVariants)
     {
         var expected = CourseControls(gs?.CourseOrder, inputs.StartFinishCodes, inputs.DisabledCodes);
         var disabledInCourse = DisabledInCourse(gs?.CourseOrder, inputs.StartFinishCodes, inputs.DisabledCodes);
@@ -2921,7 +2921,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
             PenaltyPerMinute = gs?.PenaltyPerMinute,
             TeamCommonControls = teamCommon,
-            ScatterVariants = scatterVariants
+            CourseVariants = scatterVariants
         };
 
         return _strategies.For(discipline).BuildSplits(context);
@@ -3094,7 +3094,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             StringComparer.OrdinalIgnoreCase);
         var disabledCodes = DisabledCodesOf(controlPoints);
         var dayDefault = day.DefaultDiscipline;
-        var variantsByGroup = await LoadScatterVariantsAsync(
+        var variantsByGroup = await LoadCourseVariantsAsync(
             folder, dayId, settingsByGroup, dayDefault, startFinishCodes, disabledCodes, cancellationToken);
 
         var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
@@ -3354,7 +3354,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             StringComparer.OrdinalIgnoreCase);
         var disabledCodes = DisabledCodesOf(controlPoints);
         var dayDefault = CurrentDayDefaultDiscipline;
-        var variantsByGroup = await LoadScatterVariantsAsync(
+        var variantsByGroup = await LoadCourseVariantsAsync(
             folder, dayId, settingsByGroup, dayDefault, startFinishCodes, disabledCodes, cancellationToken);
 
         // Per-control point values — needed only to tally the «Бали» column on point-scoring days.
@@ -3455,8 +3455,9 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 if (relayLeg is not null && r.ManualStatus is null)
                 {
                     status = relayLeg.Pending ? FinishStatus.None : result!.Computed;
-                    if (status == FinishStatus.Ok)
-                        detail = string.Empty;
+                    // The leg's own course decides the detail (Р-41), not the group's course order.
+                    detail = status == FinishStatus.Mp ? result!.StatusDetail : string.Empty;
+                    detailKind = result!.StatusDetailKind;
                     resolvedStart = relayLeg.Start;
                     elapsed = !relayLeg.Pending && r.FinishTime is { } lf && relayLeg.Start is { } ls ? lf - ls : null;
                 }
@@ -3482,7 +3483,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     RelayTeamName = result?.Team?.Name ?? string.Empty,
                     RelayLeg = result?.Leg?.Leg,
                     RelayRestarted = relayLeg?.Restarted ?? false,
-                    RelayPending = relayLeg?.Pending ?? false
+                    RelayPending = relayLeg?.Pending ?? false,
+                    RelayCourseCode = result?.Leg?.CourseCode
                 });
             }
             else
@@ -3645,11 +3647,11 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
         // Scatter variants for the runner's group, so the strategy can auto-detect which order they ran.
         // Empty for a non-scatter group or an unknown chip (no group).
-        var variantsByGroup = await LoadScatterVariantsAsync(
+        var variantsByGroup = await LoadCourseVariantsAsync(
             folder, dayId, settingsByGroup, CurrentDayDefaultDiscipline, startFinishCodes, disabledCodes, cancellationToken);
         var scatterVariants = link?.GroupId is { } svgid && variantsByGroup.TryGetValue(svgid, out var svs)
             ? svs
-            : NoScatterVariants;
+            : NoCourseVariants;
 
         // Expected = course controls minus start/finish; punches = read punches (with times) minus the
         // same. An unknown chip (no link) has no prescribed course, so the expected list is empty and
@@ -3669,18 +3671,30 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             });
         // A relay leg's splits run from the leg's start in the sequence — the previous leg's finish or the
         // restart (Р-28, Р-29) — for the chip's latest read-out, which the results are built from.
+        CourseVariantData? legCourse = null;
         if (link?.RelayTeamId is not null && _strategies.For(discipline).Competitors == CompetitorModel.TeamWithLegs
             && !readouts.Any(o => o.Order > readout.Order && TextKey.Same(o.ChipNumber.Trim(), readout.ChipNumber.Trim())))
         {
             var dayResults = await ComputeDayResultsAsync(folder, _session.CurrentDay, cancellationToken);
             if (dayResults.TryGetValue(link.Id, out var legResult) && legResult.Leg is { } leg)
+            {
                 start = leg.Start;
+                // The leg's own named course (Р-44): the splits are judged against it, not the group's order.
+                legCourse = leg.CourseCode is { } code
+                    ? scatterVariants.FirstOrDefault(v => TextKey.Same(v.Code.Trim(), code.Trim()))
+                    : null;
+            }
+        }
+        if (legCourse is not null)
+        {
+            expected = legCourse.Controls.ToList();
+            disabledInCourse = DisabledInCourse(legCourse.CourseOrderText, startFinishCodes, disabledCodes);
         }
 
         var context = new SplitsContext
         {
             ExpectedControls = expected,
-            CourseOrderText = gs?.CourseOrder ?? string.Empty,
+            CourseOrderText = legCourse?.CourseOrderText ?? gs?.CourseOrder ?? string.Empty,
             DisabledControls = disabledInCourse,
             Punches = punches,
             PointsByCode = pointsByCode,
@@ -3698,7 +3712,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
             PenaltyPerMinute = gs?.PenaltyPerMinute,
             TeamCommonControls = teamCommon,
-            ScatterVariants = scatterVariants
+            CourseVariants = scatterVariants
         };
 
         // A known holder gets their group's discipline shape. An unknown chip has no group/course, so we
@@ -3706,7 +3720,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         // list of every punch in chip order — the raw passage, which is what's wanted for an unknown chip
         // (the scored layout would instead drop every punch as "not an allowed control" and show nothing).
         var strategy = link is null ? _strategies.For(DisciplineId.SetCourse) : _strategies.For(discipline);
-        return strategy.BuildSplits(context);
+        var view = strategy.BuildSplits(context);
+        return legCourse is null ? view : view with { VariantCode = legCourse.Code };
     }
 
     public async Task<SplitPrintDocument?> GetSplitPrintDocumentAsync(Guid readoutId, CancellationToken cancellationToken = default)
@@ -3932,7 +3947,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         HashSet<string> startFinishCodes,
         HashSet<string> disabledCodes,
         DisciplineId dayDefault,
-        IReadOnlyDictionary<Guid, IReadOnlyList<ScatterVariantData>> variantsByGroup,
+        IReadOnlyDictionary<Guid, IReadOnlyList<CourseVariantData>> variantsByGroup,
         Func<IDisciplineStrategy, SettingValues>? settingsOf = null)
     {
         var (result, start) = FinishEvaluator.Evaluate(
@@ -3942,9 +3957,9 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     }
 
     // Loads the day's scatter («розсіювання») variants, keyed by group id, ready for the discipline strategy
-    // (see FinishEvaluator.BuildScatterVariants). Empty for a day with no variant group, so the other paths
+    // (see FinishEvaluator.BuildCourseVariants). Empty for a day with no variant group, so the other paths
     // pay no query.
-    private async Task<Dictionary<Guid, IReadOnlyList<ScatterVariantData>>> LoadScatterVariantsAsync(
+    private async Task<Dictionary<Guid, IReadOnlyList<CourseVariantData>>> LoadCourseVariantsAsync(
         string folder, Guid dayId,
         IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup,
         DisciplineId dayDefault,
@@ -3955,8 +3970,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         if (!FinishEvaluator.AnyUsesCourseVariants(_strategies, settingsByGroup, dayDefault))
             return [];
 
-        var rows = await _eventStore.GetScatterVariantsAsync(folder, dayId, cancellationToken);
-        return FinishEvaluator.BuildScatterVariants(
+        var rows = await _eventStore.GetCourseVariantsAsync(folder, dayId, cancellationToken);
+        return FinishEvaluator.BuildCourseVariants(
             _strategies, rows, settingsByGroup, dayDefault, startFinishCodes, disabledCodes);
     }
 

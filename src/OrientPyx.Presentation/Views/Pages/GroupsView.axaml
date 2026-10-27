@@ -251,6 +251,36 @@
                                       ItemsSource="{Binding RelayRestartRankingOptions}"
                                       SelectedItem="{Binding SelectedRelayRestartRanking, Mode=TwoWay}" />
                         </StackPanel>
+                        <!-- Leg courses (Р-41): one course for every leg, by leg, by leg number, or a team set. -->
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,16,2">
+                            <TextBlock Text="{Binding Localization[Groups.Relay.CourseMode]}" VerticalAlignment="Center" />
+                            <ComboBox MinWidth="200"
+                                      ItemsSource="{Binding RelayCourseModeOptions}"
+                                      SelectedItem="{Binding SelectedRelayCourseMode, Mode=TwoWay}" />
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding RelayLegCourses}" IsVisible="{Binding IsRelayByLeg}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="pages:RelayLegCourseItemViewModel">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,16,2">
+                                        <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
+                                        <TextBox Width="60" Text="{Binding Text, Mode=TwoWay}" PlaceholderText="A" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,16,2"
+                                    IsVisible="{Binding IsRelayTeamSet}">
+                            <TextBlock Text="{Binding Localization[Groups.Relay.TeamCourseSet]}" VerticalAlignment="Center" />
+                            <TextBox Width="140" Text="{Binding RelayTeamCourseSetText, Mode=TwoWay}" PlaceholderText="A B" />
+                        </StackPanel>
+                        <TextBlock Classes="muted" VerticalAlignment="Center" Margin="0,2,16,2" TextWrapping="Wrap"
+                                   IsVisible="{Binding IsRelayByBib}"
+                                   Text="{Binding Localization[Groups.Relay.ByBibHint]}" />
                     </WrapPanel>
                 </Border>
                 <!-- Live validation of the «mixed» order pattern: a ✔ with the normalized "S … F" order
@@ -280,7 +310,12 @@
                 <DockPanel LastChildFill="True"
                            IsVisible="{Binding IsScatterEditorVisible}">
                     <TextBlock DockPanel.Dock="Top"
+                               IsVisible="{Binding !IsRelayCoursesEditor}"
                                Text="{Binding Localization[Groups.Scatter.Hint]}"
+                               Classes="muted" TextWrapping="Wrap" Margin="2,0,0,8" />
+                    <TextBlock DockPanel.Dock="Top"
+                               IsVisible="{Binding IsRelayCoursesEditor}"
+                               Text="{Binding Localization[Groups.Relay.Courses.Hint]}"
                                Classes="muted" TextWrapping="Wrap" Margin="2,0,0,8" />
                     <Button DockPanel.Dock="Bottom"
                             Classes="ghost"
@@ -293,13 +328,13 @@
                                Classes="muted"
                                Margin="2,8,0,0"
                                TextWrapping="Wrap"
-                               IsVisible="{Binding HasNoScatterVariants}"
+                               IsVisible="{Binding HasNoCourseVariants}"
                                Text="{Binding Localization[Groups.Scatter.Empty]}" />
                     <Border Classes="card" ClipToBounds="True">
                         <controls:SheetTable Name="ScatterSheet"
                                              IsLocked="{Binding IsDayLocked}"
                                  LockedEditAttempted="OnLockedEditAttempted"
-                                             ItemsSource="{Binding ScatterVariants}"
+                                             ItemsSource="{Binding CourseVariants}"
                                              Localization="{Binding Localization}"
                                              LayoutKey="groups.scatter"
                                              LayoutStore="{Binding LayoutStore}"

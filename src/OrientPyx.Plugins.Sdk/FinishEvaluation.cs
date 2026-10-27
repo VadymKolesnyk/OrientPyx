@@ -6,7 +6,7 @@ namespace OrientPyx.Plugins.Sdk;
 /// controls are the group's prescribed course already reduced to the codes that must be visited
 /// (start/finish markers removed by the caller using the day's control-point types).
 /// </summary>
-public sealed class FinishContext
+public sealed record FinishContext
 {
     /// <summary>Control codes that must be visited, in the prescribed order (no start/finish markers, and
     /// with any disabled «проблемні» controls already removed by the caller).</summary>
@@ -45,7 +45,7 @@ public sealed class FinishContext
     /// <see cref="ExpectedControls"/>). Populated only for a scatter group; empty otherwise. The scatter
     /// strategy picks the best-matching variant from these and judges the runner against it.
     /// </summary>
-    public IReadOnlyList<ScatterVariantData> ScatterVariants { get; init; } = [];
+    public IReadOnlyList<CourseVariantData> CourseVariants { get; init; } = [];
 
     /// <summary>The discipline's effective settings for the runner's day.</summary>
     public SettingValues Settings { get; init; } = SettingValues.Empty;
@@ -91,5 +91,8 @@ public enum FinishDetailKind
     MissingControl,
 
     /// <summary>The detail is a "taken/required" control tally (за вибором по кількості КП).</summary>
-    ControlCount
+    ControlCount,
+
+    /// <summary>No course was assigned to the relay leg (Р-41); the detail is empty or the missing course code.</summary>
+    CourseNotAssigned
 }

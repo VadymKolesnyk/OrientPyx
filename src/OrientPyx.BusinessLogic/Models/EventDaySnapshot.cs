@@ -39,8 +39,8 @@ public sealed record EventDaySnapshot
     /// <summary>The day's chip read-outs, in log order (<c>Order</c>).</summary>
     public IReadOnlyList<FinishReadout> FinishReadouts { get; init; } = [];
 
-    /// <summary>The day's scatter variants (every group), in <c>Order</c>.</summary>
-    public IReadOnlyList<ScatterVariant> ScatterVariants { get; init; } = [];
+    /// <summary>The day's named group courses — scatter variants and relay leg courses (every group), in <c>Order</c>.</summary>
+    public IReadOnlyList<GroupCourseVariant> CourseVariants { get; init; } = [];
 
     /// <summary>Saved discipline settings that apply to the day: its own rows plus the competition-scoped ones.</summary>
     public IReadOnlyList<PluginSettingsRow> DisciplineSettings { get; init; } = [];
@@ -50,6 +50,9 @@ public sealed record EventDaySnapshot
 
     /// <summary>The day's relay teams (Р-20), by number.</summary>
     public IReadOnlyList<RelayTeam> RelayTeams { get; init; } = [];
+
+    /// <summary>The day's relay leg-number courses (<see cref="Enums.RelayCourseMode.ByBib"/>, Р-41).</summary>
+    public IReadOnlyList<LegCourseAssignment> LegCourseAssignments { get; init; } = [];
 
     /// <summary>Competition metadata (name, organisation, officials); null when none is stored yet.</summary>
     public CompetitionInfo? Info { get; init; }
