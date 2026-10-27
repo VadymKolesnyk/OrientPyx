@@ -167,7 +167,7 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
             m.ResultsByDay.TryGetValue(d.Id, out var r) &&
             (byPoints
                 ? r.Points is > 0
-                : r.Status == FinishStatus.Ok && r.ResultTime is { } t && t > TimeSpan.Zero)));
+                : r.Status == FinishStatus.Ok && r.RankingTime is { } t && t > TimeSpan.Zero)));
 
     // The tie-break priority day: none with «Без пріоритету»; else the configured one (if still counted), else
     // the first counted day.
@@ -394,7 +394,7 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
             }
             else
             {
-                if (r.Status == FinishStatus.Ok && r.ResultTime is { } t && t >= TimeSpan.Zero)
+                if (r.Status == FinishStatus.Ok && r.RankingTime is { } t && t >= TimeSpan.Zero)
                 {
                     totalSeconds += t.TotalSeconds;
                     counted++;
@@ -462,7 +462,7 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         if (r is null)
             return EmDash;
         if (r.Status == FinishStatus.Ok)
-            return r.ResultTime is { } t && t >= TimeSpan.Zero ? FormatTimeSpan(t) : EmDash;
+            return r.RankingTime is { } t && t >= TimeSpan.Zero ? FormatTimeSpan(t) : EmDash;
         return ShortCode(r.Status) is { Length: > 0 } code ? code : EmDash;
     }
 

@@ -3443,7 +3443,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var leaderTimeByGroup = new Dictionary<Guid, TimeSpan>();
         foreach (var (linkId, res) in placeByLink)
         {
-            if (res.Place == 1 && res.ResultTime is { } lt
+            if (res.Place == 1 && res.RankingTime is { } lt
                 && groupByLink.TryGetValue(linkId, out var g) && g is { } gid)
                 leaderTimeByGroup[gid] = lt;
         }
@@ -3496,7 +3496,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 }
                 // «Відставання»: loss to the group leader, for a placed OK result whose time exceeds the
                 // leader's (the leader themselves and non-placed rows show none).
-                TimeSpan? gap = place is not null && result?.ResultTime is { } rt
+                TimeSpan? gap = place is not null && result?.RankingTime is { } rt
                     && link.GroupId is { } ggid && leaderTimeByGroup.TryGetValue(ggid, out var lead) && rt > lead
                     ? rt - lead
                     : null;
@@ -4847,7 +4847,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     Birth: r.BirthDate is { } bd ? bd.ToString("dd.MM.yyyy") : string.Empty,
                     Qual: r.Rank,
                     Place: res.Place,
-                    ResultTime: res.ResultTime,
+                    ResultTime: res.RankingTime,
                     StartTime: res.ActualStart?.ToLocalTime().TimeOfDay,
                     FinishTime: res.FinishTime?.ToLocalTime().TimeOfDay,
                     Score: res.Score,
@@ -5090,16 +5090,16 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             }
 
             var leader = g.Rows
-                .Where(r => r.Result.Place is not null && r.Result.ResultTime is not null)
-                .OrderBy(r => r.Result.ResultTime!.Value)
-                .Select(r => r.Result.ResultTime)
+                .Where(r => r.Result.Place is not null && r.Result.RankingTime is not null)
+                .OrderBy(r => r.Result.RankingTime!.Value)
+                .Select(r => r.Result.RankingTime)
                 .FirstOrDefault();
 
             // Sort by result: placed finishers first by ascending place, then everyone still unplaced
             // (DNS/MP/running/поза конкурсом) after them — the same order the printed protocol uses.
             var rows = g.Rows
                 .OrderBy(r => r.Result.Place ?? int.MaxValue)
-                .ThenBy(r => r.Result.ResultTime ?? TimeSpan.MaxValue)
+                .ThenBy(r => r.Result.RankingTime ?? TimeSpan.MaxValue)
                 .ThenBy(r => r.FullName, StringComparer.CurrentCultureIgnoreCase)
                 .Select(r => BuildMonitorRow(r, columns, leader, labels))
                 .ToList();
@@ -5147,8 +5147,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 ResultColumn.Club => r.ClubName,
                 ResultColumn.Region => r.RegionName,
                 ResultColumn.StartTime => FormatClock(res.ActualStart?.ToLocalTime().TimeOfDay),
-                ResultColumn.ResultTime => res.Status == FinishStatus.Ok ? FormatSpan(res.ResultTime) : string.Empty,
-                ResultColumn.Gap => placed && leader is { } l && res.ResultTime is { } rt && rt > l
+                ResultColumn.ResultTime => res.Status == FinishStatus.Ok ? FormatSpan(res.RankingTime) : string.Empty,
+                ResultColumn.Gap => placed && leader is { } l && res.RankingTime is { } rt && rt > l
                     ? "+" + FormatSpan(rt - l)
                     : string.Empty,
                 ResultColumn.Status => StatusText(res, labels),

@@ -110,6 +110,14 @@ public sealed record ParticipantDayResult(
     /// </summary>
     public TimeSpan? AdjustedTime { get; init; }
 
+    /// <summary>
+    /// The time shown as the result and measured for «Відставання» — the one the places are ranked by
+    /// (<see cref="AdjustedTime"/>, falling back to <see cref="ResultTime"/>). Same as <see cref="ResultTime"/>
+    /// for the built-in disciplines; for a plugin that corrects the time (penalty, T·K) the printed result
+    /// then agrees with the place order.
+    /// </summary>
+    public TimeSpan? RankingTime => AdjustedTime ?? ResultTime;
+
     /// <summary>Every required control the run missed (Р-52a); empty unless an ordered course gave MP.</summary>
     public IReadOnlyList<string> Missed { get; init; } = [];
 

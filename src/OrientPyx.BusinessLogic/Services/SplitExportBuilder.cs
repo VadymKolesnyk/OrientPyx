@@ -52,7 +52,7 @@ public sealed class SplitExportBuilder : ISplitExportBuilder
         // The result column: a score for a point format, else the result time for an OK run; blank otherwise.
         var resultText = ok
             ? (r.Score is { } s ? s.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                : r.ResultTime is { } e && e >= TimeSpan.Zero ? e.ToString("h\\:mm\\:ss") : string.Empty)
+                : r.RankingTime is { } e && e >= TimeSpan.Zero ? e.ToString("h\\:mm\\:ss") : string.Empty)
             : string.Empty;
 
         var placeText = ok && r.Place is { } p

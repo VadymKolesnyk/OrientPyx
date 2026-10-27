@@ -209,8 +209,8 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
     // The group leader's result time: the fastest clean, placed result in the group. Null when nobody is
     // placed yet or the discipline carries no time (a point-scoring day) — then no gap is shown at all.
     private static TimeSpan? LeaderTime(IReadOnlyList<ResultProtocolRow> rows) =>
-        rows.Where(r => r.Result.Place is not null && r.Result.ResultTime is not null)
-            .Select(r => r.Result.ResultTime)
+        rows.Where(r => r.Result.Place is not null && r.Result.RankingTime is not null)
+            .Select(r => r.Result.RankingTime)
             .DefaultIfEmpty(null)
             .Min();
 
@@ -454,7 +454,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
     // point-scoring day with no times all show nothing — the same loss-to-leader convention the finish
     // read-out and the monitor screens use.
     private static string GapCell(ParticipantDayResult r, TimeSpan? leader) =>
-        r.Place is not null && leader is { } lead && r.ResultTime is { } rt && rt > lead
+        r.Place is not null && leader is { } lead && r.RankingTime is { } rt && rt > lead
             ? "+" + (rt - lead).ToString(@"h\:mm\:ss")
             : string.Empty;
 
@@ -470,7 +470,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
     private static string ResultCell(ParticipantDayResult r)
     {
         if (r.Status == FinishStatus.Ok)
-            return TimeFormat.Result(r.ResultTime);
+            return TimeFormat.Result(r.RankingTime);
         return ShortCode(r.Status);
     }
 

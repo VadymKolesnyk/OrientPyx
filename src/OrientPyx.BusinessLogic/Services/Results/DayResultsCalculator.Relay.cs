@@ -379,7 +379,8 @@ internal sealed partial class DayResultsCalculator
             Time = time,
             AdjustedTime = time,
             Punches = CourseCodes.SplitCodes(readout.Punches).Where(c => !input.StartFinishCodes.Contains(c)).ToList(),
-            Missed = result.Missed
+            // Р-10: a judge's status override is final — the discipline sees no missed controls to penalise.
+            Missed = result.Override is null ? result.Missed : []
         };
         var adjusted = strategy.AdjustTime(new AdjustContext
         {

@@ -24,7 +24,7 @@ public static class ResultText
 
     /// <summary>Result time (finish − start) as "H:mm:ss", blank when no valid OK result.</summary>
     public static string Result(ParticipantDayResult r) =>
-        r.ResultTime is { } e && e >= TimeSpan.Zero ? e.ToString("h\\:mm\\:ss") : string.Empty;
+        r.RankingTime is { } e && e >= TimeSpan.Zero ? e.ToString("h\\:mm\\:ss") : string.Empty;
 
     /// <summary>The standard short status code (OK / MP / …), blank for None.</summary>
     public static string Status(ParticipantDayResult r) => FinishStatusOptions.ShortCode(r.Status);

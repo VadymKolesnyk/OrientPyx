@@ -198,7 +198,8 @@ internal sealed partial class DayResultsCalculator
                 Score = result.Score,
                 OutOfCompetition = result.OutOfCompetition,
                 Punches = CourseCodes.SplitCodes(e.Readout?.Punches).Where(c => !startFinishCodes.Contains(c)).ToList(),
-                Missed = result.Missed
+                // Р-10: a judge's status override is final — the discipline sees no missed controls to penalise.
+                Missed = result.Override is null ? result.Missed : []
             };
             var adjusted = e.Strategy.AdjustTime(new AdjustContext
             {

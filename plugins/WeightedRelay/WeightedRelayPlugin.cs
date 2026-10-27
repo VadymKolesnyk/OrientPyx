@@ -80,10 +80,12 @@ public abstract class WeightedDiscipline : Discipline
             return ctx.Time;
         }
 
-        var adj = ctx.Time * coefficient;
+        // Р-49: every leg's T·K is rounded to a second — even with K = 1.00, where T·K equals T and the host
+        // (Р-6) would otherwise keep the unrounded time; so the «T·K» column always sums to the team time.
+        var adj = RoundToSecond(ctx.Time * coefficient);
         ctx.Row.Set("k", coefficient);
-        ctx.Row.Set("adj", RoundToSecond(adj));
-        return adj;                       // the host rounds each leg to a second (Р-49) and sums: team time = Σ Tᵢ·Kᵢ
+        ctx.Row.Set("adj", adj);
+        return adj;
     }
 
     // The value shown in «T·K» — the same rounding the host applies to the ranked time (Р-49).
