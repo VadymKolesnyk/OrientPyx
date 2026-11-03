@@ -35,6 +35,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The app projects import the SDK namespaces globally; the tests do the same. -->
+    <Using Include="OrientPyx.Plugins.Sdk" />
+    <Using Include="OrientPyx.Plugins.Sdk.Toolkit" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Approved results of the synthetic competition (see Support/SyntheticCompetition.cs). -->
     <None Include="Golden\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

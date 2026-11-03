@@ -1,0 +1,370 @@
+using System.Reflection;
+using Microsoft.Extensions.DependencyInjection;
+using OrientPyx.BusinessLogic.Disciplines;
+using OrientPyx.BusinessLogic.Enums;
+using OrientPyx.BusinessLogic.Interfaces;
+using OrientPyx.Presentation.ViewModels;
+using OrientPyx.Presentation.ViewModels.Pages;
+using OrientPyx.Tests.Support;
+using Xunit.Abstractions;
+
+namespace OrientPyx.Tests.Ui;
+
+/// <summary>
+/// Judge's workflows driven through the real view models on the headless app: creating a competition from the
+/// picker, adding and locking days, adding groups / controls / chips / participants, auto-reading a chip file on the
+/// finish page, generating the protocol documents, creating relay teams, switching the read-out type.
+/// Each test opens the competition it needs, so the order of tests does not matter.
+/// </summary>
+[Collection(AppCollection.Name)]
+public sealed class HeadlessWorkflowTests
+{
+    private readonly HeadlessApp _app;
+    private readonly ITestOutputHelper _output;
+
+    public HeadlessWorkflowTests(HeadlessApp app, ITestOutputHelper output)
+    {
+        _app = app;
+        _output = output;
+    }
+
+    private static IServiceProvider Core => TestEnvironment.Instance.Services;
+
+    [Fact]
+    public async Task CreateCompetitionFromThePicker()
+    {
+        var id = TestIds.Next("ui_create");
+        await GoToPickerAsync();
+        var selection = (EventSelectionViewModel)_app.Vm.CurrentView;
+        await _app.OnUiAsync(() => selection.CreateCommand.Execute(null));
+        await _app.SettleAsync();
+        var create = Assert.IsType<CreateEventViewModel>(_app.Vm.CurrentView);
+        await _app.ScreenshotAsync("10-create-empty");
+
+        await _app.OnUiAsync(async () =>
+        {
+            create.Name = "Кубок тесту";
+            create.Identifier = id;
+            create.Venue = "Ліс";
+            create.DayCount = 2;
+            await create.CreateCommand.ExecuteAsync(null);
+        });
+        await _app.WaitUntilAsync(() => _app.Vm.CurrentView is EventSelectionViewModel, what: "back on the picker");
+        await _app.SettleAsync();
+        var picker = (EventSelectionViewModel)_app.Vm.CurrentView;
+        var row = picker.Events.Single(e => e.Identifier == id);
+        Assert.Equal("Кубок тесту", row.Name);
+        Assert.Equal(2, row.DayCount);
+        await _app.ScreenshotAsync("11-create-listed");
+
+        var summary = await TestEnvironment.Instance.GetEventAsync(id);
+        Assert.Equal(2, (await Core.GetRequiredService<IEventStore>().GetDaysAsync(summary.FolderPath)).Count);
+        AssertNoUiErrors();
+    }
+
+    [Fact]
+    public async Task CreateRefusesABlankOrTakenIdentifier()
+    {
+        await GoToPickerAsync();
+        var selection = (EventSelectionViewModel)_app.Vm.CurrentView;
+        await _app.OnUiAsync(() => selection.CreateCommand.Execute(null));
+        await _app.SettleAsync();
+        var create = (CreateEventViewModel)_app.Vm.CurrentView;
+        await _app.OnUiAsync(async () =>
+        {
+            create.Name = "x";
+            create.Identifier = "";
+            await create.CreateCommand.ExecuteAsync(null);
+        });
+        Assert.False(string.IsNullOrEmpty(create.ErrorMessage));
+        await _app.OnUiAsync(() => create.Identifier = TestEnvironment.Instance.SyntheticId);
+        await _app.WaitUntilAsync(() => create.IdentifierError is not null, what: "duplicate identifier flagged");
+        await _app.OnUiAsync(() => create.CancelCommand.Execute(null));
+        await _app.WaitUntilAsync(() => _app.Vm.CurrentView is EventSelectionViewModel, what: "cancel returns to the picker");
+        AssertNoUiErrors();
+    }
+
+    [Fact]
+    public async Task DaysPageAddsAndLocksADay()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Core, TestIds.Next("ui_days"));
+        await OpenCompetitionAsync(c.Summary.Identifier);
+        await _app.OnUiAsync(() => _app.Vm.OpenCompetitionDaysCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        var page = Assert.IsType<CompetitionDaysViewModel>(Shell().SelectedPage);
+        await _app.WaitUntilAsync(() => page.Days.Count == 1, what: "one day listed");
+
+        await _app.OnUiAsync(() => page.AddDayCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        await _app.WaitUntilAsync(() => page.Days.Count == 2, what: "second day added");
+        var day2 = page.Days.Single(d => d.Number == 2);
+        await _app.OnUiAsync(() => page.ToggleDayLockCommand.ExecuteAsync(day2));
+        await _app.SettleAsync();
+        await _app.WaitUntilAsync(() => page.Days.Single(d => d.Number == 2).IsLocked, what: "day 2 locked");
+        await _app.ScreenshotAsync("12-days-locked");
+
+        var store = Core.GetRequiredService<IEventStore>();
+        var days = await store.GetDaysAsync(c.Folder);
+        Assert.True(days.Single(d => d.Number == 2).IsLocked);
+        Assert.False(days.Single(d => d.Number == 1).IsLocked);
+        AssertNoUiErrors();
+    }
+
+    [Fact]
+    public async Task GroupsControlsChipsAndParticipantsPagesAddRows()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Core, TestIds.Next("ui_rows"));
+        await OpenCompetitionAsync(c.Summary.Identifier);
+
+        await _app.OnUiAsync(() => _app.Vm.OpenGroupsCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        var groups = Assert.IsType<GroupsViewModel>(Shell().SelectedPage);
+        await _app.OnUiAsync(() => groups.AddGroupCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        await _app.WaitUntilAsync(() => groups.Groups.Count == 1, what: "group row added");
+        await _app.OnUiAsync(() => { groups.Groups[0].Name = "Ч21"; groups.Groups[0].CourseOrder = "31 32"; });
+        await Task.Delay(900);                                             // debounced save
+        await _app.SettleAsync();
+        await _app.ScreenshotAsync("13-groups-row");
+
+        await _app.OnUiAsync(() => _app.Vm.OpenControlPointsCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        var points = Assert.IsType<ControlPointsViewModel>(Shell().SelectedPage);
+        await _app.OnUiAsync(() => points.AddPointCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        await _app.WaitUntilAsync(() => points.Points.Count == 1, what: "control point added");
+        await _app.OnUiAsync(() => points.Points[0].Code = "31");
+        await Task.Delay(900);
+        await _app.SettleAsync();
+
+        await _app.OnUiAsync(() => _app.Vm.OpenChipsCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        var chips = Assert.IsType<ChipsViewModel>(Shell().SelectedPage);
+        await _app.OnUiAsync(() => chips.AddChipCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        await _app.WaitUntilAsync(() => chips.Chips.Count == 1, what: "rental chip added");
+        await _app.OnUiAsync(() => chips.Chips[0].Number = "7000");
+        await Task.Delay(900);
+        await _app.SettleAsync();
+
+        await _app.OnUiAsync(() => _app.Vm.OpenParticipantsCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        var participants = Assert.IsType<ParticipantsViewModel>(Shell().SelectedPage);
+        if (participants.IsRosterMode)
+        {
+            // The page opens on the roster; pick the real day in the day dropdown to edit the day grid.
+            await _app.OnUiAsync(() => participants.SelectedDay = participants.DayOptions.First(d => !d.IsRoster));
+            await _app.SettleAsync();
+        }
+        await _app.WaitUntilAsync(() => participants.IsDayMode, what: "participants page in day mode");
+        await _app.OnUiAsync(() => participants.AddParticipantCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        await _app.WaitUntilAsync(() => participants.Participants.Count == 1, what: "participant row added");
+        await _app.OnUiAsync(() =>
+        {
+            participants.Participants[0].FullName = "Тестовий Учасник";
+            participants.Participants[0].Number = "77";
+            participants.Participants[0].Chip = "7000";
+        });
+        await Task.Delay(900);
+        await _app.SettleAsync();
+        await _app.ScreenshotAsync("14-participant-row");
+
+        // What the pages wrote, read back through the core services.
+        await c.SelectAsync();
+        var editor = Core.GetRequiredService<ICompetitionEditorService>();
+        var groupRows = await editor.GetGroupDayRowsAsync();
+        Assert.Equal("Ч21", Assert.Single(groupRows).Name);
+        Assert.Equal("31 32", groupRows[0].CourseOrder);
+        Assert.Equal("31", Assert.Single(await editor.GetControlPointsAsync()).Code);
+        Assert.Equal("7000", Assert.Single(await editor.GetRentalChipsAsync()).Number);
+        var row = Assert.Single(await editor.GetParticipantDayRowsAsync());
+        Assert.Equal("Тестовий Учасник", row.FullName);
+        Assert.Equal("77", row.Number);
+        Assert.Equal("7000", row.Chip);
+        Assert.Equal("Ч21", row.GroupName);
+        AssertNoUiErrors();
+    }
+
+    [Fact]
+    public async Task FinishPageAutoReadsAChipFile()
+    {
+        var env = TestEnvironment.Instance;
+        await OpenCompetitionAsync(env.SyntheticId);
+        await _app.OnUiAsync(() => _app.Vm.OpenFinishReadCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        var page = Assert.IsType<FinishReadViewModel>(Shell().SelectedPage);
+        await _app.WaitUntilAsync(() => page.Readouts.Count > 0, what: "existing read-outs listed");
+        var before = page.Readouts.Count;
+
+        var file = Path.Combine(TestEnvironment.ResultsDir, "autoread.csv");
+        await File.WriteAllTextAsync(file,
+            "No.;Read on;SIID;Start DOW;Start time;Finish DOW;Finish time;No. of records;\n" +
+            "1;2026-05-01 11:20:03;8002003;Fr;10:05:00;Fr;10:40:00;3;31;Fr;10:15:00;33;Fr;10:25:00;34;Fr;10:35:00;\n");
+        await _app.OnUiAsync(() =>
+        {
+            page.AutoReadFilePath = file;
+            page.AutoReadIntervalSeconds = 5;
+            page.AutoReadEnabled = true;
+        });
+        try
+        {
+            await _app.WaitUntilAsync(() => page.Readouts.Count == before + 1, TimeSpan.FromSeconds(30), "the file's read-out appears in the log");
+            await _app.SettleAsync();
+            var added = page.Readouts.Single(r => r.ChipNumber == "8002003");
+            Assert.True(added.IsKnown);
+            Assert.Equal("Мельник Софія", added.FullName);
+            Assert.Equal("", added.StatusText);                         // an automatic OK shows no code
+            Assert.False(added.StatusIsBad);
+            await _app.ScreenshotAsync("15-finish-autoread");
+            Assert.False(page.HasAutoReadError, page.AutoReadError);
+        }
+        finally
+        {
+            await _app.OnUiAsync(() => page.AutoReadEnabled = false);
+            await _app.SettleAsync();
+        }
+        AssertNoUiErrors();
+    }
+
+    [Fact]
+    public async Task ProtocolPagesGenerateWordDocuments()
+    {
+        var env = TestEnvironment.Instance;
+        await OpenCompetitionAsync(env.SyntheticId);
+
+        await _app.OnUiAsync(() => _app.Vm.OpenProtocolsCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        var protocols = Assert.IsType<ProtocolsViewModel>(Shell().SelectedPage);
+        await _app.WaitUntilAsync(() => !protocols.Preview.IsEmpty, what: "protocol preview filled");
+        var result = await await _app.OnUiAsync(() => protocols.GenerateAsync());
+        Assert.NotNull(result);
+        Checks.IsDocx(result.Bytes);
+        Assert.EndsWith(".docx", result.SuggestedFileName);
+        _output.WriteLine($"result protocol: {result.SuggestedFileName}, {result.Bytes.Length} bytes");
+
+        await _app.OnUiAsync(() => _app.Vm.OpenStartProtocolCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        var start = Assert.IsType<StartProtocolsViewModel>(Shell().SelectedPage);
+        var startResult = await await _app.OnUiAsync(() => start.GenerateAsync());
+        Assert.NotNull(startResult);
+        Checks.IsDocx(startResult.Bytes);
+        AssertNoUiErrors();
+    }
+
+    [Fact]
+    public async Task RelayTeamsPageCreatesTeamsInBulk()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Core, TestIds.Next("ui_relay"), discipline: DisciplineId.Relay);
+        await c.AddGroupAsync("R", "31", s => { s.LegCount = 3; s.MassStartTime = new TimeSpan(10, 0, 0); });
+        await OpenCompetitionAsync(c.Summary.Identifier);
+        await _app.OnUiAsync(() => _app.Vm.OpenRelayTeamsCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        var page = Assert.IsType<RelayTeamsViewModel>(Shell().SelectedPage);
+        await _app.WaitUntilAsync(() => page.HasRelayGroups, what: "relay group offered");
+        await _app.OnUiAsync(async () =>
+        {
+            page.BulkGroup = page.GroupOptions[0];
+            page.BulkCountText = "4";
+            page.BulkFirstNumberText = "101";
+            await page.CreateTeamsCommand.ExecuteAsync(null);
+        });
+        await _app.SettleAsync();
+        await _app.WaitUntilAsync(() => page.Teams.Count == 4, what: "four teams created");
+        Assert.Equal(["101", "102", "103", "104"], page.Teams.Select(t => t.NumberText).OrderBy(x => x));
+        await _app.ScreenshotAsync("16-relay-teams");
+
+        var teams = await Core.GetRequiredService<IEventStore>().GetRelayTeamsAsync(c.Folder, c.Day(1).Id);
+        Assert.Equal(4, teams.Count);
+        AssertNoUiErrors();
+    }
+
+    [Fact]
+    public async Task SettingsSwitchTheReadoutType()
+    {
+        await EnsureAnyCompetitionOpenAsync();
+        var settings = _app.Vm.Settings;
+        var app = Core.GetRequiredService<IAppSettingsService>();
+        var original = await app.GetReadoutTypeAsync();
+        try
+        {
+            await _app.OnUiAsync(() => settings.ReadoutType = ReadoutType.SportTime);
+            await _app.WaitUntilAsync(() => app.GetReadoutTypeAsync().GetAwaiter().GetResult() == ReadoutType.SportTime, what: "readout type saved");
+            Assert.True(settings.IsSportTime);
+        }
+        finally
+        {
+            await _app.OnUiAsync(() => settings.ReadoutType = original);
+            await _app.WaitUntilAsync(() => app.GetReadoutTypeAsync().GetAwaiter().GetResult() == original, what: "readout type restored");
+        }
+        AssertNoUiErrors();
+    }
+
+    [Fact]
+    public async Task DashboardShowsTheSyntheticCounts()
+    {
+        var env = TestEnvironment.Instance;
+        await OpenCompetitionAsync(env.SyntheticId);
+        await _app.OnUiAsync(() => _app.Vm.OpenDashboardCommand.Execute(null));
+        await _app.SettleAsync();
+        var page = Assert.IsType<DashboardViewModel>(Shell().SelectedPage);
+        await _app.WaitUntilAsync(() => page.Info.HasSelection && page.Info.ParticipantTotal == 6, what: "dashboard loaded");
+        Assert.Equal(2, page.Info.GroupsToday);
+        Assert.Equal(6, page.Info.StartsAssigned);
+        await _app.ScreenshotAsync("17-dashboard-synthetic");
+        AssertNoUiErrors();
+    }
+
+    // ---- helpers --------------------------------------------------------------------------------------------
+
+    private async Task GoToPickerAsync()
+    {
+        await _app.SettleAsync();
+        if (_app.Vm.IsEventSelected)
+        {
+            await _app.OnUiAsync(() => _app.Vm.ChangeEventCommand.ExecuteAsync(null));
+            await _app.SettleAsync();
+        }
+        else if (_app.Vm.CurrentView is CreateEventViewModel create)
+        {
+            await _app.OnUiAsync(() => create.CancelCommand.Execute(null));
+            await _app.SettleAsync();
+        }
+        await _app.WaitUntilAsync(() => _app.Vm.CurrentView is EventSelectionViewModel, what: "picker shown");
+    }
+
+    private async Task OpenCompetitionAsync(string identifier)
+    {
+        await GoToPickerAsync();
+        var selection = (EventSelectionViewModel)_app.Vm.CurrentView;
+        await _app.WaitUntilAsync(() => selection.Events.Any(e => e.Identifier == identifier), what: $"{identifier} listed");
+        await _app.OnUiAsync(async () =>
+        {
+            selection.SelectedEvent = selection.Events.First(e => e.Identifier == identifier);
+            await selection.OpenCommand.ExecuteAsync(null);
+        });
+        await _app.WaitUntilAsync(() => _app.Vm.IsEventSelected, what: $"{identifier} opened");
+        await _app.SettleAsync();
+    }
+
+    private async Task EnsureAnyCompetitionOpenAsync()
+    {
+        if (!_app.Vm.IsEventSelected)
+            await OpenCompetitionAsync(TestEnvironment.Instance.SyntheticId);
+    }
+
+    private ShellViewModel Shell()
+    {
+        var field = typeof(MainWindowViewModel).GetField("_shell", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        return (ShellViewModel)field.GetValue(_app.Vm)!;
+    }
+
+    private void AssertNoUiErrors()
+    {
+        if (_app.UiErrors.Count == 0)
+            return;
+        var text = string.Join(Environment.NewLine, _app.UiErrors.Select(e => e.ToString()));
+        _app.UiErrors.Clear();
+        Assert.Fail("The UI thread reported an exception:" + Environment.NewLine + text);
+    }
+}

@@ -290,7 +290,10 @@ test-free. `Core/` tests wire the three layers through the real DI extensions ov
 computed results against approved snapshots (`Golden/autotest.results.json` for the synthetic competition built
 by `Support/SyntheticCompetition.cs`; `tests/fixtures/<id>.results.json` next to git-ignored real `.opyx`
 fixtures), every document/export of every day, a sweep of day 1 through every discipline strategy, the plugin
-catalog, and an `.opyx` round trip. `Ui/` tests run the real `App` + `MainWindow` on Avalonia's headless
+catalog, an `.opyx` round trip, plus rule-level tests of every discipline (set course, score, rogaine, mixed,
+scatter, relay with restarts and course modes, the two standard plugins), the read-out parsers and import, the
+CSV/IOF/UOF imports, every document builder, the draw, entry fees, custom fields and the editing service — each on a
+competition built by `Support/CompetitionBuilder.cs`. `Ui/` tests run the real `App` + `MainWindow` on Avalonia's headless
 platform with Skia (`Support/HeadlessApp.cs`), open every page through the root view model's commands and save
 screenshots to `tests/TestResults/<timestamp>/`. The snapshot format equals the Debug «Знімок результатів»
 (`scripts/diff-results.ps1`). Run the suite before a release and after any change to results, protocols or
