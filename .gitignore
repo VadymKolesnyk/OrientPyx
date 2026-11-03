@@ -54,3 +54,6 @@ Thumbs.db
 /build/releases/
 *.snupkg
 .nuget/
+
+# Test run artifacts (screenshots, actual snapshots)
+/tests/TestResults/

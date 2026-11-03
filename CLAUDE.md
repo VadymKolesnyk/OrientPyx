@@ -279,6 +279,23 @@ dotnet restore
 dotnet build
 ```
 
+## How to test
+
+```bash
+dotnet test tests/OrientPyx.Tests.sln
+```
+
+A separate solution (`tests/OrientPyx.Tests.sln`, xunit; guide in `tests/README.md`) so the app solution stays
+test-free. `Core/` tests wire the three layers through the real DI extensions over a temp data root and check:
+computed results against approved snapshots (`Golden/autotest.results.json` for the synthetic competition built
+by `Support/SyntheticCompetition.cs`; `tests/fixtures/<id>.results.json` next to git-ignored real `.opyx`
+fixtures), every document/export of every day, a sweep of day 1 through every discipline strategy, the plugin
+catalog, and an `.opyx` round trip. `Ui/` tests run the real `App` + `MainWindow` on Avalonia's headless
+platform with Skia (`Support/HeadlessApp.cs`), open every page through the root view model's commands and save
+screenshots to `tests/TestResults/<timestamp>/`. The snapshot format equals the Debug «Знімок результатів»
+(`scripts/diff-results.ps1`). Run the suite before a release and after any change to results, protocols or
+plugin loading; when a results change is intended, replace the golden with the written `.actual.json`.
+
 ## How to run
 
 ```bash
@@ -310,9 +327,9 @@ Do not reintroduce `EnsureCreated` — it is incompatible with migrations.
 
 ## What NOT to do
 
-Do not add: test projects, Clean Architecture / CQRS / MediatR, Docker, or authentication.
-Keep the app lightweight and the four layers + plugin SDK structure above intact (no new projects besides
-plugins under `plugins/`; plugins reference only the SDK). (The Supabase online-results
+Do not add: Clean Architecture / CQRS / MediatR, Docker, or authentication.
+Keep the app lightweight and the four layers + plugin SDK structure above intact (no new projects in
+`OrientPyx.sln`; plugins live under `plugins/` and reference only the SDK; tests live under `tests/`). (The Supabase online-results
 publisher below is the one exception to "no cloud sync" — it is publish-only and stays confined to
 DataAccess.)
 

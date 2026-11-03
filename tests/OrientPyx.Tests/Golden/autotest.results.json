@@ -1,0 +1,166 @@
+[
+  {
+    "Day": 1,
+    "Discipline": "SetCourse",
+    "Groups": [
+      {
+        "Name": "Ж21",
+        "Rows": [
+          {
+            "Number": "201",
+            "FullName": "Бойко Марія",
+            "Status": "Ok",
+            "Time": "00:35:02",
+            "Place": 1,
+            "Score": null,
+            "Points": null,
+            "AwardedRank": null,
+            "OutOfCompetition": false
+          },
+          {
+            "Number": "202",
+            "FullName": "Ткаченко Олена",
+            "Status": "Ok",
+            "Time": "00:35:02",
+            "Place": 1,
+            "Score": null,
+            "Points": null,
+            "AwardedRank": null,
+            "OutOfCompetition": false
+          },
+          {
+            "Number": "203",
+            "FullName": "Мельник Софія",
+            "Status": "None",
+            "Time": null,
+            "Place": null,
+            "Score": null,
+            "Points": null,
+            "AwardedRank": null,
+            "OutOfCompetition": false
+          }
+        ]
+      },
+      {
+        "Name": "Ч21",
+        "Rows": [
+          {
+            "Number": "101",
+            "FullName": "Петренко Іван",
+            "Status": "Ok",
+            "Time": "00:31:05",
+            "Place": 2,
+            "Score": null,
+            "Points": null,
+            "AwardedRank": null,
+            "OutOfCompetition": false
+          },
+          {
+            "Number": "102",
+            "FullName": "Коваль Андрій",
+            "Status": "Ok",
+            "Time": "00:29:48",
+            "Place": 1,
+            "Score": null,
+            "Points": null,
+            "AwardedRank": null,
+            "OutOfCompetition": false
+          },
+          {
+            "Number": "103",
+            "FullName": "Шевченко Олег",
+            "Status": "Mp",
+            "Time": null,
+            "Place": null,
+            "Score": null,
+            "Points": null,
+            "AwardedRank": null,
+            "OutOfCompetition": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Day": 2,
+    "Discipline": "SetCourse",
+    "Groups": [
+      {
+        "Name": "Ж21",
+        "Rows": [
+          {
+            "Number": "201",
+            "FullName": "Бойко Марія",
+            "Status": "None",
+            "Time": null,
+            "Place": null,
+            "Score": null,
+            "Points": null,
+            "AwardedRank": null,
+            "OutOfCompetition": false
+          },
+          {
+            "Number": "202",
+            "FullName": "Ткаченко Олена",
+            "Status": "None",
+            "Time": null,
+            "Place": null,
+            "Score": null,
+            "Points": null,
+            "AwardedRank": null,
+            "OutOfCompetition": false
+          },
+          {
+            "Number": "203",
+            "FullName": "Мельник Софія",
+            "Status": "None",
+            "Time": null,
+            "Place": null,
+            "Score": null,
+            "Points": null,
+            "AwardedRank": null,
+            "OutOfCompetition": false
+          }
+        ]
+      },
+      {
+        "Name": "Ч21",
+        "Rows": [
+          {
+            "Number": "101",
+            "FullName": "Петренко Іван",
+            "Status": "None",
+            "Time": null,
+            "Place": null,
+            "Score": null,
+            "Points": null,
+            "AwardedRank": null,
+            "OutOfCompetition": false
+          },
+          {
+            "Number": "102",
+            "FullName": "Коваль Андрій",
+            "Status": "None",
+            "Time": null,
+            "Place": null,
+            "Score": null,
+            "Points": null,
+            "AwardedRank": null,
+            "OutOfCompetition": false
+          },
+          {
+            "Number": "103",
+            "FullName": "Шевченко Олег",
+            "Status": "None",
+            "Time": null,
+            "Place": null,
+            "Score": null,
+            "Points": null,
+            "AwardedRank": null,
+            "OutOfCompetition": false
+          }
+        ]
+      }
+    ]
+  }
+]
