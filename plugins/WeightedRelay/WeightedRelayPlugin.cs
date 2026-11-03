@@ -5,7 +5,7 @@ namespace WeightedRelay;
 
 /// <summary>
 /// «Зважена естафета»: each leg time is multiplied by the runner's coefficient K (age × gender, Р-45); the team time
-/// is Σ Tᵢ·Kᵢ. Also an individual variant placed by T·K (Р-51). The coefficient table is one per competition (Р-50).
+/// is Σ Tᵢ·Kᵢ. The coefficient table is one per competition (Р-50).
 /// </summary>
 public sealed class WeightedRelayPlugin : IOrientPyxPlugin
 {
@@ -18,34 +18,20 @@ public sealed class WeightedRelayPlugin : IOrientPyxPlugin
             new ChoiceOption("Ч", "M", "Чол", "Чоловіча"),
             new ChoiceOption("Ж", "F", "Жін", "Жіноча")));
         p.AddDiscipline<WeightedRelayDiscipline>();
-        p.AddDiscipline<WeightedSetCourseDiscipline>();
         p.AddStrings("uk-UA", Strings.Uk);
         p.AddStrings("en-US", Strings.En);
     }
 }
 
 /// <summary>The relay: legs, handoff, restarts and leg courses are the built-in relay's.</summary>
-public sealed class WeightedRelayDiscipline : WeightedDiscipline
+public sealed class WeightedRelayDiscipline : Discipline
 {
     public override string Id => "weighted.relay";
 
     public override string Name => "name.relay";
 
     public override BuiltinDiscipline BasedOn => BuiltinDiscipline.Relay;
-}
 
-/// <summary>The individual variant: a set course, placed by T·K.</summary>
-public sealed class WeightedSetCourseDiscipline : WeightedDiscipline
-{
-    public override string Id => "weighted.set-course";
-
-    public override string Name => "name.setCourse";
-
-    public override BuiltinDiscipline BasedOn => BuiltinDiscipline.SetCourse;
-}
-
-public abstract class WeightedDiscipline : Discipline
-{
     /// <summary>Р-7: no sports ranks for a weighted result.</summary>
     public override bool AwardsRanks => false;
 
@@ -124,7 +110,6 @@ internal static class Strings
     public static readonly IReadOnlyDictionary<string, string> Uk = new Dictionary<string, string>
     {
         ["name.relay"] = "Зважена естафета (T·K)",
-        ["name.setCourse"] = "Заданий напрямок, час × K",
         ["setting.k"] = "Коефіцієнти K (вік × стать)",
         ["table.age"] = "Вік",
         ["table.male"] = "K (Ч)",
@@ -137,7 +122,6 @@ internal static class Strings
     public static readonly IReadOnlyDictionary<string, string> En = new Dictionary<string, string>
     {
         ["name.relay"] = "Weighted relay (T·K)",
-        ["name.setCourse"] = "Set course, time × K",
         ["setting.k"] = "Coefficients K (age × gender)",
         ["table.age"] = "Age",
         ["table.male"] = "K (M)",

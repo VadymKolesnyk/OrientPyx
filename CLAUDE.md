@@ -140,8 +140,9 @@ Author-facing guide (contract, contexts, toolkit, versioning, examples): `docs/p
 A plugin is a DLL with one `IOrientPyxPlugin`; it registers `Discipline` subclasses (each `BasedOn` a built-in —
 the format's structure comes from it, the plugin overrides rules: `EvaluateFinish`, `BuildSplits`, `ResolveStart`,
 `AdjustTime`, `Rank`, `AwardsRanks`, `Columns`, `Settings`), participant fields and translated strings.
-- **Loading** (`DataAccess/Plugins/`): `PluginCatalog : IPluginCatalog` scans (Debug) `<repo>/artifacts/plugins`,
-  `<app dir>/plugins`, `<data root>/plugins` — a later folder wins on a duplicate id (Р-12). Each plugin gets its own
+- **Loading** (`DataAccess/Plugins/`): `PluginCatalog : IPluginCatalog` scans one folder, `<data root>/plugins`; before
+  loading it copies the standard plugins in from `<app dir>/plugins` (and, Debug, `<repo>/artifacts/plugins`) — a file
+  missing or older than the bundled one is replaced, a locked one skipped. Each plugin gets its own
   `PluginLoadContext`; the SDK always resolves from the default context. Loading is lazy and happens right after
   the app DB is migrated (`PluginStartup.RegisterStrings` in `App.axaml.cs`), because the switched-on list lives in
   `AppSettingsRow.EnabledPluginsJson`. Every found plugin registers, but **stays off until switched on** on the

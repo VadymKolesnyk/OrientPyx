@@ -14,10 +14,13 @@ public interface IPluginCatalog
     /// <summary>Plugins that could not be loaded, with the reason.</summary>
     IReadOnlyList<PluginLoadError> Errors { get; }
 
-    /// <summary>The folder for the user's own plugins (under the data root; survives updates).</summary>
+    /// <summary>
+    /// The one plugin folder (under the data root; survives updates): the user's own plugins plus the standard ones,
+    /// which are copied in from the app package at startup.
+    /// </summary>
     string UserFolder { get; }
 
-    /// <summary>The scanned folders, lowest priority first (Р-12).</summary>
+    /// <summary>The scanned folders (just <see cref="UserFolder"/>).</summary>
     IReadOnlyList<string> Folders { get; }
 
     /// <summary>True when the plugin is loaded and switched on.</summary>

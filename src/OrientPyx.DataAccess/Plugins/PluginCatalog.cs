@@ -7,8 +7,9 @@ using OrientPyx.DataAccess.Persistence;
 namespace OrientPyx.DataAccess.Plugins;
 
 /// <summary>
-/// The plugin catalog: scans (in a Debug build) <c>&lt;repo&gt;/artifacts/plugins</c>, then
-/// <c>&lt;app dir&gt;/plugins</c>, then <c>&lt;data root&gt;/plugins</c> — later folders win on a duplicate id (Р-12).
+/// The plugin catalog: one folder, <c>&lt;data root&gt;/plugins</c>, holding both the user's own plugins and the
+/// standard ones — those are copied in from <c>&lt;app dir&gt;/plugins</c> (and, in a Debug build,
+/// <c>&lt;repo&gt;/artifacts/plugins</c>) before loading, so an update of the app updates them too.
 /// Loading is deferred to first use, which the app triggers right after migrating the app database (the list of
 /// switched-on plugins lives there). Load failures are written to the activity log.
 /// </summary>
@@ -26,7 +27,7 @@ internal sealed class PluginCatalog : IPluginCatalog
     {
         _appDb = appDb;
         _log = log;
-        Folders = ScanFolders();
+        Folders = [Path.GetFullPath(UserFolder)];
         _loaded = new(Load);
         _enabled = new(() => new HashSet<string>(ReadEnabled(), StringComparer.Ordinal));
     }
@@ -76,6 +77,9 @@ internal sealed class PluginCatalog : IPluginCatalog
 
     private (IReadOnlyList<LoadedPlugin>, IReadOnlyList<PluginLoadError>) Load()
     {
+        foreach (var source in BundledFolders())
+            SyncBundled(source, Folders[0]);
+
         var (plugins, errors) = new PluginLoader(new DllPluginSource()).Load(Folders);
         foreach (var p in plugins)
             _log.Info($"Plugin '{p.Info.Id}' {p.Info.Version} from {p.Folder}");
@@ -98,17 +102,43 @@ internal sealed class PluginCatalog : IPluginCatalog
         }
     }
 
-    private List<string> ScanFolders()
+    /// <summary>Where the standard plugins come from: the app package's folder (and the repository build in Debug).</summary>
+    private static IEnumerable<string> BundledFolders()
     {
-        var folders = new List<string>();
 #if DEBUG
         // A development run picks up the plugins built from the repository's plugins/ solution.
         if (FindRepoRoot() is { } repo)
-            folders.Add(Path.Combine(repo, "artifacts", FolderName));
+            yield return Path.Combine(repo, "artifacts", FolderName);
 #endif
-        folders.Add(Path.Combine(AppContext.BaseDirectory, FolderName));
-        folders.Add(UserFolder);
-        return folders.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        yield return Path.Combine(AppContext.BaseDirectory, FolderName);
+    }
+
+    /// <summary>
+    /// Copies every file of <paramref name="source"/> into <paramref name="target"/> that is missing there or older
+    /// than the bundled one — a newer own build in the same place is kept. A locked file (another instance has the
+    /// plugin loaded) is skipped: that launch keeps the previous version.
+    /// </summary>
+    private void SyncBundled(string source, string target)
+    {
+        source = Path.GetFullPath(source);
+        if (!Directory.Exists(source) || string.Equals(source, target, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            var dest = Path.Combine(target, Path.GetRelativePath(source, file));
+            try
+            {
+                if (File.Exists(dest) && File.GetLastWriteTimeUtc(dest) >= File.GetLastWriteTimeUtc(file))
+                    continue;
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                File.Copy(file, dest, overwrite: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _log.Info($"Plugin file not updated: {dest}: {ex.Message}");
+            }
+        }
     }
 
 #if DEBUG
