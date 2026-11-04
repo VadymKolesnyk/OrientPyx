@@ -61,11 +61,13 @@ public sealed partial class ChipScanViewModel : ObservableObject
         string defaultFilePath,
         ITableLayoutStore layoutStore,
         IFileReadoutPoller? poller = null,
-        IReadoutParserSelector? parsers = null)
+        IReadoutParserSelector? parsers = null,
+        bool sportIdentCards = true)
     {
         ArgumentNullException.ThrowIfNull(candidates);
         Localization = localization;
         LayoutStore = layoutStore;
+        ShowCardColumn = sportIdentCards;
         _fields = fields;
         _saved = settings ?? new ChipScanSettings();
         _holders = holders;
@@ -81,7 +83,7 @@ public sealed partial class ChipScanViewModel : ObservableObject
                 _poolNotes[number] = (chip.Note ?? string.Empty).Trim();
         }
 
-        Rows = new ObservableCollection<ChipScanRowViewModel>(candidates.Select(c => new ChipScanRowViewModel(c, Rules)));
+        Rows = new ObservableCollection<ChipScanRowViewModel>(candidates.Select(c => new ChipScanRowViewModel(c, Rules, sportIdentCards)));
         foreach (var row in Rows)
             row.RuleChanged += OnRowRuleChanged;
 
@@ -119,6 +121,13 @@ public sealed partial class ChipScanViewModel : ObservableObject
     public ILocalizationService Localization { get; }
 
     public ITableLayoutStore LayoutStore { get; }
+
+    /// <summary>
+    /// True when the competition is punched with SportIdent (app-level «Тип відмітки»): the chip number then
+    /// names the card model (<see cref="SiCard"/>), so the table shows a «Тип картки» column and a card too
+    /// small for the target's course is held back. Off for any other punching system.
+    /// </summary>
+    public bool ShowCardColumn { get; }
 
     public string Title => Localization.Get("Participants.ChipScan.Title");
 
@@ -417,6 +426,15 @@ public sealed partial class ChipScanViewModel : ObservableObject
             return;
         }
 
+        // A card model that cannot hold the target's course (fewer punches than controls) is held back the
+        // same way: scan another chip («Пропустити») or take it anyway («Присвоїти все одно»).
+        if (!force && ShowCardColumn && SiCard.TooSmall(number, target.Candidate.NeededPunches) is { } card)
+        {
+            Hold(number, "Participants.ChipScan.Msg.TooSmall",
+                number, card.Model, card.Capacity, target.FullName, target.Group, target.Candidate.NeededPunches);
+            return;
+        }
+
         target.Chip = number;
         target.AddToBase = !inBase;
         target.Note = req.Note;
@@ -620,14 +638,17 @@ public sealed partial class ChipScanViewModel : ObservableObject
 }
 
 /// <summary>A shown participant without a chip: identity for the list plus the field values the rules read and
-/// the page's row object, handed back in the result so the page can update the very cell it came from.</summary>
+/// the page's row object, handed back in the result so the page can update the very cell it came from.
+/// <see cref="NeededPunches"/> is the longest course the participant runs on the days the chip is for
+/// (<see cref="GroupOption.ControlCount"/>; 0 = unknown), so a card too small for it can be held back.</summary>
 public sealed record ChipScanCandidate(
     Guid ParticipantId,
     string Number,
     string FullName,
     string Group,
     IReadOnlyDictionary<string, string> FieldValues,
-    object Row);
+    object Row,
+    int NeededPunches = 0);
 
 /// <summary>What a participant needs: a rental chip filed under <see cref="Note"/>, or their own chip
 /// (<see cref="IsOwn"/> — the scan skips them).</summary>
@@ -696,10 +717,13 @@ public sealed partial class ChipScanRowViewModel : ObservableObject
 {
     private bool _suppressRuleChanged;
 
-    public ChipScanRowViewModel(ChipScanCandidate candidate, ObservableCollection<ChipScanRuleViewModel> rules)
+    private readonly bool _sportIdentCards;
+
+    public ChipScanRowViewModel(ChipScanCandidate candidate, ObservableCollection<ChipScanRuleViewModel> rules, bool sportIdentCards = true)
     {
         Candidate = candidate;
         Rules = rules;
+        _sportIdentCards = sportIdentCards;
     }
 
     public ChipScanCandidate Candidate { get; }
@@ -758,9 +782,14 @@ public sealed partial class ChipScanRowViewModel : ObservableObject
     /// <summary>The chip scanned for this row; empty until one is.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasChip))]
+    [NotifyPropertyChangedFor(nameof(CardText))]
     private string _chip = string.Empty;
 
     public bool HasChip => Chip.Length > 0;
+
+    /// <summary>The scanned chip's SportIdent model and capacity («SI-Card 9 · 50»); empty until a known card is
+    /// scanned, and always empty when the competition is not punched with SportIdent.</summary>
+    public string CardText => _sportIdentCards && SiCard.Identify(Chip) is { } card ? $"{card.Model} · {card.CapacityText}" : string.Empty;
 
     [ObservableProperty]
     private string _status = string.Empty;

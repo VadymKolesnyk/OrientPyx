@@ -1091,6 +1091,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         // The age window is read off each day's group, so a group/membership change can flip the highlight.
         OnPropertyChanged(nameof(BirthDateViolatesAge));
         OnPropertyChanged(nameof(AgeViolationTooltip));
+        // So can the chip-capacity flag: the course length comes from each day's group.
+        OnPropertyChanged(nameof(ChipTooSmall));
+        OnPropertyChanged(nameof(ChipCapacityTooltip));
     }
 
     private void RaiseChipAggregates()
@@ -1101,6 +1104,29 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         OnPropertyChanged(nameof(ChipShowsInput));
         OnPropertyChanged(nameof(ChipShowsDifferent));
         OnPropertyChanged(nameof(ChipMergedEditable));
+        OnPropertyChanged(nameof(ChipTooSmall));
+        OnPropertyChanged(nameof(ChipCapacityTooltip));
+    }
+
+    /// <summary>
+    /// True when on ANY member day the chip is a SportIdent card too small for that day's group course
+    /// (<see cref="RosterDayCellViewModel.ChipTooSmall"/>). Drives the amber tint on the collapsed (all-days)
+    /// chip cell; the expanded per-day cells read their own day's flag.
+    /// </summary>
+    public bool ChipTooSmall => Days.Any(d => d.ChipTooSmall);
+
+    /// <summary>Every member day's capacity breach (one line per distinct reason); null when none, which hides the tooltip.</summary>
+    public string? ChipCapacityTooltip
+    {
+        get
+        {
+            var reasons = Days
+                .Select(d => d.ChipCapacityTooltip)
+                .Where(r => !string.IsNullOrEmpty(r))
+                .Distinct()
+                .ToList();
+            return reasons.Count == 0 ? null : string.Join(Environment.NewLine, reasons);
+        }
     }
 
     private void RaiseStartTimeAggregates()

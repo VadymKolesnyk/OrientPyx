@@ -162,6 +162,8 @@ public sealed class RosterColumnBuilder
                     RentalChipColumn = isChips,
                     ToolTipPath = ResultTooltipPath(block.Field),
                 };
+                if (isChips)
+                    ConfigureChipCapacityTint(col, 0);
                 // Single-day group/status cell binds under Days[0]. too — wire combo-paste the same way.
                 ConfigureDayComboPaste(col, block.Field, 0);
                 ConfigureDayPaymentColumn(col, block.Field, 0);
@@ -196,6 +198,9 @@ public sealed class RosterColumnBuilder
                     // edit, like an expanded one, is still a chip value).
                     RentalChipColumn = isChips,
                 });
+                // The merged chip cell flags a card too small for ANY member day's course.
+                if (isChips)
+                    ConfigureChipCapacityTint(cols[0], dayIndex: null);
                 if (block.Field == RosterField.Payment)
                 {
                     // The merged cell shows one value for the whole competition, so it tints (and sums) by
@@ -227,6 +232,8 @@ public sealed class RosterColumnBuilder
                         RentalChipColumn = isChips,
                         ToolTipPath = ResultTooltipPath(block.Field),
                     };
+                    if (isChips)
+                        ConfigureChipCapacityTint(leaf, i);
                     // Per-day combo leaves (group / status) resolve a paste to an option on that day by
                     // exact label match — bound under Days[i]. like the cell factory binds them.
                     ConfigureDayComboPaste(leaf, block.Field, i);
@@ -442,6 +449,17 @@ public sealed class RosterColumnBuilder
 
     // The two-way text property a per-day leaf cell edits, for fill-down paste. Only the plain text
     // fields (chip, start time) qualify; group is a combo and out-of-competition is a checkbox.
+    // Amber-tints a chip cell whose SportIdent card model cannot hold the course of the day's group (see
+    // SiCard / GroupOption.ControlCount), with the reason as the tooltip. A per-day cell reads its own day's
+    // flag under Days[i].; the merged all-days cell reads the row's aggregate (any member day).
+    private static void ConfigureChipCapacityTint(SheetColumn column, int? dayIndex)
+    {
+        var prefix = dayIndex is { } i ? $"Days[{i}]." : string.Empty;
+        column.CellBackgroundPath = prefix + nameof(RosterDayCellViewModel.ChipTooSmall);
+        column.CellBackgroundTooltipPath = prefix + nameof(RosterDayCellViewModel.ChipCapacityTooltip);
+        column.CellBackgroundBrush = DayColumnBuilder.ChipCapacityBrush;
+    }
+
     private static string? LeafPastePath(RosterField field, int i) => field switch
     {
         RosterField.Chips => $"Days[{i}].{nameof(RosterDayCellViewModel.Chip)}",

@@ -40,7 +40,7 @@ Three layers plus a shared localization library and the plugin SDK.
 - **Localization** — pure .NET, no UI dependency, usable from any layer.
 - **Plugins.Sdk** — the plugin contract (`IOrientPyxPlugin`, `Discipline`, contexts, columns, settings, fields)
   and the toolkit (`Toolkit/`: course patterns, `CourseMatcher`, `VariantMatcher`, `Punches`, `Ranking`, `Age`,
-  `TimeFormat`, `TextKey`, `CourseOrder`) plus the shared simple types (`FinishStatus`, `FinishContext`,
+  `TimeFormat`, `TextKey`, `CourseOrder`, `SiCard`) plus the shared simple types (`FinishStatus`, `FinishContext`,
   `FinishStatusResult`, `SplitsView`…, `ControlPointType`, `ChipPunch`, `GeoPoint`/`MapPoint`). **No dependencies,
   no knowledge of EF / files / UI — only the contract and pure algorithms.** Everything in it is public API with
   compatibility obligations: add only what is stable. Its `AssemblyVersion` is set explicitly (`1.0.0.0`) and is
@@ -225,6 +225,21 @@ Pages/outputs: «Команди» (teams + legs), day-grid team/leg columns, rea
 (`ResultProtocolGroup.RelayTeams`, sub-rows), import (CSV `relay.*` targets, IOF `EntryList` `TeamEntry`), draw
 (a team is the unit, leg 1 gets the minute), monitor (`MonitorRowKind.Team/Leg`), HTML splits (leg start + leg
 course), summary («за очками» counts relay points; «за часом» skips relay days, Р-39), online (`relay_teams`).
+
+## Chip capacity (SportIdent card model)
+
+`Toolkit.SiCard.Identify(number)` maps a chip number onto its SportIdent card model and punch capacity by the
+SPORTident number ranges (Card 5 = 30, Card 6 = 64 (192 station-dependent), Card 8 = 30, Card 9 = 50, pCard 20,
+tCard 25, Card 10/11/SIAC = 128, fCard 20); an unknown number is `null` and never judged. `Models/ChipCapacity.
+NeededPunches(groupDayRow, strategy)` = max(course control count, longest named course / scatter variant) and is
+carried on `GroupOption.ControlCount`. Surfaces: «Чіпи» shows read-only «Тип картки» / «Відміток» columns; the
+day grid and the roster amber-tint a chip cell whose card holds fewer punches than the group's course
+(`ChipTooSmall` / `ChipCapacityTooltip` on both row VMs and `RosterDayCellViewModel`); «Сканування чіпів»
+holds such a chip back (`ChipScanCandidate.NeededPunches`) with «Пропустити» / «Присвоїти все одно», like a
+rental-note mismatch. **All of it is gated on the app-level «Тип відмітки» = SportIdent** (another system's numbers
+say nothing about the card): `ParticipantsViewModel.UsesSportIdentCardsAsync` feeds `ControlCount` = 0 otherwise,
+`ChipsViewModel.ShowCardColumns` / `ChipScanViewModel.ShowCardColumn` hide the columns; a Settings change applies on
+the next page load.
 
 ## Editable tables (SheetTable)
 

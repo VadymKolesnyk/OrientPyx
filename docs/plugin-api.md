@@ -180,6 +180,7 @@ public override IEnumerable<ResultColumnDef> Columns =>
 | `Age` | `InYear(birthYear, date)` = рік дати − рік народження |
 | `RangeTable` | `FromSetting(TableValue, "range")`, `Lookup(age, key)` — «діапазон × ключ → значення»; поза діапазоном — найближчий рядок, останній відкритий угору (Р-47) |
 | `RelayBib` | `Format(100, 2)` = «100.2», `TryParse`, `IsLegNumber` |
+| `SiCard` | `Identify(number)` → модель картки SportIdent і місткість (відміток) за діапазоном номера; `TooSmall(number, punches)` |
 | `TextKey` | порівняння назв зі схожими літерами (M12 = М12) |
 | `TimeFormat` | формати часу як у протоколах |
 

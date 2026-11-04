@@ -12,13 +12,33 @@ public sealed class GroupOption
     private readonly ILocalizationService _localization;
 
     public GroupOption(Guid? id, string name, ILocalizationService localization,
-        int? minBirthYear = null, int? maxBirthYear = null)
+        int? minBirthYear = null, int? maxBirthYear = null, int controlCount = 0)
     {
         Id = id;
         _name = name;
         _localization = localization;
         MinBirthYear = minBirthYear;
         MaxBirthYear = maxBirthYear;
+        ControlCount = controlCount;
+    }
+
+    /// <summary>
+    /// The most control punches a member of this group may make on the day (<see cref="ChipCapacity.NeededPunches"/>);
+    /// 0 when the group has no course yet. A chip whose model holds fewer punches is flagged on the chip cell.
+    /// </summary>
+    public int ControlCount { get; }
+
+    /// <summary>
+    /// A localized explanation that <paramref name="chip"/> is a SportIdent card too small for this group's course
+    /// (names the model, its capacity, the group and its control count), or an empty string when the chip fits,
+    /// is unknown or blank, or the group has no course. Used as the chip cell's tooltip.
+    /// </summary>
+    public string ChipCapacityReason(string? chip)
+    {
+        if (SiCard.TooSmall(chip, ControlCount) is not { } card)
+            return string.Empty;
+        return string.Format(_localization.Get("Participants.ChipCapacity.TooSmall"),
+            (chip ?? string.Empty).Trim(), card.Model, card.Capacity, Label, ControlCount);
     }
 
     private readonly string _name;

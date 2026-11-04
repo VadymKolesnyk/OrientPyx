@@ -290,12 +290,36 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
 
     partial void OnSelectedGroupChanged(GroupOption value)
     {
+        // The course length the chip must hold comes from the group, so a group change can flip the flag.
+        OnPropertyChanged(nameof(ChipTooSmall));
+        OnPropertyChanged(nameof(ChipCapacityTooltip));
         if (_initialized && !IsDayLocked)
             _requestGroupChange(this);
     }
 
+    /// <summary>
+    /// True when this day's chip is a known SportIdent card model that holds fewer punches than the day's group
+    /// course has controls (<see cref="GroupOption.ControlCount"/>). Drives the amber tint on the per-day chip
+    /// cell. False for a non-member, a blank/unknown chip, or a group without a course.
+    /// </summary>
+    public bool ChipTooSmall => IsMember && SiCard.TooSmall(Chip, SelectedGroup?.ControlCount ?? 0) is not null;
+
+    /// <summary>Why the chip is too small (model, capacity, group, control count); null when it fits, which hides the tooltip.</summary>
+    public string? ChipCapacityTooltip
+    {
+        get
+        {
+            var reason = IsMember ? SelectedGroup?.ChipCapacityReason(Chip) : null;
+            return string.IsNullOrEmpty(reason) ? null : reason;
+        }
+    }
+
     partial void OnChipChanged(string value)
     {
+        // Re-evaluate on every change, a silent (reverted / scanned-in) one included — the cell shows the
+        // new number either way.
+        OnPropertyChanged(nameof(ChipTooSmall));
+        OnPropertyChanged(nameof(ChipCapacityTooltip));
         if (_initialized && !IsDayLocked)
             _requestChipChange(this);
     }

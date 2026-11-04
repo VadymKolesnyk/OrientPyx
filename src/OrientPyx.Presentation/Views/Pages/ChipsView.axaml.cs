@@ -130,9 +130,16 @@ public partial class ChipsView : UserControl
             // Tint the number cell red when it duplicates another chip (numbers must be unique): the
             // duplicate is never saved, so the tint + tooltip is the only signal it can't be used.
             .CellTint(nameof(RentalChipRowViewModel.IsDuplicate), DuplicateBrush,
-                      tooltipPath: nameof(RentalChipRowViewModel.DuplicateTooltip))
-            .Text("Chips.Col.Note", nameof(RentalChipRowViewModel.Note),
-                  editPath: nameof(RentalChipRowViewModel.Note), minWidth: 240);
+                      tooltipPath: nameof(RentalChipRowViewModel.DuplicateTooltip));
+        // Read-only: the SportIdent card model and its punch capacity, both read off the number range — only
+        // when the competition is punched with SportIdent (another system's numbers mean nothing here).
+        if (_vm.ShowCardColumns)
+        {
+            builder.Text("Chips.Col.CardModel", nameof(RentalChipRowViewModel.CardModel), width: 110)
+                   .Text("Chips.Col.Capacity", nameof(RentalChipRowViewModel.CapacityText), width: 90);
+        }
+        builder.Text("Chips.Col.Note", nameof(RentalChipRowViewModel.Note),
+                     editPath: nameof(RentalChipRowViewModel.Note), minWidth: 240);
 
         // Read-only: who holds this chip, one column per day (a chip may pass to another runner between
         // days). A single-day competition keeps the plain «Видано» header.
@@ -151,7 +158,7 @@ public partial class ChipsView : UserControl
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(ChipsViewModel.DayNumbers))
+        if (e.PropertyName is nameof(ChipsViewModel.DayNumbers) or nameof(ChipsViewModel.ShowCardColumns))
             BuildBands();
     }
 

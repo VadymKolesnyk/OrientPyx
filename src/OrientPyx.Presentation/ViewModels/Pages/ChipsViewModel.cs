@@ -28,6 +28,7 @@ public sealed partial class ChipsViewModel : PageViewModelBase
     private readonly IBusyService _busy;
     private readonly IDialogService _dialogs;
     private readonly IBackgroundActivityService _activities;
+    private readonly IAppSettingsService _appSettings;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
 
     /// <summary>
@@ -45,10 +46,12 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         IBusyService busy,
         IDialogService dialogs,
         IBackgroundActivityService activities,
-        ITableLayoutStore layoutStore)
+        ITableLayoutStore layoutStore,
+        IAppSettingsService appSettings)
         : base(localization)
     {
         LayoutStore = layoutStore;
+        _appSettings = appSettings;
         _editor = editor;
         _session = session;
         _readoutParsers = readoutParsers;
@@ -87,6 +90,14 @@ public sealed partial class ChipsViewModel : PageViewModelBase
     /// </summary>
     [ObservableProperty]
     private IReadOnlyList<int> _dayNumbers = [];
+
+    /// <summary>
+    /// True when the app-level «Тип відмітки» is SportIdent — the only system whose chip numbers encode the card
+    /// model, so the «Тип картки» / «Відміток» columns are shown. Read on each load; the view rebuilds its
+    /// columns when this flips.
+    /// </summary>
+    [ObservableProperty]
+    private bool _showCardColumns;
 
     /// <summary>The row selected in the grid; the Delete key acts on it.</summary>
     [ObservableProperty]
@@ -143,6 +154,7 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         var chips = await _busy.RunAsync(() => _editor.GetRentalChipsAsync());
         // Who holds each chip on each day — populates the read-only per-day "assigned to" columns.
         var holders = await _busy.RunAsync(() => _editor.GetRentalChipHoldersByDayAsync());
+        ShowCardColumns = await _appSettings.GetReadoutTypeAsync() == BusinessLogic.Enums.ReadoutType.SportIdent;
 
         foreach (var existing in Chips)
             existing.PropertyChanged -= OnRowPropertyChanged;

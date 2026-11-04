@@ -187,6 +187,64 @@ public sealed class ToolkitTests
         Assert.False(RelayBib.IsLegNumber("12"));
     }
 
+    // ---- SiCard --------------------------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("1", "SI-Card 5", 30)]
+    [InlineData("499999", "SI-Card 5", 30)]
+    [InlineData("500000", "SI-Card 6", 64)]
+    [InlineData(" 1234567 ", "SI-Card 9", 50)]
+    [InlineData("2000001", "SI-Card 8", 30)]
+    [InlineData("4500000", "pCard", 20)]
+    [InlineData("6000000", "tCard", 25)]
+    [InlineData("7001234", "SI-Card 10", 128)]
+    [InlineData("8123456", "SIAC", 128)]
+    [InlineData("9007400", "SI-Card 11", 128)]
+    [InlineData("14000001", "fCard", 20)]
+    [InlineData("16711680", "SI-Card 6*", 192)]
+    public void SiCard_IdentifiesModelAndCapacityByNumberRange(string number, string model, int capacity)
+    {
+        var card = SiCard.Identify(number);
+        Assert.NotNull(card);
+        Assert.Equal(model, card.Model);
+        Assert.Equal(capacity, card.Capacity);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("0")]
+    [InlineData("abc")]
+    [InlineData("3000000")]   // unassigned range
+    [InlineData("5000000")]
+    [InlineData("10000000")]
+    [InlineData("-5")]
+    public void SiCard_UnknownNumbersAreNull(string number) => Assert.Null(SiCard.Identify(number));
+
+    [Fact]
+    public void SiCard_TooSmallJudgesOnlyKnownCardsAgainstAPositiveNeed()
+    {
+        Assert.Equal("64 (192)", SiCard.Identify("500000")!.CapacityText);
+        Assert.Equal("50", SiCard.Identify("1000000")!.CapacityText);
+
+        Assert.Equal("SI-Card 5", SiCard.TooSmall("123", 31)!.Model);
+        Assert.Null(SiCard.TooSmall("123", 30));      // fits exactly
+        Assert.Null(SiCard.TooSmall("123", 0));       // nothing needed
+        Assert.Null(SiCard.TooSmall("3000000", 999)); // unknown card is never judged
+        Assert.Null(SiCard.TooSmall("", 10));
+    }
+
+    [Fact]
+    public void ChipCapacity_NeededPunchesIsTheLongerOfCourseAndVariants()
+    {
+        var row = new GroupDayRow(Guid.NewGuid(), Guid.NewGuid(), 0, "Ч21", "31 32 33", null, null,
+            DisciplineId.SetCourse, null, null, null, ScatterMaxControlCount: 5);
+        var strategy = new SetCourseStrategy(new CourseDistanceCalculator());
+        Assert.Equal(5, ChipCapacity.NeededPunches(row, strategy));
+        Assert.Equal(3, ChipCapacity.NeededPunches(row with { ScatterMaxControlCount = 0 }, strategy));
+        Assert.Equal(0, ChipCapacity.NeededPunches(row with { CourseOrder = "", ScatterMaxControlCount = 0 }, strategy));
+    }
+
     [Fact]
     public void RelayRestartTimesAndLegCourses_RoundTrip()
     {

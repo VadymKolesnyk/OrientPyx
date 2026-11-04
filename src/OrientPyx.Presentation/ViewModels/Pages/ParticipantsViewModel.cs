@@ -56,6 +56,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private readonly IParticipantExportFlow _exportFlow;
     private readonly IStatementFlow _statementFlow;
     private readonly IReadoutParserSelector _readoutParsers;
+    private readonly IAppSettingsService _appSettings;
     private readonly IEntryFeeCalculator _entryFeeCalculator;
     private readonly IActivityLog _log;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
@@ -80,10 +81,12 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         IEntryFeeCalculator entryFeeCalculator,
         IActivityLog log,
         ITableLayoutStore layoutStore,
-        IDayLockService dayLock)
+        IDayLockService dayLock,
+        IAppSettingsService appSettings)
         : base(localization)
     {
         UseDayLock(dayLock);
+        _appSettings = appSettings;
         LayoutStore = layoutStore;
         _editor = editor;
         _appStore = appStore;
@@ -807,12 +810,29 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private async Task<IReadOnlyList<GroupOption>> BuildGroupOptionsAsync(Guid dayId, bool includeNone = false)
     {
         var groups = await _editor.GetGroupsForDayAsync(dayId);
+        // The chip-capacity check reads SportIdent card models off the number, so it only makes sense when
+        // the competition is punched with SportIdent (app-level «Тип відмітки»); with another system the
+        // course length is left at 0 and no chip is ever flagged.
+        var sportIdent = await UsesSportIdentCardsAsync();
         var options = new List<GroupOption>(groups.Count + (includeNone ? 1 : 0));
         if (includeNone)
             options.Add(new GroupOption(null, string.Empty, Localization));
         foreach (var g in groups)
-            options.Add(new GroupOption(g.GroupId, g.Name, Localization, g.MinBirthYear, g.MaxBirthYear));
+        {
+            // The longest course a member may run that day — what their chip must be able to hold.
+            var strategy = _strategies.For(g.DisciplineOverride ?? g.DayDefaultDiscipline);
+            options.Add(new GroupOption(g.GroupId, g.Name, Localization, g.MinBirthYear, g.MaxBirthYear,
+                sportIdent ? ChipCapacity.NeededPunches(g, strategy) : 0));
+        }
         return options;
+    }
+
+    // True when the app-level «Тип відмітки» is SportIdent — the only system whose chip numbers encode the
+    // card model (SiCard). Read fresh each time so a Settings change applies on the next page load.
+    private async Task<bool> UsesSportIdentCardsAsync()
+    {
+        var type = await _appSettings.GetReadoutTypeAsync();
+        return type == BusinessLogic.Enums.ReadoutType.SportIdent;
     }
 
     // For the roster: a per-day map of group options, so each cell offers its own day's groups. The
@@ -1954,7 +1974,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 case ParticipantDayRowViewModel row when IsDayMode && string.IsNullOrWhiteSpace(row.Chip):
                     candidates.Add(new ChipScanCandidate(
                         row.ParticipantId, row.Number ?? string.Empty, row.FullName ?? string.Empty,
-                        row.SelectedGroup?.Label ?? string.Empty, row.Fields.Values, row));
+                        row.SelectedGroup?.Label ?? string.Empty, row.Fields.Values, row,
+                        NeededPunches: row.SelectedGroup?.ControlCount ?? 0));
                     break;
                 case ParticipantRosterRowViewModel row when IsRosterMode && ChiplessOpenDays(row).Any():
                     var groups = row.Days
@@ -1963,9 +1984,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                         .Where(g => g.Length > 0)
                         .Distinct()
                         .ToList();
+                    // The chip goes to every chip-less open day, so it must hold the longest of their courses.
+                    var needed = ChiplessOpenDays(row).Select(d => d.SelectedGroup?.ControlCount ?? 0).DefaultIfEmpty(0).Max();
                     candidates.Add(new ChipScanCandidate(
                         row.ParticipantId, row.Number ?? string.Empty, row.FullName ?? string.Empty,
-                        string.Join(" / ", groups), row.Fields.Values, row));
+                        string.Join(" / ", groups), row.Fields.Values, row, NeededPunches: needed));
                     break;
             }
         }
@@ -1981,12 +2004,13 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             return;
         }
 
-        var (pool, holders, settings) = await _busy.RunAsync(async () =>
+        var (pool, holders, settings, sportIdent) = await _busy.RunAsync(async () =>
         {
             var p = await _editor.GetRentalChipsAsync();
             var h = await _editor.GetRentalChipHoldersByDayAsync();
             var s = await _editor.GetChipScanSettingsAsync();
-            return (p, h, s);
+            var si = await UsesSportIdentCardsAsync();
+            return (p, h, s, si);
         });
 
         // chip → who holds it on any day: nothing in here may be handed out again.
@@ -2003,7 +2027,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         // A poller of its own: the shared one is single-watch and may be busy with the finish read-out.
         var dialog = new ChipScanViewModel(
             Localization, candidates, CustomFields, pool, holderNames, settings, defaultPath, LayoutStore,
-            new FileReadoutPoller(), _readoutParsers);
+            new FileReadoutPoller(), _readoutParsers, sportIdentCards: sportIdent);
         var result = await _dialogs.ShowChipScanAsync(dialog);
         await _busy.RunAsync(() => _editor.SaveChipScanSettingsAsync(dialog.BuildSettings()));
         if (result is null || (result.Assignments.Count == 0 && result.FieldUpdates.Count == 0))

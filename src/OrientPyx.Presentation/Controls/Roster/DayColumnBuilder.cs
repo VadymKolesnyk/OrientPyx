@@ -17,6 +17,14 @@ public sealed class DayColumnBuilder
     private static readonly Avalonia.Media.ISolidColorBrush ProblemBrush =
         new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(0x55, 0xDC, 0x26, 0x26));
 
+    /// <summary>
+    /// The amber tint of a chip cell whose SportIdent card model cannot hold the group's course (see
+    /// <see cref="SiCard"/>). Amber, not red: the chip text itself turns red for a non-rental number, and
+    /// the two must stay readable together. Shared with the roster's chip columns.
+    /// </summary>
+    public static readonly Avalonia.Media.ISolidColorBrush ChipCapacityBrush =
+        new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(0x66, 0xF5, 0x9E, 0x0B));
+
     private readonly ILocalizationService _loc;
 
     public DayColumnBuilder(ILocalizationService localization)
@@ -89,6 +97,11 @@ public sealed class DayColumnBuilder
         }
         var chipBand = Identity(SheetCellKind.ChipText, "Participants.Col.Chip", nameof(ParticipantDayRowViewModel.Chip));
         chipBand.Columns[0].RentalChipColumn = true; // right-click offers the rental toggle
+        // Amber-tint a chip whose SportIdent model holds fewer punches than the group's course has controls;
+        // the tooltip names the model, its capacity and the course length.
+        chipBand.Columns[0].CellBackgroundPath = nameof(ParticipantDayRowViewModel.ChipTooSmall);
+        chipBand.Columns[0].CellBackgroundBrush = ChipCapacityBrush;
+        chipBand.Columns[0].CellBackgroundTooltipPath = nameof(ParticipantDayRowViewModel.ChipCapacityTooltip);
         bands.Add(chipBand);
         // This day's start time (HH:mm text) and out-of-competition flag.
         bands.Add(Identity(SheetCellKind.StartTimeText, "Participants.Col.StartTime", nameof(ParticipantDayRowViewModel.StartTimeText),

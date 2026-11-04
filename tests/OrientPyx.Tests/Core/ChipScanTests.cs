@@ -297,6 +297,55 @@ public sealed class ChipScanTests
         Assert.Equal("other", (await Editor.GetChipScanSettingsAsync())!.FieldKey);
     }
 
+    [Fact]
+    public void TooSmallCard_IsHeldBackUntilForced_UnknownOrFittingCardsPass()
+    {
+        // A 40-control course: an SI-Card 5 (30 punches) can't hold it, an SI-Card 9 (50) and an unknown number can.
+        var rows = new[]
+        {
+            Candidate("Довга", "") with { NeededPunches = 40 },
+            Candidate("Коротка", "") with { NeededPunches = 12 },
+        };
+        var vm = Dialog(rows);
+
+        vm.HandleScan("123456");
+        Assert.True(vm.HasPending);
+        Assert.Equal("123456", vm.PendingNumber);
+        Assert.False(vm.Rows[0].HasChip);
+
+        // «Пропустити» drops it so another chip can be scanned; a card that fits is taken straight away.
+        vm.DismissPendingCommand.Execute(null);
+        Assert.False(vm.HasPending);
+        vm.HandleScan("1234567");
+        Assert.Equal("1234567", vm.Rows[0].Chip);
+        Assert.Equal("SI-Card 9 · 50", vm.Rows[0].CardText);
+
+        // The same small card fits the short course; an unknown number is never judged.
+        vm.HandleScan("123456");
+        Assert.Equal("123456", vm.Rows[1].Chip);
+        vm.ClearRow(vm.Rows[1]);
+        vm.HandleScan("3000000");
+        Assert.Equal("3000000", vm.Rows[1].Chip);
+        Assert.Equal("", vm.Rows[1].CardText);
+
+        // «Присвоїти все одно» takes a too-small card.
+        vm.ClearRow(vm.Rows[0]);
+        vm.HandleScan("123456");
+        Assert.True(vm.HasPending);
+        vm.ForceAssignCommand.Execute(null);
+        Assert.Equal("123456", vm.Rows[0].Chip);
+        Assert.False(vm.HasPending);
+
+        // With another punching system (Sport Time) the numbers say nothing about the card: no hold, no card text.
+        var other = new ChipScanViewModel(Loc, rows, [ChipType], [], new Dictionary<string, string>(TextKey.Comparer),
+            null, "C:\\x\\rentchip.csv", new NoLayoutStore(), sportIdentCards: false);
+        Assert.False(other.ShowCardColumn);
+        other.HandleScan("123456");
+        Assert.False(other.HasPending);
+        Assert.Equal("123456", other.Rows[0].Chip);
+        Assert.Equal("", other.Rows[0].CardText);
+    }
+
     private sealed class NoLayoutStore : ITableLayoutStore
     {
         public string? CurrentScopeId => null;

@@ -43,6 +43,17 @@ public sealed partial class RentalChipRowViewModel : ObservableObject
     /// <summary>Hover text for the red duplicate tint; empty (no tooltip) unless the number is a duplicate.</summary>
     public string DuplicateTooltip => IsDuplicate ? Localization.Get("Chips.Duplicate.Tooltip") : string.Empty;
 
+    /// <summary>
+    /// The SportIdent card model behind the number («SI-Card 9», «SIAC»…), read-only, derived from the number
+    /// range (<see cref="SiCard.Identify"/>). «—» for a number outside every known range; empty for a blank number.
+    /// </summary>
+    public string CardModel => SiCard.Identify(Number) is { } card ? card.Model : UnknownMark(Number);
+
+    /// <summary>How many control punches the card holds («50», «64 (192)» when station-dependent); read-only.</summary>
+    public string CapacityText => SiCard.Identify(Number) is { } card ? card.CapacityText : UnknownMark(Number);
+
+    private static string UnknownMark(string? number) => string.IsNullOrWhiteSpace(number) ? string.Empty : "—";
+
     public RentalChipRowViewModel(
         RentalChip chip,
         ILocalizationService localization,
@@ -71,7 +82,13 @@ public sealed partial class RentalChipRowViewModel : ObservableObject
         CreatedAt = _createdAt
     };
 
-    partial void OnNumberChanged(string value) => QueueSave();
+    partial void OnNumberChanged(string value)
+    {
+        // The model and capacity columns are read off the number.
+        OnPropertyChanged(nameof(CardModel));
+        OnPropertyChanged(nameof(CapacityText));
+        QueueSave();
+    }
     partial void OnNoteChanged(string value) => QueueSave();
 
     private void QueueSave()

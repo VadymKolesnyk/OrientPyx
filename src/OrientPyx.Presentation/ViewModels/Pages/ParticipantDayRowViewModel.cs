@@ -664,6 +664,9 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         // The age window comes from the selected group, so a group change can flip the highlight.
         OnPropertyChanged(nameof(BirthDateViolatesAge));
         OnPropertyChanged(nameof(AgeViolationTooltip));
+        // So does the course length the chip must hold.
+        OnPropertyChanged(nameof(ChipTooSmall));
+        OnPropertyChanged(nameof(ChipCapacityTooltip));
 
         if (!_initialized)
             return;
@@ -702,11 +705,32 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
             return string.IsNullOrEmpty(reason) ? null : reason;
         }
     }
+    /// <summary>
+    /// True when the chip is a known SportIdent card model that holds fewer punches than this day's group
+    /// course has controls (<see cref="GroupOption.ControlCount"/>). Drives the amber tint on the chip cell.
+    /// False for a blank/unknown chip or a group without a course.
+    /// </summary>
+    public bool ChipTooSmall => SiCard.TooSmall(Chip, SelectedGroup?.ControlCount ?? 0) is not null;
+
+    /// <summary>Why the chip is too small (model, capacity, group, control count); null when it fits, which hides the tooltip.</summary>
+    public string? ChipCapacityTooltip
+    {
+        get
+        {
+            var reason = SelectedGroup?.ChipCapacityReason(Chip);
+            return string.IsNullOrEmpty(reason) ? null : reason;
+        }
+    }
+
     // The chip is NOT part of the debounced row save: a chip edit may collide with another competitor
     // on the day and must be resolved (confirm + reassign, or revert) before it is persisted, so the
     // page owns it via a dedicated callback.
     partial void OnChipChanged(string value)
     {
+        // The capacity check reads the chip, so re-evaluate on every change — a silent (reverted /
+        // scanned-in) one included, since the cell shows the new number either way.
+        OnPropertyChanged(nameof(ChipTooSmall));
+        OnPropertyChanged(nameof(ChipCapacityTooltip));
         if (_initialized)
         {
             _requestChipChange(this);

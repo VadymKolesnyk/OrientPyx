@@ -97,7 +97,7 @@ public partial class ChipScanView : UserControl
         if (_vm is null)
             return;
 
-        Sheet.Bands = new SheetColumnBuilder(_vm.Localization)
+        var builder = new SheetColumnBuilder(_vm.Localization)
             .Text("Participants.Col.Number", nameof(ChipScanRowViewModel.Number), width: 90)
             .Text("Participants.Col.FullName", nameof(ChipScanRowViewModel.FullName), minWidth: 220)
             .Text("Participants.Col.Group", nameof(ChipScanRowViewModel.Group), width: 100)
@@ -107,7 +107,11 @@ public partial class ChipScanView : UserControl
                    selectedPath: nameof(ChipScanRowViewModel.SelectedRule),
                    labelPath: nameof(ChipScanRuleViewModel.Caption),
                    width: 190)
-            .Text("Participants.Col.Chip", nameof(ChipScanRowViewModel.Chip), width: 120)
+            .Text("Participants.Col.Chip", nameof(ChipScanRowViewModel.Chip), width: 120);
+        // The SportIdent card model is only meaningful when the competition is punched with SportIdent.
+        if (_vm.ShowCardColumn)
+            builder.Text("Participants.ChipScan.Col.Card", nameof(ChipScanRowViewModel.CardText), width: 150);
+        Sheet.Bands = builder
             .Text("Participants.ChipScan.Col.Status", nameof(ChipScanRowViewModel.Status), minWidth: 200)
             .DeleteAction(OnClearChip, "Participants.ChipScan.ClearRow")
             .Bands;
