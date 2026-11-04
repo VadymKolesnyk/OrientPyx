@@ -70,7 +70,7 @@ dotnet run --project src/OrientPyx.Presentation
 Готові до встановлення версії збираються через Velopack — див. [`build/README.md`](build/README.md):
 
 - **Windows** — `OrientPyx-win-Setup.exe` (локально, `build/publish.ps1`);
-- **macOS** — `OrientPyx-osx-arm64.pkg` (Apple Silicon) та `OrientPyx-osx-x64.pkg` (Intel), збираються
+- **macOS** — `OrientPyx-osx-arm64-Setup.pkg` (Apple Silicon) та `OrientPyx-osx-x64-Setup.pkg` (Intel), збираються
   GitHub Actions на тегу релізу (`build/publish-mac.sh`). Непідписаний пакет при першому запуску треба
   відкрити через правий клік → «Відкрити». Файли `.opyx` відкриваються з Finder так само, як з Провідника.
   На macOS недоступний друк на принтер (спліти, переможці, відомість) — експорт у Word/HTML працює.

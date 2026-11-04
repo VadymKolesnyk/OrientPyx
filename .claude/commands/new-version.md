@@ -108,7 +108,7 @@ $env:GITHUB_TOKEN = (gh auth token)
   and merges them into the same release. Both uploads pass `--merge`, so their order does not
   matter. Check it: `gh run list --workflow release-macos.yml --limit 1` and, once it is done,
   `gh release view v<version> --json assets -q '.assets[].name'` should list
-  `OrientPyx-osx-arm64.pkg` and `OrientPyx-osx-x64.pkg` next to `OrientPyx-win-Setup.exe`.
+  `OrientPyx-osx-arm64-Setup.pkg` and `OrientPyx-osx-x64-Setup.pkg` next to `OrientPyx-win-Setup.exe`.
   If the workflow failed, report it (`gh run view <id> --log-failed`) — the Windows release is
   still valid; re-run the workflow from the Actions tab after fixing the cause.
 - After it finishes, verify the remote tag points at the release commit — the annotated

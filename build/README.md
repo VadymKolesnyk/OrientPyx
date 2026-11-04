@@ -45,7 +45,7 @@ dotnet tool install -g vpk        # the Velopack CLI
 - Velopack can only build a `.app`/`.pkg` **on macOS** (`vpk` on Windows offers just `bundle` for OSX), hence
   the CI workflow. To build locally on a Mac: `dotnet tool install -g vpk`, then
   `build/publish-mac.sh 1.1.0 [--upload] [--runtime osx-arm64|osx-x64|all]`.
-- Output per architecture in `build/releases-mac/<rid>/`: `OrientPyx-<rid>.pkg` (installer),
+- Output per architecture in `build/releases-mac/<rid>/`: `OrientPyx-<rid>-Setup.pkg` (installer),
   `OrientPyx-<rid>-Portable.zip` (the bare `.app`), `*-full.nupkg`/`*-delta.nupkg` and `releases.<rid>.json`.
 - The `.icns` icon is generated on the fly from `Assets/orientpyx.png` with `sips` + `iconutil`.
 - **Signing & notarization** are optional and driven by repository secrets (listed at the top of the
