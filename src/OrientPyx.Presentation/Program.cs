@@ -81,9 +81,11 @@ internal static class Program
 
     /// <summary>
     /// When running as a Velopack-installed app, redirect data/events/logs to a stable per-user folder
-    /// so they survive updates. Velopack lays the app out as <c>&lt;root&gt;\current\OrientPyx.exe</c> with
-    /// <c>&lt;root&gt;\Update.exe</c> one level up; the presence of that sibling is our "installed" signal.
-    /// A plain build (no sibling Update.exe) is left untouched so <c>dotnet run</c> writes next to the exe.
+    /// so they survive updates. On Windows Velopack lays the app out as <c>&lt;root&gt;\current\OrientPyx.exe</c>
+    /// with <c>&lt;root&gt;\Update.exe</c> one level up; on macOS the whole app is the bundle
+    /// <c>OrientPyx.app/Contents/MacOS/</c> holding <c>OrientPyx</c> and <c>UpdateMac</c> side by side. The presence
+    /// of that updater is our "installed" signal (see <see cref="IsVelopackInstallLayout"/>). A plain build (no
+    /// updater) is left untouched so <c>dotnet run</c> writes next to the exe.
     ///
     /// CRITICAL: every auto-update replaces the whole <c>current</c> folder, so anything written under it
     /// (competition data, the app DB, logs) is destroyed on the next update. Early installed builds wrote
@@ -99,8 +101,7 @@ internal static class Program
             // trim the separator first to reach ...\OrientPyx where Velopack's Update.exe lives. Missing this
             // made the "installed" check always fail, leaving data in the update-volatile install folder.
             var appDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var updateExe = Path.Combine(Directory.GetParent(appDir)?.FullName ?? appDir, "Update.exe");
-            if (!File.Exists(updateExe))
+            if (!IsVelopackInstallLayout(appDir))
                 return;
 
             // Re-assert the .opyx association on every installed launch, so installs made before it existed
@@ -121,6 +122,18 @@ internal static class Program
         {
             // Best-effort: if detection fails, fall back to the default (next to the exe).
         }
+    }
+
+    /// <summary>True when <paramref name="appDir"/> (the folder holding the running exe, no trailing separator)
+    /// sits inside a Velopack install: <c>Update.exe</c> one level up on Windows, <c>UpdateMac</c> beside the exe
+    /// inside the <c>.app</c> bundle on macOS. Both layouts are replaced wholesale by an update.</summary>
+    private static bool IsVelopackInstallLayout(string appDir)
+    {
+        if (OperatingSystem.IsMacOS())
+            return File.Exists(Path.Combine(appDir, "UpdateMac"));
+
+        var updateExe = Path.Combine(Directory.GetParent(appDir)?.FullName ?? appDir, "Update.exe");
+        return File.Exists(updateExe);
     }
 
     /// <summary>

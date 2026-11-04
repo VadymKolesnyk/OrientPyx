@@ -1,7 +1,10 @@
 # Packaging & updates (Velopack)
 
 OrientPyx ships as a **Velopack** app: `publish.ps1` builds a Windows installer (`Setup.exe`) and an
-update package, and the running app checks GitHub Releases for newer versions.
+update package, `publish-mac.sh` (run by GitHub Actions on a macOS runner) builds the macOS `.pkg` /
+`.app`, and the running app checks GitHub Releases for newer versions. One GitHub Release holds every
+platform; each platform reads its own Velopack **channel**: `win`, `osx-arm64` (Apple Silicon), `osx-x64`
+(Intel).
 
 ## One-time setup
 
@@ -30,6 +33,37 @@ dotnet tool install -g vpk        # the Velopack CLI
    ```
 
    …or attach the whole `build/releases/` contents to a GitHub Release manually.
+
+4. **macOS** is built by the `Release macOS` workflow (`.github/workflows/release-macos.yml`): pushing the
+   `v<version>` tag starts it on a `macos-14` runner, where `build/publish-mac.sh` publishes `osx-arm64` and
+   `osx-x64`, packs each with `vpk` and uploads into the same release with `--merge` (the Windows upload
+   also passes `--merge`, so the order of the two uploads does not matter). It can also be started by hand
+   from the Actions tab (inputs: version, upload). The packages are kept as a workflow artifact too.
+
+## macOS specifics
+
+- Velopack can only build a `.app`/`.pkg` **on macOS** (`vpk` on Windows offers just `bundle` for OSX), hence
+  the CI workflow. To build locally on a Mac: `dotnet tool install -g vpk`, then
+  `build/publish-mac.sh 1.1.0 [--upload] [--runtime osx-arm64|osx-x64|all]`.
+- Output per architecture in `build/releases-mac/<rid>/`: `OrientPyx-<rid>.pkg` (installer),
+  `OrientPyx-<rid>-Portable.zip` (the bare `.app`), `*-full.nupkg`/`*-delta.nupkg` and `releases.<rid>.json`.
+- The `.icns` icon is generated on the fly from `Assets/orientpyx.png` with `sips` + `iconutil`.
+- **Signing & notarization** are optional and driven by repository secrets (listed at the top of the
+  workflow file): a `Developer ID Application` certificate (`.p12`, base64) with its password, the two identity
+  names, and `APPLE_ID` / `APPLE_TEAM_ID` / `APPLE_APP_PASSWORD` for `notarytool`. With them `vpk` signs the
+  `.app`, signs the `.pkg` (if a `Developer ID Installer` identity is given), notarizes and staples. Without
+  them the packages are **unsigned**: Gatekeeper blocks the first launch and the user must right-click →
+  «Open» (or System Settings → Privacy & Security → «Open Anyway»). Auto-updates work either way.
+- Installed to `/Applications/OrientPyx.app`; data lives in `~/Library/Application Support/OrientPyx/data-root`
+  (the `.app` is replaced wholesale by every update — see `Program.cs`, `IsVelopackInstallLayout`, which
+  recognises the bundled `UpdateMac` beside the executable).
+- Not available on macOS: printing to a thermal / system printer (GDI, `System.Drawing`) — the split,
+  winners and statement printouts report «unsupported»; Word/HTML export is unaffected.
+- The `.opyx` association comes from `build/mac/Info.plist` (`CFBundleDocumentTypes` + an exported UTI),
+  which `publish-mac.sh` fills with the version and passes to `vpk pack --plist`. Velopack copies a provided
+  plist **as-is**, so that template must keep every standard key (name, executable, identifier, version,
+  icon) in sync with what Velopack would generate. Finder delivers the file as an Avalonia file activation
+  (`IActivatableLifetime`, handled in `App.axaml.cs`), not as a command-line argument.
 
 > **Deltas need history.** `vpk` builds delta packages by diffing against the previous packages already
 > in `build/releases/`. That folder is git-ignored, so before packing a new version, restore the prior

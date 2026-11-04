@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Info.plist of the macOS bundle, handed to vpk pack (the plist option) by build/publish-mac.sh (which replaces
+  __VERSION__). Velopack copies a provided plist AS-IS, so this file must carry every key Velopack would
+  otherwise generate (bundle name/executable/identifier/version/icon) plus what we add on top: the .opyx
+  document type, so Finder opens competition archives with OrientPyx (the Windows side is FileAssociation.cs).
+-->
+<plist version="1.0">
+<dict>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>OrientPyx</string>
+  <key>CFBundleDisplayName</key>
+  <string>OrientPyx</string>
+  <key>CFBundleExecutable</key>
+  <string>OrientPyx</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.orientpyx.OrientPyx</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleSignature</key>
+  <string>????</string>
+  <key>CFBundleShortVersionString</key>
+  <string>__VERSION__</string>
+  <key>CFBundleVersion</key>
+  <string>__VERSION__</string>
+  <key>CFBundleIconFile</key>
+  <string>orientpyx.icns</string>
+  <key>NSPrincipalClass</key>
+  <string>NSApplication</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.sports</string>
+
+  <!-- Competition archive (.opyx, a zip of events/<id>): double-click in Finder opens it in OrientPyx. -->
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>OrientPyx competition archive</string>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSHandlerRank</key>
+      <string>Owner</string>
+      <key>CFBundleTypeIconFile</key>
+      <string>orientpyx.icns</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>com.orientpyx.opyx</string>
+      </array>
+    </dict>
+  </array>
+  <key>UTExportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>com.orientpyx.opyx</string>
+      <key>UTTypeDescription</key>
+      <string>OrientPyx competition archive</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+        <string>public.archive</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array>
+          <string>opyx</string>
+        </array>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>

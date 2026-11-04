@@ -11,6 +11,10 @@
 *.md        text
 *.manifest  text
 *.gitignore text
+*.sh        text eol=lf
+*.yml       text
+*.yaml      text
+*.plist     text
 
 # Binary assets
 *.png  binary

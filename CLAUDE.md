@@ -184,6 +184,20 @@ the format's structure comes from it, the plugin overrides rules: `EvaluateFinis
 - **Release**: `build/publish.ps1` builds `plugins/OrientPyx.Plugins.sln` and copies `artifacts/plugins/*` into the
   package's `plugins\` folder. Build plugins locally with `dotnet build plugins/OrientPyx.Plugins.sln`.
 
+## Platforms & packaging
+
+Windows and macOS are shipped; Linux runs from source only. `build/publish.ps1` (Windows, run locally) and
+`build/publish-mac.sh` (macOS, run by `.github/workflows/release-macos.yml` on the `v<version>` tag) pack with
+Velopack into one GitHub Release, each platform on its own channel (`win`, `osx-arm64`, `osx-x64`; both uploads
+use `--merge`). Details and the optional Apple signing secrets: `build/README.md`. Keep the code portable:
+anything Windows-only (GDI printing in `DataAccess/Printing`, `FileAssociation`, Explorer) must be guarded by
+`OperatingSystem.IsWindows()` and degrade gracefully (the print services expose `IsSupported`); reveal/open
+files through `Presentation/Services/FileReveal.cs`, never by launching `explorer.exe` directly. On macOS the
+installed layout is the `.app` bundle with `UpdateMac` beside the exe (`Program.IsVelopackInstallLayout`) and
+data goes to `~/Library/Application Support/OrientPyx/data-root`. The `.opyx` association on macOS is the
+bundle's `build/mac/Info.plist` (copied as-is by `vpk pack --plist`, so keep its standard keys complete) and the
+file arrives as an `IActivatableLifetime` file activation handled in `App.axaml.cs`, not in `args`.
+
 Notable formats: **Mixed** (змішаний) judges against a course *pattern* (`<seq>` ordered runs,
 `[N …]` any-of blocks, nesting) like a set course. **Scatter** (розсіювання) has several valid
 orders (variants) per (day, group) stored in the `GroupCourseVariant` event-DB table (renamed from

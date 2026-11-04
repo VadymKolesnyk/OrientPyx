@@ -103,6 +103,14 @@ $env:GITHUB_TOKEN = (gh auth token)
   the correct existing `v<version>` tag. It publishes a GitHub Release named
   `OrientPyx <version>` with the installer, full/delta packages, and the
   `RELEASES`/`releases.win.json` update feed.
+- The tag push (Step 5) also started the **`Release macOS`** GitHub Actions workflow
+  (`.github/workflows/release-macos.yml`), which builds the `osx-arm64` / `osx-x64` packages
+  and merges them into the same release. Both uploads pass `--merge`, so their order does not
+  matter. Check it: `gh run list --workflow release-macos.yml --limit 1` and, once it is done,
+  `gh release view v<version> --json assets -q '.assets[].name'` should list
+  `OrientPyx-osx-arm64.pkg` and `OrientPyx-osx-x64.pkg` next to `OrientPyx-win-Setup.exe`.
+  If the workflow failed, report it (`gh run view <id> --log-failed`) — the Windows release is
+  still valid; re-run the workflow from the Actions tab after fixing the cause.
 - After it finishes, verify the remote tag points at the release commit — the annotated
   tag dereferences with `^{}`:
   `git ls-remote origin 'refs/tags/v<version>^{}'` should equal `git rev-parse HEAD`.
@@ -129,6 +137,7 @@ English summary is also acceptable — match what past releases used.
 Summarize for the user:
 - the released version and the previous one,
 - the release URL (`gh release view v<version> --json url -q .url`),
+- whether the macOS packages landed (or that the workflow is still running / failed),
 - the key changes shipped,
 - and remind them that installed clients will pick up the update via
   **Settings → Version & updates**.

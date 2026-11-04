@@ -14,6 +14,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using OrientPyx.Presentation.Behaviors;
 using OrientPyx.Presentation.Controls;
+using OrientPyx.Presentation.Services;
 using OrientPyx.Presentation.ViewModels.Pages;
 
 namespace OrientPyx.Presentation.Views.Pages;
@@ -50,27 +51,9 @@ public partial class FinishReadView : UserControl
         if (string.IsNullOrWhiteSpace(path))
             return;
 
-        try
-        {
-            // File present: highlight it in Explorer (Windows). Otherwise (or on other OSes) just open the
-            // parent folder so the operator can see where the reader is expected to write.
-            if (File.Exists(path) && OperatingSystem.IsWindows())
-            {
-                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"")
-                {
-                    UseShellExecute = true
-                });
-                return;
-            }
-
-            var folder = Path.GetDirectoryName(path);
-            if (!string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder))
-                Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true });
-        }
-        catch
-        {
-            // Reveal is a convenience; a launch failure must not disrupt readout.
-        }
+        // File present: highlight it in Explorer / Finder. Otherwise just open the parent folder so the
+        // operator can see where the reader is expected to write. Never throws.
+        FileReveal.TryReveal(path);
     }
 
     private async Task<string?> PickCsvAsync()

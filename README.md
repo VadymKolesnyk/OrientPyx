@@ -31,7 +31,7 @@
 - [.NET 10](https://dotnet.microsoft.com/) / C#
 - [Avalonia 12](https://avaloniaui.net/) — кросплатформний UI (MVVM, CommunityToolkit.Mvvm)
 - [Entity Framework Core](https://learn.microsoft.com/ef/core/) + SQLite — зберігання
-- [Velopack](https://velopack.io/) — інсталятор та авто-оновлення (Windows)
+- [Velopack](https://velopack.io/) — інсталятор та авто-оновлення (Windows, macOS)
 
 ## Архітектура
 
@@ -67,8 +67,15 @@ dotnet run --project src/OrientPyx.Presentation
 
 ## Інсталятор та оновлення
 
-Готова до встановлення версія для Windows збирається через Velopack — див.
-[`build/README.md`](build/README.md). Встановлена програма перевіряє оновлення на
+Готові до встановлення версії збираються через Velopack — див. [`build/README.md`](build/README.md):
+
+- **Windows** — `OrientPyx-win-Setup.exe` (локально, `build/publish.ps1`);
+- **macOS** — `OrientPyx-osx-arm64.pkg` (Apple Silicon) та `OrientPyx-osx-x64.pkg` (Intel), збираються
+  GitHub Actions на тегу релізу (`build/publish-mac.sh`). Непідписаний пакет при першому запуску треба
+  відкрити через правий клік → «Відкрити». Файли `.opyx` відкриваються з Finder так само, як з Провідника.
+  На macOS недоступний друк на принтер (спліти, переможці, відомість) — експорт у Word/HTML працює.
+
+Усі пакети лежать в одному GitHub Release. Встановлена програма перевіряє оновлення на
 GitHub Releases (сторінка «Налаштування» → «Версія та оновлення»).
 
 ## Ліцензія

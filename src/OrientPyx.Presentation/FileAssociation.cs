@@ -7,7 +7,9 @@ namespace OrientPyx.Presentation;
 /// <summary>
 /// Associates competition archives (<c>.opyx</c>) with the installed app, so double-clicking one in Explorer
 /// launches OrientPyx and starts importing it. Per-user (HKCU\Software\Classes — no admin rights needed) and
-/// Windows-only; every call is best-effort and never throws.
+/// Windows-only; every call is best-effort and never throws. On macOS the association is declared statically in
+/// the bundle's <c>Info.plist</c> (<c>build/mac/Info.plist</c>, CFBundleDocumentTypes) and Finder hands the file
+/// over as a file activation (see <c>App.OnFrameworkInitializationCompleted</c>), not as an argument.
 /// </summary>
 internal static class FileAssociation
 {
@@ -67,10 +69,13 @@ internal static class FileAssociation
     }
 
     /// <summary>The competition archive the app was launched to open (a double-clicked <c>.opyx</c>), if any.</summary>
-    public static string? FindArchiveArgument(string[] args) =>
-        args.FirstOrDefault(a =>
-            string.Equals(Path.GetExtension(a), $".{EventArchiveConstants.Extension}", StringComparison.OrdinalIgnoreCase)
-            && File.Exists(a));
+    public static string? FindArchiveArgument(string[] args) => args.FirstOrDefault(IsArchivePath);
+
+    /// <summary>True for an existing local file with the <c>.opyx</c> extension.</summary>
+    public static bool IsArchivePath(string? path) =>
+        !string.IsNullOrEmpty(path)
+        && string.Equals(Path.GetExtension(path), $".{EventArchiveConstants.Extension}", StringComparison.OrdinalIgnoreCase)
+        && File.Exists(path);
 
     // Tells Explorer the association changed, so the new icon/handler shows without a re-login.
     private static void NotifyShell() => SHChangeNotify(0x08000000 /* SHCNE_ASSOCCHANGED */, 0, IntPtr.Zero, IntPtr.Zero);

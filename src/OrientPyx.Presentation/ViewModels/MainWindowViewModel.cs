@@ -604,9 +604,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private async Task WriteResultsSnapshotAsync()
     {
         var path = await _resultsSnapshot.WriteAsync();
-        // Developer tool: reveal the written file in Explorer rather than a localized dialog.
-        if (path is not null && OperatingSystem.IsWindows())
-            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\"");
+        // Developer tool: reveal the written file in the file manager rather than a localized dialog.
+        Services.FileReveal.TryReveal(path);
     }
 
     // Exports the currently-open competition to a single archive file (File → Export competition).

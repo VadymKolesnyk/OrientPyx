@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using OrientPyx.BusinessLogic.Interfaces;
@@ -63,12 +64,38 @@ public partial class App : Application
 
             // Launched by double-clicking a competition archive: once the window is up and the startup
             // screen settled, run the regular import flow on that file (its dialogs need a shown owner).
-            if (Program.StartupArchivePath is { } archivePath)
+            var windowOpened = new TaskCompletionSource();
+            mainWindow.Opened += (_, _) => windowOpened.TrySetResult();
+            var log = services.GetRequiredService<IActivityLog>();
+
+            async Task ImportArchiveWhenReadyAsync(string archivePath)
             {
-                mainWindow.Opened += async (_, _) =>
+                try
                 {
+                    await windowOpened.Task;
                     await initialized;
                     await mainViewModel.ImportCompetitionFileAsync(archivePath);
+                }
+                catch (Exception ex)
+                {
+                    log.Error("Open archive on launch", ex);
+                }
+            }
+
+            // Windows: Explorer passes the file as a command-line argument.
+            if (Program.StartupArchivePath is { } startupArchive)
+                _ = ImportArchiveWhenReadyAsync(startupArchive);
+
+            // macOS: Finder delivers the file as an activation (both at launch and into a running app) — the
+            // bundle's Info.plist declares the .opyx document type; nothing arrives in args.
+            if (this.TryGetFeature<IActivatableLifetime>() is { } activatable)
+            {
+                activatable.Activated += (_, e) =>
+                {
+                    if (e is not FileActivatedEventArgs files)
+                        return;
+                    foreach (var path in files.Files.Select(f => f.TryGetLocalPath()).Where(FileAssociation.IsArchivePath))
+                        _ = ImportArchiveWhenReadyAsync(path!);
                 };
             }
 

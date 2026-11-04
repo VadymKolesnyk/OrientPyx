@@ -52,6 +52,8 @@ Thumbs.db
 # Velopack packaging output (publish staging + generated installers/packages)
 /build/publish/
 /build/releases/
+/build/publish-mac/
+/build/releases-mac/
 *.snupkg
 .nuget/
 

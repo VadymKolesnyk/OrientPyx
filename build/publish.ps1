@@ -8,6 +8,11 @@
     the initial release; subsequent runs compare against the previous packages there and emit deltas, so
     keep build/releases (or re-download it from GitHub) before packing a new version.
 
+    macOS packages are NOT built here (Velopack can only pack a .app/.pkg on macOS): they come from
+    build/publish-mac.sh, run by the GitHub Actions workflow .github/workflows/release-macos.yml on the
+    v<Version> tag push. Both uploads merge into the same GitHub Release (--merge), each under its own
+    Velopack channel (win / osx-arm64 / osx-x64).
+
     Requires the Velopack CLI (vpk). Install once with:  dotnet tool install -g vpk
 
 .PARAMETER Version
@@ -93,6 +98,7 @@ if ($Upload) {
         --repoUrl 'https://github.com/VadymKolesnyk/OrientPyx' `
         --token $env:GITHUB_TOKEN `
         --publish `
+        --merge `
         --releaseName "OrientPyx $Version" `
         --tag "v$Version"
     if ($LASTEXITCODE -ne 0) { throw "vpk upload failed." }

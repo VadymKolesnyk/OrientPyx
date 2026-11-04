@@ -1,0 +1,121 @@
+# Builds the macOS packages (Apple Silicon + Intel) with Velopack and attaches them to the GitHub Release
+# of the same version. Runs when a v<version> tag is pushed (the Windows release is built locally by
+# build/publish.ps1 and uploads into the same release - both sides use --merge), or by hand.
+#
+# Signing / notarization is optional and switched on by repository secrets:
+#   MACOS_CERTIFICATE_P12        base64 of a .p12 holding "Developer ID Application" (+ "Developer ID Installer")
+#   MACOS_CERTIFICATE_PASSWORD   password of that .p12
+#   MACOS_SIGN_APP_IDENTITY      "Developer ID Application: Name" (without the team id, per Velopack docs)
+#   MACOS_SIGN_INSTALL_IDENTITY  "Developer ID Installer: Name"  (optional; the .pkg stays unsigned without it)
+#   APPLE_ID / APPLE_TEAM_ID / APPLE_APP_PASSWORD   notarytool credentials (an app-specific password)
+# Without MACOS_CERTIFICATE_P12 the packages are built unsigned (right-click -> Open on first launch).
+name: Release macOS
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build, e.g. 1.2.0 (default: taken from the current tag)'
+        required: false
+        default: ''
+      upload:
+        description: 'Upload to the GitHub Release v<version> (merging into it)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-14
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      HAS_CERT: ${{ secrets.MACOS_CERTIFICATE_P12 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install Velopack CLI
+        run: dotnet tool install -g vpk
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          v="$INPUT_VERSION"
+          if [[ -z "$v" ]]; then
+            v="${GITHUB_REF_NAME#v}"
+          fi
+          if [[ ! "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Not a release version: '$v' (push a v<MAJOR.MINOR.PATCH> tag or pass the version input)" >&2
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Import signing certificate
+        id: sign
+        if: env.HAS_CERT == 'true'
+        shell: bash
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/orientpyx-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$RUNNER_TEMP/cert.p12"
+          echo "keychain=$KEYCHAIN" >> "$GITHUB_OUTPUT"
+          if [[ -n "$APPLE_ID" && -n "$APPLE_TEAM_ID" && -n "$APPLE_APP_PASSWORD" ]]; then
+            xcrun notarytool store-credentials orientpyx-notary \
+              --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" \
+              --keychain "$KEYCHAIN"
+            echo "notary=orientpyx-notary" >> "$GITHUB_OUTPUT"
+          else
+            echo "notary=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build, pack and upload
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SIGN_APP_IDENTITY: ${{ env.HAS_CERT == 'true' && secrets.MACOS_SIGN_APP_IDENTITY || '' }}
+          SIGN_INSTALL_IDENTITY: ${{ env.HAS_CERT == 'true' && secrets.MACOS_SIGN_INSTALL_IDENTITY || '' }}
+          NOTARY_PROFILE: ${{ steps.sign.outputs.notary }}
+          KEYCHAIN_PATH: ${{ steps.sign.outputs.keychain }}
+          UPLOAD: ${{ github.event_name == 'push' || github.event.inputs.upload == 'true' }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          args=()
+          if [[ "$UPLOAD" == "true" ]]; then args+=(--upload); fi
+          bash build/publish-mac.sh "$VERSION" "${args[@]+"${args[@]}"}"
+
+      - name: Keep packages as workflow artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orientpyx-macos-${{ steps.version.outputs.version }}
+          path: build/releases-mac/**
+          if-no-files-found: ignore
+
+      - name: Remove signing keychain
+        if: always() && steps.sign.outputs.keychain != ''
+        run: security delete-keychain "${{ steps.sign.outputs.keychain }}"
