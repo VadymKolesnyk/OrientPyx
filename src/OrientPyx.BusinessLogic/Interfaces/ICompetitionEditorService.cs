@@ -698,6 +698,17 @@ public interface ICompetitionEditorService
         ParticipantImportScope scope,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// What an all-days import (keeping the current roster) would do, for the user to confirm row by row: the
+    /// rows that add an athlete, the rows that update one — matched by FOU code like the import itself — with the
+    /// fields that would change (a blank chip in the file never counts: it keeps the stored one), and the athletes
+    /// the file no longer lists. Empty for a day-scoped import or with no competition.
+    /// </summary>
+    Task<ImportPreview> PreviewParticipantImportAsync(
+        UofParticipantData data,
+        ParticipantImportScope scope,
+        CancellationToken cancellationToken = default);
+
     /// <summary>The settings of a (plugin) discipline on a day: definitions plus effective values (saved, else
     /// default; day-scoped from the day, competition-scoped from the competition, Р-11). Null with no competition.</summary>
     Task<DisciplineSettingsData?> GetDisciplineSettingsAsync(Guid dayId, DisciplineId disciplineId, CancellationToken cancellationToken = default);

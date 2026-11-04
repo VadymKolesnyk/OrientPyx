@@ -125,6 +125,10 @@ public interface IDialogService : INotifyPropertyChanged
     /// the rows to merge into an existing athlete (empty when all are new).</summary>
     Task<IReadOnlyDictionary<int, Guid>?> ShowImportDuplicatesAsync(ImportDuplicatesViewModel dialog);
 
+    /// <summary>The all-days import's confirmation (rows to add / update, athletes to delete). Returns the
+    /// decision on import.</summary>
+    Task<ImportPreviewDecision?> ShowImportPreviewAsync(ImportPreviewViewModel dialog);
+
     /// <summary>Returns the new competition identifier (folder name), validated against the events folder.</summary>
     Task<string?> ShowRenameEventAsync(RenameEventViewModel dialog);
 }

@@ -4,6 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Interfaces;
+using OrientPyx.BusinessLogic.Models;
+using OrientPyx.Localization;
 using OrientPyx.Presentation.Controls;
 using OrientPyx.Presentation.ViewModels;
 using OrientPyx.Presentation.ViewModels.Dialogs;
@@ -256,6 +258,41 @@ public sealed class HeadlessWorkflowTests
         Assert.Equal("7101", rows.Single(r => r.FullName == "Сканований Перший").Chip);
         Assert.Equal("", rows.Single(r => r.FullName == "Сканований Другий").Chip);
         Assert.NotNull(await editor.GetChipScanSettingsAsync());   // the set-up is saved on apply
+        AssertNoUiErrors();
+    }
+
+    [Fact]
+    public async Task ImportPreviewDialogRendersThreeBlocksAndReturnsTheDecision()
+    {
+        // The dialog alone, on a synthetic preview: the three blocks, select-all / none, and the decision.
+        await EnsureAnyCompetitionOpenAsync();
+        var localization = Core.GetRequiredService<ILocalizationService>();
+        var kovalId = Guid.NewGuid();
+        var preview = new ImportPreview(
+            [new ImportPreviewAdded(0, "Новий Учасник", "Ч21", 2008, "Орієнтир", "Київ", [1])],
+            [new ImportPreviewUpdated(1, kovalId, "Коваль Олег", "Ч21",
+                [new ImportPreviewChange("Club", null, "", "Орієнтир"), new ImportPreviewChange("Chip", 1, "", "8001"),
+                 new ImportPreviewChange("Day", 2, "", "")])],
+            [new ImportPreviewMissing(Guid.NewGuid(), "Петренко Іван", "Ч21", 2001, "", "Львів", [1, 2])]);
+
+        var vm = new ImportPreviewViewModel(localization, preview);
+        var shown = _app.OnUiAsync(() => _app.Vm.Dialogs.ShowImportPreviewAsync(vm));
+        await _app.WaitUntilAsync(() => ReferenceEquals(_app.Vm.Dialogs.Current, vm), what: "preview dialog open");
+        await _app.SettleAsync();
+        await _app.ScreenshotAsync("18-import-preview");
+
+        await _app.OnUiAsync(() =>
+        {
+            vm.DeselectAllAddedCommand.Execute(null);
+            vm.SelectAllMissingCommand.Execute(null);
+            vm.ConfirmCommand.Execute(null);
+        });
+        await _app.WaitUntilAsync(() => _app.Vm.Dialogs.Current is null, what: "preview dialog closed");
+        var decision = await vm.Completion;
+        Assert.NotNull(decision);
+        Assert.Equal([0], decision.ExcludedRows.OrderBy(x => x));
+        Assert.Single(decision.DeleteParticipantIds);
+        await shown;
         AssertNoUiErrors();
     }
 

@@ -60,6 +60,12 @@ public sealed class ParticipantImportScope
     /// </summary>
     public IReadOnlyDictionary<int, Guid> MergeInto { get; init; } = new Dictionary<int, Guid>();
 
+    /// <summary>
+    /// Rows of the import data (by index) the user chose to leave out in the all-days preview
+    /// (<see cref="ImportPreview"/>): they are neither added nor updated. Empty by default.
+    /// </summary>
+    public IReadOnlySet<int> ExcludedRows { get; init; } = new HashSet<int>();
+
     /// <summary>A copy of this scope with <see cref="MergeInto"/> replaced.</summary>
     public ParticipantImportScope WithMergeInto(IReadOnlyDictionary<int, Guid> mergeInto) => new()
     {
@@ -67,7 +73,19 @@ public sealed class ParticipantImportScope
         TargetDayNumber = TargetDayNumber,
         LinkField = LinkField,
         UpdateFields = UpdateFields,
-        MergeInto = mergeInto
+        MergeInto = mergeInto,
+        ExcludedRows = ExcludedRows
+    };
+
+    /// <summary>A copy of this scope with <see cref="ExcludedRows"/> replaced.</summary>
+    public ParticipantImportScope WithExcludedRows(IReadOnlySet<int> excludedRows) => new()
+    {
+        Mode = Mode,
+        TargetDayNumber = TargetDayNumber,
+        LinkField = LinkField,
+        UpdateFields = UpdateFields,
+        MergeInto = MergeInto,
+        ExcludedRows = excludedRows
     };
 }
 

@@ -4603,6 +4603,139 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             FolderPath, data, clearFirst, daysCreated, scope, progress, cancellationToken, relayDays);
     }
 
+    public async Task<ImportPreview> PreviewParticipantImportAsync(
+        UofParticipantData data,
+        ParticipantImportScope scope,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(scope);
+        if (_session.CurrentEvent is null || scope.Mode != ParticipantImportMode.AllDays)
+            return ImportPreview.Empty;
+
+        var folder = FolderPath;
+        var days = (await _eventStore.GetDaysAsync(folder, cancellationToken)).OrderBy(d => d.Number).ToList();
+        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        var links = await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
+        var groups = (await _eventStore.GetGroupsAsync(folder, cancellationToken)).ToDictionary(g => g.Id, g => g.Name);
+        var clubs = (await _eventStore.GetClubsAsync(folder, cancellationToken)).ToDictionary(c => c.Id, c => c.Name);
+        var regions = (await _eventStore.GetRegionsAsync(folder, cancellationToken)).ToDictionary(r => r.Id, r => r.Name);
+        var dusshes = (await _eventStore.GetDusshesAsync(folder, cancellationToken)).ToDictionary(d => d.Id, d => d.Name);
+        var fieldDefs = (await _eventStore.GetCustomFieldDefsAsync(folder, cancellationToken))
+            .ToDictionary(d => d.Key, CustomField.From);
+        var fieldValues = (await _eventStore.GetParticipantFieldValuesAsync(folder, cancellationToken))
+            .ToDictionary(v => (v.ParticipantId, v.Key), v => v.Value);
+        var dayById = days.ToDictionary(d => d.Id);
+        var allDayNumbers = days.Select(d => d.Number).ToList();
+        var linksByParticipant = links.ToLookup(l => l.ParticipantId);
+
+        // The import matches an existing athlete by FOU code only (all-days mode).
+        var byCode = participants
+            .Where(p => !string.IsNullOrWhiteSpace(p.FsouCode))
+            .GroupBy(p => p.FsouCode.Trim(), TextKey.Comparer)
+            .ToDictionary(g => g.Key, g => g.First(), TextKey.Comparer);
+
+        static string Name<T>(Guid? id, Dictionary<Guid, string> names, Func<T, string>? _ = null) =>
+            id is { } key && names.TryGetValue(key, out var n) ? n.Trim() : string.Empty;
+        static bool Differs(string stored, string incoming) => !TextKey.Same(stored.Trim(), incoming.Trim());
+
+        var added = new List<ImportPreviewAdded>();
+        var updated = new List<ImportPreviewUpdated>();
+        var seen = new HashSet<Guid>();
+        for (var i = 0; i < data.Participants.Count; i++)
+        {
+            var src = data.Participants[i];
+            var rowDays = src.DayNumbers.Count > 0 ? src.DayNumbers : allDayNumbers;
+            var code = src.FsouCode.Trim();
+            if (code.Length == 0 || !byCode.TryGetValue(code, out var existing))
+            {
+                added.Add(new ImportPreviewAdded(i, src.FullName.Trim(), src.Group.Trim(), src.BirthDate?.Year,
+                    src.Club.Trim(), src.Region.Trim(), rowDays));
+                continue;
+            }
+
+            seen.Add(existing.Id);
+            var changes = new List<ImportPreviewChange>();
+            void Change(string field, string before, string after, int? day = null)
+            {
+                if (Differs(before, after))
+                    changes.Add(new ImportPreviewChange(field, day, before.Trim(), after.Trim()));
+            }
+
+            // Participant-level fields, with the import's own rules: number/team/payment only when the file has
+            // a value; everything else is overwritten by an all-days import.
+            Change("FullName", existing.FullName, src.FullName);
+            if (src.Number.Trim() is { Length: > 0 } and not "0") Change("Number", existing.Number, src.Number);
+            if (src.Team.Trim().Length > 0) Change("Team", existing.Team, src.Team);
+            Change("Rank", existing.Rank, src.Rank);
+            Change("Coach", existing.Coach, src.Coach);
+            if (existing.BirthDate?.Date != src.BirthDate?.Date)
+                changes.Add(new ImportPreviewChange("BirthDate", null,
+                    existing.BirthDate?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) ?? string.Empty,
+                    src.BirthDate?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) ?? string.Empty));
+            Change("Region", Name<Region>(existing.RegionId, regions), src.Region);
+            Change("Club", Name<Club>(existing.ClubId, clubs), src.Club);
+            Change("Dussh", Name<Dussh>(existing.DusshId, dusshes), src.Dussh);
+            Change("Representative", existing.Representative, src.Representative);
+            if (existing.IsFsouMember != src.IsFsouMember)
+                changes.Add(new ImportPreviewChange("IsFsouMember", null, existing.IsFsouMember ? "+" : "−", src.IsFsouMember ? "+" : "−"));
+            if (src.Payment.Trim().Length > 0) Change("Payment", existing.Payment, src.Payment);
+
+            // Additional fields: a blank cell never clears a stored value.
+            foreach (var (key, raw) in src.Fields)
+            {
+                if (!fieldDefs.TryGetValue(key, out var def))
+                    continue;
+                var value = def.Normalize(raw);
+                if (value.Length == 0)
+                    continue;
+                var stored = fieldValues.TryGetValue((existing.Id, key), out var v) ? v : string.Empty;
+                Change(CustomField.ColumnPrefix + key, stored, value);
+            }
+
+            // Per day: the group always follows the file; the chip only when the file has one; a day the athlete
+            // is not on yet is a new entry.
+            var mine = linksByParticipant[existing.Id].ToList();
+            foreach (var dayNumber in rowDays)
+            {
+                var link = mine.FirstOrDefault(l => dayById.TryGetValue(l.EventDayId, out var d) && d.Number == dayNumber);
+                if (link is null)
+                {
+                    changes.Add(new ImportPreviewChange("Day", dayNumber, string.Empty, string.Empty));
+                    continue;
+                }
+                Change("Group", Name<Group>(link.GroupId, groups), src.Group, dayNumber);
+                var chip = src.Chip.Trim();
+                if (chip.Length > 0 && chip != "0")
+                    Change("Chip", link.Chip, chip, dayNumber);
+            }
+
+            updated.Add(new ImportPreviewUpdated(i, existing.Id, src.FullName.Trim(), src.Group.Trim(), changes));
+        }
+
+        var missing = participants
+            .Where(p => !seen.Contains(p.Id))
+            .Select(p =>
+            {
+                var mine = linksByParticipant[p.Id]
+                    .Where(l => dayById.ContainsKey(l.EventDayId))
+                    .OrderBy(l => dayById[l.EventDayId].Number)
+                    .ToList();
+                var groupNames = mine
+                    .Select(l => Name<Group>(l.GroupId, groups))
+                    .Where(g => g.Length > 0)
+                    .Distinct(TextKey.Comparer)
+                    .ToList();
+                return new ImportPreviewMissing(p.Id, p.FullName.Trim(), string.Join(" / ", groupNames), p.BirthDate?.Year,
+                    Name<Club>(p.ClubId, clubs), Name<Region>(p.RegionId, regions),
+                    mine.Select(l => dayById[l.EventDayId].Number).ToList());
+            })
+            .OrderBy(m => m.FullName, StringComparer.CurrentCulture)
+            .ToList();
+
+        return new ImportPreview(added, updated, missing);
+    }
+
     public async Task<IReadOnlyList<ImportDuplicateCase>> FindImportDuplicatesAsync(
         UofParticipantData data,
         bool clearFirst,

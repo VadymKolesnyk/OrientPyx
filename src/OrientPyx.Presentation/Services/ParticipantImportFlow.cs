@@ -82,8 +82,16 @@ public sealed class ParticipantImportFlow : IParticipantImportFlow
             return false; // cancelled in the duplicates modal
         importScope = resolved;
 
+        // All-days: confirm what the file adds / updates and which absent athletes to delete.
+        var previewed = await ImportPreviewStep.ResolveAsync(
+            data, clearFirst, importScope, _editor, _dialogs, _busy, _localization);
+        if (previewed is null)
+            return false; // cancelled in the preview modal
+        var (finalScope, deleteIds) = previewed.Value;
+
         await _busy.RunAsync(reporter =>
-            _editor.ImportParticipantsAsync(data, clearFirst, importScope, new ProgressRelay(this, reporter)));
+            _editor.ImportParticipantsAsync(data, clearFirst, finalScope, new ProgressRelay(this, reporter)));
+        await ImportPreviewStep.DeleteAsync(deleteIds, _editor, _busy);
         return true;
     }
 

@@ -129,8 +129,16 @@ public sealed class CsvImportFlow : ICsvImportFlow
         if (importScope is null)
             return false; // cancelled in the duplicates modal
 
+        // All-days: confirm what the file adds / updates and which absent athletes to delete.
+        var previewed = await ImportPreviewStep.ResolveAsync(
+            data, mapping.ClearFirst, importScope, _editor, _dialogs, _busy, _localization);
+        if (previewed is null)
+            return false; // cancelled in the preview modal
+        var (finalScope, deleteIds) = previewed.Value;
+
         await _busy.RunAsync(reporter =>
-            _editor.ImportParticipantsAsync(data, mapping.ClearFirst, importScope, new ProgressRelay(this, reporter)));
+            _editor.ImportParticipantsAsync(data, mapping.ClearFirst, finalScope, new ProgressRelay(this, reporter)));
+        await ImportPreviewStep.DeleteAsync(deleteIds, _editor, _busy);
         return true;
     }
 

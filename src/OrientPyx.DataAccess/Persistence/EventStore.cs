@@ -2001,6 +2001,13 @@ public sealed partial class EventStore : IEventStore
             cancellationToken.ThrowIfCancellationRequested();
             var src = data.Participants[rowIndex];
 
+            // A row the user left out in the all-days preview: neither added nor updated.
+            if (scope.ExcludedRows.Contains(rowIndex))
+            {
+                processed++;
+                continue;
+            }
+
             var regionId = ResolveRegion(src.Region);
             var clubId = ResolveClub(src.Club);
             var dusshId = ResolveDussh(src.Dussh);
@@ -2041,7 +2048,7 @@ public sealed partial class EventStore : IEventStore
                 participant = new Participant
                 {
                     FullName = src.FullName,
-                    Number = src.Number,
+                    Number = ImportedNumber(src.Number) ?? string.Empty,
                     Team = src.Team,
                     Rank = src.Rank,
                     Coach = src.Coach,
@@ -2082,8 +2089,8 @@ public sealed partial class EventStore : IEventStore
                     participant.FullName = src.FullName;
                 // Number and Team are absent in UOF files; only overwrite when the source supplies one,
                 // so re-importing UOF data over a CSV-set number/team doesn't wipe it.
-                if (Update(ParticipantUpdateFields.Number) && src.Number.Length > 0)
-                    participant.Number = src.Number;
+                if (Update(ParticipantUpdateFields.Number) && ImportedNumber(src.Number) is { } number)
+                    participant.Number = number;
                 if (Update(ParticipantUpdateFields.Team) && src.Team.Length > 0)
                     participant.Team = src.Team;
                 if (Update(ParticipantUpdateFields.Rank))
@@ -2167,7 +2174,7 @@ public sealed partial class EventStore : IEventStore
                         ParticipantId = participant.Id,
                         Order = ++linkOrderByDay[day.Id],
                         GroupId = group?.Id,
-                        Chip = src.Chip,
+                        Chip = ImportedChip(src.Chip) ?? string.Empty,
                         Payment = dayPayment ?? string.Empty
                     };
                     db.ParticipantDays.Add(newLink);
@@ -2178,7 +2185,10 @@ public sealed partial class EventStore : IEventStore
                 else
                 {
                     link.GroupId = group?.Id;
-                    link.Chip = src.Chip;
+                    // A blank (or "0") chip in the file is "no information": the chip handed out at the desk
+                    // must survive a re-import of the entries.
+                    if (ImportedChip(src.Chip) is { } chip)
+                        link.Chip = chip;
                     if (dayPayment is not null)
                         link.Payment = dayPayment;
                 }
@@ -2203,6 +2213,17 @@ public sealed partial class EventStore : IEventStore
         progress?.Report(ImportProgress.Of(ImportStage.Done));
 
         return new ParticipantImportResult(Added: added, Updated: updated, DaysCreated: daysCreated);
+    }
+
+    // The chip an import row carries, or null when it carries none ("" and "0" both mean "no chip").
+    private static string? ImportedChip(string? raw) => ImportedNumber(raw);
+
+    // The bib number an import row carries, or null when it carries none — the same rule as the chip: a blank
+    // or "0" cell is "no information", so the number given at the desk survives a re-import of the entries.
+    private static string? ImportedNumber(string? raw)
+    {
+        var value = (raw ?? string.Empty).Trim();
+        return value.Length == 0 || value == "0" ? null : value;
     }
 
     // One imported runner's relay entry on a day: the team (by number) and the leg (null ⇒ the next free one).

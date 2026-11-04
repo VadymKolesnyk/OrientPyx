@@ -219,6 +219,70 @@ public sealed class ImportTests
     }
 
     [Fact]
+    public async Task AllDays_PreviewListsAddedUpdatedMissing_AndReimportKeepsDeskChips()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("preview"));
+        await c.AddGroupAsync("Ч21", "31");
+        await c.SelectAsync();
+        var editor = Sp.GetRequiredService<ICompetitionEditorService>();
+
+        // First file: two athletes with FOU codes, one without a chip.
+        UofParticipantData File(params UofParticipant[] rows) => new() { Participants = rows };
+        UofParticipant Row(string name, string code, string group, string chip = "", string club = "", string number = "") =>
+            new() { FullName = name, FsouCode = code, Group = group, Chip = chip, Club = club, Number = number };
+        await editor.ImportParticipantsAsync(File(
+            Row("Петренко Іван", "1001", "Ч21", chip: "8001"),
+            Row("Коваль Олег", "1002", "Ч21"),
+            Row("Без Коду", "", "Ч21")), clearFirst: false, ParticipantImportScope.AllDays);
+
+        // The desk hands Коваль a chip; the site's second export drops Петренко, adds a newcomer and moves Коваль's club.
+        var koval = (await editor.GetParticipantRosterAsync()).Single(r => r.FullName == "Коваль Олег");
+        await editor.SetParticipantDayChipAsync(koval.ParticipantId, c.Day(1).Id, "7777");
+        var second = File(
+            Row("Коваль Олег", "1002", "Ч21", club: "Орієнтир"),
+            Row("Новий Учасник", "1003", "Ч21"));
+
+        var preview = await editor.PreviewParticipantImportAsync(second, ParticipantImportScope.AllDays);
+        var added = Assert.Single(preview.Added);
+        Assert.Equal("Новий Учасник", added.FullName);
+        Assert.Equal(1, added.RowIndex);
+        var updatedRow = Assert.Single(preview.Updated);
+        Assert.Equal(koval.ParticipantId, updatedRow.ParticipantId);
+        var change = Assert.Single(updatedRow.Changes);           // the club; the blank chip is not a change
+        Assert.Equal(("Club", "", "Орієнтир"), (change.Field, change.Before, change.After));
+        Assert.Equal(["Без Коду", "Петренко Іван"], preview.Missing.Select(m => m.FullName).OrderBy(x => x));
+        Assert.Equal([1], preview.Missing.First().DayNumbers);
+        Assert.Empty((await editor.PreviewParticipantImportAsync(second, ParticipantImportScope.CurrentDay(1, ParticipantLinkField.FsouCode))).Added);
+
+        // Import leaving the newcomer out, then delete Петренко as the preview offered.
+        var scope = ParticipantImportScope.AllDays.WithExcludedRows(new HashSet<int> { 1 });
+        var result = await editor.ImportParticipantsAsync(second, clearFirst: false, scope);
+        Assert.Equal(0, result.Added);
+        Assert.Equal(1, result.Updated);
+        var petrenko = preview.Missing.Single(m => m.FullName == "Петренко Іван");
+        await editor.DeleteParticipantAsync(petrenko.ParticipantId);
+
+        var roster = await editor.GetParticipantRosterAsync();
+        Assert.Equal(["Без Коду", "Коваль Олег"], roster.Select(r => r.FullName).OrderBy(x => x));
+        var kovalAfter = roster.Single(r => r.FullName == "Коваль Олег");
+        Assert.Equal("7777", kovalAfter.Days[0].Chip);          // the desk chip survived the blank cell
+        Assert.Equal("Орієнтир", kovalAfter.ClubName);
+
+        // A "0" chip is "no chip" too; a real chip in the file does replace the stored one. The bib number follows
+        // the same rule: "" / "0" keep the stored number, a real one replaces it.
+        await editor.ImportParticipantsAsync(File(Row("Коваль Олег", "1002", "Ч21", chip: "0", number: "0")), clearFirst: false, ParticipantImportScope.AllDays);
+        Assert.Equal("7777", (await editor.GetParticipantRosterAsync()).Single(r => r.FullName == "Коваль Олег").Days[0].Chip);
+        await editor.ImportParticipantsAsync(File(Row("Коваль Олег", "1002", "Ч21", number: "15")), clearFirst: false, ParticipantImportScope.AllDays);
+        Assert.Equal("15", (await editor.GetParticipantRosterAsync()).Single(r => r.FullName == "Коваль Олег").Number);
+        await editor.ImportParticipantsAsync(File(Row("Коваль Олег", "1002", "Ч21", number: "0")), clearFirst: false, ParticipantImportScope.AllDays);
+        Assert.Equal("15", (await editor.GetParticipantRosterAsync()).Single(r => r.FullName == "Коваль Олег").Number);
+        var zeroPreview = await editor.PreviewParticipantImportAsync(File(Row("Коваль Олег", "1002", "Ч21", number: "0")), ParticipantImportScope.AllDays);
+        Assert.DoesNotContain(zeroPreview.Updated.Single().Changes, ch => ch.Field == "Number");
+        await editor.ImportParticipantsAsync(File(Row("Коваль Олег", "1002", "Ч21", chip: "9999")), clearFirst: false, ParticipantImportScope.AllDays);
+        Assert.Equal("9999", (await editor.GetParticipantRosterAsync()).Single(r => r.FullName == "Коваль Олег").Days[0].Chip);
+    }
+
+    [Fact]
     public async Task UofXml_CurrentDayOnlyScopeLinksByNameAndNeverCreatesDays()
     {
         var data = new UofXmlParser().Parse(Uof);

@@ -46,6 +46,9 @@
         <DataTemplate DataType="dialogs:ChipScanViewModel">
             <dialogViews:ChipScanView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:ImportPreviewViewModel">
+            <dialogViews:ImportPreviewView />
+        </DataTemplate>
         <DataTemplate DataType="dialogs:CopyParticipantsViewModel">
             <dialogViews:CopyParticipantsView />
         </DataTemplate>
