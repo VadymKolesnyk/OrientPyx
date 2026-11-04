@@ -530,12 +530,23 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     {
         // BD work runs off the UI thread inside RunAsync; UI-state writes happen after the await.
         string savedLanguage = string.Empty;
-        var restored = await _busy.RunAsync(async () =>
+        bool restored;
+        try
         {
-            await _uiScale.InitializeAsync();
-            savedLanguage = await _appSettings.GetLanguageAsync();
-            return await _session.TryRestoreLastAsync();
-        });
+            restored = await _busy.RunAsync(async () =>
+            {
+                await _uiScale.InitializeAsync();
+                savedLanguage = await _appSettings.GetLanguageAsync();
+                return await _session.TryRestoreLastAsync();
+            });
+        }
+        catch (Exception)
+        {
+            // Restoring the last competition failed (its database is unreadable or gone). The busy service
+            // has already logged the exception; fall through to the picker instead of surfacing a crash —
+            // nothing awaits this task, so a throw here would reach the unobserved-exception handler.
+            restored = false;
+        }
 
         // Restore the saved UI language (SetLanguage touches culture/UI, so apply after the await).
         ApplySavedLanguage(savedLanguage);
