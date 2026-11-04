@@ -43,6 +43,9 @@
         <DataTemplate DataType="dialogs:AssignChipsViewModel">
             <dialogViews:AssignChipsView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:ChipScanViewModel">
+            <dialogViews:ChipScanView />
+        </DataTemplate>
         <DataTemplate DataType="dialogs:CopyParticipantsViewModel">
             <dialogViews:CopyParticipantsView />
         </DataTemplate>

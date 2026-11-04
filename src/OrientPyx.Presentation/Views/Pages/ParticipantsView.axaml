@@ -196,6 +196,18 @@
                                             </StackPanel>
                                         </DockPanel>
                                     </Button>
+                                    <!-- Scan chips at the station: each chip goes to the next shown participant
+                                         without one; a rental chip is filed in the base as it is scanned. Then the
+                                         statement opens for the same rows. Hotkey Ctrl+Shift+K. -->
+                                    <Button Click="OnScanChipsClick" Classes="menu" HorizontalAlignment="Stretch">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Classes="gesture" Text="Ctrl+Shift+K" />
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <controls:Icon Kind="Activity" Size="16" />
+                                                <TextBlock Text="{Binding Localization[Participants.ChipScan]}" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Button>
                                     <!-- Manually re-order the start sequence within a group. Only when a
                                          single day is in view (a real day, or the sole day of a one-day
                                          competition on the roster). -->

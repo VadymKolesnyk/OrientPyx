@@ -100,6 +100,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
     public string LandscapeLabel => Localization.Get("Statement.Layout.Landscape");
     public string TableBordersLabel => Localization.Get("Statement.Layout.TableBorders");
     public string PageFooterLabel => Localization.Get("Statement.Layout.PageFooter");
+    public string MarkPrintedLabel => Localization.Get("Statement.MarkPrinted");
     public string ColumnsLabel => Localization.Get("Statement.Columns.Title");
     public string ExportWordLabel => Localization.Get("Statement.ExportWord");
     public string PrintLabel => Localization.Get("Statement.Print");
@@ -115,6 +116,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         OnPropertyChanged(nameof(LandscapeLabel));
         OnPropertyChanged(nameof(TableBordersLabel));
         OnPropertyChanged(nameof(PageFooterLabel));
+        OnPropertyChanged(nameof(MarkPrintedLabel));
         OnPropertyChanged(nameof(ColumnsLabel));
         OnPropertyChanged(nameof(ExportWordLabel));
         OnPropertyChanged(nameof(PrintLabel));
@@ -142,6 +144,32 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
     /// the bottom of every page. On by default; saved with the rest of the template.</summary>
     [ObservableProperty]
     private bool _pageFooter = true;
+
+    /// <summary>«Відмітити як надруковану» — printing or exporting sets the «Відомість надрукована» flag on every
+    /// participant of the statement. On by default; saved with the rest of the template.</summary>
+    [ObservableProperty]
+    private bool _markPrinted = true;
+
+    /// <summary>The participants flagged as printed by this dialog (print and/or export), for the page to refresh.</summary>
+    public HashSet<Guid> MarkedParticipantIds { get; } = [];
+
+    /// <summary>True when flagging had to create the flag field (the page then reloads to show its column).</summary>
+    public bool PrintedFieldCreated { get; private set; }
+
+    /// <summary>Flags the statement's participants as printed (when the toggle is on). Called after a successful
+    /// print, and by the view after the export was actually saved.</summary>
+    public async Task MarkPrintedAfterOutputAsync()
+    {
+        if (!MarkPrinted || _data.Rows.Count == 0)
+            return;
+
+        var ids = _data.Rows.Select(r => r.ParticipantId).Distinct().ToList();
+        var label = Localization.Get("Statement.PrintedField");
+        var mark = await _busy.RunAsync(() => _editor.MarkStatementPrintedAsync(ids, label));
+        PrintedFieldCreated |= mark.FieldCreated;
+        foreach (var id in ids)
+            MarkedParticipantIds.Add(id);
+    }
 
     [ObservableProperty]
     private string _competitionName = string.Empty;
@@ -199,6 +227,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
             IsLandscape = settings.Orientation == ProtocolOrientation.Landscape;
             TableBorders = settings.TableBorders;
             PageFooter = settings.PageFooter;
+            MarkPrinted = settings.MarkPrinted;
             CompetitionName = settings.CompetitionName;
             Title2 = settings.Title;
             Subtitle = settings.Subtitle;
@@ -378,6 +407,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         Orientation = IsLandscape ? ProtocolOrientation.Landscape : ProtocolOrientation.Portrait,
         TableBorders = TableBorders,
         PageFooter = PageFooter,
+        MarkPrinted = MarkPrinted,
         CompetitionName = CompetitionName?.Trim() ?? string.Empty,
         Title = Title2?.Trim() ?? string.Empty,
         Subtitle = Subtitle?.Trim() ?? string.Empty,
@@ -468,6 +498,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
             var document = _builder.Build(_data, documentSettings, labels, _filterSummaryText);
             await _printService.PrintAsync(document, a4);
         });
+        await MarkPrintedAfterOutputAsync();
     }
 
     /// <summary>Opens the A4 print-settings modal from the «Параметри друку A4» affordance.</summary>
@@ -515,6 +546,12 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
             return;
         Preview.ShowFooter = value;
         AutoSave();
+    }
+
+    partial void OnMarkPrintedChanged(bool value)
+    {
+        if (!_applyingSettings)
+            AutoSave();
     }
 
     partial void OnCompetitionNameChanged(string value) => OnHeaderEdited();

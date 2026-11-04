@@ -55,6 +55,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private readonly ICsvImportFlow _csvImportFlow;
     private readonly IParticipantExportFlow _exportFlow;
     private readonly IStatementFlow _statementFlow;
+    private readonly IReadoutParserSelector _readoutParsers;
     private readonly IEntryFeeCalculator _entryFeeCalculator;
     private readonly IActivityLog _log;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
@@ -75,6 +76,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         IParticipantExportFlow exportFlow,
         IExportFileSaver fileSaver,
         IStatementFlow statementFlow,
+        IReadoutParserSelector readoutParsers,
         IEntryFeeCalculator entryFeeCalculator,
         IActivityLog log,
         ITableLayoutStore layoutStore,
@@ -94,6 +96,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _exportFlow = exportFlow;
         FileSaver = fileSaver;
         _statementFlow = statementFlow;
+        _readoutParsers = readoutParsers;
         _entryFeeCalculator = entryFeeCalculator;
         _log = log;
         // Singleton VM: reload when the competition/day changes. SessionChanged may be raised on a
@@ -634,12 +637,35 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     /// <summary>Opens the participant-statement («відомість») modal for the given table's current view (the
     /// page hands in the active table). Scopes per-day fields to the day in view (day mode / a single-day
     /// roster), or gathers them across all days when the roster spans several days.</summary>
-    public Task OpenStatementAsync(Controls.SheetTable table) => _statementFlow.OpenAsync(table, EffectiveDayId);
+    public async Task OpenStatementAsync(Controls.SheetTable table) =>
+        ApplyPrintedMarks(await _statementFlow.OpenAsync(table, EffectiveDayId));
 
     /// <summary>Prints the statement for the given table's current view straight to the configured A4 printer,
     /// with no preview/settings modal (the Ctrl+Shift+P «швидкий друк» path). Scopes per-day fields like
     /// <see cref="OpenStatementAsync"/>.</summary>
-    public Task PrintStatementDirectAsync(Controls.SheetTable table) => _statementFlow.PrintDirectAsync(table, EffectiveDayId);
+    public async Task PrintStatementDirectAsync(Controls.SheetTable table) =>
+        ApplyPrintedMarks(await _statementFlow.PrintDirectAsync(table, EffectiveDayId));
+
+    // Reflects the «Відомість надрукована» flags a statement run just set: the rows' field cells are updated in
+    // memory, or — when the flag field was only now created — the page reloads so its new column appears.
+    private void ApplyPrintedMarks(StatementOutcome outcome)
+    {
+        if (outcome.MarkedParticipantIds.Count == 0)
+            return;
+
+        var key = CustomField.StatementPrintedKey;
+        if (outcome.FieldCreated || CustomFields.All(f => f.Key != key))
+        {
+            _ = LoadAsync();
+            return;
+        }
+
+        var marked = outcome.MarkedParticipantIds.ToHashSet();
+        foreach (var row in Participants.Where(r => marked.Contains(r.ParticipantId)))
+            row.Fields[key].ApplySaved("1");
+        foreach (var row in Roster.Where(r => marked.Contains(r.ParticipantId)))
+            row.Fields[key].ApplySaved("1");
+    }
 
     // Rebuilds the day options only when the day set changed, so the ComboBox keeps a valid
     // SelectedItem reference across reloads. The roster sentinel leads the list while the roster view
@@ -1905,6 +1931,157 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 Localization.Get("Participants.AssignChips.Log.AssignedRow"),
                 chip,
                 string.IsNullOrWhiteSpace(name) ? Localization.Get("Participants.Chip.UnnamedHolder") : name));
+    }
+
+    // ── Chip scanning («Сканування чіпів»)
+    // Hands chips to the shown participants without one by touching each chip to the read-out station —
+    // see ChipScanViewModel for the rules (chip-type field → own chip / rental note). The dialog returns the
+    // (participant → chip) assignments plus the rental chips the base did not have; both are committed here in
+    // two batch writes, the cells are updated in memory the way the bulk assignment does, and the statement
+    // opens on the same table rows so the hand-out sheet can be printed right away. The dialog's set-up (field,
+    // rules, file) is saved for the competition whether it was applied or cancelled.
+    public async Task ScanChipsAsync(Controls.SheetTable table)
+    {
+        ArgumentNullException.ThrowIfNull(table);
+        if (_session.CurrentEvent is not { } ev || !await EnsureEffectiveDayEditableAsync())
+            return;
+
+        var candidates = new List<ChipScanCandidate>();
+        foreach (var item in table.VisibleItems)
+        {
+            switch (item)
+            {
+                case ParticipantDayRowViewModel row when IsDayMode && string.IsNullOrWhiteSpace(row.Chip):
+                    candidates.Add(new ChipScanCandidate(
+                        row.ParticipantId, row.Number ?? string.Empty, row.FullName ?? string.Empty,
+                        row.SelectedGroup?.Label ?? string.Empty, row.Fields.Values, row));
+                    break;
+                case ParticipantRosterRowViewModel row when IsRosterMode && ChiplessOpenDays(row).Any():
+                    var groups = row.Days
+                        .Where(d => d.IsMember)
+                        .Select(d => d.SelectedGroup?.Label ?? string.Empty)
+                        .Where(g => g.Length > 0)
+                        .Distinct()
+                        .ToList();
+                    candidates.Add(new ChipScanCandidate(
+                        row.ParticipantId, row.Number ?? string.Empty, row.FullName ?? string.Empty,
+                        string.Join(" / ", groups), row.Fields.Values, row));
+                    break;
+            }
+        }
+
+        if (candidates.Count == 0)
+        {
+            await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+                Localization,
+                titleKey: "Participants.ChipScan.Title",
+                messageKey: "Participants.ChipScan.NoCandidates",
+                confirmKey: "Common.Ok",
+                cancelKey: "Common.Ok"));
+            return;
+        }
+
+        var (pool, holders, settings) = await _busy.RunAsync(async () =>
+        {
+            var p = await _editor.GetRentalChipsAsync();
+            var h = await _editor.GetRentalChipHoldersByDayAsync();
+            var s = await _editor.GetChipScanSettingsAsync();
+            return (p, h, s);
+        });
+
+        // chip → who holds it on any day: nothing in here may be handed out again.
+        var holderNames = new Dictionary<string, string>(OrientPyx.Plugins.Sdk.Toolkit.TextKey.Comparer);
+        foreach (var (chip, perDay) in holders.HoldersByChip)
+        {
+            var names = perDay.Where(n => n.Length > 0).Distinct().ToList();
+            if (names.Count > 0)
+                holderNames[chip] = string.Join(", ", names);
+        }
+
+        // The same default file the «Чіпи» page's auto-read watches, so one station set-up serves both.
+        var defaultPath = System.IO.Path.Combine(ev.FolderPath, "chips", "rentchip.csv");
+        // A poller of its own: the shared one is single-watch and may be busy with the finish read-out.
+        var dialog = new ChipScanViewModel(
+            Localization, candidates, CustomFields, pool, holderNames, settings, defaultPath, LayoutStore,
+            new FileReadoutPoller(), _readoutParsers);
+        var result = await _dialogs.ShowChipScanAsync(dialog);
+        await _busy.RunAsync(() => _editor.SaveChipScanSettingsAsync(dialog.BuildSettings()));
+        if (result is null || (result.Assignments.Count == 0 && result.FieldUpdates.Count == 0))
+            return;
+
+        // Update the cells in memory and collect the (participant, day, chip) writes — the row objects came
+        // back inside the candidates, so each assignment lands on the very row it was built from.
+        var writes = new List<(Guid ParticipantId, Guid DayId, string Chip)>();
+        var assignments = new List<(string Name, string Chip)>();
+        foreach (var a in result.Assignments)
+        {
+            switch (a.Candidate.Row)
+            {
+                case ParticipantDayRowViewModel row when _session.CurrentDay is { } day:
+                    row.SetChipSilently(a.Chip);
+                    row.MarkChipCommitted(a.Chip);
+                    writes.Add((row.ParticipantId, day.Id, a.Chip));
+                    break;
+                case ParticipantRosterRowViewModel row:
+                    foreach (var cell in ChiplessOpenDays(row).ToList())
+                    {
+                        cell.SetChipSilently(a.Chip);
+                        cell.MarkChipCommitted(a.Chip);
+                        writes.Add((cell.ParticipantId, cell.DayId, a.Chip));
+                    }
+                    break;
+            }
+            assignments.Add((a.Candidate.FullName, a.Chip));
+        }
+
+        var newChips = result.NewRentalChips;
+        var fieldUpdates = result.FieldUpdates;
+        var storedFieldValues = new List<(ChipScanFieldUpdate Update, string Stored)>();
+        await _busy.RunAsync(async () =>
+        {
+            if (newChips.Count > 0)
+                await _editor.AddRentalChipsAsync(newChips);
+            if (writes.Count > 0)
+                await _editor.SetParticipantDayChipsBatchAsync(writes);
+            // Chip types changed in the dialog go to the chip-type field of those participants.
+            foreach (var u in fieldUpdates)
+                storedFieldValues.Add((u, await _editor.SetParticipantFieldAsync(u.Candidate.ParticipantId, u.Key, u.Value)));
+        });
+
+        foreach (var (u, stored) in storedFieldValues)
+        {
+            var cell = u.Candidate.Row switch
+            {
+                ParticipantDayRowViewModel r => r.Fields[u.Key],
+                ParticipantRosterRowViewModel r => r.Fields[u.Key],
+                _ => null
+            };
+            cell?.ApplySaved(stored);
+        }
+
+        if (newChips.Count > 0)
+        {
+            // The base grew: refresh the registry the chip cells consult for the "own chip" red highlight.
+            var refreshed = await _busy.RunAsync(() => _editor.GetRentalChipsAsync());
+            RentalChips.Reset(refreshed.Select(c => c.Number));
+        }
+        RefreshFeesIfVisible();
+        RecomputeStatusInfo();
+
+        _log.Action(string.Format(
+            CultureInfo.CurrentCulture,
+            Localization.Get("Participants.ChipScan.Log.Applied"),
+            assignments.Count,
+            newChips.Count));
+        foreach (var (name, chip) in assignments)
+            _log.Action(string.Format(
+                CultureInfo.CurrentCulture,
+                Localization.Get("Participants.AssignChips.Log.AssignedRow"),
+                chip,
+                string.IsNullOrWhiteSpace(name) ? Localization.Get("Participants.Chip.UnnamedHolder") : name));
+
+        // Straight on to the hand-out sheet for the same rows.
+        await OpenStatementAsync(table);
     }
 
     // ── Mark age-window violators "поза конкурсом"

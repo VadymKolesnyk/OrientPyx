@@ -163,6 +163,7 @@ public partial class ParticipantsView : UserControl
     //   • Ctrl+I        → import from UOF XML file       • Ctrl+Shift+I → import from CSV/Excel
     //   • Ctrl+E        → export the current view         • Ctrl+B       → assign start numbers
     //   • Ctrl+K        → assign rental chips             • Ctrl+G       → mark out-of-competition by age
+    //   • Ctrl+Shift+K  → scan chips at the station
     //   • F6            → bulk-edit (matches the table's in-cell F6); routed here when focus is outside
     //                     the table so it opens the modal on all visible rows.
     // The table's own handler covers focus already inside it; this one covers focus elsewhere on the page.
@@ -199,6 +200,13 @@ public partial class ParticipantsView : UserControl
         if (ctrl && shift && e.Key == Avalonia.Input.Key.P)
         {
             _ = PrintStatementDirectAsync();
+            e.Handled = true;
+            return;
+        }
+        // Ctrl+Shift+K = scan chips at the station (checked before Ctrl+K so it isn't shadowed).
+        if (ctrl && shift && e.Key == Avalonia.Input.Key.K)
+        {
+            _ = ScanChipsAsync();
             e.Handled = true;
             return;
         }
@@ -509,6 +517,23 @@ public partial class ParticipantsView : UserControl
     {
         CloseContainingFlyout(sender);
         _ = AssignChipsAsync();
+    }
+
+    // Scan chips at the station onto the shown rows (the dialog reads the table's on-screen order itself and
+    // opens the statement on the same table afterwards).
+    private void OnScanChipsClick(object? sender, RoutedEventArgs e)
+    {
+        CloseContainingFlyout(sender);
+        _ = ScanChipsAsync();
+    }
+
+    private async System.Threading.Tasks.Task ScanChipsAsync()
+    {
+        if (_vm is null)
+            return;
+
+        var table = _vm.IsRosterMode ? RosterTable : DayTable;
+        await _vm.ScanChipsAsync(table);
     }
 
     private async System.Threading.Tasks.Task AssignChipsAsync()

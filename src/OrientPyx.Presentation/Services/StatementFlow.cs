@@ -51,15 +51,15 @@ public sealed class StatementFlow : IStatementFlow
         _fileSaver = fileSaver;
     }
 
-    public async Task OpenAsync(SheetTable table, Guid? dayId)
+    public async Task<StatementOutcome> OpenAsync(SheetTable table, Guid? dayId)
     {
         ArgumentNullException.ThrowIfNull(table);
         if (_session.CurrentEvent is null)
-            return;
+            return StatementOutcome.None;
 
         var participantIds = CaptureParticipantIds(table);
         if (participantIds.Count == 0)
-            return;
+            return StatementOutcome.None;
 
         var filterSummary = BuildFilterSummary(table);
 
@@ -77,17 +77,18 @@ public sealed class StatementFlow : IStatementFlow
             _fileSaver, data, filterSummary, headerDefaults);
         await vm.LoadAsync();
         await _dialogs.ShowStatementAsync(vm);
+        return new StatementOutcome(vm.MarkedParticipantIds.ToList(), vm.PrintedFieldCreated);
     }
 
-    public async Task PrintDirectAsync(SheetTable table, Guid? dayId)
+    public async Task<StatementOutcome> PrintDirectAsync(SheetTable table, Guid? dayId)
     {
         ArgumentNullException.ThrowIfNull(table);
         if (_session.CurrentEvent is null || !_printService.IsSupported)
-            return;
+            return StatementOutcome.None;
 
         var participantIds = CaptureParticipantIds(table);
         if (participantIds.Count == 0)
-            return;
+            return StatementOutcome.None;
 
         // The A4 printer must be known before we can print silently. If none is configured (or the saved one is
         // gone), open the picker once — after that the print goes straight through with no further prompts.
@@ -97,14 +98,15 @@ public sealed class StatementFlow : IStatementFlow
             var chosen = await _dialogs.ShowA4PrintSettingsAsync(
                 new A4PrintSettingsViewModel(_localization, _appSettings, _printService, a4));
             if (!chosen)
-                return;
+                return StatementOutcome.None;
             a4 = await _appSettings.GetA4PrintSettingsAsync();
             if (!a4.HasPrinter)
-                return;
+                return StatementOutcome.None;
         }
 
         var filterSummary = BuildFilterSummary(table);
 
+        var markPrinted = false;
         await _busy.RunAsync(async () =>
         {
             // The saved statement template (per competition, seeded from the app default) — the same one the
@@ -113,7 +115,15 @@ public sealed class StatementFlow : IStatementFlow
             var data = await _editor.GetStatementDataAsync(dayId, participantIds);
             var document = _builder.Build(data, settings, BuildLabels(), filterSummary);
             await _printService.PrintAsync(document, a4);
+            markPrinted = settings.MarkPrinted;
         });
+        if (!markPrinted)
+            return StatementOutcome.None;
+
+        // The same «надруковано» flag the modal sets after its print / export.
+        var mark = await _busy.RunAsync(() =>
+            _editor.MarkStatementPrintedAsync(participantIds, _localization.Get("Statement.PrintedField")));
+        return new StatementOutcome(participantIds, mark.FieldCreated);
     }
 
     // The participant ids of the shown rows, in on-screen (filtered + sorted) order. Both day-grid and roster

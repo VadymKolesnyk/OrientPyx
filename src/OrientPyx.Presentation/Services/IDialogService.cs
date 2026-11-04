@@ -37,6 +37,10 @@ public interface IDialogService : INotifyPropertyChanged
     /// <summary>Returns the chosen note filter on OK.</summary>
     Task<AssignChipsResult?> ShowAssignChipsAsync(AssignChipsViewModel dialog);
 
+    /// <summary>«Сканування чіпів»: scan chips at the station onto the shown participants without one. Returns
+    /// the assignments (+ the rental chips to add) on apply.</summary>
+    Task<ChipScanResult?> ShowChipScanAsync(ChipScanViewModel dialog);
+
     /// <summary>«Копіювання учасників з дня в день»: returns the chosen source/target day and the
     /// per-field toggles on OK.</summary>
     Task<CopyParticipantsRequest?> ShowCopyParticipantsAsync(CopyParticipantsViewModel dialog);

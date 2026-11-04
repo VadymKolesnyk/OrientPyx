@@ -16,7 +16,7 @@ public interface IStatementFlow
     /// scope per-day fields to (day mode), or null to gather them across all days and join with " / " (roster
     /// mode). A no-op when no competition is selected or the table has no rows.
     /// </summary>
-    Task OpenAsync(SheetTable table, Guid? dayId);
+    Task<StatementOutcome> OpenAsync(SheetTable table, Guid? dayId);
 
     /// <summary>
     /// Prints the statement for the given table's current view straight to the configured A4 printer — no
@@ -25,5 +25,12 @@ public interface IStatementFlow
     /// falls back to opening the printer-picker modal once so the first print can still go through. A no-op when
     /// no competition is selected, the table has no rows, or printing is unsupported on this platform.
     /// </summary>
-    Task PrintDirectAsync(SheetTable table, Guid? dayId);
+    Task<StatementOutcome> PrintDirectAsync(SheetTable table, Guid? dayId);
+}
+
+/// <summary>What a statement run flagged: the participants marked «надруковано» (empty when none) and whether the
+/// flag field had to be created (the page then reloads so its column appears).</summary>
+public sealed record StatementOutcome(IReadOnlyList<Guid> MarkedParticipantIds, bool FieldCreated)
+{
+    public static StatementOutcome None { get; } = new([], false);
 }

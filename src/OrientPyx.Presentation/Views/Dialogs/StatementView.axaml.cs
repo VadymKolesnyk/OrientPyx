@@ -63,6 +63,9 @@ public partial class StatementView : UserControl
         // it then writes "name (2).ext" beside it and tells the user. Null means nothing was saved.
         var saved = await vm.FileSaver.SaveAsync(file, result.Bytes);
         if (saved is not null)
+        {
+            await vm.MarkPrintedAfterOutputAsync();
             ProtocolFileLauncher.TryOpen(saved);
+        }
     }
 }

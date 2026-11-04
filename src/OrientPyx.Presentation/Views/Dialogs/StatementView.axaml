@@ -22,6 +22,8 @@
                               Content="{Binding TableBordersLabel}" VerticalAlignment="Center" />
                     <CheckBox IsChecked="{Binding PageFooter, Mode=TwoWay}"
                               Content="{Binding PageFooterLabel}" VerticalAlignment="Center" />
+                    <CheckBox IsChecked="{Binding MarkPrinted, Mode=TwoWay}"
+                              Content="{Binding MarkPrintedLabel}" VerticalAlignment="Center" />
                 </StackPanel>
             </Grid>
 

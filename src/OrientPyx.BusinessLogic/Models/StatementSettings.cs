@@ -44,6 +44,10 @@ public sealed class StatementSettings
     /// printed at the bottom of every page. Default <c>true</c>.</summary>
     public bool PageFooter { get; set; } = true;
 
+    /// <summary>Whether printing / exporting the statement marks its participants in the «Відомість надрукована»
+    /// flag field (<see cref="CustomField.StatementPrintedKey"/>, created on first use). Default <c>true</c>.</summary>
+    public bool MarkPrinted { get; set; } = true;
+
     // ── Header text. Blank ⇒ fall back to the competition's own value at build time.
 
     /// <summary>Competition-name line, printed centred above the title. Blank ⇒ the current competition's name.</summary>

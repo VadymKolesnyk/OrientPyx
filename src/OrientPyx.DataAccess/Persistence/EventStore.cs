@@ -1607,6 +1607,34 @@ public sealed partial class EventStore : IEventStore
         });
     }
 
+    public async Task<string?> GetChipScanJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var row = await db.ChipScanSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(cancellationToken);
+        return row?.Json;
+    }
+
+    public async Task SaveChipScanJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default)
+    {
+        // Single competition-level row (Id = 1), same read-then-insert-or-update retry as the statement template.
+        await UpsertWithUniqueRetryAsync(eventFolderPath, async db =>
+        {
+            var row = await db.ChipScanSettings.FirstOrDefaultAsync(cancellationToken);
+            if (row is null)
+            {
+                row = new ChipScanSettingsRow { Id = 1, Json = json };
+                db.ChipScanSettings.Add(row);
+            }
+            else
+            {
+                row.Json = json;
+            }
+            await db.SaveChangesAsync(cancellationToken);
+        });
+    }
+
     public async Task<string?> GetOnlinePublishJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);

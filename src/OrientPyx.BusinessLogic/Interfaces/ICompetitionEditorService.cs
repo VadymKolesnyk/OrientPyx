@@ -219,6 +219,15 @@ public interface ICompetitionEditorService
         string note,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Adds the given rental chips (number + note each) to the rental database — the chip-scanning dialog's
+    /// «file every scanned rental chip under its type's note». A number already present is skipped and keeps
+    /// its own note; blank and repeated numbers are collapsed.
+    /// </summary>
+    Task<RentalChipBulkResult> AddRentalChipsAsync(
+        IReadOnlyList<(string Number, string Note)> chips,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<Region>> GetRegionsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>The Regions page "+ add" row.</summary>
@@ -466,6 +475,20 @@ public interface ICompetitionEditorService
     Task<StatementSettings?> GetStatementSettingsAsync(CancellationToken cancellationToken = default);
 
     Task SaveStatementSettingsAsync(StatementSettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Flags the given participants as «statement printed»: sets the Bool field
+    /// <see cref="CustomField.StatementPrintedKey"/> to "1" on each, creating that user field (labelled
+    /// <paramref name="fieldLabel"/>) when the competition does not have it yet. Returns whether it was created,
+    /// so the page knows to show the new column.
+    /// </summary>
+    Task<StatementPrintedMark> MarkStatementPrintedAsync(
+        IReadOnlyList<Guid> participantIds, string fieldLabel, CancellationToken cancellationToken = default);
+
+    /// <summary>The chip-scanning dialog's saved set-up for this competition; null when it was never saved.</summary>
+    Task<ChipScanSettings?> GetChipScanSettingsAsync(CancellationToken cancellationToken = default);
+
+    Task SaveChipScanSettingsAsync(ChipScanSettings settings, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gathers the start-protocol data for one day: every group that runs on the day with its members, each
@@ -872,6 +895,10 @@ public readonly record struct ParticipantImportResult(int Added, int Updated, in
 /// <param name="Added">How many chips were newly added.</param>
 /// <param name="Skipped">How many requested numbers already existed and were skipped.</param>
 public readonly record struct RentalChipBulkResult(int Added, int Skipped);
+
+/// <summary>Outcome of <see cref="ICompetitionEditorService.MarkStatementPrintedAsync"/>: the flag field's key and
+/// whether it had to be created.</summary>
+public readonly record struct StatementPrintedMark(string Key, bool FieldCreated);
 
 /// <summary>Outcome of a rental-chip file import, for reporting back to the user.</summary>
 /// <param name="Added">How many chips were newly added.</param>

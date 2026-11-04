@@ -1181,6 +1181,39 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         return new RentalChipImportResult(Added: toAdd.Count, Skipped: skipped);
     }
 
+    public async Task<RentalChipBulkResult> AddRentalChipsAsync(
+        IReadOnlyList<(string Number, string Note)> chips,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(chips);
+        if (_session.CurrentEvent is null || chips.Count == 0)
+            return new RentalChipBulkResult(0, 0);
+
+        var folder = FolderPath;
+        var existing = await _eventStore.GetRentalChipsAsync(folder, cancellationToken);
+        var existingNumbers = new HashSet<string>(
+            existing.Select(c => c.Number.Trim()),
+            TextKey.Comparer);
+
+        var toAdd = new List<RentalChip>();
+        var skipped = 0;
+        foreach (var (rawNumber, rawNote) in chips)
+        {
+            var number = (rawNumber ?? string.Empty).Trim();
+            if (number.Length == 0)
+                continue;
+            if (!existingNumbers.Add(number))
+            {
+                skipped++;
+                continue;
+            }
+            toAdd.Add(new RentalChip { Number = number, Note = (rawNote ?? string.Empty).Trim() });
+        }
+
+        await _eventStore.AddRentalChipsAsync(folder, toAdd, cancellationToken);
+        return new RentalChipBulkResult(Added: toAdd.Count, Skipped: skipped);
+    }
+
     public Task<IReadOnlyList<Region>> GetRegionsAsync(CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null)
@@ -2475,6 +2508,35 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
         var json = System.Text.Json.JsonSerializer.Serialize(settings);
         return _eventStore.SaveStatementJsonAsync(FolderPath, json, cancellationToken);
+    }
+
+    public async Task<ChipScanSettings?> GetChipScanSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return null;
+
+        var json = await _eventStore.GetChipScanJsonAsync(FolderPath, cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<ChipScanSettings>(json);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null; // a broken row reads as "never set up"; the dialog starts from its defaults
+        }
+    }
+
+    public Task SaveChipScanSettingsAsync(ChipScanSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (_session.CurrentEvent is null)
+            return Task.CompletedTask;
+
+        var json = System.Text.Json.JsonSerializer.Serialize(settings);
+        return _eventStore.SaveChipScanJsonAsync(FolderPath, json, cancellationToken);
     }
 
     public async Task<SummaryProtocolData> GetSummaryProtocolDataAsync(CancellationToken cancellationToken = default)

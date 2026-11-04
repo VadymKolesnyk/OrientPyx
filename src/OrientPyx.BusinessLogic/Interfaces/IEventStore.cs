@@ -410,6 +410,11 @@ public interface IEventStore
 
     Task SaveStatementJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default);
 
+    /// <summary>The chip-scanning dialog's saved set-up (<see cref="Models.ChipScanSettings"/> JSON); null when none yet.</summary>
+    Task<string?> GetChipScanJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    Task SaveChipScanJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default);
+
     /// <summary>Null when none is stored — caller seeds from the competition metadata.</summary>
     Task<string?> GetOnlinePublishJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 

@@ -1,9 +1,12 @@
 using System.Reflection;
+using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
 using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Interfaces;
+using OrientPyx.Presentation.Controls;
 using OrientPyx.Presentation.ViewModels;
+using OrientPyx.Presentation.ViewModels.Dialogs;
 using OrientPyx.Presentation.ViewModels.Pages;
 using OrientPyx.Tests.Support;
 using Xunit.Abstractions;
@@ -187,6 +190,76 @@ public sealed class HeadlessWorkflowTests
     }
 
     [Fact]
+    public async Task ParticipantsPageScansChipsOntoRowsAndOpensTheStatement()
+    {
+        // Two chip-less runners; the dialog is opened on the day grid, a chip is "scanned" through the manual
+        // box, applied, and the statement opens on the same rows. The rental base gains the scanned chip.
+        var c = await CompetitionBuilder.CreateAsync(Core, TestIds.Next("ui_scan"));
+        await c.AddGroupAsync("Ч21", "31");
+        await c.AddRunnerAsync("Сканований Перший", "1", "", "Ч21");
+        await c.AddRunnerAsync("Сканований Другий", "2", "", "Ч21");
+        await OpenCompetitionAsync(c.Summary.Identifier);
+
+        await _app.OnUiAsync(() => _app.Vm.OpenParticipantsCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        var participants = Assert.IsType<ParticipantsViewModel>(Shell().SelectedPage);
+        if (participants.IsRosterMode)
+        {
+            await _app.OnUiAsync(() => participants.SelectedDay = participants.DayOptions.First(d => !d.IsRoster));
+            await _app.SettleAsync();
+        }
+        await _app.WaitUntilAsync(() => participants.IsDayMode && participants.Participants.Count == 2, what: "two day rows");
+        await _app.SettleAsync();
+
+        var table = await _app.OnUiAsync(() =>
+            _app.Window.GetVisualDescendants().OfType<SheetTable>().Single(t => t.Name == "DayTable"));
+        await _app.WaitUntilAsync(() => table.VisibleItems.Count == 2, what: "day table shows both rows");
+
+        // A taller window so the whole dialog (set-up, file row, counters, table, footer) is in the screenshots.
+        var (width, height) = await _app.OnUiAsync(() => (_app.Window.Width, _app.Window.Height));
+        await _app.OnUiAsync(() => { _app.Window.Width = 1100; _app.Window.Height = 900; });
+        await _app.SettleAsync();
+
+        // The command awaits the dialog, so it runs detached; the dialog itself is reached through the overlay.
+        _ = _app.OnUiAsync(() => participants.ScanChipsAsync(table));
+        await _app.WaitUntilAsync(() => _app.Vm.Dialogs.Current is ChipScanViewModel, what: "chip-scan dialog open");
+        await _app.SettleAsync();
+        var scan = (ChipScanViewModel)_app.Vm.Dialogs.Current!;
+        Assert.Equal(2, scan.Rows.Count);
+        await _app.ScreenshotAsync("15-chip-scan-open");
+
+        await _app.OnUiAsync(() =>
+        {
+            scan.ManualNumber = "7101";
+            scan.SubmitManualCommand.Execute(null);
+        });
+        await _app.SettleAsync();
+        Assert.Equal("7101", scan.Rows[0].Chip);
+        Assert.True(scan.Rows[0].AddToBase);
+        Assert.Same(scan.Rows[1], scan.SelectedRow);
+        await _app.ScreenshotAsync("16-chip-scan-one-assigned");
+
+        await _app.OnUiAsync(() => scan.ApplyCommand.Execute(null));
+        await _app.WaitUntilAsync(() => _app.Vm.Dialogs.Current is StatementViewModel, what: "statement opened after apply");
+        await _app.SettleAsync();
+        await _app.ScreenshotAsync("17-chip-scan-statement");
+        var statement = (StatementViewModel)_app.Vm.Dialogs.Current!;
+        await _app.OnUiAsync(() => statement.CloseCommand.Execute(null));
+        await _app.WaitUntilAsync(() => _app.Vm.Dialogs.Current is null, what: "statement closed");
+        await _app.OnUiAsync(() => { _app.Window.Width = width; _app.Window.Height = height; });
+        await _app.SettleAsync();
+
+        await c.SelectAsync();
+        var editor = Core.GetRequiredService<ICompetitionEditorService>();
+        Assert.Equal("7101", Assert.Single(await editor.GetRentalChipsAsync()).Number);
+        var rows = await editor.GetParticipantDayRowsAsync();
+        Assert.Equal("7101", rows.Single(r => r.FullName == "Сканований Перший").Chip);
+        Assert.Equal("", rows.Single(r => r.FullName == "Сканований Другий").Chip);
+        Assert.NotNull(await editor.GetChipScanSettingsAsync());   // the set-up is saved on apply
+        AssertNoUiErrors();
+    }
+
+    [Fact]
     public async Task FinishPageAutoReadsAChipFile()
     {
         var env = TestEnvironment.Instance;
@@ -337,6 +410,13 @@ public sealed class HeadlessWorkflowTests
     {
         await GoToPickerAsync();
         var selection = (EventSelectionViewModel)_app.Vm.CurrentView;
+        if (!selection.Events.Any(e => e.Identifier == identifier))
+        {
+            // The picker lists what it scanned when it was shown; a competition built after that needs a rescan
+            // (the app itself rescans whenever it returns to the picker).
+            var items = await selection.FetchEventsAsync();
+            await _app.OnUiAsync(() => selection.Populate(items));
+        }
         await _app.WaitUntilAsync(() => selection.Events.Any(e => e.Identifier == identifier), what: $"{identifier} listed");
         await _app.OnUiAsync(async () =>
         {

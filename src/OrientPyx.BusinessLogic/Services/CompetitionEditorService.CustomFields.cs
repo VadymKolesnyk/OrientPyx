@@ -1,4 +1,5 @@
 using OrientPyx.BusinessLogic.Entities;
+using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 
 namespace OrientPyx.BusinessLogic.Services;
@@ -93,6 +94,30 @@ public sealed partial class CompetitionEditorService
         var normalized = def is null ? (value ?? string.Empty).Trim() : CustomField.From(def).Normalize(value);
         await _eventStore.SetParticipantFieldValueAsync(folder, participantId, key, normalized, cancellationToken);
         return normalized;
+    }
+
+    public async Task<StatementPrintedMark> MarkStatementPrintedAsync(
+        IReadOnlyList<Guid> participantIds, string fieldLabel, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(participantIds);
+        var key = CustomField.StatementPrintedKey;
+        if (_session.CurrentEvent is null)
+            return new StatementPrintedMark(key, false);
+
+        var folder = FolderPath;
+        var existing = await _eventStore.GetCustomFieldDefsAsync(folder, cancellationToken);
+        var created = false;
+        if (existing.All(f => f.Key != key))
+        {
+            var label = string.IsNullOrWhiteSpace(fieldLabel) ? key : fieldLabel.Trim();
+            var field = new CustomField(key, label, CustomFieldKind.Bool, [], CustomField.UserSource,
+                existing.Count == 0 ? 1 : existing.Max(f => f.Order) + 1);
+            created = await _eventStore.AddCustomFieldDefAsync(folder, field.ToDef(), cancellationToken);
+        }
+
+        foreach (var id in participantIds.Distinct())
+            await _eventStore.SetParticipantFieldValueAsync(folder, id, key, "1", cancellationToken);
+        return new StatementPrintedMark(key, created);
     }
 
     public async Task EnsurePluginFieldsAsync(CancellationToken cancellationToken = default)

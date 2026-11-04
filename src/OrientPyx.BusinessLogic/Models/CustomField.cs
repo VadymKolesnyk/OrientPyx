@@ -36,6 +36,11 @@ public sealed record CustomField(
     /// <summary>The import-target / table-column key prefix of an additional field (<c>field.&lt;key&gt;</c>).</summary>
     public const string ColumnPrefix = "field.";
 
+    /// <summary>The key of the user flag field «Відомість надрукована», set on a participant whenever a statement
+    /// with them on it is printed or exported (created on first use; see
+    /// <c>ICompetitionEditorService.MarkStatementPrintedAsync</c>).</summary>
+    public const string StatementPrintedKey = "statement-printed";
+
     /// <summary>The plugin that declared the field; null for a user field.</summary>
     public string? PluginId => Source.StartsWith(PluginSourcePrefix, StringComparison.Ordinal)
         ? Source[PluginSourcePrefix.Length..]

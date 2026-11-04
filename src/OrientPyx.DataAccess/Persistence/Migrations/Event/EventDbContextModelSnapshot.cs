@@ -38,6 +38,21 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.ToTable("ChipPriceOverrides");
                 });
 
+            modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.ChipScanSettingsRow", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Json")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ChipScanSettings");
+                });
+
             modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.Club", b =>
                 {
                     b.Property<Guid>("Id")
