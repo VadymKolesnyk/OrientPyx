@@ -40,7 +40,7 @@
 
                 <StackPanel Spacing="6">
                     <TextBlock Text="{Binding Localization[Chips.BulkAdd.Start]}" Classes="label" />
-                    <TextBox Text="{Binding StartNumber, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                    <TextBox behaviors:AutoFocus.OnOpen="True" Text="{Binding StartNumber, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                              behaviors:NumericInput.Digits="True"
                              PlaceholderText="9007400" />
                 </StackPanel>

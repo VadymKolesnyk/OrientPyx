@@ -59,9 +59,16 @@ public static class SiCard
     }
 
     /// <summary>
-    /// The card when it is a known model that cannot hold <paramref name="punches"/> control punches; null when
+    /// How many spare punches a card must keep over the course's control count (<see cref="TooSmall"/>): a runner
+    /// mis-punches or re-punches a control now and then, and a card with no room left for that loses the finish.
+    /// </summary>
+    public const int Reserve = 2;
+
+    /// <summary>
+    /// The card when it is a known model that cannot hold <paramref name="punches"/> control punches plus the
+    /// <see cref="Reserve"/> (so a 30-punch card is flagged for a 28-control course, and passes for 27); null when
     /// it fits, when the card is unknown, or when nothing is needed (<paramref name="punches"/> ≤ 0).
     /// </summary>
     public static Info? TooSmall(string? number, int punches) =>
-        punches > 0 && Identify(number) is { } card && card.Capacity < punches ? card : null;
+        punches > 0 && Identify(number) is { } card && card.Capacity - punches <= Reserve ? card : null;
 }

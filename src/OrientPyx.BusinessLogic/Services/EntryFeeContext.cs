@@ -46,8 +46,10 @@ public sealed class EntryFeeContext
         _discountById = discounts
             .Where(d => !d.IsFsouMemberDiscount)
             .ToDictionary(d => d.Id, d => (d.Percent, d.AppliesToChipRental));
-        // Chip number → its rental note, so a participant's chip resolves to a price override.
-        _noteByChip = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        // Chip number → its rental note, so a participant's chip resolves to a price override. Matched by
+        // TextKey like every other chip comparison (roster highlight, statement), so a number typed with a
+        // stray space or a look-alike letter is still the rental chip it is in the base.
+        _noteByChip = new Dictionary<string, string>(TextKey.Comparer);
         foreach (var c in rentalChips)
         {
             var num = c.Number.Trim();

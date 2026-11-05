@@ -101,6 +101,8 @@ public partial class ChipScanView : UserControl
             .Text("Participants.Col.Number", nameof(ChipScanRowViewModel.Number), width: 90)
             .Text("Participants.Col.FullName", nameof(ChipScanRowViewModel.FullName), minWidth: 220)
             .Text("Participants.Col.Group", nameof(ChipScanRowViewModel.Group), width: 100)
+            // The most controls the participant may have to punch — what the scanned card must hold.
+            .Text("Participants.ChipScan.Col.Controls", nameof(ChipScanRowViewModel.ControlCountText), width: 60)
             // The type is a dropdown of the dialog's rules, so it can be changed on the spot.
             .Combo("Participants.ChipScan.Col.Need",
                    itemsPath: nameof(ChipScanRowViewModel.Rules),

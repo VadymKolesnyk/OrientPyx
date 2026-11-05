@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviors="using:OrientPyx.Presentation.Behaviors"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
@@ -35,12 +36,12 @@
                             IsVisible="{Binding IdentifierExists}"
                             Command="{Binding OverwriteCommand}" />
                     <!-- Conflict case: "import under new name". -->
-                    <Button Classes="accent"
+                    <Button behaviors:AutoFocus.OnOpen="True" Classes="accent"
                             Content="{Binding Localization[ImportEvent.ImportAsNew]}"
                             IsVisible="{Binding IdentifierExists}"
                             Command="{Binding ConfirmCommand}" />
                     <!-- Free case: single OK. -->
-                    <Button Classes="accent"
+                    <Button behaviors:AutoFocus.OnOpen="True" Classes="accent"
                             Content="{Binding Localization[Common.Ok]}"
                             IsVisible="{Binding IdentifierFree}"
                             Command="{Binding ConfirmCommand}" />

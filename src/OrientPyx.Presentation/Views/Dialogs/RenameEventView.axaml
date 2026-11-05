@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviors="using:OrientPyx.Presentation.Behaviors"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
@@ -42,7 +43,7 @@
 
                 <StackPanel Spacing="6">
                     <TextBlock Text="{Binding Localization[RenameEvent.NewName]}" Classes="label" />
-                    <TextBox Text="{Binding NewIdentifier, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                    <TextBox behaviors:AutoFocus.OnOpen="True" Text="{Binding NewIdentifier, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                              PlaceholderText="—" />
                     <TextBlock Text="{Binding Error}"
                                IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"

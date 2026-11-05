@@ -228,7 +228,11 @@ public sealed class ToolkitTests
         Assert.Equal("50", SiCard.Identify("1000000")!.CapacityText);
 
         Assert.Equal("SI-Card 5", SiCard.TooSmall("123", 31)!.Model);
-        Assert.Null(SiCard.TooSmall("123", 30));      // fits exactly
+        // A 30-punch card keeps a reserve of 2: 29 and 28 controls are flagged, 27 fits.
+        Assert.Equal("SI-Card 5", SiCard.TooSmall("123", 30)!.Model);
+        Assert.Equal("SI-Card 5", SiCard.TooSmall("123", 29)!.Model);
+        Assert.Equal("SI-Card 5", SiCard.TooSmall("123", 28)!.Model);
+        Assert.Null(SiCard.TooSmall("123", 27));      // fits with the reserve
         Assert.Null(SiCard.TooSmall("123", 0));       // nothing needed
         Assert.Null(SiCard.TooSmall("3000000", 999)); // unknown card is never judged
         Assert.Null(SiCard.TooSmall("", 10));

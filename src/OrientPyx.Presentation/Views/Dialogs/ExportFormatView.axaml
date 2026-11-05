@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviors="using:OrientPyx.Presentation.Behaviors"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
@@ -29,7 +30,7 @@
                     <Button Content="{Binding Localization[Common.Cancel]}"
                             Classes="ghost"
                             Command="{Binding CancelCommand}" />
-                    <Button Content="{Binding Localization[Export.Confirm]}"
+                    <Button behaviors:AutoFocus.OnOpen="True" Content="{Binding Localization[Export.Confirm]}"
                             Classes="accent"
                             Command="{Binding ConfirmCommand}" />
                 </StackPanel>

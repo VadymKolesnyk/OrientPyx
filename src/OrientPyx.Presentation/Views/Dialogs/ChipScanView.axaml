@@ -116,7 +116,7 @@
                             Content="{Binding Localization[Participants.ChipScan.Pick]}" />
                     <StackPanel Grid.Column="2" Spacing="4" Margin="0,0,8,0">
                         <TextBlock Classes="label" Text="{Binding Localization[Participants.ChipScan.Manual]}" />
-                        <TextBox Name="ManualBox" MinWidth="150"
+                        <TextBox behaviors:AutoFocus.OnOpen="True" Name="ManualBox" MinWidth="150"
                                  Text="{Binding ManualNumber, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                  behaviors:NumericInput.Digits="True"
                                  KeyDown="OnManualKeyDown"

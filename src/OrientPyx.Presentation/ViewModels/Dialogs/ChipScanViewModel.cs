@@ -789,6 +789,10 @@ public sealed partial class ChipScanRowViewModel : ObservableObject
 
     public string Group => Candidate.Group;
 
+    /// <summary>The longest course this participant may run (the most punches the chip must hold); blank when the
+    /// group has no course yet.</summary>
+    public string ControlCountText => Candidate.NeededPunches > 0 ? Candidate.NeededPunches.ToString() : string.Empty;
+
     /// <summary>What the rules say this participant needs (recomputed by the dialog).</summary>
     public ChipRequirement Requirement { get; set; }
 

@@ -1977,8 +1977,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
             // The range's chips are now in the rental database, so refresh the shared registry the chip
             // cells consult for their "own chip" (non-rental) red highlight. Without this the just-added
-            // numbers would flag red until a full page reload rebuilt the registry.
+            // numbers would flag red until a full page reload rebuilt the registry. The fee snapshot holds
+            // its own copy of the rental set, so rebuild it too — otherwise the assigned chips would be
+            // charged as the participants' own until the page reloads.
             RentalChips.Reset(pool.Select(c => c.Number));
+            await RefreshFeeDataAsync(hasEvent: true, silent: true);
         }
 
         var used = UsedChipNumbers(holders, result.FreeOnThisDay && IsDayMode ? _session.CurrentDay?.Number : null);
@@ -2341,9 +2344,12 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
         if (newChips.Count > 0)
         {
-            // The base grew: refresh the registry the chip cells consult for the "own chip" red highlight.
+            // The base grew: refresh the registry the chip cells consult for the "own chip" red highlight,
+            // and the fee snapshot (it carries its own rental set — stale, it would price the newly
+            // registered rental chips as the participants' own).
             var refreshed = await _busy.RunAsync(() => _editor.GetRentalChipsAsync());
             RentalChips.Reset(refreshed.Select(c => c.Number));
+            await RefreshFeeDataAsync(hasEvent: true, silent: true);
         }
         RefreshFeesIfVisible();
         RecomputeStatusInfo();

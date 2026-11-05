@@ -30,7 +30,7 @@
                     <Button Content="{Binding Localization[Common.Cancel]}"
                             Classes="ghost"
                             Command="{Binding CancelCommand}" />
-                    <Button Content="{Binding Localization[Participants.AssignChips.Confirm]}"
+                    <Button behaviors:AutoFocus.OnOpen="True" Content="{Binding Localization[Participants.AssignChips.Confirm]}"
                             Classes="accent"
                             Command="{Binding ConfirmCommand}" />
                 </StackPanel>

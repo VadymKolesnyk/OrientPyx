@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviors="using:OrientPyx.Presentation.Behaviors"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
@@ -47,7 +48,7 @@
                     BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
                     Padding="22,14">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Content="{Binding Localization[CoursePattern.Help.Close]}"
+                    <Button behaviors:AutoFocus.OnOpen="True" Content="{Binding Localization[CoursePattern.Help.Close]}"
                             Classes="accent"
                             IsDefault="True" IsCancel="True"
                             Command="{Binding CloseCommand}" />

@@ -29,6 +29,18 @@ public partial class ParticipantsView : UserControl
             Avalonia.Threading.Dispatcher.UIThread.Post(() => Focus());
             // Apply a quick filter requested before the page was shown (dashboard drill-in first open).
             ApplyPendingQuickFilter();
+
+            // Focus does not stay on the page: the busy overlay of the first load and every closed modal
+            // drop it (the focused control leaves the tree and nothing takes its place), after which a key
+            // routes from the window and never reaches this page's handler — so the shortcuts only worked
+            // after a click into the table. Listen on the window as well, while this page is the one shown.
+            _topLevel = TopLevel.GetTopLevel(this);
+            _topLevel?.AddHandler(KeyDownEvent, OnTopLevelKeyDown, RoutingStrategies.Tunnel);
+        };
+        DetachedFromVisualTree += (_, _) =>
+        {
+            _topLevel?.RemoveHandler(KeyDownEvent, OnTopLevelKeyDown);
+            _topLevel = null;
         };
 
         // Ctrl+F (focus search) and Shift+F3 (clear the last filter) work even when focus is on the page,
@@ -152,6 +164,27 @@ public partial class ParticipantsView : UserControl
                     break;
             }
         }, Avalonia.Threading.DispatcherPriority.Loaded);
+    }
+
+    private TopLevel? _topLevel;
+
+    // The window-level fallback for the page shortcuts: runs them when the key would otherwise miss the page
+    // because focus is outside it (or nowhere). Skipped when focus is inside the page — the page's own tunnel
+    // handler below gets the key — or when the user is in a modal, the busy overlay, the settings / network
+    // overlays or a text field elsewhere in the window (the top-bar search, a dropdown filter).
+    private void OnTopLevelKeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Handled)
+            return;
+        if (e.Source is Avalonia.Visual source && (ReferenceEquals(source, this) || source.GetVisualAncestors().Contains(this)))
+            return;
+        if (e.Source is Avalonia.Controls.TextBox)
+            return;
+        if (_topLevel?.DataContext is ViewModels.MainWindowViewModel main
+            && (main.Dialogs.IsOpen || main.Busy.IsBusy || main.IsSettingsOpen || main.IsNetworkOpen))
+            return;
+
+        OnPageKeyDown(sender, e);
     }
 
     private void OnFocusGridRequested(object? sender, System.EventArgs e)
