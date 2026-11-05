@@ -34,11 +34,18 @@ dotnet tool install -g vpk        # the Velopack CLI
 
    …or attach the whole `build/releases/` contents to a GitHub Release manually.
 
+   With `-Upload` the script first **creates the GitHub Release** `v<version>` (via `gh`, so push the tag
+   first) and then merges the packages into it. Creating it up front is what keeps the two uploads (this
+   one and the macOS workflow's) from each making a draft of their own: when two drafts share one tag the
+   first to publish wins and the other fails with `tag_name already_exists`.
+
 4. **macOS** is built by the `Release macOS` workflow (`.github/workflows/release-macos.yml`): pushing the
-   `v<version>` tag starts it on a `macos-14` runner, where `build/publish-mac.sh` publishes `osx-arm64` and
-   `osx-x64`, packs each with `vpk` and uploads into the same release with `--merge` (the Windows upload
-   also passes `--merge`, so the order of the two uploads does not matter). It can also be started by hand
-   from the Actions tab (inputs: version, upload). The packages are kept as a workflow artifact too.
+   `v<version>` tag starts it on a `macos-latest` runner. It first waits for the published release
+   `v<version>` to exist (up to 20 min; creates it only if nobody did), then `build/publish-mac.sh`
+   publishes `osx-arm64` and `osx-x64`, packs each with `vpk` and uploads into that release with `--merge`
+   (the Windows upload also passes `--merge`, so the order of the two uploads does not matter). It can also
+   be started by hand from the Actions tab (inputs: version, upload). The packages are kept as a workflow
+   artifact too.
 
 ## macOS specifics
 

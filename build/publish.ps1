@@ -11,7 +11,8 @@
     macOS packages are NOT built here (Velopack can only pack a .app/.pkg on macOS): they come from
     build/publish-mac.sh, run by the GitHub Actions workflow .github/workflows/release-macos.yml on the
     v<Version> tag push. Both uploads merge into the same GitHub Release (--merge), each under its own
-    Velopack channel (win / osx-arm64 / osx-x64).
+    Velopack channel (win / osx-arm64 / osx-x64). With -Upload this script first creates that release
+    (gh release create) and the macOS workflow waits for it, so neither side ever creates a draft of its own.
 
     Requires the Velopack CLI (vpk). Install once with:  dotnet tool install -g vpk
 
@@ -92,6 +93,23 @@ Write-Host "Release ready in: $releaseDir" -ForegroundColor Green
 # --- 4. (optional) Upload to GitHub Releases ------------------------------------------------------
 if ($Upload) {
     if (-not $env:GITHUB_TOKEN) { throw "Set `$env:GITHUB_TOKEN (repo scope) to upload." }
+
+    # Create the GitHub Release up front (published, empty) so every upload - this one and the macOS
+    # workflow's two channels - merges into ONE existing release. A `vpk upload` that finds no release
+    # creates a draft of its own; with two uploads racing, the first to publish wins and the other fails
+    # at publish with "tag_name already_exists", leaving its packages in an orphan draft (0.7.12). The
+    # macOS workflow waits for this release before uploading. Needs the v<Version> tag pushed already.
+    if (Get-Command gh -ErrorAction SilentlyContinue) {
+        gh release view "v$Version" --json id *> $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Creating GitHub release v$Version..." -ForegroundColor Cyan
+            gh release create "v$Version" --verify-tag --title "OrientPyx $Version" --notes "OrientPyx $Version"
+            if ($LASTEXITCODE -ne 0) { throw "gh release create failed (is the v$Version tag pushed?)." }
+        }
+    } else {
+        Write-Warning "gh CLI not found: vpk will create the release itself, which races with the macOS workflow."
+    }
+
     Write-Host "Uploading release $Version to GitHub..." -ForegroundColor Cyan
     vpk upload github `
         --outputDir $releaseDir `

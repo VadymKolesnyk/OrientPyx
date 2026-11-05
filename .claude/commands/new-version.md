@@ -68,13 +68,10 @@ instead of pushing a half-finished release. Do not skip the build.
 
 - Create an annotated tag: `git tag -a v<version> -m "OrientPyx <version>"`.
 
-## Step 5 — Push the branch and tag (BEFORE the upload)
+## Step 5 — Push the branch and tag, then create the GitHub release (BEFORE the upload)
 
-Push **before** building/uploading. This ordering matters: `vpk upload` creates the
-`v<version>` tag/release on GitHub against whatever commit `origin/main` currently points
-at. If you upload before pushing, `vpk` tags the *previous* commit and the release ends up
-pointing one commit behind the real release. Push first so the remote tip is already the
-release commit:
+Push **before** building/uploading. This ordering matters: the release is attached to the
+`v<version>` tag on GitHub, so the remote tip must already be the release commit:
 
 ```bash
 git push origin main
@@ -84,6 +81,19 @@ git push origin v<version>
 - If either push is rejected (e.g. the remote has commits you don't have), **stop** and
   report — do not force-push over someone else's work. A rejected *tag* push only happens
   if the tag already exists remotely, which at this point it should not.
+
+Then **create the GitHub Release right away**, with the changelog from the commit body as
+its notes (the macOS workflow started by the tag push waits for this release before it
+uploads; without it each `vpk upload` would create a draft of its own and the second one
+to publish fails with `tag_name already_exists` — that is how 0.7.12 ended up with orphan
+drafts):
+
+```bash
+gh release create v<version> --verify-tag --title "OrientPyx <version>" --notes "<markdown changelog>"
+```
+
+`build/publish.ps1 -Upload` also creates it if missing, but doing it here, before the
+multi-minute build, means the macOS job never has to wait long.
 
 ## Step 6 — Build + upload the Velopack release
 
@@ -99,18 +109,26 @@ $env:GITHUB_TOKEN = (gh auth token)
 - Run it with the Bash tool via `powershell -NoProfile -File build/publish.ps1 ...`
   **or** the PowerShell tool — either is fine; set `GITHUB_TOKEN` from `gh auth token`
   first so the script's GitHub upload works without asking for a token.
-- Because `main` and the tag are already pushed (Step 5), `vpk` attaches the release to
-  the correct existing `v<version>` tag. It publishes a GitHub Release named
-  `OrientPyx <version>` with the installer, full/delta packages, and the
-  `RELEASES`/`releases.win.json` update feed.
+- Because the release already exists (Step 5), `vpk upload … --merge` adds the Windows
+  assets to it — the log says `Found existing release … Merge flag is enabled` and ends with
+  `Skipping publish, release is already not a draft`. It uploads the installer, full/delta
+  packages, and the `RELEASES`/`releases.win.json` update feed.
 - The tag push (Step 5) also started the **`Release macOS`** GitHub Actions workflow
-  (`.github/workflows/release-macos.yml`), which builds the `osx-arm64` / `osx-x64` packages
-  and merges them into the same release. Both uploads pass `--merge`, so their order does not
-  matter. Check it: `gh run list --workflow release-macos.yml --limit 1` and, once it is done,
+  (`.github/workflows/release-macos.yml`): its «Wait for the GitHub release» step polls for
+  the published release (up to 20 min, creating it itself only if nobody did), then builds
+  the `osx-arm64` / `osx-x64` packages and merges them into the same release. Both uploads
+  pass `--merge`, so their order does not matter.
+  Check it: `gh run list --workflow release-macos.yml --limit 1` and, once it is done,
   `gh release view v<version> --json assets -q '.assets[].name'` should list
   `OrientPyx-osx-arm64-Setup.pkg` and `OrientPyx-osx-x64-Setup.pkg` next to `OrientPyx-win-Setup.exe`.
   If the workflow failed, report it (`gh run view <id> --log-failed`) — the Windows release is
-  still valid; re-run the workflow from the Actions tab after fixing the cause.
+  still valid; re-run it with `gh run rerun <id>`, or after a fix on `main` with
+  `gh workflow run release-macos.yml --ref main -f version=<version> -f upload=true`.
+  If a run says `tag_name already_exists`, look for a stray draft:
+  `gh api repos/VadymKolesnyk/OrientPyx/releases -q '.[] | select(.tag_name=="v<version>") | "\(.id) draft=\(.draft)"'`
+  — its packages are also in the run's `orientpyx-macos-<version>` artifact, which can be
+  re-uploaded with `vpk upload github --outputDir <artifact>/osx-<arch> --channel osx-<arch> … --merge`
+  after deleting the draft (`gh api -X DELETE repos/VadymKolesnyk/OrientPyx/releases/<id>`).
 - After it finishes, verify the remote tag points at the release commit — the annotated
   tag dereferences with `^{}`:
   `git ls-remote origin 'refs/tags/v<version>^{}'` should equal `git rev-parse HEAD`.
@@ -120,8 +138,8 @@ $env:GITHUB_TOKEN = (gh auth token)
 
 ## Step 7 — Improve the release notes
 
-The `vpk`-generated release body is minimal. Replace it with a clear, human-readable
-changelog so users understand what changed:
+Step 5 created the release with the commit-body changelog. Re-read it now that the assets are
+in and replace it with the final, human-readable changelog so users understand what changed:
 
 ```bash
 gh release edit v<version> --notes "<markdown changelog>"

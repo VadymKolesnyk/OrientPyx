@@ -1,6 +1,7 @@
 # Builds the macOS packages (Apple Silicon + Intel) with Velopack and attaches them to the GitHub Release
 # of the same version. Runs when a v<version> tag is pushed (the Windows release is built locally by
-# build/publish.ps1 and uploads into the same release - both sides use --merge), or by hand.
+# build/publish.ps1, which creates the GitHub Release and uploads into it; this job waits for that release
+# and merges into it - both sides use --merge), or by hand.
 #
 # Signing / notarization is optional and switched on by repository secrets:
 #   MACOS_CERTIFICATE_P12        base64 of a .p12 holding "Developer ID Application" (+ "Developer ID Installer")
@@ -60,6 +61,30 @@ jobs:
             exit 1
           fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the GitHub release
+        # The Windows side (build/publish.ps1 -Upload, run locally) creates the published release
+        # v<version> and merges its packages into it; this job merges into the same one. Uploading into a
+        # release that does not exist yet makes vpk create a draft of its own - two drafts for one tag, the
+        # first to publish wins and the other fails with "tag_name already_exists" (0.7.12). So wait for the
+        # release; if it never comes (tag pushed by hand, no Windows upload) create it here so macOS still ships.
+        if: github.event_name == 'push' || github.event.inputs.upload == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          for i in $(seq 1 60); do
+            if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json isDraft -q .isDraft 2>/dev/null | grep -q false; then
+              echo "Release v$VERSION exists."
+              exit 0
+            fi
+            echo "Waiting for release v$VERSION ($i/60)..."
+            sleep 20
+          done
+          echo "No published release v$VERSION after 20 minutes - creating it."
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "OrientPyx $VERSION" --notes "OrientPyx $VERSION"
 
       - name: Import signing certificate
         id: sign

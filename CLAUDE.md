@@ -197,7 +197,9 @@ the format's structure comes from it, the plugin overrides rules: `EvaluateFinis
 Windows and macOS are shipped; Linux runs from source only. `build/publish.ps1` (Windows, run locally) and
 `build/publish-mac.sh` (macOS, run by `.github/workflows/release-macos.yml` on the `v<version>` tag) pack with
 Velopack into one GitHub Release, each platform on its own channel (`win`, `osx-arm64`, `osx-x64`; both uploads
-use `--merge`). Details and the optional Apple signing secrets: `build/README.md`. Keep the code portable:
+use `--merge`). The release is created first — `publish.ps1 -Upload` runs `gh release create` and the macOS
+workflow waits for it — so neither `vpk upload` ever creates a draft of its own (two drafts for one tag = the
+second publish fails with `tag_name already_exists`). Details and the optional Apple signing secrets: `build/README.md`. Keep the code portable:
 anything Windows-only (GDI printing in `DataAccess/Printing`, `FileAssociation`, Explorer) must be guarded by
 `OperatingSystem.IsWindows()` and degrade gracefully (the print services expose `IsSupported`); reveal/open
 files through `Presentation/Services/FileReveal.cs`, never by launching `explorer.exe` directly. On macOS the
