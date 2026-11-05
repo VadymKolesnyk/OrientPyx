@@ -359,6 +359,9 @@
                           Command="{Binding OpenStartProtocolCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Start.StartProtocolJudges]}"
                           Command="{Binding OpenStartProtocolJudgesCommand}" />
+                <Separator />
+                <MenuItem Header="{Binding Localization[Menu.Start.MapCounts]}"
+                          Command="{Binding OpenMapCountsCommand}" />
             </MenuItem>
 
             <!-- Finish: read-out of finishing chips, while a competition is open -->

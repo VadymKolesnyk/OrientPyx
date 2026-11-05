@@ -4,6 +4,7 @@ using OrientPyx.BusinessLogic.Disciplines.Plugins;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Services;
 using OrientPyx.BusinessLogic.Services.Network;
+using OrientPyx.BusinessLogic.Services.Store;
 
 namespace OrientPyx.BusinessLogic.DependencyInjection;
 
@@ -18,13 +19,17 @@ public static class BusinessLogicServiceCollectionExtensions
         services.AddSingleton<IWorkspaceMode>(sp => sp.GetRequiredService<WorkspaceMode>());
         services.AddSingleton<IDataChangeBus, DataChangeBus>();
 
-        services.AddSingleton<IAppSettingsService, AppSettingsService>();
+        // The two services the UI calls directly are wrapped so their (synchronously completing) SQLite work and
+        // result computation run on the thread pool, never on the UI thread — see UiThreadOffload.
+        services.AddSingleton<AppSettingsService>();
+        services.AddSingleton<IAppSettingsService>(sp => UiOffloadProxy<IAppSettingsService>.Create(sp.GetRequiredService<AppSettingsService>()));
         // Registered under its class: DataAccess exposes IEventCatalogService through a router (local | remote).
         services.AddSingleton<EventCatalogService>();
         // The results' app-data (points rules, ranks) — local reader; DataAccess routes the interface.
         services.AddSingleton<LocalResultsAppData>();
         services.AddSingleton<ISessionService, SessionService>();
-        services.AddSingleton<ICompetitionEditorService, CompetitionEditorService>();
+        services.AddSingleton<CompetitionEditorService>();
+        services.AddSingleton<ICompetitionEditorService>(sp => UiOffloadProxy<ICompetitionEditorService>.Create(sp.GetRequiredService<CompetitionEditorService>()));
         services.AddSingleton<IEventSharedDataService, EventSharedDataService>();
 
         // Competition-type strategies (Open/Closed): one class per discipline, resolved by enum.

@@ -21,6 +21,8 @@ public partial class App : Application
         AvaloniaXamlLoader.Load(this);
     }
 
+    private UiStallWatchdog? _stallWatchdog;
+
     public override void OnFrameworkInitializationCompleted()
     {
         // Catch exceptions raised on the UI thread (e.g. during a page's render/binding):
@@ -44,6 +46,13 @@ public partial class App : Application
         activityLog.Info("Application services built; initializing database.");
 
         services.InitializeOrientPyxDatabase();
+
+        // Log every UI-thread stall over a second (what Windows shows as «Не відповідає» when it lasts) with the
+        // background activities running at that moment — the evidence for the next freeze report.
+        _stallWatchdog = new UiStallWatchdog(
+            activityLog,
+            services.GetRequiredService<IBackgroundActivityService>(),
+            services.GetRequiredService<IWorkspaceMode>());
 
         // Load the plugins (needs the migrated app DB for the disabled list) and register their strings —
         // DataAccess loads them but does not know the localization service.

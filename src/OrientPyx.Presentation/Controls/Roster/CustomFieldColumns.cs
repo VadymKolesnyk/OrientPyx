@@ -32,8 +32,11 @@ internal static class CustomFieldColumns
                 PickerLabel = field.Label,
                 Key = CustomField.ColumnPrefix + field.Key,
                 SortPath = isFlag ? $"{cell}.{nameof(ParticipantFieldCellViewModel.Checked)}" : text,
-                // Fill-down paste writes the text (normalised on save); the flag and choice cells take single pastes.
-                PastePath = field.Kind is CustomFieldKind.Text or CustomFieldKind.Number ? text : null,
+                // Fill-down paste writes the text (normalised on save) or, for a flag, the bool; the choice cell
+                // takes single pastes.
+                PastePath = field.Kind is CustomFieldKind.Text or CustomFieldKind.Number ? text
+                    : isFlag ? $"{cell}.{nameof(ParticipantFieldCellViewModel.Checked)}" : null,
+                CheckPaste = isFlag,
                 CellBuilder = () => BuildCell(field, cell, loc),
             };
             if (isFlag)

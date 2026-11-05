@@ -108,6 +108,14 @@ instances over the same `./data`, and runtime state must not be shared through i
 - MVVM via CommunityToolkit.Mvvm source generators: `ObservableObject`,
   `[ObservableProperty]`, `[RelayCommand]`.
 - DI via plain `Microsoft.Extensions.DependencyInjection` (no Generic Host).
+- **SQLite completes synchronously** (no real async I/O), so a store call awaited on the UI thread would run the
+  query — and any wait for a lock held by a background writer — on the UI thread. Every reflection-built service
+  proxy (`RoutingProxy`, `DecoratorProxy`, and `UiOffloadProxy` over `ICompetitionEditorService` /
+  `IAppSettingsService`) routes calls through `UiThreadOffload`: a Task-returning call made from a thread with a
+  `SynchronizationContext` (the UI thread) starts on the thread pool; the caller's `await` resumes on the UI thread.
+  `BusyService.RunAsync` still adds the overlay. Write UI state only after the `await`, never inside the service.
+  `Presentation/Services/UiStallWatchdog` (started in `App.axaml.cs`) logs every UI-thread stall over 1 s to the
+  activity log with the role and the running background activities — check `events/logs` after a freeze report.
 
 ## Disciplines (strategy, not switch)
 
@@ -284,6 +292,17 @@ Pages/outputs: «Команди» (teams + legs), day-grid team/leg columns, rea
 (`ResultProtocolGroup.RelayTeams`, sub-rows), import (CSV `relay.*` targets, IOF `EntryList` `TeamEntry`), draw
 (a team is the unit, leg 1 gets the minute), monitor (`MonitorRowKind.Team/Leg`), HTML splits (leg start + leg
 course), summary («за очками» counts relay points; «за часом» skips relay days, Р-39), online (`relay_teams`).
+
+## Map counts («Кількість карт»)
+
+«Старт → Кількість карт» (`MapCountsViewModel` / `MapCountsView`): one read-only `SheetTable` over the whole
+competition — a row per group, a column per day with the group's headcount on that day (`null` = the group is
+not on the day, shown blank), a trailing «(без групи)» row (amber) for day members with no group, per-day totals in
+the table's status bar (`SheetColumnBuilder.Summary(path)` opts a column in), and an optional reserve (percent,
+rounded up, but at least N maps) that adds a «День N + запас» twin per day. Data: `ICompetitionEditorService.
+GetMapCountsAsync` → `MapCountsData` (BusinessLogic/Models/MapCounts.cs), joined to existing participants like the
+dashboard. Export reuses the participants' CSV/Excel flow (`IParticipantExportFlow.RunAsync(view, day, nameKey)`)
+over `SheetTable.ExportView()`. The reserve is page state only (not persisted).
 
 ## Chip capacity (SportIdent card model)
 

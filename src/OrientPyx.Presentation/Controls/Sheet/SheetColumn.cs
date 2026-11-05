@@ -296,6 +296,13 @@ public sealed partial class SheetColumn : ObservableObject
     public string? PastePath { get; set; }
 
     /// <summary>
+    /// True when <see cref="PastePath"/> is a two-way <see cref="bool"/> (a checkbox column). Paste then reads
+    /// each clipboard line as a flag (TRUE/FALSE, 1/0, так/ні, +/-, blank = off) and writes it straight to
+    /// the row — one value sets the focused row, several lines fill down. Copy writes TRUE/FALSE.
+    /// </summary>
+    public bool CheckPaste { get; set; }
+
+    /// <summary>
     /// Option-list column (region/club/group/rank/status). Paste resolves the text against the row's
     /// options by <see cref="ComboLabelPath"/> and assigns <see cref="ComboSelectedPath"/> ONLY on an
     /// exact 1:1 match (case-insensitive, trimmed) — a non-match leaves the cell alone, so paste can

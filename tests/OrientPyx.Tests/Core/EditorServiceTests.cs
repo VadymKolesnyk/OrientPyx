@@ -366,4 +366,37 @@ public sealed class EditorServiceTests
             await plugins.SetEnabledAsync("missed-penalty", wasOn);
         }
     }
+
+    [Fact]
+    public async Task MapCounts_PerGroupPerDayWithNoGroupRow()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("maps"), dayCount: 2);
+        await c.AddGroupAsync("Ч21", "31 32");
+        await c.AddGroupAsync("Ж21", "31");
+        await c.AddRunnerAsync("A", "1", "4001", "Ч21");                       // both days
+        await c.AddRunnerAsync("B", "2", "4002", "Ч21", days: [1]);            // day 1 only
+        await c.AddRunnerAsync("C", "3", "4003", "Ж21", days: [2]);            // day 2 only
+        await c.AddRunnerAsync("D", "4", "4004", null, days: [1]);             // no group on day 1
+        // Ж21 does not run on day 1 at all → a null (not a zero) there.
+        var zh1 = await c.GetGroupSettingsAsync("Ж21", 1);
+        await Store.DeleteGroupDaySettingsAsync(c.Folder, zh1.Id);
+        await c.SelectAsync();
+
+        var data = await Editor.GetMapCountsAsync();
+        Assert.Equal([1, 2], data.Days.Select(d => d.Number));
+        Assert.Equal(3, data.Rows.Count);
+
+        var ch = data.Rows[0];
+        Assert.Equal("Ч21", ch.GroupName);
+        Assert.Equal([2, 1], ch.Counts);
+        Assert.Equal(3, ch.Total);
+
+        var zh = data.Rows[1];
+        Assert.Equal("Ж21", zh.GroupName);
+        Assert.Equal([null, 1], zh.Counts);
+
+        var noGroup = data.Rows[2];
+        Assert.Null(noGroup.GroupId);
+        Assert.Equal([1, null], noGroup.Counts);
+    }
 }

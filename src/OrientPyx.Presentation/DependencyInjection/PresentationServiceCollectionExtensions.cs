@@ -80,6 +80,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<OnlineResultsViewModel>();
         services.AddSingleton<MonitorResultsViewModel>();
         services.AddSingleton<SplitsExportViewModel>();
+        services.AddSingleton<MapCountsViewModel>();
         services.AddSingleton<DrawViewModel>();
         services.AddSingleton<ClassicDrawViewModel>();
         services.AddSingleton<PluginsViewModel>();

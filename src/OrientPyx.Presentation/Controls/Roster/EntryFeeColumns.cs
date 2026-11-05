@@ -68,6 +68,10 @@ internal static class EntryFeeColumns
                 // Copy reads the flag's bool (rendered as a "+"/"" mark) for off-screen rows; the cell
                 // is a checkbox with no value path otherwise.
                 CopyPath = $"DiscountFlags[{index}].{nameof(DiscountFlagViewModel.IsSelected)}",
+                // Paste writes the flag(s) back to the same bool — except the auto-applied FSOU-member
+                // discount, which follows «Член ФСОУ» and is never set by hand.
+                PastePath = discount.IsFsouMemberDiscount ? null : $"DiscountFlags[{index}].{nameof(DiscountFlagViewModel.IsSelected)}",
+                CheckPaste = !discount.IsFsouMemberDiscount,
                 CellBuilder = () => RosterCellFactory.BuildDiscountFlag(index, enabled: !discount.IsFsouMemberDiscount),
             };
             bands.Add(new SheetBand(SheetBand.BandKind.Identity, [col]) { Header = label });

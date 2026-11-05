@@ -92,9 +92,11 @@ public sealed class RosterColumnBuilder
                 // language change; the picker shows the localized header.
                 Key = $"id:{headerKey}",
                 PickerLabel = _loc.Get(headerKey),
-                // Plain editable text columns (number, name, coach, payment, …) support fill-down paste
-                // straight to their bound property. Combos/dates/bools keep single-cell paste.
-                PastePath = kind is SheetCellKind.IdentityText or SheetCellKind.PaymentText ? path : null,
+                // Plain editable text columns (number, name, coach, payment, …) and the bool flags support
+                // fill-down paste straight to their bound property. Combos/dates keep single-cell paste.
+                PastePath = kind is SheetCellKind.IdentityText or SheetCellKind.PaymentText
+                    or SheetCellKind.IdentityBool or SheetCellKind.RaisedFeeFlag ? path : null,
+                CheckPaste = kind is SheetCellKind.IdentityBool or SheetCellKind.RaisedFeeFlag,
             };
             if (fixedWidth is { } w)
             {
@@ -159,6 +161,7 @@ public sealed class RosterColumnBuilder
                     Key = $"block:{block.Field}",
                     PickerLabel = blockLabel,
                     PastePath = LeafPastePath(block.Field, 0),
+                    CheckPaste = IsFlagField(block.Field),
                     RentalChipColumn = isChips,
                     ToolTipPath = ResultTooltipPath(block.Field),
                 };
@@ -185,6 +188,9 @@ public sealed class RosterColumnBuilder
                     // the displayed label). On-screen rows copy their rendered cell, so the "різні" /
                     // "<group> (n днів)" states are exact there; off-screen falls back to this value.
                     CopyPath = CollapsedCopyPath(block.Field),
+                    // A merged flag cell pastes onto the row's merged bool, which fans out to every member day.
+                    PastePath = IsFlagField(block.Field) ? CollapsedCopyPath(block.Field) : null,
+                    CheckPaste = IsFlagField(block.Field),
                     // Filter by the merged DISPLAY value, not the sort key. Without this, FilterPath falls
                     // back to SortPath — and a sort key like CollapsedGroupSortKey packs a tier + index
                     // (with a control-char separator) after the label, so the filter's value list showed
@@ -225,9 +231,10 @@ public sealed class RosterColumnBuilder
                         SortPath = LeafSortPath(block.Field, i),
                         Key = $"block:{block.Field}:day{days[i].Number}",
                         PickerLabel = $"{blockLabel} — {_loc.Get("Header.Day")} {days[i].Number}",
-                        // Per-day text leaves (chip / start time) support fill-down paste straight to
-                        // the day cell's bound property; group/out-of-competition leaves do not.
+                        // Per-day text leaves (chip / start time) and flags (out of competition / raised fee)
+                        // support fill-down paste straight to the day cell's bound property; group leaves do not.
                         PastePath = LeafPastePath(block.Field, i),
+                        CheckPaste = IsFlagField(block.Field),
                         // Per-day chip cells get the rental toggle in their right-click menu.
                         RentalChipColumn = isChips,
                         ToolTipPath = ResultTooltipPath(block.Field),
@@ -447,8 +454,8 @@ public sealed class RosterColumnBuilder
         _ => CollapsedCopyPath(field),
     };
 
-    // The two-way text property a per-day leaf cell edits, for fill-down paste. Only the plain text
-    // fields (chip, start time) qualify; group is a combo and out-of-competition is a checkbox.
+    // The two-way property a per-day leaf cell edits, for fill-down paste: the plain text fields (chip,
+    // start time, …) and the two flags (pasted as TRUE/FALSE-style values); group is a combo.
     // Amber-tints a chip cell whose SportIdent card model cannot hold the course of the day's group (see
     // SiCard / GroupOption.ControlCount), with the reason as the tooltip. A per-day cell reads its own day's
     // flag under Days[i].; the merged all-days cell reads the row's aggregate (any member day).
@@ -466,8 +473,13 @@ public sealed class RosterColumnBuilder
         RosterField.Payment => $"Days[{i}].{nameof(RosterDayCellViewModel.Payment)}",
         RosterField.StartTimes => $"Days[{i}].{nameof(RosterDayCellViewModel.StartTime)}",
         RosterField.Bonus => $"Days[{i}].{nameof(RosterDayCellViewModel.BonusText)}",
+        RosterField.OutOfCompetition => $"Days[{i}].{nameof(RosterDayCellViewModel.OutOfCompetition)}",
+        RosterField.RaisedFee => $"Days[{i}].{nameof(RosterDayCellViewModel.PaysRaisedFee)}",
         _ => null,
     };
+
+    /// <summary>The two checkbox blocks — their paste reads flags, not text.</summary>
+    private static bool IsFlagField(RosterField field) => field is RosterField.OutOfCompetition or RosterField.RaisedFee;
 
     private static string LeafSortPath(RosterField field, int i) => field switch
     {

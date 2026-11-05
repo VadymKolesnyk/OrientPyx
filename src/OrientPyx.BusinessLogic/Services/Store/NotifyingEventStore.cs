@@ -72,16 +72,8 @@ public class DecoratorProxy<T> : DispatchProxy where T : class
     {
         ArgumentNullException.ThrowIfNull(targetMethod);
         args ??= [];
-        object? result;
-        try
-        {
-            result = targetMethod.Invoke(_inner, args);
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException is not null)
-        {
-            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
-            throw;
-        }
+        // Off the UI thread when called from it (see UiThreadOffload); the after-action still follows the task.
+        var result = UiThreadOffload.Invoke(_inner, targetMethod, args);
 
         var after = _after(targetMethod, args);
         if (after is null)

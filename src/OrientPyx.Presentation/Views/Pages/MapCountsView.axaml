@@ -1,0 +1,83 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="820" d:DesignHeight="640"
+             x:Class="OrientPyx.Presentation.Views.Pages.MapCountsView"
+             x:DataType="pages:MapCountsViewModel">
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Heading + export button -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="{Binding Title, FallbackValue=''}" Classes="h1"
+                           FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+                <TextBlock Text="{Binding Localization[Page.MapCounts.Text]}" Classes="subtitle" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <Button Classes="help" Command="{Binding ShowHelpCommand}"
+                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                <Button Classes="accent" VerticalAlignment="Center"
+                        Click="OnExportClick"
+                        Content="{Binding Localization[MapCounts.Export]}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Reserve: percentage and/or minimum spare maps per group and day. Custom +/- steppers, not
+             NumericUpDown (its Windows automation peer crashes on spin). -->
+        <Border DockPanel.Dock="Top" Classes="card" Padding="18,14" Margin="0,0,0,12">
+            <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
+                    <TextBlock Grid.Column="0" Text="{Binding Localization[MapCounts.Reserve.Title]}" Classes="h2"
+                               VerticalAlignment="Center"
+                               FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="18" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Localization[MapCounts.Reserve.Percent]}" Classes="label"
+                                       VerticalAlignment="Center" />
+                            <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                                <Button Content="−" Command="{Binding DecrementReservePercentCommand}"
+                                        Width="32" Classes="ghost stepper" />
+                                <TextBox Text="{Binding ReservePercent, Mode=TwoWay}" MinWidth="56"
+                                         TextAlignment="Center" VerticalAlignment="Center" />
+                                <Button Content="+" Command="{Binding IncrementReservePercentCommand}"
+                                        Width="32" Classes="ghost stepper" />
+                            </StackPanel>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Localization[MapCounts.Reserve.Min]}" Classes="label"
+                                       VerticalAlignment="Center" />
+                            <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                                <Button Content="−" Command="{Binding DecrementReserveMinCommand}"
+                                        Width="32" Classes="ghost stepper" />
+                                <TextBox Text="{Binding ReserveMin, Mode=TwoWay}" MinWidth="56"
+                                         TextAlignment="Center" VerticalAlignment="Center" />
+                                <Button Content="+" Command="{Binding IncrementReserveMinCommand}"
+                                        Width="32" Classes="ghost stepper" />
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+                <TextBlock Text="{Binding Localization[MapCounts.Reserve.Hint]}" Classes="subtitle" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <TextBlock DockPanel.Dock="Bottom" Margin="0,10,0,0"
+                   Text="{Binding Localization[MapCounts.Info]}" Classes="subtitle" TextWrapping="Wrap" />
+
+        <!-- Group × day table. Columns are built in code-behind (SheetColumnBuilder): one per day, plus the
+             «+ запас» twins when a reserve is set; the per-day totals live in the table's status bar. -->
+        <Border Classes="card" ClipToBounds="True">
+            <controls:SheetTable Name="Sheet"
+                                 ItemsSource="{Binding Rows}"
+                                 Localization="{Binding Localization}"
+                                 LayoutStore="{Binding LayoutStore}"
+                                 LayoutKey="mapcounts" />
+        </Border>
+
+    </DockPanel>
+
+</UserControl>

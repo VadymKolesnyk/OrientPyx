@@ -874,7 +874,7 @@ public sealed class SheetTable : TemplatedControl
             // invariant) so copy/filter agree with what's on screen, no stray ",0".
             decimal dec => FormatSum(dec),
             double dbl => FormatSum((decimal)dbl),
-                bool b => b ? CheckedMark : string.Empty,
+            bool b => b ? CheckedMark : UncheckedMark,
             _ => value.ToString() ?? string.Empty
         };
 
@@ -3289,7 +3289,10 @@ public sealed class SheetTable : TemplatedControl
 
     // A checkbox/flag cell copies as "TRUE" when checked, "" otherwise, so a bool column
     // (discounts, out-of-competition, «Член ФСОУ») round-trips as a readable flag.
+    // A bool copies as TRUE / FALSE — what Excel/Sheets write for a boolean cell, so a copied flag column
+    // round-trips through them and back through the table's own flag paste (TryParseFlag).
     private const string CheckedMark = "TRUE";
+    private const string UncheckedMark = "FALSE";
 
     // Pulls the visible text out of a cell's content control, regardless of how it renders it.
     private static string? ExtractCellText(Control? content)
@@ -3307,7 +3310,7 @@ public sealed class SheetTable : TemplatedControl
             case CalendarDatePicker picker:
                 return picker.SelectedDate?.ToString("dd.MM.yyyy");
             case CheckBox check:
-                return check.IsChecked == true ? CheckedMark : string.Empty;
+                return check.IsChecked == true ? CheckedMark : UncheckedMark;
         }
 
         // Composite cells (per-day chip Panel with backdrop+editor, collapsed merged cells, the
@@ -3328,7 +3331,7 @@ public sealed class SheetTable : TemplatedControl
                         return label;
                     break;
                 case CheckBox check:
-                    return check.IsChecked == true ? CheckedMark : string.Empty;
+                    return check.IsChecked == true ? CheckedMark : UncheckedMark;
             }
         }
         return null;
@@ -3383,6 +3386,15 @@ public sealed class SheetTable : TemplatedControl
         var lines = SplitClipboardLines(text);
         var column = FindFocusedCell()?.Column;
 
+        // A checkbox column has no text editor to paste into: each line is read as a flag (TRUE/1/так/+ …
+        // or FALSE/0/ні/blank) and written to the row's bool — a single value sets the focused row, several
+        // lines fill down one row each. A line that is not a flag leaves that row untouched.
+        if (column?.CheckPaste == true && column.PastePath is { } flagPath)
+        {
+            FillDownFlags(flagPath, lines.Length > 1 ? lines : [text]);
+            return;
+        }
+
         // A combo (option-list) column resolves the pasted value(s) to an option by exact label match and
         // only then changes the selection — a single value writes the focused row, several lines fill down
         // one row each. A line that matches no option leaves that row's selection untouched. Never opens
@@ -3431,6 +3443,66 @@ public sealed class SheetTable : TemplatedControl
         for (var i = 0; i < lines.Length && startIndex + i < items.Count; i++)
             SetStringPath(items[startIndex + i], path, lines[i]);
         return true;
+    }
+
+    // Flag fill-down: write one clipboard line per row, starting at the focused row, to the column's bool
+    // property. Lines that do not read as a flag (see TryParseFlag) are skipped, so pasting arbitrary text
+    // onto a checkbox column never flips anything.
+    private void FillDownFlags(string path, string[] lines)
+    {
+        var items = _sortedItems;
+        if (items.Count == 0 || _body?.SelectedItem is not { } start)
+            return;
+
+        var startIndex = -1;
+        for (var i = 0; i < items.Count; i++)
+            if (Equals(items[i], start)) { startIndex = i; break; }
+        if (startIndex < 0)
+            return;
+
+        for (var i = 0; i < lines.Length && startIndex + i < items.Count; i++)
+            if (TryParseFlag(lines[i], out var value))
+                SetFlagPath(items[startIndex + i], path, value);
+    }
+
+    // Reads a pasted cell as a flag. Accepts what the table itself copies (TRUE/FALSE), what Excel/Sheets
+    // and plain lists carry (1/0, так/ні, yes/no, +/-, ✓) and a blank (= cleared). Anything else is not a
+    // flag and the caller leaves the row alone.
+    private static bool TryParseFlag(string text, out bool value)
+    {
+        value = false;
+        var t = text.Trim();
+        if (t.Length == 0)
+            return true;
+        switch (t.ToLowerInvariant())
+        {
+            case "true": case "1": case "так": case "yes": case "y": case "+": case "✓": case "✔":
+                value = true;
+                return true;
+            case "false": case "0": case "ні": case "no": case "n": case "-": case "—":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    // Assign a flag to the row's two-way bool (or bool?) property at the path, walking any intermediate
+    // segments like SetStringPath does. A missing segment or a non-bool target is a no-op.
+    private static void SetFlagPath(object? row, string path, bool value)
+    {
+        if (row is null)
+            return;
+
+        var segments = path.Split('.');
+        object? current = row;
+        for (var i = 0; i < segments.Length - 1 && current is not null; i++)
+            current = ResolveSegment(current, segments[i]);
+        if (current is null)
+            return;
+
+        var prop = current.GetType().GetProperty(segments[^1], BindingFlags.Public | BindingFlags.Instance);
+        if (prop is { CanWrite: true } && (prop.PropertyType == typeof(bool) || prop.PropertyType == typeof(bool?)))
+            prop.SetValue(current, value);
     }
 
     // Combo fill-down: write one clipboard line per row, starting at the focused row, by resolving each

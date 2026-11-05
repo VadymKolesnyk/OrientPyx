@@ -77,6 +77,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly SplitsExportViewModel _splitsExport;
     private readonly DrawViewModel _draw;
     private readonly ClassicDrawViewModel _classicDraw;
+    private readonly MapCountsViewModel _mapCounts;
     private readonly PluginsViewModel _plugins;
     private readonly PluginSettingsViewModel _pluginSettings;
     private readonly IPluginCatalog _pluginCatalog;
@@ -112,6 +113,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         SplitsExportViewModel splitsExport,
         DrawViewModel draw,
         ClassicDrawViewModel classicDraw,
+        MapCountsViewModel mapCounts,
         PluginsViewModel plugins,
         PluginSettingsViewModel pluginSettings,
         NetworkViewModel network,
@@ -160,6 +162,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _splitsExport = splitsExport;
         _draw = draw;
         _classicDraw = classicDraw;
+        _mapCounts = mapCounts;
         _plugins = plugins;
         _pluginSettings = pluginSettings;
         _pluginCatalog = pluginCatalog;
@@ -234,7 +237,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                      _dashboard, _competitionInfo, _competitionDays, _controlPoints, _groups, _chips,
                      _finishRead, _participants, _relayTeams, _regions, _clubs, _dussh, _ranks, _points, _entryFees,
                      _protocols, _summaryProtocols, _startProtocols, _onlineResults, _monitorResults,
-                     _splitsExport, _draw, _classicDraw, _plugins, _pluginSettings, Settings, _network,
+                     _splitsExport, _draw, _classicDraw, _mapCounts, _plugins, _pluginSettings, Settings, _network,
                  })
         {
             page.HelpRequested += OnPageHelpRequested;
@@ -480,6 +483,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     {
         await _draw.LoadAsync();
         _shell.SelectedPage = _draw;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenMapCountsAsync()
+    {
+        await _mapCounts.LoadAsync();
+        _shell.SelectedPage = _mapCounts;
     }
 
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]

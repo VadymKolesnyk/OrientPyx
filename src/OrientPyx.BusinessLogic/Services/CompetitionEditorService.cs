@@ -5537,6 +5537,75 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             Result: result ?? ParticipantDayResult.Empty);
     }
 
+    public async Task<MapCountsData> GetMapCountsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return MapCountsData.Empty;
+
+        var folder = FolderPath;
+        var days = (await _eventStore.GetDaysAsync(folder, cancellationToken)).OrderBy(d => d.Number).ToList();
+        var groups = (await _eventStore.GetGroupsAsync(folder, cancellationToken)).ToDictionary(g => g.Id);
+        // Join to existing participants so an orphaned per-day link (participant deleted, link left behind)
+        // does not inflate a map count — the same guard the dashboard applies.
+        var participantIds = (await _eventStore.GetParticipantsAsync(folder, cancellationToken))
+            .Select(p => p.Id)
+            .ToHashSet();
+
+        // Groups in the order they first appear on a day (day order, then the day's group order), so the sheet
+        // reads like the groups page of the first day; a group added only on a later day follows.
+        var groupOrder = new List<Guid>();
+        var countsByGroup = new Dictionary<Guid, int?[]>();
+        var noGroup = new int?[days.Count];
+        var anyWithoutGroup = false;
+
+        for (var i = 0; i < days.Count; i++)
+        {
+            var settings = await _eventStore.GetGroupDaySettingsAsync(folder, days[i].Id, cancellationToken);
+            foreach (var s in settings.OrderBy(s => s.Order))
+            {
+                if (!groups.ContainsKey(s.GroupId))
+                    continue;
+                if (!countsByGroup.TryGetValue(s.GroupId, out var counts))
+                {
+                    counts = new int?[days.Count];
+                    countsByGroup[s.GroupId] = counts;
+                    groupOrder.Add(s.GroupId);
+                }
+                counts[i] = 0; // on the day: a real zero, not "not on this day"
+            }
+
+            var links = await _eventStore.GetParticipantDaysAsync(folder, days[i].Id, cancellationToken);
+            foreach (var link in links)
+            {
+                if (!participantIds.Contains(link.ParticipantId))
+                    continue;
+                if (link.GroupId is { } groupId && groups.ContainsKey(groupId))
+                {
+                    // A member of a group the day does not list (stale link) still runs a course — count it.
+                    if (!countsByGroup.TryGetValue(groupId, out var counts))
+                    {
+                        counts = new int?[days.Count];
+                        countsByGroup[groupId] = counts;
+                        groupOrder.Add(groupId);
+                    }
+                    counts[i] = (counts[i] ?? 0) + 1;
+                }
+                else
+                {
+                    noGroup[i] = (noGroup[i] ?? 0) + 1;
+                    anyWithoutGroup = true;
+                }
+            }
+        }
+
+        var rows = new List<MapCountRow>(groupOrder.Count + 1);
+        foreach (var id in groupOrder)
+            rows.Add(new MapCountRow(id, groups[id].Name, countsByGroup[id]));
+        if (anyWithoutGroup)
+            rows.Add(new MapCountRow(null, string.Empty, noGroup));
+        return new MapCountsData(days, rows);
+    }
+
     private GroupDayRow ToRow(GroupDaySettings s, Group group, int participantCount = 0, int scatterVariantCount = 0, int scatterMaxControlCount = 0) => new(
         SettingsId: s.Id,
         GroupId: s.GroupId,

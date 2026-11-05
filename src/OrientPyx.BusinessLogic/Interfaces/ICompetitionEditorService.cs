@@ -99,6 +99,14 @@ public interface ICompetitionEditorService
 
     Task<IReadOnlyList<GroupDayRow>> GetGroupDayRowsAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Participants per group per day over the whole competition — the numbers for map printing («Кількість
+    /// карт»). One row per group that is on at least one day (in the groups' order), each with a count aligned
+    /// to <see cref="MapCountsData.Days"/> (null where the group is not on that day), plus a trailing «без групи»
+    /// row when some day has members without a group. Empty when no competition is selected.
+    /// </summary>
+    Task<MapCountsData> GetMapCountsAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Loads a group's scatter («розсіювання») variants for the current day, in order (Code + raw
     /// course order). Empty when the group has none.</summary>
     Task<IReadOnlyList<CourseVariantRow>> GetCourseVariantsAsync(Guid groupId, CancellationToken cancellationToken = default);

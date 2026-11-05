@@ -1,5 +1,6 @@
 using System.Reflection;
 using OrientPyx.BusinessLogic.Interfaces;
+using OrientPyx.BusinessLogic.Services.Store;
 
 namespace OrientPyx.DataAccess.Network.Routing;
 
@@ -29,14 +30,7 @@ public class RoutingProxy<T> : DispatchProxy where T : class
     {
         ArgumentNullException.ThrowIfNull(targetMethod);
         var target = _mode.Role == WorkspaceRole.Station ? _remote() : _local();
-        try
-        {
-            return targetMethod.Invoke(target, args);
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException is not null)
-        {
-            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
-            throw;
-        }
+        // A call from the UI thread runs on the thread pool (SQLite completes synchronously — see UiThreadOffload).
+        return UiThreadOffload.Invoke(target, targetMethod, args ?? []);
     }
 }

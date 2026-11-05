@@ -19,7 +19,9 @@ public interface IParticipantExportFlow
     /// cancelled. The caller saves the bytes (the view owns the save picker). <paramref name="day"/> is the
     /// single day in view, used to name the file; null for a multi-day roster, whose name then carries no day.
     /// </summary>
-    Task<ParticipantExportResult?> RunAsync(CsvParticipantData view, EventDay? day);
+    /// <param name="nameKey">The localization key of the file name's leading part («Учасники» by default); another
+    /// table exported through this flow (e.g. the map counts) passes its own.</param>
+    Task<ParticipantExportResult?> RunAsync(CsvParticipantData view, EventDay? day, string nameKey = "Export.NamePart");
 }
 
 /// <summary>

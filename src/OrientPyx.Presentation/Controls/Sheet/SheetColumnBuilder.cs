@@ -193,6 +193,9 @@ public sealed class SheetColumnBuilder
         double minWidth = SheetColumn.SortHandleMinWidth)
     {
         var column = NewColumn(headerKey, width, minWidth, path);
+        // Ctrl+V on the box writes the pasted flag(s) to the same bool (fill-down for several lines).
+        column.PastePath = path;
+        column.CheckPaste = true;
         column.CellBuilder = () =>
         {
             var box = new CheckBox
@@ -268,6 +271,17 @@ public sealed class SheetColumnBuilder
         column.Header = text;
         column.PickerLabel = text;
         _bands[^1].Header = text;
+        return this;
+    }
+
+    /// <summary>
+    /// Sums the column just added in the table's status bar: <paramref name="path"/> is the numeric row property
+    /// (an indexed path such as <c>Counts[0]</c> works) totalled over the displayed rows. Fluent — chain it right
+    /// after the column. See <see cref="SheetColumn.SummaryPath"/>.
+    /// </summary>
+    public SheetColumnBuilder Summary(string path)
+    {
+        _bands[^1].Columns[^1].SummaryPath = path;
         return this;
     }
 
