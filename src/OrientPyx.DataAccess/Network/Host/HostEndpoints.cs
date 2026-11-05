@@ -85,7 +85,15 @@ internal sealed class HostEndpoints
                 return;
             }
 
-            if (method == HttpMethods.Post && path.StartsWith(Wire.RpcPathPrefix + "/", StringComparison.Ordinal))
+            if (method == HttpMethods.Post && path == Wire.UnpairPath)
+            {
+                // The station left deliberately: forget it, so the host's list does not keep an offline row.
+                await _stations.RevokeAsync(BearerToken(context) ?? string.Empty, context.RequestAborted);
+                _log.Action($"Network host: station '{station.Name}' disconnected");
+                _changed();
+                context.Response.StatusCode = 204;
+            }
+            else if (method == HttpMethods.Post && path.StartsWith(Wire.RpcPathPrefix + "/", StringComparison.Ordinal))
             {
                 await RpcAsync(context, station, path[(Wire.RpcPathPrefix.Length + 1)..]);
             }
@@ -187,8 +195,11 @@ internal sealed class HostEndpoints
         var enabled = plugins.Plugins.Where(p => plugins.IsEnabled(p.Info.Id)).Select(p => p.Info.Id).Order(StringComparer.Ordinal).ToList();
         var readoutType = await _services.GetRequiredService<IAppStore>().GetReadoutTypeAsync(cancellationToken) ?? 0;
         _changed();
+        // What the host is working on right now, so the station lands in the same competition and day.
+        var session = _services.GetService<ISessionService>();
         await WriteJsonAsync(context, 200, new PairResponse(
-            token, _hostId(), _hostName(), Wire.AppVersion, NetworkProtocol.Version, enabled, DateTimeOffset.UtcNow, readoutType));
+            token, _hostId(), _hostName(), Wire.AppVersion, NetworkProtocol.Version, enabled, DateTimeOffset.UtcNow, readoutType,
+            session?.CurrentEvent?.Identifier, session?.CurrentDay?.Number));
     }
 
     // ── /rpc/{iface}/{method}

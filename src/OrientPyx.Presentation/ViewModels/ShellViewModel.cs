@@ -31,6 +31,10 @@ public sealed partial class ShellViewModel : ViewModelBase
         Localization = localization;
         Pages = navigation.Pages;
         _selectedPage = navigation.CurrentPage;
+        // The constructor bypasses the partial change handler, so mark the initial page active by hand — otherwise
+        // the dashboard would ignore the change bus until some other page had been shown.
+        if (_selectedPage is not null)
+            _selectedPage.IsActive = true;
     }
 
     public ILocalizationService Localization { get; }

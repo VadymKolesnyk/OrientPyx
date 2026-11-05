@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Avalonia.Threading;
 using OrientPyx.BusinessLogic.Interfaces;
+using OrientPyx.BusinessLogic.Services;
 
 namespace OrientPyx.Presentation.Services;
 
@@ -36,12 +37,15 @@ public sealed class BusyService : IBusyService
 
     public async Task<T> RunAsync<T>(Func<IProgressReporter, Task<T>> operation)
     {
-        var reporter = Enter();
+        // A live refresh caused by another machine's write (BackgroundRefresh) still runs off the UI thread but
+        // never shows the overlay — the screen just updates, like a shared spreadsheet.
+        var silent = BackgroundRefresh.IsSilent;
+        var reporter = Enter(silent);
         var releasedByTimeout = false;
         try
         {
             var work = Task.Run(() => operation(reporter));
-            releasedByTimeout = await WaitWithTimeoutAsync(work);
+            releasedByTimeout = silent ? false : await WaitWithTimeoutAsync(work);
             return await work;
         }
         catch (Exception ex)
@@ -52,18 +56,19 @@ public sealed class BusyService : IBusyService
         finally
         {
             if (!releasedByTimeout)
-                Exit();
+                Exit(silent);
         }
     }
 
     public async Task RunAsync(Func<IProgressReporter, Task> operation)
     {
-        var reporter = Enter();
+        var silent = BackgroundRefresh.IsSilent;
+        var reporter = Enter(silent);
         var releasedByTimeout = false;
         try
         {
             var work = Task.Run(() => operation(reporter));
-            releasedByTimeout = await WaitWithTimeoutAsync(work);
+            releasedByTimeout = silent ? false : await WaitWithTimeoutAsync(work);
             await work;
         }
         catch (Exception ex)
@@ -74,7 +79,7 @@ public sealed class BusyService : IBusyService
         finally
         {
             if (!releasedByTimeout)
-                Exit();
+                Exit(silent);
         }
     }
 
@@ -89,12 +94,16 @@ public sealed class BusyService : IBusyService
             return false;
 
         _log.Info($"Background operation exceeded {OperationTimeout.TotalSeconds:0}s — releasing the busy overlay; it continues in the background.");
-        Exit();
+        Exit(false);
         return true;
     }
 
-    private DispatcherProgressReporter Enter()
+    // A silent entry does not count towards IsBusy and reports its progress nowhere visible.
+    private DispatcherProgressReporter Enter(bool silent)
     {
+        if (silent)
+            return new DispatcherProgressReporter(new ObservableCollection<string>());
+
         var wasBusy = IsBusy;
         _activeCount++;
         if (!wasBusy)
@@ -105,8 +114,11 @@ public sealed class BusyService : IBusyService
         return new DispatcherProgressReporter(Progress);
     }
 
-    private void Exit()
+    private void Exit(bool silent)
     {
+        if (silent)
+            return;
+
         _activeCount = Math.Max(0, _activeCount - 1);
         if (!IsBusy)
         {

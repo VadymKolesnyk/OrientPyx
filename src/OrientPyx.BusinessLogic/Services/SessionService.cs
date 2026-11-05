@@ -192,8 +192,7 @@ public sealed class SessionService : ISessionService
             return;
         if (CurrentEvent is not { } current || CurrentDay is null)
             return;
-        if (change.Area != DataArea.Any
-            && !string.Equals(change.EventFolderPath, current.FolderPath, StringComparison.OrdinalIgnoreCase))
+        if (change.Area != DataArea.Any && !SameCompetition(change.EventFolderPath, current.FolderPath))
             return;
 
         _ = RefreshFromStoreAsync(current, change.Area);
@@ -210,7 +209,11 @@ public sealed class SessionService : ISessionService
                 var days = await _eventStore.GetDaysAsync(current.FolderPath);
                 var day = CurrentDay is { } cd ? days.FirstOrDefault(d => d.Id == cd.Id) : null;
                 if (day is not null && CurrentDay is { } old && !SameDay(old, day))
+                {
+                    // SessionChanged makes every page reload; those reloads are a background refresh, not a user action.
+                    BackgroundRefresh.QuietFor(TimeSpan.FromSeconds(3));
                     UpdateCurrentDay(day);
+                }
             }
 
             if (area is DataArea.Competition or DataArea.Any)
@@ -218,6 +221,7 @@ public sealed class SessionService : ISessionService
                 var info = await _eventStore.GetCompetitionInfoAsync(current.FolderPath);
                 if (info is not null && CurrentEvent is { } ev && ReferenceEquals(ev, current) && !SameSummary(ev, info))
                 {
+                    BackgroundRefresh.QuietFor(TimeSpan.FromSeconds(3));
                     UpdateCurrentEvent(new EventSummary
                     {
                         Identifier = ev.Identifier,
@@ -241,6 +245,14 @@ public sealed class SessionService : ISessionService
         {
             _refreshGate.Release();
         }
+    }
+
+    // Compared by the folder name (the identifier): the dispatcher's path and the scanner's path can differ in form.
+    private static bool SameCompetition(string eventPath, string sessionPath)
+    {
+        static string Key(string path) => Path.GetFileName(path.TrimEnd('/', '\\'));
+        return string.Equals(eventPath, sessionPath, StringComparison.OrdinalIgnoreCase)
+               || string.Equals(Key(eventPath), Key(sessionPath), StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool SameDay(EventDay a, EventDay b)

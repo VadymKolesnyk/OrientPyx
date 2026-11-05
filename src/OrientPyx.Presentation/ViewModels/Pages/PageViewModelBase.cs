@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
 using OrientPyx.BusinessLogic.Interfaces;
+using OrientPyx.BusinessLogic.Services;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
 
@@ -260,6 +261,16 @@ public abstract class PageViewModelBase : ViewModelBase
     private bool _isEditingCell;
 
     /// <summary>
+    /// Tells whether the cell being edited holds a change the operator has not left yet (the view sets it from its
+    /// tables). A cell merely focused — the editor goes live on focus — must not hold a reload back forever; only
+    /// typing in progress does. Null ⇒ any live editor counts.
+    /// </summary>
+    public Func<bool>? UncommittedEditCheck { get; set; }
+
+    // True while a reload would replace a value the operator is in the middle of typing.
+    private bool EditInProgress => IsEditingCell && (UncommittedEditCheck?.Invoke() ?? true);
+
+    /// <summary>
     /// Subscribes the page to the change bus for the given areas (plus <see cref="DataArea.Any"/>, which every page
     /// honours). Call once from the constructor of a page that overrides <see cref="ReloadAsync"/>.
     /// </summary>
@@ -302,17 +313,28 @@ public abstract class PageViewModelBase : ViewModelBase
         // Another competition's change is irrelevant (app-data and "any" concern every competition).
         if (change.Area is not (DataArea.Any or DataArea.AppData)
             && _observedSession?.CurrentEvent is { } ev
-            && !string.Equals(change.EventFolderPath, ev.FolderPath, StringComparison.OrdinalIgnoreCase))
+            && !SameCompetition(change.EventFolderPath, ev.FolderPath))
             return;
 
         _reloadPending = true;
         Dispatcher.UIThread.Post(ScheduleReload);
     }
 
-    // On the UI thread. Starts (or lets run) the coalescing timer; the reload itself fires when it elapses.
+    // The event path is the host's folder on a host and the bare identifier on a station; the session's FolderPath
+    // follows the same convention, but the two can differ in form (a trailing separator, relative vs absolute), so
+    // compare by the folder name — the identifier — which is what both end in.
+    private static bool SameCompetition(string eventPath, string sessionPath)
+    {
+        static string Key(string path) => System.IO.Path.GetFileName(path.TrimEnd('/', '\\'));
+        return string.Equals(eventPath, sessionPath, StringComparison.OrdinalIgnoreCase)
+               || string.Equals(Key(eventPath), Key(sessionPath), StringComparison.OrdinalIgnoreCase);
+    }
+
+    // On the UI thread. Starts (or lets run) the coalescing timer; the reload itself fires when it elapses. While a
+    // cell edit is in progress the timer keeps ticking, so the reload lands as soon as the edit is committed.
     private void ScheduleReload()
     {
-        if (!_reloadPending || !IsActive || IsEditingCell)
+        if (!_reloadPending || !IsActive)
             return;
         if (_reloadTimer is null)
         {
@@ -329,8 +351,14 @@ public abstract class PageViewModelBase : ViewModelBase
 
     private async Task RunReloadAsync()
     {
-        if (!_reloadPending || !IsActive || IsEditingCell)
+        if (!_reloadPending || !IsActive)
             return;
+        if (EditInProgress)
+        {
+            // Try again in a second — the operator is typing; the edit is usually over by then.
+            _reloadTimer?.Start();
+            return;
+        }
         if (_reloading)
         {
             // A reload is in flight; the pending flag stays set and the timer re-arms when it finishes.
@@ -340,7 +368,9 @@ public abstract class PageViewModelBase : ViewModelBase
         _reloading = true;
         try
         {
-            await ReloadAsync();
+            // Silent: the busy service shows no overlay for a refresh caused by another machine's write.
+            using (BackgroundRefresh.Scope())
+                await ReloadAsync();
         }
         catch (Exception)
         {

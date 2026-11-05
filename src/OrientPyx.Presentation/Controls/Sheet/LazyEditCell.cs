@@ -319,6 +319,34 @@ internal abstract class LazyEditCell : Decorator
         Retire();
     }
 
+    /// <summary>
+    /// True while the live editor's bound value differs from the snapshot taken when it went live, or the editor is
+    /// busy (a dropdown open) — i.e. an edit the operator has not finished. A focused but untouched cell is not dirty.
+    /// </summary>
+    internal bool IsDirty
+    {
+        get
+        {
+            if (_editor is null)
+                return false;
+            if (IsEditorBusy(_editor))
+                return true;
+            if (!_hasOriginal || EditSourcePath is not { } path)
+                return false;
+            var (target, property) = ResolveSourceProperty(path);
+            if (property is null)
+                return false;
+            try
+            {
+                return !Equals(property.GetValue(target), _originalValue);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+
     // Snapshot the row-VM value the editor is bound to, so Escape can put it back. Best-effort: an
     // unresolvable path (or no DataContext) simply leaves the cell without a revert snapshot.
     private void CaptureOriginal()

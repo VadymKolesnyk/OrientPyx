@@ -20,6 +20,9 @@ public static class Wire
     public const string LastEventIdHeader = "Last-Event-ID";
 
     public const string PairPath = "/pair";
+
+    /// <summary>A station leaving for good (its «Відключитися»): the host drops its token and its row.</summary>
+    public const string UnpairPath = "/unpair";
     public const string PingPath = "/ping";
     public const string RpcPathPrefix = "/rpc";
     public const string ChangesPath = "/changes";
@@ -92,7 +95,10 @@ public sealed record PairResponse(
     IReadOnlyList<string> Plugins,
     DateTimeOffset ServerTimeUtc,
     /// <summary>The host's app-level «Тип відмітки» (0 = SportIdent, 1 = Sport Time), for the station's warning.</summary>
-    int ReadoutType);
+    int ReadoutType,
+    /// <summary>The competition (identifier) and day open on the host right now, so the station can open the same.</summary>
+    string? CurrentIdentifier = null,
+    int? CurrentDayNumber = null);
 
 /// <summary>GET /ping response (no token needed).</summary>
 public sealed record PingResponse(

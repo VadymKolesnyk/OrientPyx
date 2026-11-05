@@ -271,6 +271,13 @@ public sealed class SheetTable : TemplatedControl
         private set => SetValue(IsEditingProperty, value);
     }
 
+    /// <summary>
+    /// True while the live editor holds a value the operator changed but has not left yet (or a dropdown is open).
+    /// A merely focused cell — the editor goes live on focus — reads false, so a live-data reload is held back only
+    /// by typing in progress, never by the cursor simply resting on a cell.
+    /// </summary>
+    public bool HasUncommittedEdit => (_liveEditCell?.IsDirty ?? false) || _openCombo is { IsDropDownOpen: true };
+
     // The lazy cell whose editor is live right now (null while resting). Tracked by identity so a retire that
     // arrives late — a cell's retire is posted at Background priority, after the next cell's BeginEdit already
     // ran — can't clear the state the newer cell set.

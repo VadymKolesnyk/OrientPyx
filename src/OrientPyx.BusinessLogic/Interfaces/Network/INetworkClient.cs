@@ -37,6 +37,10 @@ public interface INetworkClient
     /// <summary>Leaves the host: forgets the token, switches back to local.</summary>
     Task DisconnectAsync();
 
+    /// <summary>The competition (identifier) and day the host had open when this station paired — the station opens the
+    /// same one right after connecting. Null when the host had none open or the station is not connected.</summary>
+    (string Identifier, int? DayNumber)? HostCurrentCompetition => null;
+
     /// <summary>Tells the station which competition (identifier) the session works on, so its version poll and log
     /// batches name it. Optional — the station also infers it from the change stream.</summary>
     void NotifyCurrentEvent(string? identifier) { }

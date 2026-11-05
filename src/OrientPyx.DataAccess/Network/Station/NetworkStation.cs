@@ -97,6 +97,8 @@ public sealed class NetworkStation : INetworkClient, IDisposable
         }
     }
 
+    public (string Identifier, int? DayNumber)? HostCurrentCompetition { get; private set; }
+
     public void NotifyCurrentEvent(string? identifier) => CurrentEvent = identifier;
 
     public async Task<ConnectResult> ConnectAsync(string endpoint, string? pin, CancellationToken cancellationToken = default)
@@ -217,6 +219,9 @@ public sealed class NetworkStation : INetworkClient, IDisposable
                     RemoteProxies.ResultsAppData(channel));
 
                 Host = new StationInfo(pair.HostId, pair.HostName, endpoint, stationName);
+                HostCurrentCompetition = string.IsNullOrEmpty(pair.CurrentIdentifier)
+                    ? null
+                    : (pair.CurrentIdentifier, pair.CurrentDayNumber);
                 _mode.SetStation(Host);
 
                 _listener = new RemoteChangeListener(channel, _bus, _log, pair.HostName) { CurrentEvent = _currentEvent };
@@ -279,8 +284,12 @@ public sealed class NetworkStation : INetworkClient, IDisposable
         await _gate.WaitAsync();
         try
         {
-            if (_channel is not null)
+            if (_channel is { } channel)
+            {
                 _log.Action("Network: disconnected from the host");
+                // Tell the host we are leaving for good (best-effort, 3 s): it drops our token and our row.
+                await channel.TryPostAsync(Wire.UnpairPath, TimeSpan.FromSeconds(3));
+            }
             await TearDownAsync(forgetToken: true);
             State = StationState.Disconnected;
         }

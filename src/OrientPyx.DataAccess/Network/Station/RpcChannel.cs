@@ -58,6 +58,23 @@ public sealed class RpcChannel : IDisposable
     /// <summary>The bearer token (set after pairing).</summary>
     public string Token { get; set; }
 
+    /// <summary>One best-effort authenticated POST without a body and without retries (e.g. <c>/unpair</c> on leaving).</summary>
+    public async Task<bool> TryPostAsync(string path, TimeSpan timeout)
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(timeout);
+            using var request = new HttpRequestMessage(HttpMethod.Post, path.TrimStart('/'));
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Token);
+            using var response = await _http.SendAsync(request, cts.Token).ConfigureAwait(false);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     /// <summary>The underlying client, for the non-RPC endpoints (<c>/ping</c>, <c>/pair</c>, <c>/files/*</c>).</summary>
     public HttpClient Http => _http;
 

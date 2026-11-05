@@ -148,6 +148,26 @@ public sealed partial class EventSelectionViewModel : ViewModelBase
         await _session.SelectAsync(summary, day);
     });
 
+    /// <summary>
+    /// Opens a competition by identifier (and a day number, else the first day) without a row being picked — the
+    /// station lands in whatever the host has open. False when the list does not hold it.
+    /// </summary>
+    public async Task<bool> TryOpenAsync(string identifier, int? dayNumber)
+    {
+        var row = _all.FirstOrDefault(r => string.Equals(r.Identifier, identifier, StringComparison.OrdinalIgnoreCase));
+        if (row is null)
+            return false;
+        return await _busy.RunAsync(async () =>
+        {
+            var days = await _eventStore.GetDaysAsync(row.Summary.FolderPath);
+            if (days.Count == 0)
+                return false;
+            var day = days.FirstOrDefault(d => d.Number == dayNumber) ?? days[0];
+            await _session.SelectAsync(row.Summary, day);
+            return true;
+        });
+    }
+
     /// <summary>Toggles the hidden flag on a row (used by the per-row action button).</summary>
     [RelayCommand]
     private async Task ToggleHiddenAsync(EventSummaryRowViewModel row)

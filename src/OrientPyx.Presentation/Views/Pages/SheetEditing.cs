@@ -24,10 +24,16 @@ internal static class SheetEditing
             // The page's view model is a singleton, but be safe: a view model this view no longer shows must not
             // stay stuck with the flag raised (its reloads would wait forever).
             if (!ReferenceEquals(bound, vm) && bound is not null)
+            {
                 bound.IsEditingCell = false;
+                bound.UncommittedEditCheck = null;
+            }
             bound = vm;
             if (vm is not null)
+            {
+                vm.UncommittedEditCheck = () => tables.Any(t => t.HasUncommittedEdit);
                 vm.IsEditingCell = tables.Any(t => t.IsEditing);
+            }
         }
 
         foreach (var table in tables)

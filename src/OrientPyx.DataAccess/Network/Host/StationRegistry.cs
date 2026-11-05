@@ -92,9 +92,13 @@ internal sealed class StationRegistry
         }
     }
 
-    /// <summary>Issues a token for a station and stores it.</summary>
+    /// <summary>Issues a token for a station and stores it. One row per station: an earlier token of the same station
+    /// (it paired again with the PIN after losing its saved token) is revoked, so the list never shows it twice.</summary>
     public async Task<StationToken> IssueAsync(string stationName, string address, CancellationToken cancellationToken)
     {
+        foreach (var stale in _byToken.Values.Where(e => string.Equals(e.Name, stationName, StringComparison.OrdinalIgnoreCase)).ToList())
+            await RevokeAsync(stale.Token, cancellationToken);
+
         var now = DateTimeOffset.UtcNow;
         var token = new StationToken
         {

@@ -695,14 +695,18 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             : "Network: back to local data");
         _dashboard.StopAutoRefresh();
         _session.Clear();
-        _ = ShowSelectionSafelyAsync();
+        _ = ShowSelectionSafelyAsync(role == WorkspaceRole.Station ? _client.HostCurrentCompetition : null);
     }
 
-    private async Task ShowSelectionSafelyAsync()
+    // After a station connects it lands in the competition and day the host has open; the picker shows only when
+    // the host has none open (or it is not in the list).
+    private async Task ShowSelectionSafelyAsync((string Identifier, int? DayNumber)? openLikeHost = null)
     {
         try
         {
             await ShowSelectionAsync();
+            if (openLikeHost is { } target && await _selection.TryOpenAsync(target.Identifier, target.DayNumber))
+                _log.Action($"Network: opened the host's competition '{target.Identifier}'");
         }
         catch (Exception ex)
         {
