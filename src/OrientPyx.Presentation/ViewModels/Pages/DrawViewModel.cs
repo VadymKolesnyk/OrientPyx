@@ -49,7 +49,9 @@ public sealed partial class DrawViewModel : PageViewModelBase
         IStartDrawService draw,
         IBusyService busy,
         IDialogService dialogs,
-        IDayLockService dayLock)
+        IDayLockService dayLock,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         UseDayLock(dayLock);
@@ -71,6 +73,9 @@ public sealed partial class DrawViewModel : PageViewModelBase
 
         // Singleton VM: reload the day list + groups on a competition/day change (marshal to UI).
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        // Live data (another station's writes) — see ReloadAsync.
+        ObserveData(bus, session, mode,
+            DataArea.Participants, DataArea.ParticipantDays, DataArea.Groups, DataArea.GroupDaySettings, DataArea.Days, DataArea.Settings, DataArea.Relay);
     }
 
     public override string NavKey => "Nav.Draw";
@@ -167,6 +172,14 @@ public sealed partial class DrawViewModel : PageViewModelBase
     /// <summary>Status line under the action buttons (e.g. "Збережено 42 старти").</summary>
     [ObservableProperty]
     private string _statusMessage = string.Empty;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Re-reads the day's groups and members (another station may have added runners). Skipped while a draw is
+    /// on screen: reloading clears the results, and an unapplied draw is the operator's work in progress.
+    /// </remarks>
+    protected override Task ReloadAsync(CancellationToken cancellationToken = default)
+        => HasResults ? Task.CompletedTask : ReloadGroupsAsync();
 
     public async Task LoadAsync()
     {

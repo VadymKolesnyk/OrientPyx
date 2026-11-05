@@ -70,39 +70,89 @@ public sealed class EventArchiveService : IEventArchiveService
         // Zip the whole folder as a single top-level entry named after the identifier, so the identifier
         // is recoverable on import. Overwrite any existing file at the destination. File I/O is blocking,
         // so run it off the calling thread (callers invoke this inside the busy overlay's worker).
-        await Task.Run(() =>
+        //
+        // The database itself is not read from the live file: while stations (or this instance) keep writing, the
+        // file plus its WAL may be mid-change. SQLite's backup API copies a consistent image through a connection
+        // into a temp file, which is packed under the name event.db; the -wal/-shm sidecars are then not needed.
+        var dbPath = Path.Combine(folderPath, AppDatabasePaths.EventDatabaseFileName);
+        var dbCopy = Path.Combine(Path.GetTempPath(), $"opyx-export-{Guid.NewGuid():N}.db");
+        try
         {
-            if (File.Exists(destinationArchivePath))
-                File.Delete(destinationArchivePath);
-
-            using var zip = ZipFile.Open(destinationArchivePath, ZipArchiveMode.Create);
-            foreach (var file in Directory.EnumerateFiles(folderPath, "*", SearchOption.AllDirectories))
+            await Task.Run(() =>
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var relative = Path.GetRelativePath(folderPath, file);
-                // Store under "<identifier>/<relative>" with forward slashes (the zip convention).
-                var entryName = $"{identifier}/{relative.Replace(Path.DirectorySeparatorChar, '/')}";
+                if (File.Exists(dbPath))
+                    BackupDatabase(folderPath, dbCopy);
 
-                // The exported competition may be the active session's own competition, whose event.db (and
-                // its -wal/-shm sidecars) are held open by the live SQLite connection. ZipFile.CreateEntryFromFile
-                // opens the source with FileShare.Read only, which fails ("used by another process") against that
-                // open handle. Open the source ourselves with a permissive share so a live DB can still be read.
-                var entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
-                using var source = new FileStream(
-                    file, FileMode.Open, FileAccess.Read,
-                    FileShare.ReadWrite | FileShare.Delete);
-                using var entryStream = entry.Open();
-                source.CopyTo(entryStream);
+                if (File.Exists(destinationArchivePath))
+                    File.Delete(destinationArchivePath);
+
+                using var zip = ZipFile.Open(destinationArchivePath, ZipArchiveMode.Create);
+                foreach (var file in Directory.EnumerateFiles(folderPath, "*", SearchOption.AllDirectories))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var relative = Path.GetRelativePath(folderPath, file);
+                    if (IsDatabaseFile(relative))
+                        continue;
+                    // Store under "<identifier>/<relative>" with forward slashes (the zip convention).
+                    AddFile(zip, $"{identifier}/{relative.Replace(Path.DirectorySeparatorChar, '/')}", file);
+                }
+
+                if (File.Exists(dbCopy))
+                    AddFile(zip, $"{identifier}/{AppDatabasePaths.EventDatabaseFileName}", dbCopy);
+
+                var sharedEntry = zip.CreateEntry($"{identifier}/{SharedDataEntryName}", CompressionLevel.Optimal);
+                using (var writer = new StreamWriter(sharedEntry.Open()))
+                    writer.Write(sharedJson);
+
+                var pluginsEntry = zip.CreateEntry($"{identifier}/{PluginsEntryName}", CompressionLevel.Optimal);
+                using (var writer = new StreamWriter(pluginsEntry.Open()))
+                    writer.Write(pluginsJson);
+            }, cancellationToken);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(dbCopy))
+                    File.Delete(dbCopy);
             }
+            catch (IOException)
+            {
+                // A leftover temp copy is harmless.
+            }
+        }
+    }
 
-            var sharedEntry = zip.CreateEntry($"{identifier}/{SharedDataEntryName}", CompressionLevel.Optimal);
-            using (var writer = new StreamWriter(sharedEntry.Open()))
-                writer.Write(sharedJson);
+    // event.db and its -wal / -shm sidecars at the folder root: replaced in the archive by the backup copy.
+    private static bool IsDatabaseFile(string relativePath)
+    {
+        if (relativePath.Contains(Path.DirectorySeparatorChar) || relativePath.Contains(Path.AltDirectorySeparatorChar))
+            return false;
+        var db = AppDatabasePaths.EventDatabaseFileName;
+        return string.Equals(relativePath, db, StringComparison.OrdinalIgnoreCase)
+               || string.Equals(relativePath, db + "-wal", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(relativePath, db + "-shm", StringComparison.OrdinalIgnoreCase);
+    }
 
-            var pluginsEntry = zip.CreateEntry($"{identifier}/{PluginsEntryName}", CompressionLevel.Optimal);
-            using (var writer = new StreamWriter(pluginsEntry.Open()))
-                writer.Write(pluginsJson);
-        }, cancellationToken);
+    // A consistent copy of the live database (WAL included) via the SQLite online backup API. The copy's connection
+    // is unpooled so the file is closed — and deletable — as soon as it is done.
+    private static void BackupDatabase(string folderPath, string copyPath)
+    {
+        using var source = new Microsoft.Data.Sqlite.SqliteConnection(AppDatabasePaths.GetEventConnectionString(folderPath));
+        using var target = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={copyPath};Pooling=False");
+        source.Open();
+        target.Open();
+        source.BackupDatabase(target);
+    }
+
+    private static void AddFile(ZipArchive zip, string entryName, string file)
+    {
+        // Other files of the folder may be held open by this process (views.json, logs): open them with a permissive
+        // share instead of ZipFile.CreateEntryFromFile (FileShare.Read only, which fails against an open handle).
+        var entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
+        using var source = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var entryStream = entry.Open();
+        source.CopyTo(entryStream);
     }
 
     public async Task<EventArchivePreview> PreviewImportAsync(string archivePath, CancellationToken cancellationToken = default)

@@ -16,6 +16,7 @@ public partial class ControlPointsView : UserControl
     public ControlPointsView()
     {
         InitializeComponent();
+        SheetEditing.Bind(this, Sheet);
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += (_, _) => Unsubscribe();
 

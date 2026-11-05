@@ -45,6 +45,9 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<MainWindowViewModel>();
         services.AddSingleton<ShellViewModel>();
         services.AddSingleton<ViewModels.Shared.PluginNoticeViewModel>();
+        // Network mode («Спільна робота»): the overlay page and the «немає зв'язку з хостом» banner.
+        services.AddSingleton<NetworkViewModel>();
+        services.AddSingleton<ViewModels.Shared.NetworkNoticeViewModel>();
         services.AddSingleton<EventSelectionViewModel>();
         services.AddSingleton<CreateEventViewModel>();
 

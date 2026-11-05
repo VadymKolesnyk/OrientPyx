@@ -3,6 +3,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientPyx.BusinessLogic.Interfaces;
+using OrientPyx.BusinessLogic.Models.Network;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
 using OrientPyx.Presentation.ViewModels.Pages;
@@ -30,6 +31,21 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _isAboutOpen;
+
+    [ObservableProperty]
+    private bool _isNetworkOpen;
+
+    // ── Network mode («Спільна робота»)
+    private readonly NetworkViewModel _network;
+    private readonly IWorkspaceMode _mode;
+    private readonly INetworkHost _host;
+    private readonly INetworkClient _client;
+    private readonly IActivityLog _log;
+    // The role after the last handled change; a Local↔Station switch replaces the competition list.
+    private WorkspaceRole _lastRole = WorkspaceRole.Local;
+    // The startup restore may connect the station itself — no list swap until it is done.
+    private bool _initializing = true;
+    private bool _networkShutdownDone;
 
     private readonly IUiScaleService _uiScale;
     private readonly IAppSettingsService _appSettings;
@@ -98,6 +114,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         ClassicDrawViewModel classicDraw,
         PluginsViewModel plugins,
         PluginSettingsViewModel pluginSettings,
+        NetworkViewModel network,
+        IWorkspaceMode mode,
+        INetworkHost host,
+        INetworkClient client,
+        IActivityLog log,
         IPluginCatalog pluginCatalog,
         ILocalizationService localization,
         IUiScaleService uiScale,
@@ -142,6 +163,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _plugins = plugins;
         _pluginSettings = pluginSettings;
         _pluginCatalog = pluginCatalog;
+        _network = network;
+        _mode = mode;
+        _host = host;
+        _client = client;
+        _log = log;
         Localization = localization;
         _uiScale = uiScale;
         _appSettings = appSettings;
@@ -186,7 +212,20 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _pluginCatalog.EnabledChanged += (_, _) => Dispatcher.UIThread.Post(RefreshPluginMenu);
         RefreshPluginMenu();
         _session.SessionChanged += OnSessionChanged;
-        Localization.PropertyChanged += (_, _) => OnPropertyChanged(nameof(WindowTitle));
+        Localization.PropertyChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(WindowTitle));
+            OnPropertyChanged(nameof(RoleIndicatorText));
+        };
+
+        // Network mode: the picker's «Підключитися до хоста…» and the top-bar activity's «Відкрити налаштування»
+        // open the overlay; a role switch (Local ↔ Station) swaps the competition list for the host's (or back).
+        // The transport raises these on its own threads.
+        _selection.ConnectRequested += (_, _) => OpenNetwork();
+        _network.OpenRequested += (_, _) => Dispatcher.UIThread.Post(OpenNetwork);
+        _mode.Changed += (_, _) => Dispatcher.UIThread.Post(OnRoleChanged);
+        _host.Changed += (_, _) => Dispatcher.UIThread.Post(RefreshRoleIndicator);
+        _client.Changed += (_, _) => Dispatcher.UIThread.Post(RefreshRoleIndicator);
 
         // Every page's «?» header button raises HelpRequested; the root coordinator owns the dialog
         // service, so it opens the per-screen help modal here (same wiring as the quick-action events).
@@ -195,7 +234,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                      _dashboard, _competitionInfo, _competitionDays, _controlPoints, _groups, _chips,
                      _finishRead, _participants, _relayTeams, _regions, _clubs, _dussh, _ranks, _points, _entryFees,
                      _protocols, _summaryProtocols, _startProtocols, _onlineResults, _monitorResults,
-                     _splitsExport, _draw, _classicDraw, _plugins, _pluginSettings, Settings,
+                     _splitsExport, _draw, _classicDraw, _plugins, _pluginSettings, Settings, _network,
                  })
         {
             page.HelpRequested += OnPageHelpRequested;
@@ -225,8 +264,29 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>«Про програму» content shown in the global overlay.</summary>
     public AboutViewModel About { get; }
 
+    /// <summary>«Спільна робота» (network mode) content shown in its global overlay.</summary>
+    public NetworkViewModel Network => _network;
+
     /// <summary>True while the working shell is active (enables the "change competition" item).</summary>
-    public bool IsEventSelected => _session.HasSelection && !IsSettingsOpen;
+    public bool IsEventSelected => _session.HasSelection && !IsSettingsOpen && !IsNetworkOpen;
+
+    /// <summary>True while this instance works on a host's data over the network.</summary>
+    public bool IsStation => _mode.IsStation;
+
+    /// <summary>The Debug results snapshot writes into the competition folder — there is none on a station.</summary>
+    public bool ShowDebugSnapshot => IsDebugBuild && !IsStation;
+
+    /// <summary>«Хост · станцій: 2» / «Станція · Головний-ноут» — the top-bar role button, hidden while local.</summary>
+    public string RoleIndicatorText => _mode.Role switch
+    {
+        WorkspaceRole.Host => string.Format(Localization.Get("Network.Role.Host"),
+            _host.IsRunning ? _host.Stations.Count(s => s.IsOnline) : 0),
+        WorkspaceRole.Station => string.Format(Localization.Get("Network.Role.Station"),
+            _mode.Station?.HostName ?? _client.Host?.HostName ?? string.Empty),
+        _ => string.Empty,
+    };
+
+    public bool IsRoleIndicatorVisible => _mode.Role != WorkspaceRole.Local;
 
     /// <summary>Navigation pages, surfaced as top-menu items once a competition is open.</summary>
     public ReadOnlyObservableCollection<PageViewModelBase> Pages { get; }
@@ -244,7 +304,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 return appName;
 
             var name = _session.CurrentEvent?.Name ?? string.Empty;
-            return $"{appName} — {name}";
+            var title = $"{appName} — {name}";
+            return _mode.IsStation
+                ? string.Format(Localization.Get("App.Title.Station"), title, _mode.Station?.HostName ?? string.Empty)
+                : title;
         }
     }
 
@@ -555,6 +618,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             ShowShell();
         else
             await ShowSelectionAsync();
+
+        // From here on a role switch swaps the competition list (the restore above may have connected the station).
+        _lastRole = _mode.Role;
+        _initializing = false;
+        RefreshRoleIndicator();
+
+        // The host autostarts when it was switched on last time; never fatal (the overlay shows the error).
+        await _network.AutoStartHostAsync();
     }
 
     // Applies a persisted language culture name at startup, if one was saved and is available.
@@ -581,6 +652,93 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     [RelayCommand]
     private void CloseAbout() => IsAboutOpen = false;
+
+    [RelayCommand]
+    private void OpenNetwork()
+    {
+        if (IsNetworkOpen)
+            return;
+        IsNetworkOpen = true;
+        _ = _network.OnOpenedAsync();
+    }
+
+    [RelayCommand]
+    private void CloseNetwork()
+    {
+        if (!IsNetworkOpen)
+            return;
+        IsNetworkOpen = false;
+        _network.OnClosed();
+    }
+
+    partial void OnIsNetworkOpenChanged(bool value) => OnPropertyChanged(nameof(IsEventSelected));
+
+    // The role changed (host switched on/off, station connected/disconnected). Only a switch into or out of the
+    // station role changes WHOSE competitions are listed: drop the session and re-show the picker, which now reads
+    // the host's list (or the local one again). Hosting keeps the local data, so the open competition stays.
+    private void OnRoleChanged()
+    {
+        var role = _mode.Role;
+        RefreshRoleIndicator();
+        if (_initializing || role == _lastRole)
+        {
+            _lastRole = role;
+            return;
+        }
+        var wasStation = _lastRole == WorkspaceRole.Station;
+        _lastRole = role;
+        if (!wasStation && role != WorkspaceRole.Station)
+            return;
+
+        _log.Action(role == WorkspaceRole.Station
+            ? $"Network: now a station of '{_mode.Station?.HostName}'"
+            : "Network: back to local data");
+        _dashboard.StopAutoRefresh();
+        _session.Clear();
+        _ = ShowSelectionSafelyAsync();
+    }
+
+    private async Task ShowSelectionSafelyAsync()
+    {
+        try
+        {
+            await ShowSelectionAsync();
+        }
+        catch (Exception ex)
+        {
+            // The busy service has already logged a store failure; the picker stays with its previous list.
+            _log.Error("Competition list after a role change", ex);
+            CurrentView = _selection;
+        }
+    }
+
+    private void RefreshRoleIndicator()
+    {
+        OnPropertyChanged(nameof(RoleIndicatorText));
+        OnPropertyChanged(nameof(IsRoleIndicatorVisible));
+        OnPropertyChanged(nameof(IsStation));
+        OnPropertyChanged(nameof(ShowDebugSnapshot));
+        OnPropertyChanged(nameof(WindowTitle));
+    }
+
+    /// <summary>True once the network was shut down for exit (the window's Closing handler then lets the close through).</summary>
+    public bool NetworkShutdownDone => _networkShutdownDone;
+
+    /// <summary>Stops the host / leaves the host before exit, best-effort and bounded to ~2 s.</summary>
+    public async Task ShutdownNetworkAsync()
+    {
+        if (_networkShutdownDone)
+            return;
+        _networkShutdownDone = true;
+        try
+        {
+            await _network.ShutdownAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        catch (Exception ex)
+        {
+            _log.Error("Network shutdown on exit", ex);
+        }
+    }
 
     private bool CanChangeEvent() => _session.HasSelection;
 
@@ -655,8 +813,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void Exit()
+    private async Task ExitAsync()
     {
+        await ShutdownNetworkAsync();
         if (Avalonia.Application.Current?.ApplicationLifetime
             is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
         {
@@ -673,6 +832,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() => OnSessionChanged(sender, e));
             return;
         }
+
+        // On a station the identifier names the competition on the host (for its version poll / log batches).
+        _client.NotifyCurrentEvent(_session.CurrentEvent?.Identifier);
 
         ChangeEventCommand.NotifyCanExecuteChanged();
         ExportCompetitionCommand.NotifyCanExecuteChanged();

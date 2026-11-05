@@ -22,6 +22,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     private readonly Disciplines.IDisciplineStrategyProvider _strategies;
     private readonly DayResultsCalculator _calculator;
     private readonly IEntryFeeCalculator _entryFees;
+    private readonly IEventFiles _files;
+    private readonly IResultsAppData _resultsAppData;
     private readonly IPluginCatalog? _plugins;
 
     public CompetitionEditorService(
@@ -31,12 +33,16 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         ICourseDistanceCalculator distance,
         Disciplines.IDisciplineStrategyProvider strategies,
         IEntryFeeCalculator entryFees,
+        IEventFiles files,
+        IResultsAppData resultsAppData,
         IPluginCatalog? plugins = null)
     {
         _plugins = plugins;
         _session = session;
         _eventStore = eventStore;
         _appStore = appStore;
+        _files = files;
+        _resultsAppData = resultsAppData;
         _distance = distance;
         _strategies = strategies;
         _calculator = new DayResultsCalculator(strategies);
@@ -300,7 +306,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         await _eventStore.AddDayAsync(FolderPath, day, cancellationToken);
 
         // Where imported XML for the day is stored.
-        Directory.CreateDirectory(DayFolders.PathFor(FolderPath, nextNumber));
+        await _files.EnsureDayFolderAsync(FolderPath, nextNumber, cancellationToken);
         return day;
     }
 
@@ -340,26 +346,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         if (days.Any(d => d.Id != dayId && d.Number == newNumber))
             return null;
 
-        var oldFolder = DayFolders.PathFor(folder, day.Number);
-        var newFolder = DayFolders.PathFor(folder, newNumber);
-
         await _eventStore.UpdateDayNumberAsync(folder, dayId, newNumber, cancellationToken);
 
-        // Keep the day's files folder name in step with its number. The target name is free (its
-        // number was), so a plain move works; if the old folder was never created, just create the
-        // new one so the day always has its folder.
-        try
-        {
-            if (Directory.Exists(oldFolder) && !Directory.Exists(newFolder))
-                Directory.Move(oldFolder, newFolder);
-            else if (!Directory.Exists(newFolder))
-                Directory.CreateDirectory(newFolder);
-        }
-        catch
-        {
-            // A locked/again-renamed folder shouldn't fail the renumber — the DB is the source of
-            // truth for the number; the folder is just where imported files are kept.
-        }
+        // Keep the day's files folder name in step with its number (best-effort, see IEventFiles).
+        await _files.MoveDayFolderAsync(folder, day.Number, newNumber, cancellationToken);
 
         return new EventDay
         {
@@ -379,58 +369,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         if (_session.CurrentDay is not { } day)
             return null;
 
-        var safeName = Path.GetFileName((fileName ?? string.Empty).Trim());
-        if (string.IsNullOrEmpty(safeName))
-            safeName = "import.xml";
-
-        var folder = DayFolders.PathFor(FolderPath, day.Number);
-        Directory.CreateDirectory(folder);
-
-        var target = Path.Combine(folder, safeName);
-
-        // Identical bytes already there — reuse, don't duplicate.
-        if (File.Exists(target) && SameContent(target, content))
-            return target;
-
-        if (!File.Exists(target))
-        {
-            await File.WriteAllBytesAsync(target, content, cancellationToken);
-            return target;
-        }
-
-        // Name taken by different content → append a short content hash so both survive. If a file
-        // with that hashed name is itself already identical (a re-import of the same file), reuse it.
-        var stem = Path.GetFileNameWithoutExtension(safeName);
-        var ext = Path.GetExtension(safeName);
-        var hash = ShortHash(content);
-        var hashedName = $"{stem}-{hash}{ext}";
-        var hashedTarget = Path.Combine(folder, hashedName);
-
-        if (File.Exists(hashedTarget) && SameContent(hashedTarget, content))
-            return hashedTarget;
-
-        await File.WriteAllBytesAsync(hashedTarget, content, cancellationToken);
-        return hashedTarget;
-    }
-
-    private static bool SameContent(string path, byte[] content)
-    {
-        try
-        {
-            var existing = File.ReadAllBytes(path);
-            return existing.AsSpan().SequenceEqual(content);
-        }
-        catch
-        {
-            // Unreadable existing file — treat as different so we fall through to a hashed copy.
-            return false;
-        }
-    }
-
-    private static string ShortHash(byte[] content)
-    {
-        var hash = System.Security.Cryptography.SHA256.HashData(content);
-        return Convert.ToHexString(hash, 0, 4).ToLowerInvariant(); // 8 hex chars
+        // The file lands in the day's folder (on a station: on the host); the stored name comes back.
+        return await _files.SaveDayFileAsync(FolderPath, day.Number, fileName ?? string.Empty, content, cancellationToken);
     }
 
     public Task<IReadOnlyList<ControlPoint>> GetControlPointsAsync(CancellationToken cancellationToken = default)
@@ -3111,7 +3051,9 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     // awards ranks, so a day without ranks never touches them (as before the calculator existed).
     private async Task<DayResultsAppData> LoadDayResultsAppDataAsync(bool withRanks, CancellationToken cancellationToken)
     {
-        var rules = await _appStore.GetPointsRulesAsync(cancellationToken);
+        // Through IResultsAppData, never IAppStore directly: on a station these are the HOST's tables, so both
+        // machines compute the same points and ranks.
+        var rules = await _resultsAppData.GetPointsRulesAsync(cancellationToken);
         if (!withRanks)
             return new DayResultsAppData { PointsRules = rules };
 
@@ -3119,9 +3061,9 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         {
             PointsRules = rules,
             HasRankData = true,
-            RankQualification = await _appStore.GetRankQualificationAsync(cancellationToken),
-            RankConditions = await _appStore.GetRankConditionsAsync(cancellationToken) ?? (3, 8, 12),
-            Ranks = await _appStore.GetRanksAsync(cancellationToken)
+            RankQualification = await _resultsAppData.GetRankQualificationAsync(cancellationToken),
+            RankConditions = await _resultsAppData.GetRankConditionsAsync(cancellationToken) ?? (3, 8, 12),
+            Ranks = await _resultsAppData.GetRanksAsync(cancellationToken)
         };
     }
 
@@ -4221,7 +4163,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var regions = await _eventStore.GetRegionsAsync(folder, cancellationToken);
         var clubs = await _eventStore.GetClubsAsync(folder, cancellationToken);
         var dusshes = await _eventStore.GetDusshesAsync(folder, cancellationToken);
-        var ranks = await _appStore.GetRanksAsync(cancellationToken);
+        var ranks = await _resultsAppData.GetRanksAsync(cancellationToken);
 
         return new FinishReadoutEditData
         {
@@ -5151,9 +5093,9 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     }
 
     public string? GetMonitorOutputDirectory() =>
-        _session.CurrentEvent is null || _session.CurrentDay is not { } day
+        _session.CurrentEvent is not { } ev || _session.CurrentDay is not { } day
             ? null
-            : DayFolders.PathFor(FolderPath, day.Number);
+            : _files.MonitorOutputDirectory(ev.FolderPath, ev.Identifier, day.Number);
 
     public string? ResolveMonitorFilePath(string fileName)
     {
@@ -5183,7 +5125,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var builtDay = days.FirstOrDefault(d => d.Id == dayId);
         if (builtDay is null)
             return [];
-        var dayFolder = DayFolders.PathFor(FolderPath, builtDay.Number);
+        var dayFolder = _files.MonitorOutputDirectory(FolderPath, _session.CurrentEvent.Identifier, builtDay.Number);
 
         // Reuse the same computed data the protocols and online publish use — one section per group, each
         // member already carrying their result. Group rows are kept in the protocol order (placed finishers

@@ -25,6 +25,7 @@ public sealed partial class RegionsViewModel : PageViewModelBase
     private readonly IBusyService _busy;
     private readonly IDialogService _dialogs;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
+    private readonly PendingSaves _pendingSaves = new();
 
     public RegionsViewModel(
         ILocalizationService localization,
@@ -32,7 +33,9 @@ public sealed partial class RegionsViewModel : PageViewModelBase
         ISessionService session,
         IBusyService busy,
         IDialogService dialogs,
-        ITableLayoutStore layoutStore)
+        ITableLayoutStore layoutStore,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         LayoutStore = layoutStore;
@@ -43,6 +46,8 @@ public sealed partial class RegionsViewModel : PageViewModelBase
 
         // Singleton VM: reload when the competition changes (the event can be raised on a pool thread).
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        // Live data: the list and the per-row participant counts.
+        ObserveData(bus, session, mode, DataArea.Regions, DataArea.Participants);
     }
 
     /// <summary>Per-competition table-view store; persists this page's table column order/width/visibility.</summary>
@@ -78,6 +83,17 @@ public sealed partial class RegionsViewModel : PageViewModelBase
             row.ParticipantCount = counts.TryGetValue(region.Id, out var c) ? c : 0;
             Regions.Add(row);
         }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>Lets the pending row saves finish first (LoadAsync cancels them, see <see cref="PendingSaves"/>) and keeps the
+    /// selected row by id.</remarks>
+    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        await _pendingSaves.WaitAsync();
+        var selectedId = SelectedRegion?.Id;
+        await LoadAsync();
+        SelectedRegion = Regions.FirstOrDefault(r => r.Id == selectedId);
     }
 
     private RegionRowViewModel CreateRow(Region region) =>
@@ -148,7 +164,7 @@ public sealed partial class RegionsViewModel : PageViewModelBase
 
         var cts = new CancellationTokenSource();
         _saveTimers[row.Id] = cts;
-        _ = SaveRowDebouncedAsync(row, cts.Token);
+        _pendingSaves.Track(SaveRowDebouncedAsync(row, cts.Token));
     }
 
     private async Task SaveRowDebouncedAsync(RegionRowViewModel row, CancellationToken token)

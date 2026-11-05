@@ -56,7 +56,9 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
         IWinnersPrintFlow winnersPrint,
         IBusyService busy,
         IAppSettingsService appSettings,
-        IExportFileSaver fileSaver)
+        IExportFileSaver fileSaver,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         _editor = editor;
@@ -70,6 +72,9 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
         FileSaver = fileSaver;
 
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        // Live data (another station's writes) — see ReloadAsync.
+        ObserveData(bus, session, mode,
+            DataArea.Participants, DataArea.ParticipantDays, DataArea.Readouts, DataArea.Groups, DataArea.GroupDaySettings, DataArea.ControlPoints, DataArea.CourseVariants, DataArea.Relay, DataArea.Days, DataArea.Settings, DataArea.CustomFields, DataArea.Competition, DataArea.AppData);
 
         ModeOptions =
         [
@@ -185,6 +190,16 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
 
     [ObservableProperty]
     private bool _settingsSaved;
+
+    /// <inheritdoc />
+    /// <remarks>Refreshes the preview's data only; the template on screen may hold unsaved edits.</remarks>
+    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return;
+        _data = await _busy.RunAsync(() => _editor.GetSummaryProtocolDataAsync());
+        RefreshPreview();
+    }
 
     public async Task LoadAsync()
     {

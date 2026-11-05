@@ -29,7 +29,9 @@ public sealed partial class ChipsViewModel : PageViewModelBase
     private readonly IDialogService _dialogs;
     private readonly IBackgroundActivityService _activities;
     private readonly IAppSettingsService _appSettings;
+    private readonly IEventFiles _eventFiles;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
+    private readonly PendingSaves _pendingSaves = new();
 
     /// <summary>
     /// The top-bar background-activity handle for auto-read, created while it is active. Lets the user
@@ -47,7 +49,10 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         IDialogService dialogs,
         IBackgroundActivityService activities,
         ITableLayoutStore layoutStore,
-        IAppSettingsService appSettings)
+        IAppSettingsService appSettings,
+        IDataChangeBus bus,
+        IWorkspaceMode mode,
+        IEventFiles eventFiles)
         : base(localization)
     {
         LayoutStore = layoutStore;
@@ -59,6 +64,9 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         _busy = busy;
         _dialogs = dialogs;
         _activities = activities;
+        _eventFiles = eventFiles;
+        // Live data: the pool, who holds each chip per day (participants + their day links) and the day columns.
+        ObserveData(bus, session, mode, DataArea.Chips, DataArea.ParticipantDays, DataArea.Participants, DataArea.Days);
 
         // Singleton VM: when the competition changes, drop the previous event's rows and stop any
         // watch (the file belongs to the old event). The event can be raised on a pool thread.
@@ -105,8 +113,8 @@ public sealed partial class ChipsViewModel : PageViewModelBase
 
     // --- Auto-read panel (in-memory only; never persisted, per the session rule)
 
-    /// <summary>Default readout file: <c>chips\rentchip.csv</c> under the competition folder.</summary>
-    private const string DefaultReadoutSubPath = "chips/rentchip.csv";
+    /// <summary>Default read-out file name, in this machine's rental-chip folder (<see cref="IEventFiles.LocalReadoutDirectory"/>).</summary>
+    private const string DefaultReadoutFileName = "rentchip.csv";
 
     /// <summary>Whether the auto-read card is expanded (collapsible to save vertical space).</summary>
     [ObservableProperty]
@@ -139,6 +147,20 @@ public sealed partial class ChipsViewModel : PageViewModelBase
     [RelayCommand]
     private void ToggleAutoRead() => IsAutoReadExpanded = !IsAutoReadExpanded;
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// Unlike the SessionChanged handler this does NOT stop auto-read: the watched file is still this machine's
+    /// and the competition is the same. Pending row saves finish first (LoadAsync cancels them, see
+    /// PendingSaves); the selected chip is kept by id.
+    /// </remarks>
+    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        await _pendingSaves.WaitAsync();
+        var selectedId = SelectedChip?.Id;
+        await LoadAsync();
+        SelectedChip = Chips.FirstOrDefault(c => c.Id == selectedId);
+    }
+
     /// <summary>Reloads the chips for the current competition. Called when the page is shown.</summary>
     public async Task LoadAsync()
     {
@@ -147,9 +169,10 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         // Pre-fill the watch path with the per-competition default (chips/rentchip.csv). Done before
         // the await so it lands even when the page is first shown; the file itself is only created
         // when auto-read is switched on. Leave a user-customised path alone.
-        var folder = _session.CurrentEvent?.FolderPath;
-        if (!string.IsNullOrEmpty(folder) && string.IsNullOrWhiteSpace(AutoReadFilePath))
-            AutoReadFilePath = Path.Combine(folder, DefaultReadoutSubPath.Replace('/', Path.DirectorySeparatorChar));
+        // The folder is this machine's (IEventFiles.LocalReadoutDirectory): the competition's chips folder locally, a local
+        // per-host folder on a station — the reader is plugged into this computer in either role (П17).
+        if (_session.CurrentEvent is { } ev && string.IsNullOrWhiteSpace(AutoReadFilePath))
+            AutoReadFilePath = Path.Combine(_eventFiles.LocalReadoutDirectory(ev.FolderPath, ev.Identifier, null), DefaultReadoutFileName);
 
         var chips = await _busy.RunAsync(() => _editor.GetRentalChipsAsync());
         // Who holds each chip on each day — populates the read-only per-day "assigned to" columns.
@@ -462,7 +485,7 @@ public sealed partial class ChipsViewModel : PageViewModelBase
 
         var cts = new CancellationTokenSource();
         _saveTimers[row.Id] = cts;
-        _ = SaveRowDebouncedAsync(row, cts.Token);
+        _pendingSaves.Track(SaveRowDebouncedAsync(row, cts.Token));
     }
 
     private async Task SaveRowDebouncedAsync(RentalChipRowViewModel row, CancellationToken token)

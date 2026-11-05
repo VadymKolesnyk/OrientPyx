@@ -19,18 +19,33 @@ public sealed partial class PluginNoticeViewModel : ObservableObject
     private readonly ISessionService _session;
     private readonly ICompetitionEditorService _editor;
     private readonly IDisciplineStrategyProvider _strategies;
+    private readonly IWorkspaceMode _mode;
     private IReadOnlyList<DisciplineId> _missing = [];
     private (string PluginId, DisciplineId Fallback)? _failure;
 
     public PluginNoticeViewModel(
         ILocalizationService localization, ISessionService session, ICompetitionEditorService editor,
-        IDisciplineStrategyProvider strategies, PluginRuntimeErrors errors)
+        IDisciplineStrategyProvider strategies, PluginRuntimeErrors errors, IDataChangeBus bus, IWorkspaceMode mode)
     {
+        _mode = mode;
         Localization = localization;
         _session = session;
         _editor = editor;
         _strategies = strategies;
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = RefreshAsync());
+        // Someone else (another station, or the host) changed a day's or a group's discipline: re-check. Own writes are
+        // skipped like the pages do — the page that made them refreshed the banner already (via the session).
+        bus.Changed += (_, change) =>
+        {
+            if (change.Area is not (DataArea.Days or DataArea.GroupDaySettings or DataArea.Any))
+                return;
+            if (change.Area != DataArea.Any && string.Equals(change.Origin, _mode.SelfOrigin, StringComparison.Ordinal))
+                return;
+            if (change.Area != DataArea.Any && _session.CurrentEvent is { } ev
+                && !string.Equals(change.EventFolderPath, ev.FolderPath, StringComparison.OrdinalIgnoreCase))
+                return;
+            Dispatcher.UIThread.Post(() => _ = RefreshAsync());
+        };
         errors.FirstFailure += (pluginId, _, fallback) =>
             Dispatcher.UIThread.Post(() =>
             {

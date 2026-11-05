@@ -265,7 +265,7 @@ public sealed class DrawFeesAndHelpersTests
     {
         var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("layout"));
         await c.SelectAsync();
-        var store = new TableLayoutStore(Sp.GetRequiredService<ISessionService>());
+        var store = new TableLayoutStore(Sp.GetRequiredService<ISessionService>(), Sp.GetRequiredService<IWorkspaceMode>());
         Assert.Equal(c.Folder, store.CurrentScopeId);
         Assert.Null(store.Load("participants.day"));
 

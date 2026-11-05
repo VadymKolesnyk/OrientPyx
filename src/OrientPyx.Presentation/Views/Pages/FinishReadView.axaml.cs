@@ -26,6 +26,7 @@ public partial class FinishReadView : UserControl
     public FinishReadView()
     {
         InitializeComponent();
+        SheetEditing.Bind(this, Sheet);
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += (_, _) => Unsubscribe();
     }

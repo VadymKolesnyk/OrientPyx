@@ -20,6 +20,7 @@ public partial class EntryFeesView : UserControl
     public EntryFeesView()
     {
         InitializeComponent();
+        SheetEditing.Bind(this, GroupFeesSheet, ChipPricesSheet, DiscountsSheet);
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += (_, _) => Unsubscribe();
 

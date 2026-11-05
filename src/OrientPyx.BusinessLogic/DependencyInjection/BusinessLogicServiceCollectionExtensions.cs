@@ -3,6 +3,7 @@ using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Disciplines.Plugins;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Services;
+using OrientPyx.BusinessLogic.Services.Network;
 
 namespace OrientPyx.BusinessLogic.DependencyInjection;
 
@@ -11,9 +12,17 @@ public static class BusinessLogicServiceCollectionExtensions
     /// <summary>Registers business-logic services.</summary>
     public static IServiceCollection AddOrientPyxBusinessLogic(this IServiceCollection services)
     {
+        // Network mode («Спільна робота»): the role of this instance (local / host / station) and the change bus every
+        // write publishes on. DataAccess wraps IEventStore & co. in routers that read the role on every call.
+        services.AddSingleton<WorkspaceMode>();
+        services.AddSingleton<IWorkspaceMode>(sp => sp.GetRequiredService<WorkspaceMode>());
+        services.AddSingleton<IDataChangeBus, DataChangeBus>();
 
         services.AddSingleton<IAppSettingsService, AppSettingsService>();
-        services.AddSingleton<IEventCatalogService, EventCatalogService>();
+        // Registered under its class: DataAccess exposes IEventCatalogService through a router (local | remote).
+        services.AddSingleton<EventCatalogService>();
+        // The results' app-data (points rules, ranks) — local reader; DataAccess routes the interface.
+        services.AddSingleton<LocalResultsAppData>();
         services.AddSingleton<ISessionService, SessionService>();
         services.AddSingleton<ICompetitionEditorService, CompetitionEditorService>();
         services.AddSingleton<IEventSharedDataService, EventSharedDataService>();

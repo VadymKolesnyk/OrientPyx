@@ -17,6 +17,7 @@ public partial class RelayTeamsView : UserControl
     public RelayTeamsView()
     {
         InitializeComponent();
+        SheetEditing.Bind(this, Sheet);
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += (_, _) => Unsubscribe();
         // Ctrl+Click on a row's delete button skips the confirmation (same approach as the other grids).

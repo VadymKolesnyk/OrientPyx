@@ -19,10 +19,15 @@ public sealed partial class ShellViewModel : ViewModelBase
     [ObservableProperty]
     private PageViewModelBase? _selectedPage;
 
-    public ShellViewModel(INavigationService navigation, ILocalizationService localization, PluginNoticeViewModel pluginNotices)
+    public ShellViewModel(
+        INavigationService navigation,
+        ILocalizationService localization,
+        PluginNoticeViewModel pluginNotices,
+        NetworkNoticeViewModel networkNotices)
     {
         _navigation = navigation;
         PluginNotices = pluginNotices;
+        NetworkNotices = networkNotices;
         Localization = localization;
         Pages = navigation.Pages;
         _selectedPage = navigation.CurrentPage;
@@ -33,6 +38,9 @@ public sealed partial class ShellViewModel : ViewModelBase
     /// <summary>The «Потрібен плагін» / plugin-failure banners above the page.</summary>
     public PluginNoticeViewModel PluginNotices { get; }
 
+    /// <summary>The «Немає зв'язку з хостом» banner; while it is up the page content is disabled.</summary>
+    public NetworkNoticeViewModel NetworkNotices { get; }
+
     public ReadOnlyObservableCollection<PageViewModelBase> Pages { get; }
 
     /// <summary>Raised so the host (MainWindow) can return to the selection screen.</summary>
@@ -41,9 +49,15 @@ public sealed partial class ShellViewModel : ViewModelBase
     [RelayCommand]
     private void ChangeEvent() => ChangeEventRequested?.Invoke(this, EventArgs.Empty);
 
-    partial void OnSelectedPageChanged(PageViewModelBase? value)
+    partial void OnSelectedPageChanged(PageViewModelBase? oldValue, PageViewModelBase? newValue)
     {
-        if (value is not null)
-            _navigation.NavigateTo(value);
+        // Only the shown page follows the change bus (see PageViewModelBase.ObserveData).
+        if (oldValue is not null)
+            oldValue.IsActive = false;
+        if (newValue is not null)
+        {
+            newValue.IsActive = true;
+            _navigation.NavigateTo(newValue);
+        }
     }
 }

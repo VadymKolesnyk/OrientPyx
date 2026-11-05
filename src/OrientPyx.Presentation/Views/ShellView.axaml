@@ -5,6 +5,7 @@
              xmlns:vm="using:OrientPyx.Presentation.ViewModels"
              xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
              xmlns:views="using:OrientPyx.Presentation.Views.Pages"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
              mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="640"
              x:Class="OrientPyx.Presentation.Views.ShellView"
              x:DataType="vm:ShellViewModel">
@@ -97,6 +98,16 @@
 
         <!-- Plugin banners: a missing plugin for the active day (Р-2) and a plugin failure notice (Р-3). -->
         <StackPanel DockPanel.Dock="Top">
+            <!-- Network: the station lost its host — the page stays visible with its last snapshot, editing is
+                 blocked (the content below is disabled) until the connection is back. -->
+            <Border Background="#D97706" Padding="28,8"
+                    IsVisible="{Binding NetworkNotices.IsOffline}">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <controls:Icon Kind="TriangleAlert" Size="18" Foreground="White" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding NetworkNotices.Text}" Foreground="White" TextWrapping="Wrap"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
             <Border Background="{DynamicResource DangerBrush}" Padding="28,8"
                     IsVisible="{Binding PluginNotices.HasMissing}">
                 <TextBlock Text="{Binding PluginNotices.MissingText}" Foreground="White" TextWrapping="Wrap" />
@@ -118,7 +129,8 @@
              scrollbars). Instead the padded Border fills the area with a bounded height, so grid
              pages let the DataGrid scroll itself. Tall static pages add their own ScrollViewer. -->
         <Border Padding="28">
-            <ContentControl Content="{Binding SelectedPage}" />
+            <ContentControl Content="{Binding SelectedPage}"
+                            IsEnabled="{Binding NetworkNotices.IsOnline}" />
         </Border>
 
     </DockPanel>

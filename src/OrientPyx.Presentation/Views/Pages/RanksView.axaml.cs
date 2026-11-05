@@ -15,6 +15,7 @@ public partial class RanksView : UserControl
     public RanksView()
     {
         InitializeComponent();
+        SheetEditing.Bind(this, Sheet, QualSheet);
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += (_, _) => Unsubscribe();
 

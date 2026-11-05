@@ -20,6 +20,7 @@ public partial class CompetitionDaysView : UserControl
     public CompetitionDaysView()
     {
         InitializeComponent();
+        SheetEditing.Bind(this, Sheet);
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += (_, _) => Unsubscribe();
 

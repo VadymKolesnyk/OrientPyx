@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientPyx.BusinessLogic.Interfaces;
@@ -20,6 +21,7 @@ public sealed partial class EventSelectionViewModel : ViewModelBase
     private readonly IAppStore _appStore;
     private readonly ISessionService _session;
     private readonly IBusyService _busy;
+    private readonly IWorkspaceMode _mode;
 
     // Every scanned competition, hidden or not. The visible Events collection is a filtered view.
     private readonly List<EventSummaryRowViewModel> _all = [];
@@ -37,16 +39,41 @@ public sealed partial class EventSelectionViewModel : ViewModelBase
         ISessionService session,
         IBusyService busy,
         ILocalizationService localization,
-        ITableLayoutStore layoutStore)
+        ITableLayoutStore layoutStore,
+        IWorkspaceMode mode)
     {
         _catalog = catalog;
         _eventStore = eventStore;
         _appStore = appStore;
         _session = session;
         _busy = busy;
+        _mode = mode;
         Localization = localization;
         LayoutStore = layoutStore;
+        // The role switches on a transport thread; the «Станція · host» line follows it.
+        _mode.Changed += (_, _) => Dispatcher.UIThread.Post(RaiseStation);
+        Localization.PropertyChanged += (_, _) => RaiseStation();
     }
+
+    /// <summary>True while the listed competitions are a host's (this instance is a station).</summary>
+    public bool IsStation => _mode.IsStation;
+
+    /// <summary>«Станція · Головний-ноут» under the title while connected to a host.</summary>
+    public string StationLine => _mode.IsStation
+        ? string.Format(Localization.Get("Network.Role.Station"), _mode.Station?.HostName ?? string.Empty)
+        : string.Empty;
+
+    private void RaiseStation()
+    {
+        OnPropertyChanged(nameof(IsStation));
+        OnPropertyChanged(nameof(StationLine));
+    }
+
+    /// <summary>Raised by «Підключитися до хоста…» — the root coordinator opens the «Спільна робота» overlay.</summary>
+    public event EventHandler? ConnectRequested;
+
+    [RelayCommand]
+    private void ConnectToHost() => ConnectRequested?.Invoke(this, EventArgs.Empty);
 
     public ILocalizationService Localization { get; }
 

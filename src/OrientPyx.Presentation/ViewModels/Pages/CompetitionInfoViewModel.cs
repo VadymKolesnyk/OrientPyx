@@ -80,7 +80,9 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
         IEventCatalogService catalog,
         IDialogService dialogs,
         IActivityLog log,
-        IBackgroundActivityService activities)
+        IBackgroundActivityService activities,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         _editor = editor;
@@ -94,11 +96,33 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
         // never leaves the previous competition's metadata on screen. The event may arrive on a
         // pool thread (session writes run inside RunAsync), so marshal LoadAsync onto the UI thread.
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        // Live data (another station's writes) — see ReloadAsync.
+        ObserveData(bus, session, mode,
+            DataArea.Competition);
     }
 
     public override string NavKey => "Nav.CompetitionInfo";
     public override string TitleKey => "Page.CompetitionInfo.Title";
     public override string TextKey => "Page.CompetitionInfo.Text";
+
+    // True while LoadAsync fills the form, so the field setters don't count as the operator's edits.
+    private bool _loading;
+
+    // True once the operator changed a field after the last load/save: a live reload must not replace their
+    // typing with what another station saved — their own Save decides.
+    private bool _dirty;
+
+    private void MarkEdited()
+    {
+        Saved = false;
+        if (!_loading)
+            _dirty = true;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>The form is re-read only while it holds no unsaved edits of its own.</remarks>
+    protected override Task ReloadAsync(CancellationToken cancellationToken = default)
+        => _dirty ? Task.CompletedTask : LoadAsync();
 
     /// <summary>Re-reads the current competition into the form. Called when the page is shown.</summary>
     public async Task LoadAsync()
@@ -106,6 +130,7 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
         Saved = false;
         // BD read runs off the UI thread; the form fields are set afterwards on the UI thread.
         _info = await _busy.RunAsync(() => _editor.GetInfoAsync());
+        _loading = true;
         Name = _info?.Name ?? string.Empty;
         Identifier = _session.CurrentEvent?.Identifier ?? _info?.Identifier ?? string.Empty;
         Venue = _info?.Venue ?? string.Empty;
@@ -119,6 +144,8 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
         ChiefSecretary = _info?.ChiefSecretary ?? string.Empty;
         ChiefSecretaryCategory = _info?.ChiefSecretaryCategory ?? string.Empty;
         Jury = _info?.Jury ?? string.Empty;
+        _loading = false;
+        _dirty = false;
     }
 
     [RelayCommand]
@@ -157,6 +184,7 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
         }
 
         Saved = true;
+        _dirty = false;
     }
 
     /// <summary>Opens the «Додаткові поля» modal (the competition's additional participant fields, Р-13).</summary>
@@ -223,16 +251,16 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
             messageKey: messageKey,
             options: []));
 
-    partial void OnNameChanged(string value) => Saved = false;
-    partial void OnVenueChanged(string value) => Saved = false;
-    partial void OnOrganisationChanged(string value) => Saved = false;
-    partial void OnStartDateChanged(DateTimeOffset? value) => Saved = false;
-    partial void OnEndDateChanged(DateTimeOffset? value) => Saved = false;
-    partial void OnCourseSetterChanged(string value) => Saved = false;
-    partial void OnCourseSetterCategoryChanged(string value) => Saved = false;
-    partial void OnChiefJudgeChanged(string value) => Saved = false;
-    partial void OnChiefJudgeCategoryChanged(string value) => Saved = false;
-    partial void OnChiefSecretaryChanged(string value) => Saved = false;
-    partial void OnChiefSecretaryCategoryChanged(string value) => Saved = false;
-    partial void OnJuryChanged(string value) => Saved = false;
+    partial void OnNameChanged(string value) => MarkEdited();
+    partial void OnVenueChanged(string value) => MarkEdited();
+    partial void OnOrganisationChanged(string value) => MarkEdited();
+    partial void OnStartDateChanged(DateTimeOffset? value) => MarkEdited();
+    partial void OnEndDateChanged(DateTimeOffset? value) => MarkEdited();
+    partial void OnCourseSetterChanged(string value) => MarkEdited();
+    partial void OnCourseSetterCategoryChanged(string value) => MarkEdited();
+    partial void OnChiefJudgeChanged(string value) => MarkEdited();
+    partial void OnChiefJudgeCategoryChanged(string value) => MarkEdited();
+    partial void OnChiefSecretaryChanged(string value) => MarkEdited();
+    partial void OnChiefSecretaryCategoryChanged(string value) => MarkEdited();
+    partial void OnJuryChanged(string value) => MarkEdited();
 }

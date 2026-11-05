@@ -30,6 +30,7 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
     private readonly IBusyService _busy;
     private readonly IDialogService _dialogs;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
+    private readonly PendingSaves _pendingSaves = new();
     private IReadOnlyList<RelayRunner> _runners = [];
     private bool _syncingDay;
 
@@ -40,7 +41,9 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
         IBusyService busy,
         IDialogService dialogs,
         ITableLayoutStore layoutStore,
-        IDayLockService dayLock)
+        IDayLockService dayLock,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         UseDayLock(dayLock);
@@ -50,6 +53,9 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
         _busy = busy;
         _dialogs = dialogs;
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        // Live data (another station's writes) — see ReloadAsync.
+        ObserveData(bus, session, mode,
+            DataArea.Relay, DataArea.ParticipantDays, DataArea.Participants, DataArea.Groups, DataArea.GroupDaySettings, DataArea.Clubs, DataArea.Regions, DataArea.Days);
     }
 
     public ITableLayoutStore LayoutStore { get; }
@@ -109,6 +115,14 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
 
     [ObservableProperty]
     private RelayRunner? _selectedRunner;
+
+    /// <inheritdoc />
+    /// <remarks>LoadAsync already keeps the selected team by id; the pending saves just have to finish first.</remarks>
+    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        await _pendingSaves.WaitAsync();
+        await LoadAsync();
+    }
 
     public async Task LoadAsync()
     {
@@ -192,7 +206,7 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
         CancelTimer(key);
         var cts = new CancellationTokenSource();
         _saveTimers[key] = cts;
-        _ = SaveAsync();
+        _pendingSaves.Track(SaveAsync());
 
         async Task SaveAsync()
         {
@@ -326,7 +340,7 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
         CancelTimer(row.Id);
         var cts = new CancellationTokenSource();
         _saveTimers[row.Id] = cts;
-        _ = SaveAsync();
+        _pendingSaves.Track(SaveAsync());
 
         async Task SaveAsync()
         {

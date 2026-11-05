@@ -1,3 +1,4 @@
+using Avalonia.Threading;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -24,20 +25,46 @@ public sealed partial class RanksViewModel : PageViewModelBase
     private readonly IAppStore _appStore;
     private readonly IBusyService _busy;
     private readonly IDialogService _dialogs;
+    private readonly IWorkspaceMode _mode;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
+    private readonly PendingSaves _pendingSaves = new();
 
     public RanksViewModel(
         ILocalizationService localization,
         IAppStore appStore,
         IBusyService busy,
         IDialogService dialogs,
-        ITableLayoutStore layoutStore)
+        ITableLayoutStore layoutStore,
+        ISessionService session,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         LayoutStore = layoutStore;
         _appStore = appStore;
         _busy = busy;
         _dialogs = dialogs;
+        _mode = mode;
+        // Live data: the host's app-data tables (DataArea.AppData is published with no competition key).
+        ObserveData(bus, session, mode, DataArea.AppData);
+        mode.Changed += (_, _) => Dispatcher.UIThread.Post(RaiseReadOnly);
+        Localization.PropertyChanged += (_, _) => OnPropertyChanged(nameof(ReadOnlyText));
+    }
+
+    /// <summary>
+    /// True on a station: the ranks are edited on the host — the results use the host's tables (through
+    /// IResultsAppData), so this page only shows this machine's own copy. The tables are locked, the add/delete
+    /// actions are off and <see cref="ReadOnlyText"/> says so.
+    /// </summary>
+    public bool IsReadOnly => _mode.IsStation;
+
+    /// <summary>The banner text shown while <see cref="IsReadOnly"/>.</summary>
+    public string ReadOnlyText => Localization.Get("Banner.StationReadOnly");
+
+    private void RaiseReadOnly()
+    {
+        OnPropertyChanged(nameof(IsReadOnly));
+        OnPropertyChanged(nameof(ReadOnlyText));
     }
 
     /// <summary>Per-competition table-view store; persists this page's tables' column order/width/visibility.</summary>
@@ -76,6 +103,22 @@ public sealed partial class RanksViewModel : PageViewModelBase
     private bool _conditionsLoaded;
     private CancellationTokenSource? _conditionsTimer;
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// The tables live in this machine's app database. Locally that is the only copy; on a station the page shows
+    /// the station's own tables while the results are computed from the host's (through IResultsAppData), hence
+    /// read-only there (see <see cref="IsReadOnly"/>). A reload follows DataArea.AppData, published by the host.
+    /// </remarks>
+    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        await _pendingSaves.WaitAsync();
+        var rankId = SelectedRank?.Id;
+        var qualId = SelectedQual?.Id;
+        await LoadAsync();
+        SelectedRank = Ranks.FirstOrDefault(r => r.Id == rankId);
+        SelectedQual = Qual.FirstOrDefault(q => q.Id == qualId);
+    }
+
     /// <summary>Reloads the ranks. Called when the page is shown.</summary>
     public async Task LoadAsync()
     {
@@ -109,6 +152,8 @@ public sealed partial class RanksViewModel : PageViewModelBase
     [RelayCommand]
     private async Task AddRankAsync()
     {
+        if (IsReadOnly)
+            return;
         // Persist immediately so the new row carries its real id for later debounced updates.
         var rank = await _busy.RunAsync(() => _appStore.AddRankAsync());
         Ranks.Add(CreateRow(rank));
@@ -117,6 +162,8 @@ public sealed partial class RanksViewModel : PageViewModelBase
     [RelayCommand]
     private async Task AddQualRowAsync()
     {
+        if (IsReadOnly)
+            return;
         var row = await _busy.RunAsync(() => _appStore.AddRankQualificationRowAsync());
         Qual.Add(CreateQualRow(row));
     }
@@ -142,6 +189,8 @@ public sealed partial class RanksViewModel : PageViewModelBase
 
     private async Task RemoveRankAsync(RankRowViewModel? row, bool skipConfirm)
     {
+        if (IsReadOnly)
+            return;
         if (row is null)
             return;
 
@@ -176,6 +225,8 @@ public sealed partial class RanksViewModel : PageViewModelBase
 
     private async Task RemoveQualRowAsync(RankQualRowViewModel? row, bool skipConfirm)
     {
+        if (IsReadOnly)
+            return;
         if (row is null)
             return;
 
@@ -211,12 +262,12 @@ public sealed partial class RanksViewModel : PageViewModelBase
 
     private void QueueConditionsSave()
     {
-        if (!_conditionsLoaded)
+        if (!_conditionsLoaded || IsReadOnly)
             return;
         _conditionsTimer?.Cancel();
         var cts = new CancellationTokenSource();
         _conditionsTimer = cts;
-        _ = SaveConditionsDebouncedAsync(cts.Token);
+        _pendingSaves.Track(SaveConditionsDebouncedAsync(cts.Token));
     }
 
     private async Task SaveConditionsDebouncedAsync(CancellationToken token)
@@ -246,12 +297,14 @@ public sealed partial class RanksViewModel : PageViewModelBase
 
     private void RequestRowSave(RankRowViewModel row)
     {
+        if (IsReadOnly)
+            return;
         if (_saveTimers.TryGetValue(row.Id, out var existing))
             existing.Cancel();
 
         var cts = new CancellationTokenSource();
         _saveTimers[row.Id] = cts;
-        _ = SaveRowDebouncedAsync(row, cts.Token);
+        _pendingSaves.Track(SaveRowDebouncedAsync(row, cts.Token));
     }
 
     private async Task SaveRowDebouncedAsync(RankRowViewModel row, CancellationToken token)
@@ -272,12 +325,14 @@ public sealed partial class RanksViewModel : PageViewModelBase
 
     private void RequestQualRowSave(RankQualRowViewModel row)
     {
+        if (IsReadOnly)
+            return;
         if (_saveTimers.TryGetValue(row.Id, out var existing))
             existing.Cancel();
 
         var cts = new CancellationTokenSource();
         _saveTimers[row.Id] = cts;
-        _ = SaveQualRowDebouncedAsync(row, cts.Token);
+        _pendingSaves.Track(SaveQualRowDebouncedAsync(row, cts.Token));
     }
 
     private async Task SaveQualRowDebouncedAsync(RankQualRowViewModel row, CancellationToken token)

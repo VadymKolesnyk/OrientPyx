@@ -209,6 +209,51 @@ group's course, or — per `GroupDaySettings.CourseAssignmentMode` (Р-41) — a
 number, typed on «Команди» or imported from IOF `TeamCourseAssignment` / CSV), `TeamSet` (a course set per
 team/group distributed over the read legs by `Toolkit.TeamCourseAssignment`, least missed controls, Р-42).
 
+## Network mode («Спільна робота»: host + stations)
+
+Several computers work on one competition over the LAN: one is the **host** (its `events/<id>/event.db`, the only
+process that opens it), the others are **stations** that edit the same data live. Plan and design notes:
+`docs/network-mode-plan.md`, `docs/network-mode-implementation.md`; the wire contract: `docs/network-protocol.md`.
+
+- **The network boundary is a set of interfaces**, nothing above them knows the role: `IEventStore`,
+  `IEventFolderScanner`, `IEventCatalogService`, `IEventFiles` (the competition folder's files + this machine's local
+  paths), `IEventArchiveService`, `IResultsAppData` (points rules / ranks / qualification — on a station the HOST's
+  tables, so both machines compute identical results). DI registers each as a **router**
+  (`DataAccess/Network/Routing/RoutingProxy<T>`, a `DispatchProxy`) over the local class and the remote proxy
+  (`IRemoteServices`), switched by `IWorkspaceMode.Role` (`Local | Host | Station`) on every call — no restart.
+  `IEventStore` is additionally wrapped in `NotifyingEventStore` (outermost) and `IAppStore` in `NotifyingAppStore`.
+- **Adding a method to one of those interfaces**: it must be JSON-serialisable with `RpcJson.Options` (no delegates /
+  streams; `IProgress<>` only via the job list), take `eventFolderPath` (or be listed as competition-free in
+  `RpcContractTests`), and — for `IEventStore` — be classified in `EventStoreMethods` (read, or write → `DataArea`s).
+  `tests/Core/Network/RpcContractTests.cs` fails otherwise. Bump `NetworkProtocol.Version` on any signature change.
+- **Change bus**: every write publishes `DataChange(eventPath, area, version, origin)` on `IDataChangeBus`; the host
+  streams it to stations (SSE `/changes`); a station publishes nothing itself (only `Replay`s the host's stream). Pages
+  call `ObserveData(bus, session, mode, areas…)` and override `PageViewModelBase.ReloadAsync` (coalesced 1/s, only while
+  `IsActive`, deferred while `IsEditingCell`, own-origin events skipped). `SessionService` listens too and refreshes
+  `CurrentDay` / `CurrentEvent` after a remote change.
+- **Over the wire goes the identifier, never a host path**: the host's `RpcDispatcher` maps `eventFolderPath` /
+  `EventSummary.FolderPath` ↔ `events/<identifier>` (validated with `EventIdentifier.IsValid`). On a station
+  `EventSummary.FolderPath` **is** the identifier — treat it as an opaque key; never build a local path from it.
+  Local per-machine files (read-out files, monitor HTML, `views.json`, logs, `machine.json`) come from `IEventFiles`
+  / `TableLayoutStore` / `FileActivityLog`, which know the role.
+- **No file or app-DB access from BusinessLogic past these interfaces**: `CompetitionEditorService` has no
+  `Directory.`/`File.` (day folders and imported XML go through `IEventFiles`; results app-data through
+  `IResultsAppData`).
+- **Host** (`DataAccess/Network/Host`, Kestrel via `FrameworkReference Microsoft.AspNetCore.App`, minimal API, no
+  URL ACL): `/pair` (6-digit PIN → bearer token stored in `app.db` `StationTokens`), `/rpc/{iface}/{method}` (JSON
+  array of args; `Idempotency-Key` on writes; `/jobs` for the import), `/changes`, `/version`, `/files/*`, `/log`,
+  `/ping`; UDP discovery on 47831 (`DataAccess/Network/Discovery`), spoken `ConnectionCode` fallback. **Station**
+  (`DataAccess/Network/Station`): `RpcChannel` (timeouts/retries), `RpcProxy` (`DispatchProxy`), `RemoteChangeListener`,
+  `NetworkStation : INetworkClient`. Self-checks with one-click fixes: `IStationDiagnostics`
+  (`DataAccess/Network/Diagnostics`; nothing changes the OS silently, every fix is a button and is logged).
+- **UI**: «Файл → Спільна робота…» is a global overlay (reachable before a competition is selected, because a station
+  must connect first), the role indicator in the top bar, the `NetworkActivity` in the activities block and the
+  «немає зв'язку» banner (`NetworkNoticeViewModel`) that disables editing while reconnecting. «Очки» / «Розряди» are
+  read-only on a station.
+- **Last session**: `LastSessionRow.Mode/HostId` — a station pointer is restored only after reconnecting to the same
+  host, never from the local folder. Builds: run `scripts/locked-build.ps1` when several terminals/agents build the
+  same checkout.
+
 ## Additional participant fields
 
 A competition can define its own participant fields (Р-13…Р-19 in `docs/plugins-plan.md`): `CustomFieldDef`

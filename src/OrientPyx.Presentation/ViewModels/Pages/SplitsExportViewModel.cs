@@ -41,7 +41,9 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
         IBusyService busy,
         IDayLockService dayLock,
         IExportFileSaver fileSaver,
-        IDisciplineStrategyProvider disciplineStrategies)
+        IDisciplineStrategyProvider disciplineStrategies,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         _disciplineStrategies = disciplineStrategies;
@@ -55,6 +57,9 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
 
         // Singleton VM: reload the day list + header defaults on a competition/day change (marshal to UI).
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        // Live data (another station's writes) — see ReloadAsync.
+        ObserveData(bus, session, mode,
+            DataArea.Days, DataArea.Competition);
     }
 
     /// <summary>Writes the export to the file the user picked (handles a target locked by Word). Used by the view.</summary>
@@ -118,6 +123,10 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
 
     // The current competition's metadata, used to resolve the header placeholders on each day load.
     private CompetitionInfo? _competitionInfo;
+
+    /// <inheritdoc />
+    /// <remarks>Only the day list and the header placeholders are shown; the typed header fields are untouched.</remarks>
+    protected override Task ReloadAsync(CancellationToken cancellationToken = default) => LoadAsync();
 
     public async Task LoadAsync()
     {

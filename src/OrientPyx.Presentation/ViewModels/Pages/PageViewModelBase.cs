@@ -1,5 +1,7 @@
 using System.ComponentModel;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
+using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
 
@@ -203,5 +205,153 @@ public abstract class PageViewModelBase : ViewModelBase
         OnPropertyChanged(nameof(NavLabel));
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(Text));
+    }
+
+    // ── Live data (the change bus)
+    // A page that shows competition data calls ObserveData(areas) in its constructor and overrides ReloadAsync with
+    // its load path. While the page is shown (IsActive, set by the shell), a change in one of its areas — a write by
+    // another station over the network, or by the host — reloads it: coalesced to at most once a second, deferred
+    // while a cell is being edited, and skipped for this machine's own writes (the page already updated itself).
+
+    private static readonly TimeSpan ReloadCoalesce = TimeSpan.FromSeconds(1);
+
+    private IDataChangeBus? _bus;
+    private ISessionService? _observedSession;
+    private IWorkspaceMode? _mode;
+    private DataArea[] _areas = [];
+    private DispatcherTimer? _reloadTimer;
+    private bool _reloadPending;
+    private bool _reloading;
+    private bool _isActive;
+
+    /// <summary>True while this page is the one shown in the shell (the shell sets it).</summary>
+    public bool IsActive
+    {
+        get => _isActive;
+        set
+        {
+            if (_isActive == value)
+                return;
+            _isActive = value;
+            OnPropertyChanged(nameof(IsActive));
+            if (value && _reloadPending)
+                ScheduleReload();
+        }
+    }
+
+    /// <summary>
+    /// True while a cell editor on this page has focus; a bus-driven reload waits until it is released so the
+    /// operator's typing is never replaced under their fingers. Views bind their table's editing state here.
+    /// </summary>
+    public bool IsEditingCell
+    {
+        get => _isEditingCell;
+        set
+        {
+            if (_isEditingCell == value)
+                return;
+            _isEditingCell = value;
+            OnPropertyChanged(nameof(IsEditingCell));
+            if (!value && _reloadPending)
+                ScheduleReload();
+        }
+    }
+
+    private bool _isEditingCell;
+
+    /// <summary>
+    /// Subscribes the page to the change bus for the given areas (plus <see cref="DataArea.Any"/>, which every page
+    /// honours). Call once from the constructor of a page that overrides <see cref="ReloadAsync"/>.
+    /// </summary>
+    protected void ObserveData(IDataChangeBus bus, ISessionService session, IWorkspaceMode mode, params DataArea[] areas)
+    {
+        _bus = bus;
+        _observedSession = session;
+        _mode = mode;
+        _areas = areas;
+        bus.Changed += OnDataChanged;
+    }
+
+    /// <summary>
+    /// Reloads the page's content from the store after data changed elsewhere. The default does nothing; a page moves
+    /// its load path here (what it does on <c>SessionChanged</c> / when opened). It runs on the UI thread. It should
+    /// keep the operator's state — filters, sort, column view, selected row — rather than resetting the page.
+    /// </summary>
+    protected virtual Task ReloadAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    /// <summary>Asks for a reload as if the bus had raised a change (e.g. after reconnecting to the host).</summary>
+    public void RequestReload()
+    {
+        _reloadPending = true;
+        if (Dispatcher.UIThread.CheckAccess())
+            ScheduleReload();
+        else
+            Dispatcher.UIThread.Post(ScheduleReload);
+    }
+
+    private void OnDataChanged(object? sender, DataChange change)
+    {
+        if (change.Area != DataArea.Any && change.Area != DataArea.AppData && Array.IndexOf(_areas, change.Area) < 0)
+            return;
+        if (change.Area == DataArea.AppData && Array.IndexOf(_areas, DataArea.AppData) < 0)
+            return;
+        // Our own writes: the page that made them has already refreshed itself.
+        if (change.Area != DataArea.Any && _mode is not null
+            && string.Equals(change.Origin, _mode.SelfOrigin, StringComparison.Ordinal))
+            return;
+        // Another competition's change is irrelevant (app-data and "any" concern every competition).
+        if (change.Area is not (DataArea.Any or DataArea.AppData)
+            && _observedSession?.CurrentEvent is { } ev
+            && !string.Equals(change.EventFolderPath, ev.FolderPath, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _reloadPending = true;
+        Dispatcher.UIThread.Post(ScheduleReload);
+    }
+
+    // On the UI thread. Starts (or lets run) the coalescing timer; the reload itself fires when it elapses.
+    private void ScheduleReload()
+    {
+        if (!_reloadPending || !IsActive || IsEditingCell)
+            return;
+        if (_reloadTimer is null)
+        {
+            _reloadTimer = new DispatcherTimer { Interval = ReloadCoalesce };
+            _reloadTimer.Tick += async (_, _) =>
+            {
+                _reloadTimer.Stop();
+                await RunReloadAsync();
+            };
+        }
+        if (!_reloadTimer.IsEnabled)
+            _reloadTimer.Start();
+    }
+
+    private async Task RunReloadAsync()
+    {
+        if (!_reloadPending || !IsActive || IsEditingCell)
+            return;
+        if (_reloading)
+        {
+            // A reload is in flight; the pending flag stays set and the timer re-arms when it finishes.
+            return;
+        }
+        _reloadPending = false;
+        _reloading = true;
+        try
+        {
+            await ReloadAsync();
+        }
+        catch (Exception)
+        {
+            // A failed live refresh is not fatal: the next change (or the next open) reloads again. The busy
+            // service has already logged a store failure.
+        }
+        finally
+        {
+            _reloading = false;
+        }
+        if (_reloadPending)
+            ScheduleReload();
     }
 }

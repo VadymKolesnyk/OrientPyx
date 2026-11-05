@@ -109,6 +109,15 @@ public sealed class SheetTable : TemplatedControl
     public static readonly StyledProperty<bool> IsLockedProperty =
         AvaloniaProperty.Register<SheetTable, bool>(nameof(IsLocked));
 
+    /// <summary>
+    /// True while a cell of this table is being edited: from <c>BeginEdit</c> on a lazy cell until its editor retires
+    /// (commit, cancel, focus moved away), and while a bare combo's dropdown the table opened is up. Set by the
+    /// table itself; pages mirror it into <c>PageViewModelBase.IsEditingCell</c> (see <c>Views/Pages/SheetEditing</c>)
+    /// so a live-data reload waits until the operator has left the cell.
+    /// </summary>
+    public static readonly StyledProperty<bool> IsEditingProperty =
+        AvaloniaProperty.Register<SheetTable, bool>(nameof(IsEditing));
+
     /// <summary>Roster auto-build only; team disciplines.</summary>
     public static readonly StyledProperty<bool> ShowTeamProperty =
         AvaloniaProperty.Register<SheetTable, bool>(nameof(ShowTeam));
@@ -253,6 +262,36 @@ public sealed class SheetTable : TemplatedControl
     {
         get => GetValue(IsLockedProperty);
         set => SetValue(IsLockedProperty, value);
+    }
+
+    /// <summary>See <see cref="IsEditingProperty"/>. Only the table sets it.</summary>
+    public bool IsEditing
+    {
+        get => GetValue(IsEditingProperty);
+        private set => SetValue(IsEditingProperty, value);
+    }
+
+    // The lazy cell whose editor is live right now (null while resting). Tracked by identity so a retire that
+    // arrives late — a cell's retire is posted at Background priority, after the next cell's BeginEdit already
+    // ran — can't clear the state the newer cell set.
+    private LazyEditCell? _liveEditCell;
+
+    /// <summary>
+    /// Called by a lazy cell when its editor goes live / retires. Keeps <see cref="IsEditing"/> true while any
+    /// cell edits (a bare combo opened through <see cref="OpenCombo"/> counts too).
+    /// </summary>
+    internal void NotifyCellEditing(LazyEditCell cell, bool editing)
+    {
+        if (editing)
+        {
+            _liveEditCell = cell;
+            IsEditing = true;
+            return;
+        }
+        if (!ReferenceEquals(_liveEditCell, cell))
+            return;
+        _liveEditCell = null;
+        IsEditing = _openCombo is { IsDropDownOpen: true };
     }
 
     public bool ShowTeam
@@ -2861,13 +2900,19 @@ public sealed class SheetTable : TemplatedControl
         onClosed = (_, _) =>
         {
             if (ReferenceEquals(_openCombo, combo))
+            {
                 _openCombo = null;
+                // The bare combo was the edit; a lazy cell that went live meanwhile keeps the flag up.
+                if (_liveEditCell is null)
+                    IsEditing = false;
+            }
             combo.DropDownClosed -= onClosed;
         };
         combo.DropDownClosed += onClosed;
 
         combo.Focus();
         combo.IsDropDownOpen = true;
+        IsEditing = true;
         return true;
     }
 

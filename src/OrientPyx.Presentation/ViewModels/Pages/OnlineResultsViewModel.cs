@@ -61,7 +61,9 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         IBackgroundActivityService activities,
         IBusyService busy,
         IActivityLog log,
-        IDialogService dialogs)
+        IDialogService dialogs,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         _editor = editor;
@@ -73,6 +75,11 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         _busy = busy;
         _log = log;
         _dialogs = dialogs;
+        // Live data: everything the results depend on — see ReloadAsync.
+        ObserveData(bus, session, mode,
+            DataArea.Participants, DataArea.ParticipantDays, DataArea.Readouts, DataArea.Groups, DataArea.GroupDaySettings,
+            DataArea.ControlPoints, DataArea.CourseVariants, DataArea.Relay, DataArea.Days, DataArea.Settings,
+            DataArea.CustomFields, DataArea.Competition, DataArea.AppData);
 
         Columns = new OnlineColumnsEditorViewModel(localization);
         Columns.Changed += (_, _) =>
@@ -195,6 +202,20 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
     /// <summary>The whole log as one block of text, so the View can show it in a single selectable/copyable
     /// control (drag-select across lines). Refreshed whenever <see cref="LogLines"/> changes.</summary>
     public string LogText => string.Join(Environment.NewLine, LogLines);
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Drops the cached day snapshot and re-renders the preview; the publish options on screen are left alone
+    /// (they auto-save, and a reload mid-edit would overwrite the pending value). The publisher, when running,
+    /// builds a fresh snapshot on its own tick.
+    /// </remarks>
+    protected override Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        _previewSource = null;
+        _previewSourceDay = Guid.Empty;
+        RequestPreviewRefresh(immediate: true);
+        return Task.CompletedTask;
+    }
 
     /// <summary>Reloads the connection state, the per-competition options and the spectator links.</summary>
     public async Task LoadAsync()

@@ -16,6 +16,7 @@ public partial class ClassicDrawView : UserControl
     public ClassicDrawView()
     {
         InitializeComponent();
+        SheetEditing.Bind(this, ResultsSheet, GroupsSheet);
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += (_, _) => Unsubscribe();
     }

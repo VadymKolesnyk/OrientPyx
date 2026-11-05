@@ -16,6 +16,7 @@ public partial class ParticipantsView : UserControl
     public ParticipantsView()
     {
         InitializeComponent();
+        SheetEditing.Bind(this, DayTable, RosterTable);
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += (_, _) => Unsubscribe();
 

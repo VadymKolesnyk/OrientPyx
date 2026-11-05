@@ -1,0 +1,275 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:OrientPyx.Presentation.ViewModels"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="760" d:DesignHeight="900"
+             x:Class="OrientPyx.Presentation.Views.NetworkView"
+             x:DataType="vm:NetworkViewModel">
+
+    <UserControl.Resources>
+        <!-- One template for every self-check row (host checks, station checks, pairing warnings). -->
+        <DataTemplate x:Key="CheckRowTemplate" x:DataType="vm:CheckRowViewModel">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,5">
+                <Panel Grid.Column="0" VerticalAlignment="Top" Margin="0,2,0,0">
+                    <controls:Icon Kind="Check" Size="17" IsVisible="{Binding IsOk}"
+                                   Foreground="{DynamicResource SuccessBrush}" />
+                    <controls:Icon Kind="TriangleAlert" Size="17" IsVisible="{Binding IsWarning}"
+                                   Foreground="#D97706" />
+                    <controls:Icon Kind="CircleAlert" Size="17" IsVisible="{Binding IsFailed}"
+                                   Foreground="{DynamicResource DangerBrush}" />
+                    <controls:Icon Kind="Info" Size="17" IsVisible="{Binding IsInfo}"
+                                   Foreground="{DynamicResource TextSecondary}" />
+                </Panel>
+                <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock Text="{Binding Title}" FontWeight="Medium" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Detail}" Classes="muted" TextWrapping="Wrap"
+                               IsVisible="{Binding HasDetail}" />
+                </StackPanel>
+                <Button Grid.Column="2" Classes="ghost small" VerticalAlignment="Top"
+                        IsVisible="{Binding HasFix}" IsEnabled="{Binding CanFix}"
+                        Content="{Binding FixLabel}"
+                        Command="{Binding $parent[UserControl].((vm:NetworkViewModel)DataContext).ApplyFixCommand}"
+                        CommandParameter="{Binding}" />
+            </Grid>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <StackPanel Spacing="16" MaxWidth="720">
+
+        <TextBlock Text="{Binding Text}" Classes="subtitle" TextWrapping="Wrap" />
+
+        <!-- ═══ Card 1: this computer is the host ═══ -->
+        <Border Classes="card" Padding="22" IsEnabled="{Binding IsHostCardEnabled}">
+            <StackPanel Spacing="14">
+                <TextBlock Text="{Binding Localization[Network.Host.Title]}" Classes="h2"
+                           FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+
+                <!-- While this instance is a station the card is greyed out with the reason. -->
+                <TextBlock Text="{Binding Localization[Network.Host.StationHint]}" Classes="muted"
+                           TextWrapping="Wrap" IsVisible="{Binding ShowHostStationHint}" />
+
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="24">
+                    <ToggleSwitch Grid.Column="0" VerticalAlignment="Center"
+                                  IsChecked="{Binding IsHostEnabled, Mode=TwoWay}"
+                                  OnContent="{Binding Localization[Network.Host.Toggle]}"
+                                  OffContent="{Binding Localization[Network.Host.Toggle]}" />
+                    <StackPanel Grid.Column="1" Spacing="4" MaxWidth="320" HorizontalAlignment="Left">
+                        <TextBlock Text="{Binding Localization[Network.Host.Name]}" Classes="label" />
+                        <TextBox x:Name="HostNameBox" Text="{Binding HostName, Mode=TwoWay}"
+                                 Watermark="{Binding Localization[Network.Host.NamePlaceholder]}" />
+                    </StackPanel>
+                </Grid>
+
+                <TextBlock Text="{Binding HostError}" Foreground="{DynamicResource DangerBrush}"
+                           TextWrapping="Wrap" IsVisible="{Binding HasHostError}" />
+
+                <!-- Running: the PIN (large), the addresses, the connection code -->
+                <StackPanel Spacing="14" IsVisible="{Binding IsHostRunning}">
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="28">
+                        <StackPanel Grid.Column="0" Spacing="4">
+                            <TextBlock Text="{Binding Localization[Network.Host.Pin]}" Classes="label" />
+                            <TextBlock Text="{Binding PinDisplay}" FontSize="40" FontWeight="Bold"
+                                       Foreground="{DynamicResource AccentBrush}" />
+                            <Button Classes="ghost small" HorizontalAlignment="Left"
+                                    Content="{Binding Localization[Network.Host.NewPin]}"
+                                    Command="{Binding RegeneratePinCommand}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="10">
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="{Binding Localization[Network.Host.Addresses]}" Classes="label" />
+                                <ItemsControl ItemsSource="{Binding Addresses}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <TextBlock Text="{Binding}" FontFamily="Consolas, Menlo, monospace" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                            <StackPanel Spacing="2" IsVisible="{Binding HasConnectionCode}">
+                                <TextBlock Text="{Binding Localization[Network.Host.Code]}" Classes="label" />
+                                <TextBlock Text="{Binding ConnectionCode}" FontFamily="Consolas, Menlo, monospace"
+                                           FontSize="18" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Localization[Network.Host.CodeHint]}" Classes="muted"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Paired stations -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Text="{Binding Localization[Network.Host.Stations]}" Classes="label"
+                                   VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Classes="ghost danger small" IsVisible="{Binding HasStations}"
+                                Content="{Binding Localization[Network.Host.DisconnectAll]}"
+                                Command="{Binding DisconnectAllStationsCommand}" />
+                    </Grid>
+                    <TextBlock Text="{Binding Localization[Network.Host.NoStations]}" Classes="muted"
+                               IsVisible="{Binding !HasStations}" />
+                    <Border Classes="card" Padding="12,4" IsVisible="{Binding HasStations}"
+                            Background="{DynamicResource SurfaceSubtle}">
+                        <StackPanel>
+                            <Grid ColumnDefinitions="18,*,160,120,Auto" ColumnSpacing="10" Margin="0,6">
+                                <TextBlock Grid.Column="1" Text="{Binding Localization[Network.Host.Col.Name]}" Classes="label" />
+                                <TextBlock Grid.Column="2" Text="{Binding Localization[Network.Host.Col.Address]}" Classes="label" />
+                                <TextBlock Grid.Column="3" Text="{Binding Localization[Network.Host.Col.LastSeen]}" Classes="label" />
+                            </Grid>
+                            <ItemsControl ItemsSource="{Binding Stations}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:StationRowViewModel">
+                                        <Grid ColumnDefinitions="18,*,160,120,Auto" ColumnSpacing="10" Margin="0,4">
+                                            <Panel Grid.Column="0" VerticalAlignment="Center">
+                                                <Border Width="10" Height="10" CornerRadius="5"
+                                                        Background="{DynamicResource SuccessBrush}"
+                                                        IsVisible="{Binding IsOnline}" />
+                                                <Border Width="10" Height="10" CornerRadius="5"
+                                                        Background="{DynamicResource TextMuted}"
+                                                        IsVisible="{Binding !IsOnline}" />
+                                            </Panel>
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="Medium"
+                                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="2" Text="{Binding Address}" Classes="muted"
+                                                       VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="3" Text="{Binding LastSeenText}" Classes="muted"
+                                                       VerticalAlignment="Center" />
+                                            <Button Grid.Column="4" Classes="ghost small"
+                                                    Content="{Binding $parent[UserControl].((vm:NetworkViewModel)DataContext).Localization[Network.Host.Disconnect]}"
+                                                    Command="{Binding $parent[UserControl].((vm:NetworkViewModel)DataContext).DisconnectStationCommand}"
+                                                    CommandParameter="{Binding}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Self-checks -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Text="{Binding Localization[Network.Host.Checks]}" Classes="label"
+                                   VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Classes="ghost small" IsEnabled="{Binding !IsHostChecking}"
+                                Content="{Binding Localization[Network.Host.Recheck]}"
+                                Command="{Binding RunHostChecksCommand}" />
+                    </Grid>
+                    <TextBlock Text="{Binding Localization[Network.Host.Checking]}" Classes="muted"
+                               IsVisible="{Binding IsHostChecking}" />
+                    <ItemsControl ItemsSource="{Binding HostChecks}" ItemTemplate="{StaticResource CheckRowTemplate}"
+                                  IsVisible="{Binding HasHostChecks}" />
+
+                    <!-- Everything green: the big «Готово» panel -->
+                    <Border IsVisible="{Binding IsHostReady}" CornerRadius="10" Padding="18"
+                            Background="{DynamicResource AccentSurface}">
+                        <StackPanel Spacing="6">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <controls:Icon Kind="Check" Size="20" Foreground="{DynamicResource SuccessBrush}" />
+                                <TextBlock Text="{Binding Localization[Network.Host.ReadyTitle]}" Classes="h2"
+                                           Foreground="{DynamicResource AccentBrush}" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding ReadyText}" TextWrapping="Wrap" FontSize="16" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- ═══ Card 2: connect to a host ═══ -->
+        <Border Classes="card" Padding="22" IsEnabled="{Binding IsStationCardEnabled}">
+            <StackPanel Spacing="14">
+                <TextBlock Text="{Binding Localization[Network.Station.Title]}" Classes="h2"
+                           FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+
+                <TextBlock Text="{Binding Localization[Network.Station.HostHint]}" Classes="muted"
+                           TextWrapping="Wrap" IsVisible="{Binding ShowStationHostHint}" />
+
+                <!-- Connection state + disconnect -->
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <Border Width="10" Height="10" CornerRadius="5" VerticalAlignment="Center"
+                                Background="{DynamicResource SuccessBrush}" IsVisible="{Binding IsConnected}" />
+                        <TextBlock Text="{Binding StationStateText}" FontWeight="Medium" VerticalAlignment="Center"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Classes="ghost danger" IsVisible="{Binding IsConnected}"
+                            Content="{Binding Localization[Network.Station.Disconnect]}"
+                            Command="{Binding DisconnectCommand}" />
+                </Grid>
+
+                <StackPanel Spacing="4" MaxWidth="320" HorizontalAlignment="Left">
+                    <TextBlock Text="{Binding Localization[Network.Station.Name]}" Classes="label" />
+                    <TextBox x:Name="StationNameBox" Text="{Binding StationName, Mode=TwoWay}"
+                             Watermark="{Binding Localization[Network.Station.NamePlaceholder]}" />
+                </StackPanel>
+
+                <!-- The pairing form is hidden once connected -->
+                <StackPanel Spacing="14" IsVisible="{Binding !IsConnected}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="{Binding Localization[Network.Station.Hosts]}" Classes="label" />
+                        <TextBlock Text="{Binding Localization[Network.Station.NoHosts]}" Classes="muted"
+                                   TextWrapping="Wrap" IsVisible="{Binding !HasDiscoveredHosts}" />
+                        <ListBox ItemsSource="{Binding DiscoveredHosts}"
+                                 SelectedItem="{Binding SelectedHost, Mode=TwoWay}"
+                                 IsVisible="{Binding HasDiscoveredHosts}"
+                                 MaxHeight="160" Background="{DynamicResource SurfaceSubtle}" CornerRadius="8">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:DiscoveredHostRowViewModel">
+                                    <StackPanel Spacing="1">
+                                        <TextBlock Text="{Binding Label}" FontWeight="Medium" />
+                                        <TextBlock Text="{Binding Endpoint}" Classes="muted" FontSize="12" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </StackPanel>
+
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="20">
+                        <StackPanel Grid.Column="0" Spacing="4">
+                            <TextBlock Text="{Binding Localization[Network.Station.Address]}" Classes="label" />
+                            <TextBox Text="{Binding AddressText, Mode=TwoWay}"
+                                     Watermark="{Binding Localization[Network.Station.AddressPlaceholder]}" />
+                            <TextBlock Text="{Binding Localization[Network.Station.AddressHint]}" Classes="muted"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="4" Width="150">
+                            <TextBlock Text="{Binding Localization[Network.Station.Pin]}" Classes="label" />
+                            <TextBox x:Name="PinBox" Text="{Binding Pin, Mode=TwoWay}" MaxLength="6"
+                                     FontSize="24" FontWeight="Bold"
+                                     HorizontalContentAlignment="Center" Watermark="••••••" />
+                        </StackPanel>
+                    </Grid>
+
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button Classes="accent" Content="{Binding Localization[Network.Station.Connect]}"
+                                Command="{Binding ConnectCommand}" />
+                        <TextBlock Text="{Binding Localization[Network.Station.Connecting]}" Classes="muted"
+                                   VerticalAlignment="Center" IsVisible="{Binding IsConnecting}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <TextBlock Text="{Binding ErrorText}" Foreground="{DynamicResource DangerBrush}"
+                           TextWrapping="Wrap" IsVisible="{Binding HasError}" />
+
+                <!-- Pairing warnings (plugins, readout type, clock skew) -->
+                <StackPanel Spacing="4" IsVisible="{Binding HasWarnings}">
+                    <TextBlock Text="{Binding Localization[Network.Station.Warnings]}" Classes="label" />
+                    <ItemsControl ItemsSource="{Binding Warnings}" ItemTemplate="{StaticResource CheckRowTemplate}" />
+                </StackPanel>
+
+                <!-- Station checks -->
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="{Binding Localization[Network.Station.Checks]}" Classes="label"
+                               VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Classes="ghost small" IsEnabled="{Binding !IsStationChecking}"
+                            Content="{Binding Localization[Network.Station.Check]}"
+                            Command="{Binding RunStationChecksCommand}" />
+                </Grid>
+                <TextBlock Text="{Binding Localization[Network.Host.Checking]}" Classes="muted"
+                           IsVisible="{Binding IsStationChecking}" />
+                <ItemsControl ItemsSource="{Binding StationChecks}" ItemTemplate="{StaticResource CheckRowTemplate}"
+                              IsVisible="{Binding HasStationChecks}" />
+            </StackPanel>
+        </Border>
+
+    </StackPanel>
+
+</UserControl>

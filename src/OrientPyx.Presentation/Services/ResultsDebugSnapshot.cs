@@ -16,17 +16,22 @@ public sealed class ResultsDebugSnapshot
 {
     private readonly ICompetitionEditorService _editor;
     private readonly ISessionService _session;
+    private readonly IWorkspaceMode _mode;
 
-    public ResultsDebugSnapshot(ICompetitionEditorService editor, ISessionService session)
+    public ResultsDebugSnapshot(ICompetitionEditorService editor, ISessionService session, IWorkspaceMode mode)
     {
         _editor = editor;
         _session = session;
+        _mode = mode;
     }
 
-    /// <summary>Writes the snapshot and returns its path; null when no competition is open.</summary>
+    /// <summary>Writes the snapshot and returns its path; null when no competition is open or this machine is a station.</summary>
     public async Task<string?> WriteAsync(CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is not { } current)
+            return null;
+        // The file goes into the competition folder, which on a station is on the host (FolderPath is only a key there).
+        if (_mode.IsStation)
             return null;
 
         var days = await _editor.GetDaysAsync(cancellationToken);

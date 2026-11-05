@@ -33,6 +33,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     private readonly IDialogService _dialogs;
     private readonly IAppStore _appStore;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
+    private readonly PendingSaves _pendingSaves = new();
 
     // Used to debounce the competition-level settings strip (course-setter + default points rule).
     private CancellationTokenSource? _infoSaveCts;
@@ -53,7 +54,9 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         IDialogService dialogs,
         IAppStore appStore,
         ITableLayoutStore layoutStore,
-        IDayLockService dayLock)
+        IDayLockService dayLock,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         UseDayLock(dayLock);
@@ -76,6 +79,9 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         // page never shows stale data before it is next opened. The event can be raised on a pool
         // thread (session writes run inside RunAsync), so marshal LoadAsync onto the UI thread.
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        // Live data (another station's writes) — see ReloadAsync.
+        ObserveData(bus, session, mode,
+            DataArea.Groups, DataArea.GroupDaySettings, DataArea.CourseVariants, DataArea.Days, DataArea.ControlPoints, DataArea.Competition, DataArea.Relay, DataArea.AppData);
     }
 
     /// <summary>Per-competition table-view store; persists this page's table column order/width/visibility.</summary>
@@ -297,7 +303,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         _scatterSaveCts?.Cancel();
         var cts = new CancellationTokenSource();
         _scatterSaveCts = cts;
-        _ = SaveScatterDebouncedAsync(_scatterGroupId.Value, cts.Token);
+        _pendingSaves.Track(SaveScatterDebouncedAsync(_scatterGroupId.Value, cts.Token));
     }
 
     private async Task SaveScatterDebouncedAsync(Guid groupId, CancellationToken token)
@@ -395,6 +401,18 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     // True while LoadAsync syncs SelectedDay to the session, so the setter does NOT call
     // SetCurrentDayAsync (which would re-raise SessionChanged → LoadAsync in a loop).
     private bool _syncingDay;
+
+    /// <inheritdoc />
+    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        // Pending saves (rows, the scatter editor, the course-setter defaults) finish first: LoadAsync cancels
+        // them, which is right for a session switch but would drop the operator's last edit here. Re-selecting
+        // the group by id also brings its course / scatter editor back.
+        await _pendingSaves.WaitAsync();
+        var selectedId = SelectedGroup?.Id;
+        await LoadAsync();
+        SelectedGroup = Groups.FirstOrDefault(g => g.Id == selectedId);
+    }
 
     /// <summary>Reloads the groups for the current day. Called when the page is shown.</summary>
     public async Task LoadAsync()
@@ -744,7 +762,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         _infoSaveCts?.Cancel();
         var cts = new CancellationTokenSource();
         _infoSaveCts = cts;
-        _ = SaveInfoDebouncedAsync(cts.Token);
+        _pendingSaves.Track(SaveInfoDebouncedAsync(cts.Token));
     }
 
     private async Task SaveInfoDebouncedAsync(CancellationToken token)
@@ -779,7 +797,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
 
         var cts = new CancellationTokenSource();
         _saveTimers[row.Id] = cts;
-        _ = SaveRowDebouncedAsync(row, cts.Token); // fire-and-forget; the UI is never blocked
+        _pendingSaves.Track(SaveRowDebouncedAsync(row, cts.Token)); // fire-and-forget; the UI is never blocked
     }
 
     private async Task SaveRowDebouncedAsync(GroupDayRowViewModel row, CancellationToken token)

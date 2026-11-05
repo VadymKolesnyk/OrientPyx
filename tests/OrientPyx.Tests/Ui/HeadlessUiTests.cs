@@ -62,7 +62,7 @@ public sealed class HeadlessUiTests
         // Every «Open…» command of the root view model is a page (settings/about are overlays, tested apart).
         var commands = typeof(MainWindowViewModel).GetProperties()
             .Where(p => p.Name.StartsWith("Open", StringComparison.Ordinal) && p.Name.EndsWith("Command", StringComparison.Ordinal))
-            .Where(p => p.Name is not ("OpenSettingsCommand" or "OpenAboutCommand"))
+            .Where(p => p.Name is not ("OpenSettingsCommand" or "OpenAboutCommand" or "OpenNetworkCommand"))
             .OrderBy(p => p.Name, StringComparer.Ordinal)
             .ToList();
         Assert.True(commands.Count >= 20, $"expected the page commands, found {commands.Count}");

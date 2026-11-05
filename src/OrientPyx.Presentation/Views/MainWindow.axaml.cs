@@ -46,6 +46,17 @@ public partial class MainWindow : Window, IArchiveFilePicker
                 BuildPluginMenu(vm);
             }
         };
+
+        // Closing the window (title-bar ×) stops the network host / leaves the host first, best-effort and bounded
+        // (~2 s): cancel this close, shut the network down, then close again — the flag lets the second one through.
+        Closing += async (_, e) =>
+        {
+            if (DataContext is not MainWindowViewModel vm || vm.NetworkShutdownDone)
+                return;
+            e.Cancel = true;
+            await vm.ShutdownNetworkAsync();
+            Close();
+        };
     }
 
     // The «Плагіни» menu mixes fixed items (declared in XAML) with one item per switched-on plugin, which a bound

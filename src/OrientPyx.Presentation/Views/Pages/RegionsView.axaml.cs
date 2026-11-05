@@ -15,6 +15,7 @@ public partial class RegionsView : UserControl
     public RegionsView()
     {
         InitializeComponent();
+        SheetEditing.Bind(this, Sheet);
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += (_, _) => Unsubscribe();
 

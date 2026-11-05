@@ -36,7 +36,9 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         ITableLayoutStore layoutStore,
         IDayLockService dayLock,
         IActivityLog log,
-        IDisciplineStrategyProvider strategies)
+        IDisciplineStrategyProvider strategies,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         _strategies = strategies;
@@ -51,6 +53,9 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         // event never leaves the previous competition's days on screen. The event may arrive on a
         // pool thread (session writes run inside RunAsync), so marshal LoadAsync onto the UI thread.
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        // Live data (another station's writes) — see ReloadAsync.
+        ObserveData(bus, session, mode,
+            DataArea.Days, DataArea.Competition);
     }
 
     /// <summary>Per-competition table-view store; persists this page's table column order/width/visibility.</summary>
@@ -82,6 +87,15 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
 
         await ExplainDayLockAsync(row.Number);
         return false;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>Day rows save straight away (no debounce), so only the selection has to be kept.</remarks>
+    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        var selectedId = SelectedRow?.Id;
+        await LoadAsync();
+        SelectedRow = Days.FirstOrDefault(d => d.Id == selectedId);
     }
 
     /// <summary>Reloads the day rows from the current competition. Called when the page is shown.</summary>

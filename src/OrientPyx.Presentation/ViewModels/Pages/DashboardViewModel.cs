@@ -105,7 +105,9 @@ public sealed partial class DashboardViewModel : PageViewModelBase
         ICompetitionEditorService editor,
         ISessionService session,
         IBusyService busy,
-        IDisciplineStrategyProvider disciplineStrategies)
+        IDisciplineStrategyProvider disciplineStrategies,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         _disciplineStrategies = disciplineStrategies;
@@ -117,6 +119,10 @@ public sealed partial class DashboardViewModel : PageViewModelBase
         // switch, a new selection, or returning to the picker). Hop to the UI thread — SessionChanged
         // may fire off a pool thread.
         _session.SessionChanged += OnSessionChanged;
+        // Live data: every figure on the tiles — a broad set, the dashboard sums the whole day up.
+        ObserveData(bus, session, mode,
+            DataArea.Participants, DataArea.ParticipantDays, DataArea.Readouts, DataArea.Days, DataArea.Groups,
+            DataArea.GroupDaySettings, DataArea.Chips, DataArea.Competition, DataArea.Relay);
         // The discipline name + "День N" label are localized; re-raise them on a language switch.
         Localization.PropertyChanged += (_, _) =>
         {
@@ -239,6 +245,10 @@ public sealed partial class DashboardViewModel : PageViewModelBase
 
     /// <summary>Whether to show the on-course elapsed caption.</summary>
     public bool HasOnCourseElapsed => OnCourseElapsedText.Length != 0;
+
+    /// <inheritdoc />
+    /// <remarks>The tiles are recomputed figures; the day picker keeps its options when the days are unchanged.</remarks>
+    protected override Task ReloadAsync(CancellationToken cancellationToken = default) => LoadAsync();
 
     public async Task LoadAsync()
     {

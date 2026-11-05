@@ -28,6 +28,7 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
     private readonly IDisciplineStrategyProvider _strategies;
     private readonly IDialogService _dialogs;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
+    private readonly PendingSaves _pendingSaves = new();
 
     public ControlPointsViewModel(
         ILocalizationService localization,
@@ -38,7 +39,9 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
         IDisciplineStrategyProvider strategies,
         IDialogService dialogs,
         ITableLayoutStore layoutStore,
-        IDayLockService dayLock)
+        IDayLockService dayLock,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         UseDayLock(dayLock);
@@ -53,6 +56,9 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
         // page never shows stale data before it is next opened. The event can be raised on a pool
         // thread (session writes run inside RunAsync), so marshal LoadAsync onto the UI thread.
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        // Live data (another station's writes) — see ReloadAsync.
+        ObserveData(bus, session, mode,
+            DataArea.ControlPoints, DataArea.Days, DataArea.Groups, DataArea.GroupDaySettings);
     }
 
     /// <summary>Per-competition table-view store; persists this page's table column order/width/visibility.</summary>
@@ -102,6 +108,17 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
     // True while LoadAsync syncs SelectedDay to the session, so the setter does NOT call
     // SetCurrentDayAsync (which would re-raise SessionChanged → LoadAsync in a loop).
     private bool _syncingDay;
+
+    /// <inheritdoc />
+    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        // Pending row saves finish first: LoadAsync cancels them, which is right for a session switch but would
+        // drop the operator's last edit here (see PendingSaves). The selected row is kept by id.
+        await _pendingSaves.WaitAsync();
+        var selectedId = SelectedPoint?.Id;
+        await LoadAsync();
+        SelectedPoint = Points.FirstOrDefault(p => p.Id == selectedId);
+    }
 
     /// <summary>Reloads the control points for the current day. Called when the page is shown.</summary>
     public async Task LoadAsync()
@@ -283,7 +300,7 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
 
         var cts = new CancellationTokenSource();
         _saveTimers[row.Id] = cts;
-        _ = SaveRowDebouncedAsync(row, cts.Token); // fire-and-forget; the UI is never blocked
+        _pendingSaves.Track(SaveRowDebouncedAsync(row, cts.Token)); // fire-and-forget; the UI is never blocked
     }
 
     private async Task SaveRowDebouncedAsync(ControlPointRowViewModel row, CancellationToken token)

@@ -26,11 +26,17 @@ public class AppDbContext : DbContext
     /// <summary>Application-level rank qualification table (Додаток 89), shared across every competition.</summary>
     public DbSet<RankQualificationRow> RankQualification => Set<RankQualificationRow>();
 
+    /// <summary>Session tokens of the stations paired with this host (network mode).</summary>
+    public DbSet<StationTokenRow> StationTokens => Set<StationTokenRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Single-row tables; key is not generated (fixed value 1).
         modelBuilder.Entity<AppSettingsRow>().Property(x => x.Id).ValueGeneratedNever();
         modelBuilder.Entity<LastSessionRow>().Property(x => x.Id).ValueGeneratedNever();
+
+        // The token itself is the key; it is random and never changes.
+        modelBuilder.Entity<StationTokenRow>().HasKey(x => x.Token);
 
         // Rank names are unique (case-insensitive) but blanks are exempt, so a freshly added (still
         // unnamed) row never collides with another blank one. SQLite's NOCASE collation gives the

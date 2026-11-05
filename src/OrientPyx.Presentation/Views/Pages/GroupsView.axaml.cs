@@ -16,6 +16,7 @@ public partial class GroupsView : UserControl
     public GroupsView()
     {
         InitializeComponent();
+        SheetEditing.Bind(this, Sheet, ScatterSheet);
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += (_, _) => Unsubscribe();
 

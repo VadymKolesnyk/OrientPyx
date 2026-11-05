@@ -14,6 +14,7 @@ public partial class PointsView : UserControl
     public PointsView()
     {
         InitializeComponent();
+        SheetEditing.Bind(this, TableSheet);
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += (_, _) => Unsubscribe();
     }

@@ -39,6 +39,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     private readonly ISplitPrintService _printer;
     private readonly IActivityLog _log;
     private readonly IDayLockService _dayLock;
+    private readonly IEventFiles _eventFiles;
 
     /// <summary>Top-bar activity handle while auto-read runs; null when off.</summary>
     private FinishReadActivity? _activity;
@@ -74,7 +75,10 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         IActivityLog log,
         IUiPreferencesService preferences,
         ITableLayoutStore layoutStore,
-        IDayLockService dayLock)
+        IDayLockService dayLock,
+        IDataChangeBus bus,
+        IWorkspaceMode mode,
+        IEventFiles eventFiles)
         : base(localization)
     {
         UseDayLock(dayLock);
@@ -90,6 +94,11 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         _appSettings = appSettings;
         _printer = printer;
         _log = log;
+        _eventFiles = eventFiles;
+        // Live data: everything a log row and its splits are judged from.
+        ObserveData(bus, session, mode,
+            DataArea.Readouts, DataArea.ParticipantDays, DataArea.Participants, DataArea.Groups, DataArea.GroupDaySettings,
+            DataArea.ControlPoints, DataArea.CourseVariants, DataArea.Relay, DataArea.Chips, DataArea.Days, DataArea.Settings);
 
         // Singleton VM: on a competition/day change, stop the watch (the file belongs to the old day)
         // and reload. SessionChanged may be raised on a pool thread, so marshal onto the UI thread.
@@ -218,6 +227,13 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         await LoadAsync();
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// The watch keeps running (the file is this machine's); LoadAsync already keeps the selected row by id, so
+    /// the splits panel stays open. The read-out poller reloads the same way on every new read.
+    /// </remarks>
+    protected override Task ReloadAsync(CancellationToken cancellationToken = default) => LoadAsync();
+
     /// <summary>Reloads the day picker and the current day's log. Called when the page is shown.</summary>
     public async Task LoadAsync()
     {
@@ -291,25 +307,36 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
 
     // Sets the default per-day readout path (day{N}/event.csv) when the field is blank or still points
     // at another day's default — so switching the day repoints the watch, but a custom path is kept.
+    // The folder is this machine's (IEventFiles.LocalReadoutDirectory): the day folder locally, a local
+    // per-host folder on a station — the reader is plugged into this computer in either role (П17).
     private void SyncDefaultFilePath()
     {
-        var folder = _session.CurrentEvent?.FolderPath;
+        var ev = _session.CurrentEvent;
         var day = _session.CurrentDay;
-        if (string.IsNullOrEmpty(folder) || day is null)
+        if (ev is null || day is null)
             return;
 
-        var def = Path.Combine(DayFolders.PathFor(folder, day.Number), DefaultReadoutFileName);
-        if (string.IsNullOrWhiteSpace(AutoReadFilePath) || IsADayDefaultPath(folder))
+        var def = DefaultPathFor(ev, day.Number);
+        if (string.IsNullOrWhiteSpace(AutoReadFilePath) || IsADayDefaultPath(ev))
             AutoReadFilePath = def;
     }
 
-    // True when the current path is some day's default event.csv (so it may be repointed on day switch).
-    private bool IsADayDefaultPath(string folder)
+    private string DefaultPathFor(EventSummary ev, int dayNumber)
+        => Path.Combine(_eventFiles.LocalReadoutDirectory(ev.FolderPath, ev.Identifier, dayNumber), DefaultReadoutFileName);
+
+    // True when the current path is some day's default event.csv (so it may be repointed on day switch):
+    // an event.csv in a day{N} folder (the local layout), or exactly the default of one of the competition's
+    // days — a station's local day folder need not be named day{N}.
+    private bool IsADayDefaultPath(EventSummary ev)
     {
         var name = Path.GetFileName(AutoReadFilePath);
+        if (!string.Equals(name, DefaultReadoutFileName, StringComparison.OrdinalIgnoreCase))
+            return false;
         var parent = Path.GetFileName(Path.GetDirectoryName(AutoReadFilePath) ?? string.Empty);
-        return string.Equals(name, DefaultReadoutFileName, StringComparison.OrdinalIgnoreCase)
-               && parent.StartsWith("day", StringComparison.OrdinalIgnoreCase);
+        if (parent.StartsWith("day", StringComparison.OrdinalIgnoreCase))
+            return true;
+        return DayOptions.Any(o => o.Day is { } d
+            && string.Equals(AutoReadFilePath, DefaultPathFor(ev, d.Number), StringComparison.OrdinalIgnoreCase));
     }
 
     // Driven by the day ComboBox; switches the session's day (the guard stops LoadAsync's sync re-entering).

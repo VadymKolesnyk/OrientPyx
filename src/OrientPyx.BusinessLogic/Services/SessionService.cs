@@ -1,12 +1,20 @@
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
+using OrientPyx.BusinessLogic.Models.Network;
 
 namespace OrientPyx.BusinessLogic.Services;
 
 /// <summary>
 /// In-memory session holder. See <see cref="ISessionService"/> — runtime selection is a local
 /// field; the app database only stores a pointer for startup restore.
+/// <para>
+/// Network mode: the pointer also records the role (local / station) and the host, so a station's pointer is only
+/// restored after reconnecting to that host and never from the local events folder (<c>EnsureCreatedAsync</c> would
+/// otherwise create an empty competition named after the host's). The service also listens to the change bus: when
+/// another station (or the host) edits the current day's row or the competition metadata, the in-memory copies are
+/// refreshed, so the discipline and the day lock pages read from the session never go stale.
+/// </para>
 /// </summary>
 public sealed class SessionService : ISessionService
 {
@@ -14,13 +22,28 @@ public sealed class SessionService : ISessionService
     private readonly IEventCatalogService _catalog;
     private readonly IEventStore _eventStore;
     private readonly IActivityLog _log;
+    private readonly IWorkspaceMode _mode;
+    private readonly INetworkClient? _station;
 
-    public SessionService(IAppStore appStore, IEventCatalogService catalog, IEventStore eventStore, IActivityLog log)
+    // Serialises the bus-driven refreshes so two quick events cannot interleave their reads and writes.
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
+
+    public SessionService(
+        IAppStore appStore,
+        IEventCatalogService catalog,
+        IEventStore eventStore,
+        IActivityLog log,
+        IWorkspaceMode mode,
+        IDataChangeBus bus,
+        INetworkClient? station = null)
     {
         _appStore = appStore;
         _catalog = catalog;
         _eventStore = eventStore;
         _log = log;
+        _mode = mode;
+        _station = station;
+        bus.Changed += OnDataChanged;
     }
 
     public EventSummary? CurrentEvent { get; private set; }
@@ -45,7 +68,7 @@ public sealed class SessionService : ISessionService
         CurrentEvent = competition;
         CurrentDay = day;
 
-        await _appStore.SaveLastSessionAsync(competition.Identifier, day.Number, cancellationToken);
+        await SavePointerAsync(competition.Identifier, day.Number, cancellationToken);
         SessionChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -57,7 +80,7 @@ public sealed class SessionService : ISessionService
 
         _log.Action($"Switch to day {day.Number}");
         CurrentDay = day;
-        await _appStore.SaveLastSessionAsync(CurrentEvent.Identifier, day.Number, cancellationToken);
+        await SavePointerAsync(CurrentEvent.Identifier, day.Number, cancellationToken);
         SessionChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -82,7 +105,7 @@ public sealed class SessionService : ISessionService
         _log.Action($"Competition identifier changed to '{competition.Identifier}'");
 
         // The pointer stores the identifier, so a restart would otherwise look for the old folder name.
-        await _appStore.SaveLastSessionAsync(competition.Identifier, CurrentDay.Number, cancellationToken);
+        await SavePointerAsync(competition.Identifier, CurrentDay.Number, cancellationToken);
         SessionChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -107,11 +130,29 @@ public sealed class SessionService : ISessionService
 
     public async Task<bool> TryRestoreLastAsync(CancellationToken cancellationToken = default)
     {
-        var (identifier, dayNumber) = await _appStore.GetLastSessionAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(identifier))
+        var last = await _appStore.GetLastSessionAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(last.Identifier))
             return false;
 
-        var summary = await _catalog.FindByIdentifierAsync(identifier, cancellationToken);
+        if (last.Mode == WorkspaceRole.Station)
+        {
+            // A station pointer names a competition on the HOST. Reconnect first; the catalog then lists the host's
+            // competitions. Never fall back to the local folder — the identifier is not ours.
+            if (_station is null || _mode.Role == WorkspaceRole.Host)
+                return false;
+            if (_mode.Role != WorkspaceRole.Station
+                && !await _station.TryReconnectSavedAsync(TimeSpan.FromSeconds(5), cancellationToken))
+                return false;
+            if (!string.Equals(_mode.Station?.HostId, last.HostId, StringComparison.Ordinal))
+                return false;
+        }
+        else if (_mode.Role == WorkspaceRole.Station)
+        {
+            // A local pointer while connected to a host: the host's list has nothing to do with it.
+            return false;
+        }
+
+        var summary = await _catalog.FindByIdentifierAsync(last.Identifier, cancellationToken);
         if (summary is null)
             return false;
 
@@ -123,11 +164,96 @@ public sealed class SessionService : ISessionService
         if (days.Count == 0)
             return false;
 
-        var day = days.FirstOrDefault(d => d.Number == dayNumber) ?? days[0];
+        var day = days.FirstOrDefault(d => d.Number == last.DayNumber) ?? days[0];
 
         CurrentEvent = summary;
         CurrentDay = day;
         SessionChanged?.Invoke(this, EventArgs.Empty);
         return true;
     }
+
+    private Task SavePointerAsync(string identifier, int dayNumber, CancellationToken cancellationToken)
+    {
+        var station = _mode.Role == WorkspaceRole.Station;
+        return _appStore.SaveLastSessionAsync(
+            new LastSession(identifier, dayNumber, station ? WorkspaceRole.Station : WorkspaceRole.Local,
+                station ? _mode.Station?.HostId : null),
+            cancellationToken);
+    }
+
+    // Another machine changed the current day's row or the competition metadata: refresh the in-memory copies
+    // (UpdateCurrentDay / UpdateCurrentEvent raise SessionChanged, which every page already handles by reloading).
+    // Our own writes are skipped — the page that made them already called the Update* method.
+    private void OnDataChanged(object? sender, DataChange change)
+    {
+        if (change.Area is not (DataArea.Days or DataArea.Competition or DataArea.Any))
+            return;
+        if (string.Equals(change.Origin, _mode.SelfOrigin, StringComparison.Ordinal) && change.Area != DataArea.Any)
+            return;
+        if (CurrentEvent is not { } current || CurrentDay is null)
+            return;
+        if (change.Area != DataArea.Any
+            && !string.Equals(change.EventFolderPath, current.FolderPath, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _ = RefreshFromStoreAsync(current, change.Area);
+    }
+
+    private async Task RefreshFromStoreAsync(EventSummary current, DataArea area)
+    {
+        if (!await _refreshGate.WaitAsync(0))
+            return;
+        try
+        {
+            if (area is DataArea.Days or DataArea.Any)
+            {
+                var days = await _eventStore.GetDaysAsync(current.FolderPath);
+                var day = CurrentDay is { } cd ? days.FirstOrDefault(d => d.Id == cd.Id) : null;
+                if (day is not null && CurrentDay is { } old && !SameDay(old, day))
+                    UpdateCurrentDay(day);
+            }
+
+            if (area is DataArea.Competition or DataArea.Any)
+            {
+                var info = await _eventStore.GetCompetitionInfoAsync(current.FolderPath);
+                if (info is not null && CurrentEvent is { } ev && ReferenceEquals(ev, current) && !SameSummary(ev, info))
+                {
+                    UpdateCurrentEvent(new EventSummary
+                    {
+                        Identifier = ev.Identifier,
+                        Name = info.Name,
+                        Venue = info.Venue,
+                        FolderPath = ev.FolderPath,
+                        CreatedAt = info.CreatedAt,
+                        DayCount = ev.DayCount,
+                        StartDate = info.StartDate,
+                        EndDate = info.EndDate,
+                        IsHidden = info.IsHidden,
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Error("Session refresh after a remote change failed", ex);
+        }
+        finally
+        {
+            _refreshGate.Release();
+        }
+    }
+
+    private static bool SameDay(EventDay a, EventDay b)
+        => a.Number == b.Number
+           && a.IsLocked == b.IsLocked
+           && a.DefaultDiscipline == b.DefaultDiscipline
+           && a.Date == b.Date
+           && string.Equals(a.Venue, b.Venue, StringComparison.Ordinal);
+
+    private static bool SameSummary(EventSummary s, CompetitionInfo info)
+        => string.Equals(s.Name, info.Name, StringComparison.Ordinal)
+           && string.Equals(s.Venue, info.Venue, StringComparison.Ordinal)
+           && s.StartDate == info.StartDate
+           && s.EndDate == info.EndDate
+           && s.IsHidden == info.IsHidden;
 }

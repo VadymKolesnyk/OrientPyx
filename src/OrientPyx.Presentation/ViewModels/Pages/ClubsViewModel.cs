@@ -24,6 +24,7 @@ public sealed partial class ClubsViewModel : PageViewModelBase
     private readonly IBusyService _busy;
     private readonly IDialogService _dialogs;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
+    private readonly PendingSaves _pendingSaves = new();
 
     public ClubsViewModel(
         ILocalizationService localization,
@@ -31,7 +32,9 @@ public sealed partial class ClubsViewModel : PageViewModelBase
         ISessionService session,
         IBusyService busy,
         IDialogService dialogs,
-        ITableLayoutStore layoutStore)
+        ITableLayoutStore layoutStore,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         LayoutStore = layoutStore;
@@ -41,6 +44,8 @@ public sealed partial class ClubsViewModel : PageViewModelBase
         _dialogs = dialogs;
 
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        // Live data: the list and the per-row participant counts.
+        ObserveData(bus, session, mode, DataArea.Clubs, DataArea.Participants);
     }
 
     /// <summary>Per-competition table-view store; persists this page's table column order/width/visibility.</summary>
@@ -76,6 +81,17 @@ public sealed partial class ClubsViewModel : PageViewModelBase
             row.ParticipantCount = counts.TryGetValue(club.Id, out var c) ? c : 0;
             Clubs.Add(row);
         }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>Lets the pending row saves finish first (LoadAsync cancels them, see <see cref="PendingSaves"/>) and keeps the
+    /// selected row by id.</remarks>
+    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        await _pendingSaves.WaitAsync();
+        var selectedId = SelectedClub?.Id;
+        await LoadAsync();
+        SelectedClub = Clubs.FirstOrDefault(r => r.Id == selectedId);
     }
 
     private ClubRowViewModel CreateRow(Club club) => new(club, Localization, RequestRowSave);
@@ -140,7 +156,7 @@ public sealed partial class ClubsViewModel : PageViewModelBase
 
         var cts = new CancellationTokenSource();
         _saveTimers[row.Id] = cts;
-        _ = SaveRowDebouncedAsync(row, cts.Token);
+        _pendingSaves.Track(SaveRowDebouncedAsync(row, cts.Token));
     }
 
     private async Task SaveRowDebouncedAsync(ClubRowViewModel row, CancellationToken token)

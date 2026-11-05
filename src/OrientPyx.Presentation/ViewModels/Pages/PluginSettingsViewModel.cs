@@ -31,7 +31,9 @@ public sealed partial class PluginSettingsViewModel : PageViewModelBase
 
     public PluginSettingsViewModel(
         ILocalizationService localization, IPluginCatalog plugins, IDisciplineStrategyProvider strategies,
-        ICompetitionEditorService editor, ISessionService session, IBusyService busy, IDialogService dialogs)
+        ICompetitionEditorService editor, ISessionService session, IBusyService busy, IDialogService dialogs,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         _plugins = plugins;
@@ -40,6 +42,8 @@ public sealed partial class PluginSettingsViewModel : PageViewModelBase
         _session = session;
         _busy = busy;
         _dialogs = dialogs;
+        // Live data: the settings rows and the day list — see ReloadAsync.
+        ObserveData(bus, session, mode, DataArea.Settings, DataArea.Days);
 
         // Singleton VM: reload on a competition/day change (marshal to UI) — but only once a plugin was opened.
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() =>
@@ -86,6 +90,12 @@ public sealed partial class PluginSettingsViewModel : PageViewModelBase
     /// <summary>Shown after a save until the form is reloaded.</summary>
     [ObservableProperty]
     private bool _saved;
+
+    /// <inheritdoc />
+    /// <remarks>Only once a plugin page was opened. The form is re-read from the store, so a value typed but not yet
+    /// saved is replaced by what the other station saved (last write wins, as for cells).</remarks>
+    protected override Task ReloadAsync(CancellationToken cancellationToken = default)
+        => PluginId.Length > 0 ? LoadAsync(resetSaved: false) : Task.CompletedTask;
 
     /// <param name="resetSaved">False for the reload a save itself triggers, so its «Збережено» stays shown.</param>
     public async Task LoadAsync(bool resetSaved = true)

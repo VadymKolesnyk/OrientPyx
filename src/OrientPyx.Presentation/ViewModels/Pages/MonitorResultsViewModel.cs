@@ -44,7 +44,9 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
         IMonitorHtmlWriter writer,
         IBackgroundActivityService activities,
         IBusyService busy,
-        IActivityLog log)
+        IActivityLog log,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         _editor = editor;
@@ -53,6 +55,11 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
         _activities = activities;
         _busy = busy;
         _log = log;
+        // Live data: everything the results depend on — see ReloadAsync.
+        ObserveData(bus, session, mode,
+            DataArea.Participants, DataArea.ParticipantDays, DataArea.Readouts, DataArea.Groups, DataArea.GroupDaySettings,
+            DataArea.ControlPoints, DataArea.CourseVariants, DataArea.Relay, DataArea.Days, DataArea.Settings,
+            DataArea.CustomFields, DataArea.Competition, DataArea.AppData);
 
         // One shared column layout for ALL files (order + visibility). Editing it marks the settings dirty and
         // re-renders the selected file's preview; the reorder-by-drag on any preview header also moves it here.
@@ -125,6 +132,20 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
 
     public ObservableCollection<string> LogLines { get; } = [];
     public string LogText => string.Join(Environment.NewLine, LogLines);
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Drops the cached day snapshot and re-renders the selected file's preview; the file settings on screen are
+    /// left alone (they auto-save, and a reload mid-edit would overwrite the pending value). The generator, when
+    /// running, picks the new data up on its own tick.
+    /// </remarks>
+    protected override Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        _previewSource = null;
+        if (SelectedFile is { } file)
+            RequestPreviewRefresh(file, immediate: true);
+        return Task.CompletedTask;
+    }
 
     public async Task LoadAsync()
     {

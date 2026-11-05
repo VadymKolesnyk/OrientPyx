@@ -32,6 +32,11 @@
   <string>NSApplication</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <!-- macOS 14+: the network mode («Спільна робота») sends a UDP discovery broadcast and connects to LAN addresses,
+       which needs the «Local Network» privacy permission; without this key the system never asks and a station
+       silently finds no host. -->
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>OrientPyx connects to the host computer on the local network to share competition data between the judges' computers.</string>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.sports</string>
 

@@ -10,12 +10,16 @@ public sealed class EventCatalogService : IEventCatalogService
     private readonly IAppSettingsService _settings;
     private readonly IEventFolderScanner _scanner;
     private readonly IEventStore _eventStore;
+    private readonly INetworkHost? _host;
 
-    public EventCatalogService(IAppSettingsService settings, IEventFolderScanner scanner, IEventStore eventStore)
+    /// <param name="host">The network host, when this instance can serve stations: a competition stations are working
+    /// on must not be renamed under them.</param>
+    public EventCatalogService(IAppSettingsService settings, IEventFolderScanner scanner, IEventStore eventStore, INetworkHost? host = null)
     {
         _settings = settings;
         _scanner = scanner;
         _eventStore = eventStore;
+        _host = host;
     }
 
     public async Task<IReadOnlyList<EventSummary>> GetEventsAsync(CancellationToken cancellationToken = default)
@@ -132,6 +136,11 @@ public sealed class EventCatalogService : IEventCatalogService
 
         if (string.Equals(competition.Identifier, newIdentifier, StringComparison.Ordinal))
             return competition;
+
+        // Stations address the competition by its identifier; renaming it under them would strand their session.
+        var activeStations = _host?.ActiveStationsOn(competition.Identifier) ?? [];
+        if (activeStations.Count > 0)
+            throw new InvalidOperationException($"Stations are working on this competition: {string.Join(", ", activeStations)}.");
 
         var paths = await _settings.GetPathsAsync(cancellationToken);
         var oldFolder = competition.FolderPath;

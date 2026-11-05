@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
+using OrientPyx.BusinessLogic.Models.Network;
 
 namespace OrientPyx.DataAccess.Persistence;
 
@@ -335,27 +336,140 @@ public sealed class AppStore : IAppStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<(string? Identifier, int? DayNumber)> GetLastSessionAsync(CancellationToken cancellationToken = default)
+    public async Task<LastSession> GetLastSessionAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
         var row = await db.LastSession.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
-        return (row?.LastEventIdentifier, row?.LastEventDayNumber);
+        if (row is null)
+            return new LastSession(null, null);
+        var mode = Enum.TryParse<WorkspaceRole>(row.Mode, ignoreCase: true, out var parsed) ? parsed : WorkspaceRole.Local;
+        return new LastSession(row.LastEventIdentifier, row.LastEventDayNumber, mode, row.HostId);
     }
 
-    public async Task SaveLastSessionAsync(string? identifier, int? dayNumber, CancellationToken cancellationToken = default)
+    public async Task SaveLastSessionAsync(LastSession session, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(session);
         await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
         var row = await db.LastSession.FirstOrDefaultAsync(cancellationToken);
+        var mode = session.Mode == WorkspaceRole.Station ? nameof(WorkspaceRole.Station) : nameof(WorkspaceRole.Local);
         if (row is null)
         {
-            db.LastSession.Add(new LastSessionRow { Id = 1, LastEventIdentifier = identifier, LastEventDayNumber = dayNumber });
+            db.LastSession.Add(new LastSessionRow
+            {
+                Id = 1,
+                LastEventIdentifier = session.Identifier,
+                LastEventDayNumber = session.DayNumber,
+                Mode = mode,
+                HostId = session.HostId,
+            });
         }
         else
         {
-            row.LastEventIdentifier = identifier;
-            row.LastEventDayNumber = dayNumber;
+            row.LastEventIdentifier = session.Identifier;
+            row.LastEventDayNumber = session.DayNumber;
+            row.Mode = mode;
+            row.HostId = session.HostId;
         }
 
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    // ── Network mode
+
+    public async Task<NetworkSettings> GetNetworkSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+            return new NetworkSettings();
+        return new NetworkSettings
+        {
+            HostEnabled = row.HostEnabled,
+            HostPort = row.HostPort,
+            HostName = row.HostName,
+            HostId = row.HostId,
+            StationName = row.StationName,
+            StationHost = row.StationHost,
+            StationToken = row.StationToken,
+            StationHostId = row.StationHostId,
+        };
+    }
+
+    public async Task SaveNetworkSettingsAsync(NetworkSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+        {
+            row = new AppSettingsRow { Id = 1 };
+            db.Settings.Add(row);
+        }
+
+        row.HostEnabled = settings.HostEnabled;
+        row.HostPort = settings.HostPort;
+        row.HostName = settings.HostName ?? string.Empty;
+        row.HostId = settings.HostId ?? string.Empty;
+        row.StationName = settings.StationName ?? string.Empty;
+        row.StationHost = settings.StationHost ?? string.Empty;
+        row.StationToken = settings.StationToken ?? string.Empty;
+        row.StationHostId = settings.StationHostId ?? string.Empty;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<StationToken>> GetStationTokensAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var rows = await db.StationTokens.AsNoTracking().ToListAsync(cancellationToken);
+        return rows
+            .OrderBy(r => r.IssuedAt)
+            .Select(r => new StationToken
+            {
+                Token = r.Token,
+                StationName = r.StationName,
+                IssuedAt = r.IssuedAt,
+                LastSeenAt = r.LastSeenAt,
+            })
+            .ToList();
+    }
+
+    public async Task SaveStationTokenAsync(StationToken token, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(token);
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.StationTokens.FirstOrDefaultAsync(r => r.Token == token.Token, cancellationToken);
+        if (row is null)
+        {
+            db.StationTokens.Add(new StationTokenRow
+            {
+                Token = token.Token,
+                StationName = token.StationName,
+                IssuedAt = token.IssuedAt,
+                LastSeenAt = token.LastSeenAt,
+            });
+        }
+        else
+        {
+            row.StationName = token.StationName;
+            row.LastSeenAt = token.LastSeenAt;
+        }
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteStationTokenAsync(string token, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.StationTokens.FirstOrDefaultAsync(r => r.Token == token, cancellationToken);
+        if (row is null)
+            return;
+        db.StationTokens.Remove(row);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteAllStationTokensAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        db.StationTokens.RemoveRange(db.StationTokens);
         await db.SaveChangesAsync(cancellationToken);
     }
 

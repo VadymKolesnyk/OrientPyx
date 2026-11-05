@@ -14,4 +14,12 @@ public class LastSessionRow
 
     /// <summary>Day number of the last opened day, if any.</summary>
     public int? LastEventDayNumber { get; set; }
+
+    /// <summary>The role the competition was open in: <c>Local</c> (the default) or <c>Station</c>. A station pointer
+    /// is only restored after reconnecting to the same host — never from the local events folder, where the host's
+    /// identifier would create an empty competition.</summary>
+    public string Mode { get; set; } = string.Empty;
+
+    /// <summary>The host the station pointer belongs to; blank for a local session.</summary>
+    public string? HostId { get; set; }
 }

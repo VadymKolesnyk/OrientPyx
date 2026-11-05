@@ -3,8 +3,13 @@ using Microsoft.Extensions.DependencyInjection;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
+using OrientPyx.BusinessLogic.Services;
+using OrientPyx.BusinessLogic.Services.Store;
 using OrientPyx.DataAccess.Documents;
 using OrientPyx.DataAccess.FileSystem;
+using OrientPyx.DataAccess.Network;
+using OrientPyx.DataAccess.Network.Routing;
+using OrientPyx.DataAccess.Network.Station;
 using OrientPyx.DataAccess.Persistence;
 using OrientPyx.DataAccess.Printing;
 
@@ -21,7 +26,12 @@ public static class DataAccessServiceCollectionExtensions
         services.AddDbContextFactory<AppDbContext>(options =>
             options.UseSqlite(AppDatabasePaths.GetAppConnectionString()));
 
-        services.AddSingleton<IAppStore, AppStore>();
+        // The app store's writes to the points/ranks tables publish DataArea.AppData on the change bus.
+        services.AddSingleton<AppStore>();
+        services.AddSingleton<IAppStore>(sp => NotifyingAppStore.Create(
+            sp.GetRequiredService<AppStore>(),
+            sp.GetRequiredService<IDataChangeBus>(),
+            sp.GetRequiredService<IWorkspaceMode>()));
 
         // Per-launch diagnostic log under ./events/logs (actions + exceptions).
         services.AddSingleton<IActivityLog, FileActivityLog>();
@@ -29,12 +39,61 @@ public static class DataAccessServiceCollectionExtensions
         // Plugins (DLLs from the plugins folders), loaded on first use — after the app DB is migrated.
         services.AddSingleton<IPluginCatalog, Plugins.PluginCatalog>();
 
+        // ── Competition data: every interface a station must get from the host is registered as a ROUTER over the
+        // local implementation (under its class) and the remote one (built by the station on connect):
+        //
+        //   IEventStore          = NotifyingEventStore( Routing( EventStore | RemoteEventStore ) )
+        //   IEventFolderScanner  = Routing( EventFolderScanner | Remote… )
+        //   IEventCatalogService = Routing( EventCatalogService | Remote… )
+        //   IEventFiles          = Routing( LocalEventFiles | Remote… )
+        //   IEventArchiveService = Routing( EventArchiveService | Remote… )
+        //   IResultsAppData      = Routing( LocalResultsAppData | Remote… )
+        //
+        // The router reads IWorkspaceMode.Role on every call, so the machine switches role without a restart. The
+        // Notifying decorator is outermost, so writes coming in over the network (the host's dispatcher resolves
+        // IEventStore from DI) publish on the host's bus too.
+        services.AddSingleton<RemoteServices>();
+        services.AddSingleton<IRemoteServices>(sp => sp.GetRequiredService<RemoteServices>());
+
         // EventStore opens per-competition databases on demand; it holds no shared state.
-        services.AddSingleton<IEventStore, EventStore>();
-        services.AddSingleton<IEventFolderScanner, EventFolderScanner>();
+        services.AddSingleton<EventStore>();
+        services.AddSingleton<IEventStore>(sp => NotifyingEventStore.Create(
+            RoutingProxy<IEventStore>.Create(
+                sp.GetRequiredService<IWorkspaceMode>(),
+                () => sp.GetRequiredService<EventStore>(),
+                () => sp.GetRequiredService<IRemoteServices>().EventStore),
+            sp.GetRequiredService<IDataChangeBus>(),
+            sp.GetRequiredService<IWorkspaceMode>()));
+
+        services.AddSingleton<EventFolderScanner>();
+        services.AddSingleton<IEventFolderScanner>(sp => RoutingProxy<IEventFolderScanner>.Create(
+            sp.GetRequiredService<IWorkspaceMode>(),
+            () => sp.GetRequiredService<EventFolderScanner>(),
+            () => sp.GetRequiredService<IRemoteServices>().FolderScanner));
+
+        services.AddSingleton<IEventCatalogService>(sp => RoutingProxy<IEventCatalogService>.Create(
+            sp.GetRequiredService<IWorkspaceMode>(),
+            () => sp.GetRequiredService<EventCatalogService>(),
+            () => sp.GetRequiredService<IRemoteServices>().Catalog));
+
+        // The competition folder's files (day folders, imported XML) and this machine's local paths.
+        services.AddSingleton<LocalEventFiles>();
+        services.AddSingleton<IEventFiles>(sp => RoutingProxy<IEventFiles>.Create(
+            sp.GetRequiredService<IWorkspaceMode>(),
+            () => sp.GetRequiredService<LocalEventFiles>(),
+            () => sp.GetRequiredService<IRemoteServices>().EventFiles));
 
         // Zips/unzips a whole competition folder for the File → Export/Import Competition commands.
-        services.AddSingleton<IEventArchiveService, EventArchiveService>();
+        services.AddSingleton<EventArchiveService>();
+        services.AddSingleton<IEventArchiveService>(sp => RoutingProxy<IEventArchiveService>.Create(
+            sp.GetRequiredService<IWorkspaceMode>(),
+            () => sp.GetRequiredService<EventArchiveService>(),
+            () => sp.GetRequiredService<IRemoteServices>().Archive));
+
+        services.AddSingleton<IResultsAppData>(sp => RoutingProxy<IResultsAppData>.Create(
+            sp.GetRequiredService<IWorkspaceMode>(),
+            () => sp.GetRequiredService<LocalResultsAppData>(),
+            () => sp.GetRequiredService<IRemoteServices>().ResultsAppData));
 
         // Reads .xlsx workbooks for the participant import (column mapping reuses the CSV path).
         services.AddSingleton<ISpreadsheetParser, XlsxParser>();
@@ -63,6 +122,9 @@ public static class DataAccessServiceCollectionExtensions
         // Publishes live results to Supabase (PostgREST). Transient: each running publish session needs its
         // own instance because the publisher remembers which metadata it has already uploaded.
         services.AddTransient<IResultPublisher, Online.SupabaseResultPublisher>();
+
+        // Network mode («Спільна робота»): host, station, discovery, diagnostics.
+        services.AddOrientPyxNetwork();
 
         return services;
     }

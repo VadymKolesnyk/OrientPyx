@@ -59,7 +59,13 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private readonly IAppSettingsService _appSettings;
     private readonly IEntryFeeCalculator _entryFeeCalculator;
     private readonly IActivityLog _log;
+    private readonly IEventFiles _eventFiles;
+    private readonly IWorkspaceMode _mode;
+
+    /// <summary>The per-machine key the chip-scan file path is stored under on a station (<see cref="IEventFiles.GetMachineValueAsync"/>).</summary>
+    private const string ChipScanPathKey = "chipScan.readoutPath";
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
+    private readonly PendingSaves _pendingSaves = new();
     // Serialises chip-reassignment prompts so a collapsed-block edit that fans a chip out to several
     // days never stacks overlapping confirm dialogs (the overlay shows one dialog at a time).
     private readonly SemaphoreSlim _chipGate = new(1, 1);
@@ -82,7 +88,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         IActivityLog log,
         ITableLayoutStore layoutStore,
         IDayLockService dayLock,
-        IAppSettingsService appSettings)
+        IAppSettingsService appSettings,
+        IDataChangeBus bus,
+        IWorkspaceMode mode,
+        IEventFiles eventFiles)
         : base(localization)
     {
         UseDayLock(dayLock);
@@ -102,9 +111,14 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _readoutParsers = readoutParsers;
         _entryFeeCalculator = entryFeeCalculator;
         _log = log;
+        _eventFiles = eventFiles;
+        _mode = mode;
         // Singleton VM: reload when the competition/day changes. SessionChanged may be raised on a
         // pool thread (session writes run inside RunAsync), so marshal onto the UI thread.
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        // Live data (another station's writes) — see ReloadAsync.
+        ObserveData(bus, session, mode,
+            DataArea.Participants, DataArea.ParticipantDays, DataArea.Groups, DataArea.GroupDaySettings, DataArea.Regions, DataArea.Clubs, DataArea.Dusshes, DataArea.Chips, DataArea.Fees, DataArea.CustomFields, DataArea.Relay, DataArea.Readouts, DataArea.Days, DataArea.Competition, DataArea.ControlPoints, DataArea.CourseVariants, DataArea.Settings, DataArea.AppData);
         // Re-localize the day-table column headers on a language switch (their text is baked into the
         // band model at build time, so the bands must be rebuilt — the RosterTable picks it up).
         Localization.PropertyChanged += (_, _) =>
@@ -295,7 +309,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     {
         var key = cell.Key;
         var value = cell.Value;
-        _ = SaveFieldAsync();
+        _pendingSaves.Track(SaveFieldAsync());
 
         async Task SaveFieldAsync()
         {
@@ -529,6 +543,25 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         RefreshDayLock();
         OnPropertyChanged(nameof(IsEffectiveDayLocked));
         await ReloadContentAsync();
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// The full load path, not just the rows: the page's dropdowns (groups, regions, clubs, schools, ranks), the
+    /// rental-chip set, the fee inputs and the additional fields all come from areas this page observes. Pending
+    /// row and field saves finish first: LoadAsync cancels them, which is right for a session switch but would
+    /// drop the operator's last edit here (see PendingSaves). The selected row is re-found by id in both views.
+    /// </remarks>
+    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        await _pendingSaves.WaitAsync();
+        var dayRowId = SelectedParticipant?.Id;
+        var rosterId = SelectedRosterRow?.ParticipantId;
+        await LoadAsync();
+        if (dayRowId is { } id)
+            SelectedParticipant = Participants.FirstOrDefault(r => r.Id == id);
+        if (rosterId is { } pid)
+            SelectedRosterRow = Roster.FirstOrDefault(r => r.ParticipantId == pid);
     }
 
     /// <summary>Reloads the page for the current selection. Called when the page is shown.</summary>
@@ -1229,7 +1262,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
         var cts = new CancellationTokenSource();
         _saveTimers[row.Id] = cts;
-        _ = SaveRowDebouncedAsync(row, cts.Token);
+        _pendingSaves.Track(SaveRowDebouncedAsync(row, cts.Token));
     }
 
     private async Task SaveRowDebouncedAsync(ParticipantDayRowViewModel row, CancellationToken token)
@@ -1252,7 +1285,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
         var cts = new CancellationTokenSource();
         _saveTimers[row.ParticipantId] = cts;
-        _ = SaveRosterRowDebouncedAsync(row, cts.Token);
+        _pendingSaves.Track(SaveRosterRowDebouncedAsync(row, cts.Token));
     }
 
     private async Task SaveRosterRowDebouncedAsync(ParticipantRosterRowViewModel row, CancellationToken token)
@@ -2022,14 +2055,33 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 holderNames[chip] = string.Join(", ", names);
         }
 
-        // The same default file the «Чіпи» page's auto-read watches, so one station set-up serves both.
-        var defaultPath = System.IO.Path.Combine(ev.FolderPath, "chips", "rentchip.csv");
+        // The same default file the «Чіпи» page's auto-read watches, so one station set-up serves both. The folder is
+        // this machine's (IEventFiles.LocalReadoutDirectory) — the reader is plugged into this computer in either role.
+        var defaultPath = System.IO.Path.Combine(_eventFiles.LocalReadoutDirectory(ev.FolderPath, ev.Identifier, null), "rentchip.csv");
+        if (_mode.IsStation)
+        {
+            // On a station the saved path is per machine (П17): it lives in the local machine.json, not in the
+            // competition's settings on the host (those are sent with a blank path, see below).
+            var localPath = await _eventFiles.GetMachineValueAsync(ev.FolderPath, ChipScanPathKey);
+            if (!string.IsNullOrWhiteSpace(localPath))
+            {
+                settings ??= new ChipScanSettings();
+                settings.ReadoutFilePath = localPath;
+            }
+        }
         // A poller of its own: the shared one is single-watch and may be busy with the finish read-out.
         var dialog = new ChipScanViewModel(
             Localization, candidates, CustomFields, pool, holderNames, settings, defaultPath, LayoutStore,
             new FileReadoutPoller(), _readoutParsers, sportIdentCards: sportIdent);
         var result = await _dialogs.ShowChipScanAsync(dialog);
-        await _busy.RunAsync(() => _editor.SaveChipScanSettingsAsync(dialog.BuildSettings()));
+        var built = dialog.BuildSettings();
+        if (_mode.IsStation)
+        {
+            await _eventFiles.SetMachineValueAsync(ev.FolderPath, ChipScanPathKey,
+                built.ReadoutFilePath.Length == 0 ? null : built.ReadoutFilePath);
+            built.ReadoutFilePath = string.Empty;
+        }
+        await _busy.RunAsync(() => _editor.SaveChipScanSettingsAsync(built));
         if (result is null || (result.Assignments.Count == 0 && result.FieldUpdates.Count == 0))
             return;
 

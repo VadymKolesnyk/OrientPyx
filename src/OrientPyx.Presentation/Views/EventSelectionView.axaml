@@ -21,6 +21,13 @@
                                    FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
                     </StackPanel>
                     <TextBlock Text="{Binding Localization[EventSelection.Subtitle]}" Classes="subtitle" />
+                    <!-- Network: the list is a host's while this instance is a station -->
+                    <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsStation}">
+                        <controls:Icon Kind="Users" Size="15" Foreground="{DynamicResource AccentBrush}"
+                                       VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding StationLine}" Foreground="{DynamicResource AccentBrush}"
+                                   FontWeight="Medium" VerticalAlignment="Center" />
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- Reveal hidden competitions. Only shown when at least one is hidden. -->
@@ -64,6 +71,9 @@
                         Classes="accent" />
                 <Button Content="{Binding Localization[EventSelection.Create]}"
                         Command="{Binding CreateCommand}"
+                        Classes="ghost" />
+                <Button Content="{Binding Localization[EventSelection.ConnectToHost]}"
+                        Command="{Binding ConnectToHostCommand}"
                         Classes="ghost" />
             </StackPanel>
 

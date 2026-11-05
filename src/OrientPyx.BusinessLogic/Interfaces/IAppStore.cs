@@ -1,5 +1,6 @@
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Models;
+using OrientPyx.BusinessLogic.Models.Network;
 
 namespace OrientPyx.BusinessLogic.Interfaces;
 
@@ -86,10 +87,31 @@ public interface IAppStore
 
     Task SaveLanguageAsync(string language, CancellationToken cancellationToken = default);
 
-    /// <summary>Returns the last opened competition identifier + day number, if any.</summary>
-    Task<(string? Identifier, int? DayNumber)> GetLastSessionAsync(CancellationToken cancellationToken = default);
+    /// <summary>Returns the last opened competition identifier + day number (plus the role it was open in and the host,
+    /// for a station session); identifier null when none.</summary>
+    Task<LastSession> GetLastSessionAsync(CancellationToken cancellationToken = default);
 
-    Task SaveLastSessionAsync(string? identifier, int? dayNumber, CancellationToken cancellationToken = default);
+    Task SaveLastSessionAsync(string? identifier, int? dayNumber, CancellationToken cancellationToken = default)
+        => SaveLastSessionAsync(new LastSession(identifier, dayNumber), cancellationToken);
+
+    Task SaveLastSessionAsync(LastSession session, CancellationToken cancellationToken = default);
+
+    // ── Network mode («Спільна робота»)
+
+    /// <summary>The host/station settings of this machine (defaults when never saved).</summary>
+    Task<NetworkSettings> GetNetworkSettingsAsync(CancellationToken cancellationToken = default);
+
+    Task SaveNetworkSettingsAsync(NetworkSettings settings, CancellationToken cancellationToken = default);
+
+    /// <summary>The tokens of the stations paired with this host.</summary>
+    Task<IReadOnlyList<StationToken>> GetStationTokensAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Adds (or, for a known token, updates) a station token.</summary>
+    Task SaveStationTokenAsync(StationToken token, CancellationToken cancellationToken = default);
+
+    Task DeleteStationTokenAsync(string token, CancellationToken cancellationToken = default);
+
+    Task DeleteAllStationTokensAsync(CancellationToken cancellationToken = default);
 
     // ── Sports ranks (application-level, shared across competitions)
 

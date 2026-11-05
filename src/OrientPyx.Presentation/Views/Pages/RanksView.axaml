@@ -15,6 +15,12 @@
     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
         <StackPanel Spacing="12">
 
+            <!-- Station mode: the tables are the host's to edit; this machine only shows its own copy. -->
+            <Border Background="{DynamicResource DangerBrush}" Padding="12,8" CornerRadius="6"
+                    IsVisible="{Binding IsReadOnly}">
+                <TextBlock Text="{Binding ReadOnlyText}" Foreground="White" TextWrapping="Wrap" />
+            </Border>
+
             <!-- Heading + add-rank action -->
             <Grid ColumnDefinitions="*,Auto">
                 <StackPanel Grid.Column="0" Spacing="4">
@@ -26,7 +32,7 @@
                             VerticalAlignment="Center">
                     <Button Classes="help" Command="{Binding ShowHelpCommand}"
                             ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
-                    <Button Command="{Binding AddRankCommand}" Classes="accent">
+                    <Button Command="{Binding AddRankCommand}" Classes="accent" IsEnabled="{Binding !IsReadOnly}">
                         <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                             <controls:Icon Kind="Plus" Size="15" Foreground="White" />
                             <TextBlock Text="{Binding Localization[Ranks.Add]}" />
@@ -43,12 +49,13 @@
                                      SelectedItem="{Binding SelectedRank, Mode=TwoWay}"
                                      LayoutStore="{Binding LayoutStore}"
                                      LayoutKey="ranks.ranks"
+                                     IsLocked="{Binding IsReadOnly}"
                                      DeleteRequested="OnDeleteRequested" />
             </Border>
 
             <!-- Rank validity conditions. WrapPanel (not a horizontal StackPanel) so a narrow window
                  reflows the label+textbox groups onto another line instead of pushing them off-screen. -->
-            <WrapPanel Orientation="Horizontal">
+            <WrapPanel Orientation="Horizontal" IsEnabled="{Binding !IsReadOnly}">
                 <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="0,0,16,8">
                     <TextBlock Text="{Binding Localization[Ranks.Cond.Title]}" Classes="h2" VerticalAlignment="Center" />
                     <Button Classes="help"
@@ -80,7 +87,7 @@
                     </StackPanel>
                     <TextBlock Text="{Binding Localization[Ranks.Qual.Subtitle]}" Classes="subtitle" TextWrapping="Wrap" />
                 </StackPanel>
-                <Button Grid.Column="1" Command="{Binding AddQualRowCommand}" VerticalAlignment="Center">
+                <Button Grid.Column="1" Command="{Binding AddQualRowCommand}" VerticalAlignment="Center" IsEnabled="{Binding !IsReadOnly}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                         <controls:Icon Kind="Plus" Size="15" />
                         <TextBlock Text="{Binding Localization[Ranks.Qual.Add]}" />
@@ -96,6 +103,7 @@
                                      SelectedItem="{Binding SelectedQual, Mode=TwoWay}"
                                      LayoutStore="{Binding LayoutStore}"
                                      LayoutKey="ranks.qual"
+                                     IsLocked="{Binding IsReadOnly}"
                                      DeleteRequested="OnQualDeleteRequested" />
             </Border>
 

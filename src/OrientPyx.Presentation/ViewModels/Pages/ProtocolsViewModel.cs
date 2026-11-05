@@ -68,7 +68,9 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         IWinnersPrintFlow winnersPrint,
         IBusyService busy,
         IExportFileSaver fileSaver,
-        IDisciplineStrategyProvider disciplineStrategies)
+        IDisciplineStrategyProvider disciplineStrategies,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         _disciplineStrategies = disciplineStrategies;
@@ -84,6 +86,9 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
 
         // Singleton VM: reload the day list + header defaults on a competition/day change (marshal to UI).
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        // Live data (another station's writes) — see ReloadAsync.
+        ObserveData(bus, session, mode,
+            DataArea.Participants, DataArea.ParticipantDays, DataArea.Readouts, DataArea.Groups, DataArea.GroupDaySettings, DataArea.ControlPoints, DataArea.CourseVariants, DataArea.Relay, DataArea.Days, DataArea.Settings, DataArea.CustomFields, DataArea.Competition, DataArea.AppData);
     }
 
     /// <summary>The live document preview shown on the page. Rebuilt by <see cref="RefreshPreview"/>.</summary>
@@ -194,6 +199,20 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         ProtocolColumn.Cumulative => "Protocols.Col.Cumulative",
         _ => "Protocols.Col.FullName"
     };
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Refreshes the preview's data only: the template on screen may hold unsaved edits, so it is left alone
+    /// (another station's template change shows on the next open / day switch).
+    /// </remarks>
+    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        if (SelectedDay?.Day is not { } day)
+            return;
+        var data = await _busy.RunAsync(() => _editor.GetResultProtocolDataAsync(day.Id));
+        _previewData = data;
+        RefreshPreview();
+    }
 
     public async Task LoadAsync()
     {

@@ -25,13 +25,20 @@ public sealed class TableLayoutStore : ITableLayoutStore
     };
 
     private readonly ISessionService _session;
+    private readonly IWorkspaceMode _mode;
 
-    public TableLayoutStore(ISessionService session)
+    public TableLayoutStore(ISessionService session, IWorkspaceMode mode)
     {
         _session = session;
+        _mode = mode;
     }
 
-    public string? CurrentScopeId => _session.CurrentEvent?.FolderPath;
+    // Locally the competition folder; on a station "<hostId>/<identifier>" — the view is the operator's own, kept
+    // on this machine per host competition, never on the host.
+    public string? CurrentScopeId =>
+        _session.CurrentEvent is not { } ev ? null
+        : _mode.Role == WorkspaceRole.Station && _mode.Station is { } station ? $"{station.HostId}/{ev.Identifier}"
+        : ev.FolderPath;
 
     public TableLayout? Load(string tableKey)
     {
@@ -62,11 +69,33 @@ public sealed class TableLayoutStore : ITableLayoutStore
 
     public bool HasDefault(string tableKey) => ReadAll(DefaultsPath()).ContainsKey(tableKey);
 
-    // The views.json path for the current competition, or null when none is selected.
+    // The views.json path for the current competition, or null when none is selected. On a station the file lives
+    // under <data root>/views/<hostId>/<identifier>.json (the competition folder is on the host).
     private string? FilePath()
     {
-        var folder = _session.CurrentEvent?.FolderPath;
-        return string.IsNullOrEmpty(folder) ? null : Path.Combine(folder, FileName);
+        if (_session.CurrentEvent is not { } ev)
+            return null;
+        if (_mode.Role == WorkspaceRole.Station && _mode.Station is { } station)
+        {
+            var folder = Path.Combine(AppDatabasePaths.BaseDirectory, "views", Safe(station.HostId));
+            try
+            {
+                Directory.CreateDirectory(folder);
+            }
+            catch
+            {
+                return null;
+            }
+            return Path.Combine(folder, Safe(ev.Identifier) + ".json");
+        }
+        return string.IsNullOrEmpty(ev.FolderPath) ? null : Path.Combine(ev.FolderPath, FileName);
+    }
+
+    private static string Safe(string value)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var chars = value.Select(c => invalid.Contains(c) ? '_' : c).ToArray();
+        return chars.Length == 0 ? "_" : new string(chars);
     }
 
     // The application-wide defaults file, next to data/ and events/ in the (possibly redirected) data root.

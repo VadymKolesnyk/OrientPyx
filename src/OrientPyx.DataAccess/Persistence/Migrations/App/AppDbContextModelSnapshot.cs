@@ -37,6 +37,20 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.App
                     b.Property<double>("FontScale")
                         .HasColumnType("REAL");
 
+                    b.Property<bool>("HostEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("HostId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("HostName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("HostPort")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("ImportMappingsJson")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -95,6 +109,22 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.App
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("StationHost")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StationHostId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StationName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StationToken")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("SummaryProtocolJson")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -109,10 +139,17 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.App
                     b.Property<int>("Id")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("HostId")
+                        .HasColumnType("TEXT");
+
                     b.Property<int?>("LastEventDayNumber")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("LastEventIdentifier")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -223,6 +260,26 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.App
                         .HasFilter("\"Name\" <> ''");
 
                     b.ToTable("Ranks");
+                });
+
+            modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.StationTokenRow", b =>
+                {
+                    b.Property<string>("Token")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("IssuedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("LastSeenAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StationName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Token");
+
+                    b.ToTable("StationTokens");
                 });
 #pragma warning restore 612, 618
         }

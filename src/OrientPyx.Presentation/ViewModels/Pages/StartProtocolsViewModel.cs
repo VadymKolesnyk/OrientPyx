@@ -63,7 +63,9 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         IResultProtocolWriter writer,
         IBusyService busy,
         IExportFileSaver fileSaver,
-        IDisciplineStrategyProvider disciplineStrategies)
+        IDisciplineStrategyProvider disciplineStrategies,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         _disciplineStrategies = disciplineStrategies;
@@ -77,6 +79,9 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
 
         // Singleton VM: reload the day list + template on a competition/day change (marshal to UI).
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        // Live data (another station's writes) — see ReloadAsync.
+        ObserveData(bus, session, mode,
+            DataArea.Participants, DataArea.ParticipantDays, DataArea.Groups, DataArea.GroupDaySettings, DataArea.Relay, DataArea.Days, DataArea.Settings, DataArea.CustomFields, DataArea.Competition, DataArea.Chips);
 
         // The base re-raises Title/Text on a language switch but not PageTitle (a VM-only property,
         // needed because Title is shadowed by the editable document title). Refresh it ourselves.
@@ -209,6 +214,23 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(Text));
         OnPropertyChanged(nameof(TitlePlaceholder));
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Refreshes the preview's data only: the template on screen may hold unsaved edits, so it is left alone.
+    /// Takes a load generation like the loads do, so a day switch mid-read wins.
+    /// </remarks>
+    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        if (SelectedDay?.Day is not { } day)
+            return;
+        var generation = ++_loadGeneration;
+        var data = await _busy.RunAsync(() => _editor.GetStartProtocolDataAsync(day.Id));
+        if (generation != _loadGeneration)
+            return;
+        _previewData = data;
+        RefreshPreview();
     }
 
     public async Task LoadAsync()

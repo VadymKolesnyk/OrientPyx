@@ -266,11 +266,26 @@
             </Button.Flyout>
         </Button>
 
+        <!-- Network role («Хост · станцій: 2» / «Станція · Головний-ноут»): shown only while this instance is a host
+             or a station; opens the «Спільна робота» overlay. -->
+        <Button DockPanel.Dock="Right" Classes="ghost"
+                VerticalAlignment="Center" Margin="0,0,4,0" Padding="8,4"
+                IsVisible="{Binding IsRoleIndicatorVisible}"
+                Command="{Binding OpenNetworkCommand}"
+                ToolTip.Tip="{Binding Localization[Page.Network.Title]}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <controls:Icon Kind="Users" Size="16" Foreground="{DynamicResource AccentBrush}" />
+                <TextBlock Text="{Binding RoleIndicatorText}" VerticalAlignment="Center" FontSize="12" />
+            </StackPanel>
+        </Button>
+
         <!-- Always-visible top menu, with the page navigation as top-level items -->
         <Menu x:Name="TopMenu">
             <MenuItem Header="{Binding Localization[Menu.File]}">
                 <MenuItem Header="{Binding Localization[Menu.File.Settings]}"
                           Command="{Binding OpenSettingsCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.File.Network]}"
+                          Command="{Binding OpenNetworkCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.File.ChangeEvent]}"
                           Command="{Binding ChangeEventCommand}" />
                 <Separator />
@@ -280,7 +295,7 @@
                 <MenuItem Header="{Binding Localization[Menu.File.ImportEvent]}"
                           Command="{Binding ImportCompetitionCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.File.DebugResultsSnapshot]}"
-                          IsVisible="{Binding IsDebugBuild}"
+                          IsVisible="{Binding ShowDebugSnapshot}"
                           Command="{Binding WriteResultsSnapshotCommand}" />
                 <Separator />
                 <MenuItem Header="{Binding Localization[Menu.File.Exit]}"
@@ -471,6 +486,47 @@
                                       HorizontalScrollBarVisibility="Disabled">
                             <pageViews:AboutView DataContext="{Binding About}"
                                                  Margin="24" />
+                        </ScrollViewer>
+                    </DockPanel>
+                </Border>
+            </Border>
+
+            <!-- «Спільна робота» (network mode) overlay: same structure as Settings. Reachable from the competition
+                 picker too, because a station must connect before it can list the host's competitions. -->
+            <Border x:Name="NetworkBackdrop"
+                    IsVisible="{Binding IsNetworkOpen}"
+                    Background="#80000000">
+                <Border Background="{DynamicResource SurfacePage}"
+                        CornerRadius="12"
+                        Margin="60"
+                        MaxWidth="800"
+                        VerticalAlignment="Stretch"
+                        BoxShadow="0 10 40 0 #40000000"
+                        Padding="0"
+                        ClipToBounds="True">
+                    <DockPanel LastChildFill="True">
+                        <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
+                                BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
+                                Padding="22,16">
+                            <Grid ColumnDefinitions="*,Auto,Auto">
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding Localization[Page.Network.Title]}"
+                                           Classes="h2"
+                                           FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}"
+                                           VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Classes="help" Margin="0,0,8,0"
+                                        Command="{Binding Network.ShowHelpCommand}"
+                                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                                <Button Grid.Column="2"
+                                        Content="{Binding Localization[Settings.Close]}"
+                                        Classes="ghost"
+                                        Command="{Binding CloseNetworkCommand}" />
+                            </Grid>
+                        </Border>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <views:NetworkView DataContext="{Binding Network}"
+                                               Margin="24" />
                         </ScrollViewer>
                     </DockPanel>
                 </Border>

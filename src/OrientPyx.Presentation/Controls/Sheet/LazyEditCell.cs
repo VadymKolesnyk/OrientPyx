@@ -411,5 +411,16 @@ internal abstract class LazyEditCell : Decorator
     // accent outline for the whole edit — including while a combo's dropdown popup (which lives outside
     // this cell's visual tree, so keyboard-focus-within can't see it) holds the focus.
     private void SetHostEditing(bool editing)
-        => this.FindAncestorOfType<SheetCell>()?.SetEditing(editing);
+    {
+        this.FindAncestorOfType<SheetCell>()?.SetEditing(editing);
+        // The table's IsEditing (a live-reload guard) follows the same lifecycle. The table is resolved when the
+        // editor goes live and remembered for the retire: a recycled cell may already be out of the tree by then.
+        if (editing)
+            _hostTable = this.FindAncestorOfType<SheetTable>();
+        _hostTable?.NotifyCellEditing(this, editing);
+        if (!editing)
+            _hostTable = null;
+    }
+
+    private SheetTable? _hostTable;
 }

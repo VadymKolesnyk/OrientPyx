@@ -113,4 +113,30 @@ public class AppSettingsRow
     /// picks a language on the Settings page; when blank the built-in default (uk-UA) is used.
     /// </summary>
     public string Language { get; set; } = string.Empty;
+
+    // --- Network mode («Спільна робота»): this machine as a host, and as a station
+
+    /// <summary>Start serving stations on launch (the host switch was on when the app last ran).</summary>
+    public bool HostEnabled { get; set; }
+
+    /// <summary>The TCP port the host listens on; 0 ⇒ the default port (next free one when taken).</summary>
+    public int HostPort { get; set; }
+
+    /// <summary>The host name stations see; blank ⇒ the machine name.</summary>
+    public string HostName { get; set; } = string.Empty;
+
+    /// <summary>Generated once; identifies this host to its stations across restarts.</summary>
+    public string HostId { get; set; } = string.Empty;
+
+    /// <summary>This machine's name as a station; blank ⇒ the machine name.</summary>
+    public string StationName { get; set; } = string.Empty;
+
+    /// <summary>The last host this station connected to (<c>ip:port</c>); blank ⇒ none.</summary>
+    public string StationHost { get; set; } = string.Empty;
+
+    /// <summary>The session token that host issued; blank ⇒ a PIN is needed again.</summary>
+    public string StationToken { get; set; } = string.Empty;
+
+    /// <summary>The id of that host (a restored session is resumed only on the same host).</summary>
+    public string StationHostId { get; set; } = string.Empty;
 }

@@ -36,6 +36,7 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
     private readonly Dictionary<Guid, CancellationTokenSource> _chipPriceTimers = new();
     private readonly Dictionary<Guid, CancellationTokenSource> _discountTimers = new();
     private CancellationTokenSource? _settingsTimer;
+    private readonly PendingSaves _pendingSaves = new();
 
     // The current competition's metadata, kept so a settings save preserves the unrelated fields.
     private CompetitionInfo? _info;
@@ -49,7 +50,9 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
         ISessionService session,
         IBusyService busy,
         IDialogService dialogs,
-        ITableLayoutStore layoutStore)
+        ITableLayoutStore layoutStore,
+        IDataChangeBus bus,
+        IWorkspaceMode mode)
         : base(localization)
     {
         LayoutStore = layoutStore;
@@ -60,6 +63,9 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
 
         // Singleton VM: reload when the competition changes (the event can be raised on a pool thread).
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        // Live data (another station's writes) — see ReloadAsync.
+        ObserveData(bus, session, mode,
+            DataArea.Fees, DataArea.Groups, DataArea.Competition);
     }
 
     /// <summary>Per-competition table-view store; persists this page's tables' column order/width/visibility.</summary>
@@ -105,6 +111,18 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
 
     // Suppresses the confirmation flow while LoadAsync (or a revert) seeds the toggle.
     private bool _applyingPaymentMode;
+
+    /// <inheritdoc />
+    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        // Pending saves finish first (LoadAsync cancels them, see PendingSaves); the selections are kept by id.
+        await _pendingSaves.WaitAsync();
+        var chipPriceId = SelectedChipPrice?.Id;
+        var discountId = SelectedDiscount?.Id;
+        await LoadAsync();
+        SelectedChipPrice = ChipPriceOverrides.FirstOrDefault(p => p.Id == chipPriceId);
+        SelectedDiscount = Discounts.FirstOrDefault(d => d.Id == discountId);
+    }
 
     /// <summary>Reloads everything for the current competition. Called when the page is shown.</summary>
     public async Task LoadAsync()
@@ -331,7 +349,7 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
         _settingsTimer?.Cancel();
         var cts = new CancellationTokenSource();
         _settingsTimer = cts;
-        _ = SaveSettingsDebouncedAsync(cts.Token);
+        _pendingSaves.Track(SaveSettingsDebouncedAsync(cts.Token));
     }
 
     private async Task SaveSettingsDebouncedAsync(CancellationToken token)
@@ -372,14 +390,14 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
 
     // Shared debounce: reset the row's timer and, after the delay, run the save (swallowing
     // cancellation/background errors), mirroring the other grid pages.
-    private static void Debounce(Dictionary<Guid, CancellationTokenSource> timers, Guid id, Func<CancellationToken, Task> save)
+    private void Debounce(Dictionary<Guid, CancellationTokenSource> timers, Guid id, Func<CancellationToken, Task> save)
     {
         if (timers.TryGetValue(id, out var existing))
             existing.Cancel();
 
         var cts = new CancellationTokenSource();
         timers[id] = cts;
-        _ = RunDebouncedAsync(save, cts.Token);
+        _pendingSaves.Track(RunDebouncedAsync(save, cts.Token));
     }
 
     private static async Task RunDebouncedAsync(Func<CancellationToken, Task> save, CancellationToken token)

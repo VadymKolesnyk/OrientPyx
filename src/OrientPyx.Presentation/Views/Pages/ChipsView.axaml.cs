@@ -22,6 +22,7 @@ public partial class ChipsView : UserControl
     public ChipsView()
     {
         InitializeComponent();
+        SheetEditing.Bind(this, Sheet);
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += (_, _) => Unsubscribe();
 
