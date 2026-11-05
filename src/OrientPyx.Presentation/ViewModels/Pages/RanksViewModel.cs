@@ -111,31 +111,48 @@ public sealed partial class RanksViewModel : PageViewModelBase
     /// </remarks>
     protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
     {
+        // The two tables are merged in place (RowSync), so the selections survive and only changed cells repaint.
         await _pendingSaves.WaitAsync();
-        var rankId = SelectedRank?.Id;
-        var qualId = SelectedQual?.Id;
-        await LoadAsync();
-        SelectedRank = Ranks.FirstOrDefault(r => r.Id == rankId);
-        SelectedQual = Qual.FirstOrDefault(q => q.Id == qualId);
+        await LoadCoreAsync(merge: true);
+        if (SelectedRank is { } rank && !Ranks.Contains(rank))
+            SelectedRank = null;
+        if (SelectedQual is { } qual && !Qual.Contains(qual))
+            SelectedQual = null;
     }
 
     /// <summary>Reloads the ranks. Called when the page is shown.</summary>
     public async Task LoadAsync()
     {
         CancelAllTimers();
+        await LoadCoreAsync(merge: false);
+    }
+
+    // Reads the tables and either rebuilds them (first open) or merges them in place (a live refresh).
+    private async Task LoadCoreAsync(bool merge)
+    {
         _conditionsLoaded = false;
 
         var ranks = await _busy.RunAsync(() => _appStore.GetRanksAsync());
         var qual = await _busy.RunAsync(() => _appStore.GetRankQualificationAsync());
         var conditions = await _busy.RunAsync(() => _appStore.GetRankConditionsAsync()) ?? (3, 8, 12);
 
-        Ranks.Clear();
-        foreach (var rank in ranks)
-            Ranks.Add(CreateRow(rank));
+        if (!merge)
+        {
+            Ranks.Clear();
+            Qual.Clear();
+        }
 
-        Qual.Clear();
-        foreach (var row in qual)
-            Qual.Add(CreateQualRow(row));
+        RowSync.Sync(Ranks, ranks,
+            itemKey: rank => rank.Id,
+            rowKey: row => row.Id,
+            create: CreateRow,
+            update: (row, rank) => row.Apply(rank));
+
+        RowSync.Sync(Qual, qual,
+            itemKey: item => item.Id,
+            rowKey: row => row.Id,
+            create: CreateQualRow,
+            update: (row, item) => row.Apply(item));
 
         MinParticipantsText = conditions.Item1.ToString(System.Globalization.CultureInfo.InvariantCulture);
         MinRegionsText = conditions.Item2.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -297,7 +314,7 @@ public sealed partial class RanksViewModel : PageViewModelBase
 
     private void RequestRowSave(RankRowViewModel row)
     {
-        if (IsReadOnly)
+        if (IsReadOnly || row.IsApplying)
             return;
         if (_saveTimers.TryGetValue(row.Id, out var existing))
             existing.Cancel();
@@ -325,7 +342,7 @@ public sealed partial class RanksViewModel : PageViewModelBase
 
     private void RequestQualRowSave(RankQualRowViewModel row)
     {
-        if (IsReadOnly)
+        if (IsReadOnly || row.IsApplying)
             return;
         if (_saveTimers.TryGetValue(row.Id, out var existing))
             existing.Cancel();

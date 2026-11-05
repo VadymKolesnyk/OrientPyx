@@ -11,10 +11,10 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 public sealed partial class ClubRowViewModel : ObservableObject
 {
     private readonly Guid _id;
-    private readonly DateTimeOffset _createdAt;
+    private DateTimeOffset _createdAt;
     private readonly Action<ClubRowViewModel> _requestSave;
 
-    private readonly bool _initialized;
+    private bool _initialized;
 
     [ObservableProperty]
     private string _name;
@@ -36,6 +36,30 @@ public sealed partial class ClubRowViewModel : ObservableObject
         _name = club.Name;
 
         _initialized = true;
+    }
+
+    /// <summary>True while <see cref="Apply"/> copies fresh values onto the row; the page skips its save callbacks then.</summary>
+    public bool IsApplying { get; private set; }
+
+    /// <summary>
+    /// Copies a freshly-read entity (and its participant count) onto this row without triggering a save. Only the
+    /// cells whose value changed raise a property change, so a live refresh touches nothing else on screen.
+    /// </summary>
+    public void Apply(Club club, int participantCount)
+    {
+        IsApplying = true;
+        _initialized = false;
+        try
+        {
+            _createdAt = club.CreatedAt;
+            Name = club.Name;
+            ParticipantCount = participantCount;
+        }
+        finally
+        {
+            _initialized = true;
+            IsApplying = false;
+        }
     }
 
     public ILocalizationService Localization { get; }

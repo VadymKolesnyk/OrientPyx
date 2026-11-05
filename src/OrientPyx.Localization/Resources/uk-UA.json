@@ -1919,6 +1919,8 @@
   "Network.Host.NoStations": "Станцій поки немає.",
   "Network.Host.Col.Name": "Станція",
   "Network.Host.Col.Address": "Адреса",
+  "Network.Host.Col.Trusted": "Довірений",
+  "Network.Host.TrustedHint": "Довірений пристрій підключається без PIN. Запам'ятовується сам пристрій, а не його назва.",
   "Network.Host.Col.LastSeen": "Останній запит",
   "Network.Host.Stations.JustNow": "щойно",
   "Network.Host.Stations.MinutesAgo": "{0} хв тому",

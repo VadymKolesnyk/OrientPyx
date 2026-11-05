@@ -12,10 +12,10 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 public sealed partial class RentalChipRowViewModel : ObservableObject
 {
     private readonly Guid _id;
-    private readonly DateTimeOffset _createdAt;
+    private DateTimeOffset _createdAt;
     private readonly Action<RentalChipRowViewModel> _requestSave;
 
-    private readonly bool _initialized;
+    private bool _initialized;
 
     [ObservableProperty]
     private string _number;
@@ -68,6 +68,32 @@ public sealed partial class RentalChipRowViewModel : ObservableObject
         _note = chip.Note;
 
         _initialized = true;
+    }
+
+    /// <summary>True while <see cref="Apply"/> copies fresh values onto the row; the page skips its save callbacks then.</summary>
+    public bool IsApplying { get; private set; }
+
+    /// <summary>
+    /// Copies a freshly-read chip (and its per-day holders) onto this row without triggering a save. Only the cells
+    /// whose value changed raise a property change, so a live refresh touches nothing else on screen.
+    /// </summary>
+    public void Apply(RentalChip chip, IReadOnlyList<string> dayHolders)
+    {
+        IsApplying = true;
+        _initialized = false;
+        try
+        {
+            _createdAt = chip.CreatedAt;
+            Number = chip.Number;
+            Note = chip.Note;
+            if (!DayHolders.SequenceEqual(dayHolders))
+                DayHolders = dayHolders;
+        }
+        finally
+        {
+            _initialized = true;
+            IsApplying = false;
+        }
     }
 
     public ILocalizationService Localization { get; }

@@ -14,9 +14,9 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 public sealed partial class ChipPriceOverrideRowViewModel : ObservableObject
 {
     private readonly Guid _id;
-    private readonly DateTimeOffset _createdAt;
+    private DateTimeOffset _createdAt;
     private readonly Action<ChipPriceOverrideRowViewModel> _requestSave;
-    private readonly bool _initialized;
+    private bool _initialized;
 
     /// <summary>The chip note this rule matches.</summary>
     [ObservableProperty]
@@ -40,6 +40,27 @@ public sealed partial class ChipPriceOverrideRowViewModel : ObservableObject
         _priceText = FormatDecimal(priceOverride.PricePerDay);
 
         _initialized = true;
+    }
+
+    /// <summary>True while <see cref="Apply"/> copies fresh values onto the row; the page skips its save callbacks then.</summary>
+    public bool IsApplying { get; private set; }
+
+    /// <summary>Copies a freshly-read price rule onto this row without triggering a save (only changed cells raise).</summary>
+    public void Apply(ChipPriceOverride priceOverride)
+    {
+        IsApplying = true;
+        _initialized = false;
+        try
+        {
+            _createdAt = priceOverride.CreatedAt;
+            Note = priceOverride.Note;
+            PriceText = FormatDecimal(priceOverride.PricePerDay);
+        }
+        finally
+        {
+            _initialized = true;
+            IsApplying = false;
+        }
     }
 
     public ILocalizationService Localization { get; }

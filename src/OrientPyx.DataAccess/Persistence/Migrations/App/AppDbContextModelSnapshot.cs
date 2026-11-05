@@ -109,6 +109,10 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.App
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("StationDeviceId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("StationHost")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -118,6 +122,10 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.App
                         .HasColumnType("TEXT");
 
                     b.Property<string>("StationName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StationPin")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
@@ -266,6 +274,13 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.App
                 {
                     b.Property<string>("Token")
                         .HasColumnType("TEXT");
+
+                    b.Property<string>("DeviceId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsTrusted")
+                        .HasColumnType("INTEGER");
 
                     b.Property<DateTimeOffset>("IssuedAt")
                         .HasColumnType("TEXT");

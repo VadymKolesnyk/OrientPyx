@@ -117,16 +117,23 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
     private RelayRunner? _selectedRunner;
 
     /// <inheritdoc />
-    /// <remarks>LoadAsync already keeps the selected team by id; the pending saves just have to finish first.</remarks>
+    /// <remarks>The teams (and the selected team's legs) are merged in place, so the selection survives and only the
+    /// cells that changed repaint; the pending saves just have to finish first.</remarks>
     protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
     {
         await _pendingSaves.WaitAsync();
-        await LoadAsync();
+        await LoadCoreAsync(merge: true);
     }
 
     public async Task LoadAsync()
     {
         CancelAllTimers();
+        await LoadCoreAsync(merge: false);
+    }
+
+    // Reads the day and either rebuilds the tables (first open / session switch) or merges them in place.
+    private async Task LoadCoreAsync(bool merge)
+    {
         var hasDay = _session.CurrentDay is not null;
         var (days, data, clubs, regions) = await _busy.RunAsync(async () =>
         {
@@ -140,9 +147,17 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
         _syncingDay = true;
         try
         {
-            DayOptions.Clear();
-            foreach (var day in days)
-                DayOptions.Add(new DayOption(day, Localization));
+            // Keep the DayOption instances while the day set is the same, so the picker's SelectedItem stays valid.
+            if (DayOptions.Count != days.Count || DayOptions.Where((o, i) => o.Number != days[i].Number).Any())
+            {
+                DayOptions.Clear();
+                foreach (var day in days)
+                    DayOptions.Add(new DayOption(day, Localization));
+            }
+            else
+            {
+                DayOption.SyncAll(DayOptions, days);
+            }
             SelectedDay = DayOptions.FirstOrDefault(o => o.Number == _session.CurrentDay?.Number) ?? DayOptions.FirstOrDefault();
         }
         finally
@@ -152,29 +167,53 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
         OnPropertyChanged(nameof(ShowDaySelector));
         RefreshDayLock();
 
-        ClubOptions = [ClubOption.None(Localization), .. clubs.Select(c => new ClubOption(c.Id, c.Name, Localization))];
-        RegionOptions = [RegionOption.None(Localization), .. regions.Select(r => new RegionOption(r.Id, r.Name, Localization))];
-        OnPropertyChanged(nameof(ClubOptions));
-        OnPropertyChanged(nameof(RegionOptions));
+        // The shared option lists are rebuilt only when their content moved, so a row's combo keeps its items
+        // (and its selected instance) across a live refresh.
+        if (!merge || !ClubOptions.Skip(1).Select(o => (o.Id, o.Label)).SequenceEqual(clubs.Select(c => ((Guid?)c.Id, c.Name))))
+        {
+            ClubOptions = [ClubOption.None(Localization), .. clubs.Select(c => new ClubOption(c.Id, c.Name, Localization))];
+            OnPropertyChanged(nameof(ClubOptions));
+        }
+        if (!merge || !RegionOptions.Skip(1).Select(o => (o.Id, o.Label)).SequenceEqual(regions.Select(r => ((Guid?)r.Id, r.Name))))
+        {
+            RegionOptions = [RegionOption.None(Localization), .. regions.Select(r => new RegionOption(r.Id, r.Name, Localization))];
+            OnPropertyChanged(nameof(RegionOptions));
+        }
 
-        GroupOptions.Clear();
-        foreach (var g in data.Groups)
-            GroupOptions.Add(new RelayGroupOption(g.GroupId, g.GroupName, g.LegCount, g.CourseMode, g.TeamCourseSet));
-        OnPropertyChanged(nameof(HasRelayGroups));
+        var groupsChanged = !merge || !GroupOptions
+            .Select(g => (g.GroupId, g.Label, g.LegCount, g.CourseMode, g.TeamCourseSet))
+            .SequenceEqual(data.Groups.Select(g => (g.GroupId, g.GroupName, g.LegCount, g.CourseMode, g.TeamCourseSet)));
+        if (groupsChanged)
+        {
+            GroupOptions.Clear();
+            foreach (var g in data.Groups)
+                GroupOptions.Add(new RelayGroupOption(g.GroupId, g.GroupName, g.LegCount, g.CourseMode, g.TeamCourseSet));
+            OnPropertyChanged(nameof(HasRelayGroups));
+            BulkGroup = GroupOptions.FirstOrDefault(o => o.GroupId == BulkGroup?.GroupId) ?? GroupOptions.FirstOrDefault();
+        }
         var showSet = GroupOptions.Any(g => g.CourseMode == RelayCourseMode.TeamSet);
         if (showSet != ShowCourseSetColumn)
         {
             ShowCourseSetColumn = showSet;
             ColumnsChanged?.Invoke(this, EventArgs.Empty);
         }
-        BulkGroup = GroupOptions.FirstOrDefault(o => o.GroupId == BulkGroup?.GroupId) ?? GroupOptions.FirstOrDefault();
 
-        var selectedId = SelectedTeam?.Id;
-        Teams.Clear();
-        foreach (var team in data.Teams)
-            Teams.Add(new RelayTeamRowViewModel(team, Localization, GroupOptions, ClubOptions, RegionOptions, QueueSave));
+        var previous = SelectedTeam;
+        if (!merge)
+            Teams.Clear();
+        RowSync.Sync(Teams, data.Teams,
+            itemKey: team => team.Id,
+            rowKey: row => row.Id,
+            create: team => new RelayTeamRowViewModel(team, Localization, GroupOptions, ClubOptions, RegionOptions, QueueSave),
+            update: (row, team) => row.Apply(team, ClubOptions, RegionOptions));
         _runners = data.Runners;
-        SelectedTeam = Teams.FirstOrDefault(t => t.Id == selectedId) ?? Teams.FirstOrDefault();
+
+        // The same selected team keeps its object, so the selection setter does not re-run: merge its legs here.
+        var selected = previous is not null && Teams.Contains(previous) ? previous : Teams.FirstOrDefault();
+        if (ReferenceEquals(selected, SelectedTeam))
+            RebuildLegs(merge: true);
+        else
+            SelectedTeam = selected;
         RefreshRunnerMatches();
     }
 
@@ -185,22 +224,31 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
         _ = _busy.RunAsync(() => _session.SetCurrentDayAsync(value.Day));
     }
 
-    partial void OnSelectedTeamChanged(RelayTeamRowViewModel? value) => RebuildLegs();
+    partial void OnSelectedTeamChanged(RelayTeamRowViewModel? value) => RebuildLegs(merge: false);
 
-    private void RebuildLegs()
+    // merge: keep the leg rows (matched by leg number) and change only what moved — a live refresh of the team
+    // being shown; otherwise the panel is rebuilt for a newly selected team.
+    private void RebuildLegs(bool merge)
     {
-        Legs.Clear();
         if (SelectedTeam is not { } team)
+        {
+            Legs.Clear();
             return;
+        }
+        if (!merge)
+            Legs.Clear();
         var mode = GroupOptions.FirstOrDefault(g => g.GroupId == team.Model.GroupId)?.CourseMode ?? RelayCourseMode.Group;
-        foreach (var leg in team.Model.Legs)
-            Legs.Add(new RelayLegRowViewModel(team.Model, leg, Localization, mode, QueueLegCourseSave));
+        RowSync.Sync(Legs, team.Model.Legs,
+            itemKey: leg => leg.Leg,
+            rowKey: row => row.Leg,
+            create: leg => new RelayLegRowViewModel(team.Model, leg, Localization, mode, QueueLegCourseSave),
+            update: (row, leg) => row.Apply(team.Model, leg, mode));
     }
 
     // «За номером етапу» (Р-41): a typed leg course is saved after a short pause.
     private void QueueLegCourseSave(RelayLegRowViewModel leg)
     {
-        if (IsDayLocked)
+        if (IsDayLocked || leg.IsApplying)
             return;
         var key = leg.SaveKey;
         CancelTimer(key);
@@ -335,7 +383,7 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
     // A team edit: debounced per row; a taken number is refused (Р-20) and the row shows the stored one again.
     private void QueueSave(RelayTeamRowViewModel row)
     {
-        if (IsDayLocked)
+        if (IsDayLocked || row.IsApplying)
             return;
         CancelTimer(row.Id);
         var cts = new CancellationTokenSource();
@@ -405,7 +453,7 @@ public sealed class RelayGroupOption(
 public sealed partial class RelayTeamRowViewModel : ObservableObject
 {
     private readonly Action<RelayTeamRowViewModel> _requestSave;
-    private readonly bool _initialized;
+    private bool _initialized;
 
     public RelayTeamRowViewModel(
         RelayTeamRow model, ILocalizationService localization,
@@ -416,8 +464,8 @@ public sealed partial class RelayTeamRowViewModel : ObservableObject
         Localization = localization;
         _requestSave = requestSave;
         GroupOptions = groups;
-        ClubOptions = clubs;
-        RegionOptions = regions;
+        _clubOptions = clubs;
+        _regionOptions = regions;
         _numberText = model.Number.ToString(CultureInfo.InvariantCulture);
         _name = model.Name;
         _selectedGroup = groups.FirstOrDefault(g => g.GroupId == model.GroupId) ?? groups.FirstOrDefault();
@@ -425,12 +473,12 @@ public sealed partial class RelayTeamRowViewModel : ObservableObject
         _selectedRegion = regions.FirstOrDefault(r => r.Id == model.RegionId) ?? regions[0];
         _outOfCompetition = model.OutOfCompetition;
         _courseSetText = model.CourseSet;
-        StatusOptions = FinishStatusOptions.Build(localization, model.Result?.Computed ?? FinishStatus.None);
+        _statusOptions = FinishStatusOptions.Build(localization, model.Result?.Computed ?? FinishStatus.None);
         _selectedStatus = FinishStatusOptions.Select(StatusOptions, model.StatusOverride);
         _initialized = true;
     }
 
-    public RelayTeamRow Model { get; }
+    public RelayTeamRow Model { get; private set; }
 
     public ILocalizationService Localization { get; }
 
@@ -438,11 +486,62 @@ public sealed partial class RelayTeamRowViewModel : ObservableObject
 
     public IReadOnlyList<RelayGroupOption> GroupOptions { get; }
 
-    public IReadOnlyList<ClubOption> ClubOptions { get; }
+    [ObservableProperty]
+    private IReadOnlyList<ClubOption> _clubOptions;
 
-    public IReadOnlyList<RegionOption> RegionOptions { get; }
+    [ObservableProperty]
+    private IReadOnlyList<RegionOption> _regionOptions;
 
-    public IReadOnlyList<FinishStatusOption> StatusOptions { get; }
+    [ObservableProperty]
+    private IReadOnlyList<FinishStatusOption> _statusOptions;
+
+    /// <summary>True while <see cref="Apply"/> copies fresh values onto the row; the page skips its save callback then.</summary>
+    public bool IsApplying { get; private set; }
+
+    /// <summary>
+    /// Copies a freshly-read team onto this row without triggering a save. Only the cells whose value changed raise
+    /// a property change; the shared option lists are swapped only when the page rebuilt them.
+    /// </summary>
+    public void Apply(RelayTeamRow model, IReadOnlyList<ClubOption> clubs, IReadOnlyList<RegionOption> regions)
+    {
+        IsApplying = true;
+        _initialized = false;
+        try
+        {
+            var previous = Model;
+            Model = model;
+            if (!ReferenceEquals(ClubOptions, clubs))
+                ClubOptions = clubs;
+            if (!ReferenceEquals(RegionOptions, regions))
+                RegionOptions = regions;
+
+            NumberText = model.Number.ToString(CultureInfo.InvariantCulture);
+            Name = model.Name;
+            SelectedGroup = GroupOptions.FirstOrDefault(g => g.GroupId == model.GroupId) ?? GroupOptions.FirstOrDefault();
+            SelectedClub = ClubOptions.FirstOrDefault(c => c.Id == model.ClubId) ?? ClubOptions[0];
+            SelectedRegion = RegionOptions.FirstOrDefault(r => r.Id == model.RegionId) ?? RegionOptions[0];
+            OutOfCompetition = model.OutOfCompetition;
+            CourseSetText = model.CourseSet;
+            NumberError = false;
+
+            // The "(… — автоматично)" sentinel names the computed status, so it is rebuilt when that moved.
+            var computed = model.Result?.Computed ?? FinishStatus.None;
+            if ((previous.Result?.Computed ?? FinishStatus.None) != computed)
+                StatusOptions = FinishStatusOptions.Build(Localization, computed);
+            SelectedStatus = FinishStatusOptions.Select(StatusOptions, model.StatusOverride);
+
+            OnPropertyChanged(nameof(LegsText));
+            OnPropertyChanged(nameof(StatusText));
+            OnPropertyChanged(nameof(TimeText));
+            OnPropertyChanged(nameof(PlaceText));
+            OnPropertyChanged(nameof(PlaceSort));
+        }
+        finally
+        {
+            _initialized = true;
+            IsApplying = false;
+        }
+    }
 
     [ObservableProperty]
     private string _numberText;
@@ -501,7 +600,11 @@ public sealed partial class RelayTeamRowViewModel : ObservableObject
 
     partial void OnNumberTextChanged(string value) => QueueSave();
     partial void OnNameChanged(string value) => QueueSave();
-    partial void OnSelectedGroupChanged(RelayGroupOption? value) => QueueSave();
+    partial void OnSelectedGroupChanged(RelayGroupOption? value)
+    {
+        OnPropertyChanged(nameof(CourseSetPlaceholder));
+        QueueSave();
+    }
     partial void OnSelectedClubChanged(ClubOption value) => QueueSave();
     partial void OnSelectedRegionChanged(RegionOption value) => QueueSave();
     partial void OnOutOfCompetitionChanged(bool value) => QueueSave();
@@ -516,55 +619,119 @@ public sealed partial class RelayTeamRowViewModel : ObservableObject
 }
 
 /// <summary>One leg of the selected team in the legs panel.</summary>
-public sealed partial class RelayLegRowViewModel(
-    RelayTeamRow team, RelayLegRow leg, ILocalizationService localization, RelayCourseMode courseMode,
-    Action<RelayLegRowViewModel> saveBibCourse) : ObservableObject
+public sealed partial class RelayLegRowViewModel : ObservableObject
 {
-    public Guid TeamId { get; } = team.Id;
+    private readonly ILocalizationService _localization;
+    private readonly Action<RelayLegRowViewModel> _saveBibCourse;
+    private RelayTeamRow _team;
+    private RelayLegRow _leg;
+    private RelayCourseMode _courseMode;
 
-    public int TeamNumber { get; } = team.Number;
+    public RelayLegRowViewModel(
+        RelayTeamRow team, RelayLegRow leg, ILocalizationService localization, RelayCourseMode courseMode,
+        Action<RelayLegRowViewModel> saveBibCourse)
+    {
+        _team = team;
+        _leg = leg;
+        _localization = localization;
+        _courseMode = courseMode;
+        _saveBibCourse = saveBibCourse;
+        Leg = leg.Leg;
+        _bibCourseText = leg.BibCourse;
+    }
 
-    public int Leg { get; } = leg.Leg;
+    public Guid TeamId => _team.Id;
+
+    public int TeamNumber => _team.Number;
+
+    public int Leg { get; }
 
     /// <summary>A stable key for this leg's debounced course save.</summary>
-    public Guid SaveKey { get; } = new(team.Id.ToByteArray().Select((b, i) => i == 15 ? (byte)(b ^ leg.Leg) : b).ToArray());
+    public Guid SaveKey => new(_team.Id.ToByteArray().Select((b, i) => i == 15 ? (byte)(b ^ Leg) : b).ToArray());
 
     /// <summary>«За номером етапу» (Р-41): the leg number's course is typed here.</summary>
-    public bool IsBibCourseEditable { get; } = courseMode == RelayCourseMode.ByBib;
+    public bool IsBibCourseEditable => _courseMode == RelayCourseMode.ByBib;
 
     [ObservableProperty]
-    private string _bibCourseText = leg.BibCourse;
+    private string _bibCourseText;
 
-    partial void OnBibCourseTextChanged(string value) => saveBibCourse(this);
+    /// <summary>True while <see cref="Apply"/> copies fresh values onto the row; the page skips its save callback then.</summary>
+    public bool IsApplying { get; private set; }
+
+    partial void OnBibCourseTextChanged(string value) => _saveBibCourse(this);
 
     /// <summary>The leg's course (Р-44): «дистанція B», «дистанцію не призначено» or — in a team set before the
     /// leg is read — «не визначено» (Р-43); blank when the group runs one course.</summary>
-    public string CourseText { get; } = courseMode == RelayCourseMode.Group
+    public string CourseText => _courseMode == RelayCourseMode.Group
         ? string.Empty
-        : leg.Result?.CourseCode is { Length: > 0 } code
-            ? string.Format(localization.Get("Relay.CourseOf"), code)
-            : leg.Result is { CourseUnassigned: true }
-                ? localization.Get("Relay.NoCourse")
-                : courseMode == RelayCourseMode.TeamSet
-                    ? localization.Get("Relay.CourseUndetermined")
+        : _leg.Result?.CourseCode is { Length: > 0 } code
+            ? string.Format(_localization.Get("Relay.CourseOf"), code)
+            : _leg.Result is { CourseUnassigned: true }
+                ? _localization.Get("Relay.NoCourse")
+                : _courseMode == RelayCourseMode.TeamSet
+                    ? _localization.Get("Relay.CourseUndetermined")
                     : string.Empty;
 
     public bool HasCourseText => CourseText.Length > 0;
 
-    public Guid? ParticipantId { get; } = leg.ParticipantId;
+    public Guid? ParticipantId => _leg.ParticipantId;
 
     /// <summary>«Етап 2 · 100.2».</summary>
-    public string Header { get; } = string.Format(localization.Get("RelayTeams.Leg.Header"), leg.Leg,
-        RelayBib.Format(team.Number, leg.Leg));
+    public string Header => string.Format(_localization.Get("RelayTeams.Leg.Header"), Leg,
+        RelayBib.Format(_team.Number, Leg));
 
-    public string Runner { get; } = leg.LinkId is null ? localization.Get("RelayTeams.Leg.Empty") : leg.FullName;
+    public string Runner => _leg.LinkId is null ? _localization.Get("RelayTeams.Leg.Empty") : _leg.FullName;
 
     public bool HasRunner => ParticipantId is not null;
 
-    public string Chip { get; } = leg.Chip;
+    public string Chip => _leg.Chip;
 
     /// <summary>The leg's computed state: status · time · cumulative, «очікує», «перезапуск».</summary>
-    public string ResultText { get; } = leg.Result is { } r ? RelayText.Leg(r, localization) : string.Empty;
+    public string ResultText => _leg.Result is { } r ? RelayText.Leg(r, _localization) : string.Empty;
+
+    /// <summary>
+    /// Replaces the wrapped leg (same leg number) and re-raises the display properties that changed, without
+    /// triggering the course save. A leg whose data is unchanged raises nothing.
+    /// </summary>
+    public void Apply(RelayTeamRow team, RelayLegRow leg, RelayCourseMode courseMode)
+    {
+        if (ReferenceEquals(_team, team) && _leg == leg && _courseMode == courseMode)
+            return;
+
+        IsApplying = true;
+        try
+        {
+            var before = Snapshot();
+            _team = team;
+            _leg = leg;
+            _courseMode = courseMode;
+            BibCourseText = leg.BibCourse;
+            var after = Snapshot();
+            foreach (var (name, value) in after)
+                if (!Equals(before[name], value))
+                    OnPropertyChanged(name);
+        }
+        finally
+        {
+            IsApplying = false;
+        }
+    }
+
+    // Every bound display property with its current value, so Apply can raise exactly the ones that changed.
+    private Dictionary<string, object?> Snapshot() => new()
+    {
+        [nameof(TeamId)] = TeamId,
+        [nameof(TeamNumber)] = TeamNumber,
+        [nameof(IsBibCourseEditable)] = IsBibCourseEditable,
+        [nameof(CourseText)] = CourseText,
+        [nameof(HasCourseText)] = HasCourseText,
+        [nameof(ParticipantId)] = ParticipantId,
+        [nameof(Header)] = Header,
+        [nameof(Runner)] = Runner,
+        [nameof(HasRunner)] = HasRunner,
+        [nameof(Chip)] = Chip,
+        [nameof(ResultText)] = ResultText,
+    };
 }
 
 /// <summary>Shared display text of relay results (the «Команди» page, the day grid, the read-out log).</summary>

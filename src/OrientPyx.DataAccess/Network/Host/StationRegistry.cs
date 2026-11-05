@@ -26,6 +26,8 @@ internal sealed class StationRegistry
         public DateTimeOffset IssuedAt { get; set; }
         public DateTimeOffset LastSeenAt { get; set; }
         public string? LastIdentifier { get; set; }
+        public string DeviceId { get; set; } = string.Empty;
+        public bool IsTrusted { get; set; }
     }
 
     private readonly IAppStore _appStore;
@@ -50,16 +52,42 @@ internal sealed class StationRegistry
                 Name = token.StationName,
                 IssuedAt = token.IssuedAt,
                 LastSeenAt = token.LastSeenAt,
+                DeviceId = token.DeviceId,
+                IsTrusted = token.IsTrusted,
             };
         }
     }
 
-    /// <summary>A new 6-digit PIN; resets the failure counter.</summary>
+    /// <summary>True when a station with this device id was marked trusted — it pairs without a PIN.</summary>
+    public bool IsTrustedDevice(string? deviceId)
+        => !string.IsNullOrEmpty(deviceId)
+           && _byToken.Values.Any(e => e.IsTrusted && string.Equals(e.DeviceId, deviceId, StringComparison.Ordinal));
+
+    /// <summary>Marks the device behind a token as trusted or not (stored, so it survives a host restart).</summary>
+    public async Task SetTrustedAsync(string token, bool trusted, CancellationToken cancellationToken)
+    {
+        if (!_byToken.TryGetValue(token, out var entry))
+            return;
+        entry.IsTrusted = trusted;
+        await _appStore.SaveStationTokenAsync(ToToken(entry), cancellationToken);
+    }
+
+    private static StationToken ToToken(Entry e) => new()
+    {
+        Token = e.Token,
+        StationName = e.Name,
+        IssuedAt = e.IssuedAt,
+        LastSeenAt = e.LastSeenAt,
+        DeviceId = e.DeviceId,
+        IsTrusted = e.IsTrusted,
+    };
+
+    /// <summary>A new 4-digit PIN; resets the failure counter.</summary>
     public string RegeneratePin()
     {
         lock (_pinGate)
         {
-            Pin = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+            Pin = RandomNumberGenerator.GetInt32(0, 10_000).ToString("D4");
             _pinFailures = 0;
             _lockedUntil = DateTimeOffset.MinValue;
             return Pin;
@@ -92,12 +120,20 @@ internal sealed class StationRegistry
         }
     }
 
-    /// <summary>Issues a token for a station and stores it. One row per station: an earlier token of the same station
-    /// (it paired again with the PIN after losing its saved token) is revoked, so the list never shows it twice.</summary>
-    public async Task<StationToken> IssueAsync(string stationName, string address, CancellationToken cancellationToken)
+    /// <summary>Issues a token for a station and stores it. One row per station: an earlier token of the same device (or,
+    /// for a station that sends no device id, of the same name) is revoked, so the list never shows it twice; the trust
+    /// mark of the replaced row carries over.</summary>
+    public async Task<StationToken> IssueAsync(string stationName, string address, string? deviceId, CancellationToken cancellationToken)
     {
-        foreach (var stale in _byToken.Values.Where(e => string.Equals(e.Name, stationName, StringComparison.OrdinalIgnoreCase)).ToList())
-            await RevokeAsync(stale.Token, cancellationToken);
+        deviceId ??= string.Empty;
+        var stale = _byToken.Values
+            .Where(e => deviceId.Length > 0
+                ? string.Equals(e.DeviceId, deviceId, StringComparison.Ordinal)
+                : e.DeviceId.Length == 0 && string.Equals(e.Name, stationName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var trusted = stale.Any(e => e.IsTrusted);
+        foreach (var old in stale)
+            await RevokeAsync(old.Token, cancellationToken);
 
         var now = DateTimeOffset.UtcNow;
         var token = new StationToken
@@ -106,6 +142,8 @@ internal sealed class StationRegistry
             StationName = stationName,
             IssuedAt = now,
             LastSeenAt = now,
+            DeviceId = deviceId,
+            IsTrusted = trusted,
         };
         await _appStore.SaveStationTokenAsync(token, cancellationToken);
         _byToken[token.Token] = new Entry
@@ -115,6 +153,8 @@ internal sealed class StationRegistry
             Address = address,
             IssuedAt = now,
             LastSeenAt = now,
+            DeviceId = deviceId,
+            IsTrusted = trusted,
         };
         return token;
     }
@@ -127,13 +167,7 @@ internal sealed class StationRegistry
         entry.Name = stationName;
         entry.Address = address;
         entry.LastSeenAt = DateTimeOffset.UtcNow;
-        await _appStore.SaveStationTokenAsync(new StationToken
-        {
-            Token = token,
-            StationName = stationName,
-            IssuedAt = entry.IssuedAt,
-            LastSeenAt = entry.LastSeenAt,
-        }, cancellationToken);
+        await _appStore.SaveStationTokenAsync(ToToken(entry), cancellationToken);
         return true;
     }
 
@@ -176,7 +210,7 @@ internal sealed class StationRegistry
     {
         var cutoff = DateTimeOffset.UtcNow - OnlineWindow;
         return _byToken.Values
-            .Select(e => new ConnectedStation(e.Token, e.Name, e.Address, e.IssuedAt, e.LastSeenAt, e.LastSeenAt >= cutoff))
+            .Select(e => new ConnectedStation(e.Token, e.Name, e.Address, e.IssuedAt, e.LastSeenAt, e.LastSeenAt >= cutoff, e.DeviceId, e.IsTrusted))
             .OrderByDescending(s => s.LastSeenAt)
             .ToList();
     }

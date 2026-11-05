@@ -25,8 +25,8 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private readonly Guid _linkId;
     private readonly Guid _dayId;
     private readonly Guid _participantId;
-    private readonly int _order;
-    private readonly DisciplineId _dayDefaultDiscipline;
+    private int _order;
+    private DisciplineId _dayDefaultDiscipline;
     private readonly IDisciplineStrategyProvider _strategies;
     private readonly Action<ParticipantDayRowViewModel> _requestSave;
     private readonly Action<ParticipantDayRowViewModel> _requestLeaveDay;
@@ -44,9 +44,11 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private readonly Action<ParticipantDayRowViewModel> _requestDayPaymentChange;
     // Whether the competition charges per day: decides which payment field the «Оплата» column edits and
     // which fee the value is compared against. Fixed for the row's lifetime (a mode change reloads the page).
-    private readonly bool _paymentPerDay;
+    private bool _paymentPerDay;
     private EntryFeeContext _fees;
-    private readonly IReadOnlyList<ParticipantFeeDay> _otherDays;
+    private IReadOnlyList<ParticipantFeeDay> _otherDays;
+    // The page's shared rank list the row's own list was derived from (an "unknown" option may be prepended).
+    private IReadOnlyList<RankOption> _sharedRankOptions;
 
     // Suppresses save requests while the constructor seeds initial values, and while a rejected
     // reassignment reverts the chip.
@@ -184,7 +186,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         _otherDays = row.OtherDays;
         Localization = localization;
 
-        GroupOptions = groupOptions;
+        _groupOptions = groupOptions;
         RegionOptions = regionOptions;
         ClubOptions = clubOptions;
         DusshOptions = dusshOptions;
@@ -195,6 +197,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         // Rank stores text; resolve the dropdown selection by matching the stored name (case-insensitive).
         // A stored value not in the list gets a one-off "unknown" option prepended so it still shows.
         var (rankOpts, rankSel) = RankOptionResolver.Resolve(rankOptions, row.Rank, localization);
+        _sharedRankOptions = rankOptions;
         _rankOptions = rankOpts;
         _selectedRank = rankSel;
         _coach = row.Coach;
@@ -478,7 +481,143 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     /// <summary>Group choices for this day (id + name). The day grid offers only real groups — no
     /// "не участвує" sentinel — since a participant shown here is always a day member (leave the day
     /// via the row's delete button instead).</summary>
-    public IReadOnlyList<GroupOption> GroupOptions { get; }
+    [ObservableProperty]
+    private IReadOnlyList<GroupOption> _groupOptions;
+
+    /// <summary>True while <see cref="Apply"/> copies fresh values onto the row; the page skips its callbacks then.</summary>
+    public bool IsApplying { get; private set; }
+
+    /// <summary>
+    /// Copies a freshly-read row onto this one without triggering any save or dialog. Only the cells whose value
+    /// changed raise a property change; the shared option lists are swapped only when the page rebuilt them, so an
+    /// open combo keeps its items and its selected instance. The additional-field cells are applied by the page.
+    /// </summary>
+    public void Apply(
+        ParticipantDayRow row,
+        IReadOnlyList<GroupOption> groupOptions,
+        IReadOnlyList<RegionOption> regionOptions,
+        IReadOnlyList<ClubOption> clubOptions,
+        IReadOnlyList<DusshOption> dusshOptions,
+        IReadOnlyList<RankOption> rankOptions,
+        IReadOnlyList<EntryFeeDiscount> discounts,
+        EntryFeeContext fees,
+        IReadOnlyList<ResultColumnDef> resultColumns)
+    {
+        IsApplying = true;
+        _initialized = false;
+        try
+        {
+            _order = row.Order;
+            _otherDays = row.OtherDays;
+            _fees = fees;
+            if (_dayDefaultDiscipline != row.DayDefaultDiscipline)
+            {
+                _dayDefaultDiscipline = row.DayDefaultDiscipline;
+                OnPropertyChanged(nameof(UsesTeam));
+                OnPropertyChanged(nameof(UsesScore));
+            }
+            if (_paymentPerDay != row.PaymentPerDay)
+            {
+                _paymentPerDay = row.PaymentPerDay;
+                OnPropertyChanged(nameof(PaymentBase));
+                OnPropertyChanged(nameof(EffectivePayment));
+                OnPropertyChanged(nameof(PaymentStatus));
+                OnPropertyChanged(nameof(PaymentStatusKey));
+            }
+
+            if (!ReferenceEquals(GroupOptions, groupOptions))
+                GroupOptions = groupOptions;
+            SelectedGroup = groupOptions.FirstOrDefault(o => o.Id == row.GroupId) ?? groupOptions[0];
+
+            if (!ReferenceEquals(RegionOptions, regionOptions))
+                RegionOptions = regionOptions;
+            SelectedRegion = regionOptions.FirstOrDefault(o => !o.IsAdd && o.Id == row.RegionId) ?? regionOptions[0];
+            _committedRegion = SelectedRegion;
+
+            if (!ReferenceEquals(ClubOptions, clubOptions))
+                ClubOptions = clubOptions;
+            SelectedClub = clubOptions.FirstOrDefault(o => !o.IsAdd && o.Id == row.ClubId) ?? clubOptions[0];
+            _committedClub = SelectedClub;
+
+            if (!ReferenceEquals(DusshOptions, dusshOptions))
+                DusshOptions = dusshOptions;
+            SelectedDussh = dusshOptions.FirstOrDefault(o => !o.IsAdd && o.Id == row.DusshId) ?? dusshOptions[0];
+            _committedDussh = SelectedDussh;
+
+            // The rank list is re-resolved only when the page rebuilt it or the stored value moved (a stray value
+            // gets its one-off "unknown" option), so the combo keeps its items otherwise.
+            var rankChanged = !string.Equals(Rank, row.Rank, StringComparison.Ordinal);
+            Rank = row.Rank;
+            if (rankChanged || !ReferenceEquals(_sharedRankOptions, rankOptions))
+            {
+                _sharedRankOptions = rankOptions;
+                var (rankOpts, rankSel) = RankOptionResolver.Resolve(rankOptions, row.Rank, Localization);
+                if (!ReferenceEquals(RankOptions, rankOpts))
+                    RankOptions = rankOpts;
+                SelectedRank = rankSel;
+            }
+
+            FullName = row.FullName;
+            Number = row.Number;
+            Coach = row.Coach;
+            BirthDate = row.BirthDate;
+            Representative = row.Representative;
+            FsouCode = row.FsouCode;
+            Note = row.Note;
+            IsFsouMember = row.IsFsouMember;
+            Payment = row.Payment;
+            DayPayment = row.DayPayment;
+            Chip = row.Chip;
+            _committedChip = row.Chip;
+            Team = row.Team;
+            StartTime = row.StartTime;
+            OutOfCompetition = row.OutOfCompetition;
+            PaysRaisedFee = row.PaysRaisedFee;
+
+            if (_bonus != row.Bonus)
+            {
+                _bonus = row.Bonus;
+                OnPropertyChanged(nameof(BonusText));
+                OnPropertyChanged(nameof(BonusSort));
+            }
+
+            ApplyDiscountFlags(discounts, row);
+
+            if (!ReferenceEquals(_resultColumns, resultColumns))
+                SetResultColumns(resultColumns);
+            ApplyResult(row.Result);
+
+            RecomputeTotal();
+        }
+        finally
+        {
+            _initialized = true;
+            IsApplying = false;
+        }
+    }
+
+    // One flag per discount column, in build order. The collection is rebuilt only when the discount set moved
+    // (the page then rebuilds the columns too); otherwise each flag is set silently.
+    private void ApplyDiscountFlags(IReadOnlyList<EntryFeeDiscount> discounts, ParticipantDayRow row)
+    {
+        var selected = row.SelectedDiscountIds.ToHashSet();
+        var same = DiscountFlags.Count == discounts.Count;
+        for (var i = 0; same && i < discounts.Count; i++)
+            same = DiscountFlags[i].DiscountId == discounts[i].Id
+                && DiscountFlags[i].IsFsouMemberDiscount == discounts[i].IsFsouMemberDiscount;
+
+        if (!same)
+            DiscountFlags.Clear();
+        for (var i = 0; i < discounts.Count; i++)
+        {
+            var d = discounts[i];
+            var on = d.IsFsouMemberDiscount ? row.IsFsouMember : selected.Contains(d.Id);
+            if (same)
+                DiscountFlags[i].SetSilently(on);
+            else
+                DiscountFlags.Add(new DiscountFlagViewModel(d.Id, d.IsFsouMemberDiscount, on, OnDiscountFlagChanged));
+        }
+    }
 
     public bool UsesTeam => _strategies.For(_dayDefaultDiscipline).UsesParticipantColumn(ParticipantColumn.Team);
 
@@ -914,34 +1053,51 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     /// </summary>
     public void ApplyResult(ParticipantDayResult result)
     {
+        if (ReferenceEquals(_result, result))
+            return;
+
+        var before = ResultSnapshot();
+        var computedChanged = _result.Computed != result.Computed;
         _result = result;
         var wasInitialized = _initialized;
         _initialized = false;
-        // Rebuild the options so the "auto" sentinel reflects the new computed status, then select by the
-        // raw override (auto when none).
-        StatusOptions = FinishStatusOptions.Build(Localization, result.Computed);
+        // Rebuild the options so the "auto" sentinel reflects the new computed status (only when it moved, so an
+        // open dropdown keeps its items), then select by the raw override (auto when none).
+        if (computedChanged)
+            StatusOptions = FinishStatusOptions.Build(Localization, result.Computed);
         SelectedStatus = FinishStatusOptions.Select(StatusOptions, result.Override);
         _initialized = wasInitialized;
-        OnPropertyChanged(nameof(ResultStatusText));
-        OnPropertyChanged(nameof(StatusIsProblem));
-        OnPropertyChanged(nameof(CanEditStatus));
-        OnPropertyChanged(nameof(ActualStartText));
-        OnPropertyChanged(nameof(FinishText));
-        OnPropertyChanged(nameof(ResultText_));
-        OnPropertyChanged(nameof(PlaceText));
-        OnPropertyChanged(nameof(ScoreText));
-        OnPropertyChanged(nameof(ScoreTooltip));
-        OnPropertyChanged(nameof(PointsText));
-        OnPropertyChanged(nameof(AwardedRankText));
+
+        // Raise only the display properties whose value moved, so a live refresh repaints exactly the changed cells.
+        foreach (var (name, value) in ResultSnapshot())
+            if (!Equals(before[name], value))
+                OnPropertyChanged(name);
+        // The plugin views wrap the result object, so they always follow a new result.
         OnPropertyChanged(nameof(ResultExtras));
         OnPropertyChanged(nameof(ResultProblems));
-        OnPropertyChanged(nameof(PlaceSort));
-        OnPropertyChanged(nameof(RelayTeamText));
-        OnPropertyChanged(nameof(RelayTeamSort));
-        OnPropertyChanged(nameof(RelayLegText));
-        OnPropertyChanged(nameof(RelayBibText));
-        OnPropertyChanged(nameof(IsGroupEditable));
-        OnPropertyChanged(nameof(ScoreSort));
-        OnPropertyChanged(nameof(PointsSort));
     }
+
+    // Every result-derived bound property with its current value (see ApplyResult).
+    private Dictionary<string, object?> ResultSnapshot() => new()
+    {
+        [nameof(ResultStatusText)] = ResultStatusText,
+        [nameof(StatusIsProblem)] = StatusIsProblem,
+        [nameof(CanEditStatus)] = CanEditStatus,
+        [nameof(ActualStartText)] = ActualStartText,
+        [nameof(FinishText)] = FinishText,
+        [nameof(ResultText_)] = ResultText_,
+        [nameof(PlaceText)] = PlaceText,
+        [nameof(ScoreText)] = ScoreText,
+        [nameof(ScoreTooltip)] = ScoreTooltip,
+        [nameof(PointsText)] = PointsText,
+        [nameof(AwardedRankText)] = AwardedRankText,
+        [nameof(PlaceSort)] = PlaceSort,
+        [nameof(RelayTeamText)] = RelayTeamText,
+        [nameof(RelayTeamSort)] = RelayTeamSort,
+        [nameof(RelayLegText)] = RelayLegText,
+        [nameof(RelayBibText)] = RelayBibText,
+        [nameof(IsGroupEditable)] = IsGroupEditable,
+        [nameof(ScoreSort)] = ScoreSort,
+        [nameof(PointsSort)] = PointsSort,
+    };
 }

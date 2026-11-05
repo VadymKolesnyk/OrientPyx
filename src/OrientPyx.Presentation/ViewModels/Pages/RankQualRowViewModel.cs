@@ -14,9 +14,9 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 public sealed partial class RankQualRowViewModel : ObservableObject
 {
     private readonly Guid _id;
-    private readonly int _order;
+    private int _order;
     private readonly Action<RankQualRowViewModel> _requestSave;
-    private readonly bool _initialized;
+    private bool _initialized;
 
     [ObservableProperty] private string _rankText;
     [ObservableProperty] private string _timeKmsText;
@@ -53,6 +53,36 @@ public sealed partial class RankQualRowViewModel : ObservableObject
         _pointsThirdJuniorText = Format(row.PointsThirdJunior);
 
         _initialized = true;
+    }
+
+    /// <summary>True while <see cref="Apply"/> copies fresh values onto the row; the page skips its save callbacks then.</summary>
+    public bool IsApplying { get; private set; }
+
+    /// <summary>Copies a freshly-read threshold row onto this one without triggering a save (only changed cells raise).</summary>
+    public void Apply(RankQualificationRow row)
+    {
+        IsApplying = true;
+        _initialized = false;
+        try
+        {
+            _order = row.Order;
+            RankText = row.Rank.ToString(CultureInfo.InvariantCulture);
+            TimeKmsText = Format(row.TimeKms);
+            TimeFirstText = Format(row.TimeFirst);
+            TimeSecondText = Format(row.TimeSecond);
+            TimeThirdText = Format(row.TimeThird);
+            TimeThirdJuniorText = Format(row.TimeThirdJunior);
+            PointsKmsText = Format(row.PointsKms);
+            PointsFirstText = Format(row.PointsFirst);
+            PointsSecondText = Format(row.PointsSecond);
+            PointsThirdText = Format(row.PointsThird);
+            PointsThirdJuniorText = Format(row.PointsThirdJunior);
+        }
+        finally
+        {
+            _initialized = true;
+            IsApplying = false;
+        }
     }
 
     public ILocalizationService Localization { get; }

@@ -1919,6 +1919,8 @@
   "Network.Host.NoStations": "No stations yet.",
   "Network.Host.Col.Name": "Station",
   "Network.Host.Col.Address": "Address",
+  "Network.Host.Col.Trusted": "Trusted",
+  "Network.Host.TrustedHint": "A trusted device connects without a PIN. The device itself is remembered, not its name.",
   "Network.Host.Col.LastSeen": "Last request",
   "Network.Host.Stations.JustNow": "just now",
   "Network.Host.Stations.MinutesAgo": "{0} min ago",

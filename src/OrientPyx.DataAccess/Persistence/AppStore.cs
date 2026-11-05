@@ -392,6 +392,8 @@ public sealed class AppStore : IAppStore
             StationHost = row.StationHost,
             StationToken = row.StationToken,
             StationHostId = row.StationHostId,
+            StationDeviceId = row.StationDeviceId,
+            StationPin = row.StationPin,
         };
     }
 
@@ -414,6 +416,8 @@ public sealed class AppStore : IAppStore
         row.StationHost = settings.StationHost ?? string.Empty;
         row.StationToken = settings.StationToken ?? string.Empty;
         row.StationHostId = settings.StationHostId ?? string.Empty;
+        row.StationDeviceId = settings.StationDeviceId ?? string.Empty;
+        row.StationPin = settings.StationPin ?? string.Empty;
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -429,6 +433,8 @@ public sealed class AppStore : IAppStore
                 StationName = r.StationName,
                 IssuedAt = r.IssuedAt,
                 LastSeenAt = r.LastSeenAt,
+                DeviceId = r.DeviceId,
+                IsTrusted = r.IsTrusted,
             })
             .ToList();
     }
@@ -446,12 +452,16 @@ public sealed class AppStore : IAppStore
                 StationName = token.StationName,
                 IssuedAt = token.IssuedAt,
                 LastSeenAt = token.LastSeenAt,
+                DeviceId = token.DeviceId,
+                IsTrusted = token.IsTrusted,
             });
         }
         else
         {
             row.StationName = token.StationName;
             row.LastSeenAt = token.LastSeenAt;
+            row.DeviceId = token.DeviceId;
+            row.IsTrusted = token.IsTrusted;
         }
         await db.SaveChangesAsync(cancellationToken);
     }

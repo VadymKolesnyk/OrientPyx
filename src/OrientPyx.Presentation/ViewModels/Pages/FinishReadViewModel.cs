@@ -229,8 +229,9 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
 
     /// <inheritdoc />
     /// <remarks>
-    /// The watch keeps running (the file is this machine's); LoadAsync already keeps the selected row by id, so
-    /// the splits panel stays open. The read-out poller reloads the same way on every new read.
+    /// The watch keeps running (the file is this machine's); LoadAsync merges the fresh rows into the existing
+    /// ones (<see cref="RowSync"/>), so the selected row — and the splits panel under it — stay put. The read-out
+    /// poller reloads the same way on every new read.
     /// </remarks>
     protected override Task ReloadAsync(CancellationToken cancellationToken = default) => LoadAsync();
 
@@ -283,15 +284,23 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         // already typed a path. Done after the day is resolved so it follows the selected day.
         SyncDefaultFilePath();
 
-        // Preserve the selection across a reload (auto-read reloads on every new read) so the splits
-        // panel doesn't flicker shut; re-select the row with the same id when it's still present.
-        var selectedId = SelectedReadout?.Id;
-        Readouts.Clear();
-        foreach (var row in rows)
-            Readouts.Add(new FinishReadRowViewModel(row, Localization));
-        SelectedReadout = selectedId is { } id
-            ? Readouts.FirstOrDefault(r => r.Id == id)
-            : null;
+        // Merge the fresh log into the existing rows (auto-read reloads on every new read): a row that is still
+        // there keeps its object — and the selection, so the splits panel doesn't flicker shut — and repaints
+        // only the cells that changed; a new read is inserted, a cleared one removed.
+        RowSync.Sync(Readouts, rows,
+            itemKey: row => row.Id,
+            rowKey: row => row.Id,
+            create: row => new FinishReadRowViewModel(row, Localization),
+            update: (vm, row) => vm.Apply(row));
+        if (SelectedReadout is { } selected)
+        {
+            // The selected row survived as the same object, so the selection setter did not re-run: refresh its
+            // splits here, as they are judged from data that may have just changed.
+            if (Readouts.Contains(selected))
+                LoadSplitsFor(selected);
+            else
+                SelectedReadout = null;
+        }
     }
 
     // True when the current options already represent exactly these days (same count and numbers).
@@ -361,6 +370,12 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
             return;
         }
 
+        LoadSplitsFor(value);
+    }
+
+    // Builds the panel heading for a row and loads its splits (see OnSelectedReadoutChanged).
+    private void LoadSplitsFor(FinishReadRowViewModel value)
+    {
         var id = value.Id;
 
         // Header line: «#bib  ПІБ (group) · chip XXXXX» — bib and chip prefix the name/group so the

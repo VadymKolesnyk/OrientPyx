@@ -139,4 +139,10 @@ public class AppSettingsRow
 
     /// <summary>The id of that host (a restored session is resumed only on the same host).</summary>
     public string StationHostId { get; set; } = string.Empty;
+
+    /// <summary>This machine's stable device id as a station (generated once; hosts trust it by this).</summary>
+    public string StationDeviceId { get; set; } = string.Empty;
+
+    /// <summary>The PIN last used for the host in <see cref="StationHostId"/>; re-sent on the next connect.</summary>
+    public string StationPin { get; set; } = string.Empty;
 }

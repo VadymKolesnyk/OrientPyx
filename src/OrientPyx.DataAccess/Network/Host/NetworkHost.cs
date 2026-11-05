@@ -192,6 +192,13 @@ public sealed class NetworkHost : INetworkHost
         RefreshInfo();
     }
 
+    public async Task SetStationTrustedAsync(string token, bool trusted, CancellationToken cancellationToken = default)
+    {
+        await _stations.SetTrustedAsync(token, trusted, cancellationToken);
+        _log.Action(trusted ? "Network host: a station's device was marked trusted" : "Network host: a station's device is no longer trusted");
+        RefreshInfo();
+    }
+
     public IReadOnlyList<string> ActiveStationsOn(string identifier)
         => _app is null ? [] : _stations.ActiveOn(identifier);
 

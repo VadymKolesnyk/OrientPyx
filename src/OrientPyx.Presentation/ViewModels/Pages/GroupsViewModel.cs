@@ -230,16 +230,12 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     // a scatter-discipline group; otherwise loads its variants off the DB into editable rows.
     private async Task RefreshScatterEditorAsync()
     {
-        // Detach the old rows' change handlers before clearing.
-        foreach (var v in CourseVariants)
-            v.Changed -= OnScatterRowChanged;
-        CourseVariants.Clear();
-
         var row = SelectedGroup;
         // A relay group whose legs take named courses (Р-40) edits them in the same table.
         var relayCourses = row is { IsRelay: true } && _relayNamedCourses;
         if (row is null || !(row.IsScatter || relayCourses))
         {
+            ClearCourseVariants();
             _scatterGroupId = null;
             IsScatterEditorVisible = false;
             IsRelayCoursesEditor = false;
@@ -247,22 +243,35 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             return;
         }
 
+        // Another group's variants are replaced outright; the same group's are merged below.
+        if (_scatterGroupId != row.GroupId)
+            ClearCourseVariants();
+
         IsScatterEditorVisible = true;
         IsRelayCoursesEditor = relayCourses;
         _scatterGroupId = row.GroupId;
         ScatterHeader = string.Format(Localization.Get("Groups.Scatter.Header"), row.ScatterVariantCount);
 
         var variants = await _editor.GetCourseVariantsAsync(row.GroupId);
+        if (!ReferenceEquals(SelectedGroup, row))
+            return;
 
+        // Variants have no id of their own, so the rows are matched by position: a live refresh of the same group
+        // rewrites only the cells that changed instead of rebuilding the table.
         _suppressScatterSave = true;
         try
         {
-            foreach (var v in variants)
-            {
-                var vm = new CourseVariantRowViewModel(v.Code, v.CourseOrder, DescribeVariant);
-                vm.Changed += OnScatterRowChanged;
-                CourseVariants.Add(vm);
-            }
+            RowSync.Sync(CourseVariants, variants.Select((v, i) => (Index: i, Variant: v)).ToList(),
+                itemKey: item => item.Index,
+                rowKey: vm => CourseVariants.IndexOf(vm),
+                create: item =>
+                {
+                    var vm = new CourseVariantRowViewModel(item.Variant.Code, item.Variant.CourseOrder, DescribeVariant);
+                    vm.Changed += OnScatterRowChanged;
+                    return vm;
+                },
+                update: (vm, item) => vm.Apply(item.Variant.Code, item.Variant.CourseOrder),
+                removed: vm => vm.Changed -= OnScatterRowChanged);
         }
         finally
         {
@@ -270,6 +279,14 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         }
 
         OnPropertyChanged(nameof(HasNoCourseVariants));
+    }
+
+    // Detaches the variant rows' change handlers and empties the editor.
+    private void ClearCourseVariants()
+    {
+        foreach (var v in CourseVariants)
+            v.Changed -= OnScatterRowChanged;
+        CourseVariants.Clear();
     }
 
     [RelayCommand]
@@ -406,19 +423,36 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
     {
         // Pending saves (rows, the scatter editor, the course-setter defaults) finish first: LoadAsync cancels
-        // them, which is right for a session switch but would drop the operator's last edit here. Re-selecting
-        // the group by id also brings its course / scatter editor back.
+        // them, which is right for a session switch but would drop the operator's last edit here. The fresh rows
+        // are merged into the existing ones (RowSync), so the selected group — and its course / scatter / relay
+        // editors — stay put; the editors are refreshed in place since the selection setter does not re-run.
         await _pendingSaves.WaitAsync();
-        var selectedId = SelectedGroup?.Id;
-        await LoadAsync();
-        SelectedGroup = Groups.FirstOrDefault(g => g.Id == selectedId);
+        await LoadCoreAsync(merge: true);
+        if (SelectedGroup is { } selected)
+        {
+            if (Groups.Contains(selected))
+            {
+                RefreshPatternPreview();
+                _ = RefreshScatterEditorAsync();
+                _ = RefreshRelayEditorAsync();
+            }
+            else
+            {
+                SelectedGroup = null;
+            }
+        }
     }
 
     /// <summary>Reloads the groups for the current day. Called when the page is shown.</summary>
     public async Task LoadAsync()
     {
         CancelAllTimers();
+        await LoadCoreAsync(merge: false);
+    }
 
+    // Reads the day and either rebuilds the rows (first open / session switch) or merges them in place.
+    private async Task LoadCoreAsync(bool merge)
+    {
         // Both BD reads run off the UI thread; every collection/property write below happens
         // afterwards on the UI thread (SQLite has no real async I/O, so this can't stay inline).
         var hasDay = _session.CurrentDay is not null;
@@ -437,13 +471,19 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         _startCode = controlPoints.FirstOrDefault(c => c.Type == ControlPointType.Start)?.Code.Trim();
         _finishCode = controlPoints.FirstOrDefault(c => c.Type == ControlPointType.Finish)?.Code.Trim();
 
+        // The rule set is the one input the shared option lists are built from: a merge keeps the lists (and so
+        // every row's combo items) while it is unchanged.
+        var sameRules = merge && SameRules(rules);
         _pointsRules = rules;
         _info = info;
 
-        foreach (var existing in Groups)
-            existing.PropertyChanged -= OnRowPropertyChanged;
-        Groups.Clear();
-        SelectedGroup = null;
+        if (!merge)
+        {
+            foreach (var existing in Groups)
+                existing.PropertyChanged -= OnRowPropertyChanged;
+            Groups.Clear();
+            SelectedGroup = null;
+        }
 
         _syncingDay = true;
         try
@@ -476,15 +516,47 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         OnPropertyChanged(nameof(ShowDaySelector));
         RefreshDayLock();
 
-        SeedCompetitionSettings();
+        SeedCompetitionSettings(rebuildOptions: !sameRules);
 
-        // One shared per-group options list for this load (default sentinel + every rule).
-        _rowPointsRuleOptions = BuildRowPointsRuleOptions();
+        // One shared per-group options list for this load (default sentinel + every rule). Kept across a merge
+        // while the rules are the same — only the "(default: …)" sentinel's name follows the competition default.
+        if (sameRules)
+        {
+            var name = RuleName(_info?.DefaultPointsRuleId);
+            foreach (var option in _rowPointsRuleOptions)
+                if (option.Id is null)
+                    option.UpdateDefaultName(name);
+        }
+        else
+        {
+            _rowPointsRuleOptions = BuildRowPointsRuleOptions();
+        }
 
-        foreach (var row in rows)
-            Groups.Add(CreateRow(row));
+        var showRequired = ShowRequiredCountColumn;
+        var showPenalty = ShowPenaltyColumn;
+        var courseSetter = (DefaultCourseSetter ?? string.Empty).Trim();
+        var courseSetterCategory = (DefaultCourseSetterCategory ?? string.Empty).Trim();
+        RowSync.Sync(Groups, rows,
+            itemKey: row => row.SettingsId,
+            rowKey: row => row.Id,
+            create: CreateRow,
+            update: (vm, row) => vm.Apply(row, _rowPointsRuleOptions, courseSetter, courseSetterCategory),
+            removed: vm => vm.PropertyChanged -= OnRowPropertyChanged);
 
-        RaiseColumnVisibility();
+        // A column rebuild repaints the whole grid, so a merge raises it only when the visible set moved.
+        if (!merge || showRequired != ShowRequiredCountColumn || showPenalty != ShowPenaltyColumn)
+            RaiseColumnVisibility();
+    }
+
+    // True when the loaded rule set (ids and names, in order) is the one the option lists were built from.
+    private bool SameRules(IReadOnlyList<PointsRule> rules)
+    {
+        if (_pointsRules.Count != rules.Count)
+            return false;
+        for (var i = 0; i < rules.Count; i++)
+            if (_pointsRules[i].Id != rules[i].Id || _pointsRules[i].Name != rules[i].Name)
+                return false;
+        return true;
     }
 
     // The shared per-group points-rule options for the current load (rebuilt each LoadAsync).
@@ -498,7 +570,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     // Fills the top settings strip from the loaded CompetitionInfo, and (re)builds both the competition
     // default-rule options and the seed for each row's per-group options. Guarded so the property setters
     // don't trigger a save while we seed.
-    private void SeedCompetitionSettings()
+    private void SeedCompetitionSettings(bool rebuildOptions)
     {
         _suppressInfoSave = true;
         try
@@ -507,10 +579,14 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             DefaultCourseSetterCategory = _info?.CourseSetterCategory ?? string.Empty;
 
             // Competition default combo: a plain "немає" option (no default rule, stored as null) + every rule.
-            DefaultPointsRuleOptions.Clear();
-            DefaultPointsRuleOptions.Add(PointsRuleOption.None(Localization, explicitChoice: false));
-            foreach (var rule in _pointsRules)
-                DefaultPointsRuleOptions.Add(PointsRuleOption.ForRule(rule.Id, rule.Name, Localization));
+            // Rebuilt only when the rule set changed (a merge keeps the combo's items).
+            if (rebuildOptions)
+            {
+                DefaultPointsRuleOptions.Clear();
+                DefaultPointsRuleOptions.Add(PointsRuleOption.None(Localization, explicitChoice: false));
+                foreach (var rule in _pointsRules)
+                    DefaultPointsRuleOptions.Add(PointsRuleOption.ForRule(rule.Id, rule.Name, Localization));
+            }
 
             var defId = _info?.DefaultPointsRuleId;
             var match = DefaultPointsRuleOptions.FirstOrDefault(o => o.Id == defId);
@@ -556,6 +632,11 @@ public sealed partial class GroupsViewModel : PageViewModelBase
 
     private void OnRowPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        // A row being applied by a live refresh: the column set is checked once after the whole sync, and the
+        // selected group's editors are refreshed there too.
+        if (sender is GroupDayRowViewModel { IsApplying: true })
+            return;
+
         if (e.PropertyName == nameof(GroupDayRowViewModel.EffectiveDiscipline))
             RaiseColumnVisibility();
 
@@ -792,6 +873,9 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     // Invoked by a row on every edit (UI thread). Resets that row's debounce timer.
     private void RequestRowSave(GroupDayRowViewModel row)
     {
+        if (row.IsApplying)
+            return;
+
         if (_saveTimers.TryGetValue(row.Id, out var existing))
             existing.Cancel();
 
@@ -861,6 +945,13 @@ public sealed partial class CourseVariantRowViewModel : ObservableObject
 
     [ObservableProperty]
     private string _courseOrder;
+
+    /// <summary>Copies fresh values onto the row (only a changed cell raises); the page suppresses the save meanwhile.</summary>
+    public void Apply(string code, string courseOrder)
+    {
+        Code = code;
+        CourseOrder = courseOrder;
+    }
 
     partial void OnCodeChanged(string value) => Changed?.Invoke();
     partial void OnCourseOrderChanged(string value)

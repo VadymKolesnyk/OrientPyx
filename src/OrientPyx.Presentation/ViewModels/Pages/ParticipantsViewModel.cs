@@ -550,18 +550,92 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     /// The full load path, not just the rows: the page's dropdowns (groups, regions, clubs, schools, ranks), the
     /// rental-chip set, the fee inputs and the additional fields all come from areas this page observes. Pending
     /// row and field saves finish first: LoadAsync cancels them, which is right for a session switch but would
-    /// drop the operator's last edit here (see PendingSaves). The selected row is re-found by id in both views.
+    /// drop the operator's last edit here (see PendingSaves). Unlike LoadAsync, the rows of both views are merged
+    /// into the existing row objects (<see cref="RowSync"/>) and every shared list (options, fields, days) is kept
+    /// while its content is unchanged — so the table repaints exactly the cells another station changed, and the
+    /// selected row, the scroll position and an open dropdown survive.
     /// </remarks>
     protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
     {
         await _pendingSaves.WaitAsync();
-        var dayRowId = SelectedParticipant?.Id;
-        var rosterId = SelectedRosterRow?.ParticipantId;
-        await LoadAsync();
-        if (dayRowId is { } id)
-            SelectedParticipant = Participants.FirstOrDefault(r => r.Id == id);
-        if (rosterId is { } pid)
-            SelectedRosterRow = Roster.FirstOrDefault(r => r.ParticipantId == pid);
+
+        var hasEvent = _session.CurrentEvent is not null;
+        var days = hasEvent
+            ? await _busy.RunAsync(() => _editor.GetDaysAsync())
+            : (IReadOnlyList<EventDay>)[];
+        // The roster table rebuilds its per-day columns when the day list changes, so the bound list is replaced
+        // only when the day set moved; otherwise the fresh entities are swapped in silently (the page reads the
+        // lock and the discipline off them).
+        if (SameDayEntities(days))
+            _rosterDays = days;
+        else
+            RosterDays = days;
+
+        RosterEnabled = !hasEvent || await _busy.RunAsync(() => _editor.GetRosterEnabledAsync());
+
+        await RefreshRentalChipsAsync(hasEvent);
+        await RefreshRegionOptionsAsync(hasEvent);
+        await RefreshClubOptionsAsync(hasEvent);
+        await RefreshDusshOptionsAsync(hasEvent);
+        await RefreshRankOptionsAsync();
+        await RefreshFeeDataAsync(hasEvent);
+
+        var fields = hasEvent ? await _busy.RunAsync(() => _editor.GetCustomFieldsAsync()) : [];
+        if (!CustomFieldsEqual(CustomFields, fields))
+            CustomFields = fields;
+
+        _lockedDayIds = days.Where(d => d.IsLocked).Select(d => d.Id).ToHashSet();
+
+        _syncingDay = true;
+        try
+        {
+            RebuildDayOptions(days);
+            SelectedDay = ResolveSelectedDay();
+        }
+        finally
+        {
+            _syncingDay = false;
+        }
+
+        OnPropertyChanged(nameof(ShowDaySelector));
+        OnPropertyChanged(nameof(CanToggleRoster));
+        RefreshDayLock();
+        OnPropertyChanged(nameof(IsEffectiveDayLocked));
+        await ReloadContentAsync(merge: true);
+
+        if (SelectedParticipant is { } dayRow && !Participants.Contains(dayRow))
+            SelectedParticipant = null;
+        if (SelectedRosterRow is { } rosterRow && !Roster.Contains(rosterRow))
+            SelectedRosterRow = null;
+    }
+
+    // True when the loaded days are the ones the roster columns were built for (same ids and numbers, in order).
+    private bool SameDayEntities(IReadOnlyList<EventDay> days)
+    {
+        if (_rosterDays.Count != days.Count)
+            return false;
+        for (var i = 0; i < days.Count; i++)
+            if (_rosterDays[i].Id != days[i].Id || _rosterDays[i].Number != days[i].Number)
+                return false;
+        return true;
+    }
+
+    // Value equality for the additional-field set: a changed list reference rebuilds both tables' columns, so
+    // the page keeps the old list while nothing in it moved.
+    private static bool CustomFieldsEqual(IReadOnlyList<CustomField> a, IReadOnlyList<CustomField> b)
+    {
+        if (ReferenceEquals(a, b))
+            return true;
+        if (a.Count != b.Count)
+            return false;
+        for (var i = 0; i < a.Count; i++)
+        {
+            var (x, y) = (a[i], b[i]);
+            if (x.Key != y.Key || x.Label != y.Label || x.Kind != y.Kind || x.Source != y.Source || x.Order != y.Order
+                || !x.Options.SequenceEqual(y.Options))
+                return false;
+        }
+        return true;
     }
 
     /// <summary>Reloads the page for the current selection. Called when the page is shown.</summary>
@@ -593,8 +667,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         // Entry-fee inputs: the discount set + the fee snapshot used to compute each row's total.
         await RefreshFeeDataAsync(hasEvent);
 
-        // The additional fields, before any row is built (each row gets one cell per field).
-        CustomFields = hasEvent ? await _busy.RunAsync(() => _editor.GetCustomFieldsAsync()) : [];
+        // The additional fields, before any row is built (each row gets one cell per field). The list is replaced
+        // only when its content moved (a new reference rebuilds the columns).
+        var fields = hasEvent ? await _busy.RunAsync(() => _editor.GetCustomFieldsAsync()) : [];
+        if (!CustomFieldsEqual(CustomFields, fields))
+            CustomFields = fields;
 
         _lockedDayIds = days.Where(d => d.IsLocked).Select(d => d.Id).ToHashSet();
 
@@ -754,34 +831,75 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         return true;
     }
 
-    // Loads the rows for the current mode (roster vs the selected real day).
-    private async Task ReloadContentAsync()
+    // The group options the current rows were built with, kept while their content is unchanged so a live refresh
+    // leaves every group combo's items (and selected instance) alone.
+    private IReadOnlyList<GroupOption> _dayGroupOptions = [];
+    private Dictionary<Guid, IReadOnlyList<GroupOption>> _groupsByDay = new();
+
+    // Loads the rows for the current mode (roster vs the selected real day). With merge the fresh rows are applied
+    // onto the existing row objects (RowSync) — a live refresh; otherwise the tables are rebuilt from scratch.
+    private async Task ReloadContentAsync(bool merge = false)
     {
-        ClearParticipantRows();
-        ClearRosterRows();
-        // Fresh rows compute their totals at construction, so no deferred fee recompute is owed anymore.
+        if (!merge)
+        {
+            ClearParticipantRows();
+            ClearRosterRows();
+        }
+        // Rows compute their totals when built or applied, so no deferred fee recompute is owed anymore.
         _feesDirty = false;
 
         if (_session.CurrentEvent is null)
+        {
+            if (merge)
+            {
+                ClearParticipantRows();
+                ClearRosterRows();
+            }
             return;
+        }
 
         if (IsRosterMode)
         {
+            if (merge)
+                ClearParticipantRows();
+
             var roster = await _busy.RunAsync(() => _editor.GetParticipantRosterAsync());
             // The roster's group dropdowns need each day's groups; gather them once.
             var groupsByDay = await _busy.RunAsync(() => LoadGroupsByDayAsync());
             // The roster spans all days, so its team column shows when ANY day uses teams (its default
             // discipline or any group's override).
-            _rosterShowsTeam = await _busy.RunAsync(() => AnyDayUsesTeamAsync());
-            _rosterShowsScore = await _busy.RunAsync(() => AnyDayUsesScoreAsync());
-            foreach (var row in roster)
-                Roster.Add(CreateRosterRow(row, groupsByDay));
-            OnPropertyChanged(nameof(RosterShowsTeam));
-            OnPropertyChanged(nameof(RosterShowsScore));
-            RosterColumnsChanged?.Invoke(this, EventArgs.Empty);
+            var showsTeam = await _busy.RunAsync(() => AnyDayUsesTeamAsync());
+            var showsScore = await _busy.RunAsync(() => AnyDayUsesScoreAsync());
+
+            // Keep each day's option list while its groups are unchanged, so the cells' combos keep their items.
+            foreach (var (dayId, options) in groupsByDay.ToList())
+                if (_groupsByDay.TryGetValue(dayId, out var previous) && SameGroupOptions(previous, options))
+                    groupsByDay[dayId] = previous;
+            _groupsByDay = groupsByDay;
+
+            var columnsChanged = !merge || _rosterShowsTeam != showsTeam || _rosterShowsScore != showsScore;
+            _rosterShowsTeam = showsTeam;
+            _rosterShowsScore = showsScore;
+
+            RowSync.Sync(Roster, roster,
+                itemKey: row => row.ParticipantId,
+                rowKey: row => row.ParticipantId,
+                create: row => CreateRosterRow(row, groupsByDay),
+                update: (vm, row) => ApplyRosterRow(vm, row, groupsByDay));
+
+            if (columnsChanged)
+            {
+                OnPropertyChanged(nameof(RosterShowsTeam));
+                OnPropertyChanged(nameof(RosterShowsScore));
+                // A column rebuild repaints the whole table, so a live refresh raises it only when the set moved.
+                RosterColumnsChanged?.Invoke(this, EventArgs.Empty);
+            }
         }
         else if (_session.CurrentDay is not null)
         {
+            if (merge)
+                ClearRosterRows();
+
             var (rows, groupOptions, dayGroups) = await _busy.RunAsync(async () =>
             {
                 var r = await _editor.GetParticipantDayRowsAsync();
@@ -794,47 +912,118 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             // crash the row VM's group-fallback ([0]); seed the "(none)" sentinel so it never does.
             if (groupOptions.Count == 0)
                 groupOptions = [new GroupOption(null, string.Empty, Localization)];
-            foreach (var row in rows)
-                Participants.Add(CreateDayRow(row, groupOptions));
+            if (SameGroupOptions(_dayGroupOptions, groupOptions))
+                groupOptions = _dayGroupOptions;
+            _dayGroupOptions = groupOptions;
 
             // Teams apply when the day's default discipline uses them, or any group on the day
             // overrides to a team discipline (e.g. a rogaine group on a set-course day).
             var day = _session.CurrentDay;
-            _dayUsesTeam =
+            var usesTeam =
                 _strategies.For(day.DefaultDiscipline).UsesParticipantColumn(BusinessLogic.Enums.ParticipantColumn.Team)
                 || dayGroups.Any(g => _strategies.For(g.DisciplineOverride ?? day.DefaultDiscipline)
                     .UsesParticipantColumn(BusinessLogic.Enums.ParticipantColumn.Team));
             // Relay columns (team / leg / «100.2») when the day or any group runs a relay.
-            _dayUsesRelay =
+            var usesRelay =
                 _strategies.For(day.DefaultDiscipline).Competitors == CompetitorModel.TeamWithLegs
                 || dayGroups.Any(g => _strategies.For(g.DisciplineOverride ?? day.DefaultDiscipline).Competitors
                     == CompetitorModel.TeamWithLegs);
             // «Бали» applies when the day's discipline scores points, or any group overrides to one.
-            _dayUsesScore =
+            var usesScore =
                 _strategies.For(day.DefaultDiscipline).UsesControlPointPoints
                 || dayGroups.Any(g => _strategies.For(g.DisciplineOverride ?? day.DefaultDiscipline).UsesControlPointPoints);
             // A plugin discipline's own result columns (e.g. «Штраф»), once per key, for every discipline in use.
-            _dayResultColumns = new[] { day.DefaultDiscipline }
+            IReadOnlyList<ResultColumnDef> resultColumns = new[] { day.DefaultDiscipline }
                 .Concat(dayGroups.Select(g => g.DisciplineOverride ?? day.DefaultDiscipline))
                 .Distinct()
                 .SelectMany(id => _strategies.For(id).ResultColumns)
                 .DistinctBy(c => c.Key)
                 .ToList();
-            foreach (var participant in Participants)
-                participant.SetResultColumns(_dayResultColumns);
+            // Kept while the keys are the same: the columns are baked into the bands and the rows' extras view.
+            if (_dayResultColumns.Select(c => c.Key).SequenceEqual(resultColumns.Select(c => c.Key)))
+                resultColumns = _dayResultColumns;
+
+            var bandsChanged = !merge || _dayUsesTeam != usesTeam || _dayUsesRelay != usesRelay
+                || _dayUsesScore != usesScore || !ReferenceEquals(_dayResultColumns, resultColumns);
+            _dayUsesTeam = usesTeam;
+            _dayUsesRelay = usesRelay;
+            _dayUsesScore = usesScore;
+            _dayResultColumns = resultColumns;
+
+            RowSync.Sync(Participants, rows,
+                itemKey: row => row.LinkId,
+                rowKey: row => row.Id,
+                create: row => CreateDayRow(row, groupOptions),
+                update: (vm, row) => ApplyDayRow(vm, row, groupOptions));
+
+            if (bandsChanged)
+            {
+                OnPropertyChanged(nameof(ShowTeamColumn));
+                OnPropertyChanged(nameof(ShowScoreColumn));
+                RebuildDayBands();
+            }
         }
         else
         {
+            if (merge)
+            {
+                ClearParticipantRows();
+                ClearRosterRows();
+            }
             _dayUsesTeam = false;
             _dayUsesRelay = false;
             _dayUsesScore = false;
             _dayResultColumns = [];
+            OnPropertyChanged(nameof(ShowTeamColumn));
+            OnPropertyChanged(nameof(ShowScoreColumn));
+            RebuildDayBands();
         }
 
-        OnPropertyChanged(nameof(ShowTeamColumn));
-        OnPropertyChanged(nameof(ShowScoreColumn));
-        RebuildDayBands();
         RecomputeStatusInfo();
+    }
+
+    // Value equality for a group option list (what the combos show and what the age / chip checks read).
+    private static bool SameGroupOptions(IReadOnlyList<GroupOption> a, IReadOnlyList<GroupOption> b)
+    {
+        if (ReferenceEquals(a, b))
+            return true;
+        if (a.Count != b.Count)
+            return false;
+        for (var i = 0; i < a.Count; i++)
+        {
+            var (x, y) = (a[i], b[i]);
+            if (x.Id != y.Id || x.Label != y.Label || x.MinBirthYear != y.MinBirthYear
+                || x.MaxBirthYear != y.MaxBirthYear || x.ControlCount != y.ControlCount)
+                return false;
+        }
+        return true;
+    }
+
+    // Applies a fresh day row onto its existing row object (a live refresh): the row's own values, then the
+    // additional-field cells — rebuilt only when the field set changed (the columns are rebuilt then too).
+    private void ApplyDayRow(ParticipantDayRowViewModel vm, ParticipantDayRow row, IReadOnlyList<GroupOption> groupOptions)
+    {
+        vm.Apply(row, groupOptions, _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Discounts, _feeContext,
+            _dayResultColumns);
+        if (vm.Fields.BuiltFor(CustomFields))
+            vm.Fields.Apply(row.Fields);
+        else
+            vm.Fields = FieldsFor(row.ParticipantId, row.Fields);
+    }
+
+    // Applies a fresh roster row onto its existing row object (a live refresh), cells by day id.
+    private void ApplyRosterRow(
+        ParticipantRosterRowViewModel vm,
+        ParticipantRosterRow row,
+        IReadOnlyDictionary<Guid, IReadOnlyList<GroupOption>> groupsByDay)
+    {
+        vm.Apply(row, groupsByDay, cell => CreateRosterCell(row.ParticipantId, cell, groupsByDay),
+            _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Discounts, _feeContext);
+        if (vm.Fields.BuiltFor(CustomFields))
+            vm.Fields.Apply(row.Fields);
+        else
+            vm.Fields = FieldsFor(row.ParticipantId, row.Fields);
+        vm.ApplyDayLocks(_lockedDayIds);
     }
 
     // Builds the day-group options list for a given day. The roster prepends the "(none)" / "не
@@ -941,12 +1130,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     {
         var cells = new List<RosterDayCellViewModel>(row.Days.Count);
         foreach (var cell in row.Days)
-        {
-            var options = groupsByDay.TryGetValue(cell.DayId, out var o)
-                ? o
-                : [new GroupOption(null, string.Empty, Localization)];
-            cells.Add(new RosterDayCellViewModel(row.ParticipantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange, RequestCellStartTimeChange, RequestCellOutOfCompetitionChange, RequestCellResultStatusChange, RequestCellBonusChange, RequestCellPaymentChange, RequestCellRaisedFeeChange));
-        }
+            cells.Add(CreateRosterCell(row.ParticipantId, cell, groupsByDay));
         var rosterRow = new ParticipantRosterRowViewModel(row, cells, _regionOptions, _clubOptions, _dusshOptions, _rankOptions, Discounts, _feeContext, Localization,
             RequestRosterRowSave,
             RequestRosterRowRegionChange, RequestRosterRowAddRegion,
@@ -959,6 +1143,18 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         // Mark the closed days before the row goes live, so a locked cell never accepts a first edit.
         rosterRow.ApplyDayLocks(_lockedDayIds);
         return rosterRow;
+    }
+
+    // One per-day cell of a roster row, wired to the page's per-cell callbacks.
+    private RosterDayCellViewModel CreateRosterCell(
+        Guid participantId, RosterDayCell cell, IReadOnlyDictionary<Guid, IReadOnlyList<GroupOption>> groupsByDay)
+    {
+        var options = groupsByDay.TryGetValue(cell.DayId, out var o)
+            ? o
+            : [new GroupOption(null, string.Empty, Localization)];
+        return new RosterDayCellViewModel(participantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange,
+            RequestCellStartTimeChange, RequestCellOutOfCompetitionChange, RequestCellResultStatusChange, RequestCellBonusChange,
+            RequestCellPaymentChange, RequestCellRaisedFeeChange);
     }
 
     // Driven by the day ComboBox. A real day switches the session (so other pages follow); the roster
@@ -1033,6 +1229,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // background (cascade-deletes the participant when this was their last day).
     private void LeaveDay(ParticipantDayRowViewModel row)
     {
+        if (row.IsApplying)
+            return;
         if (_saveTimers.TryGetValue(row.Id, out var cts))
         {
             cts.Cancel();
@@ -1144,6 +1342,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // exactly when the edit commits (the chip box updates on lost focus).
     private void RequestDayRowChipChange(ParticipantDayRowViewModel row)
     {
+        if (row.IsApplying)
+            return;
         _ = ResolveDayRowChipAsync(row);
     }
 
@@ -1257,6 +1457,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // ── Day-row autosave (debounced per row)
     private void RequestRowSave(ParticipantDayRowViewModel row)
     {
+        if (row.IsApplying)
+            return;
         if (_saveTimers.TryGetValue(row.Id, out var existing))
             existing.Cancel();
 
@@ -1280,6 +1482,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // ── Roster identity autosave (debounced per row)
     private void RequestRosterRowSave(ParticipantRosterRowViewModel row)
     {
+        if (row.IsApplying)
+            return;
         if (_saveTimers.TryGetValue(row.ParticipantId, out var existing))
             existing.Cancel();
 
@@ -2576,6 +2780,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // the day. Either way the write runs in the background and the cell's membership is updated.
     private void RequestCellGroupChange(RosterDayCellViewModel cell)
     {
+        if (cell.IsApplying)
+            return;
         _ = ApplyCellGroupChangeAsync(cell);
     }
 
@@ -2585,6 +2791,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // holder) or revert. Only member days carry a chip, so there is no membership change to apply here.
     private void RequestCellChipChange(RosterDayCellViewModel cell)
     {
+        if (cell.IsApplying)
+            return;
         if (!cell.IsMember)
             return;
         _ = ResolveCellChipAsync(cell);
@@ -2594,6 +2802,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // background (no confirm flow). Member-only — a non-member cell is ignored.
     private void RequestCellStartTimeChange(RosterDayCellViewModel cell)
     {
+        if (cell.IsApplying)
+            return;
         if (!cell.IsMember)
             return;
         var (participantId, dayId, startTime) = (cell.ParticipantId, cell.DayId, cell.StartTime);
@@ -2602,6 +2812,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
     private void RequestCellOutOfCompetitionChange(RosterDayCellViewModel cell)
     {
+        if (cell.IsApplying)
+            return;
         if (!cell.IsMember)
             return;
         var (participantId, dayId, value) = (cell.ParticipantId, cell.DayId, cell.OutOfCompetition);
@@ -2614,6 +2826,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // cell carries its own day.
     private void RequestDayRowResultStatusChange(ParticipantDayRowViewModel row)
     {
+        if (row.IsApplying)
+            return;
         if (_session.CurrentDay is not { } day)
             return;
         _ = ApplyResultStatusAsync(row.ParticipantId, day.Id, row.ResultStatusOverride);
@@ -2621,6 +2835,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
     private void RequestCellResultStatusChange(RosterDayCellViewModel cell)
     {
+        if (cell.IsApplying)
+            return;
         if (!cell.IsMember)
             return;
         _ = ApplyResultStatusAsync(cell.ParticipantId, cell.DayId, cell.ResultStatusOverride);
@@ -2643,6 +2859,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // uses the session's current day; the roster cell carries its own day.
     private void RequestDayRowBonusChange(ParticipantDayRowViewModel row)
     {
+        if (row.IsApplying)
+            return;
         if (_session.CurrentDay is not { } day)
             return;
         _ = ApplyBonusAsync(row.ParticipantId, day.Id, row.Bonus);
@@ -2650,6 +2868,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
     private void RequestCellBonusChange(RosterDayCellViewModel cell)
     {
+        if (cell.IsApplying)
+            return;
         if (!cell.IsMember)
             return;
         _ = ApplyBonusAsync(cell.ParticipantId, cell.DayId, cell.Bonus);
@@ -2659,6 +2879,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // the debounced row save can't wipe it. No result recompute — a payment changes no standings.
     private void RequestDayRowPaymentChange(ParticipantDayRowViewModel row)
     {
+        if (row.IsApplying)
+            return;
         if (_session.CurrentDay is not { } day)
             return;
         _ = ApplyDayPaymentAsync(row.ParticipantId, day.Id, row.DayPayment);
@@ -2666,6 +2888,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
     private void RequestCellPaymentChange(RosterDayCellViewModel cell)
     {
+        if (cell.IsApplying)
+            return;
         if (!cell.IsMember)
             return;
         _ = ApplyDayPaymentAsync(cell.ParticipantId, cell.DayId, cell.Payment);
@@ -2683,6 +2907,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // Per-day payment mode only: the raised-fee flag belongs to the day, so it is saved on the link.
     private void RequestCellRaisedFeeChange(RosterDayCellViewModel cell)
     {
+        if (cell.IsApplying)
+            return;
         if (!cell.IsMember)
             return;
         _ = ApplyDayRaisedFeeAsync(cell.ParticipantId, cell.DayId, cell.PaysRaisedFee);
@@ -2822,7 +3048,22 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         var regions = hasEvent
             ? await _busy.RunAsync(() => _editor.GetRegionsAsync())
             : (IReadOnlyList<BusinessLogic.Entities.Region>)[];
-        _regionOptions = BuildRegionOptions(regions);
+        var options = BuildRegionOptions(regions);
+        // A new list reference re-seeds every row's combo, so the old one is kept while nothing in it moved.
+        if (!SameOptions(_regionOptions, options, o => (o.Id, o.IsAdd, o.Label)))
+            _regionOptions = options;
+    }
+
+    // Value equality for a shared option list, by a per-option key (id + label).
+    private static bool SameOptions<T, TKey>(IReadOnlyList<T> a, IReadOnlyList<T> b, Func<T, TKey> key)
+        where TKey : notnull
+    {
+        if (a.Count != b.Count)
+            return false;
+        for (var i = 0; i < a.Count; i++)
+            if (!key(a[i]).Equals(key(b[i])))
+                return false;
+        return true;
     }
 
     private IReadOnlyList<RegionOption> BuildRegionOptions(IReadOnlyList<BusinessLogic.Entities.Region> regions)
@@ -2835,23 +3076,37 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     }
 
     // A real region / "(none)" was picked on a row: persist the participant's region in the background.
+    // Every per-row callback below ignores a row a live refresh is applying (IsApplying): those values came from the
+    // store and must neither be written back nor open a dialog.
     private void RequestDayRowRegionChange(ParticipantDayRowViewModel row)
-        => _ = Task.Run(() => _editor.SetParticipantRegionAsync(row.ParticipantId, row.SelectedRegion.Id));
+    {
+        if (!row.IsApplying)
+            _ = Task.Run(() => _editor.SetParticipantRegionAsync(row.ParticipantId, row.SelectedRegion.Id));
+    }
 
     private void RequestRosterRowRegionChange(ParticipantRosterRowViewModel row)
-        => _ = Task.Run(() => _editor.SetParticipantRegionAsync(row.ParticipantId, row.SelectedRegion.Id));
+    {
+        if (!row.IsApplying)
+            _ = Task.Run(() => _editor.SetParticipantRegionAsync(row.ParticipantId, row.SelectedRegion.Id));
+    }
 
     // "+ new" was picked: prompt for a name, create the region, refresh every row's options, and
     // select the new region on the originating row. On cancel, revert the row to its previous region.
     private void RequestDayRowAddRegion(ParticipantDayRowViewModel row)
-        => _ = AddRegionForRowAsync(
-            select: id => SelectRegionOnDayRow(row, id),
-            revert: () => row.SetRegionSilently(row.CommittedRegion));
+    {
+        if (!row.IsApplying)
+            _ = AddRegionForRowAsync(
+                select: id => SelectRegionOnDayRow(row, id),
+                revert: () => row.SetRegionSilently(row.CommittedRegion));
+    }
 
     private void RequestRosterRowAddRegion(ParticipantRosterRowViewModel row)
-        => _ = AddRegionForRowAsync(
-            select: id => SelectRegionOnRosterRow(row, id),
-            revert: () => row.SetRegionSilently(row.CommittedRegion));
+    {
+        if (!row.IsApplying)
+            _ = AddRegionForRowAsync(
+                select: id => SelectRegionOnRosterRow(row, id),
+                revert: () => row.SetRegionSilently(row.CommittedRegion));
+    }
 
     private async Task AddRegionForRowAsync(Action<Guid> select, Action revert)
     {
@@ -2927,7 +3182,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         var clubs = hasEvent
             ? await _busy.RunAsync(() => _editor.GetClubsAsync())
             : (IReadOnlyList<BusinessLogic.Entities.Club>)[];
-        _clubOptions = BuildClubOptions(clubs);
+        var options = BuildClubOptions(clubs);
+        if (!SameOptions(_clubOptions, options, o => (o.Id, o.IsAdd, o.Label)))
+            _clubOptions = options;
     }
 
     private IReadOnlyList<ClubOption> BuildClubOptions(IReadOnlyList<BusinessLogic.Entities.Club> clubs)
@@ -2940,20 +3197,32 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     }
 
     private void RequestDayRowClubChange(ParticipantDayRowViewModel row)
-        => _ = Task.Run(() => _editor.SetParticipantClubAsync(row.ParticipantId, row.SelectedClub.Id));
+    {
+        if (!row.IsApplying)
+            _ = Task.Run(() => _editor.SetParticipantClubAsync(row.ParticipantId, row.SelectedClub.Id));
+    }
 
     private void RequestRosterRowClubChange(ParticipantRosterRowViewModel row)
-        => _ = Task.Run(() => _editor.SetParticipantClubAsync(row.ParticipantId, row.SelectedClub.Id));
+    {
+        if (!row.IsApplying)
+            _ = Task.Run(() => _editor.SetParticipantClubAsync(row.ParticipantId, row.SelectedClub.Id));
+    }
 
     private void RequestDayRowAddClub(ParticipantDayRowViewModel row)
-        => _ = AddClubForRowAsync(
-            select: id => SelectClubOnDayRow(row, id),
-            revert: () => row.SetClubSilently(row.CommittedClub));
+    {
+        if (!row.IsApplying)
+            _ = AddClubForRowAsync(
+                select: id => SelectClubOnDayRow(row, id),
+                revert: () => row.SetClubSilently(row.CommittedClub));
+    }
 
     private void RequestRosterRowAddClub(ParticipantRosterRowViewModel row)
-        => _ = AddClubForRowAsync(
-            select: id => SelectClubOnRosterRow(row, id),
-            revert: () => row.SetClubSilently(row.CommittedClub));
+    {
+        if (!row.IsApplying)
+            _ = AddClubForRowAsync(
+                select: id => SelectClubOnRosterRow(row, id),
+                revert: () => row.SetClubSilently(row.CommittedClub));
+    }
 
     private async Task AddClubForRowAsync(Action<Guid> select, Action revert)
     {
@@ -3024,7 +3293,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         var dusshes = hasEvent
             ? await _busy.RunAsync(() => _editor.GetDusshesAsync())
             : (IReadOnlyList<BusinessLogic.Entities.Dussh>)[];
-        _dusshOptions = BuildDusshOptions(dusshes);
+        var options = BuildDusshOptions(dusshes);
+        if (!SameOptions(_dusshOptions, options, o => (o.Id, o.IsAdd, o.Label)))
+            _dusshOptions = options;
     }
 
     private IReadOnlyList<DusshOption> BuildDusshOptions(IReadOnlyList<BusinessLogic.Entities.Dussh> dusshes)
@@ -3037,20 +3308,32 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     }
 
     private void RequestDayRowDusshChange(ParticipantDayRowViewModel row)
-        => _ = Task.Run(() => _editor.SetParticipantDusshAsync(row.ParticipantId, row.SelectedDussh.Id));
+    {
+        if (!row.IsApplying)
+            _ = Task.Run(() => _editor.SetParticipantDusshAsync(row.ParticipantId, row.SelectedDussh.Id));
+    }
 
     private void RequestRosterRowDusshChange(ParticipantRosterRowViewModel row)
-        => _ = Task.Run(() => _editor.SetParticipantDusshAsync(row.ParticipantId, row.SelectedDussh.Id));
+    {
+        if (!row.IsApplying)
+            _ = Task.Run(() => _editor.SetParticipantDusshAsync(row.ParticipantId, row.SelectedDussh.Id));
+    }
 
     private void RequestDayRowAddDussh(ParticipantDayRowViewModel row)
-        => _ = AddDusshForRowAsync(
-            select: id => SelectDusshOnDayRow(row, id),
-            revert: () => row.SetDusshSilently(row.CommittedDussh));
+    {
+        if (!row.IsApplying)
+            _ = AddDusshForRowAsync(
+                select: id => SelectDusshOnDayRow(row, id),
+                revert: () => row.SetDusshSilently(row.CommittedDussh));
+    }
 
     private void RequestRosterRowAddDussh(ParticipantRosterRowViewModel row)
-        => _ = AddDusshForRowAsync(
-            select: id => SelectDusshOnRosterRow(row, id),
-            revert: () => row.SetDusshSilently(row.CommittedDussh));
+    {
+        if (!row.IsApplying)
+            _ = AddDusshForRowAsync(
+                select: id => SelectDusshOnRosterRow(row, id),
+                revert: () => row.SetDusshSilently(row.CommittedDussh));
+    }
 
     private async Task AddDusshForRowAsync(Action<Guid> select, Action revert)
     {
@@ -3125,7 +3408,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         foreach (var r in ranks)
             if (!string.IsNullOrWhiteSpace(r.Name))
                 options.Add(new RankOption(r.Name, Localization));
-        _rankOptions = options;
+        if (!SameOptions(_rankOptions, options, o => o.Value))
+            _rankOptions = options;
     }
 
     // ── Entry-fee data (discounts + the recompute snapshot)
@@ -3183,6 +3467,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // otherwise it is competition-level and covers every day the participant runs.
     private void RequestRowRaisedFeeChange(ParticipantDayRowViewModel row)
     {
+        if (row.IsApplying)
+            return;
         if (PaymentPerDay)
         {
             if (_session.CurrentDay is { } day)
@@ -3197,6 +3483,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // block whose cells save themselves through RequestCellRaisedFeeChange).
     private void RequestRosterRaisedFeeChange(ParticipantRosterRowViewModel row)
     {
+        if (row.IsApplying)
+            return;
         if (PaymentPerDay)
             return;
 
@@ -3205,10 +3493,16 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
     // A row's discount checkbox toggled: persist the link add/remove in the background.
     private void RequestRowDiscountChange(ParticipantDayRowViewModel row, Guid discountId, bool on)
-        => _ = Task.Run(() => _editor.SetParticipantDiscountAsync(row.ParticipantId, discountId, on));
+    {
+        if (!row.IsApplying)
+            _ = Task.Run(() => _editor.SetParticipantDiscountAsync(row.ParticipantId, discountId, on));
+    }
 
     private void RequestRosterDiscountChange(ParticipantRosterRowViewModel row, Guid discountId, bool on)
-        => _ = Task.Run(() => _editor.SetParticipantDiscountAsync(row.ParticipantId, discountId, on));
+    {
+        if (!row.IsApplying)
+            _ = Task.Run(() => _editor.SetParticipantDiscountAsync(row.ParticipantId, discountId, on));
+    }
 
     // ── Rental-chip highlight + toggle
     private async Task RefreshRentalChipsAsync(bool hasEvent)

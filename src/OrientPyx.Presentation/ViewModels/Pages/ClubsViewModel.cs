@@ -65,7 +65,23 @@ public sealed partial class ClubsViewModel : PageViewModelBase
     public async Task LoadAsync()
     {
         CancelAllTimers();
+        await LoadCoreAsync(merge: false);
+    }
 
+    /// <inheritdoc />
+    /// <remarks>Lets the pending row saves finish first (LoadAsync cancels them, see <see cref="PendingSaves"/>), then merges
+    /// the fresh rows into the existing ones (<see cref="RowSync"/>) so the selected row and the scroll position survive.</remarks>
+    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        await _pendingSaves.WaitAsync();
+        await LoadCoreAsync(merge: true);
+        if (SelectedClub is { } selected && !Clubs.Contains(selected))
+            SelectedClub = null;
+    }
+
+    // Reads the rows and either rebuilds the collection (first open / session switch) or merges them in place.
+    private async Task LoadCoreAsync(bool merge)
+    {
         var hasEvent = _session.CurrentEvent is not null;
         var clubs = hasEvent
             ? await _busy.RunAsync(() => _editor.GetClubsAsync())
@@ -74,24 +90,20 @@ public sealed partial class ClubsViewModel : PageViewModelBase
             ? await _busy.RunAsync(() => _editor.GetClubParticipantCountsAsync())
             : (IReadOnlyDictionary<Guid, int>)new Dictionary<Guid, int>();
 
-        Clubs.Clear();
-        foreach (var club in clubs)
-        {
-            var row = CreateRow(club);
-            row.ParticipantCount = counts.TryGetValue(club.Id, out var c) ? c : 0;
-            Clubs.Add(row);
-        }
-    }
+        if (!merge)
+            Clubs.Clear();
 
-    /// <inheritdoc />
-    /// <remarks>Lets the pending row saves finish first (LoadAsync cancels them, see <see cref="PendingSaves"/>) and keeps the
-    /// selected row by id.</remarks>
-    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
-    {
-        await _pendingSaves.WaitAsync();
-        var selectedId = SelectedClub?.Id;
-        await LoadAsync();
-        SelectedClub = Clubs.FirstOrDefault(r => r.Id == selectedId);
+        int CountOf(Club item) => counts.TryGetValue(item.Id, out var c) ? c : 0;
+        RowSync.Sync(Clubs, clubs,
+            itemKey: item => item.Id,
+            rowKey: row => row.Id,
+            create: item =>
+            {
+                var row = CreateRow(item);
+                row.ParticipantCount = CountOf(item);
+                return row;
+            },
+            update: (row, item) => row.Apply(item, CountOf(item)));
     }
 
     private ClubRowViewModel CreateRow(Club club) => new(club, Localization, RequestRowSave);
@@ -151,6 +163,9 @@ public sealed partial class ClubsViewModel : PageViewModelBase
 
     private void RequestRowSave(ClubRowViewModel row)
     {
+        if (row.IsApplying)
+            return;
+
         if (_saveTimers.TryGetValue(row.Id, out var existing))
             existing.Cancel();
 

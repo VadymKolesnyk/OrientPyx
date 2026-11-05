@@ -1,3 +1,4 @@
+using CommunityToolkit.Mvvm.ComponentModel;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
@@ -21,9 +22,9 @@ public enum StatusHighlight
 /// participant on the current day holds that chip — their number, full name and group. An unrecognised
 /// chip (held by nobody on the day) shows a localized "невідомий" marker instead.
 /// </summary>
-public sealed class FinishReadRowViewModel
+public sealed class FinishReadRowViewModel : ObservableObject
 {
-    private readonly FinishReadoutRow _row;
+    private FinishReadoutRow _row;
     private readonly ILocalizationService _localization;
 
     public FinishReadRowViewModel(FinishReadoutRow row, ILocalizationService localization)
@@ -31,6 +32,52 @@ public sealed class FinishReadRowViewModel
         _row = row;
         _localization = localization;
     }
+
+    /// <summary>
+    /// Replaces the wrapped read-out with a freshly-read one (same id) and re-raises every display property that
+    /// changed. A row whose record is unchanged raises nothing, so a live refresh repaints only what moved — a
+    /// re-ranked place, a status override made elsewhere, a resolved chip.
+    /// </summary>
+    public void Apply(FinishReadoutRow row)
+    {
+        if (_row == row)
+            return;
+
+        var before = Snapshot();
+        _row = row;
+        var after = Snapshot();
+        foreach (var (name, value) in after)
+            if (!Equals(before[name], value))
+                OnPropertyChanged(name);
+    }
+
+    // Every bound property with its current value, so Apply can raise exactly the ones that changed.
+    private Dictionary<string, object?> Snapshot() => new()
+    {
+        [nameof(Order)] = Order,
+        [nameof(ChipNumber)] = ChipNumber,
+        [nameof(CollectRentalChip)] = CollectRentalChip,
+        [nameof(CollectRentalChipTooltip)] = CollectRentalChipTooltip,
+        [nameof(StartTimeText)] = StartTimeText,
+        [nameof(FinishTimeText)] = FinishTimeText,
+        [nameof(ElapsedText)] = ElapsedText,
+        [nameof(IsKnown)] = IsKnown,
+        [nameof(IsUnknown)] = IsUnknown,
+        [nameof(ParticipantNumber)] = ParticipantNumber,
+        [nameof(FullName)] = FullName,
+        [nameof(GroupName)] = GroupName,
+        [nameof(ScoreText)] = ScoreText,
+        [nameof(PlaceText)] = PlaceText,
+        [nameof(PlaceMedal)] = PlaceMedal,
+        [nameof(GapText)] = GapText,
+        [nameof(StatusText)] = StatusText,
+        [nameof(StatusDetail)] = StatusDetail,
+        [nameof(StatusIsBad)] = StatusIsBad,
+        [nameof(Highlight)] = Highlight,
+        [nameof(StatusHighlightTooltip)] = StatusHighlightTooltip,
+        [nameof(StatusIsManual)] = StatusIsManual,
+        [nameof(StatusIsManualOk)] = StatusIsManualOk,
+    };
 
     /// <summary>Stable identity for the grid (the readout's entity id).</summary>
     public Guid Id => _row.Id;

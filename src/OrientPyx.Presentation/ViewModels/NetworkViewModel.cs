@@ -354,6 +354,19 @@ public sealed partial class NetworkViewModel : PageViewModelBase
         RefreshHost();
     }
 
+    // The «Довірений» check box of a station row: the host remembers the DEVICE (its id), not the name.
+    private async void TrustStation(StationRowViewModel row, bool trusted)
+    {
+        try
+        {
+            await _host.SetStationTrustedAsync(row.Token, trusted);
+        }
+        catch (Exception ex)
+        {
+            _log.Error("Network host: trust station", ex);
+        }
+    }
+
     [RelayCommand]
     private async Task DisconnectStationAsync(StationRowViewModel? row)
     {
@@ -481,7 +494,7 @@ public sealed partial class NetworkViewModel : PageViewModelBase
         IReadOnlyList<ConnectedStation> stations = _host.IsRunning ? _host.Stations : [];
         Stations.Clear();
         foreach (var station in stations.OrderByDescending(s => s.IsOnline).ThenBy(s => s.Name, StringComparer.CurrentCultureIgnoreCase))
-            Stations.Add(new StationRowViewModel(station, Localization));
+            Stations.Add(new StationRowViewModel(station, Localization, TrustStation));
 
         if (!_host.IsRunning && _hostCheckResults.Count > 0)
         {
@@ -508,7 +521,7 @@ public sealed partial class NetworkViewModel : PageViewModelBase
     {
         if (string.IsNullOrEmpty(pin))
             return string.Empty;
-        return pin.Length == 6 ? $"{pin[..3]} {pin[3..]}" : pin;
+        return pin.Length == 6 ? $"{pin[..3]} {pin[3..]}" : pin; // 4-digit PINs read fine unsplit
     }
 
     // ── Station card
@@ -532,7 +545,7 @@ public sealed partial class NetworkViewModel : PageViewModelBase
         get => _pin;
         set
         {
-            var digits = new string((value ?? string.Empty).Where(char.IsDigit).Take(6).ToArray());
+            var digits = new string((value ?? string.Empty).Where(char.IsDigit).Take(4).ToArray());
             if (SetProperty(ref _pin, digits, nameof(Pin)))
                 ConnectCommand.NotifyCanExecuteChanged();
         }
@@ -609,7 +622,7 @@ public sealed partial class NetworkViewModel : PageViewModelBase
         {
             await LoadSettingsAsync();
             await SaveNamesAsync();
-            var pin = Pin.Length == 6 ? Pin : null;
+            var pin = Pin.Length == 4 ? Pin : null;
             var result = await _client.ConnectAsync(endpoint, pin);
             _warningResults = result.Warnings;
             if (result.Success)
@@ -823,16 +836,35 @@ public sealed partial class StationRowViewModel : ObservableObject
     [ObservableProperty]
     private string _lastSeenText = string.Empty;
 
-    public StationRowViewModel(ConnectedStation station, ILocalizationService localization)
+    private readonly Action<StationRowViewModel, bool> _onTrustChanged;
+    private readonly bool _ready;
+
+    public StationRowViewModel(ConnectedStation station, ILocalizationService localization, Action<StationRowViewModel, bool> onTrustChanged)
     {
         _station = station;
+        _onTrustChanged = onTrustChanged;
+        _isTrusted = station.IsTrusted;
         RefreshLastSeen(localization);
+        _ready = true;
     }
 
     public string Token => _station.Token;
     public string Name => _station.Name;
     public string Address => _station.Address;
     public bool IsOnline => _station.IsOnline;
+
+    /// <summary>A station of an older build sends no device id and cannot be trusted by device.</summary>
+    public bool CanTrust => !string.IsNullOrEmpty(_station.DeviceId);
+
+    /// <summary>«Довірений пристрій»: pairs again without a PIN. Two-way from the row's check box.</summary>
+    [ObservableProperty]
+    private bool _isTrusted;
+
+    partial void OnIsTrustedChanged(bool value)
+    {
+        if (_ready)
+            _onTrustChanged(this, value);
+    }
 
     /// <summary>«щойно» / «N хв тому» — recomputed by the page's timer while the overlay is open.</summary>
     public void RefreshLastSeen(ILocalizationService localization)

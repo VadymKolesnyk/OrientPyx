@@ -217,6 +217,15 @@ internal static class Program
             return;
         }
 
+        // A station that lost its host: every background path (a debounced save, a preview refresh, a poller tick)
+        // ends in HostUnreachableException while the connection is down. The offline banner already says so and
+        // the station reconnects by itself — log it, never show a crash dialog for it.
+        if (IsHostUnreachable(ex))
+        {
+            LogCrash(source, ex);
+            return;
+        }
+
         LogCrash(source, ex);
 
         if (_showingCrashDialog)
@@ -235,6 +244,21 @@ internal static class Program
     }
 
     private static bool _showingCrashDialog;
+
+    // True for a HostUnreachableException anywhere in the chain (an AggregateException from an unobserved task
+    // wraps it; a busy-service rethrow may nest it once more).
+    private static bool IsHostUnreachable(Exception? ex)
+    {
+        for (var depth = 0; ex is not null && depth < 8; depth++)
+        {
+            if (ex is OrientPyx.BusinessLogic.Models.Network.HostUnreachableException)
+                return true;
+            if (ex is AggregateException aggregate && aggregate.InnerExceptions.Any(IsHostUnreachable))
+                return true;
+            ex = ex.InnerException;
+        }
+        return false;
+    }
 
     /// <summary>
     /// Appends a full crash report to crash.log next to the executable. Best-effort:

@@ -151,21 +151,27 @@ public sealed partial class ChipsViewModel : PageViewModelBase
     /// <remarks>
     /// Unlike the SessionChanged handler this does NOT stop auto-read: the watched file is still this machine's
     /// and the competition is the same. Pending row saves finish first (LoadAsync cancels them, see
-    /// PendingSaves); the selected chip is kept by id.
+    /// PendingSaves); the fresh rows are then merged into the existing ones (<see cref="RowSync"/>), so the
+    /// selected chip and the scroll position survive and only the cells that changed repaint.
     /// </remarks>
     protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
     {
         await _pendingSaves.WaitAsync();
-        var selectedId = SelectedChip?.Id;
-        await LoadAsync();
-        SelectedChip = Chips.FirstOrDefault(c => c.Id == selectedId);
+        await LoadCoreAsync(merge: true);
+        if (SelectedChip is { } selected && !Chips.Contains(selected))
+            SelectedChip = null;
     }
 
     /// <summary>Reloads the chips for the current competition. Called when the page is shown.</summary>
     public async Task LoadAsync()
     {
         CancelAllTimers();
+        await LoadCoreAsync(merge: false);
+    }
 
+    // Reads the pool and either rebuilds the rows (first open / session switch) or merges them in place.
+    private async Task LoadCoreAsync(bool merge)
+    {
         // Pre-fill the watch path with the per-competition default (chips/rentchip.csv). Done before
         // the await so it lands even when the page is first shown; the file itself is only created
         // when auto-read is switched on. Leave a user-customised path alone.
@@ -179,21 +185,31 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         var holders = await _busy.RunAsync(() => _editor.GetRentalChipHoldersByDayAsync());
         ShowCardColumns = await _appSettings.GetReadoutTypeAsync() == BusinessLogic.Enums.ReadoutType.SportIdent;
 
-        foreach (var existing in Chips)
-            existing.PropertyChanged -= OnRowPropertyChanged;
-        Chips.Clear();
+        if (!merge)
+        {
+            foreach (var existing in Chips)
+                existing.PropertyChanged -= OnRowPropertyChanged;
+            Chips.Clear();
+        }
 
         // Only swap the day list when it actually changed, so the view rebuilds its columns just then.
         if (!DayNumbers.SequenceEqual(holders.DayNumbers))
             DayNumbers = holders.DayNumbers;
 
-        foreach (var chip in chips)
-        {
-            var row = CreateRow(chip);
-            if (holders.HoldersByChip.TryGetValue(chip.Number.Trim(), out var names))
-                row.DayHolders = names;
-            Chips.Add(row);
-        }
+        IReadOnlyList<string> HoldersOf(RentalChip chip) =>
+            holders.HoldersByChip.TryGetValue(chip.Number.Trim(), out var names) ? names : [];
+
+        RowSync.Sync(Chips, chips,
+            itemKey: chip => chip.Id,
+            rowKey: row => row.Id,
+            create: chip =>
+            {
+                var row = CreateRow(chip);
+                row.DayHolders = HoldersOf(chip);
+                return row;
+            },
+            update: (row, chip) => row.Apply(chip, HoldersOf(chip)),
+            removed: row => row.PropertyChanged -= OnRowPropertyChanged);
 
         RefreshDuplicates();
     }
@@ -233,7 +249,8 @@ public sealed partial class ChipsViewModel : PageViewModelBase
     // write to avoid re-entering.)
     private void OnRowPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(RentalChipRowViewModel.Number))
+        // A row being applied by a live refresh is re-flagged once, after the whole sync.
+        if (e.PropertyName == nameof(RentalChipRowViewModel.Number) && sender is RentalChipRowViewModel { IsApplying: false })
             RefreshDuplicates();
     }
 
@@ -403,8 +420,14 @@ public sealed partial class ChipsViewModel : PageViewModelBase
             var parser = await _readoutParsers.GetCurrentAsync();
             var data = parser.Parse(content);
             var result = await _editor.ImportRentalChipsAsync(data, note: AutoReadNote);
+            // Merge the new chips into the table (same competition, same machine): the rows being edited keep
+            // their pending saves and the table does not repaint.
             if (result.Added > 0)
-                await Dispatcher.UIThread.InvokeAsync(LoadAsync);
+                await Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    await _pendingSaves.WaitAsync();
+                    await LoadCoreAsync(merge: true);
+                });
         }
         catch (ReadoutFormatException)
         {
@@ -480,6 +503,9 @@ public sealed partial class ChipsViewModel : PageViewModelBase
 
     private void RequestRowSave(RentalChipRowViewModel row)
     {
+        if (row.IsApplying)
+            return;
+
         if (_saveTimers.TryGetValue(row.Id, out var existing))
             existing.Cancel();
 

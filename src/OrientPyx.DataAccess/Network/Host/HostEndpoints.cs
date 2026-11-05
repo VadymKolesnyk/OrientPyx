@@ -172,6 +172,12 @@ internal sealed class HostEndpoints
             token = request.Token;
             _log.Info($"Network host: station '{stationName}' ({address}) reconnected with its token");
         }
+        else if (_stations.IsTrustedDevice(request.DeviceId))
+        {
+            // A device the operator marked «довірений»: no PIN needed, by device id — never by name.
+            token = (await _stations.IssueAsync(stationName, address, request.DeviceId, cancellationToken)).Token;
+            _log.Action($"Network host: trusted station '{stationName}' ({address}) paired without a PIN");
+        }
         else
         {
             if (_stations.IsLocked)
@@ -187,7 +193,7 @@ internal sealed class HostEndpoints
                     : RpcErrors.Outcome(401, RpcErrorKinds.Unauthorized, "Wrong PIN."));
                 return;
             }
-            token = (await _stations.IssueAsync(stationName, address, cancellationToken)).Token;
+            token = (await _stations.IssueAsync(stationName, address, request.DeviceId, cancellationToken)).Token;
             _log.Action($"Network host: station '{stationName}' ({address}) paired");
         }
 

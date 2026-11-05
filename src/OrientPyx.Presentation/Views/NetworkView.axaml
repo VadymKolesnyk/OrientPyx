@@ -110,15 +110,17 @@
                     <Border Classes="card" Padding="12,4" IsVisible="{Binding HasStations}"
                             Background="{DynamicResource SurfaceSubtle}">
                         <StackPanel>
-                            <Grid ColumnDefinitions="18,*,160,120,Auto" ColumnSpacing="10" Margin="0,6">
+                            <Grid ColumnDefinitions="18,*,160,120,Auto,Auto" ColumnSpacing="10" Margin="0,6">
                                 <TextBlock Grid.Column="1" Text="{Binding Localization[Network.Host.Col.Name]}" Classes="label" />
                                 <TextBlock Grid.Column="2" Text="{Binding Localization[Network.Host.Col.Address]}" Classes="label" />
                                 <TextBlock Grid.Column="3" Text="{Binding Localization[Network.Host.Col.LastSeen]}" Classes="label" />
+                                <TextBlock Grid.Column="4" Text="{Binding Localization[Network.Host.Col.Trusted]}" Classes="label"
+                                           ToolTip.Tip="{Binding Localization[Network.Host.TrustedHint]}" />
                             </Grid>
                             <ItemsControl ItemsSource="{Binding Stations}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="vm:StationRowViewModel">
-                                        <Grid ColumnDefinitions="18,*,160,120,Auto" ColumnSpacing="10" Margin="0,4">
+                                        <Grid ColumnDefinitions="18,*,160,120,Auto,Auto" ColumnSpacing="10" Margin="0,4">
                                             <Panel Grid.Column="0" VerticalAlignment="Center">
                                                 <Border Width="10" Height="10" CornerRadius="5"
                                                         Background="{DynamicResource SuccessBrush}"
@@ -133,7 +135,10 @@
                                                        VerticalAlignment="Center" />
                                             <TextBlock Grid.Column="3" Text="{Binding LastSeenText}" Classes="muted"
                                                        VerticalAlignment="Center" />
-                                            <Button Grid.Column="4" Classes="ghost small"
+                                            <CheckBox Grid.Column="4" IsChecked="{Binding IsTrusted, Mode=TwoWay}"
+                                                      IsEnabled="{Binding CanTrust}" VerticalAlignment="Center"
+                                                      ToolTip.Tip="{Binding $parent[UserControl].((vm:NetworkViewModel)DataContext).Localization[Network.Host.TrustedHint]}" />
+                                            <Button Grid.Column="5" Classes="ghost small"
                                                     Content="{Binding $parent[UserControl].((vm:NetworkViewModel)DataContext).Localization[Network.Host.Disconnect]}"
                                                     Command="{Binding $parent[UserControl].((vm:NetworkViewModel)DataContext).DisconnectStationCommand}"
                                                     CommandParameter="{Binding}" />

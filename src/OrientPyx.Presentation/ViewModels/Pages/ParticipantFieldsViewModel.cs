@@ -11,6 +11,7 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 public sealed class ParticipantFieldsViewModel
 {
     private readonly Dictionary<string, ParticipantFieldCellViewModel> _cells;
+    private readonly IReadOnlyList<CustomField> _fields;
 
     /// <summary>A row with no fields (before the page attaches the real set).</summary>
     public static ParticipantFieldsViewModel Empty { get; } = new(Guid.Empty, [], new Dictionary<string, string>(), (_, _) => { });
@@ -21,10 +22,21 @@ public sealed class ParticipantFieldsViewModel
         IReadOnlyDictionary<string, string> values,
         Action<Guid, ParticipantFieldCellViewModel> requestSave)
     {
+        _fields = fields;
         _cells = fields.ToDictionary(
             f => f.Key,
             f => new ParticipantFieldCellViewModel(
                 f, values.TryGetValue(f.Key, out var v) ? v : string.Empty, cell => requestSave(participantId, cell)));
+    }
+
+    /// <summary>True when the cells were built for exactly this field set (the page keeps the list while it is unchanged).</summary>
+    public bool BuiltFor(IReadOnlyList<CustomField> fields) => ReferenceEquals(_fields, fields);
+
+    /// <summary>Copies fresh stored values onto the cells without triggering a save; only a changed cell raises.</summary>
+    public void Apply(IReadOnlyDictionary<string, string> values)
+    {
+        foreach (var (key, cell) in _cells)
+            cell.ApplySaved(values.TryGetValue(key, out var v) ? v : string.Empty);
     }
 
     /// <summary>The cell of a field; a key the competition doesn't have reads as an inert empty cell.</summary>

@@ -150,22 +150,39 @@ public sealed partial class PointsViewModel : PageViewModelBase
     /// </remarks>
     protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
     {
+        // The list is merged in place (RowSync), so the selected rule survives; its detail pane is then refreshed
+        // in place too, since the selection setter does not re-run for the same item.
         await _pendingSaves.WaitAsync();
-        await LoadAsync();
+        await LoadCoreAsync(merge: true);
     }
 
     public async Task LoadAsync()
     {
         CancelAllTimers();
+        await LoadCoreAsync(merge: false);
+    }
+
+    // Reads the rules and either rebuilds the list (first open) or merges it in place (a live refresh).
+    private async Task LoadCoreAsync(bool merge)
+    {
         var rules = await _busy.RunAsync(() => _appStore.GetPointsRulesAsync());
 
-        var previousId = SelectedRule?.Id;
-        Rules.Clear();
-        foreach (var rule in rules)
-            Rules.Add(new PointsRuleListItemViewModel(rule, Localization));
+        var previous = SelectedRule;
+        if (!merge)
+            Rules.Clear();
+
+        RowSync.Sync(Rules, rules,
+            itemKey: rule => rule.Id,
+            rowKey: item => item.Id,
+            create: rule => new PointsRuleListItemViewModel(rule, Localization),
+            update: (item, rule) => item.Apply(rule));
 
         // Restore the prior selection if it still exists, else select the first rule.
-        SelectedRule = Rules.FirstOrDefault(r => r.Id == previousId) ?? Rules.FirstOrDefault();
+        var selected = previous is not null && Rules.Contains(previous) ? previous : Rules.FirstOrDefault();
+        if (ReferenceEquals(selected, SelectedRule))
+            await LoadDetailAsync(selected, merge: true);
+        else
+            SelectedRule = selected;
     }
 
     partial void OnSelectedRuleChanged(PointsRuleListItemViewModel? value)
@@ -176,9 +193,12 @@ public sealed partial class PointsViewModel : PageViewModelBase
         _ = LoadDetailAsync(value);
     }
 
-    private async Task LoadDetailAsync(PointsRuleListItemViewModel? item)
+    // merge: keep the table rows (matched by place) and change only what moved — a live refresh of the rule
+    // being shown; otherwise the pane is rebuilt for a newly selected rule.
+    private async Task LoadDetailAsync(PointsRuleListItemViewModel? item, bool merge = false)
     {
-        TableRows.Clear();
+        if (!merge)
+            TableRows.Clear();
         if (item is null)
         {
             _loadingDetail = true;
@@ -192,26 +212,35 @@ public sealed partial class PointsViewModel : PageViewModelBase
         // Re-read the full rule (the list item only carries name + kind).
         var rules = await _appStore.GetPointsRulesAsync();
         var rule = rules.FirstOrDefault(r => r.Id == item.Id);
-        if (rule is null)
+        if (rule is null || !ReferenceEquals(SelectedRule, item))
             return;
 
         _loadingDetail = true;
-        EditName = rule.Name;
-
-        if (rule.Kind == PointsRuleKind.Table)
+        try
         {
-            var values = PointsTable.Parse(rule.TableJson);
-            for (var i = 0; i < values.Count; i++)
-                TableRows.Add(new PointsTableRowViewModel(i + 1, values[i], OnTableEdited));
-            FormulaText = string.Empty;
-        }
-        else
-        {
-            FormulaText = rule.Formula ?? string.Empty;
-            FormulaValid = PointsFormula.TryValidate(FormulaText, out _);
-        }
+            EditName = rule.Name;
 
-        _loadingDetail = false;
+            if (rule.Kind == PointsRuleKind.Table)
+            {
+                var values = PointsTable.Parse(rule.TableJson);
+                RowSync.Sync(TableRows, values.Select((v, i) => (Place: i + 1, Points: v)).ToList(),
+                    itemKey: v => v.Place,
+                    rowKey: row => row.Place,
+                    create: v => new PointsTableRowViewModel(v.Place, v.Points, OnTableEdited),
+                    update: (row, v) => row.Apply(v.Points));
+                FormulaText = string.Empty;
+            }
+            else
+            {
+                TableRows.Clear();
+                FormulaText = rule.Formula ?? string.Empty;
+                FormulaValid = PointsFormula.TryValidate(FormulaText, out _);
+            }
+        }
+        finally
+        {
+            _loadingDetail = false;
+        }
     }
 
     // ── Name / table / formula change handlers

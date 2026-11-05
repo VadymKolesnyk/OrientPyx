@@ -14,18 +14,18 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 public sealed partial class ControlPointRowViewModel : ObservableObject
 {
     private readonly Guid _id;
-    private readonly Guid _eventDayId;
-    private readonly int _order;
-    private readonly DateTimeOffset _createdAt;
+    private Guid _eventDayId;
+    private int _order;
+    private DateTimeOffset _createdAt;
     private readonly Action<ControlPointRowViewModel> _requestSave;
 
     // Paper-map position (mm) + scale captured at import; used to render the read-only "by map"
     // ground-metre columns. Not edited here, so kept as plain fields and round-tripped via ToEntity.
-    private readonly double? _mapX;
-    private readonly double? _mapY;
-    private readonly int? _mapScale;
+    private double? _mapX;
+    private double? _mapY;
+    private int? _mapScale;
 
-    private readonly bool _initialized;
+    private bool _initialized;
 
     [ObservableProperty]
     private string _code;
@@ -77,6 +77,44 @@ public sealed partial class ControlPointRowViewModel : ObservableObject
         _isDisabled = point.IsDisabled;
 
         _initialized = true;
+    }
+
+    /// <summary>True while <see cref="Apply"/> copies fresh values onto the row; the page skips its save callbacks then.</summary>
+    public bool IsApplying { get; private set; }
+
+    /// <summary>
+    /// Copies a freshly-read control point onto this row without triggering a save. Only the cells whose value
+    /// changed raise a property change, so a live refresh touches nothing else on screen.
+    /// </summary>
+    public void Apply(ControlPoint point)
+    {
+        IsApplying = true;
+        _initialized = false;
+        try
+        {
+            _eventDayId = point.EventDayId;
+            _order = point.Order;
+            _createdAt = point.CreatedAt;
+            if (_mapX != point.MapX || _mapY != point.MapY || _mapScale != point.MapScale)
+            {
+                _mapX = point.MapX;
+                _mapY = point.MapY;
+                _mapScale = point.MapScale;
+                OnPropertyChanged(nameof(MapXText));
+                OnPropertyChanged(nameof(MapYText));
+            }
+            Code = point.Code;
+            LatitudeText = FormatCoord(point.Latitude);
+            LongitudeText = FormatCoord(point.Longitude);
+            PointsText = FormatPoints(point.Points);
+            SelectedType = TypeOptions.First(o => o.Value == point.Type);
+            IsDisabled = point.IsDisabled;
+        }
+        finally
+        {
+            _initialized = true;
+            IsApplying = false;
+        }
     }
 
     public ILocalizationService Localization { get; }

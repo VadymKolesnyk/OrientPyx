@@ -31,8 +31,10 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     private EntryFeeContext _fees;
     // Whether the competition charges the entry fee per day: decides whether «Оплата» is one row-level value
     // or the per-day block, and which fee each payment is measured against.
-    private readonly bool _paymentPerDay;
+    private bool _paymentPerDay;
     private bool _initialized;
+    // The page's shared rank list the row's own list was derived from (an "unknown" option may be prepended).
+    private IReadOnlyList<RankOption> _sharedRankOptions;
 
     /// <summary>Whether this participant is charged the raised (late) fee. Competition-level.</summary>
     [ObservableProperty]
@@ -146,6 +148,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         _rank = row.Rank;
         // Rank stores text; resolve the dropdown selection by matching the stored name (case-insensitive).
         var (rankOpts, rankSel) = RankOptionResolver.Resolve(rankOptions, row.Rank, localization);
+        _sharedRankOptions = rankOptions;
         _rankOptions = rankOpts;
         _selectedRank = rankSel;
         _coach = row.Coach;
@@ -179,6 +182,139 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     public ILocalizationService Localization { get; }
 
     public Guid ParticipantId => _participantId;
+
+    /// <summary>True while <see cref="Apply"/> copies fresh values onto the row; the page skips its callbacks then.</summary>
+    public bool IsApplying { get; private set; }
+
+    /// <summary>
+    /// Copies a freshly-read roster row onto this one without triggering any save or dialog. The identity cells
+    /// raise a change only when their value moved; the per-day cells are applied in place by day id, and the cell
+    /// list is rebuilt (through <paramref name="createCell"/>) only when the day set changed. The shared option
+    /// lists are swapped only when the page rebuilt them. The additional-field cells are applied by the page.
+    /// </summary>
+    public void Apply(
+        ParticipantRosterRow row,
+        IReadOnlyDictionary<Guid, IReadOnlyList<GroupOption>> groupsByDay,
+        Func<RosterDayCell, RosterDayCellViewModel> createCell,
+        IReadOnlyList<RegionOption> regionOptions,
+        IReadOnlyList<ClubOption> clubOptions,
+        IReadOnlyList<DusshOption> dusshOptions,
+        IReadOnlyList<RankOption> rankOptions,
+        IReadOnlyList<EntryFeeDiscount> discounts,
+        EntryFeeContext fees)
+    {
+        IsApplying = true;
+        _initialized = false;
+        try
+        {
+            _fees = fees;
+            _paymentPerDay = row.PaymentPerDay;
+
+            if (!ReferenceEquals(RegionOptions, regionOptions))
+                RegionOptions = regionOptions;
+            SelectedRegion = regionOptions.FirstOrDefault(o => !o.IsAdd && o.Id == row.RegionId) ?? regionOptions[0];
+            _committedRegion = SelectedRegion;
+
+            if (!ReferenceEquals(ClubOptions, clubOptions))
+                ClubOptions = clubOptions;
+            SelectedClub = clubOptions.FirstOrDefault(o => !o.IsAdd && o.Id == row.ClubId) ?? clubOptions[0];
+            _committedClub = SelectedClub;
+
+            if (!ReferenceEquals(DusshOptions, dusshOptions))
+                DusshOptions = dusshOptions;
+            SelectedDussh = dusshOptions.FirstOrDefault(o => !o.IsAdd && o.Id == row.DusshId) ?? dusshOptions[0];
+            _committedDussh = SelectedDussh;
+
+            var rankChanged = !string.Equals(Rank, row.Rank, StringComparison.Ordinal);
+            Rank = row.Rank;
+            if (rankChanged || !ReferenceEquals(_sharedRankOptions, rankOptions))
+            {
+                _sharedRankOptions = rankOptions;
+                var (rankOpts, rankSel) = RankOptionResolver.Resolve(rankOptions, row.Rank, Localization);
+                if (!ReferenceEquals(RankOptions, rankOpts))
+                    RankOptions = rankOpts;
+                SelectedRank = rankSel;
+            }
+
+            FullName = row.FullName;
+            Number = row.Number;
+            Coach = row.Coach;
+            BirthDate = row.BirthDate;
+            Representative = row.Representative;
+            FsouCode = row.FsouCode;
+            Note = row.Note;
+            IsFsouMember = row.IsFsouMember;
+            Payment = row.Payment;
+            Team = row.Team;
+            PaysRaisedFee = row.PaysRaisedFee;
+
+            ApplyDiscountFlags(discounts, row);
+
+            // Per-day cells: same day set ⇒ apply in place; otherwise rebuild the list (the columns follow the days).
+            var sameDays = Days.Count == row.Days.Count;
+            for (var i = 0; sameDays && i < row.Days.Count; i++)
+                sameDays = Days[i].DayId == row.Days[i].DayId;
+            if (sameDays)
+            {
+                for (var i = 0; i < row.Days.Count; i++)
+                {
+                    var cell = row.Days[i];
+                    var options = groupsByDay.TryGetValue(cell.DayId, out var o) ? o : Days[i].GroupOptions;
+                    Days[i].Apply(cell, options);
+                }
+            }
+            else
+            {
+                foreach (var cell in Days)
+                    cell.PropertyChanged -= OnDayCellChanged;
+                Days.Clear();
+                foreach (var cell in row.Days)
+                {
+                    var vm = createCell(cell);
+                    vm.PropertyChanged += OnDayCellChanged;
+                    Days.Add(vm);
+                }
+            }
+
+            // The cell changes were ignored while applying (see OnDayCellChanged): refresh every aggregate once.
+            RaiseGroupAggregates();
+            RaiseChipAggregates();
+            RaiseStartTimeAggregates();
+            RaiseOutOfCompetitionAggregates();
+            RaisePaymentAggregates();
+            RaiseRaisedFeeAggregates();
+            RaiseResultAggregates();
+            RecomputeTotal();
+        }
+        finally
+        {
+            _initialized = true;
+            IsApplying = false;
+        }
+    }
+
+    // One flag per discount column, in build order. The collection is rebuilt only when the discount set moved
+    // (the page then rebuilds the columns too); otherwise each flag is set silently.
+    private void ApplyDiscountFlags(IReadOnlyList<EntryFeeDiscount> discounts, ParticipantRosterRow row)
+    {
+        var selected = row.SelectedDiscountIds.ToHashSet();
+        var same = DiscountFlags.Count == discounts.Count;
+        for (var i = 0; same && i < discounts.Count; i++)
+            same = DiscountFlags[i].DiscountId == discounts[i].Id
+                && DiscountFlags[i].IsFsouMemberDiscount == discounts[i].IsFsouMemberDiscount;
+
+        if (!same)
+            DiscountFlags.Clear();
+        for (var i = 0; i < discounts.Count; i++)
+        {
+            var d = discounts[i];
+            var on = d.IsFsouMemberDiscount ? row.IsFsouMember : selected.Contains(d.Id);
+            if (same)
+                DiscountFlags[i].SetSilently(on);
+            else
+                DiscountFlags.Add(new DiscountFlagViewModel(d.Id, d.IsFsouMemberDiscount, on, OnDiscountFlagChanged));
+        }
+    }
 
     /// <summary>The participant's additional fields (Р-13), bound by the <c>field.&lt;key&gt;</c> columns as
     /// <c>Fields[key].Text</c> etc. Set by the page right after the row is built.</summary>
@@ -978,6 +1114,11 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
 
     private void OnDayCellChanged(object? sender, PropertyChangedEventArgs e)
     {
+        // While a live refresh applies the row, every aggregate is refreshed once at the end (see Apply) — and a
+        // cell flipping to "member" must not copy another day's chip over the value the store is about to give it.
+        if (IsApplying)
+            return;
+
         switch (e.PropertyName)
         {
             case nameof(RosterDayCellViewModel.SelectedGroup):

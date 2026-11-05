@@ -15,4 +15,10 @@ public class StationTokenRow
     public DateTimeOffset IssuedAt { get; set; }
 
     public DateTimeOffset LastSeenAt { get; set; }
+
+    /// <summary>The station's stable device id (a GUID it generated once); empty for a station of an older build.</summary>
+    public string DeviceId { get; set; } = string.Empty;
+
+    /// <summary>«Довірений пристрій»: the host lets this device pair again without a PIN.</summary>
+    public bool IsTrusted { get; set; }
 }

@@ -67,7 +67,23 @@ public sealed partial class DusshViewModel : PageViewModelBase
     public async Task LoadAsync()
     {
         CancelAllTimers();
+        await LoadCoreAsync(merge: false);
+    }
 
+    /// <inheritdoc />
+    /// <remarks>Lets the pending row saves finish first (LoadAsync cancels them, see <see cref="PendingSaves"/>), then merges
+    /// the fresh rows into the existing ones (<see cref="RowSync"/>) so the selected row and the scroll position survive.</remarks>
+    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        await _pendingSaves.WaitAsync();
+        await LoadCoreAsync(merge: true);
+        if (SelectedDussh is { } selected && !Dusshes.Contains(selected))
+            SelectedDussh = null;
+    }
+
+    // Reads the rows and either rebuilds the collection (first open / session switch) or merges them in place.
+    private async Task LoadCoreAsync(bool merge)
+    {
         var hasEvent = _session.CurrentEvent is not null;
         var dusshes = hasEvent
             ? await _busy.RunAsync(() => _editor.GetDusshesAsync())
@@ -76,24 +92,20 @@ public sealed partial class DusshViewModel : PageViewModelBase
             ? await _busy.RunAsync(() => _editor.GetDusshParticipantCountsAsync())
             : (IReadOnlyDictionary<Guid, int>)new Dictionary<Guid, int>();
 
-        Dusshes.Clear();
-        foreach (var dussh in dusshes)
-        {
-            var row = CreateRow(dussh);
-            row.ParticipantCount = counts.TryGetValue(dussh.Id, out var c) ? c : 0;
-            Dusshes.Add(row);
-        }
-    }
+        if (!merge)
+            Dusshes.Clear();
 
-    /// <inheritdoc />
-    /// <remarks>Lets the pending row saves finish first (LoadAsync cancels them, see <see cref="PendingSaves"/>) and keeps the
-    /// selected row by id.</remarks>
-    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
-    {
-        await _pendingSaves.WaitAsync();
-        var selectedId = SelectedDussh?.Id;
-        await LoadAsync();
-        SelectedDussh = Dusshes.FirstOrDefault(r => r.Id == selectedId);
+        int CountOf(Dussh item) => counts.TryGetValue(item.Id, out var c) ? c : 0;
+        RowSync.Sync(Dusshes, dusshes,
+            itemKey: item => item.Id,
+            rowKey: row => row.Id,
+            create: item =>
+            {
+                var row = CreateRow(item);
+                row.ParticipantCount = CountOf(item);
+                return row;
+            },
+            update: (row, item) => row.Apply(item, CountOf(item)));
     }
 
     private DusshRowViewModel CreateRow(Dussh dussh) =>
@@ -159,6 +171,9 @@ public sealed partial class DusshViewModel : PageViewModelBase
 
     private void RequestRowSave(DusshRowViewModel row)
     {
+        if (row.IsApplying)
+            return;
+
         if (_saveTimers.TryGetValue(row.Id, out var existing))
             existing.Cancel();
 

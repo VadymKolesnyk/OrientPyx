@@ -67,7 +67,23 @@ public sealed partial class RegionsViewModel : PageViewModelBase
     public async Task LoadAsync()
     {
         CancelAllTimers();
+        await LoadCoreAsync(merge: false);
+    }
 
+    /// <inheritdoc />
+    /// <remarks>Lets the pending row saves finish first (LoadAsync cancels them, see <see cref="PendingSaves"/>), then merges
+    /// the fresh rows into the existing ones (<see cref="RowSync"/>) so the selected row and the scroll position survive.</remarks>
+    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        await _pendingSaves.WaitAsync();
+        await LoadCoreAsync(merge: true);
+        if (SelectedRegion is { } selected && !Regions.Contains(selected))
+            SelectedRegion = null;
+    }
+
+    // Reads the rows and either rebuilds the collection (first open / session switch) or merges them in place.
+    private async Task LoadCoreAsync(bool merge)
+    {
         var hasEvent = _session.CurrentEvent is not null;
         var regions = hasEvent
             ? await _busy.RunAsync(() => _editor.GetRegionsAsync())
@@ -76,24 +92,20 @@ public sealed partial class RegionsViewModel : PageViewModelBase
             ? await _busy.RunAsync(() => _editor.GetRegionParticipantCountsAsync())
             : (IReadOnlyDictionary<Guid, int>)new Dictionary<Guid, int>();
 
-        Regions.Clear();
-        foreach (var region in regions)
-        {
-            var row = CreateRow(region);
-            row.ParticipantCount = counts.TryGetValue(region.Id, out var c) ? c : 0;
-            Regions.Add(row);
-        }
-    }
+        if (!merge)
+            Regions.Clear();
 
-    /// <inheritdoc />
-    /// <remarks>Lets the pending row saves finish first (LoadAsync cancels them, see <see cref="PendingSaves"/>) and keeps the
-    /// selected row by id.</remarks>
-    protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
-    {
-        await _pendingSaves.WaitAsync();
-        var selectedId = SelectedRegion?.Id;
-        await LoadAsync();
-        SelectedRegion = Regions.FirstOrDefault(r => r.Id == selectedId);
+        int CountOf(Region item) => counts.TryGetValue(item.Id, out var c) ? c : 0;
+        RowSync.Sync(Regions, regions,
+            itemKey: item => item.Id,
+            rowKey: row => row.Id,
+            create: item =>
+            {
+                var row = CreateRow(item);
+                row.ParticipantCount = CountOf(item);
+                return row;
+            },
+            update: (row, item) => row.Apply(item, CountOf(item)));
     }
 
     private RegionRowViewModel CreateRow(Region region) =>
@@ -159,6 +171,9 @@ public sealed partial class RegionsViewModel : PageViewModelBase
 
     private void RequestRowSave(RegionRowViewModel row)
     {
+        if (row.IsApplying)
+            return;
+
         if (_saveTimers.TryGetValue(row.Id, out var existing))
             existing.Cancel();
 

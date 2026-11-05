@@ -14,10 +14,10 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 public sealed partial class EntryFeeDiscountRowViewModel : ObservableObject
 {
     private readonly Guid _id;
-    private readonly DateTimeOffset _createdAt;
+    private DateTimeOffset _createdAt;
     private readonly bool _isFsouMemberDiscount;
     private readonly Action<EntryFeeDiscountRowViewModel> _requestSave;
-    private readonly bool _initialized;
+    private bool _initialized;
 
     /// <summary>Discount display name.</summary>
     [ObservableProperty]
@@ -47,6 +47,28 @@ public sealed partial class EntryFeeDiscountRowViewModel : ObservableObject
         _appliesToChipRental = discount.AppliesToChipRental;
 
         _initialized = true;
+    }
+
+    /// <summary>True while <see cref="Apply"/> copies fresh values onto the row; the page skips its save callbacks then.</summary>
+    public bool IsApplying { get; private set; }
+
+    /// <summary>Copies a freshly-read discount onto this row without triggering a save (only changed cells raise).</summary>
+    public void Apply(EntryFeeDiscount discount)
+    {
+        IsApplying = true;
+        _initialized = false;
+        try
+        {
+            _createdAt = discount.CreatedAt;
+            Name = discount.Name;
+            PercentText = FormatDecimal(discount.Percent);
+            AppliesToChipRental = discount.AppliesToChipRental;
+        }
+        finally
+        {
+            _initialized = true;
+            IsApplying = false;
+        }
     }
 
     public ILocalizationService Localization { get; }

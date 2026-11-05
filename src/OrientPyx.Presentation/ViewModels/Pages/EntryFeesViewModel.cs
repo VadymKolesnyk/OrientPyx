@@ -115,20 +115,26 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
     /// <inheritdoc />
     protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
     {
-        // Pending saves finish first (LoadAsync cancels them, see PendingSaves); the selections are kept by id.
+        // Pending saves finish first (LoadAsync cancels them, see PendingSaves); the three tables are then merged in
+        // place (RowSync), so the selections survive and only the cells that changed repaint.
         await _pendingSaves.WaitAsync();
-        var chipPriceId = SelectedChipPrice?.Id;
-        var discountId = SelectedDiscount?.Id;
-        await LoadAsync();
-        SelectedChipPrice = ChipPriceOverrides.FirstOrDefault(p => p.Id == chipPriceId);
-        SelectedDiscount = Discounts.FirstOrDefault(d => d.Id == discountId);
+        await LoadCoreAsync(merge: true);
+        if (SelectedChipPrice is { } price && !ChipPriceOverrides.Contains(price))
+            SelectedChipPrice = null;
+        if (SelectedDiscount is { } discount && !Discounts.Contains(discount))
+            SelectedDiscount = null;
     }
 
     /// <summary>Reloads everything for the current competition. Called when the page is shown.</summary>
     public async Task LoadAsync()
     {
         CancelAllTimers();
+        await LoadCoreAsync(merge: false);
+    }
 
+    // Reads the competition and either rebuilds the tables (first open / session switch) or merges them in place.
+    private async Task LoadCoreAsync(bool merge)
+    {
         var hasEvent = _session.CurrentEvent is not null;
         var groups = hasEvent
             ? await _busy.RunAsync(() => _editor.GetGroupsAsync())
@@ -157,19 +163,32 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
             _loadingSettings = false;
         }
 
-        foreach (var existing in GroupFees)
-            existing.PropertyChanged -= OnGroupFeeRowChanged;
-        GroupFees.Clear();
-        foreach (var group in groups)
-            GroupFees.Add(new GroupFeeRowViewModel(group, Localization, RequestGroupFeeSave));
+        if (!merge)
+        {
+            foreach (var existing in GroupFees)
+                existing.PropertyChanged -= OnGroupFeeRowChanged;
+            GroupFees.Clear();
+            ChipPriceOverrides.Clear();
+            Discounts.Clear();
+        }
 
-        ChipPriceOverrides.Clear();
-        foreach (var price in chipPrices)
-            ChipPriceOverrides.Add(new ChipPriceOverrideRowViewModel(price, Localization, RequestChipPriceSave));
+        RowSync.Sync(GroupFees, groups,
+            itemKey: group => group.Id,
+            rowKey: row => row.Id,
+            create: group => new GroupFeeRowViewModel(group, Localization, RequestGroupFeeSave),
+            update: (row, group) => row.Apply(group));
 
-        Discounts.Clear();
-        foreach (var discount in discounts)
-            Discounts.Add(new EntryFeeDiscountRowViewModel(discount, Localization, RequestDiscountSave));
+        RowSync.Sync(ChipPriceOverrides, chipPrices,
+            itemKey: price => price.Id,
+            rowKey: row => row.Id,
+            create: price => new ChipPriceOverrideRowViewModel(price, Localization, RequestChipPriceSave),
+            update: (row, price) => row.Apply(price));
+
+        RowSync.Sync(Discounts, discounts,
+            itemKey: discount => discount.Id,
+            rowKey: row => row.Id,
+            create: discount => new EntryFeeDiscountRowViewModel(discount, Localization, RequestDiscountSave),
+            update: (row, discount) => row.Apply(discount));
     }
 
     // The group-fee table only edits an existing group's fee — rows aren't added/deleted here
@@ -376,14 +395,24 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
 
     // --- Per-row debounced saves
 
+    // Each callback ignores a row a live refresh is applying (IsApplying): those values came from the store.
     private void RequestGroupFeeSave(GroupFeeRowViewModel row)
-        => Debounce(_groupFeeTimers, row.Id, token => SaveGroupFeeAsync(row, token));
+    {
+        if (!row.IsApplying)
+            Debounce(_groupFeeTimers, row.Id, token => SaveGroupFeeAsync(row, token));
+    }
 
     private void RequestChipPriceSave(ChipPriceOverrideRowViewModel row)
-        => Debounce(_chipPriceTimers, row.Id, token => Task.Run(() => _editor.UpdateChipPriceOverrideAsync(row.ToEntity(), token), token));
+    {
+        if (!row.IsApplying)
+            Debounce(_chipPriceTimers, row.Id, token => Task.Run(() => _editor.UpdateChipPriceOverrideAsync(row.ToEntity(), token), token));
+    }
 
     private void RequestDiscountSave(EntryFeeDiscountRowViewModel row)
-        => Debounce(_discountTimers, row.Id, token => Task.Run(() => _editor.UpdateEntryFeeDiscountAsync(row.ToEntity(), token), token));
+    {
+        if (!row.IsApplying)
+            Debounce(_discountTimers, row.Id, token => Task.Run(() => _editor.UpdateEntryFeeDiscountAsync(row.ToEntity(), token), token));
+    }
 
     private Task SaveGroupFeeAsync(GroupFeeRowViewModel row, CancellationToken token)
         => Task.Run(() => _editor.UpdateGroupEntryFeeAsync(row.Id, row.Fee, token), token);

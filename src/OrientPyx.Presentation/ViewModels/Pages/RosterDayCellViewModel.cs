@@ -91,7 +91,7 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         _requestRaisedFeeChange = requestRaisedFeeChange;
         Localization = localization;
 
-        GroupOptions = groupOptions;
+        _groupOptions = groupOptions;
         _selectedGroup = groupOptions.FirstOrDefault(o => o.Id == cell.GroupId) ?? groupOptions[0];
         _chip = cell.Chip;
         _committedChip = cell.Chip;
@@ -213,26 +213,85 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
             _requestResultStatusChange(this);
     }
 
-    /// <summary>Applies a recomputed result (after a status edit re-ranked the day) without re-firing the callback.</summary>
+    /// <summary>Applies a recomputed result (after a status edit re-ranked the day) without re-firing the callback.
+    /// Only the display properties whose value moved raise a change.</summary>
     public void ApplyResult(ParticipantDayResult result)
     {
+        if (ReferenceEquals(_result, result))
+            return;
+
+        var before = ResultSnapshot();
+        var computedChanged = _result.Computed != result.Computed;
         _result = result;
         var wasInitialized = _initialized;
         _initialized = false;
-        StatusOptions = FinishStatusOptions.Build(Localization, result.Computed);
+        if (computedChanged)
+            StatusOptions = FinishStatusOptions.Build(Localization, result.Computed);
         SelectedStatus = FinishStatusOptions.Select(StatusOptions, result.Override);
         _initialized = wasInitialized;
-        OnPropertyChanged(nameof(ResultStatusText));
-        OnPropertyChanged(nameof(StatusIsProblem));
-        OnPropertyChanged(nameof(CanEditStatus));
-        OnPropertyChanged(nameof(ActualStartText));
-        OnPropertyChanged(nameof(FinishText));
-        OnPropertyChanged(nameof(ResultText_));
-        OnPropertyChanged(nameof(PlaceText));
-        OnPropertyChanged(nameof(ScoreText));
-        OnPropertyChanged(nameof(ScoreTooltip));
-        OnPropertyChanged(nameof(PointsText));
-        OnPropertyChanged(nameof(AwardedRankText));
+        foreach (var (name, value) in ResultSnapshot())
+            if (!Equals(before[name], value))
+                OnPropertyChanged(name);
+    }
+
+    // Every result-derived bound property with its current value (see ApplyResult).
+    private Dictionary<string, object?> ResultSnapshot() => new()
+    {
+        [nameof(ResultStatusText)] = ResultStatusText,
+        [nameof(StatusIsProblem)] = StatusIsProblem,
+        [nameof(CanEditStatus)] = CanEditStatus,
+        [nameof(ActualStartText)] = ActualStartText,
+        [nameof(FinishText)] = FinishText,
+        [nameof(ResultText_)] = ResultText_,
+        [nameof(PlaceText)] = PlaceText,
+        [nameof(ScoreText)] = ScoreText,
+        [nameof(ScoreTooltip)] = ScoreTooltip,
+        [nameof(PointsText)] = PointsText,
+        [nameof(AwardedRankText)] = AwardedRankText,
+    };
+
+    /// <summary>True while <see cref="Apply"/> copies fresh values onto the cell; the page skips its callbacks then.</summary>
+    public bool IsApplying { get; private set; }
+
+    /// <summary>
+    /// Copies a freshly-read day cell onto this one without triggering any save or dialog. Only the values that
+    /// changed raise a property change; the day's group list is swapped only when the page rebuilt it.
+    /// </summary>
+    public void Apply(RosterDayCell cell, IReadOnlyList<GroupOption> groupOptions)
+    {
+        IsApplying = true;
+        _initialized = false;
+        try
+        {
+            if (DayNumber != cell.DayNumber)
+            {
+                DayNumber = cell.DayNumber;
+                OnPropertyChanged(nameof(DayNumber));
+                OnPropertyChanged(nameof(LockedDayNumber));
+            }
+            LinkId = cell.LinkId;
+            if (!ReferenceEquals(GroupOptions, groupOptions))
+                GroupOptions = groupOptions;
+            SelectedGroup = groupOptions.FirstOrDefault(o => o.Id == cell.GroupId) ?? groupOptions[0];
+            IsMember = cell.IsMember;
+            Chip = cell.Chip;
+            _committedChip = cell.Chip;
+            Payment = cell.Payment;
+            PaysRaisedFee = cell.PaysRaisedFee;
+            StartTime = cell.StartTime;
+            OutOfCompetition = cell.OutOfCompetition;
+            if (_bonus != cell.Bonus)
+            {
+                _bonus = cell.Bonus;
+                OnPropertyChanged(nameof(BonusText));
+            }
+            ApplyResult(cell.Result);
+        }
+        finally
+        {
+            _initialized = true;
+            IsApplying = false;
+        }
     }
 
     /// <summary>
@@ -278,7 +337,7 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     public Guid DayId { get; }
 
     /// <summary>1-based day number (for the column header).</summary>
-    public int DayNumber { get; }
+    public int DayNumber { get; private set; }
 
     /// <summary>The participant's link id for this day, or null when not a member.</summary>
     public Guid? LinkId { get; private set; }
@@ -286,7 +345,8 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     public Guid ParticipantId => _participantId;
 
     /// <summary>Group choices for this specific day (id + name), with a leading "не участвує" sentinel.</summary>
-    public IReadOnlyList<GroupOption> GroupOptions { get; }
+    [ObservableProperty]
+    private IReadOnlyList<GroupOption> _groupOptions;
 
     partial void OnSelectedGroupChanged(GroupOption value)
     {

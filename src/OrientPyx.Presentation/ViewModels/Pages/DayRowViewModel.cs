@@ -10,7 +10,10 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 public sealed partial class DayRowViewModel : ObservableObject
 {
     private readonly Guid _id;
-    private readonly DateTimeOffset _createdAt;
+    private DateTimeOffset _createdAt;
+    private readonly IDisciplineStrategyProvider _strategies;
+    // Suppresses the dirty flag while Apply copies stored values onto the row.
+    private bool _applying;
 
     [ObservableProperty]
     private DateTimeOffset? _date;
@@ -65,13 +68,14 @@ public sealed partial class DayRowViewModel : ObservableObject
     {
         _id = day.Id;
         _createdAt = day.CreatedAt;
+        _strategies = strategies;
         Number = day.Number;
         _date = day.Date;
         _venue = day.Venue;
         VenuePlaceholder = venuePlaceholder;
         Localization = localization;
 
-        DisciplineOptions = DisciplineTypeOption.ListFor(strategies, localization, day.DefaultDiscipline);
+        _disciplineOptions = DisciplineTypeOption.ListFor(strategies, localization, day.DefaultDiscipline);
         _selectedDiscipline = DisciplineOptions.First(o => o.Value == day.DefaultDiscipline);
 
         _isActive = isActive;
@@ -88,12 +92,49 @@ public sealed partial class DayRowViewModel : ObservableObject
     public Guid Id => _id;
 
     /// <summary>Discipline options (value + localized label) shown in the Type ComboBox.</summary>
-    public IReadOnlyList<DisciplineTypeOption> DisciplineOptions { get; }
+    [ObservableProperty]
+    private IReadOnlyList<DisciplineTypeOption> _disciplineOptions;
 
-    /// <summary>1-based day number (immutable label).</summary>
-    public int Number { get; }
+    /// <summary>1-based day number (a label; renumbering goes through the editor and comes back on reload).</summary>
+    public int Number { get; private set; }
 
     public string NumberLabel => $"{Localization.Get("Header.Day")} {Number}";
+
+    /// <summary>
+    /// Copies a freshly-read day onto this row. The editable cells (date, venue, discipline) are left alone while
+    /// the row holds unsaved edits — the operator's typing wins over a refresh — and never mark the row dirty;
+    /// the lock and the active flag always follow the store. Only a changed cell raises a property change.
+    /// </summary>
+    public void Apply(EventDay day, bool isActive)
+    {
+        _applying = true;
+        try
+        {
+            _createdAt = day.CreatedAt;
+            if (Number != day.Number)
+            {
+                Number = day.Number;
+                OnPropertyChanged(nameof(Number));
+                OnPropertyChanged(nameof(NumberLabel));
+                OnPropertyChanged(nameof(LockedDayNumber));
+            }
+            IsActive = isActive;
+            IsLocked = day.IsLocked;
+
+            if (IsDirty)
+                return;
+
+            Date = day.Date;
+            Venue = day.Venue;
+            if (DisciplineOptions.All(o => o.Value != day.DefaultDiscipline))
+                DisciplineOptions = DisciplineTypeOption.ListFor(_strategies, Localization, day.DefaultDiscipline);
+            SelectedDiscipline = DisciplineOptions.First(o => o.Value == day.DefaultDiscipline);
+        }
+        finally
+        {
+            _applying = false;
+        }
+    }
 
     public EventDay ToEntity() => new()
     {
@@ -108,9 +149,15 @@ public sealed partial class DayRowViewModel : ObservableObject
 
     public void MarkSaved() => IsDirty = false;
 
-    partial void OnDateChanged(DateTimeOffset? value) => IsDirty = true;
-    partial void OnVenueChanged(string value) => IsDirty = true;
-    partial void OnSelectedDisciplineChanged(DisciplineTypeOption value) => IsDirty = true;
+    partial void OnDateChanged(DateTimeOffset? value) => MarkDirty();
+    partial void OnVenueChanged(string value) => MarkDirty();
+    partial void OnSelectedDisciplineChanged(DisciplineTypeOption value) => MarkDirty();
+
+    private void MarkDirty()
+    {
+        if (!_applying)
+            IsDirty = true;
+    }
 
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e)
         => OnPropertyChanged(nameof(NumberLabel));

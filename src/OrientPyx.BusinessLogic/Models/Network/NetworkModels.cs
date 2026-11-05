@@ -34,7 +34,11 @@ public sealed record ConnectedStation(
     string Address,
     DateTimeOffset IssuedAt,
     DateTimeOffset LastSeenAt,
-    bool IsOnline);
+    bool IsOnline,
+    /// <summary>The station's stable device id (sent on pairing); empty for stations of an older build.</summary>
+    string DeviceId = "",
+    /// <summary>Marked «довірений» on the host: this device pairs again without a PIN.</summary>
+    bool IsTrusted = false);
 
 /// <summary>A host answering the discovery broadcast.</summary>
 public sealed record DiscoveredHost(
@@ -96,6 +100,12 @@ public sealed class NetworkSettings
 
     /// <summary>The id of the last host, so a restored session is only resumed on the same host.</summary>
     public string StationHostId { get; set; } = string.Empty;
+
+    /// <summary>This machine's stable device id (generated once), by which a host can trust it across restarts.</summary>
+    public string StationDeviceId { get; set; } = string.Empty;
+
+    /// <summary>The PIN last used for <see cref="StationHostId"/>, re-sent on the next connect so it need not be typed.</summary>
+    public string StationPin { get; set; } = string.Empty;
 }
 
 /// <summary>A station token issued by the host (kept so stations survive a host restart without a new PIN).</summary>
@@ -103,6 +113,12 @@ public sealed class StationToken
 {
     public string Token { get; set; } = string.Empty;
     public string StationName { get; set; } = string.Empty;
+
+    /// <summary>The station's stable device id; empty for an older station.</summary>
+    public string DeviceId { get; set; } = string.Empty;
+
+    /// <summary>The host trusts this device: it pairs again without a PIN.</summary>
+    public bool IsTrusted { get; set; }
     public DateTimeOffset IssuedAt { get; set; }
     public DateTimeOffset LastSeenAt { get; set; }
 }

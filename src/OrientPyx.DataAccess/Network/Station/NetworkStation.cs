@@ -147,18 +147,21 @@ public sealed class NetworkStation : INetworkClient, IDisposable
                 }
 
                 // 2. /pair — a PIN, or the saved token when it belongs to this very host.
-                var savedToken = pin is null && string.Equals(settings.StationHostId, ping.HostId, StringComparison.Ordinal)
-                    ? settings.StationToken
-                    : string.Empty;
-                if (pin is null && string.IsNullOrEmpty(savedToken))
+                // This machine's stable device id: generated once, so a host can trust the device (never the name).
+                if (string.IsNullOrEmpty(settings.StationDeviceId))
                 {
-                    channel.Dispose();
-                    return Fail("PinRequired");
+                    settings.StationDeviceId = Guid.NewGuid().ToString("N");
+                    await _appStore.SaveNetworkSettingsAsync(settings, cancellationToken);
                 }
+                var sameHost = string.Equals(settings.StationHostId, ping.HostId, StringComparison.Ordinal);
+                var savedToken = pin is null && sameHost ? settings.StationToken : string.Empty;
+                // No PIN typed: the saved token, else the PIN last used for this host, else nothing — a trusted device
+                // still gets in; the host answers 401 otherwise and the page asks for the PIN.
+                var sentPin = pin ?? (sameHost ? settings.StationPin : string.Empty) ?? string.Empty;
 
                 var enabledPlugins = _plugins.Plugins.Where(p => _plugins.IsEnabled(p.Info.Id)).Select(p => p.Info.Id).Order(StringComparer.Ordinal).ToList();
-                var pairRequest = new PairRequest(pin ?? string.Empty, stationName, Wire.AppVersion, NetworkProtocol.Version, enabledPlugins,
-                    string.IsNullOrEmpty(savedToken) ? null : savedToken);
+                var pairRequest = new PairRequest(sentPin, stationName, Wire.AppVersion, NetworkProtocol.Version, enabledPlugins,
+                    string.IsNullOrEmpty(savedToken) ? null : savedToken, settings.StationDeviceId);
                 PairResponse pair;
                 try
                 {
@@ -203,6 +206,8 @@ public sealed class NetworkStation : INetworkClient, IDisposable
                 settings.StationHost = endpoint;
                 settings.StationToken = pair.Token;
                 settings.StationHostId = pair.HostId;
+                if (!string.IsNullOrEmpty(pin))
+                    settings.StationPin = pin; // remembered for this host, so the next connect needs no typing
                 await _appStore.SaveNetworkSettingsAsync(settings, cancellationToken);
 
                 channel.Token = pair.Token;

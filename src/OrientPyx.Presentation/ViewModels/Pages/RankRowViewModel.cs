@@ -14,10 +14,10 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 public sealed partial class RankRowViewModel : ObservableObject
 {
     private readonly Guid _id;
-    private readonly int _order;
+    private int _order;
     private readonly Action<RankRowViewModel> _requestSave;
 
-    private readonly bool _initialized;
+    private bool _initialized;
 
     [ObservableProperty]
     private string _name;
@@ -39,6 +39,27 @@ public sealed partial class RankRowViewModel : ObservableObject
         _pointsText = FormatPoints(rank.Points);
 
         _initialized = true;
+    }
+
+    /// <summary>True while <see cref="Apply"/> copies fresh values onto the row; the page skips its save callbacks then.</summary>
+    public bool IsApplying { get; private set; }
+
+    /// <summary>Copies a freshly-read rank onto this row without triggering a save (only changed cells raise).</summary>
+    public void Apply(SportRank rank)
+    {
+        IsApplying = true;
+        _initialized = false;
+        try
+        {
+            _order = rank.Order;
+            Name = rank.Name;
+            PointsText = FormatPoints(rank.Points);
+        }
+        finally
+        {
+            _initialized = true;
+            IsApplying = false;
+        }
     }
 
     public ILocalizationService Localization { get; }

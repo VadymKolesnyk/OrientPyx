@@ -20,7 +20,19 @@ public sealed partial class PointsRuleListItemViewModel : ObservableObject
 
     public Guid Id { get; }
 
-    public PointsRuleKind Kind { get; }
+    public PointsRuleKind Kind { get; private set; }
+
+    /// <summary>Copies a freshly-read rule onto this item; only a changed name or kind raises a property change.</summary>
+    public void Apply(PointsRule rule)
+    {
+        if (Kind != rule.Kind)
+        {
+            Kind = rule.Kind;
+            OnPropertyChanged(nameof(Kind));
+            OnPropertyChanged(nameof(KindLabel));
+        }
+        Name = rule.Name;
+    }
 
     public ILocalizationService Localization { get; }
 

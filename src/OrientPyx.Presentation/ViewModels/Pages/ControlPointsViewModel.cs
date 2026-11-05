@@ -113,18 +113,24 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
     protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
     {
         // Pending row saves finish first: LoadAsync cancels them, which is right for a session switch but would
-        // drop the operator's last edit here (see PendingSaves). The selected row is kept by id.
+        // drop the operator's last edit here (see PendingSaves). The fresh rows are merged into the existing ones
+        // (RowSync), so the selected row and the scroll position survive and only the cells that changed repaint.
         await _pendingSaves.WaitAsync();
-        var selectedId = SelectedPoint?.Id;
-        await LoadAsync();
-        SelectedPoint = Points.FirstOrDefault(p => p.Id == selectedId);
+        await LoadCoreAsync(merge: true);
+        if (SelectedPoint is { } selected && !Points.Contains(selected))
+            SelectedPoint = null;
     }
 
     /// <summary>Reloads the control points for the current day. Called when the page is shown.</summary>
     public async Task LoadAsync()
     {
         CancelAllTimers();
+        await LoadCoreAsync(merge: false);
+    }
 
+    // Reads the day and either rebuilds the rows (first open / session switch) or merges them in place.
+    private async Task LoadCoreAsync(bool merge)
+    {
         // Both BD reads run off the UI thread; every collection/property write below happens
         // afterwards on the UI thread (SQLite has no real async I/O, so this can't stay inline).
         var hasDay = _session.CurrentDay is not null;
@@ -136,8 +142,11 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
             return (d, p, g);
         });
 
-        Points.Clear();
-        SelectedPoint = null;
+        if (!merge)
+        {
+            Points.Clear();
+            SelectedPoint = null;
+        }
 
         _syncingDay = true;
         try
@@ -170,23 +179,30 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
         OnPropertyChanged(nameof(ShowDaySelector));
         RefreshDayLock();
 
-        foreach (var point in points)
-            Points.Add(new ControlPointRowViewModel(point, Localization, RequestRowSave));
+        RowSync.Sync(Points, points,
+            itemKey: point => point.Id,
+            rowKey: row => row.Id,
+            create: point => new ControlPointRowViewModel(point, Localization, RequestRowSave),
+            update: (row, point) => row.Apply(point));
 
-        UpdatePointsColumn(groups);
+        UpdatePointsColumn(groups, raiseAlways: !merge);
     }
 
     // Points are shown when the day's default discipline scores points, or any group on the day
     // (via its effective discipline) does — asked through the strategies, never a per-type switch.
-    private void UpdatePointsColumn(IReadOnlyList<GroupDayRow> groups)
+    // A column rebuild repaints the whole grid, so a live refresh raises it only when the flag actually moved.
+    private void UpdatePointsColumn(IReadOnlyList<GroupDayRow> groups, bool raiseAlways)
     {
         var dayDefault = _session.CurrentDay?.DefaultDiscipline;
         var byDay = dayDefault is not null && _strategies.For(dayDefault.Value).UsesControlPointPoints;
         var byGroup = groups.Any(g =>
             _strategies.For(g.DisciplineOverride ?? g.DayDefaultDiscipline).UsesControlPointPoints);
 
-        ShowPointsColumn = byDay || byGroup;
-        ColumnsChanged?.Invoke(this, EventArgs.Empty);
+        var show = byDay || byGroup;
+        var changed = show != ShowPointsColumn;
+        ShowPointsColumn = show;
+        if (raiseAlways || changed)
+            ColumnsChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // True when the current options already represent exactly these days (same count and numbers,
@@ -295,6 +311,9 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
     // Invoked by a row on every edit (UI thread). Resets that row's debounce timer.
     private void RequestRowSave(ControlPointRowViewModel row)
     {
+        if (row.IsApplying)
+            return;
+
         if (_saveTimers.TryGetValue(row.Id, out var existing))
             existing.Cancel();
 

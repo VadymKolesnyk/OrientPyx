@@ -83,7 +83,9 @@ public sealed record PairRequest(
     int ProtocolVersion,
     IReadOnlyList<string> Plugins,
     /// <summary>A previously issued token to re-validate instead of the PIN (reconnect after a restart).</summary>
-    string? Token = null);
+    string? Token = null,
+    /// <summary>The station's stable device id; a host that trusts it pairs without a PIN.</summary>
+    string? DeviceId = null);
 
 /// <summary>POST /pair response.</summary>
 public sealed record PairResponse(

@@ -38,6 +38,9 @@ public interface INetworkHost
     /// <summary>Revokes every token.</summary>
     Task DisconnectAllAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Marks a station's device as trusted (pairs again without a PIN) or not; keyed by the device, not the name.</summary>
+    Task SetStationTrustedAsync(string token, bool trusted, CancellationToken cancellationToken = default);
+
     /// <summary>The names of the stations that made a request in the last minute on the given competition (by identifier);
     /// the catalog refuses to rename or delete a competition stations are working on.</summary>
     IReadOnlyList<string> ActiveStationsOn(string identifier);

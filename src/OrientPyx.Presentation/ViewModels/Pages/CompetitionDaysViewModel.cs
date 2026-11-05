@@ -93,13 +93,17 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
     /// <remarks>Day rows save straight away (no debounce), so only the selection has to be kept.</remarks>
     protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
     {
-        var selectedId = SelectedRow?.Id;
-        await LoadAsync();
-        SelectedRow = Days.FirstOrDefault(d => d.Id == selectedId);
+        // The rows are merged in place (RowSync): the selection survives, a row with unsaved edits keeps them.
+        await LoadCoreAsync(merge: true);
+        if (SelectedRow is { } selected && !Days.Contains(selected))
+            SelectedRow = null;
     }
 
     /// <summary>Reloads the day rows from the current competition. Called when the page is shown.</summary>
-    public async Task LoadAsync()
+    public Task LoadAsync() => LoadCoreAsync(merge: false);
+
+    // Reads the days and either rebuilds the rows (first open / session switch) or merges them in place.
+    private async Task LoadCoreAsync(bool merge)
     {
         var activeNumber = _session.CurrentDay?.Number;
         // BD read runs off the UI thread; the collection is rebuilt afterwards on the UI thread.
@@ -112,10 +116,17 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
 
         var venuePlaceholder = info?.Venue?.Trim() ?? string.Empty;
 
-        Days.Clear();
-        SelectedRow = null;
-        foreach (var day in days)
-            Days.Add(new DayRowViewModel(day, day.Number == activeNumber, Localization, _strategies, venuePlaceholder));
+        if (!merge)
+        {
+            Days.Clear();
+            SelectedRow = null;
+        }
+
+        RowSync.Sync(Days, days,
+            itemKey: day => day.Id,
+            rowKey: row => row.Id,
+            create: day => new DayRowViewModel(day, day.Number == activeNumber, Localization, _strategies, venuePlaceholder),
+            update: (row, day) => row.Apply(day, day.Number == activeNumber));
     }
 
     [RelayCommand]

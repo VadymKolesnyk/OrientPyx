@@ -22,14 +22,19 @@ JSON по HTTP/1.1, відкритий (без TLS) у локальній мер
 Невідомий/відкликаний токен → `401` з тілом `RpcError{kind:"unauthorized"}`; станція тоді переходить у стан
 `Disconnected` і просить PIN знову.
 
-PIN — 6 цифр, генерується при старті хоста, показується на його екрані. 5 невдалих спроб → пауза 30 с (`429`).
+PIN — 4 цифри, генерується при старті хоста, показується на його екрані. 5 невдалих спроб → пауза 30 с (`429`).
+Станція запам'ятовує PIN для хоста (`NetworkSettings.StationPin`) і надсилає його сама при наступному підключенні.
+**Довірений пристрій**: станція має стабільний `deviceId` (GUID, згенерований один раз); позначена на хості як
+«Довірений» (`StationTokens.IsTrusted`, за `DeviceId`, не за назвою) — спарюється без PIN. Один рядок на пристрій:
+повторне спарювання відкликає попередній токен того самого `deviceId` (або тієї самої назви для станцій без id).
 
 ## Ендпоїнти
 
 | Метод і шлях | Тіло запиту | Відповідь |
 |---|---|---|
 | `GET /ping` | — | `PingResponse{hostId, hostName, appVersion, protocolVersion, time}` — без токена |
-| `POST /pair` | `PairRequest{pin, stationName, appVersion, protocolVersion, plugins[], token?}` | `200 PairResponse{token, hostId, hostName, appVersion, protocolVersion, plugins[], serverTimeUtc, readoutType}`; `401` (PIN/токен), `409` `RpcError{kind:"protocol"}` (версія), `429` (пауза) |
+| `POST /pair` | `PairRequest{pin, stationName, appVersion, protocolVersion, plugins[], token?, deviceId?}` | `200 PairResponse{token, hostId, hostName, appVersion, protocolVersion, plugins[], serverTimeUtc, readoutType, currentIdentifier?, currentDayNumber?}` (змагання і день, відкриті на хості — станція відкриває ті самі); `401` (PIN/токен), `409` `RpcError{kind:"protocol"}` (версія), `429` (пауза) |
+| `POST /unpair` | — (токен у заголовку) | `204`; хост відкликає токен і прибирає станцію зі списку (кнопка «Відключитися» на станції) |
 | `POST /rpc/{iface}/{method}` | JSON-масив аргументів `[arg0, arg1, …]` (без `CancellationToken` і `IProgress<>`), заголовки `Authorization`, для записів `Idempotency-Key: <guid>` | результат методу як JSON; `204` для `Task` без значення; для job-методів `200 JobStarted{jobId}`; помилки — `RpcError` |
 | `GET /changes` | заголовок `Last-Event-ID: <seq>` (необов'язково) | `text/event-stream`, див. нижче |
 | `GET /version?event=<identifier>` | — | `VersionResponse{eventPath, version, sequence}` |

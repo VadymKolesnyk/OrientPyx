@@ -11,7 +11,7 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 public sealed partial class PointsTableRowViewModel : ObservableObject
 {
     private readonly Action _onChanged;
-    private readonly bool _initialized;
+    private bool _initialized;
 
     public PointsTableRowViewModel(int place, decimal points, Action onChanged)
     {
@@ -29,6 +29,20 @@ public sealed partial class PointsTableRowViewModel : ObservableObject
 
     /// <summary>The parsed points value (rounded to two decimals).</summary>
     public decimal Points => PointsTable.ParseValue(PointsText);
+
+    /// <summary>Copies a fresh value onto the row without notifying the page (only a changed cell raises).</summary>
+    public void Apply(decimal points)
+    {
+        _initialized = false;
+        try
+        {
+            PointsText = PointsTable.Format(points);
+        }
+        finally
+        {
+            _initialized = true;
+        }
+    }
 
     partial void OnPointsTextChanged(string value)
     {

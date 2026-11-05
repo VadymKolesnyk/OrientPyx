@@ -20,13 +20,13 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
 {
     private readonly Guid _settingsId;
     private readonly Guid _groupId;
-    private readonly int _order;
-    private readonly DisciplineId _dayDefaultDiscipline;
-    private readonly int _participantCount;
+    private int _order;
+    private DisciplineId _dayDefaultDiscipline;
+    private int _participantCount;
     private readonly IDisciplineStrategyProvider _strategies;
     private readonly Action<GroupDayRowViewModel> _requestSave;
 
-    private readonly bool _initialized;
+    private bool _initialized;
 
     [ObservableProperty]
     private string _name;
@@ -130,15 +130,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         _requestSave = requestSave;
         Localization = localization;
 
-        // "(default: <day default>)" sentinel first, then one option per registered discipline.
-        DisciplineOptions =
-        [
-            new DisciplineOverrideOption(null, localization, strategies.For(row.DayDefaultDiscipline)),
-            .. strategies.All.Select(s => new DisciplineOverrideOption(s, localization))
-        ];
-        // A stored override with no registered strategy (a missing plugin) still shows as itself.
-        if (row.DisciplineOverride is { } stored && DisciplineOptions.All(o => o.Value != stored))
-            DisciplineOptions = [.. DisciplineOptions, new DisciplineOverrideOption(strategies.For(stored), localization)];
+        _disciplineOptions = BuildDisciplineOptions(row);
 
         _name = row.Name;
         _courseOrder = row.CourseOrder;
@@ -154,21 +146,8 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         _courseSetterCategoryPlaceholder = courseSetterCategoryPlaceholder ?? string.Empty;
         _selectedDiscipline = DisciplineOptions.First(o => o.Value == row.DisciplineOverride);
 
-        // Points-rule options are the shared list [default sentinel + every rule]. Match the stored id;
-        // if it no longer exists (rule deleted), prepend a one-off "unknown" option just for this row so
-        // the choice still shows rather than silently snapping to default.
-        var match = pointsRuleOptions.FirstOrDefault(o => o.Id == row.PointsRuleId);
-        if (match is null && row.PointsRuleId is { } missingId)
-        {
-            PointsRuleOptions = [PointsRuleOption.Unknown(missingId, localization), .. pointsRuleOptions];
-            match = PointsRuleOptions[0];
-        }
-        else
-        {
-            PointsRuleOptions = pointsRuleOptions;
-            match ??= pointsRuleOptions.First(o => o.Id is null);
-        }
-        _selectedPointsRule = match;
+        _sharedPointsRuleOptions = pointsRuleOptions;
+        (_pointsRuleOptions, _selectedPointsRule) = ResolvePointsRule(pointsRuleOptions, row.PointsRuleId);
 
         // Rank-level options: one per GroupRankLevel value (None / Adult / Junior).
         RankLevelOptions =
@@ -199,10 +178,122 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     public Guid GroupId => _groupId;
 
     /// <summary>Discipline options (value + localized label) shown in the Discipline ComboBox.</summary>
-    public IReadOnlyList<DisciplineOverrideOption> DisciplineOptions { get; }
+    [ObservableProperty]
+    private IReadOnlyList<DisciplineOverrideOption> _disciplineOptions;
 
     /// <summary>Points-rule options (default sentinel + every rule) shown in the Points ComboBox.</summary>
-    public IReadOnlyList<PointsRuleOption> PointsRuleOptions { get; }
+    [ObservableProperty]
+    private IReadOnlyList<PointsRuleOption> _pointsRuleOptions;
+
+    // The page's shared points-rule list the row's own list was derived from (a one-off "unknown" option may be
+    // prepended), so Apply can tell whether the page rebuilt it.
+    private IReadOnlyList<PointsRuleOption> _sharedPointsRuleOptions;
+
+    /// <summary>True while <see cref="Apply"/> copies fresh values onto the row; the page skips its save callbacks then.</summary>
+    public bool IsApplying { get; private set; }
+
+    /// <summary>
+    /// Copies a freshly-read row onto this one without triggering a save. Only the cells whose value changed raise
+    /// a property change; the option lists are swapped only when the page rebuilt them (or the day's default
+    /// discipline moved), so an open combo keeps its items.
+    /// </summary>
+    public void Apply(
+        GroupDayRow row,
+        IReadOnlyList<PointsRuleOption> pointsRuleOptions,
+        string courseSetterPlaceholder,
+        string courseSetterCategoryPlaceholder)
+    {
+        IsApplying = true;
+        _initialized = false;
+        try
+        {
+            _order = row.Order;
+            if (_participantCount != row.ParticipantCount)
+            {
+                _participantCount = row.ParticipantCount;
+                OnPropertyChanged(nameof(ParticipantCountText));
+            }
+
+            // The "(default: …)" sentinel names the day's default discipline, so a changed default rebuilds the list;
+            // so does a stored override the current list can't show (a plugin switched on or off).
+            if (_dayDefaultDiscipline != row.DayDefaultDiscipline
+                || DisciplineOptions.All(o => o.Value != row.DisciplineOverride))
+            {
+                _dayDefaultDiscipline = row.DayDefaultDiscipline;
+                DisciplineOptions = BuildDisciplineOptions(row);
+            }
+            SelectedDiscipline = DisciplineOptions.First(o => o.Value == row.DisciplineOverride);
+
+            if (!ReferenceEquals(_sharedPointsRuleOptions, pointsRuleOptions)
+                || PointsRuleOptions.All(o => o.Id != row.PointsRuleId))
+            {
+                _sharedPointsRuleOptions = pointsRuleOptions;
+                var (options, selected) = ResolvePointsRule(pointsRuleOptions, row.PointsRuleId);
+                PointsRuleOptions = options;
+                SelectedPointsRule = selected;
+            }
+            else
+            {
+                SelectedPointsRule = PointsRuleOptions.First(o => o.Id == row.PointsRuleId);
+            }
+
+            Name = row.Name;
+            CourseOrder = row.CourseOrder;
+            ScatterVariantCount = row.ScatterVariantCount;
+            ScatterMaxControlCount = row.ScatterMaxControlCount;
+            DistanceText = FormatDecimal(row.DistanceKm);
+            RequiredCountText = FormatInt(row.RequiredControlCount);
+            TimeLimitText = FormatTime(row.TimeLimitSeconds);
+            CourseSetter = row.CourseSetter;
+            CourseSetterCategory = row.CourseSetterCategory;
+            CourseSetterPlaceholder = courseSetterPlaceholder ?? string.Empty;
+            CourseSetterCategoryPlaceholder = courseSetterCategoryPlaceholder ?? string.Empty;
+            SelectedRankLevel = RankLevelOptions.First(o => o.Value == row.RankLevel);
+            MasterCountText = FormatInt(row.MasterCount);
+            MinBirthYearText = FormatInt(row.MinBirthYear);
+            MaxBirthYearText = FormatInt(row.MaxBirthYear);
+
+            // Same default-penalty rule as the constructor: an unset rogaine penalty shows the default rate.
+            var penalty = FormatDecimal(row.PenaltyPerMinute);
+            if (penalty.Length == 0 && Strategy.DefaultPenaltyPerMinute is { } rate)
+                penalty = FormatDecimal(rate);
+            PenaltyText = penalty;
+        }
+        finally
+        {
+            _initialized = true;
+            IsApplying = false;
+        }
+    }
+
+    // "(default: <day default>)" sentinel first, then one option per registered discipline; a stored override with
+    // no registered strategy (a missing plugin) still shows as itself.
+    private IReadOnlyList<DisciplineOverrideOption> BuildDisciplineOptions(GroupDayRow row)
+    {
+        IReadOnlyList<DisciplineOverrideOption> options =
+        [
+            new DisciplineOverrideOption(null, Localization, _strategies.For(row.DayDefaultDiscipline)),
+            .. _strategies.All.Select(s => new DisciplineOverrideOption(s, Localization))
+        ];
+        if (row.DisciplineOverride is { } stored && options.All(o => o.Value != stored))
+            options = [.. options, new DisciplineOverrideOption(_strategies.For(stored), Localization)];
+        return options;
+    }
+
+    // Points-rule options are the shared list [default sentinel + every rule]. Match the stored id; if it no longer
+    // exists (rule deleted), prepend a one-off "unknown" option just for this row so the choice still shows rather
+    // than silently snapping to default.
+    private (IReadOnlyList<PointsRuleOption> Options, PointsRuleOption Selected) ResolvePointsRule(
+        IReadOnlyList<PointsRuleOption> shared, Guid? pointsRuleId)
+    {
+        var match = shared.FirstOrDefault(o => o.Id == pointsRuleId);
+        if (match is null && pointsRuleId is { } missingId)
+        {
+            IReadOnlyList<PointsRuleOption> options = [PointsRuleOption.Unknown(missingId, Localization), .. shared];
+            return (options, options[0]);
+        }
+        return (shared, match ?? shared.First(o => o.Id is null));
+    }
 
     /// <summary>Rank-level options (None / Adult / Junior) shown in the Rank-level ComboBox.</summary>
     public IReadOnlyList<RankLevelOption> RankLevelOptions { get; }

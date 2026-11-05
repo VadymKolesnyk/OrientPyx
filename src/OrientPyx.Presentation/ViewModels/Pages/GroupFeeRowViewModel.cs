@@ -15,7 +15,7 @@ public sealed partial class GroupFeeRowViewModel : ObservableObject
 {
     private readonly Guid _id;
     private readonly Action<GroupFeeRowViewModel> _requestSave;
-    private readonly bool _initialized;
+    private bool _initialized;
 
     /// <summary>Group display name (read-only on this page).</summary>
     [ObservableProperty]
@@ -38,6 +38,26 @@ public sealed partial class GroupFeeRowViewModel : ObservableObject
         _feeText = FormatDecimal(group.EntryFee);
 
         _initialized = true;
+    }
+
+    /// <summary>True while <see cref="Apply"/> copies fresh values onto the row; the page skips its save callbacks then.</summary>
+    public bool IsApplying { get; private set; }
+
+    /// <summary>Copies a freshly-read group onto this row without triggering a save (only changed cells raise).</summary>
+    public void Apply(Group group)
+    {
+        IsApplying = true;
+        _initialized = false;
+        try
+        {
+            Name = group.Name;
+            FeeText = FormatDecimal(group.EntryFee);
+        }
+        finally
+        {
+            _initialized = true;
+            IsApplying = false;
+        }
     }
 
     public ILocalizationService Localization { get; }
