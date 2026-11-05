@@ -51,6 +51,21 @@ public sealed class SportIdentCsvReadoutParser : IReadoutParser
     // value is the punch count.
     private const string RecordCountColumn = "No. of records";
 
+    /// <summary>
+    /// The header row SPORTident ReaderUI (3.x) writes for the «Config+ (card readout)» list format — the
+    /// 45 fixed columns before the punch triplets, verbatim (the string lives in SPORTident.Reader.dll).
+    /// Written into a read-out file the app creates, because ReaderUI appends to an existing file
+    /// <i>without</i> a header and the result would not parse (<see cref="NewFileHeader"/>).
+    /// </summary>
+    public const string ConfigPlusHeader =
+        "No;Read on;SIID;Start no;Clear CN;Clear DOW;Clear time;Clear_r CN;Clear_r DOW;Clear_r time;" +
+        "Check CN;Check DOW;Check time;Start CN;Start DOW;Start time;Start_r CN;Start_r DOW;Start_r time;" +
+        "Finish CN;Finish DOW;Finish time;Finish_r CN;Finish_r DOW;Finish_r time;Class;First name;Last name;" +
+        "Club;Country;Email;Date of birth;Sex;Phone;Street;ZIP;City;Hardware version;Software version;" +
+        "Battery date;Battery voltage;Clear count;Character set;SEL_FEEDBACK;No. of records;";
+
+    public string? NewFileHeader => ConfigPlusHeader + "\r\n";
+
     public bool CanParse(string content)
     {
         if (string.IsNullOrWhiteSpace(content))

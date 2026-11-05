@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 
 namespace OrientPyx.Presentation.Services;
 
@@ -12,7 +13,8 @@ public sealed class FileReadoutPoller : IFileReadoutPoller
 {
     private CancellationTokenSource? _cts;
 
-    public void Start(string filePath, TimeSpan interval, Func<string, Task> onContent)
+    public void Start(string filePath, TimeSpan interval, Func<string, Task> onContent,
+        Func<Task<string?>>? newFileContent = null)
     {
         ArgumentNullException.ThrowIfNull(onContent);
 
@@ -22,28 +24,34 @@ public sealed class FileReadoutPoller : IFileReadoutPoller
         if (interval < TimeSpan.FromSeconds(1))
             interval = TimeSpan.FromSeconds(1);
 
-        EnsureFileExists(filePath);
-
         var cts = new CancellationTokenSource();
         _cts = cts;
-        _ = RunAsync(filePath, interval, onContent, cts.Token);
+        _ = RunAsync(filePath, interval, onContent, newFileContent, cts.Token);
     }
 
-    // Creates the file (and any missing parent folders) so the SI software can write to it and the
-    // poll has something to read. An empty file parses to no chips, which is the correct start state.
-    // Best-effort: a failure here just means the loop reads nothing until the file appears.
-    private static void EnsureFileExists(string filePath)
+    /// <summary>
+    /// Creates the file (and any missing parent folders) so the SI software can write to it and the poll
+    /// has something to read, seeded with <paramref name="content"/> — the header row the timing software
+    /// writes only into a file it creates itself (SPORTident ReaderUI appends to an existing file without
+    /// one, and a header-keyed parser then reads nothing). An existing <b>empty</b> file is seeded too: that
+    /// is what an earlier start left behind before the reader was pointed at it. A file with content is
+    /// never touched. Best-effort: a failure just means the loop reads nothing until the file appears.
+    /// </summary>
+    public static void EnsureFileExists(string filePath, string? content = null)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(filePath) || File.Exists(filePath))
+            if (string.IsNullOrWhiteSpace(filePath))
+                return;
+            if (File.Exists(filePath) && (content is null || new FileInfo(filePath).Length > 0))
                 return;
 
             var directory = Path.GetDirectoryName(filePath);
             if (!string.IsNullOrEmpty(directory))
                 Directory.CreateDirectory(directory);
 
-            using (File.Create(filePath)) { }
+            // UTF-8 with BOM, exactly as ReaderUI writes its own files (the parsers strip it).
+            File.WriteAllText(filePath, content ?? string.Empty, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
         }
         catch
         {
@@ -62,10 +70,20 @@ public sealed class FileReadoutPoller : IFileReadoutPoller
         string filePath,
         TimeSpan interval,
         Func<string, Task> onContent,
+        Func<Task<string?>>? newFileContent,
         CancellationToken token)
     {
         try
         {
+            string? seed = null;
+            if (newFileContent is not null)
+            {
+                try { seed = await newFileContent(); }
+                catch (OperationCanceledException) { throw; }
+                catch { /* no seed — the file is still created, just empty */ }
+            }
+            EnsureFileExists(filePath, seed);
+
             while (!token.IsCancellationRequested)
             {
                 var content = await TryReadAsync(filePath, token);

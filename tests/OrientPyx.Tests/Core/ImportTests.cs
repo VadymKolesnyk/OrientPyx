@@ -228,8 +228,8 @@ public sealed class ImportTests
 
         // First file: two athletes with FOU codes, one without a chip.
         UofParticipantData File(params UofParticipant[] rows) => new() { Participants = rows };
-        UofParticipant Row(string name, string code, string group, string chip = "", string club = "", string number = "") =>
-            new() { FullName = name, FsouCode = code, Group = group, Chip = chip, Club = club, Number = number };
+        UofParticipant Row(string name, string code, string group, string chip = "", string club = "", string number = "", string payment = "") =>
+            new() { FullName = name, FsouCode = code, Group = group, Chip = chip, Club = club, Number = number, Payment = payment };
         await editor.ImportParticipantsAsync(File(
             Row("Петренко Іван", "1001", "Ч21", chip: "8001"),
             Row("Коваль Олег", "1002", "Ч21"),
@@ -280,6 +280,19 @@ public sealed class ImportTests
         Assert.DoesNotContain(zeroPreview.Updated.Single().Changes, ch => ch.Field == "Number");
         await editor.ImportParticipantsAsync(File(Row("Коваль Олег", "1002", "Ч21", chip: "9999")), clearFirst: false, ParticipantImportScope.AllDays);
         Assert.Equal("9999", (await editor.GetParticipantRosterAsync()).Single(r => r.FullName == "Коваль Олег").Days[0].Chip);
+
+        // «Оплата»: the preview lists the change; with UpdatePayment off the desk's value survives the re-import
+        // (an existing athlete), while a newcomer still gets the file's value; on, the file wins.
+        await editor.ImportParticipantsAsync(File(Row("Коваль Олег", "1002", "Ч21", payment: "100")), clearFirst: false, ParticipantImportScope.AllDays);
+        var paid = File(Row("Коваль Олег", "1002", "Ч21", payment: "250"), Row("Нова Платниця", "1004", "Ч21", payment: "50"));
+        var paidPreview = await editor.PreviewParticipantImportAsync(paid, ParticipantImportScope.AllDays);
+        Assert.Contains(paidPreview.Updated.Single().Changes, ch => ch.Field == "Payment" && ch.Before == "100" && ch.After == "250");
+        await editor.ImportParticipantsAsync(paid, clearFirst: false, ParticipantImportScope.AllDays.WithUpdatePayment(false));
+        var afterKeep = await editor.GetParticipantRosterAsync();
+        Assert.Equal("100", afterKeep.Single(r => r.FullName == "Коваль Олег").Payment);
+        Assert.Equal("50", afterKeep.Single(r => r.FullName == "Нова Платниця").Payment);
+        await editor.ImportParticipantsAsync(paid, clearFirst: false, ParticipantImportScope.AllDays);
+        Assert.Equal("250", (await editor.GetParticipantRosterAsync()).Single(r => r.FullName == "Коваль Олег").Payment);
     }
 
     [Fact]

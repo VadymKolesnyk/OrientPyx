@@ -1,5 +1,14 @@
 namespace OrientPyx.BusinessLogic.Models;
 
+/// <summary>How the statement's rows are ordered.</summary>
+public enum StatementSortOrder
+{
+    /// <summary>By chip: rental chips first, then own chips, each by chip number ascending; chip-less rows last.</summary>
+    Chip = 0,
+    /// <summary>By bib number ascending (numeric, so 9 precedes 10); rows without a number last.</summary>
+    Number = 1
+}
+
 /// <summary>
 /// One selectable column in the statement settings: which <see cref="StatementColumn"/> it is and whether
 /// it is currently shown. The list order IS the on-page column order, so the settings UI reorders this list.
@@ -31,6 +40,9 @@ public sealed class StatementColumnSetting
 public sealed class StatementSettings
 {
     public ProtocolOrientation Orientation { get; set; } = ProtocolOrientation.Portrait;
+
+    /// <summary>The row order: by chip (the default) or by bib number. Saved with the rest of the template.</summary>
+    public StatementSortOrder SortOrder { get; set; } = StatementSortOrder.Chip;
 
     /// <summary>The columns in on-page order. Defaults to a sensible identity layout.</summary>
     public List<StatementColumnSetting> Columns { get; set; } = DefaultColumns();

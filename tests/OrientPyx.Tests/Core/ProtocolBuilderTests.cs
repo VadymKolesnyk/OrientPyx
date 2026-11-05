@@ -3,6 +3,7 @@ using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
+using OrientPyx.BusinessLogic.Services;
 using OrientPyx.Tests.Support;
 
 namespace OrientPyx.Tests.Core;
@@ -208,6 +209,20 @@ public sealed class ProtocolBuilderTests
         Assert.True(section.Rows[1].BoldCells![chip]);
         Assert.Null(section.Rows[0].BoldCells);
         Assert.Equal("усі", doc.FilterSummary);
+
+        // By number: numeric bibs ascending (9 before 10), a text bib after them, no bib last.
+        var rows = new[]
+        {
+            new StatementRow { Number = "10", FullName = "Ten" },
+            new StatementRow { Number = "", FullName = "Blank" },
+            new StatementRow { Number = "9", FullName = "Nine" },
+            new StatementRow { Number = "A1", FullName = "Text" },
+        };
+        Assert.Equal(["Nine", "Ten", "Text", "Blank"],
+            StatementBuilder.Order(rows, StatementSortOrder.Number).Select(r => r.FullName));
+        settings.SortOrder = StatementSortOrder.Number;
+        doc = Sp.GetRequiredService<IStatementBuilder>().Build(data, settings, labels, "усі");
+        Assert.Equal(["Own", "Rental", "None"], doc.Sections[0].Rows.Select(r => r.Cells[name]));
     }
 
     [Fact]

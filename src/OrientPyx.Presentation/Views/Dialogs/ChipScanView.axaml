@@ -127,6 +127,18 @@
                             Content="{Binding Localization[Participants.ChipScan.Manual.Enter]}" />
                 </Grid>
 
+                <!-- The watched file has content the parser rejects (e.g. no Config+ header). -->
+                <Border DockPanel.Dock="Top" IsVisible="{Binding HasFileError}"
+                        Background="{DynamicResource DangerSurface}"
+                        CornerRadius="6" Padding="10,8" Margin="0,0,0,10">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <controls:Icon Kind="TriangleAlert" Size="15" Margin="0,0,8,0"
+                                       Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1" Text="{Binding FileError}" TextWrapping="Wrap" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource DangerBrush}" />
+                    </Grid>
+                </Border>
+
                 <!-- What to touch to the station right now, for whom. -->
                 <Border DockPanel.Dock="Top" CornerRadius="8" Padding="14,10" Margin="0,0,0,10"
                         Background="{DynamicResource AccentSurface}">
@@ -166,10 +178,10 @@
                             <Button Classes="accent" Command="{Binding ForceAssignCommand}"
                                     Content="{Binding Localization[Participants.ChipScan.Force]}" />
                         </StackPanel>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <controls:Icon Kind="CircleAlert" Size="15" VerticalAlignment="Center" />
-                            <TextBlock Text="{Binding Message}" TextWrapping="Wrap" VerticalAlignment="Center" />
-                        </StackPanel>
+                        <Grid ColumnDefinitions="Auto,*">
+                            <controls:Icon Kind="CircleAlert" Size="15" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBlock Grid.Column="1" Text="{Binding Message}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                        </Grid>
                     </DockPanel>
                 </Border>
 
@@ -177,21 +189,21 @@
                 <Border DockPanel.Dock="Bottom" IsVisible="{Binding ShowWarning}"
                         Background="{DynamicResource DangerSurface}"
                         CornerRadius="6" Padding="10,8" Margin="0,10,0,0">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <controls:Icon Kind="TriangleAlert" Size="15"
+                    <Grid ColumnDefinitions="Auto,*">
+                        <controls:Icon Kind="TriangleAlert" Size="15" Margin="0,0,8,0"
                                        Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" VerticalAlignment="Center"
+                        <TextBlock Grid.Column="1" Text="{Binding Message}" TextWrapping="Wrap" VerticalAlignment="Center"
                                    Foreground="{DynamicResource DangerBrush}" />
-                    </StackPanel>
+                    </Grid>
                 </Border>
                 <Border DockPanel.Dock="Bottom" IsVisible="{Binding ShowInfo}"
                         Background="{DynamicResource SurfaceSubtle}"
                         CornerRadius="6" Padding="10,8" Margin="0,10,0,0">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <controls:Icon Kind="Check" Size="15"
+                    <Grid ColumnDefinitions="Auto,*">
+                        <controls:Icon Kind="Check" Size="15" Margin="0,0,8,0"
                                        Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" VerticalAlignment="Center" />
-                    </StackPanel>
+                        <TextBlock Grid.Column="1" Text="{Binding Message}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                    </Grid>
                 </Border>
 
                 <!-- Our standard spreadsheet table; columns are built in code-behind. Bounded height so it

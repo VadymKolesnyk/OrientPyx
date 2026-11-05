@@ -112,6 +112,18 @@
                         </Border>
                     </StackPanel>
 
+                    <!-- Whether existing athletes' «Оплата» follows the file (shown only when it would change) -->
+                    <CheckBox IsChecked="{Binding UpdatePayment, Mode=TwoWay}" IsVisible="{Binding HasPaymentChanges}"
+                              Content="{Binding Localization[ParticipantsImport.Preview.UpdatePayment]}" />
+
+                    <!-- Rows identical to the database: counted, not listed -->
+                    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasUnchanged}">
+                        <controls:Icon Kind="Check" Size="16" Foreground="{DynamicResource TextMuted}"
+                                       VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding UnchangedText}" Foreground="{DynamicResource TextMuted}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+
                     <!-- Missing from the file: ticked = delete from the database -->
                     <StackPanel Spacing="6" IsVisible="{Binding HasMissing}">
                         <DockPanel LastChildFill="False">

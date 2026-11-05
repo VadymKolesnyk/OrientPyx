@@ -36,7 +36,8 @@ internal static class ImportPreviewStep
         if (decision is null)
             return null;
 
-        return (scope.WithExcludedRows(decision.ExcludedRows), decision.DeleteParticipantIds);
+        return (scope.WithExcludedRows(decision.ExcludedRows).WithUpdatePayment(decision.UpdatePayment),
+            decision.DeleteParticipantIds);
     }
 
     /// <summary>Deletes the athletes the user ticked in the «missing from the file» block (after the import).</summary>

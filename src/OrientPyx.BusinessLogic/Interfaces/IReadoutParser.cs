@@ -20,6 +20,14 @@ public interface IReadoutParser
     /// in a shape this parser understands.
     /// </summary>
     ChipReadData Parse(string content);
+
+    /// <summary>
+    /// The line(s) a <b>new, empty</b> read-out file is seeded with so that the timing software, when it
+    /// appends to a file that already exists, produces a file this parser reads. SPORTident ReaderUI writes
+    /// its header row only into a file it creates itself; a file the app created first gets data rows only,
+    /// which a header-keyed parser rejects. Null when the format needs no seeding.
+    /// </summary>
+    string? NewFileHeader => null;
 }
 
 /// <summary>Raised when readout content is not in a shape the parser can read.</summary>

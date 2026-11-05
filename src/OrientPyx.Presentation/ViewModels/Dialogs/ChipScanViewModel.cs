@@ -201,6 +201,16 @@ public sealed partial class ChipScanViewModel : ObservableObject
     [ObservableProperty]
     private bool _isWatching;
 
+    /// <summary>
+    /// Why the watched file cannot be read (it has content the current parser rejects — typically a
+    /// SPORTident file with no «Config+ (card readout)» header); empty while it reads fine or is still empty.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasFileError))]
+    private string _fileError = string.Empty;
+
+    public bool HasFileError => FileError.Length > 0;
+
     /// <summary>A chip number typed by hand (no station): Enter / the button scans it.</summary>
     [ObservableProperty]
     private string _manualNumber = string.Empty;
@@ -531,7 +541,8 @@ public sealed partial class ChipScanViewModel : ObservableObject
             return;
         }
 
-        _poller.Start(FilePath, TimeSpan.FromSeconds(1), OnPolledContentAsync);
+        FileError = string.Empty;
+        _poller.Start(FilePath, TimeSpan.FromSeconds(1), OnPolledContentAsync, NewFileHeaderAsync);
         IsWatching = true;
     }
 
@@ -540,6 +551,10 @@ public sealed partial class ChipScanViewModel : ObservableObject
         _poller?.Stop();
         IsWatching = false;
     }
+
+    // The header a brand-new read-out file is seeded with (ReaderUI appends to an existing file without one).
+    private async Task<string?> NewFileHeaderAsync() =>
+        _parsers is null ? null : (await _parsers.GetCurrentAsync()).NewFileHeader;
 
     // Poller thread: parse the whole file, pick out the rows not seen before and scan them on the UI thread.
     private async Task OnPolledContentAsync(string content)
@@ -555,8 +570,15 @@ public sealed partial class ChipScanViewModel : ObservableObject
         }
         catch (ReadoutFormatException)
         {
-            return; // not a readable read-out right now (e.g. half-written)
+            // Not a readable read-out: say so (a silent no-op looks exactly like «nothing scanned yet»).
+            // The ReaderUI case: it appended data rows to a file that had no header.
+            await Dispatcher.UIThread.InvokeAsync(() =>
+                FileError = Localization.Get("Participants.ChipScan.File.WrongFormat"));
+            return;
         }
+
+        if (HasFileError)
+            await Dispatcher.UIThread.InvokeAsync(() => FileError = string.Empty);
 
         var fresh = ExtractNewScans(data);
         if (fresh.Count == 0)

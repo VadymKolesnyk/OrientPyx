@@ -99,6 +99,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
     public string Title => Localization.Get("Statement.Modal.Title");
     public string LandscapeLabel => Localization.Get("Statement.Layout.Landscape");
     public string TableBordersLabel => Localization.Get("Statement.Layout.TableBorders");
+    public string SortByNumberLabel => Localization.Get("Statement.Layout.SortByNumber");
     public string PageFooterLabel => Localization.Get("Statement.Layout.PageFooter");
     public string MarkPrintedLabel => Localization.Get("Statement.MarkPrinted");
     public string ColumnsLabel => Localization.Get("Statement.Columns.Title");
@@ -115,6 +116,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(LandscapeLabel));
         OnPropertyChanged(nameof(TableBordersLabel));
+        OnPropertyChanged(nameof(SortByNumberLabel));
         OnPropertyChanged(nameof(PageFooterLabel));
         OnPropertyChanged(nameof(MarkPrintedLabel));
         OnPropertyChanged(nameof(ColumnsLabel));
@@ -134,6 +136,10 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
 
     [ObservableProperty]
     private bool _isLandscape;
+
+    /// <summary>«Сортувати за номером» — rows by bib number instead of the chip order. Saved with the template.</summary>
+    [ObservableProperty]
+    private bool _sortByNumber;
 
     /// <summary>«Друк таблиці» — print the data table inside a full border grid. Off by default (only the
     /// header row is boxed); saved with the rest of the template.</summary>
@@ -225,6 +231,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
         try
         {
             IsLandscape = settings.Orientation == ProtocolOrientation.Landscape;
+            SortByNumber = settings.SortOrder == StatementSortOrder.Number;
             TableBorders = settings.TableBorders;
             PageFooter = settings.PageFooter;
             MarkPrinted = settings.MarkPrinted;
@@ -405,6 +412,7 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
     private StatementSettings BuildSettings() => new()
     {
         Orientation = IsLandscape ? ProtocolOrientation.Landscape : ProtocolOrientation.Portrait,
+        SortOrder = SortByNumber ? StatementSortOrder.Number : StatementSortOrder.Chip,
         TableBorders = TableBorders,
         PageFooter = PageFooter,
         MarkPrinted = MarkPrinted,
@@ -554,19 +562,31 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
             AutoSave();
     }
 
+    // The order changes the rows themselves, so the preview is rebuilt through the builder.
+    partial void OnSortByNumberChanged(bool value)
+    {
+        if (_applyingSettings)
+            return;
+        RefreshPreview();
+        AutoSave();
+    }
+
     partial void OnCompetitionNameChanged(string value) => OnHeaderEdited();
     partial void OnTitle2Changed(string value) => OnHeaderEdited();
     partial void OnSubtitleChanged(string value) => OnHeaderEdited();
     partial void OnVenueChanged(string value) => OnHeaderEdited();
     partial void OnDateTextChanged(string value) => OnHeaderEdited();
 
-    // "Відомість - <competition> - [День N - ]<date>.docx" (see ExportFileName). A statement spanning the
-    // whole competition carries no day segment and is dated by the competition's start.
+    // "Відомість - [<filters> - ]<competition> - [День N - ]<date>.docx" (see ExportFileName): the applied
+    // filters (the heading over the table) name what the list is of, so several statements of one competition
+    // get distinct names. A statement spanning the whole competition carries no day segment and is dated by the
+    // competition's start.
     private string SuggestedFileName(string extension) => Services.ExportFileName.Build(
         Localization, "Statement.NamePart", _session.CurrentEvent?.Name, extension,
         _headerDefaults.Day,
         date: _headerDefaults.CompetitionDate,
-        defaultNameKey: "Statement.DefaultName");
+        defaultNameKey: "Statement.DefaultName",
+        qualifier: Services.ExportFileName.Qualifier(_filterSummaryText));
 
     // ── Column captions
 

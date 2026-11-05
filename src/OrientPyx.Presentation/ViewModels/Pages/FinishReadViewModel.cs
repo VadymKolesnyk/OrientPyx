@@ -665,8 +665,11 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         ResetSeenInFile();
 
         var interval = TimeSpan.FromSeconds(Math.Max(1, AutoReadIntervalSeconds));
-        _poller.Start(AutoReadFilePath, interval, OnPolledContentAsync);
+        _poller.Start(AutoReadFilePath, interval, OnPolledContentAsync, NewFileHeaderAsync);
     }
+
+    // The header a brand-new read-out file is seeded with (ReaderUI appends to an existing file without one).
+    private async Task<string?> NewFileHeaderAsync() => (await _readoutParsers.GetCurrentAsync()).NewFileHeader;
 
     // Sets AutoReadError to a specific message when the watched file is missing or the current timing
     // system's parser can't read it, or clears it when the file looks right (or can't be examined yet).

@@ -272,7 +272,7 @@ public sealed class HeadlessWorkflowTests
             [new ImportPreviewAdded(0, "Новий Учасник", "Ч21", 2008, "Орієнтир", "Київ", [1])],
             [new ImportPreviewUpdated(1, kovalId, "Коваль Олег", "Ч21",
                 [new ImportPreviewChange("Club", null, "", "Орієнтир"), new ImportPreviewChange("Chip", 1, "", "8001"),
-                 new ImportPreviewChange("Day", 2, "", "")])],
+                 new ImportPreviewChange("Day", 2, "", ""), new ImportPreviewChange("Payment", null, "100", "250")])],
             [new ImportPreviewMissing(Guid.NewGuid(), "Петренко Іван", "Ч21", 2001, "", "Львів", [1, 2])]);
 
         var vm = new ImportPreviewViewModel(localization, preview);
@@ -285,6 +285,9 @@ public sealed class HeadlessWorkflowTests
         {
             vm.DeselectAllAddedCommand.Execute(null);
             vm.SelectAllMissingCommand.Execute(null);
+            Assert.True(vm.HasPaymentChanges);
+            vm.UpdatePayment = false;
+            Assert.DoesNotContain(vm.Updated.Single().Changes, line => line.Contains("100"));
             vm.ConfirmCommand.Execute(null);
         });
         await _app.WaitUntilAsync(() => _app.Vm.Dialogs.Current is null, what: "preview dialog closed");
@@ -292,6 +295,7 @@ public sealed class HeadlessWorkflowTests
         Assert.NotNull(decision);
         Assert.Equal([0], decision.ExcludedRows.OrderBy(x => x));
         Assert.Single(decision.DeleteParticipantIds);
+        Assert.False(decision.UpdatePayment);
         await shown;
         AssertNoUiErrors();
     }

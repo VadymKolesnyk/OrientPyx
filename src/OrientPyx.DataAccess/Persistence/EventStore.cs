@@ -2062,7 +2062,7 @@ public sealed partial class EventStore : IEventStore
                     // A brand-new athlete is fully populated, but the payment still honours the caller's
                     // "оплата" toggle (a day-scoped import that was told not to bring payments must not
                     // bring them for new people either), and in per-day mode it belongs on the day link.
-                    Payment = !paymentPerDay && hasPayment && ImportsPayment(scope, currentDayOnly)
+                    Payment = !paymentPerDay && hasPayment && ImportsPayment(scope, currentDayOnly, isNewParticipant: true)
                         ? srcPayment
                         : string.Empty
                 };
@@ -2110,8 +2110,9 @@ public sealed partial class EventStore : IEventStore
                 if (Update(ParticipantUpdateFields.IsFsouMember))
                     participant.IsFsouMember = src.IsFsouMember;
                 // Never wipe a stored payment with a blank cell (see srcPayment above); in per-day mode the
-                // value belongs on the day link, so the participant-level column is left alone entirely.
-                if (!paymentPerDay && hasPayment && Update(ParticipantUpdateFields.Payment))
+                // value belongs on the day link, so the participant-level column is left alone entirely. An
+                // all-days re-import told not to update payments leaves the desk's value alone too.
+                if (!paymentPerDay && hasPayment && Update(ParticipantUpdateFields.Payment) && ImportsPayment(scope, currentDayOnly, isNewParticipant))
                     participant.Payment = srcPayment;
                 updated++;
             }
@@ -2161,7 +2162,7 @@ public sealed partial class EventStore : IEventStore
 
                 // In per-day mode the file's payment goes onto every day this import enters the athlete on
                 // (in current-day-only mode that is exactly the target day) — never onto their other days.
-                var dayPayment = paymentPerDay && hasPayment && ImportsPayment(scope, currentDayOnly)
+                var dayPayment = paymentPerDay && hasPayment && ImportsPayment(scope, currentDayOnly, isNewParticipant)
                     ? srcPayment
                     : null;
 
@@ -2313,11 +2314,14 @@ public sealed partial class EventStore : IEventStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    // Whether this import is allowed to bring the «Оплата» column at all. All-days mode always may (its
-    // legacy behaviour is to overwrite everything); a day-scoped import only when the user ticked it in the
-    // options modal. Applies to a brand-new athlete too, which the per-field Update() check below does not.
-    private static bool ImportsPayment(ParticipantImportScope scope, bool currentDayOnly) =>
-        !currentDayOnly || scope.UpdateFields.HasFlag(ParticipantUpdateFields.Payment);
+    // Whether this import is allowed to bring the «Оплата» column at all. All-days mode may for a new athlete
+    // always and for an existing one unless the preview's «оновлювати оплату» was unticked
+    // (scope.UpdatePayment); a day-scoped import only when the user ticked it in the options modal. Applies to a
+    // brand-new athlete too, which the per-field Update() check does not.
+    private static bool ImportsPayment(ParticipantImportScope scope, bool currentDayOnly, bool isNewParticipant) =>
+        currentDayOnly
+            ? scope.UpdateFields.HasFlag(ParticipantUpdateFields.Payment)
+            : isNewParticipant || scope.UpdatePayment;
 
     // Get-or-create against an in-memory tracked list + the DbSet (added rows are saved with the batch).
     private static Guid? ResolveLookup<T>(string name, List<T> cache, Func<string, T> create, DbSet<T> set)

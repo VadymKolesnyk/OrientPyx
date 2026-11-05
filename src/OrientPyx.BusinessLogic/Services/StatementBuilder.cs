@@ -6,8 +6,8 @@ namespace OrientPyx.BusinessLogic.Services;
 
 /// <summary>
 /// Default <see cref="IStatementBuilder"/>. Produces a single flat section (no per-group split) from the
-/// participant rows, sorted by chip: rental chips first, then own chips, then by chip number ascending, with
-/// chip-less rows last. Own-chip rows get the chip cell marked bold (via
+/// participant rows, sorted per <see cref="StatementSettings.SortOrder"/>: by chip (rental chips first, then own
+/// chips, then by chip number ascending, chip-less rows last) or by bib number. Own-chip rows get the chip cell marked bold (via
 /// <see cref="ResultProtocolBodyRow.BoldCells"/>) so their own chips stand out. The filter summary line is
 /// stamped onto the document header. Emits a <see cref="ResultProtocolDocument"/> so the statement reuses the
 /// results-protocol writer + live preview.
@@ -73,13 +73,7 @@ public sealed class StatementBuilder : IStatementBuilder
         // The chip column's physical cell index (or -1 when hidden), so we can bold own-chip cells there.
         var chipIndex = plan.FindIndex(p => p.Column == StatementColumn.Chip);
 
-        // Fixed statement order: chip-less last; rental chips before own chips; then by chip number ascending.
-        var ordered = data.Rows
-            .OrderBy(r => r.HasChip ? 0 : 1)
-            .ThenBy(r => r.HasOwnChip ? 1 : 0)
-            .ThenBy(r => r.ChipSortKey ?? int.MaxValue)
-            .ThenBy(r => r.FullName, StringComparer.CurrentCultureIgnoreCase)
-            .ToList();
+        var ordered = Order(data.Rows, settings.SortOrder);
 
         var body = new List<ResultProtocolBodyRow>(ordered.Count);
         var seq = 0;
@@ -132,6 +126,35 @@ public sealed class StatementBuilder : IStatementBuilder
                 : null
         };
     }
+
+    /// <summary>
+    /// The statement order. By chip: chip-less last; rental chips before own chips; then by chip number
+    /// ascending. By number: numeric bib ascending (so 9 precedes 10), a non-numeric number after the numeric
+    /// ones by text, rows without a number last. Ties fall back to the name either way.
+    /// </summary>
+    public static List<StatementRow> Order(IEnumerable<StatementRow> rows, StatementSortOrder order)
+    {
+        var byName = StringComparer.CurrentCultureIgnoreCase;
+        if (order == StatementSortOrder.Number)
+        {
+            return rows
+                .OrderBy(r => NumberKey(r.Number) is not null ? 0 : r.Number.Trim().Length > 0 ? 1 : 2)
+                .ThenBy(r => NumberKey(r.Number) ?? int.MaxValue)
+                .ThenBy(r => r.Number.Trim(), byName)
+                .ThenBy(r => r.FullName, byName)
+                .ToList();
+        }
+
+        return rows
+            .OrderBy(r => r.HasChip ? 0 : 1)
+            .ThenBy(r => r.HasOwnChip ? 1 : 0)
+            .ThenBy(r => r.ChipSortKey ?? int.MaxValue)
+            .ThenBy(r => r.FullName, byName)
+            .ToList();
+    }
+
+    private static int? NumberKey(string number) =>
+        int.TryParse(number.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : null;
 
     // Free-text columns (name, group, region, club, ДЮСШ, coach, team, representative, note) may wrap; the
     // short-code columns (№ з/п, number, birth date, chip, rank, ФСОУ) stay on one line.

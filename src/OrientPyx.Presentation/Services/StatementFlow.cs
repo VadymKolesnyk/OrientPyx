@@ -236,7 +236,7 @@ public sealed class StatementFlow : IStatementFlow
         var parts = new List<string>();
         foreach (var filter in table.ActiveFilters)
         {
-            if (!filter.IsActive)
+            if (!filter.IsActive || IsPrintedFlagFilter(filter))
                 continue;
             parts.Add(DescribeFilter(filter));
         }
@@ -251,6 +251,11 @@ public sealed class StatementFlow : IStatementFlow
         // No literal "Фільтри:" prefix — the values are shown on their own as a heading line under the title.
         return string.Join(" · ", parts);
     }
+
+    // The «Відомість надрукована» flag is filtered on to pick who still needs a printout; it says nothing about
+    // the people on the list, so it is left out of the heading and of the file name (user request).
+    private static bool IsPrintedFlagFilter(SheetFilter filter) =>
+        filter.ColumnKey.EndsWith(CustomField.ColumnPrefix + CustomField.StatementPrintedKey, StringComparison.Ordinal);
 
     // One filter as "<Header>: <values or condition>". Value/status filters list the kept values (joined with
     // ", "); a condition filter uses the SheetFilter's own localized description.

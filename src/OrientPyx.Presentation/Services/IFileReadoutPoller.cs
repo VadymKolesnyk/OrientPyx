@@ -15,9 +15,13 @@ public interface IFileReadoutPoller
     /// Starts polling <paramref name="filePath"/> every <paramref name="interval"/>, invoking
     /// <paramref name="onContent"/> with the file's text on each successful read (the first read
     /// fires immediately). Replaces any current watch. The callback is awaited, so a slow consumer
-    /// throttles the next read rather than overlapping with it.
+    /// throttles the next read rather than overlapping with it. A missing (or empty) file is created
+    /// first, seeded with the text <paramref name="newFileContent"/> yields (an
+    /// <see cref="OrientPyx.BusinessLogic.Interfaces.IReadoutParser.NewFileHeader"/>): timing software that
+    /// appends to an existing file then writes under a header it would otherwise omit.
     /// </summary>
-    void Start(string filePath, TimeSpan interval, Func<string, Task> onContent);
+    void Start(string filePath, TimeSpan interval, Func<string, Task> onContent,
+        Func<Task<string?>>? newFileContent = null);
 
     /// <summary>Stops the current watch, if any. Safe to call when nothing is running.</summary>
     void Stop();

@@ -9,28 +9,35 @@ namespace OrientPyx.Presentation.ViewModels.Dialogs;
 
 /// <summary>
 /// The all-days import's confirmation: three blocks — athletes the file adds, athletes it updates (with the
-/// fields that change) and athletes in the database the file no longer lists — each with «select all / none».
+/// fields that change; rows with nothing to change are only counted) and athletes in the database the file no
+/// longer lists — each with «select all / none».
 /// A ticked row in the first two blocks is imported (unticked ones are left out); a ticked row in the third is
-/// deleted from the database (unticked by default: nothing is removed unless asked). Completes with the
-/// decision, or null on cancel.
+/// deleted from the database (unticked by default: nothing is removed unless asked). When the file would change
+/// somebody's «Оплата», an «оновлювати оплату» checkbox decides whether those values are taken: unticked, the
+/// payment lines disappear from the list (a row with nothing else to change joins the unchanged count) and the
+/// import leaves every existing athlete's payment alone. Completes with the decision, or null on cancel.
 /// </summary>
 public sealed partial class ImportPreviewViewModel : ObservableObject
 {
+    private const string PaymentField = "Payment";
+
     private readonly TaskCompletionSource<ImportPreviewDecision?> _completion =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private readonly ImportPreview _preview;
 
     public ImportPreviewViewModel(ILocalizationService localization, ImportPreview preview)
     {
         ArgumentNullException.ThrowIfNull(preview);
         Localization = localization;
+        _preview = preview;
 
         Added = new ObservableCollection<ImportPreviewItem>(preview.Added.Select(a =>
             new ImportPreviewItem(a.RowIndex, null, a.FullName, a.Group,
                 Details(a.BirthYear, a.Club, a.Region, a.DayNumbers), [], isChecked: true, OnItemChanged)));
-        Updated = new ObservableCollection<ImportPreviewItem>(preview.Updated.Select(u =>
-            new ImportPreviewItem(u.RowIndex, u.ParticipantId, u.FullName, u.Group,
-                u.Changes.Count == 0 ? Localization.Get("ParticipantsImport.Preview.NoChanges") : string.Empty,
-                u.Changes.Select(ChangeText).ToList(), isChecked: true, OnItemChanged)));
+        Updated = [];
+        HasPaymentChanges = preview.Updated.Any(u => u.Changes.Any(c => c.Field == PaymentField));
+        RebuildUpdated();
         Missing = new ObservableCollection<ImportPreviewItem>(preview.Missing.Select(m =>
             new ImportPreviewItem(-1, m.ParticipantId, m.FullName, m.Groups,
                 Details(m.BirthYear, m.Club, m.Region, m.DayNumbers), [], isChecked: false, OnItemChanged)));
@@ -49,6 +56,54 @@ public sealed partial class ImportPreviewViewModel : ObservableObject
     public bool HasAdded => Added.Count > 0;
 
     public bool HasUpdated => Updated.Count > 0;
+
+    /// <summary>File rows that match the database exactly (hidden from the list).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasUnchanged))]
+    [NotifyPropertyChangedFor(nameof(UnchangedText))]
+    private int _unchangedCount;
+
+    public bool HasUnchanged => UnchangedCount > 0;
+
+    /// <summary>True when the file would change at least one athlete's «Оплата» — the checkbox is shown then.</summary>
+    public bool HasPaymentChanges { get; }
+
+    /// <summary>«Оновлювати оплату з файлу»: off, the payment lines are dropped from the list and the import keeps
+    /// every existing athlete's payment as it is. On by default (the legacy behaviour).</summary>
+    [ObservableProperty]
+    private bool _updatePayment = true;
+
+    partial void OnUpdatePaymentChanged(bool value)
+    {
+        RebuildUpdated();
+        OnItemChanged();
+    }
+
+    // Rows identical to what is stored are not listed — there is nothing to decide about them; the import takes
+    // them as they are. Only their count is shown. With the payment switch off a payment change does not count.
+    // A row the user had unticked stays unticked across a rebuild.
+    private void RebuildUpdated()
+    {
+        var unticked = Updated.Where(i => !i.IsChecked).Select(i => i.RowIndex).ToHashSet();
+        Updated.Clear();
+        var unchanged = 0;
+        foreach (var u in _preview.Updated)
+        {
+            var changes = UpdatePayment ? u.Changes : u.Changes.Where(c => c.Field != PaymentField).ToList();
+            if (changes.Count == 0)
+            {
+                unchanged++;
+                continue;
+            }
+            Updated.Add(new ImportPreviewItem(u.RowIndex, u.ParticipantId, u.FullName, u.Group, string.Empty,
+                changes.Select(ChangeText).ToList(), isChecked: !unticked.Contains(u.RowIndex), OnItemChanged));
+        }
+        UnchangedCount = unchanged;
+        OnPropertyChanged(nameof(HasUpdated));
+    }
+
+    public string UnchangedText => string.Format(
+        CultureInfo.CurrentCulture, Localization.Get("ParticipantsImport.Preview.Unchanged"), UnchangedCount);
 
     public bool HasMissing => Missing.Count > 0;
 
@@ -147,7 +202,7 @@ public sealed partial class ImportPreviewViewModel : ObservableObject
             .Select(i => i.RowIndex)
             .ToHashSet();
         var delete = Missing.Where(i => i.IsChecked).Select(i => i.ParticipantId!.Value).ToList();
-        _completion.TrySetResult(new ImportPreviewDecision(excluded, delete));
+        _completion.TrySetResult(new ImportPreviewDecision(excluded, delete, UpdatePayment));
     }
 
     [RelayCommand]
@@ -205,5 +260,7 @@ public sealed partial class ImportPreviewItem : ObservableObject
     partial void OnIsCheckedChanged(bool value) => _changed();
 }
 
-/// <summary>The user's choices: file rows to leave out, and database athletes to delete.</summary>
-public sealed record ImportPreviewDecision(IReadOnlySet<int> ExcludedRows, IReadOnlyList<Guid> DeleteParticipantIds);
+/// <summary>The user's choices: file rows to leave out, database athletes to delete, and whether existing
+/// athletes' «Оплата» is updated from the file.</summary>
+public sealed record ImportPreviewDecision(
+    IReadOnlySet<int> ExcludedRows, IReadOnlyList<Guid> DeleteParticipantIds, bool UpdatePayment = true);

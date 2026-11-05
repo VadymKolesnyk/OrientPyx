@@ -405,8 +405,11 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         }
 
         var interval = TimeSpan.FromSeconds(Math.Max(1, AutoReadIntervalSeconds));
-        _poller.Start(AutoReadFilePath, interval, OnPolledContentAsync);
+        _poller.Start(AutoReadFilePath, interval, OnPolledContentAsync, NewFileHeaderAsync);
     }
+
+    // The header a brand-new read-out file is seeded with (ReaderUI appends to an existing file without one).
+    private async Task<string?> NewFileHeaderAsync() => (await _readoutParsers.GetCurrentAsync()).NewFileHeader;
 
     // Runs on a pool thread (the poller's loop). Parse + import are synchronous SQLite work, so they
     // stay off the UI thread; only the reload hops back. Silent: it just merges new chips.

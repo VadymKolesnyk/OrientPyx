@@ -66,6 +66,15 @@ public sealed class ParticipantImportScope
     /// </summary>
     public IReadOnlySet<int> ExcludedRows { get; init; } = new HashSet<int>();
 
+    /// <summary>
+    /// In <see cref="ParticipantImportMode.AllDays"/>, whether an already existing (matched) athlete's «Оплата»
+    /// is taken from the file (the preview's «оновлювати оплату» checkbox). Off, the payment entered at the desk
+    /// stays as it is, on the participant and on every day link; a brand-new athlete still gets the file's
+    /// value. Default on (the legacy behaviour). Ignored in current-day-only mode, which has
+    /// <see cref="ParticipantUpdateFields.Payment"/> for the same decision.
+    /// </summary>
+    public bool UpdatePayment { get; init; } = true;
+
     /// <summary>A copy of this scope with <see cref="MergeInto"/> replaced.</summary>
     public ParticipantImportScope WithMergeInto(IReadOnlyDictionary<int, Guid> mergeInto) => new()
     {
@@ -74,7 +83,8 @@ public sealed class ParticipantImportScope
         LinkField = LinkField,
         UpdateFields = UpdateFields,
         MergeInto = mergeInto,
-        ExcludedRows = ExcludedRows
+        ExcludedRows = ExcludedRows,
+        UpdatePayment = UpdatePayment
     };
 
     /// <summary>A copy of this scope with <see cref="ExcludedRows"/> replaced.</summary>
@@ -85,7 +95,20 @@ public sealed class ParticipantImportScope
         LinkField = LinkField,
         UpdateFields = UpdateFields,
         MergeInto = MergeInto,
-        ExcludedRows = excludedRows
+        ExcludedRows = excludedRows,
+        UpdatePayment = UpdatePayment
+    };
+
+    /// <summary>A copy of this scope with <see cref="UpdatePayment"/> replaced.</summary>
+    public ParticipantImportScope WithUpdatePayment(bool updatePayment) => new()
+    {
+        Mode = Mode,
+        TargetDayNumber = TargetDayNumber,
+        LinkField = LinkField,
+        UpdateFields = UpdateFields,
+        MergeInto = MergeInto,
+        ExcludedRows = ExcludedRows,
+        UpdatePayment = updatePayment
     };
 }
 

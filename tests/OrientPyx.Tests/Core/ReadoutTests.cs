@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using OrientPyx.BusinessLogic.Enums;
@@ -26,6 +27,54 @@ public sealed class ReadoutTests
         "No.;read at;SI-Card;start time;Finish time;No. of punches;1.CN;1.DOW;1.Time;2.CN;2.DOW;2.Time;3.CN;3.DOW;3.Time\n" +
         "1;11:30:00;2101234;10:00:00 (Сб);10:25:30 (Сб);3;31;;10:05:00 (Сб);32;;10:12:00;33;;10:20:00\n" +
         "2;11:35:00;2101235;10:02:00;10:31:00;2;31;;10:08:00;;;;33;;10:26:00\n";
+
+    [Fact]
+    public void SportIdent_NewFileHeader_IsTheConfigPlusLayout_AndParsesAsEmpty()
+    {
+        var parser = new SportIdentCsvReadoutParser();
+        var header = parser.NewFileHeader!;
+        Assert.True(parser.CanParse(header));
+        Assert.Empty(parser.Parse(header).Records);
+        // A ReaderUI data row appended under that header reads with the chip, finish and punches in place.
+        var row = "2;2026-11-05 16:09:10;2771457;;1;Th; 21:33:59;;;;1;Th; 21:33:59;;;;;;;4;Fr; 15:58:29;;;;;club;\"Sever\";" +
+                  ";;;;;;;;;;;;;;;;2;42;Fr; 13:11:36;76;Fr; 13:17:50;\r\n";
+        var record = Assert.Single(parser.Parse(header + row).Records);
+        Assert.Equal("2771457", record.ChipNumber);
+        Assert.Equal(new TimeSpan(15, 58, 29), record.FinishTime!.Value.TimeOfDay);
+        Assert.Equal(["42", "76"], record.Punches.Select(p => p.ControlCode));
+        Assert.Null(((IReadoutParser)new SportTimeCsvReadoutParser()).NewFileHeader);
+    }
+
+    [Fact]
+    public void Poller_SeedsANewOrEmptyFileWithTheHeader_AndLeavesContentAlone()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "opyx-poller-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var header = new SportIdentCsvReadoutParser().NewFileHeader;
+            var fresh = Path.Combine(dir, "sub", "new.csv");
+            FileReadoutPoller.EnsureFileExists(fresh, header);
+            Assert.Equal(header, File.ReadAllText(fresh));
+
+            var empty = Path.Combine(dir, "empty.csv");
+            File.WriteAllText(empty, string.Empty);
+            FileReadoutPoller.EnsureFileExists(empty, header);
+            Assert.Equal(header, File.ReadAllText(empty));
+
+            var full = Path.Combine(dir, "full.csv");
+            File.WriteAllText(full, SportIdentFile);
+            FileReadoutPoller.EnsureFileExists(full, header);
+            Assert.Equal(SportIdentFile, File.ReadAllText(full));
+
+            var plain = Path.Combine(dir, "plain.csv");
+            FileReadoutPoller.EnsureFileExists(plain);
+            Assert.Equal(string.Empty, File.ReadAllText(plain));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 
     [Fact]
     public void SportIdent_ParsesRecordsPunchesAndDates()
