@@ -2540,9 +2540,14 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             fieldLabels.TryGetValue(result.Key, out var label) ? label : result.Key));
     }
 
+    /// <summary>The bulk-edit field key prefix of a discount checkbox column: <c>Discount:&lt;discountId&gt;</c>.</summary>
+    public const string DiscountFieldKeyPrefix = "Discount:";
+
     // The fields the user can bulk-edit, in display order. Unique fields (number, chip) are excluded.
     // Context-sensitive fields are dropped when they don't apply: group (day mode only), team (only when
-    // shown for the current mode), raised fee (only when enabled), out-of-competition (day mode only).
+    // shown for the current mode), raised fee (only when enabled), bonus (only on a point-scoring day /
+    // when the roster shows the block), discounts (one Bool field per discount column, the auto FSOU one
+    // excluded), and one field per additional participant field (kind by the field's kind).
     private IReadOnlyList<Dialogs.BulkEditFieldOption> BuildBulkEditFields(bool includeGroup)
     {
         var fields = new List<Dialogs.BulkEditFieldOption>();
@@ -2556,6 +2561,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         fields.Add(F("Dussh", Dialogs.BulkEditFieldKind.Dussh, "Participants.Col.Dussh"));
         fields.Add(F("Rank", Dialogs.BulkEditFieldKind.Rank, "Participants.Col.Rank"));
         fields.Add(F("Coach", Dialogs.BulkEditFieldKind.Text, "Participants.Col.Coach"));
+        fields.Add(F("BirthDate", Dialogs.BulkEditFieldKind.Date, "Participants.Col.BirthDate"));
         fields.Add(F("Representative", Dialogs.BulkEditFieldKind.Text, "Participants.Col.Representative"));
         fields.Add(F("FsouCode", Dialogs.BulkEditFieldKind.Text, "Participants.Col.FsouCode"));
         fields.Add(F("Payment", Dialogs.BulkEditFieldKind.Text, "Participants.Col.Payment"));
@@ -2570,7 +2576,72 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         // Both modes therefore offer them. Start is a free-text HH:mm:ss field like the cell editor.
         fields.Add(F("StartTime", Dialogs.BulkEditFieldKind.Text, "Participants.Col.StartTime"));
         fields.Add(F("OutOfCompetition", Dialogs.BulkEditFieldKind.Bool, "Participants.Col.OutOfCompetition"));
+
+        // The result-status override: the same choices as the row dropdown (the "auto" sentinel clears the
+        // override); the choice value is the FinishStatus name, blank for auto. Per day: the roster fans it
+        // out over the member days like the other per-day fields.
+        var statusChoices = FinishStatusOptions.Build(Localization)
+            .Select(o => new Dialogs.BulkEditChoice(o.Status?.ToString() ?? string.Empty, o.Label))
+            .ToList();
+        fields.Add(new Dialogs.BulkEditFieldOption("ResultStatus", Dialogs.BulkEditFieldKind.Choice,
+            Localization.Get("Participants.Col.ResultStatus"), statusChoices));
+        // «Бонус» exists only where the table shows it: a point-scoring day / any point-scoring day for the roster.
+        if ((IsDayMode && ShowScoreColumn) || (IsRosterMode && RosterShowsScore))
+            fields.Add(F("Bonus", Dialogs.BulkEditFieldKind.Text, "Participants.Col.Bonus"));
+
+        // One flag per discount column, captioned like the column (the discount's name). The FSOU-member
+        // discount follows «Член ФСОУ» and has no column of its own, so it is not offered either.
+        foreach (var discount in Discounts.Where(d => !d.IsFsouMemberDiscount))
+        {
+            var label = string.IsNullOrWhiteSpace(discount.Name)
+                ? Localization.Get("EntryFees.Discount.Unnamed")
+                : discount.Name;
+            fields.Add(new Dialogs.BulkEditFieldOption(DiscountFieldKeyPrefix + discount.Id, Dialogs.BulkEditFieldKind.Bool, label));
+        }
+
+        // The competition's additional fields, keyed like their columns ("field.<key>"); the editor follows
+        // the field's kind (flag / choice list / text; a number is text, normalised on save like a typed edit).
+        foreach (var field in CustomFields)
+        {
+            var key = CustomField.ColumnPrefix + field.Key;
+            fields.Add(field.Kind switch
+            {
+                CustomFieldKind.Bool => new Dialogs.BulkEditFieldOption(key, Dialogs.BulkEditFieldKind.Bool, field.Label),
+                CustomFieldKind.Choice => new Dialogs.BulkEditFieldOption(key, Dialogs.BulkEditFieldKind.Choice, field.Label,
+                    field.Options.Select(o => new Dialogs.BulkEditChoice(o.Value, o.Value)).ToList()),
+                _ => new Dialogs.BulkEditFieldOption(key, Dialogs.BulkEditFieldKind.Text, field.Label),
+            });
+        }
         return fields;
+    }
+
+    // The FinishStatus a status-choice result names; null = the "auto" sentinel (clear the override).
+    private static FinishStatus? ParseStatusChoice(string? text) =>
+        Enum.TryParse<FinishStatus>(text, out var status) && status != FinishStatus.None ? status : null;
+
+    // Applies a bulk edit to a row's additional-field cell (shared by both row kinds): the flag setter for a
+    // Bool field, the text setter otherwise; either goes through the cell's save callback, which normalises
+    // and persists exactly like a typed edit. A field the row doesn't carry is an inert cell and is skipped.
+    private static void ApplyBulkEditToField(ParticipantFieldsViewModel fields, string columnKey, BulkEditResult r)
+    {
+        var cell = fields[columnKey[CustomField.ColumnPrefix.Length..]];
+        if (cell.Key.Length == 0)
+            return;
+        if (r.Bool is { } flag)
+            cell.Checked = flag;
+        else
+            cell.Text = r.Text ?? string.Empty;
+    }
+
+    // Applies a discount flag ("Discount:<id>") to a row's DiscountFlags entry, which persists through the
+    // row's own change callback like a click on the column's checkbox. The FSOU-member flag is never touched.
+    private static void ApplyBulkEditToDiscount(IEnumerable<DiscountFlagViewModel> flags, string key, BulkEditResult r)
+    {
+        if (!Guid.TryParse(key[DiscountFieldKeyPrefix.Length..], out var id))
+            return;
+        var flag = flags.FirstOrDefault(f => f.DiscountId == id && !f.IsFsouMemberDiscount);
+        if (flag is not null)
+            flag.IsSelected = r.Bool ?? false;
     }
 
     // A list field's "+ new" sentinel was picked in the dialog: run the existing create flow for that
@@ -2701,6 +2772,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 row.SelectedRank = row.RankOptions.FirstOrDefault(o => OrientPyx.Plugins.Sdk.Toolkit.TextKey.Same(o.Value, r.Text)) ?? row.RankOptions[0];
                 break;
             case "Coach": row.Coach = r.Text ?? string.Empty; break;
+            case "BirthDate": row.BirthDate = r.Date; break;
             case "Representative": row.Representative = r.Text ?? string.Empty; break;
             case "FsouCode": row.FsouCode = r.Text ?? string.Empty; break;
             // In per-day mode the day grid's «Оплата» is this day's own value, so bulk edit writes there.
@@ -2716,6 +2788,17 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             case "IsFsouMember": row.IsFsouMember = r.Bool ?? false; break;
             case "PaysRaisedFee": row.PaysRaisedFee = r.Bool ?? false; break;
             case "OutOfCompetition": row.OutOfCompetition = r.Bool ?? false; break;
+            // The status override goes through the row's dedicated status callback (persist + re-rank).
+            case "ResultStatus":
+                row.SelectedStatus = FinishStatusOptions.Select(row.StatusOptions, ParseStatusChoice(r.Text));
+                break;
+            case "Bonus": row.BonusText = r.Text ?? string.Empty; break;
+            case var key when key.StartsWith(DiscountFieldKeyPrefix, StringComparison.Ordinal):
+                ApplyBulkEditToDiscount(row.DiscountFlags, key, r);
+                break;
+            case var key when key.StartsWith(CustomField.ColumnPrefix, StringComparison.Ordinal):
+                ApplyBulkEditToField(row.Fields, key, r);
+                break;
         }
     }
 
@@ -2739,6 +2822,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 row.SelectedRank = row.RankOptions.FirstOrDefault(o => OrientPyx.Plugins.Sdk.Toolkit.TextKey.Same(o.Value, r.Text)) ?? row.RankOptions[0];
                 break;
             case "Coach": row.Coach = r.Text ?? string.Empty; break;
+            case "BirthDate": row.BirthDate = r.Date; break;
             case "Representative": row.Representative = r.Text ?? string.Empty; break;
             case "FsouCode": row.FsouCode = r.Text ?? string.Empty; break;
             // Per-day mode fans the payment out to the member days, like the collapsed roster cell does.
@@ -2760,6 +2844,14 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             // Per-day fields fan out to the participant's member days (like the collapsed roster cells).
             case "StartTime": row.SetStartTimeForMemberDays(r.Text ?? string.Empty); break;
             case "OutOfCompetition": row.SetOutOfCompetitionForMemberDays(r.Bool ?? false); break;
+            case "ResultStatus": row.SetResultStatusForMemberDays(ParseStatusChoice(r.Text)); break;
+            case "Bonus": row.SetBonusForMemberDays(r.Text ?? string.Empty); break;
+            case var key when key.StartsWith(DiscountFieldKeyPrefix, StringComparison.Ordinal):
+                ApplyBulkEditToDiscount(row.DiscountFlags, key, r);
+                break;
+            case var key when key.StartsWith(CustomField.ColumnPrefix, StringComparison.Ordinal):
+                ApplyBulkEditToField(row.Fields, key, r);
+                break;
         }
     }
 

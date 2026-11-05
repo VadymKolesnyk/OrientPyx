@@ -620,10 +620,11 @@ public partial class ParticipantsView : UserControl
     }
 
     // Maps a sheet column to the bulk-edit field key it edits, or null when the column can't be
-    // bulk-edited (the unique number/chip columns, name/birth date, the computed fee tail, actions).
+    // bulk-edited (the unique number/chip columns, name, the computed result/fee columns, actions).
     // The mapping is by the column's kind + bound property so it works for both the day grid and the
-    // roster (they share kinds and identity paths); per-day group/chip/start cells in the roster map to
-    // their field, but only day-mode offers the per-day fields (group via the day combo, start, OOC).
+    // roster (they share kinds and identity paths); per-day cells in the roster (group/start/status/
+    // bonus…) map to the same field, which the page fans out over the member days. The custom-built
+    // columns (additional fields, discount flags) map by their stable column key.
     private static string? BulkEditKeyFor(SheetColumn? column)
     {
         if (column is null)
@@ -631,6 +632,27 @@ public partial class ParticipantsView : UserControl
 
         switch (column.Kind)
         {
+            case SheetCellKind.BirthDate:
+                return "BirthDate";
+            // The status override: the day grid's row combo, a roster day leaf or the merged block cell.
+            case SheetCellKind.RowStatus:
+            case SheetCellKind.Status:
+            case SheetCellKind.CollapsedStatus:
+                return "ResultStatus";
+            case SheetCellKind.RowBonus:
+            case SheetCellKind.Bonus:
+                return "Bonus";
+            // The merged (collapsed) «Бонус» block is a read-only result text bound to CollapsedBonus.
+            case SheetCellKind.CollapsedResultText:
+                return column.IdentityPath == nameof(ParticipantRosterRowViewModel.CollapsedBonus) ? "Bonus" : null;
+            // Custom-built cells: an additional field column ("field.<key>", the bulk-edit key itself) or
+            // a discount checkbox column ("fee:discount:<id>" → "Discount:<id>").
+            case SheetCellKind.Custom:
+                if (column.Key.StartsWith(BusinessLogic.Models.CustomField.ColumnPrefix, StringComparison.Ordinal))
+                    return column.Key;
+                if (column.Key.StartsWith(DiscountColumnKeyPrefix, StringComparison.Ordinal))
+                    return ParticipantsViewModel.DiscountFieldKeyPrefix + column.Key[DiscountColumnKeyPrefix.Length..];
+                return null;
             case SheetCellKind.RowGroup:
             case SheetCellKind.Group:
             case SheetCellKind.CollapsedGroup:
@@ -680,11 +702,14 @@ public partial class ParticipantsView : UserControl
                     nameof(ParticipantDayRowViewModel.OutOfCompetition) => "OutOfCompetition",
                     _ => null,
                 };
-            // Number, ChipText/Chip/CollapsedChip, BirthDate, fee total, actions, custom: not bulk-editable.
+            // Number, ChipText/Chip/CollapsedChip, read-only result texts, fee total, actions: not bulk-editable.
             default:
                 return null;
         }
     }
+
+    // The stable key prefix EntryFeeColumns gives a discount checkbox column ("fee:discount:<id>").
+    private const string DiscountColumnKeyPrefix = "fee:discount:";
 
     // A collapse/expand toggle (or day-set change) asks the roster table to rebuild its columns.
     private void OnRosterColumnsChanged(object? sender, System.EventArgs e) => RosterTable.Rebuild();

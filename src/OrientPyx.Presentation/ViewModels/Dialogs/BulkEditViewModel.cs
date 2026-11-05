@@ -30,8 +30,19 @@ public enum BulkEditFieldKind
     Dussh,
 
     /// <summary>The rank dropdown (stored as text; no "+ new").</summary>
-    Rank
+    Rank,
+
+    /// <summary>A calendar date (e.g. Дата народження): a date picker; null clears the value.</summary>
+    Date,
+
+    /// <summary>One of a fixed list of values (a choice field, the result status): a plain dropdown over
+    /// <see cref="BulkEditFieldOption.Choices"/>; the result carries the chosen value as text.</summary>
+    Choice
 }
+
+/// <summary>One entry of a <see cref="BulkEditFieldKind.Choice"/> field: the stored <see cref="Value"/> and
+/// the label the dropdown shows (the same text for a custom choice field; a translated label for a status).</summary>
+public sealed record BulkEditChoice(string Value, string Label);
 
 /// <summary>
 /// One selectable target field in the bulk-edit modal: a stable <see cref="Key"/> the page switches on,
@@ -40,23 +51,27 @@ public enum BulkEditFieldKind
 /// </summary>
 public sealed class BulkEditFieldOption
 {
-    public BulkEditFieldOption(string key, BulkEditFieldKind kind, string label)
+    public BulkEditFieldOption(string key, BulkEditFieldKind kind, string label, IReadOnlyList<BulkEditChoice>? choices = null)
     {
         Key = key;
         Kind = kind;
         Label = label;
+        Choices = choices ?? [];
     }
 
     public string Key { get; }
     public BulkEditFieldKind Kind { get; }
     public string Label { get; }
+
+    /// <summary>The values a <see cref="BulkEditFieldKind.Choice"/> field offers (empty for other kinds).</summary>
+    public IReadOnlyList<BulkEditChoice> Choices { get; }
 }
 
 /// <summary>
 /// Modal for changing one field across every participant currently shown in the table (the filtered +
 /// sorted set the page hands in). The user picks a field, then the matching value editor appears: a
-/// dropdown for the list fields (group/region/club/ДЮСШ/rank), a text box for text fields, or a checkbox
-/// for the boolean flags. List dropdowns reuse the same option lists (incl. the "+ new" sentinel) as the
+/// dropdown for the list fields (group/region/club/ДЮСШ/rank), a text box for text fields, a checkbox
+/// for the boolean flags, a date picker for date fields, or a plain dropdown for choice fields. List dropdowns reuse the same option lists (incl. the "+ new" sentinel) as the
 /// table's own cells; picking "+ new" raises <see cref="AddRequested"/> so the page runs the existing
 /// create flow and re-seeds the dialog. Callers <c>await</c> <see cref="Completion"/> for the chosen
 /// field + value, or null on cancel. Mirrors the <see cref="AssignChipsViewModel"/> pattern.
@@ -135,6 +150,9 @@ public sealed partial class BulkEditViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsClubField))]
     [NotifyPropertyChangedFor(nameof(IsDusshField))]
     [NotifyPropertyChangedFor(nameof(IsRankField))]
+    [NotifyPropertyChangedFor(nameof(IsDateField))]
+    [NotifyPropertyChangedFor(nameof(IsChoiceField))]
+    [NotifyPropertyChangedFor(nameof(Choices))]
     private BulkEditFieldOption? _selectedField;
 
     public bool IsTextField => SelectedField?.Kind == BulkEditFieldKind.Text;
@@ -144,6 +162,11 @@ public sealed partial class BulkEditViewModel : ObservableObject
     public bool IsClubField => SelectedField?.Kind == BulkEditFieldKind.Club;
     public bool IsDusshField => SelectedField?.Kind == BulkEditFieldKind.Dussh;
     public bool IsRankField => SelectedField?.Kind == BulkEditFieldKind.Rank;
+    public bool IsDateField => SelectedField?.Kind == BulkEditFieldKind.Date;
+    public bool IsChoiceField => SelectedField?.Kind == BulkEditFieldKind.Choice;
+
+    /// <summary>The selected choice field's values (empty for any other kind).</summary>
+    public IReadOnlyList<BulkEditChoice> Choices => SelectedField?.Choices ?? [];
 
     [ObservableProperty]
     private string _textValue = string.Empty;
@@ -165,6 +188,14 @@ public sealed partial class BulkEditViewModel : ObservableObject
 
     [ObservableProperty]
     private RankOption? _selectedRank;
+
+    /// <summary>The date value of a <see cref="BulkEditFieldKind.Date"/> field; null clears it on every row.</summary>
+    [ObservableProperty]
+    private DateTimeOffset? _dateValue;
+
+    /// <summary>The picked entry of a <see cref="BulkEditFieldKind.Choice"/> field.</summary>
+    [ObservableProperty]
+    private BulkEditChoice? _selectedChoice;
 
     /// <summary>
     /// Raised when the user picks a list field's "+ new" sentinel. The page handles it by running the
@@ -201,6 +232,12 @@ public sealed partial class BulkEditViewModel : ObservableObject
                 break;
             case BulkEditFieldKind.Bool:
                 BoolValue = false;
+                break;
+            case BulkEditFieldKind.Date:
+                DateValue = null;
+                break;
+            case BulkEditFieldKind.Choice:
+                SelectedChoice = Choices.FirstOrDefault();
                 break;
         }
     }
@@ -287,6 +324,8 @@ public sealed partial class BulkEditViewModel : ObservableObject
             BulkEditFieldKind.Club => BulkEditResult.ForId(field.Key, SelectedClub?.Id),
             BulkEditFieldKind.Dussh => BulkEditResult.ForId(field.Key, SelectedDussh?.Id),
             BulkEditFieldKind.Rank => BulkEditResult.ForText(field.Key, SelectedRank?.Value ?? string.Empty),
+            BulkEditFieldKind.Date => BulkEditResult.ForDate(field.Key, DateValue),
+            BulkEditFieldKind.Choice => BulkEditResult.ForText(field.Key, SelectedChoice?.Value ?? string.Empty),
             _ => null
         };
 
@@ -300,24 +339,28 @@ public sealed partial class BulkEditViewModel : ObservableObject
 /// <summary>
 /// The confirmed bulk edit: the target field <see cref="Key"/> plus exactly one of the typed values
 /// depending on the field kind. Id-backed fields (group/region/club/ДЮСШ) carry <see cref="Id"/> (null =
-/// "(none)"); text/rank carry <see cref="Text"/>; bool fields carry <see cref="Bool"/>.
+/// "(none)"); text/rank/choice carry <see cref="Text"/>; bool fields carry <see cref="Bool"/>; date fields
+/// carry <see cref="Date"/> (null = clear).
 /// </summary>
 public sealed class BulkEditResult
 {
-    private BulkEditResult(string key, Guid? id, string? text, bool? @bool)
+    private BulkEditResult(string key, Guid? id, string? text, bool? @bool, DateTimeOffset? date)
     {
         Key = key;
         Id = id;
         Text = text;
         Bool = @bool;
+        Date = date;
     }
 
     public string Key { get; }
     public Guid? Id { get; }
     public string? Text { get; }
     public bool? Bool { get; }
+    public DateTimeOffset? Date { get; }
 
-    public static BulkEditResult ForId(string key, Guid? id) => new(key, id, null, null);
-    public static BulkEditResult ForText(string key, string text) => new(key, null, text, null);
-    public static BulkEditResult ForBool(string key, bool value) => new(key, null, null, value);
+    public static BulkEditResult ForId(string key, Guid? id) => new(key, id, null, null, null);
+    public static BulkEditResult ForText(string key, string text) => new(key, null, text, null, null);
+    public static BulkEditResult ForBool(string key, bool value) => new(key, null, null, value, null);
+    public static BulkEditResult ForDate(string key, DateTimeOffset? date) => new(key, null, null, null, date);
 }

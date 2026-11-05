@@ -131,6 +131,28 @@
                             </DataTemplate>
                         </ComboBox.ItemTemplate>
                     </controls:SearchableComboBox>
+
+                    <!-- Date value (dd.MM.yyyy, same picker as the other form dates; blank = clear) -->
+                    <controls:DatePickerBox SelectedDate="{Binding DateValue, Mode=TwoWay,
+                                            Converter={StaticResource DateTimeOffsetToDateTime}}"
+                                            SelectedDateFormat="Custom"
+                                            CustomDateFormatString="dd.MM.yyyy"
+                                            PlaceholderText="{Binding Localization[Common.DatePlaceholder]}"
+                                            IsVisible="{Binding IsDateField}"
+                                            HorizontalAlignment="Stretch" />
+
+                    <!-- Choice value (a custom choice field's options / the finish statuses) -->
+                    <controls:SearchableComboBox ItemsSource="{Binding Choices}"
+                              SelectedItem="{Binding SelectedChoice, Mode=TwoWay}"
+                              SearchWatermark="{Binding Localization[Common.Search]}"
+                              IsVisible="{Binding IsChoiceField}"
+                              HorizontalAlignment="Stretch">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="dialogs:BulkEditChoice">
+                                <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </controls:SearchableComboBox>
                 </StackPanel>
 
                 <TextBlock Text="{Binding Hint}"

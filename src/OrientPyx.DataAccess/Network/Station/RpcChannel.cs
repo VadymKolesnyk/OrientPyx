@@ -154,6 +154,11 @@ public sealed class RpcChannel : IDisposable
         {
             throw new TimeoutException($"The host did not answer within {timeout.TotalSeconds:0} s.");
         }
+        catch (ObjectDisposedException ex)
+        {
+            // The station tore this channel down (disconnect / revoked token) while a caller still held it.
+            throw new HostUnreachableException($"The connection to {Endpoint} was closed.", ex);
+        }
     }
 
     /// <summary>Reads an error body and throws the exception it stands for (a 2xx returns normally).</summary>
@@ -228,6 +233,11 @@ public sealed class RpcChannel : IDisposable
             catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {
                 last = new TimeoutException($"The host did not answer within {timeout.TotalSeconds:0} s.", ex);
+            }
+            catch (ObjectDisposedException ex)
+            {
+                // The channel was torn down meanwhile (the station disconnected): no retries, just "unreachable".
+                throw new HostUnreachableException($"The connection to {Endpoint} was closed.", ex);
             }
             finally
             {

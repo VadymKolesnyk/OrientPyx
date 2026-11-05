@@ -1073,6 +1073,28 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             cell.OutOfCompetition = value;
     }
 
+    /// <summary>Sets the result-status override (null = auto) on every member day; each cell's status
+    /// callback persists it and re-ranks that day. Used by bulk edit (no merged status cell is editable).</summary>
+    public void SetResultStatusForMemberDays(FinishStatus? status)
+    {
+        if (MemberDaysHaveLockedDay)
+            return;
+
+        foreach (var cell in Days.Where(d => d.IsMember))
+            cell.SelectedStatus = FinishStatusOptions.Select(cell.StatusOptions, status);
+    }
+
+    /// <summary>Sets the «бонус» text (a signed integer; blank clears) on every member day; each cell
+    /// persists itself through the page's bonus callback. Used by bulk edit.</summary>
+    public void SetBonusForMemberDays(string value)
+    {
+        if (MemberDaysHaveLockedDay)
+            return;
+
+        foreach (var cell in Days.Where(d => d.IsMember))
+            cell.BonusText = value;
+    }
+
     // ── Collapsed (merged) result blocks — read-only
     // Each shows the shared per-day text when all member days agree, else the localized "різні".
     public string CollapsedActualStart => MergedResult(c => c.ActualStartText);
