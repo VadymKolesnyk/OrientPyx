@@ -389,7 +389,6 @@ public sealed class EditorServiceTests
         var ch = data.Rows[0];
         Assert.Equal("Ч21", ch.GroupName);
         Assert.Equal([2, 1], ch.Counts);
-        Assert.Equal(3, ch.Total);
 
         var zh = data.Rows[1];
         Assert.Equal("Ж21", zh.GroupName);

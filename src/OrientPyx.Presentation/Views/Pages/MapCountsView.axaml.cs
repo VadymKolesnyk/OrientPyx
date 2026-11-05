@@ -45,9 +45,9 @@ public partial class MapCountsView : UserControl
             BuildBands();
     }
 
-    // Group name, then per day the headcount (and, with a reserve set, the headcount plus reserve beside it);
-    // a multi-day competition closes with the totals. Every numeric column is summed in the status bar, so the
-    // per-day total — the figure the printer actually needs — is always on screen.
+    // Group name, then per day the headcount (and, with a reserve set, the headcount plus reserve beside it).
+    // Every numeric column is summed in the status bar, so the per-day total — the figure the printer actually
+    // needs — is always on screen. No row total: maps are ordered per day, a sum over days means nothing.
     private void BuildBands()
     {
         if (_vm is null)
@@ -74,15 +74,6 @@ public partial class MapCountsView : UserControl
                        .HeaderText(loc.Get("MapCounts.Col.DayReserve").Replace("{0}", days[i].ToString()))
                        .Summary(reserve);
             }
-        }
-
-        if (days.Count > 1)
-        {
-            builder.Text("MapCounts.Col.Total", nameof(MapCountRowViewModel.Total), width: 110)
-                   .Summary(nameof(MapCountRowViewModel.Total));
-            if (showReserve)
-                builder.Text("MapCounts.Col.TotalReserve", nameof(MapCountRowViewModel.TotalWithReserve), width: 140)
-                       .Summary(nameof(MapCountRowViewModel.TotalWithReserve));
         }
 
         Sheet.Bands = builder.Bands;

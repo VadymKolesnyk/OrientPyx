@@ -153,8 +153,6 @@ public sealed class MapCountRowViewModel
         NoGroupTooltip = noGroupTooltip;
         Counts = counts;
         WithReserve = counts.Select(c => c is { } n ? n + Reserve(n, reservePercent, reserveMin) : (int?)null).ToList();
-        Total = counts.Sum(c => c ?? 0);
-        TotalWithReserve = WithReserve.Sum(c => c ?? 0);
     }
 
     public string GroupName { get; }
@@ -170,9 +168,6 @@ public sealed class MapCountRowViewModel
 
     /// <summary>Participants plus the reserve per day; null where the group is not on the day.</summary>
     public IReadOnlyList<int?> WithReserve { get; }
-
-    public int Total { get; }
-    public int TotalWithReserve { get; }
 
     // The spare maps for a day the group runs on: the percentage share rounded up, but never below the minimum.
     // A day the group is on with nobody entered still gets the minimum — a late entry needs a map too.

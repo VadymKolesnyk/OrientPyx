@@ -298,8 +298,6 @@
   "MapCounts.Col.Group": "Group",
   "MapCounts.Col.Day": "Day {0}",
   "MapCounts.Col.DayReserve": "Day {0} + reserve",
-  "MapCounts.Col.Total": "Total",
-  "MapCounts.Col.TotalReserve": "Total + reserve",
   "MapCounts.NoGroup": "(no group)",
   "MapCounts.NoGroup.Tooltip": "Members of the day with no group: a map is needed, but nobody knows which one. Assign a group on the Participants page.",
   "MapCounts.Reserve.Title": "Map reserve",

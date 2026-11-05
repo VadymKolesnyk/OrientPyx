@@ -298,8 +298,6 @@
   "MapCounts.Col.Group": "Група",
   "MapCounts.Col.Day": "День {0}",
   "MapCounts.Col.DayReserve": "День {0} + запас",
-  "MapCounts.Col.Total": "Усього",
-  "MapCounts.Col.TotalReserve": "Усього + запас",
   "MapCounts.NoGroup": "(без групи)",
   "MapCounts.NoGroup.Tooltip": "Учасники дня без групи: карта потрібна, але невідомо яка. Призначте групу на сторінці «Учасники».",
   "MapCounts.Reserve.Title": "Запас карт",

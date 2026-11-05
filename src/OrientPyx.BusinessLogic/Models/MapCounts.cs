@@ -19,8 +19,4 @@ public sealed record MapCountsData(IReadOnlyList<EventDay> Days, IReadOnlyList<M
 /// synthetic «без групи» row that gathers the day's members with no group assigned — they still need a map,
 /// but nobody knows which one, so the row is there to be noticed and resolved before printing.
 /// </summary>
-public sealed record MapCountRow(Guid? GroupId, string GroupName, IReadOnlyList<int?> Counts)
-{
-    /// <summary>The group's participants over all days (a null day counts as zero).</summary>
-    public int Total => Counts.Sum(c => c ?? 0);
-}
+public sealed record MapCountRow(Guid? GroupId, string GroupName, IReadOnlyList<int?> Counts);
