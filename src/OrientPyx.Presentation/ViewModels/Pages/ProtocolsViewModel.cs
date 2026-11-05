@@ -381,13 +381,19 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         return string.Empty;
     }
 
+    // Driven by the day ComboBox. The chosen day becomes the session's day, so the other day-scoped pages open
+    // on it too; the switch re-raises SessionChanged → LoadAsync, which re-selects the day (under _syncingDay)
+    // and loads its own template + preview data (each day has its own saved layout).
     partial void OnSelectedDayChanged(DayOption? value)
     {
-        // A day change here only repoints the protocol target; it must NOT switch the session day. Load the
-        // newly chosen day's own template + preview data (each day has its own saved layout).
-        if (_syncingDay)
+        if (_syncingDay || value?.Day is null)
             return;
-        _ = LoadDayTemplateAsync();
+        if (_session.CurrentDay?.Number == value.Number)
+        {
+            _ = LoadDayTemplateAsync();
+            return;
+        }
+        _ = _busy.RunAsync(() => _session.SetCurrentDayAsync(value.Day));
     }
 
     // Moving a column reorders the on-page order, re-renders the preview, and auto-saves to the current day.

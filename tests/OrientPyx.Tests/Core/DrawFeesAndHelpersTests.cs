@@ -23,6 +23,17 @@ public sealed class DrawFeesAndHelpersTests
     // ---- Draw ----------------------------------------------------------------------------------------------
 
     [Fact]
+    public void StartGroupOrder_EliteThenVeteransThenKidsThenRestUnchanged()
+    {
+        var names = new[] { "Ч75", "Ж12", "OPEN", "Ж21Е", "Ч20", "Ж75", "Ч12", "Ч35", "Ж16", "Ч21Е", "Ч55", "Ж21А", "Ч14", "Ч10" };
+        var sorted = StartGroupOrder.Sort(names, n => n);
+        Assert.Equal(
+            ["Ж21Е", "Ч21Е", "Ж75", "Ч75", "Ч55", "Ж12", "Ч12", "Ч14", "Ж16", "OPEN", "Ч20", "Ч35", "Ж21А", "Ч10"],
+            sorted);
+    }
+
+
+    [Fact]
     public void Draw_AssignsOneMinutePerSlotPerLaneAndIsSeededDeterministic()
     {
         var draw = Sp.GetRequiredService<IStartDrawService>();

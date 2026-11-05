@@ -385,11 +385,19 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         return string.Empty;
     }
 
+    // Driven by the day ComboBox. The chosen day becomes the session's day, so the other day-scoped pages open
+    // on it too; the switch re-raises SessionChanged → LoadAsync, which re-selects the day (under _syncingDay)
+    // and loads its own template + preview data.
     partial void OnSelectedDayChanged(DayOption? value)
     {
-        if (_syncingDay)
+        if (_syncingDay || value?.Day is null)
             return;
-        _ = LoadDayTemplateAsync();
+        if (_session.CurrentDay?.Number == value.Number)
+        {
+            _ = LoadDayTemplateAsync();
+            return;
+        }
+        _ = _busy.RunAsync(() => _session.SetCurrentDayAsync(value.Day));
     }
 
     [RelayCommand]

@@ -191,13 +191,19 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
         return string.Empty;
     }
 
+    // Driven by the day ComboBox. The chosen day becomes the session's day, so the other day-scoped pages open
+    // on it too; the switch re-raises SessionChanged → LoadAsync, which re-selects the day (under _syncingDay)
+    // and refreshes the header placeholders (the editable fields are untouched).
     partial void OnSelectedDayChanged(DayOption? value)
     {
-        // A day change here only repoints the export target; it must NOT switch the session day. Refresh the
-        // header placeholders to the newly chosen day's defaults (the editable fields are untouched).
-        if (_syncingDay)
+        if (_syncingDay || value?.Day is null)
             return;
-        ResolveHeaderPlaceholders(_competitionInfo);
+        if (_session.CurrentDay?.Number == value.Number)
+        {
+            ResolveHeaderPlaceholders(_competitionInfo);
+            return;
+        }
+        _ = _busy.RunAsync(() => _session.SetCurrentDayAsync(value.Day));
     }
 
     /// <summary>

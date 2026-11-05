@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
+using OrientPyx.BusinessLogic.Services;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
 using OrientPyx.Presentation.ViewModels.Dialogs;
@@ -205,11 +206,18 @@ public sealed partial class DrawViewModel : PageViewModelBase
         await ReloadGroupsAsync();
     }
 
+    // Driven by the day ComboBox. The chosen day becomes the session's day, so the other day-scoped pages open
+    // on it too; the switch re-raises SessionChanged → LoadAsync, whose _syncingDay reassignment skips this.
     partial void OnSelectedDayChanged(DayOption? value)
     {
-        if (_syncingDay)
+        if (_syncingDay || value?.Day is null)
             return;
-        _ = ReloadGroupsAsync();
+        if (_session.CurrentDay?.Number == value.Number)
+        {
+            _ = ReloadGroupsAsync();
+            return;
+        }
+        _ = _busy.RunAsync(() => _session.SetCurrentDayAsync(value.Day));
     }
 
     // Loads the selected day's groups + members and seeds the initial start groups. When the day has saved
@@ -831,16 +839,36 @@ public sealed partial class DrawViewModel : PageViewModelBase
             buckets[best] = (buckets[best].Items, buckets[best].Sum + atom.Sum);
         }
 
-        // Heaviest lane first reads nicer.
+        // Heaviest lane first reads nicer; inside a lane the conventional order (elite, veterans, kids, rest).
         buckets.Sort((a, b) => b.Sum.CompareTo(a.Sum));
         StartGroups.Clear();
         foreach (var bucket in buckets)
         {
             var column = new DrawStartGroupViewModel(StartGroups.Count, Localization);
-            foreach (var item in bucket.Items)
+            foreach (var item in StartGroupOrder.Sort(bucket.Items, i => i.Name))
                 column.Groups.Add(item);
             StartGroups.Add(column);
         }
+    }
+
+    /// <summary>
+    /// Re-sorts one start group into the conventional lane order (<see cref="StartGroupOrder"/>): Ч21Е/Ж21Е,
+    /// then 75/65/55, then 12/14/16, the rest in their current order. The «Авто» split applies the same order.
+    /// </summary>
+    [RelayCommand]
+    private void SortStartGroup(DrawStartGroupViewModel? column)
+    {
+        if (column is null || column.Groups.Count < 2)
+            return;
+        var sorted = StartGroupOrder.Sort(column.Groups, g => g.Name);
+        if (sorted.SequenceEqual(column.Groups))
+            return;
+        column.Groups.Clear();
+        foreach (var item in sorted)
+            column.Groups.Add(item);
+        ClearResults();
+        RecomputeColumnTimes();
+        SaveSettings();
     }
 
     /// <summary>

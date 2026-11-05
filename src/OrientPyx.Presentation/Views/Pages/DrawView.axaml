@@ -183,10 +183,15 @@
                                               DragDrop.DragLeave="OnColumnDragLeave"
                                               DragDrop.Drop="OnColumnDrop">
                                         <StackPanel Spacing="8">
-                                            <Grid ColumnDefinitions="*,Auto">
+                                            <Grid ColumnDefinitions="*,Auto,Auto">
                                                 <TextBlock Grid.Column="0" Text="{Binding Title}" FontWeight="Bold"
                                                            VerticalAlignment="Center" />
-                                                <Button Grid.Column="1" Classes="ghost danger small"
+                                                <Button Grid.Column="1" Classes="ghost small"
+                                                        Content="⇅"
+                                                        ToolTip.Tip="{Binding #Root.((pages:DrawViewModel)DataContext).Localization[Draw.SortStartGroup]}"
+                                                        Command="{Binding #Root.((pages:DrawViewModel)DataContext).SortStartGroupCommand}"
+                                                        CommandParameter="{Binding}" />
+                                                <Button Grid.Column="2" Classes="ghost danger small"
                                                         Content="✕"
                                                         ToolTip.Tip="{Binding #Root.((pages:DrawViewModel)DataContext).Localization[Draw.RemoveStartGroup]}"
                                                         Command="{Binding #Root.((pages:DrawViewModel)DataContext).RemoveStartGroupCommand}"

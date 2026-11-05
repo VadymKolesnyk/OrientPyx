@@ -146,11 +146,18 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
         await ReloadGroupsAsync();
     }
 
+    // Driven by the day ComboBox. The chosen day becomes the session's day, so the other day-scoped pages open
+    // on it too; the switch re-raises SessionChanged → LoadAsync, whose _syncingDay reassignment skips this.
     partial void OnSelectedDayChanged(DayOption? value)
     {
-        if (_syncingDay)
+        if (_syncingDay || value?.Day is null)
             return;
-        _ = ReloadGroupsAsync();
+        if (_session.CurrentDay?.Number == value.Number)
+        {
+            _ = ReloadGroupsAsync();
+            return;
+        }
+        _ = _busy.RunAsync(() => _session.SetCurrentDayAsync(value.Day));
     }
 
     // Loads the selected day's groups + members into the table. When the day has saved settings (the values
