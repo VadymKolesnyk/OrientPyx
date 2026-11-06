@@ -71,6 +71,7 @@ public sealed partial class DrawViewModel : PageViewModelBase
         ];
         // Default the "keep off consecutive slots" separation to Club — the most common requirement.
         _selectedSeparation = SeparationOptions.First(o => o.Value == DrawSeparationField.Club);
+        Localization.PropertyChanged += (_, _) => OnPropertyChanged(nameof(PreviousDaysHint));
 
         // Singleton VM: reload the day list + groups on a competition/day change (marshal to UI).
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
@@ -108,6 +109,21 @@ public sealed partial class DrawViewModel : PageViewModelBase
 
     [ObservableProperty]
     private DrawSeparationOption _selectedSeparation;
+
+    /// <summary>«Враховувати попередні дні»: steer the order away from the earlier days' start positions
+    /// (no repeated first/last starter, no repeated order in a small group). Persisted with the page.</summary>
+    [ObservableProperty]
+    private bool _considerPreviousDays = true;
+
+    /// <summary>True when at least one member of the loaded day has a start position on an earlier day — the
+    /// checkbox is disabled otherwise (nothing to consider on day 1).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PreviousDaysHint))]
+    private bool _hasPreviousDays;
+
+    /// <summary>Tooltip of the checkbox: what it does, or why it is disabled.</summary>
+    public string PreviousDaysHint
+        => Localization.Get(HasPreviousDays ? "Draw.PreviousDays.Hint" : "Draw.PreviousDays.None");
 
     [ObservableProperty]
     private int _autoGroupCount = 1;
@@ -243,6 +259,7 @@ public sealed partial class DrawViewModel : PageViewModelBase
         {
             _settingsDayId = day.Id;
             _loadedGroups = data.Groups;
+            HasPreviousDays = _loadedGroups.Any(g => g.Members.Any(m => m.History.Count > 0));
 
             if (saved is not null)
             {
@@ -252,6 +269,7 @@ public sealed partial class DrawViewModel : PageViewModelBase
                 ProportionalHeights = saved.ProportionalHeights;
                 SelectedSeparation = SeparationOptions.FirstOrDefault(o => o.Value == saved.Separation)
                                      ?? SelectedSeparation;
+                ConsiderPreviousDays = saved.ConsiderPreviousDays;
                 AutoGroupCount = Math.Clamp(saved.AutoGroupCount, 1, 50);
                 RestoreStartGroups(saved.Lanes);
             }
@@ -316,6 +334,7 @@ public sealed partial class DrawViewModel : PageViewModelBase
         var settings = new DrawSettings
         {
             Separation = SelectedSeparation.Value,
+            ConsiderPreviousDays = ConsiderPreviousDays,
             GlobalStart = GlobalStart,
             Interval = Interval,
             GroupGap = GroupGap,
@@ -355,6 +374,8 @@ public sealed partial class DrawViewModel : PageViewModelBase
     }
 
     partial void OnSelectedSeparationChanged(DrawSeparationOption value) => SaveSettings();
+
+    partial void OnConsiderPreviousDaysChanged(bool value) => SaveSettings();
 
     partial void OnAutoGroupCountChanged(int value) => SaveSettings();
 
@@ -929,7 +950,8 @@ public sealed partial class DrawViewModel : PageViewModelBase
             .Select(c => (IReadOnlyList<DrawGroup>)c.Groups.Select(g => g.Group).ToList())
             .ToList();
 
-        var assignments = _draw.Draw(startGroups, start, interval, separation, GapSlots);
+        var assignments = _draw.Draw(
+            startGroups, start, interval, separation, GapSlots, considerPreviousDays: ConsiderPreviousDays);
 
         // Map each assignment back to the participant for display (group name, number, name, sep value).
         var memberByLink = _loadedGroups
@@ -949,7 +971,8 @@ public sealed partial class DrawViewModel : PageViewModelBase
                 info.Member.FullName,
                 SeparationValueOf(info.Member, separation),
                 a.StartTime,
-                StartTimeFormat.Format(a.StartTime)));
+                StartTimeFormat.Format(a.StartTime),
+                DrawResultRowViewModel.FormatHistory(info.Member.History)));
         }
         foreach (var row in rows.OrderBy(r => r.StartTime).ThenBy(r => r.GroupName))
             Results.Add(row);

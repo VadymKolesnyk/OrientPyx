@@ -68,6 +68,7 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
             new DrawSeparationOption(DrawSeparationField.Team, localization),
         ];
         _selectedSeparation = SeparationOptions.First(o => o.Value == DrawSeparationField.Club);
+        Localization.PropertyChanged += (_, _) => OnPropertyChanged(nameof(PreviousDaysHint));
 
         // Singleton VM: reload the day list + groups on a competition/day change (marshal to UI).
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
@@ -102,6 +103,19 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
 
     [ObservableProperty]
     private DrawSeparationOption _selectedSeparation;
+
+    /// <summary>«Враховувати попередні дні» — see <see cref="DrawViewModel.ConsiderPreviousDays"/>.</summary>
+    [ObservableProperty]
+    private bool _considerPreviousDays = true;
+
+    /// <summary>True when some member of the loaded day has a start position on an earlier day.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PreviousDaysHint))]
+    private bool _hasPreviousDays;
+
+    /// <summary>Tooltip of the checkbox: what it does, or why it is disabled.</summary>
+    public string PreviousDaysHint
+        => Localization.Get(HasPreviousDays ? "Draw.PreviousDays.Hint" : "Draw.PreviousDays.None");
 
     public ObservableCollection<ClassicDrawGroupRowViewModel> Groups { get; } = [];
 
@@ -183,10 +197,14 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
         try
         {
             _settingsDayId = day.Id;
+            HasPreviousDays = data.Groups.Any(g => g.Members.Any(m => m.History.Count > 0));
 
             if (saved is not null)
+            {
                 SelectedSeparation = SeparationOptions.FirstOrDefault(o => o.Value == saved.Separation)
                                      ?? SelectedSeparation;
+                ConsiderPreviousDays = saved.ConsiderPreviousDays;
+            }
 
             foreach (var group in data.Groups)
             {
@@ -230,6 +248,7 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
         var settings = new DrawSettings
         {
             Separation = SelectedSeparation.Value,
+            ConsiderPreviousDays = ConsiderPreviousDays,
             Rows = Groups
                 .Select(g => new DrawGroupRowSettings
                 {
@@ -246,6 +265,8 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
     }
 
     partial void OnSelectedSeparationChanged(DrawSeparationOption value) => SaveSettings();
+
+    partial void OnConsiderPreviousDaysChanged(bool value) => SaveSettings();
 
     // Computes a row's first free start minute: group start + members × interval. Blank when either the
     // start or interval can't be parsed, or the group has no members.
@@ -355,7 +376,7 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
     private void BuildResults(IReadOnlyList<ClassicDrawGroup> classicGroups)
     {
         var separation = SelectedSeparation.Value;
-        var assignments = _draw.DrawClassic(classicGroups, separation);
+        var assignments = _draw.DrawClassic(classicGroups, separation, considerPreviousDays: ConsiderPreviousDays);
 
         // Map each assignment back to the participant for display (group name, number, name, sep value).
         var memberByLink = classicGroups
@@ -375,7 +396,8 @@ public sealed partial class ClassicDrawViewModel : PageViewModelBase
                 info.Member.FullName,
                 SeparationValueOf(info.Member, separation),
                 a.StartTime,
-                StartTimeFormat.Format(a.StartTime)));
+                StartTimeFormat.Format(a.StartTime),
+                DrawResultRowViewModel.FormatHistory(info.Member.History)));
         }
         foreach (var row in rows.OrderBy(r => r.StartTime).ThenBy(r => r.GroupName))
             Results.Add(row);

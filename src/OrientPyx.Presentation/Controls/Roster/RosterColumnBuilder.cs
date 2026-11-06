@@ -110,6 +110,11 @@ public sealed class RosterColumnBuilder
                 col.ShowCount = true;
                 col.CellBackgroundPath = nameof(ParticipantRosterRowViewModel.CheckedIn);
                 col.CellBackgroundBrush = DayColumnBuilder.CheckedInBrush;
+                // Filter «За станом»: «Мандатку пройдено» / «Не пройдено» — like the payment column's status
+                // mode, but on its own token path so by-values / by-condition still work on the numbers.
+                col.StatusFilter = true;
+                col.StatusPath = nameof(ParticipantRosterRowViewModel.CheckedInKey);
+                col.StatusOptions = CheckedInStatus.FilterOptions;
             }
             // The payment column tints by status, offers the "by status" filter mode, and is summed in
             // the status bar.

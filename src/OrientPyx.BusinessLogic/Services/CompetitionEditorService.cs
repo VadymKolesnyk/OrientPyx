@@ -3101,6 +3101,87 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         => DayResultsCalculator.ScoreDetail(
             _strategies.For(discipline), readout, gs, startFinishCodes, disabledCodes, pointsByCode, resolvedStart).Net;
 
+    /// <summary>Cross-day key of an individual draw unit (see <see cref="DrawParticipant.HistoryKey"/>).</summary>
+    private static string DrawHistoryKeyOf(Guid participantId) => participantId.ToString("N");
+
+    /// <summary>Cross-day key of a relay team: the group and the team number (its runners may change).</summary>
+    private static string DrawHistoryKeyOf(Guid groupId, int teamNumber)
+        => $"team:{groupId:N}:{teamNumber.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+    /// <summary>
+    /// Builds every draw unit's start positions on the days before <paramref name="day"/> (by day number):
+    /// for each earlier day with start times, the links of each group are ordered by start time and each one
+    /// gets its 0-based position, the group size and the unit that started right before it. A relay team
+    /// (leg-1 link with a team) is one unit keyed by group + team number. Individuals are keyed by participant
+    /// id, in whatever group they ran that day. Days with no start times contribute nothing.
+    /// </summary>
+    private async Task<Dictionary<string, List<DrawHistoryEntry>>> LoadDrawHistoryAsync(
+        string folder,
+        EventDay day,
+        IReadOnlyList<EventDay> days,
+        IReadOnlyDictionary<Guid, Participant> byParticipant,
+        CancellationToken cancellationToken)
+    {
+        var history = new Dictionary<string, List<DrawHistoryEntry>>(StringComparer.Ordinal);
+        var earlierDays = days.Where(d => d.Number < day.Number).OrderBy(d => d.Number).ToList();
+        if (earlierDays.Count == 0)
+            return history;
+
+        var allLinks = await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
+        foreach (var prev in earlierDays)
+        {
+            var prevLinks = allLinks
+                .Where(l => l.EventDayId == prev.Id && l.GroupId is not null && l.StartTime is not null)
+                .ToList();
+            if (prevLinks.Count == 0)
+                continue;
+
+            var teamNumber = new Dictionary<Guid, int>();
+            if (prevLinks.Any(l => l.RelayTeamId is not null))
+            {
+                var teams = await _eventStore.GetRelayTeamsAsync(folder, prev.Id, cancellationToken);
+                foreach (var t in teams)
+                    teamNumber[t.Id] = t.Number;
+            }
+
+            var units = new List<(Guid GroupId, TimeSpan Start, string Number, string Key)>(prevLinks.Count);
+            foreach (var l in prevLinks)
+            {
+                var gid = l.GroupId!.Value;
+                if (l.RelayTeamId is { } tid)
+                {
+                    // The team is the unit; only its leg-1 link carries the drawn start.
+                    if (l.Leg != 1 || !teamNumber.TryGetValue(tid, out var n))
+                        continue;
+                    units.Add((gid, l.StartTime!.Value, n.ToString("D6"), DrawHistoryKeyOf(gid, n)));
+                }
+                else
+                {
+                    var number = byParticipant.TryGetValue(l.ParticipantId, out var p) ? p.Number : string.Empty;
+                    units.Add((gid, l.StartTime!.Value, number, DrawHistoryKeyOf(l.ParticipantId)));
+                }
+            }
+
+            foreach (var group in units.GroupBy(u => u.GroupId))
+            {
+                var ordered = group
+                    .OrderBy(u => u.Start)
+                    .ThenBy(u => u.Number, StringComparer.Ordinal)
+                    .ThenBy(u => u.Key, StringComparer.Ordinal)
+                    .ToList();
+                for (var i = 0; i < ordered.Count; i++)
+                {
+                    var entry = new DrawHistoryEntry(prev.Number, i, ordered.Count, i > 0 ? ordered[i - 1].Key : null);
+                    if (!history.TryGetValue(ordered[i].Key, out var list))
+                        history[ordered[i].Key] = list = [];
+                    list.Add(entry);
+                }
+            }
+        }
+
+        return history;
+    }
+
     public async Task<DrawPrepData> GetDrawPrepDataAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null)
@@ -3138,6 +3219,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var byParticipant = participants.ToDictionary(p => p.Id);
         var regionName = regions.ToDictionary(r => r.Id, r => r.Name);
         var clubName = clubs.ToDictionary(c => c.Id, c => c.Name);
+        var history = await LoadDrawHistoryAsync(folder, day, days, byParticipant, cancellationToken);
 
         // Members per group on this day (a link with no group is left out — the draw is per group).
         var membersByGroup = new Dictionary<Guid, List<DrawParticipant>>();
@@ -3153,7 +3235,9 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
             if (!membersByGroup.TryGetValue(gid, out var list))
                 membersByGroup[gid] = list = [];
-            list.Add(new DrawParticipant(link.Id, p.Id, p.FullName, p.Number, region, club, p.Team));
+            var key = DrawHistoryKeyOf(p.Id);
+            list.Add(new DrawParticipant(
+                link.Id, p.Id, p.FullName, p.Number, region, club, p.Team, key, history.GetValueOrDefault(key)));
         }
 
         // Relay groups (Р-36): the draw unit is the team, separated by the team's club/region; the drawn minute is
@@ -3176,13 +3260,16 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     if (!leg1ByTeam.TryGetValue(team.Id, out var leg1))
                         continue;
                     var number = team.Number.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    var key = DrawHistoryKeyOf(team.GroupId, team.Number);
                     units.Add(new DrawParticipant(
                         leg1.Id, leg1.ParticipantId,
                         team.Name.Length > 0 ? team.Name : number,
                         number,
                         team.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty,
                         team.ClubId is { } cid && clubName.TryGetValue(cid, out var cn) ? cn : string.Empty,
-                        team.Name));
+                        team.Name,
+                        key,
+                        history.GetValueOrDefault(key)));
                 }
                 membersByGroup[s.GroupId] = units;
             }

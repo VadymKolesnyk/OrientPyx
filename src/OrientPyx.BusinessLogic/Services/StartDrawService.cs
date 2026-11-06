@@ -6,17 +6,24 @@ namespace OrientPyx.BusinessLogic.Services;
 /// <summary>
 /// Default <see cref="IStartDrawService"/>. Shuffles each group's members (Fisher–Yates), optionally
 /// spreads competitors who share the chosen attribute apart so they don't start consecutively, then lays
-/// every start group out from the global start with the fixed interval.
+/// every start group out from the global start with the fixed interval. With <c>considerPreviousDays</c> the
+/// shuffle-and-separate step is repeated <see cref="HistoryTrials"/> times and the candidate that repeats the
+/// least of the earlier days' positions (<see cref="DrawHistoryScore"/>) is kept — still a random draw, biased
+/// away from yesterday.
 /// </summary>
 public sealed class StartDrawService : IStartDrawService
 {
+    /// <summary>Candidate orders generated per group when the previous days are taken into account.</summary>
+    internal const int HistoryTrials = 200;
+
     public IReadOnlyList<DrawStartAssignment> Draw(
         IReadOnlyList<IReadOnlyList<DrawGroup>> startGroups,
         TimeSpan globalStart,
         TimeSpan interval,
         DrawSeparationField separation,
         int groupGap = 0,
-        int? seed = null)
+        int? seed = null,
+        bool considerPreviousDays = false)
     {
         ArgumentNullException.ThrowIfNull(startGroups);
 
@@ -32,7 +39,7 @@ public sealed class StartDrawService : IStartDrawService
             for (var gi = 0; gi < startGroup.Count; gi++)
             {
                 var group = startGroup[gi];
-                var ordered = DrawGroupOrder(group.Members, separation, random);
+                var ordered = DrawGroupOrder(group.Members, separation, random, considerPreviousDays);
                 foreach (var member in ordered)
                 {
                     var startTime = globalStart + TimeSpan.FromTicks(interval.Ticks * offset);
@@ -52,7 +59,8 @@ public sealed class StartDrawService : IStartDrawService
     public IReadOnlyList<DrawStartAssignment> DrawClassic(
         IReadOnlyList<ClassicDrawGroup> groups,
         DrawSeparationField separation,
-        int? seed = null)
+        int? seed = null,
+        bool considerPreviousDays = false)
     {
         ArgumentNullException.ThrowIfNull(groups);
 
@@ -62,7 +70,7 @@ public sealed class StartDrawService : IStartDrawService
         // Each group is independent: drawn from its own start with its own interval.
         foreach (var g in groups)
         {
-            var ordered = DrawGroupOrder(g.Group.Members, separation, random);
+            var ordered = DrawGroupOrder(g.Group.Members, separation, random, considerPreviousDays);
             var slot = 0;
             foreach (var member in ordered)
             {
@@ -77,9 +85,39 @@ public sealed class StartDrawService : IStartDrawService
 
     /// <summary>
     /// Draws the running order for one group: a random shuffle, then (when a separation field is set) a
-    /// reordering pass that avoids two consecutive competitors sharing the attribute where possible.
+    /// reordering pass that avoids two consecutive competitors sharing the attribute where possible. When the
+    /// previous days count and any member has a history, that is repeated <see cref="HistoryTrials"/> times and
+    /// the lowest-scoring candidate wins (the first of equals, so equally good orders stay random). Without
+    /// history the result is exactly the single-pass draw — the same seed gives the same order as before.
     /// </summary>
     private static IReadOnlyList<DrawParticipant> DrawGroupOrder(
+        IReadOnlyList<DrawParticipant> members,
+        DrawSeparationField separation,
+        Random random,
+        bool considerPreviousDays)
+    {
+        if (!considerPreviousDays || !DrawHistoryScore.Applies(members))
+            return DrawGroupOrderOnce(members, separation, random);
+
+        IReadOnlyList<DrawParticipant>? best = null;
+        var bestScore = double.PositiveInfinity;
+        for (var trial = 0; trial < HistoryTrials; trial++)
+        {
+            var candidate = DrawGroupOrderOnce(members, separation, random);
+            var score = DrawHistoryScore.Score(candidate);
+            if (score < bestScore)
+            {
+                best = candidate;
+                bestScore = score;
+                if (score == 0)
+                    break;
+            }
+        }
+
+        return best!;
+    }
+
+    private static IReadOnlyList<DrawParticipant> DrawGroupOrderOnce(
         IReadOnlyList<DrawParticipant> members,
         DrawSeparationField separation,
         Random random)

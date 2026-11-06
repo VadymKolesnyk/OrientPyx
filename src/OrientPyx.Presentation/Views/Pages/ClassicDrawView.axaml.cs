@@ -69,6 +69,7 @@ public partial class ClassicDrawView : UserControl
             .Text("Draw.Col.Name", nameof(DrawResultRowViewModel.FullName), minWidth: 220)
             .Text("Draw.Col.Separation", nameof(DrawResultRowViewModel.SeparationValue),
                   minWidth: 150, placeholder: string.Empty)
+            .Text("Draw.Col.PreviousDays", nameof(DrawResultRowViewModel.HistoryLabel), minWidth: 110)
             .Text("Draw.Col.Group", nameof(DrawResultRowViewModel.GroupName), minWidth: 120)
             .Bands;
     }

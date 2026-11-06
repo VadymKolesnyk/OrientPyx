@@ -52,7 +52,7 @@ internal sealed class ColumnFilterPopup
             Header = string.IsNullOrEmpty(column.PickerLabel) ? column.Header : column.PickerLabel,
             // A status column (payment) defaults to "by status" — its cell value is a status token, so
             // the generic "by values" list would show raw tokens. Other columns default to "by values".
-            Mode = existing?.Mode ?? (column.StatusFilter ? SheetFilterMode.Status : SheetFilterMode.Values),
+            Mode = existing?.Mode ?? (column.StatusIsCellValue ? SheetFilterMode.Status : SheetFilterMode.Values),
             Condition = existing?.Condition ?? SheetFilterCondition.Contains,
             Text = existing?.Text ?? string.Empty,
             AllowedValues = existing?.AllowedValues is { } a ? new HashSet<string>(a) : null,
@@ -91,21 +91,22 @@ internal sealed class ColumnFilterPopup
         byCondition.IsCheckedChanged += (_, _) => { if (byCondition.IsChecked == true) SetMode(SheetFilterMode.Condition); };
         var modeRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
 
+        // "By values" is dropped only when the cell value IS the status token (payment); a column whose status
+        // lives on its own path (the roster's «Номер» → «Мандатку пройдено») keeps all three modes.
+        if (!_column.StatusIsCellValue)
+        {
+            var byValues = new RadioButton { Content = _loc.Get("Sheet.Filter.Mode.Values"), GroupName = "mode" };
+            byValues.IsChecked = _draft.Mode == SheetFilterMode.Values;
+            byValues.IsCheckedChanged += (_, _) => { if (byValues.IsChecked == true) SetMode(SheetFilterMode.Values); };
+            modeRow.Children.Add(byValues);
+        }
+        modeRow.Children.Add(byCondition);
         if (_column.StatusFilter)
         {
             var byStatus = new RadioButton { Content = _loc.Get("Sheet.Filter.Mode.Status"), GroupName = "mode" };
             byStatus.IsChecked = _draft.Mode == SheetFilterMode.Status;
             byStatus.IsCheckedChanged += (_, _) => { if (byStatus.IsChecked == true) SetMode(SheetFilterMode.Status); };
             modeRow.Children.Add(byStatus);
-            modeRow.Children.Add(byCondition);
-        }
-        else
-        {
-            var byValues = new RadioButton { Content = _loc.Get("Sheet.Filter.Mode.Values"), GroupName = "mode" };
-            byValues.IsChecked = _draft.Mode == SheetFilterMode.Values;
-            byValues.IsCheckedChanged += (_, _) => { if (byValues.IsChecked == true) SetMode(SheetFilterMode.Values); };
-            modeRow.Children.Add(byValues);
-            modeRow.Children.Add(byCondition);
         }
         stack.Children.Add(modeRow);
 
@@ -248,18 +249,19 @@ internal sealed class ColumnFilterPopup
         SyncTextVisibility();
     }
 
-    // ── Status mode (payment column)
+    // ── Status mode (payment column, roster «Номер»)
     private void BuildStatusPanel()
     {
-        // One checkbox per payment-status category; checked = kept. A null AllowedStatuses (no filter
-        // yet) means every status is currently shown, so start all checked.
+        // One checkbox per status category (the column's own list, else the payment statuses); checked =
+        // kept. A null AllowedStatuses (no filter yet) means every status is currently shown, so start all checked.
         var allowed = _draft.AllowedStatuses;
-        foreach (var status in PaymentStatusExtensions.All)
+        var options = _column.StatusOptions
+            ?? PaymentStatusExtensions.All.Select(s => (Token: s.ToString(), LabelKey: PaymentStatusExtensions.LabelKey(s))).ToList();
+        foreach (var (token, labelKey) in options)
         {
-            var token = status.ToString();
             var check = new CheckBox
             {
-                Content = _loc.Get(PaymentStatusExtensions.LabelKey(status)),
+                Content = _loc.Get(labelKey),
                 Tag = token,
                 IsChecked = allowed is null || allowed.Contains(token),
                 Padding = new Thickness(6, 2),

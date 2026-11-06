@@ -122,6 +122,67 @@ public sealed class CheckedInTests
         AssertNoUiErrors();
     }
 
+    [Fact]
+    public async Task NumberColumnFiltersByCheckedInStatus()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Core, TestIds.Next("ui_chkf"));
+        await c.AddGroupAsync("Ч21", "31");
+        for (var i = 1; i <= 4; i++)
+            await c.AddRunnerAsync($"Бігун {i:00}", i.ToString(), "", "Ч21");
+        await OpenCompetitionAsync(c.Summary.Identifier);
+
+        // Two of the four are through registration.
+        var marked = (await Store.GetParticipantsAsync(c.Folder)).OrderBy(p => p.Number).Take(2).Select(p => p.Id).ToList();
+        await Store.SetParticipantsCheckedInAsync(c.Folder, marked, true);
+
+        await _app.OnUiAsync(() => _app.Vm.OpenParticipantsCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        var participants = Assert.IsType<ParticipantsViewModel>(Shell().SelectedPage);
+        if (!participants.IsRosterMode)
+        {
+            await _app.OnUiAsync(() => participants.SelectedDay = participants.DayOptions.First(d => d.IsRoster));
+            await _app.SettleAsync();
+        }
+        await _app.WaitUntilAsync(() => participants.IsRosterMode && participants.Roster.Count == 4, what: "four roster rows");
+        var table = await _app.OnUiAsync(() =>
+            _app.Window.GetVisualDescendants().OfType<SheetTable>().Single(t => t.Name == "RosterTable"));
+        await _app.WaitUntilAsync(() => table.VisibleItems.Count == 4, what: "roster table shows the rows");
+
+        const string numberKey = "id:Participants.Col.Number";
+
+        // «За станом» → only «Мандатку пройдено»: the two marked rows.
+        await _app.OnUiAsync(() => table.SetColumnFilter(numberKey, new SheetFilter
+        {
+            ColumnKey = numberKey, Mode = SheetFilterMode.Status, AllowedStatuses = [CheckedInStatus.Yes]
+        }));
+        await _app.SettleAsync();
+        await _app.WaitUntilAsync(() => table.VisibleItems.Count == 2, what: "only the checked-in rows");
+        Assert.All(table.VisibleItems, r => Assert.True(((ParticipantRosterRowViewModel)r!).CheckedIn));
+        await _app.ScreenshotAsync("checkin-20-filter-checked");
+
+        // Only «не пройдено»: the other two.
+        await _app.OnUiAsync(() => table.SetColumnFilter(numberKey, new SheetFilter
+        {
+            ColumnKey = numberKey, Mode = SheetFilterMode.Status, AllowedStatuses = [CheckedInStatus.No]
+        }));
+        await _app.SettleAsync();
+        await _app.WaitUntilAsync(() => table.VisibleItems.Count == 2, what: "only the not-checked-in rows");
+        Assert.All(table.VisibleItems, r => Assert.False(((ParticipantRosterRowViewModel)r!).CheckedIn));
+
+        // The by-values mode of the same column still filters on the visible numbers.
+        await _app.OnUiAsync(() => table.SetColumnFilter(numberKey, new SheetFilter
+        {
+            ColumnKey = numberKey, Mode = SheetFilterMode.Values, AllowedValues = ["3"]
+        }));
+        await _app.SettleAsync();
+        await _app.WaitUntilAsync(() => table.VisibleItems.Count == 1, what: "number 3 alone");
+
+        await _app.OnUiAsync(() => table.ClearAllFilters());
+        await _app.SettleAsync();
+        await _app.WaitUntilAsync(() => table.VisibleItems.Count == 4, what: "filter cleared");
+        AssertNoUiErrors();
+    }
+
     // The window-space centre of the «Номер» cell (the column that shows the row count) of the given displayed row.
     private static Point CellCenter(SheetTable table, int rowIndex)
     {

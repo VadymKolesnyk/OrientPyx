@@ -942,6 +942,13 @@ public sealed class SheetTable : TemplatedControl
     private static string CellText(SheetColumn column, object row)
         => FormatValue(ReadPath(row, column.FilterPath));
 
+    // The text a filter compares for a row: the "by status" mode reads the column's status token path when
+    // it has one of its own (the roster's «Номер» → CheckedIn), every other mode the visible cell text.
+    private static string FilterText(SheetColumn column, object row, SheetFilterMode mode)
+        => mode == SheetFilterMode.Status && column.StatusPath.Length > 0
+            ? FormatValue(ReadPath(row, column.StatusPath))
+            : CellText(column, row);
+
     // The text COPY reads for a cell of an off-screen (unrealized) row — uses CopyPath, which defaults
     // to FilterPath but is overridden where the filter value differs from the display (payment amount
     // vs. its status token, collapsed merged values). A realized cell is read directly instead (its
@@ -974,7 +981,7 @@ public sealed class SheetTable : TemplatedControl
             var col = FindColumnByKey(filter.ColumnKey);
             if (col is null)
                 continue;
-            if (!filter.Matches(CellText(col, row)))
+            if (!filter.Matches(FilterText(col, row, filter.Mode)))
                 return false;
         }
         return PassesGlobalSearch(row);

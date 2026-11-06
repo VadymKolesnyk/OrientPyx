@@ -45,7 +45,11 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     /// debounced row save: the page toggles it (F8 / cell menu) and writes it through its own service call.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CheckedInKey))]
     private bool _checkedIn;
+
+    /// <summary>«Номер» column's "by status" token: <see cref="CheckedInStatus.Yes"/> / <see cref="CheckedInStatus.No"/>.</summary>
+    public string CheckedInKey => CheckedIn ? CheckedInStatus.Yes : CheckedInStatus.No;
 
     [ObservableProperty]
     private string _fullName;

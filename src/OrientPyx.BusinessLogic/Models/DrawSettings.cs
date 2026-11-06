@@ -22,6 +22,13 @@ public sealed class DrawSettings
     /// <summary>The attribute kept off consecutive start slots.</summary>
     public DrawSeparationField Separation { get; set; } = DrawSeparationField.Club;
 
+    /// <summary>
+    /// Whether the draw takes the previous days' start positions into account (no repeated first/last starter,
+    /// no repeated order in a small group, balanced positions over the competition). On by default; a stored
+    /// row without the property reads as on.
+    /// </summary>
+    public bool ConsiderPreviousDays { get; set; } = true;
+
     /// <summary>Lane page: "hh:mm:ss" global start of the first competitor in every lane.</summary>
     public string GlobalStart { get; set; } = "11:00:00";
 

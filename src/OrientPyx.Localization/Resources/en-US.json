@@ -359,6 +359,9 @@
   "Draw.Separation.Region": "By region",
   "Draw.Separation.Club": "By club",
   "Draw.Separation.Team": "By team",
+  "Draw.PreviousDays": "Consider previous days",
+  "Draw.PreviousDays.Hint": "The draw avoids repeats from the earlier days: the same first or last starter in a group, the same neighbour pair, a position close to yesterday's; positions are balanced over all days. The order stays random.",
+  "Draw.PreviousDays.None": "No previous days with start times.",
   "Draw.Section.StartGroups": "Start groups",
   "Draw.StartGroups.Hint": "Cluster groups into start lanes. Groups sharing a first control point must stay in one lane. Drag groups between lanes with the mouse, or use “Auto” for a balanced split or the arrows to move them. Inside a lane, “Auto” and the ⇅ button order the groups: Ж21Е/Ч21Е first, then 75, 65, 55, then 12, 14, 16, the rest as they are.",
   "Draw.SortStartGroup": "Order the groups in this lane: elite (21Е), veterans (75, 65, 55), kids (12, 14, 16), the rest unchanged",
@@ -385,6 +388,7 @@
   "Draw.Col.Name": "Name",
   "Draw.Col.Separation": "Separation",
   "Draw.Col.Group": "Group",
+  "Draw.Col.PreviousDays": "Previous days",
 
   "Draw.Clash.Tooltip": "Why is this highlighted? Show the overlapping groups",
   "Draw.Clash.Title": "Why «{0}» is highlighted",
@@ -501,9 +505,9 @@
   "Help.SummaryProtocol.Preview.How": "Click the header text to edit it.\nDrag a leading column header to change the order.\nCheck that the day columns and the total match what you expect.\nThe generate button at the top produces the summary .docx.",
 
   "Help.Draw.Params.Title": "Draw parameters",
-  "Help.Draw.Params.What": "The general parameters of the start-time draw: the start time of the first runner, the interval between starts (mm:ss) and the separation criterion for teammates — by region, club or team, so that «own» runners do not start back to back.",
+  "Help.Draw.Params.What": "General parameters of the start-time draw: the first competitor's start, the interval between starts (min:sec), the separation criterion — by region, club or team, so team-mates do not start one after another — and the «Consider previous days» checkbox, which on a multi-day event keeps the same person from starting first or last two days running and from repeating yesterday's order in a small group.",
   "Help.Draw.Params.Why": "These parameters set the start rhythm and prevent runners from the same region/club starting one after another. They apply to the whole day's draw.",
-  "Help.Draw.Params.How": "Enter the mass-start time (hh:mm:ss) and the interval between start minutes.\nChoose the separation criterion (or «no separation»).\nOnce set, run the draw in the start-groups block below.",
+  "Help.Draw.Params.How": "Enter the mass-start time (hh:mm:ss) and the interval between start minutes.\nChoose the separation criterion (or «no separation»).\nLeave «Consider previous days» on so the draw of the second and later days avoids repeats (first/last starter, neighbour pairs, a close position); the «Previous days» column of the result shows where each competitor started before (1/5 = first of five).\nOnce set, run the draw in the start-groups block below.",
 
   "Help.Draw.StartGroups.Title": "Start groups (lanes)",
   "Help.Draw.StartGroups.What": "The competition's groups combined into start lanes. Here you set the number of lanes (with the stepper) and run the draw itself — a random assignment of a start minute to each participant, respecting the configured separation.",
@@ -1586,6 +1590,8 @@
   "Sheet.Filter.PayStatus.Under": "Less than fee",
   "Sheet.Filter.PayStatus.Equal": "Equal to fee",
   "Sheet.Filter.PayStatus.NotANumber": "Not a number",
+  "Sheet.Filter.CheckedIn.Yes": "Checked in",
+  "Sheet.Filter.CheckedIn.No": "Not checked in",
   "Sheet.Filter.Search": "Search…",
   "Sheet.Filter.SelectAll": "Select all",
   "Sheet.Filter.ClearValues": "Clear all",
@@ -1805,7 +1811,7 @@
   "Help.ClassicDraw.Title": "Classic draw",
   "Help.ClassicDraw.What": "A manually controlled per-group draw: you pick the groups and separation parameters and assign start minutes.",
   "Help.ClassicDraw.Why": "Gives more control over the draw than automatic grouping into lanes.",
-  "Help.ClassicDraw.How": "Pick the day at the top.\nChoose the separation criterion and tick the needed groups («Select all/none»).\nRun the draw for the selected groups.\nThe start time is written to the participants and carried into the start protocols.",
+  "Help.ClassicDraw.How": "Pick the day at the top.\nChoose the separation criterion and tick the needed groups («Select all/none»).\nLeave «Consider previous days» on so a multi-day event does not repeat the first/last starter or yesterday's order within a group.\nRun the draw for the selected groups.\nThe start time is written to the participants and carried into the start protocols.",
 
   "Help.Settings.Title": "Settings",
   "Help.Settings.What": "General application settings: interface size, language, data paths, split printing and the online-service connection keys.",

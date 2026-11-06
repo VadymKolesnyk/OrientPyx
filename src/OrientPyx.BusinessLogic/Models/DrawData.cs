@@ -58,8 +58,14 @@ public sealed record DrawGroup(
 
 /// <summary>
 /// One competitor in the draw, carrying just what the algorithm needs: the participant-day link id (so the
-/// assigned start time can be written back), display fields, and the separation keys (region/club/team).
+/// assigned start time can be written back), display fields, the separation keys (region/club/team) and the
+/// competitor's start positions on the previous days (see <see cref="DrawHistoryEntry"/>).
 /// </summary>
+/// <param name="HistoryKey">Stable key of the draw unit across days: the participant id for an individual,
+/// <c>team:&lt;groupId&gt;:&lt;number&gt;</c> for a relay team (its composition may change). Blank = no key,
+/// the unit is never matched against history (its own or as somebody's predecessor).</param>
+/// <param name="History">This unit's start positions on the previous days, oldest first; empty when it is new
+/// on this day or no earlier day has start times.</param>
 public sealed record DrawParticipant(
     Guid LinkId,
     Guid ParticipantId,
@@ -67,7 +73,32 @@ public sealed record DrawParticipant(
     string Number,
     string RegionName,
     string ClubName,
-    string Team);
+    string Team,
+    string? HistoryKey = null,
+    IReadOnlyList<DrawHistoryEntry>? History = null)
+{
+    /// <summary>The cross-day key; defaults to the participant id.</summary>
+    public string HistoryKey { get; init; } = HistoryKey ?? ParticipantId.ToString("N");
+
+    /// <summary>Start positions on the previous days, oldest first (never null).</summary>
+    public IReadOnlyList<DrawHistoryEntry> History { get; init; } = History ?? [];
+}
+
+/// <summary>
+/// Where a draw unit started within its group on one earlier day of the competition: used by the draw to keep
+/// the same competitor from opening (or closing) the group two days running and from reproducing yesterday's
+/// order in a small group.
+/// </summary>
+/// <param name="DayNumber">The earlier day's number.</param>
+/// <param name="Position">0-based start position inside the group that day (0 = started first).</param>
+/// <param name="GroupSize">How many units the group had that day.</param>
+/// <param name="PredecessorKey">The <see cref="DrawParticipant.HistoryKey"/> of the unit that started right
+/// before this one that day; null for the group's first starter.</param>
+public sealed record DrawHistoryEntry(int DayNumber, int Position, int GroupSize, string? PredecessorKey)
+{
+    /// <summary>The position normalised to 0…1 (0 = first, 1 = last); 0.5 for a group of one.</summary>
+    public double Normalized => GroupSize > 1 ? (double)Position / (GroupSize - 1) : 0.5;
+}
 
 /// <summary>One assigned start time, to be written back onto a participant-day link.</summary>
 public readonly record struct DrawStartAssignment(Guid LinkId, TimeSpan StartTime);

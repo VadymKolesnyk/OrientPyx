@@ -1,3 +1,6 @@
+using System.Globalization;
+using OrientPyx.BusinessLogic.Models;
+
 namespace OrientPyx.Presentation.ViewModels.Pages;
 
 /// <summary>
@@ -13,8 +16,10 @@ public sealed class DrawResultRowViewModel
         string fullName,
         string separationValue,
         TimeSpan startTime,
-        string startTimeLabel)
+        string startTimeLabel,
+        string historyLabel = "")
     {
+        HistoryLabel = historyLabel;
         LinkId = linkId;
         GroupName = groupName;
         Number = number;
@@ -36,4 +41,14 @@ public sealed class DrawResultRowViewModel
 
     public TimeSpan StartTime { get; }
     public string StartTimeLabel { get; }
+
+    /// <summary>The competitor's start positions on the previous days, «1/5 · 4/5» (1-based position / group
+    /// size, oldest day first); blank when there is no history.</summary>
+    public string HistoryLabel { get; }
+
+    /// <summary>Formats <see cref="DrawParticipant.History"/> for <see cref="HistoryLabel"/>.</summary>
+    public static string FormatHistory(IReadOnlyList<DrawHistoryEntry> history)
+        => string.Join(" · ", history.Select(h =>
+            (h.Position + 1).ToString(CultureInfo.InvariantCulture) + "/" +
+            h.GroupSize.ToString(CultureInfo.InvariantCulture)));
 }

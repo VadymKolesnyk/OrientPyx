@@ -231,6 +231,24 @@ public sealed partial class SheetColumn : ObservableObject
     public bool StatusFilter { get; set; }
 
     /// <summary>
+    /// The categories the "by status" mode offers, as (token, localization key) pairs in display order; the
+    /// row's status token (read through <see cref="StatusPath"/>) must be one of the tokens. Null means the
+    /// payment statuses (<c>PaymentStatusExtensions.All</c>) — the original status column.
+    /// </summary>
+    public IReadOnlyList<(string Token, string LabelKey)>? StatusOptions { get; set; }
+
+    /// <summary>
+    /// Where the "by status" mode reads the row's status token when it differs from <see cref="FilterPath"/>.
+    /// Blank means the cell value itself is the token (the payment column); set for a column whose visible
+    /// value is ordinary text (the roster's «Номер», whose status is «Мандатку пройдено») — the by-values and
+    /// by-condition modes then keep working on the visible text while "by status" reads this path.
+    /// </summary>
+    public string StatusPath { get; set; } = string.Empty;
+
+    /// <summary>True when the "by status" token is the cell value itself (so a raw by-values list would show tokens).</summary>
+    public bool StatusIsCellValue => StatusFilter && string.IsNullOrEmpty(StatusPath);
+
+    /// <summary>
     /// Where a <see cref="SheetCellKind.PaymentText"/> cell reads the <c>PaymentStatus</c> that tints it.
     /// Blank means the row's own <c>PaymentStatus</c> property — the competition-level «Оплата» column. The
     /// roster's per-day payment leaves point it at their own day cell (<c>Days[i].PaymentStatus</c>) so each

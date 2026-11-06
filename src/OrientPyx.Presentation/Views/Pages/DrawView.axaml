@@ -116,6 +116,11 @@
                                 </ComboBox.ItemTemplate>
                             </ComboBox>
                         </StackPanel>
+                        <CheckBox IsChecked="{Binding ConsiderPreviousDays, Mode=TwoWay}"
+                                  IsEnabled="{Binding HasPreviousDays}"
+                                  ToolTip.Tip="{Binding PreviousDaysHint}"
+                                  Content="{Binding Localization[Draw.PreviousDays]}"
+                                  VerticalAlignment="Bottom" />
                     </WrapPanel>
                 </StackPanel>
             </Border>
@@ -327,7 +332,7 @@
                 <Border Classes="card" Padding="0" IsVisible="{Binding HasResults}" ClipToBounds="True">
                     <DockPanel LastChildFill="True">
                         <Grid DockPanel.Dock="Top" Background="{DynamicResource SurfaceSubtle}"
-                              ColumnDefinitions="100,90,*,160,110" Height="36">
+                              ColumnDefinitions="100,90,*,160,130,110" Height="36">
                             <TextBlock Grid.Column="0" Text="{Binding Localization[Draw.Col.StartTime]}"
                                        FontWeight="Bold" VerticalAlignment="Center" Margin="12,0,0,0" />
                             <TextBlock Grid.Column="1" Text="{Binding Localization[Draw.Col.Number]}"
@@ -336,7 +341,9 @@
                                        FontWeight="Bold" VerticalAlignment="Center" />
                             <TextBlock Grid.Column="3" Text="{Binding Localization[Draw.Col.Separation]}"
                                        FontWeight="Bold" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="4" Text="{Binding Localization[Draw.Col.Group]}"
+                            <TextBlock Grid.Column="4" Text="{Binding Localization[Draw.Col.PreviousDays]}"
+                                       FontWeight="Bold" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="5" Text="{Binding Localization[Draw.Col.Group]}"
                                        FontWeight="Bold" VerticalAlignment="Center" />
                         </Grid>
                         <ListBox ItemsSource="{Binding Results}"
@@ -344,14 +351,16 @@
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                             <ListBox.ItemTemplate>
                                 <DataTemplate x:DataType="pages:DrawResultRowViewModel">
-                                    <Grid ColumnDefinitions="100,90,*,160,110">
+                                    <Grid ColumnDefinitions="100,90,*,160,130,110">
                                         <TextBlock Grid.Column="0" Text="{Binding StartTimeLabel}"
                                                    FontFamily="Consolas,monospace" VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="1" Text="{Binding Number}" VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="2" Text="{Binding FullName}" VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="3" Text="{Binding SeparationValue}"
                                                    Classes="muted" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="4" Text="{Binding GroupName}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="4" Text="{Binding HistoryLabel}"
+                                                   Classes="muted" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="5" Text="{Binding GroupName}" VerticalAlignment="Center" />
                                     </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>

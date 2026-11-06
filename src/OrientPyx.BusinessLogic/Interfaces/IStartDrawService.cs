@@ -37,13 +37,20 @@ public interface IStartDrawService
     /// the same start lane begins. 0 packs groups back-to-back; no gap is left after the last group in a lane.
     /// </param>
     /// <param name="seed">Optional fixed seed for a reproducible draw; null uses a random seed.</param>
+    /// <param name="considerPreviousDays">
+    /// When true, the members' <see cref="DrawParticipant.History"/> steers the order: the draw avoids the same
+    /// first/last starter and the same neighbour pairs as on the earlier days and balances every member's
+    /// position over the competition. Still random — several candidate orders are drawn and the one repeating
+    /// the least is kept. Has no effect on a group where nobody has a history.
+    /// </param>
     IReadOnlyList<DrawStartAssignment> Draw(
         IReadOnlyList<IReadOnlyList<DrawGroup>> startGroups,
         TimeSpan globalStart,
         TimeSpan interval,
         DrawSeparationField separation,
         int groupGap = 0,
-        int? seed = null);
+        int? seed = null,
+        bool considerPreviousDays = false);
 
     /// <summary>
     /// Classic per-group draw: each group is drawn independently with its OWN start time and interval. Within
@@ -54,8 +61,11 @@ public interface IStartDrawService
     /// <param name="groups">The groups to draw, each with its own start time and interval.</param>
     /// <param name="separation">Which attribute to keep off consecutive slots within a group (or none).</param>
     /// <param name="seed">Optional fixed seed for a reproducible draw; null uses a random seed.</param>
+    /// <param name="considerPreviousDays">Take the previous days' start positions into account, as in
+    /// <see cref="Draw"/>.</param>
     IReadOnlyList<DrawStartAssignment> DrawClassic(
         IReadOnlyList<ClassicDrawGroup> groups,
         DrawSeparationField separation,
-        int? seed = null);
+        int? seed = null,
+        bool considerPreviousDays = false);
 }
