@@ -812,6 +812,13 @@ public interface ICompetitionEditorService
     Task SetParticipantPaysRaisedFeeAsync(Guid participantId, bool paysRaisedFee, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Sets «Мандатку пройдено» (<see cref="Entities.Participant.CheckedIn"/>, competition-level) on every listed
+    /// participant in one write. Returns how many rows were changed. Has its own writer so the debounced
+    /// row save never wipes it.
+    /// </summary>
+    Task<int> SetParticipantsCheckedInAsync(IReadOnlyList<Guid> participantIds, bool checkedIn, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Marks (or unmarks) that a participant gets a particular entry-fee discount. Idempotent. The
     /// FSOU-member discount is auto-applied from <see cref="Participant.IsFsouMember"/> and must not be
     /// toggled through here.

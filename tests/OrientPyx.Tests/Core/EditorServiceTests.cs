@@ -221,6 +221,34 @@ public sealed class EditorServiceTests
     }
 
     [Fact]
+    public async Task CheckedIn_BatchToggleSurvivesTheRowSave()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("checkin"));
+        await c.AddGroupAsync("Ч21", "31");
+        var a = await c.AddRunnerAsync("A", "1", "", "Ч21");
+        var b = await c.AddRunnerAsync("B", "2", "", "Ч21");
+        var d = await c.AddRunnerAsync("C", "3", "", "Ч21");
+        await c.SelectAsync();
+
+        Assert.Equal(0, await Editor.SetParticipantsCheckedInAsync([], true));
+        Assert.Equal(2, await Editor.SetParticipantsCheckedInAsync([a.Id, b.Id, Guid.NewGuid()], true)); // unknown id skipped
+        Assert.Equal(0, await Editor.SetParticipantsCheckedInAsync([a.Id, b.Id], true));                  // already on → nothing changed
+        var roster = await Editor.GetParticipantRosterAsync();
+        Assert.True(roster.Single(r => r.FullName == "A").CheckedIn);
+        Assert.True(roster.Single(r => r.FullName == "B").CheckedIn);
+        Assert.False(roster.Single(r => r.FullName == "C").CheckedIn);
+
+        // The debounced identity save rewrites every identity column but leaves the flag alone.
+        var rowA = roster.Single(r => r.FullName == "A");
+        await Editor.UpdateParticipantIdentityAsync(rowA with { FullName = "A2", CheckedIn = false });
+        roster = await Editor.GetParticipantRosterAsync();
+        Assert.True(roster.Single(r => r.FullName == "A2").CheckedIn);
+
+        Assert.Equal(2, await Editor.SetParticipantsCheckedInAsync([a.Id, b.Id, d.Id], false));
+        Assert.All(await Editor.GetParticipantRosterAsync(), r => Assert.False(r.CheckedIn));
+    }
+
+    [Fact]
     public async Task PaymentPerDay_SplitsAndSumsStoredPayments()
     {
         var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("pay"), dayCount: 2);

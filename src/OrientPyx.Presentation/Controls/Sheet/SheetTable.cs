@@ -185,6 +185,38 @@ public sealed class SheetTable : TemplatedControl
     public Func<SheetColumn, bool>? CanBulkEditColumn { get; set; }
 
     /// <summary>
+    /// The page's one row-level action (F8 and a cell-menu item): given the rows it would run over (the
+    /// selected rows, see <see cref="SelectedRowItems"/>), returns the already-localized menu label, or null
+    /// when the action does not apply to them (the item is hidden and F8 does nothing). Null ⇒ no action.
+    /// </summary>
+    public Func<IReadOnlyList<object>, string?>? RowActionLabel { get; set; }
+
+    /// <summary>Raised when the user runs the row action (F8 / the cell menu); arg = the rows it applies to.</summary>
+    public event EventHandler<IReadOnlyList<object>>? RowActionRequested;
+
+    /// <summary>
+    /// The rows the current selection covers, in view order: every row of the multi-cell range (whatever
+    /// columns it spans), else the selected row, else none. Row-level actions (F8) act on these.
+    /// </summary>
+    public IReadOnlyList<object> SelectedRowItems
+    {
+        get
+        {
+            if (HasRange)
+            {
+                var minRow = Math.Max(0, Math.Min(_anchorRow, _activeRow));
+                var maxRow = Math.Min(Math.Max(_anchorRow, _activeRow), _sortedItems.Count - 1);
+                var rows = new List<object>();
+                for (var r = minRow; r <= maxRow; r++)
+                    if (_sortedItems[r] is { } row)
+                        rows.Add(row);
+                return rows;
+            }
+            return SelectedItem is { } selected && RowIndexOf(selected) >= 0 ? [selected] : [];
+        }
+    }
+
+    /// <summary>
     /// The leaf column the focused cell belongs to, or null when nothing in the table is focused. The
     /// page reads it to preselect the bulk-edit field for the cell the user was last in.
     /// </summary>
@@ -360,6 +392,7 @@ public sealed class SheetTable : TemplatedControl
     private Border? _statusSumsRow;
     private TextBlock? _statusCounts;
     private TextBlock? _statusInfo;
+    private TextBlock? _statusSelection;
     private TextBox? _search;
     private Button? _searchClear;
 
@@ -377,6 +410,10 @@ public sealed class SheetTable : TemplatedControl
 
     public SheetTable()
     {
+        // The table itself can hold keyboard focus (programmatically only — Tab still lands on the cells)
+        // so the keyboard stays with it when the focused cell is virtualized away (see OnCellFocusLost).
+        Focusable = true;
+        IsTabStop = false;
         AddHandler(KeyDownEvent, OnTunnelKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnBubbleKeyDown, RoutingStrategies.Bubble);
         AddHandler(PointerPressedEvent, OnTunnelPointerPressed, RoutingStrategies.Tunnel);
@@ -398,17 +435,64 @@ public sealed class SheetTable : TemplatedControl
         if (_bodyScroll is null || e.Source is not Visual source)
             return;
 
+        // While a press-drag selection is in progress the table holds the pointer capture, so the wheel
+        // event is delivered to the table itself instead of being hit-tested — the body ScrollViewer (a
+        // descendant) never sees it and the wheel appears dead. Scroll the body ourselves and, like edge
+        // autoscroll, extend the selection to the cell that lands under the (stationary) cursor.
+        if (_dragging)
+        {
+            ScrollBodyByWheel(e);
+            _dragPoint = e.GetPosition(this);
+            e.Handled = true;
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_dragging)
+                    ExtendDragSelectionTo(_dragPoint);
+            }, DispatcherPriority.Loaded);
+            return;
+        }
+
         var combo = source as ComboBox ?? source.FindAncestorOfType<ComboBox>();
         if (combo is null || combo.IsDropDownOpen)
             return;
 
+        ScrollBodyByWheel(e);
+        e.Handled = true;
+    }
+
+    // Applies one wheel notch to the body offset (Shift = horizontal), the way the ScrollViewer would.
+    private void ScrollBodyByWheel(PointerWheelEventArgs e)
+    {
+        if (_bodyScroll is null)
+            return;
         const double step = 50;
         var delta = e.Delta.Y != 0 ? e.Delta.Y : e.Delta.X;
         var offset = _bodyScroll.Offset;
         _bodyScroll.Offset = (e.KeyModifiers & KeyModifiers.Shift) != 0
             ? offset.WithX(offset.X - delta * step)
             : offset.WithY(offset.Y - delta * step);
-        e.Handled = true;
+    }
+
+    // A focused cell that scrolls out of the viewport is recycled by the virtualizing body: its container
+    // leaves the visual tree and Avalonia clears keyboard focus to nothing, so the next Ctrl+C / Shift+Arrow
+    // goes to the window instead of this table and the selection looks dead. The cell reports that here
+    // (see SheetCell); when focus really went nowhere, the table takes it so the keys keep arriving.
+    // A focus move the user made (another cell, an editor, a button elsewhere) is left alone.
+    internal void OnCellFocusLost(SheetCell cell)
+    {
+        if (_anchorRow < 0)
+            return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_anchorRow < 0 || !this.IsAttachedToVisualTree() || !IsEffectivelyVisible)
+                return;
+            var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
+            if (focused is not null && focused is not TopLevel)
+                return;
+            if (cell.IsAttachedToVisualTree() && cell.IsEffectivelyVisible)
+                return;
+            Focus();
+        }, DispatcherPriority.Background);
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -481,6 +565,7 @@ public sealed class SheetTable : TemplatedControl
         _statusSumsRow = e.NameScope.Find<Border>("PART_StatusSumsRow");
         _statusCounts = e.NameScope.Find<TextBlock>("PART_StatusCounts");
         _statusInfo = e.NameScope.Find<TextBlock>("PART_StatusInfo");
+        _statusSelection = e.NameScope.Find<TextBlock>("PART_StatusSelection");
         if (e.NameScope.Find<Decorator>("PART_StatusSlot") is { } statusSlot)
         {
             _statusPanel = new SheetStatusPanel();
@@ -1475,6 +1560,63 @@ public sealed class SheetTable : TemplatedControl
         {
             UnhookRows();
         }
+        UpdateSelectionSum();
+    }
+
+    // ── Selection sum
+    // The status bar's middle text: the sum of the numeric cells of every summary column (fee / payment)
+    // that the multi-cell selection rectangle covers, per column, plus the number of cells summed —
+    // the spreadsheet habit of selecting a few payments to see what they add up to. Blank when there is
+    // no range or the range touches no summary column. Recomputed on every range change and live edit.
+    private void UpdateSelectionSum()
+    {
+        if (_statusSelection is null)
+            return;
+        var text = SelectionSumText();
+        _statusSelection.Text = text;
+        _statusSelection.IsVisible = text.Length > 0;
+    }
+
+    private string SelectionSumText()
+    {
+        if (!HasRange || _summaryColumns.Count == 0)
+            return string.Empty;
+
+        var minRow = Math.Min(_anchorRow, _activeRow);
+        var maxRow = Math.Min(Math.Max(_anchorRow, _activeRow), _sortedItems.Count - 1);
+        var minCol = Math.Min(_focusedColumn, _activeCol);
+        var maxCol = Math.Max(_focusedColumn, _activeCol);
+
+        var parts = new List<string>();
+        var cells = 0;
+        var leaf = 0;
+        foreach (var band in _visibleBands)
+            foreach (var column in band.Columns)
+            {
+                var index = leaf++;
+                if (index < minCol || index > maxCol || !column.HasSummary)
+                    continue;
+                decimal sum = 0m;
+                for (var r = minRow; r <= maxRow; r++)
+                {
+                    if (_sortedItems[r] is not { } row)
+                        continue;
+                    if (TryReadDecimal(ReadPath(row, column.SummaryPath), out var value))
+                    {
+                        sum += value;
+                        cells++;
+                    }
+                }
+                parts.Add($"{ColumnHeader(column)} = {FormatSum(sum)}");
+            }
+        if (parts.Count == 0)
+            return string.Empty;
+
+        var joined = string.Join(" · ", parts);
+        if (Localization is not { } loc)
+            return $"Σ {joined} ({cells})";
+        return loc.Get("Sheet.Status.SelectionSum").Replace("{0}", joined)
+            + " " + loc.Get("Sheet.Status.SelectionCells").Replace("{0}", cells.ToString());
     }
 
     private List<SheetColumn> _summaryColumns = new();
@@ -1582,6 +1724,7 @@ public sealed class SheetTable : TemplatedControl
             _sumRecomputeQueued = false;
             if (_summaryColumns.Count > 0)
                 WriteSums(_summaryColumns);
+            UpdateSelectionSum();
         }, DispatcherPriority.Background);
     }
 
@@ -2428,9 +2571,12 @@ public sealed class SheetTable : TemplatedControl
         // A ghost button whose content is the localized label on the left and a grey shortcut hint on
         // the right. Clicking hides the flyout then runs the action.
         Button MenuItem(string textKey, string shortcut, Action onClick)
+            => MenuItemText(Localization.Get(textKey), shortcut, onClick);
+
+        Button MenuItemText(string text, string shortcut, Action onClick)
         {
             var content = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            var label = new TextBlock { Text = Localization.Get(textKey), VerticalAlignment = VerticalAlignment.Center };
+            var label = new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center };
             var hint = new TextBlock
             {
                 Text = shortcut,
@@ -2456,6 +2602,11 @@ public sealed class SheetTable : TemplatedControl
             return b;
         }
 
+        // Copy — the selected range when the click landed inside it, else this cell; with or without
+        // the column header line. Shown first: it is the most common thing to do with a selection.
+        MenuItem("Sheet.Copy", "Ctrl+C", () => CopyFromMenu(cell, row, withHeaders: false));
+        MenuItem("Sheet.CopyWithHeaders", "Ctrl+Shift+C", () => CopyFromMenu(cell, row, withHeaders: true));
+
         MenuItem("Sheet.Filter.ByValue", "F3", () => FilterByValue(column, value));
 
         if (_filters.ContainsKey(column.Key))
@@ -2476,10 +2627,50 @@ public sealed class SheetTable : TemplatedControl
         if (CanBulkEditColumn?.Invoke(column) == true)
             MenuItem("Sheet.Columns.BulkEdit", "F6", () => BulkEditColumnRequested?.Invoke(this, column));
 
+        // The page's row action (e.g. «Мандатку пройдено» on the roster): over the selected rows when the
+        // clicked row is one of them, else over the clicked row alone. The label comes from the page.
+        var actionRows = RowsForAction(row);
+        if (RowActionLabel?.Invoke(actionRows) is { Length: > 0 } actionLabel)
+            MenuItemText(actionLabel, "F8", () => RowActionRequested?.Invoke(this, actionRows));
+
         // Hiding the selected cell's column — also available from the header menu, here as a cell action.
         MenuItem("Sheet.Columns.Hide", "Ctrl+H", () => HideColumn(column));
 
         flyout.ShowAt(cell);
+    }
+
+    // The rows a row action runs over from a right-click on `clickedRow`: the selection when the click
+    // landed inside it (a multi-row range keeps its rows), else just the clicked row.
+    private IReadOnlyList<object> RowsForAction(object clickedRow)
+    {
+        var selected = SelectedRowItems;
+        foreach (var item in selected)
+            if (ReferenceEquals(item, clickedRow))
+                return selected;
+        return [clickedRow];
+    }
+
+    // F8: run the page's row action over the selected rows (no-op when the page offers none for them).
+    private void RunRowAction()
+    {
+        var rows = SelectedRowItems;
+        if (rows.Count > 0 && RowActionLabel?.Invoke(rows) is { Length: > 0 })
+            RowActionRequested?.Invoke(this, rows);
+    }
+
+    // Ctrl+A: select every row and column of the current (filtered, sorted) view as one range, so a
+    // following F8 / Ctrl+C acts on the whole table as shown. Focus stays where it was; the next plain
+    // click or arrow collapses the range like any other.
+    private bool SelectAllRange()
+    {
+        var rows = _sortedItems.Count;
+        var cols = LeafColumnCount();
+        if (rows == 0 || cols == 0)
+            return false;
+        _anchorRow = 0;
+        _focusedColumn = 0;
+        ExtendRangeTo(rows - 1, cols - 1);
+        return true;
     }
 
     // Apply a "filter by this value" Values filter for the column (shared by the menu and the F3 key).
@@ -2501,14 +2692,14 @@ public sealed class SheetTable : TemplatedControl
     }
 
     // The key chords that map to a cell context-menu action: F3 (filter), Shift+F3 (clear), F4 (rental),
-    // F6 (bulk-edit), Ctrl+H (hide). Recognised before the edit branch in OnTunnelKeyDown so they fire
-    // even while a cell is being edited — they're keys a text editor never needs.
+    // F6 (bulk-edit), F8 (row action), Ctrl+H (hide). Recognised before the edit branch in OnTunnelKeyDown
+    // so they fire even while a cell is being edited — they're keys a text editor never needs.
     private static bool IsCellShortcut(KeyEventArgs e)
     {
         if (e.Key == Key.H && e.KeyModifiers.HasFlag(KeyModifiers.Control))
             return true;
         var plain = (e.KeyModifiers & ~KeyModifiers.Shift) == KeyModifiers.None;
-        return plain && e.Key is Key.F3 or Key.F4 or Key.F6;
+        return plain && e.Key is Key.F3 or Key.F4 or Key.F6 or Key.F8;
     }
 
     // Keyboard shortcuts for the cell context-menu actions, dispatched against the focused cell's
@@ -2528,8 +2719,17 @@ public sealed class SheetTable : TemplatedControl
         // The remaining shortcuts are unmodified F-keys (Shift+F3 is the one exception).
         var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         var plain = (e.KeyModifiers & ~KeyModifiers.Shift) == KeyModifiers.None;
-        if (!plain || e.Key is not (Key.F3 or Key.F4 or Key.F6))
+        if (!plain || e.Key is not (Key.F3 or Key.F4 or Key.F6 or Key.F8))
             return false;
+
+        // F8 runs the page's row action over the selected rows — it needs no focused cell and no
+        // particular column, so it goes before the filterable-cell gate.
+        if (e.Key == Key.F8)
+        {
+            if (!shift)
+                RunRowAction();
+            return true;
+        }
 
         // Shift+F3 clears a filter even with no column in focus: the focused column's filter if it has
         // one, otherwise the most recently added filter on the table. Handled before the filterable-cell
@@ -2794,9 +2994,19 @@ public sealed class SheetTable : TemplatedControl
         // (Context-menu action shortcuts — F3/Shift+F3/F4/F6/Ctrl+H — are handled at the top of this
         //  method so they fire in edit mode too; see the IsCellShortcut check there.)
 
+        // Ctrl+A selects the whole filtered view as one range (outside a text edit, where the TextBox
+        // keeps its own select-all).
+        if (e.Key == Key.A && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            if (SelectAllRange())
+                e.Handled = true;
+            return;
+        }
+
+        // Ctrl+C copies the focused cell / the selected range; Ctrl+Shift+C prepends a header row.
         if (e.Key == Key.C && e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
-            if (CopyFocusedCell())
+            if (CopyFocusedCell(withHeaders: e.KeyModifiers.HasFlag(KeyModifiers.Shift)))
                 e.Handled = true;
             return;
         }
@@ -3089,6 +3299,7 @@ public sealed class SheetTable : TemplatedControl
     // they realize (see ExtendRangeTo's posted pass).
     private void RepaintRange()
     {
+        UpdateSelectionSum();
         if (_body is null)
             return;
         foreach (var d in _body.GetVisualDescendants())
@@ -3140,25 +3351,55 @@ public sealed class SheetTable : TemplatedControl
     // Copy the focused cell's text to the clipboard (Ctrl+C). Returns false if there's no focused
     // cell or it has no copyable text. Reads the cell's display value rather than a binding path so
     // it works uniformly across every cell kind (text editors, group combos, dates, "різні").
-    private bool CopyFocusedCell()
+    // `withHeaders` (Ctrl+Shift+C / the menu item) prepends the column header(s) as the first line.
+    private bool CopyFocusedCell(bool withHeaders = false)
     {
-        if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
-            return false;
-
         // A multi-cell selection copies as TSV (tab between columns, newline between rows) so it
         // round-trips with Excel/Sheets and the table's own fill-down paste.
         if (HasRange)
-        {
-            _ = clipboard.SetTextAsync(BuildRangeTsv());
-            return true;
-        }
+            return CopyToClipboard(BuildRangeTsv(withHeaders));
 
         if (FindFocusedCell() is not { } cell)
             return false;
+        return CopyCell(cell, withHeaders);
+    }
+
+    // Copy one cell's rendered text (optionally under its column header). False when it has no text.
+    private bool CopyCell(SheetCell cell, bool withHeaders)
+    {
         var text = ExtractCellText(cell.Content as Control);
         if (string.IsNullOrEmpty(text))
             return false;
+        if (withHeaders)
+            text = ColumnHeader(cell.Column) + "\n" + text;
+        return CopyToClipboard(text);
+    }
 
+    // The cell-menu copy: the whole selection when the clicked cell lies inside it, else the clicked
+    // cell alone (a right-click never moves the selection, so the menu must follow where it landed).
+    private void CopyFromMenu(SheetCell cell, object row, bool withHeaders)
+    {
+        if (IsInsideRange(cell, row))
+            CopyToClipboard(BuildRangeTsv(withHeaders));
+        else
+            CopyCell(cell, withHeaders);
+    }
+
+    // Whether the cell (of `row`) sits inside the current multi-cell selection rectangle.
+    private bool IsInsideRange(SheetCell cell, object row)
+    {
+        if (!HasRange)
+            return false;
+        var r = RowIndexOf(row);
+        var c = cell.ColumnIndex;
+        return r >= Math.Min(_anchorRow, _activeRow) && r <= Math.Max(_anchorRow, _activeRow)
+            && c >= Math.Min(_focusedColumn, _activeCol) && c <= Math.Max(_focusedColumn, _activeCol);
+    }
+
+    private bool CopyToClipboard(string text)
+    {
+        if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
+            return false;
         _ = clipboard.SetTextAsync(text);
         return true;
     }
@@ -3168,8 +3409,9 @@ public sealed class SheetTable : TemplatedControl
     // what's on screen — the collapsed "<group> (n днів)" / "різні" summaries, combo labels, the payment
     // value (not its status), and discount check states. Rows scrolled out of view aren't realized, so
     // those fall back to CellText (the value-path reader). Off-screen composite/checkbox columns are the
-    // only case where the two can differ — acceptable for a visible-selection copy.
-    private string BuildRangeTsv()
+    // only case where the two can differ — acceptable for a visible-selection copy. With `withHeaders`
+    // the first line holds the spanned columns' export headers (the same text ExportView writes).
+    private string BuildRangeTsv(bool withHeaders = false)
     {
         var minRow = Math.Min(_anchorRow, _activeRow);
         var maxRow = Math.Max(_anchorRow, _activeRow);
@@ -3194,6 +3436,16 @@ public sealed class SheetTable : TemplatedControl
                 }
 
         var sb = new System.Text.StringBuilder();
+        if (withHeaders)
+        {
+            for (var c = minCol; c <= maxCol && c < columns.Count; c++)
+            {
+                if (c > minCol)
+                    sb.Append('\t');
+                sb.Append(ColumnHeader(columns[c]));
+            }
+            sb.Append('\n');
+        }
         for (var r = minRow; r <= maxRow && r < _sortedItems.Count; r++)
         {
             if (_sortedItems[r] is not { } row)
@@ -3685,6 +3937,7 @@ internal sealed class SheetCell : ContentControl
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        _owner = this.FindAncestorOfType<SheetTable>();
         var row = this.FindAncestorOfType<ListBoxItem>();
         if (row is not null)
         {
@@ -3698,7 +3951,21 @@ internal sealed class SheetCell : ContentControl
         _selectedSub?.Dispose();
         _selectedSub = null;
         PseudoClasses.Set(":selected", false);
+        // Recycled while holding the keyboard (the row scrolled out of view): let the table keep the keys.
+        if (IsKeyboardFocusWithin)
+            _owner?.OnCellFocusLost(this);
         base.OnDetachedFromVisualTree(e);
+    }
+
+    // The owning table, resolved on attach (a recycled cell has no ancestors by the time it is detached).
+    private SheetTable? _owner;
+
+    protected override void OnLostFocus(FocusChangedEventArgs e)
+    {
+        base.OnLostFocus(e);
+        // Focus cleared because the cell (or its row) is gone from the screen, not by a user action.
+        if (!this.IsAttachedToVisualTree() || !IsEffectivelyVisible)
+            _owner?.OnCellFocusLost(this);
     }
 }
 

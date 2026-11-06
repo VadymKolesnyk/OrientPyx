@@ -69,9 +69,10 @@ public sealed partial class ImportPreviewViewModel : ObservableObject
     public bool HasPaymentChanges { get; }
 
     /// <summary>«Оновлювати оплату з файлу»: off, the payment lines are dropped from the list and the import keeps
-    /// every existing athlete's payment as it is. On by default (the legacy behaviour).</summary>
+    /// every existing athlete's payment as it is. Off by default: the payment typed at the desk is the trusted one,
+    /// the user opts in to overwrite it from the file.</summary>
     [ObservableProperty]
-    private bool _updatePayment = true;
+    private bool _updatePayment;
 
     partial void OnUpdatePaymentChanged(bool value)
     {

@@ -3577,6 +3577,51 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _ = Task.Run(() => _editor.SetParticipantPaysRaisedFeeAsync(row.ParticipantId, row.PaysRaisedFee));
     }
 
+    // ── «Мандатку пройдено» (roster only; F8 / the cell menu)
+
+    /// <summary>
+    /// The label the roster table shows for its row action over <paramref name="rows"/>, or null when the
+    /// action does not apply (no roster rows among them). The action is a toggle: with any row not yet
+    /// checked in it reads «Мандатку пройдено», otherwise «Зняти позначку»; several rows add the count.
+    /// </summary>
+    public string? CheckedInActionLabel(IReadOnlyList<object> rows)
+    {
+        var items = RosterRowsOf(rows);
+        if (items.Count == 0)
+            return null;
+        var label = Localization.Get(items.Any(r => !r.CheckedIn)
+            ? "Participants.CheckedIn.Mark"
+            : "Participants.CheckedIn.Unmark");
+        return items.Count > 1
+            ? string.Format(Localization.Get("Participants.CheckedIn.Many"), label, items.Count)
+            : label;
+    }
+
+    /// <summary>
+    /// Toggles «Мандатку пройдено» on the roster rows: if any of them is not checked in yet, every one is
+    /// marked; if all are, every one is cleared. The rows update at once; the write runs in the background
+    /// through its own service call (the debounced row save never touches the flag).
+    /// </summary>
+    public void ToggleCheckedIn(IReadOnlyList<object> rows)
+    {
+        var items = RosterRowsOf(rows);
+        if (items.Count == 0)
+            return;
+        var on = items.Any(r => !r.CheckedIn);
+        var changed = items.Where(r => r.CheckedIn != on).ToList();
+        foreach (var row in changed)
+            row.CheckedIn = on;
+        var ids = changed.Select(r => r.ParticipantId).ToList();
+        _ = Task.Run(() => _editor.SetParticipantsCheckedInAsync(ids, on));
+        _log.Action(string.Format(
+            Localization.Get(on ? "Participants.CheckedIn.Log.Marked" : "Participants.CheckedIn.Log.Unmarked"),
+            changed.Count));
+        RecomputeStatusInfo();
+    }
+
+    private static List<ParticipantRosterRowViewModel> RosterRowsOf(IReadOnlyList<object> rows)
+        => rows.OfType<ParticipantRosterRowViewModel>().ToList();
+
     // The roster's row-level checkbox only exists outside per-day mode (in it, the flag is a per-day
     // block whose cells save themselves through RequestCellRaisedFeeChange).
     private void RequestRosterRaisedFeeChange(ParticipantRosterRowViewModel row)
@@ -3717,6 +3762,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         // The roster aggregates every day, so a single "members on day" figure isn't meaningful there.
         if (IsDayMode)
             parts.Add(Localization.Get("Participants.Status.Members").Replace("{0}", Participants.Count.ToString()));
+        // Registration progress («Мандатку пройдено») is competition-level, so only the roster shows it.
+        if (IsRosterMode)
+            parts.Add(string.Format(Localization.Get("Participants.Status.CheckedIn"),
+                Roster.Count(r => r.CheckedIn), Roster.Count));
 
         StatusInfo = string.Join("    •    ", parts);
     }

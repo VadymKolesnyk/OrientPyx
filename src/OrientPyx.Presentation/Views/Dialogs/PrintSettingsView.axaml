@@ -59,6 +59,23 @@
                               HorizontalAlignment="Stretch" />
                 </StackPanel>
 
+                <!-- Test slip to the printer/width chosen above (not yet saved), with the outcome under the button. -->
+                <StackPanel Spacing="6" IsEnabled="{Binding IsSupported}">
+                    <Button Content="{Binding TestPrintLabel}"
+                            Classes="ghost"
+                            HorizontalAlignment="Left"
+                            IsEnabled="{Binding !IsTestPrinting}"
+                            Command="{Binding TestPrintCommand}" />
+                    <TextBlock Text="{Binding TestPrintStatus}"
+                               IsVisible="{Binding TestPrintSucceeded}"
+                               TextWrapping="Wrap"
+                               Classes="muted" />
+                    <TextBlock Text="{Binding TestPrintStatus}"
+                               IsVisible="{Binding TestPrintFailed}"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource DangerBrush}" />
+                </StackPanel>
+
             </StackPanel>
 
         </DockPanel>

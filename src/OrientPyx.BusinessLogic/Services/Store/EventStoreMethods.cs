@@ -79,6 +79,7 @@ public static class EventStoreMethods
         [nameof(IEventStore.UpdateParticipantAsync)] = [DataArea.Participants],
         [nameof(IEventStore.DeleteParticipantAsync)] = [DataArea.Participants, DataArea.ParticipantDays, DataArea.Relay],
         [nameof(IEventStore.SetParticipantPaysRaisedFeeAsync)] = [DataArea.Participants, DataArea.Fees],
+        [nameof(IEventStore.SetParticipantsCheckedInAsync)] = [DataArea.Participants],
         [nameof(IEventStore.SetParticipantDiscountAsync)] = [DataArea.Participants, DataArea.Fees],
         [nameof(IEventStore.SetParticipantNumbersBatchAsync)] = [DataArea.Participants],
         [nameof(IEventStore.ImportParticipantsBatchAsync)] =

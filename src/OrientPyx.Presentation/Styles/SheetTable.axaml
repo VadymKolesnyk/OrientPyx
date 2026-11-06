@@ -110,6 +110,14 @@
                                            VerticalAlignment="Center"
                                            FontSize="15" FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextPrimary}" />
+                                <!-- Sum of the selected fee/payment cells (blank without a multi-cell selection). -->
+                                <TextBlock Name="PART_StatusSelection" Grid.Column="1"
+                                           IsVisible="False"
+                                           VerticalAlignment="Center"
+                                           Margin="16,0"
+                                           FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource TextPrimary}" />
                                 <TextBlock Name="PART_StatusInfo" Grid.Column="2"
                                            VerticalAlignment="Center"
                                            TextAlignment="Right"

@@ -197,6 +197,10 @@ public interface IEventStore
 
     Task SetParticipantPaysRaisedFeeAsync(string eventFolderPath, Guid participantId, bool paysRaisedFee, CancellationToken cancellationToken = default);
 
+    /// <summary>Sets <see cref="Entities.Participant.CheckedIn"/> («Мандатку пройдено») on every listed participant in
+    /// one transaction; unknown ids are skipped. Returns the number of rows whose value actually changed.</summary>
+    Task<int> SetParticipantsCheckedInAsync(string eventFolderPath, IReadOnlyList<Guid> participantIds, bool checkedIn, CancellationToken cancellationToken = default);
+
     /// <summary>Every participant↔discount link in the competition.</summary>
     Task<IReadOnlyList<ParticipantDiscount>> GetParticipantDiscountsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 

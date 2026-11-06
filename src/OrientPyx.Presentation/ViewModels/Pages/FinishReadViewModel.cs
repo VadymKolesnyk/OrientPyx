@@ -535,29 +535,9 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
             new PrintSettingsViewModel(Localization, _appSettings, _printer, settings));
     }
 
-    // Localized captions the printer draws around the values (the document itself is values-only).
-    private SplitPrintLabels BuildPrintLabels() => new(
-        ChipLabel: Localization.Get("FinishRead.Print.Chip"),
-        RentalChipLabel: Localization.Get("FinishRead.Print.RentalChip"),
-        StartLabel: Localization.Get("FinishRead.Print.Start"),
-        FinishLabel: Localization.Get("FinishRead.Print.Finish"),
-        ResultLabel: Localization.Get("FinishRead.Print.Result"),
-        DistanceLabel: Localization.Get("FinishRead.Print.Distance"),
-        AvgPaceLabel: Localization.Get("FinishRead.Print.AvgPace"),
-        StatusLabel: Localization.Get("FinishRead.Col.Status"),
-        MpDetailLabel: Localization.Get("FinishRead.Print.MpDetail"),
-        CountDetailLabel: Localization.Get("FinishRead.Print.CountDetail"),
-        NoCourseDetailLabel: Localization.Get("FinishRead.Print.NoCourseDetail"),
-        TotalPointsLabel: Localization.Get("FinishRead.Print.TotalPoints"),
-        VariantLabel: Localization.Get("Splits.VariantCode"),
-        ColSeq: Localization.Get("FinishRead.Print.ColSeq"),
-        ColCode: Localization.Get("FinishRead.Print.ColCode"),
-        ColElapsed: Localization.Get("FinishRead.Print.ColElapsed"),
-        ColLeg: Localization.Get("FinishRead.Print.ColLeg"),
-        ColDistance: Localization.Get("FinishRead.Print.ColDistance"),
-        ColPace: Localization.Get("FinishRead.Print.ColPace"),
-        ColPoints: Localization.Get("FinishRead.Print.ColPoints"),
-        CorrectOrderTitle: Localization.Get("FinishRead.Print.CorrectOrder"));
+    // Localized captions the printer draws around the values (the document itself is values-only); shared with
+    // the print-settings dialog's test slip.
+    private SplitPrintLabels BuildPrintLabels() => SplitPrintLabelsFactory.Create(Localization);
 
     // A single-button (OK) message modal, reusing the confirm dialog for an info-only notice.
     private Task ShowInfoAsync(string messageKey) => _dialogs.ConfirmAsync(new ConfirmDialogViewModel(

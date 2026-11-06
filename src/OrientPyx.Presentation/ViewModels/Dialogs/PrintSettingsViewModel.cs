@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
+using OrientPyx.Presentation.Services;
 
 namespace OrientPyx.Presentation.ViewModels.Dialogs;
 
@@ -20,6 +21,7 @@ public sealed partial class PrintSettingsViewModel : ObservableObject
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private readonly IAppSettingsService _settings;
+    private readonly ISplitPrintService _printService;
 
     public PrintSettingsViewModel(
         ILocalizationService localization,
@@ -29,6 +31,7 @@ public sealed partial class PrintSettingsViewModel : ObservableObject
     {
         Localization = localization;
         _settings = settings;
+        _printService = printService;
 
         IsSupported = printService.IsSupported;
         foreach (var name in printService.GetInstalledPrinters())
@@ -46,6 +49,7 @@ public sealed partial class PrintSettingsViewModel : ObservableObject
             OnPropertyChanged(nameof(PrinterLabel));
             OnPropertyChanged(nameof(WidthLabel));
             OnPropertyChanged(nameof(UnsupportedNote));
+            OnPropertyChanged(nameof(TestPrintLabel));
         };
     }
 
@@ -55,6 +59,7 @@ public sealed partial class PrintSettingsViewModel : ObservableObject
     public string PrinterLabel => Localization.Get("Print.Settings.Printer");
     public string WidthLabel => Localization.Get("Print.Settings.Width");
     public string UnsupportedNote => Localization.Get("Print.Unsupported");
+    public string TestPrintLabel => Localization.Get("Print.Settings.Test");
 
     /// <summary>False off-Windows — the view shows the unsupported note and disables saving.</summary>
     public bool IsSupported { get; }
@@ -71,6 +76,23 @@ public sealed partial class PrintSettingsViewModel : ObservableObject
     [ObservableProperty]
     private int _selectedWidth;
 
+    /// <summary>Outcome of the last test print (sent / failed), shown under the button; blank until one runs.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TestPrintSucceeded))]
+    private string _testPrintStatus = string.Empty;
+
+    /// <summary>True when the last test print threw (the status line turns red).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TestPrintSucceeded))]
+    private bool _testPrintFailed;
+
+    /// <summary>True while a test slip is being sent to the spooler (disables the button).</summary>
+    [ObservableProperty]
+    private bool _isTestPrinting;
+
+    /// <summary>The last test print was sent without error (shows the muted status line).</summary>
+    public bool TestPrintSucceeded => !TestPrintFailed && TestPrintStatus.Length > 0;
+
     /// <summary>Completes true once the chosen settings are saved, false on cancel/close.</summary>
     public Task<bool> Completion => _completion.Task;
 
@@ -83,4 +105,31 @@ public sealed partial class PrintSettingsViewModel : ObservableObject
 
     [RelayCommand]
     private void Cancel() => _completion.TrySetResult(false);
+
+    // Prints the fixed sample slip (SplitPrintSample) to the printer/width currently chosen in the dialog —
+    // not the saved ones — so the operator can check a new choice before saving it. Nothing is persisted.
+    [RelayCommand]
+    private async Task TestPrintAsync()
+    {
+        if (!IsSupported || string.IsNullOrWhiteSpace(SelectedPrinter) || IsTestPrinting)
+            return;
+
+        var target = new PrintSettings(SelectedPrinter, SelectedWidth);
+        IsTestPrinting = true;
+        try
+        {
+            await _printService.PrintAsync(SplitPrintSample.Create(), SplitPrintLabelsFactory.Create(Localization), target);
+            TestPrintFailed = false;
+            TestPrintStatus = string.Format(Localization.Get("Print.Settings.TestDone"), target.PrinterName);
+        }
+        catch (Exception ex)
+        {
+            TestPrintFailed = true;
+            TestPrintStatus = string.Format(Localization.Get("Print.Settings.TestFailed"), ex.Message);
+        }
+        finally
+        {
+            IsTestPrinting = false;
+        }
+    }
 }

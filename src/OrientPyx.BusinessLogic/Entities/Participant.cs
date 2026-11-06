@@ -63,5 +63,13 @@ public class Participant
     /// </summary>
     public bool PaysRaisedFee { get; set; }
 
+    /// <summary>
+    /// «Мандатку пройдено»: the participant has been through registration (number and chip handed out).
+    /// Competition-level — a person checks in once for the whole event. Shown as a green tint on the
+    /// roster's number cell; toggled with F8 / the cell menu, never by the debounced row save
+    /// (<c>UpdateParticipantAsync</c> leaves it alone, like <see cref="PaysRaisedFee"/>).
+    /// </summary>
+    public bool CheckedIn { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

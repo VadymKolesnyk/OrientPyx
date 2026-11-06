@@ -285,6 +285,11 @@ internal sealed class ReceiptRenderer
         if (summary.Count > 0)
             y = DrawCentred(g, string.Join(" ", summary), font, centreX, y);
 
+        // 6) Place in the group at the moment of the finish: "МІСЦЕ НА ФІНІШІ: 3 з 7". Only an OK, placed result
+        // has one, so it never shares the slip with the status line below.
+        if (_doc.Place is { } place && _labels.PlaceLabel.Length > 0)
+            y = DrawCentred(g, string.Format(_labels.PlaceLabel, place, _doc.PlacedCount ?? place), font, centreX, y);
+
         // Status when it isn't a plain OK; for MP we also spell out what it means (the missing/out-of-order
         // control), so the slip reads e.g. "Статус: MP - Бракує КП або порушено порядок: 33".
         if (_doc.StatusText.Length > 0 && _doc.StatusText != "OK")

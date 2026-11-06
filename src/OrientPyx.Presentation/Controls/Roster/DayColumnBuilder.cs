@@ -25,6 +25,13 @@ public sealed class DayColumnBuilder
     public static readonly Avalonia.Media.ISolidColorBrush ChipCapacityBrush =
         new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(0x66, 0xF5, 0x9E, 0x0B));
 
+    /// <summary>
+    /// The green tint of the roster's «Номер» cell once the participant has been through registration
+    /// («Мандатку пройдено», <see cref="ParticipantRosterRowViewModel.CheckedIn"/>).
+    /// </summary>
+    public static readonly Avalonia.Media.ISolidColorBrush CheckedInBrush =
+        new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(0x66, 0x22, 0xC5, 0x5E));
+
     private readonly ILocalizationService _loc;
 
     public DayColumnBuilder(ILocalizationService localization)
@@ -135,7 +142,6 @@ public sealed class DayColumnBuilder
             // of the effect. A signed-integer cell with fill-down paste straight to the row's BonusText.
             var bonusBand = Identity(SheetCellKind.RowBonus, "Participants.Col.Bonus", nameof(ParticipantDayRowViewModel.BonusText),
                 sortPath: nameof(ParticipantDayRowViewModel.BonusSort), fixedWidth: 80);
-            bonusBand.Columns[0].PastePath = nameof(ParticipantDayRowViewModel.BonusText);
             bands.Add(bonusBand);
 
             var scoreBand = Identity(SheetCellKind.RowResultText, "Participants.Col.Score", nameof(ParticipantDayRowViewModel.ScoreText),
@@ -220,6 +226,14 @@ public sealed class DayColumnBuilder
             // change; the picker shows the localized header.
             Key = $"id:{headerKey}",
             PickerLabel = header,
+            // Plain editable text columns (number, name, chip, payment, start time, bonus, …) and the bool
+            // flags support fill-down paste straight to their bound property (one clipboard line per row,
+            // like the roster — see RosterColumnBuilder). Combos / dates keep single-cell paste. The chip
+            // goes through the row's own confirm-reassign callback on every write, so a pasted column is
+            // resolved row by row exactly like typed values.
+            PastePath = kind is SheetCellKind.IdentityText or SheetCellKind.PaymentText or SheetCellKind.ChipText
+                or SheetCellKind.StartTimeText or SheetCellKind.RowBonus or SheetCellKind.IdentityBool ? path : null,
+            CheckPaste = kind is SheetCellKind.IdentityBool,
         };
         if (fixedWidth is { } w)
         {

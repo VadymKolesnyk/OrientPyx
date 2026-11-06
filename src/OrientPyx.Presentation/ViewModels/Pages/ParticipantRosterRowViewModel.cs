@@ -40,6 +40,13 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     [ObservableProperty]
     private bool _paysRaisedFee;
 
+    /// <summary>
+    /// «Мандатку пройдено» (competition-level). Drives the green tint of the «Номер» cell. Not part of the
+    /// debounced row save: the page toggles it (F8 / cell menu) and writes it through its own service call.
+    /// </summary>
+    [ObservableProperty]
+    private bool _checkedIn;
+
     [ObservableProperty]
     private string _fullName;
 
@@ -130,6 +137,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         // the per-discount checkbox binds DiscountFlags[i]. The FSOU-member discount's flag mirrors
         // «Член ФСОУ» and is read-only; manual discounts seed from the participant's saved selection.
         _paysRaisedFee = row.PaysRaisedFee;
+        _checkedIn = row.CheckedIn;
         var selected = row.SelectedDiscountIds.ToHashSet();
         DiscountFlags = new ObservableCollection<DiscountFlagViewModel>();
         foreach (var d in discounts)
@@ -247,6 +255,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             Payment = row.Payment;
             Team = row.Team;
             PaysRaisedFee = row.PaysRaisedFee;
+            CheckedIn = row.CheckedIn;
 
             ApplyDiscountFlags(discounts, row);
 

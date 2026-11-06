@@ -36,6 +36,10 @@ public sealed record ParticipantRosterRow(
     /// <summary>The participant's additional-field values by field key (participant-level, Р-13). Read-only here;
     /// edits go through <c>ICompetitionEditorService.SetParticipantFieldAsync</c>.</summary>
     public IReadOnlyDictionary<string, string> Fields { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>«Мандатку пройдено» (competition-level, <see cref="Entities.Participant.CheckedIn"/>). Read-only
+    /// here; toggled through <c>ICompetitionEditorService.SetParticipantsCheckedInAsync</c>, never by the row save.</summary>
+    public bool CheckedIn { get; init; }
 }
 
 /// <summary>

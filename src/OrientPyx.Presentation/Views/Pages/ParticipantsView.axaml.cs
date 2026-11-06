@@ -59,6 +59,11 @@ public partial class ParticipantsView : UserControl
         DayTable.BulkEditColumnRequested += OnBulkEditColumnRequested;
         RosterTable.BulkEditColumnRequested += OnBulkEditColumnRequested;
 
+        // «Мандатку пройдено»: the roster's row action (F8 / the cell menu) toggles the flag on the selected
+        // rows. Only the roster — the flag is competition-level and the day grid doesn't show it.
+        RosterTable.RowActionLabel = rows => _vm?.CheckedInActionLabel(rows);
+        RosterTable.RowActionRequested += (_, rows) => _vm?.ToggleCheckedIn(rows);
+
         // Skip the per-row fee recompute while the «Стартовий внесок» column is hidden; flush it when the
         // column is shown again. The active table owns the fee:total column (same key on both).
         DayTable.ColumnVisibilityChanged += OnFeeColumnVisibilityChanged;

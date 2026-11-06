@@ -626,6 +626,9 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.Property<DateTimeOffset?>("BirthDate")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("CheckedIn")
+                        .HasColumnType("INTEGER");
+
                     b.Property<Guid?>("ClubId")
                         .HasColumnType("TEXT");
 

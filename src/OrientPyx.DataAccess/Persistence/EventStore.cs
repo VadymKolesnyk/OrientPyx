@@ -792,6 +792,22 @@ public sealed partial class EventStore : IEventStore
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<int> SetParticipantsCheckedInAsync(string eventFolderPath, IReadOnlyList<Guid> participantIds, bool checkedIn, CancellationToken cancellationToken = default)
+    {
+        if (participantIds.Count == 0)
+            return 0;
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var ids = participantIds.ToHashSet();
+        var participants = await db.Participants
+            .Where(p => ids.Contains(p.Id) && p.CheckedIn != checkedIn)
+            .ToListAsync(cancellationToken);
+        foreach (var p in participants)
+            p.CheckedIn = checkedIn;
+        await db.SaveChangesAsync(cancellationToken);
+        return participants.Count;
+    }
+
     public async Task<IReadOnlyList<ParticipantDiscount>> GetParticipantDiscountsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);

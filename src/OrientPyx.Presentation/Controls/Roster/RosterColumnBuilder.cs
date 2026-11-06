@@ -103,9 +103,14 @@ public sealed class RosterColumnBuilder
                 col.Width = w;
                 col.WidthCapped = true; // explicit width is never auto-capped
             }
-            // The status bar shows the row count under «Номер» (the leading column).
+            // The status bar shows the row count under «Номер» (the leading column). The same cell turns
+            // green once the participant has checked in («Мандатку пройдено»), toggled with F8 / the cell menu.
             if (headerKey == "Participants.Col.Number")
+            {
                 col.ShowCount = true;
+                col.CellBackgroundPath = nameof(ParticipantRosterRowViewModel.CheckedIn);
+                col.CellBackgroundBrush = DayColumnBuilder.CheckedInBrush;
+            }
             // The payment column tints by status, offers the "by status" filter mode, and is summed in
             // the status bar.
             if (kind == SheetCellKind.PaymentText)

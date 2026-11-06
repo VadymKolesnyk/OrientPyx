@@ -1549,7 +1549,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 participant.PaysRaisedFee,
                 fees.SelectedDiscountIds(participant.Id),
                 fees.Total(participant, memberDays),
-                cells) { Fields = FieldsOf(fieldValues, participant.Id) });
+                cells) { Fields = FieldsOf(fieldValues, participant.Id), CheckedIn = participant.CheckedIn });
         }
         return rows;
     }
@@ -3822,6 +3822,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
         var resultElapsed = row.Elapsed is { } e && e >= TimeSpan.Zero ? e : (TimeSpan?)null;
 
+        var (place, placedCount) = await PlaceAtFinishAsync(row, cancellationToken);
+
         // When a set course broke the order (MP), append the prescribed (correct) order so the slip shows
         // what should have been done, with the first untaken control flagged as where the route went wrong.
         var correctOrder = view.Layout == SplitsLayout.Ordered && row.Status == FinishStatus.Mp
@@ -3870,12 +3872,46 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             FinishClock = finishClock,
             TotalDistanceText = FormatDistanceMetres(totalKm),
             AvgPaceText = FormatPace(AvgPaceSecondsPerKm(resultElapsed, totalKm)),
+            Place = place,
+            PlacedCount = placedCount,
             Rows = rows,
             // Rogaine (Ordered + points) keeps the full geometry columns plus a бал column; the geometry-less
             // choice/score formats (Scored layout) use the compact layout instead.
             HasGeometry = view.Layout == SplitsLayout.Ordered && view.HasPoints,
             CorrectOrder = correctOrder
         };
+    }
+
+    // The runner's place in their group at the moment of the finish, plus how many were placed by then. The
+    // day is ranked on a snapshot whose read-outs are cut to those finished no later than this one, so the
+    // slip shows the standing the runner saw at the finish — not the one the log shows when a slip is
+    // re-printed an hour later. The discipline's own ranking applies (time, score, relay/rogaine teams); a
+    // team's place is counted once, not per member.
+    private async Task<(int? Place, int? PlacedCount)> PlaceAtFinishAsync(FinishReadoutRow row, CancellationToken cancellationToken)
+    {
+        if (!row.IsKnown || row.FinishTime is not { } finish || _session.CurrentDay is null)
+            return (null, null);
+
+        var snapshot = await _eventStore.GetDaySnapshotAsync(FolderPath, CurrentDayId, cancellationToken);
+        var link = DistinctLinks(snapshot.Links).FirstOrDefault(l => TextKey.Same(l.Chip.Trim(), row.ChipNumber.Trim()));
+        if (link?.GroupId is not { } groupId)
+            return (null, null);
+
+        var finishedByThen = snapshot with
+        {
+            FinishReadouts = snapshot.FinishReadouts.Where(r => r.FinishTime is { } f && f <= finish).ToList()
+        };
+        var results = await ComputeDayResultsAsync(FolderPath, _session.CurrentDay, cancellationToken, snapshot: finishedByThen);
+        if (!results.TryGetValue(link.Id, out var mine) || mine.Place is not { } place)
+            return (null, null);
+
+        var groupLinks = finishedByThen.Links.Where(l => l.GroupId == groupId).Select(l => l.Id).ToHashSet();
+        var placed = results
+            .Where(kv => groupLinks.Contains(kv.Key) && kv.Value.Place is not null)
+            .Select(kv => (object?)kv.Value.Team ?? kv.Key)
+            .Distinct()
+            .Count();
+        return (place, placed);
     }
 
     // Maps the prescribed course (set-course layout) to the compact correct-order line. Each control keeps
@@ -3956,24 +3992,14 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     // Distance in whole metres (unit lives in the header); blank for null/zero. Used for both the per-leg
     // column and the course total on the header line.
-    private static string FormatDistanceMetres(decimal? km) => km is { } d && d > 0m
-        ? Math.Round(d * 1000m).ToString("0", CultureInfo.InvariantCulture)
-        : string.Empty;
+    private static string FormatDistanceMetres(decimal? km) => SplitPrintFormat.DistanceMetres(km);
 
     // Pace "m:ss" from seconds-per-km (unit /км lives in the header); blank for null/non-positive.
-    private static string FormatPace(double? secondsPerKm)
-    {
-        if (secondsPerKm is not { } s || s <= 0 || double.IsInfinity(s))
-            return string.Empty;
-        var span = TimeSpan.FromSeconds(Math.Round(s));
-        return $"{(int)span.TotalMinutes}:{span.Seconds:00}";
-    }
+    private static string FormatPace(double? secondsPerKm) => SplitPrintFormat.Pace(secondsPerKm);
 
     // Average pace (seconds per km) over the whole result: result time ÷ total course distance.
     private static double? AvgPaceSecondsPerKm(TimeSpan? result, decimal totalKm) =>
-        result is { } r && r > TimeSpan.Zero && totalKm > 0m
-            ? r.TotalSeconds / (double)totalKm
-            : null;
+        SplitPrintFormat.SecondsPerKm(result, totalKm);
 
     // Judges one read-out against its holder's group (see FinishEvaluator) and returns the status parts plus
     // the resolved start so the caller can derive the finish − start elapsed duration.
@@ -5439,6 +5465,11 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public Task SetParticipantPaysRaisedFeeAsync(Guid participantId, bool paysRaisedFee, CancellationToken cancellationToken = default) =>
         _eventStore.SetParticipantPaysRaisedFeeAsync(FolderPath, participantId, paysRaisedFee, cancellationToken);
+
+    public Task<int> SetParticipantsCheckedInAsync(IReadOnlyList<Guid> participantIds, bool checkedIn, CancellationToken cancellationToken = default) =>
+        participantIds.Count == 0
+            ? Task.FromResult(0)
+            : _eventStore.SetParticipantsCheckedInAsync(FolderPath, participantIds, checkedIn, cancellationToken);
 
     public Task SetParticipantDiscountAsync(Guid participantId, Guid discountId, bool on, CancellationToken cancellationToken = default) =>
         _eventStore.SetParticipantDiscountAsync(FolderPath, participantId, discountId, on, cancellationToken);

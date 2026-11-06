@@ -463,14 +463,34 @@ internal sealed class SheetHeaderPanel : Grid
             }
         };
 
-        Button MenuItem(string textKey, Action onClick)
+        // A ghost button: the localized label on the left and, when the action also has a keyboard
+        // shortcut (one that works from a focused cell of this column), a grey hint on the right — the
+        // same look as the cell context menu in SheetTable.
+        Button MenuItem(string textKey, string? shortcut, Action onClick)
         {
+            var content = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            var label = new TextBlock { Text = _loc.Get(textKey), VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(label, 0);
+            content.Children.Add(label);
+            if (!string.IsNullOrEmpty(shortcut))
+            {
+                var hint = new TextBlock
+                {
+                    Text = shortcut,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(24, 0, 0, 0),
+                    Foreground = (IBrush?)this.FindResource("TextSecondary") ?? Brushes.Gray
+                };
+                Grid.SetColumn(hint, 1);
+                content.Children.Add(hint);
+            }
+
             var b = new Button
             {
                 Classes = { "ghost" },
-                Content = _loc.Get(textKey),
+                Content = content,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Left,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 Padding = new Thickness(10, 6)
             };
             b.Click += (_, _) => { flyout.Hide(); onClick(); };
@@ -480,16 +500,16 @@ internal sealed class SheetHeaderPanel : Grid
         if (column.Filterable && FilterColumn is not null)
         {
             var hasFilter = HasFilter?.Invoke(column) == true;
-            menu.Children.Add(MenuItem(hasFilter ? "Sheet.Filter.Edit" : "Sheet.Filter.Add",
+            menu.Children.Add(MenuItem(hasFilter ? "Sheet.Filter.Edit" : "Sheet.Filter.Add", null,
                 () => FilterColumn.Invoke(column)));
             if (hasFilter)
-                menu.Children.Add(MenuItem("Sheet.Filter.Remove", () => RemoveFilter?.Invoke(column)));
+                menu.Children.Add(MenuItem("Sheet.Filter.Remove", "Shift+F3", () => RemoveFilter?.Invoke(column)));
         }
 
         if (BulkEditColumn is not null && CanBulkEdit?.Invoke(column) == true)
-            menu.Children.Add(MenuItem("Sheet.Columns.BulkEdit", () => BulkEditColumn.Invoke(column)));
+            menu.Children.Add(MenuItem("Sheet.Columns.BulkEdit", "F6", () => BulkEditColumn.Invoke(column)));
 
-        menu.Children.Add(MenuItem("Sheet.Columns.Hide", () => HideColumn?.Invoke(column)));
+        menu.Children.Add(MenuItem("Sheet.Columns.Hide", "Ctrl+H", () => HideColumn?.Invoke(column)));
         flyout.ShowAt(header);
     }
 

@@ -346,6 +346,16 @@ The participant roster ("Мандатка") additionally needs a true two-tier (
 columns under a spanning band label — which it builds with the roster-specific `RosterColumnBuilder`
 / `RosterCellFactory` (`Controls/Roster/`) and the table's `Days`/`Blocks` properties instead of `Bands`.
 
+**Selection and row actions.** A press-drag / Shift+click / Shift+arrow selects an Excel-style cell range; **Ctrl+A**
+selects the whole filtered, sorted view (outside a text edit). `SheetTable.SelectedRowItems` lists the rows the
+selection covers whatever columns it spans. A page may give a table one **row action** — `RowActionLabel`
+(rows → localized label, null = not offered) + `RowActionRequested` — shown in the cell context menu with the
+«F8» hint and run by F8 over the selected rows (right-click outside the selection = the clicked row alone). The
+roster uses it for **«Мандатку пройдено»** (`Participant.CheckedIn`, competition-level): the «Номер» cell turns
+green (`DayColumnBuilder.CheckedInBrush`), the toggle marks all selected rows when any is unmarked, else clears
+them, written by `SetParticipantsCheckedInAsync` (its own writer — `UpdateParticipantAsync` leaves the flag
+alone, like `PaysRaisedFee`); the roster's `StatusInfo` adds «Мандатка: пройшли X з Y». No column, no filter.
+
 Column widths are content-sized then user-resizable; explicit fixed widths are set via the builder's
 `width:` argument. There is no star/`*` sizing — the table left-aligns content-width columns and
 scrolls horizontally.

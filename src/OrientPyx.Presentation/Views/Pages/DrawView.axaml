@@ -46,8 +46,9 @@
     </UserControl.Styles>
 
     <!-- Single ScrollViewer for the whole page — heading, parameters, toolbar and the
-         start-group columns all scroll together as one surface. -->
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+         start-group columns all scroll together as one surface. Horizontal scrolling is off: with it on
+         the content measures at infinite width, the hint never wraps and the page grows a horizontal bar. -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Spacing="16">
 
         <Grid ColumnDefinitions="*,Auto">

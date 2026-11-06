@@ -91,6 +91,17 @@ public sealed class SplitPrintDocument
     /// <summary>Average pace over the whole result (result time ÷ total distance) as "m:ss" — the СК. value.</summary>
     public string AvgPaceText { get; init; } = string.Empty;
 
+    /// <summary>
+    /// The runner's place in their group <b>at the moment of the finish</b>: the group ranked as if only the
+    /// read-outs finished by then existed (so a slip re-printed later still shows the standing the runner saw at
+    /// the finish). Null for a non-OK result, an unknown chip, «поза конкурсом» or a group that awards no places.
+    /// Printed on its own header line ("МІСЦЕ НА ФІНІШІ: 3 з 7").
+    /// </summary>
+    public int? Place { get; init; }
+
+    /// <summary>How many of the group had a place at that moment (this runner included) — the "з N" of the place line.</summary>
+    public int? PlacedCount { get; init; }
+
     public DateTimeOffset PrintedAt { get; init; } = DateTimeOffset.Now;
 
     // ── Body
@@ -143,7 +154,8 @@ public sealed record SplitPrintLabels(
     string ColPace,
     string ColPoints,
     string CorrectOrderTitle,
-    string NoCourseDetailLabel = "");
+    string NoCourseDetailLabel = "",
+    string PlaceLabel = "");
 
 /// <summary>
 /// One printed passage row: the 1-based index (blank for start/finish markers), the control code, the
