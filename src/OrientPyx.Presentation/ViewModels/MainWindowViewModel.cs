@@ -128,6 +128,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         IBusyService busy,
         IDialogService dialogs,
         IBackgroundActivityService activities,
+        IToastService toasts,
         Services.IEventArchiveFlow archiveFlow,
         Services.ResultsDebugSnapshot resultsSnapshot)
     {
@@ -177,6 +178,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _busy = busy;
         _dialogs = dialogs;
         _activities = activities;
+        Toasts = toasts;
         _archiveFlow = archiveFlow;
 
         Pages = navigation.Pages;
@@ -261,6 +263,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Exposed for the top-bar running-processes block.</summary>
     public IBackgroundActivityService Activities => _activities;
+
+    /// <summary>Exposed for the bottom-right toast stack (non-blocking notices over every page).</summary>
+    public IToastService Toasts { get; }
 
     public SettingsViewModel Settings { get; }
 

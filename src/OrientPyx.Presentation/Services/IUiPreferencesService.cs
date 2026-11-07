@@ -25,4 +25,10 @@ public interface IUiPreferencesService
 
     /// <summary>Width of the prescribed-course column in the ordered splits layout, in DIPs; the passage list takes the rest.</summary>
     double SplitsPrescribedWidth { get; set; }
+
+    /// <summary>
+    /// When on (the default), a finish read-out of a rental chip due back pops a toast — whatever page is open —
+    /// so the finish judge takes the chip. Switched on the «Зчитка на фініші» auto-read panel.
+    /// </summary>
+    bool CollectChipToast { get; set; }
 }

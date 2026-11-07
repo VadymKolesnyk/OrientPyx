@@ -79,15 +79,17 @@ public sealed class NetworkHost : INetworkHost
 
     public HostInfo? Info => _mode.Host;
 
-    /// <summary>The spoken fallback for finding the host: the first usable LAN address + port as a 12-character code.</summary>
+    /// <summary>The spoken fallback for finding the host: the first usable LAN address + port as a 12-character code.
+    /// Taken from the addresses the host card shows (read when the host started or its station count moved): the page
+    /// reads this on every refresh — several times a second while stations work — and enumerating the network
+    /// adapters takes ~20 ms on the UI thread.</summary>
     public string ConnectionCode
     {
         get
         {
-            if (_mode.Host is not { } host)
+            if (_mode.Host is not { } host || host.Addresses.Count == 0 || !IPAddress.TryParse(host.Addresses[0], out var ip))
                 return string.Empty;
-            var address = Discovery.LocalNetwork.Addresses().FirstOrDefault(a => !a.IsLinkLocal);
-            return address is null ? string.Empty : Discovery.ConnectionCode.Encode(address.Ip, host.Port);
+            return Discovery.ConnectionCode.Encode(ip, host.Port);
         }
     }
 

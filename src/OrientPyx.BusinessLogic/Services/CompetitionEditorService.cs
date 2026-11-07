@@ -228,7 +228,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 else
                     finishedProblem++;
             }
-            else if (r.ActualStart is null && r.FinishTime is null)
+            else if (IsOnCourse(r))
             {
                 // Still on course: no actual (chip) start, no finish and no (blank) status — the exact same
                 // three-field test the "На дистанції" participants filter uses, so the count matches the
@@ -3445,9 +3445,12 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     }
 
     public async Task<IReadOnlyList<FinishReadoutRow>> GetFinishReadoutRowsAsync(CancellationToken cancellationToken = default)
+        => (await GetFinishReadoutLogAsync(cancellationToken)).Rows;
+
+    public async Task<FinishReadoutLog> GetFinishReadoutLogAsync(CancellationToken cancellationToken = default)
     {
         if (_session.CurrentEvent is null || _session.CurrentDay is null)
-            return [];
+            return new FinishReadoutLog([], FinishReadoutCounts.Empty);
 
         var folder = FolderPath;
         var dayId = CurrentDayId;
@@ -3549,10 +3552,14 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         }
 
         var rows = new List<FinishReadoutRow>(readouts.Count);
+        // The head count under the log: each runner who read (once, however often), each unrecognised chip.
+        var readHolders = new HashSet<Guid>();
+        var unknownChips = new HashSet<string>(TextKey.Comparer);
         foreach (var r in readouts)
         {
             if (holderByChip.TryGetValue(r.ChipNumber.Trim(), out var link) && byId.TryGetValue(link.ParticipantId, out var p))
             {
+                readHolders.Add(p.Id);
                 var group = link.GroupId is { } gid && groupName.TryGetValue(gid, out var gn) ? gn : string.Empty;
                 var (status, detail, detailKind, resolvedStart) = EvaluateFinish(r, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup,
                     s => DisciplineSettings.Resolve(s, snapshot.DisciplineSettings, dayId));
@@ -3613,6 +3620,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             }
             else
             {
+                unknownChips.Add(r.ChipNumber.Trim());
                 // An unrecognised chip has no group/course to judge against — no computed status — but a
                 // manual override still shows (a judge may rule on an unknown chip).
                 rows.Add(new FinishReadoutRow(r.Id, r.Order, r.ChipNumber, r.StartTime, r.FinishTime,
@@ -3621,8 +3629,20 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     IsManualStatus: r.ManualStatus is not null));
             }
         }
-        return rows;
+
+        // Still out: the dashboard's «На дистанції» test over the same results, minus anyone who has read (a read
+        // with no start/finish punch would otherwise count as both). Orphaned links are skipped like everywhere.
+        var onCourse = links.Count(l => byId.ContainsKey(l.ParticipantId)
+            && !readHolders.Contains(l.ParticipantId)
+            && IsOnCourse(placeByLink.TryGetValue(l.Id, out var res) ? res : ParticipantDayResult.Empty));
+
+        return new FinishReadoutLog(rows, new FinishReadoutCounts(readHolders.Count, onCourse, unknownChips.Count));
     }
+
+    // A day member still on course: no actual (chip) start, no finish and a blank status — the same three-field
+    // test the «На дистанції» participants filter uses, shared by the dashboard tile and the finish-read count.
+    private static bool IsOnCourse(ParticipantDayResult result) =>
+        result.Status == FinishStatus.None && result.ActualStart is null && result.FinishTime is null;
 
     public async Task<bool> CurrentDayUsesScoreAsync(CancellationToken cancellationToken = default)
     {
@@ -3848,7 +3868,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         return legCourse is null ? view : view with { VariantCode = legCourse.Code };
     }
 
-    public async Task<SplitPrintDocument?> GetSplitPrintDocumentAsync(Guid readoutId, CancellationToken cancellationToken = default)
+    public async Task<SplitPrintDocument?> GetSplitPrintDocumentAsync(Guid readoutId, bool reprint = false, CancellationToken cancellationToken = default)
     {
         // The splits view (passage in order) is the printout's body; the resolved row carries the header
         // metadata (name/number/group/result/status). Both already resolve the chip's holder on the day,
@@ -3909,7 +3929,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
         var resultElapsed = row.Elapsed is { } e && e >= TimeSpan.Zero ? e : (TimeSpan?)null;
 
-        var (place, placedCount) = await PlaceAtFinishAsync(row, cancellationToken);
+        var (place, readOutCount) = await CurrentPlaceAsync(row, reprint, cancellationToken);
 
         // When a set course broke the order (MP), append the prescribed (correct) order so the slip shows
         // what should have been done, with the first untaken control flagged as where the route went wrong.
@@ -3960,7 +3980,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             TotalDistanceText = FormatDistanceMetres(totalKm),
             AvgPaceText = FormatPace(AvgPaceSecondsPerKm(resultElapsed, totalKm)),
             Place = place,
-            PlacedCount = placedCount,
+            ReadOutCount = readOutCount,
             Rows = rows,
             // Rogaine (Ordered + points) keeps the full geometry columns plus a бал column; the geometry-less
             // choice/score formats (Scored layout) use the compact layout instead.
@@ -3969,36 +3989,52 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         };
     }
 
-    // The runner's place in their group at the moment of the finish, plus how many were placed by then. The
-    // day is ranked on a snapshot whose read-outs are cut to those finished no later than this one, so the
-    // slip shows the standing the runner saw at the finish — not the one the log shows when a slip is
-    // re-printed an hour later. The discipline's own ranking applies (time, score, relay/rogaine teams); a
-    // team's place is counted once, not per member.
-    private async Task<(int? Place, int? PlacedCount)> PlaceAtFinishAsync(FinishReadoutRow row, CancellationToken cancellationToken)
+    // The runner's current place in their group and how many of the group have read out. The first slip (printed
+    // as the chip reads out) ranks the day on the read-outs logged up to this one, in log order; a re-print counts
+    // every read-out logged so far, later ones too, so a slip asked for again an hour later shows the standing
+    // then. Either way this chip's own later read-outs are left out, so the place belongs to the passage printed.
+    // The "з N" counts every competitor of the group with a read-out in that set — withdrawn (MP, DNF, DSQ…) and
+    // поза конкурсом included — and a team (relay, rogaine) once, not per member. The discipline's own ranking
+    // applies (time, score, teams).
+    private async Task<(int? Place, int? ReadOutCount)> CurrentPlaceAsync(
+        FinishReadoutRow row, bool reprint, CancellationToken cancellationToken)
     {
-        if (!row.IsKnown || row.FinishTime is not { } finish || _session.CurrentDay is null)
+        if (!row.IsKnown || _session.CurrentDay is null)
             return (null, null);
 
         var snapshot = await _eventStore.GetDaySnapshotAsync(FolderPath, CurrentDayId, cancellationToken);
-        var link = DistinctLinks(snapshot.Links).FirstOrDefault(l => TextKey.Same(l.Chip.Trim(), row.ChipNumber.Trim()));
+        var chip = row.ChipNumber.Trim();
+        var link = DistinctLinks(snapshot.Links).FirstOrDefault(l => TextKey.Same(l.Chip.Trim(), chip));
         if (link?.GroupId is not { } groupId)
             return (null, null);
 
-        var finishedByThen = snapshot with
+        var readSoFar = snapshot with
         {
-            FinishReadouts = snapshot.FinishReadouts.Where(r => r.FinishTime is { } f && f <= finish).ToList()
+            FinishReadouts = snapshot.FinishReadouts
+                .Where(r => r.Order <= row.Order || (reprint && !TextKey.Same(r.ChipNumber.Trim(), chip)))
+                .ToList()
         };
-        var results = await ComputeDayResultsAsync(FolderPath, _session.CurrentDay, cancellationToken, snapshot: finishedByThen);
+        var results = await ComputeDayResultsAsync(FolderPath, _session.CurrentDay, cancellationToken, snapshot: readSoFar);
         if (!results.TryGetValue(link.Id, out var mine) || mine.Place is not { } place)
             return (null, null);
 
-        var groupLinks = finishedByThen.Links.Where(l => l.GroupId == groupId).Select(l => l.Id).ToHashSet();
-        var placed = results
-            .Where(kv => groupLinks.Contains(kv.Key) && kv.Value.Place is not null)
-            .Select(kv => (object?)kv.Value.Team ?? kv.Key)
-            .Distinct()
+        // A rogaine team is the participants of the group sharing a team name (the calculator's team key); a
+        // relay team comes with the result.
+        var settings = readSoFar.GroupDaySettings.FirstOrDefault(s => s.GroupId == groupId);
+        var teamFormat = _strategies.For(settings?.DisciplineOverride ?? CurrentDayDefaultDiscipline).Competitors
+            == CompetitorModel.Team;
+        var teamOf = readSoFar.Participants.ToDictionary(p => p.Id, p => p.Team.Trim());
+
+        var readOut = DistinctLinks(readSoFar.Links)
+            .Where(l => l.GroupId == groupId)
+            .Select(l => (Link: l, Result: results.GetValueOrDefault(l.Id)))
+            .Where(x => x.Result?.HasReadout == true)
+            .Select(x => x.Result!.Team is { } relayTeam ? "relay:" + relayTeam.TeamId
+                : teamFormat && teamOf.TryGetValue(x.Link.ParticipantId, out var team) && team.Length > 0 ? "team:" + team
+                : x.Link.Id.ToString())
+            .Distinct(StringComparer.Ordinal)
             .Count();
-        return (place, placed);
+        return (place, readOut);
     }
 
     // Maps the prescribed course (set-course layout) to the compact correct-order line. Each control keeps
@@ -4261,7 +4297,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             var number = link.RelayTeamId is { } tid && link.Leg is { } leg && teamNumbers.TryGetValue(tid, out var tn)
                 ? RelayBib.Format(tn, leg)
                 : p.Number;
-            options.Add(new FinishReadoutParticipantOption(p.Id, number, p.FullName, group));
+            options.Add(new FinishReadoutParticipantOption(p.Id, number, p.FullName, group, link.GroupId, link.StartTime));
         }
         options = options
             .OrderBy(o => o.FullName, StringComparer.CurrentCultureIgnoreCase)
@@ -4360,8 +4396,15 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var holders = await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken);
         var holder = holders.FirstOrDefault(l =>
             TextKey.Same(l.Chip.Trim(), readout.ChipNumber));
-        if (holder is not null)
-            await SetParticipantDayResultStatusAsync(holder.ParticipantId, dayId, edit.ManualStatus, cancellationToken);
+        if (holder is null)
+            return;
+
+        // The operator picked another group for the holder (a runner who ran the wrong course / was entered
+        // in the wrong group): move them on this day only. A new participant already got the form's group.
+        if (edit.NewParticipant is null && edit.GroupId is { } groupId && holder.GroupId != groupId)
+            await _eventStore.SetParticipantDayGroupAsync(folder, holder.ParticipantId, dayId, groupId, cancellationToken);
+
+        await SetParticipantDayResultStatusAsync(holder.ParticipantId, dayId, edit.ManualStatus, cancellationToken);
     }
 
     // Creates a competitor from the unknown-chip modal's "new participant" form and adds them to the day

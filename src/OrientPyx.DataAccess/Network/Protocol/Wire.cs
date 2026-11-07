@@ -19,6 +19,19 @@ public static class Wire
     /// <summary>SSE reconnect: the number of the last event the station received.</summary>
     public const string LastEventIdHeader = "Last-Event-ID";
 
+    /// <summary>
+    /// <c>/changes</c> response: the host's heartbeat interval in whole seconds. A station waits about three of them
+    /// before it reopens a silent stream; without the header (an older host) it waits 30 s.
+    /// </summary>
+    public const string HeartbeatHeader = "X-OrientPyx-Heartbeat";
+
+    /// <summary>
+    /// <c>/changes</c>: the id of the host process's event numbering (response), echoed by the station on a reconnect
+    /// (request). A different one means the host restarted, so the station's <c>Last-Event-ID</c> means nothing there and
+    /// the host answers <c>full-refresh</c>.
+    /// </summary>
+    public const string StreamEpochHeader = "X-OrientPyx-Stream";
+
     public const string PairPath = "/pair";
 
     /// <summary>A station leaving for good (its «Відключитися»): the host drops its token and its row.</summary>

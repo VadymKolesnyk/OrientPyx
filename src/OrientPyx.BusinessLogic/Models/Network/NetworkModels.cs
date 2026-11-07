@@ -60,7 +60,8 @@ public enum StationState
     Disconnected,
     Connecting,
     Connected,
-    /// <summary>The host stopped answering; the station keeps trying and blocks edits meanwhile.</summary>
+    /// <summary>The host has not answered anything for a while (a short blip does not count); the station keeps trying
+    /// and blocks edits meanwhile.</summary>
     Reconnecting,
 }
 

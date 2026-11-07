@@ -70,6 +70,18 @@ public sealed class UiPreferencesService : IUiPreferencesService
         }
     }
 
+    public bool CollectChipToast
+    {
+        get => _data.CollectChipToast;
+        set
+        {
+            if (_data.CollectChipToast == value)
+                return;
+            _data.CollectChipToast = value;
+            Write();
+        }
+    }
+
     private void Write()
     {
         try
@@ -107,5 +119,6 @@ public sealed class UiPreferencesService : IUiPreferencesService
         public SplitsDock SplitsDock { get; set; } = SplitsDock.Bottom;
         public double SplitsSize { get; set; } = 200;
         public double SplitsPrescribedWidth { get; set; } = 320;
+        public bool CollectChipToast { get; set; } = true;
     }
 }

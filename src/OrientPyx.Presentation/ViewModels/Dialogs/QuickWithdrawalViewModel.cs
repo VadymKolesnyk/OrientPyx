@@ -56,8 +56,10 @@ public sealed partial class QuickWithdrawalViewModel : ObservableObject
         Rows = [];
         // Seed rows for members that already carry a manual status override, so opening the dialog shows the
         // competitors already withdrawn (and lets the judge review / change them). Ordered as the data came.
+        // A manual OK is not a withdrawal — it isn't listed (the override stays as it is; typing the number
+        // still finds the runner).
         foreach (var m in data.Members)
-            if (m.CurrentStatus is { } s && s != FinishStatus.None)
+            if (m.CurrentStatus is { } s && s != FinishStatus.None && s != FinishStatus.Ok)
             {
                 var row = NewRow();
                 row.SetNumberSilently(m.Number);

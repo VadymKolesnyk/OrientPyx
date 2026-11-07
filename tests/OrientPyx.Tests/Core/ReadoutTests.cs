@@ -254,4 +254,33 @@ public sealed class ReadoutTests
         Assert.Equal("99", created.ParticipantNumber);
         Assert.Equal(FinishStatus.Ok, created.Status);
     }
+
+    [Fact]
+    public async Task EditReadout_MovesHolderToAnotherGroup()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("rgroup"));
+        await c.AddControlsAsync(1, "31");
+        var men = await c.AddGroupAsync("Ч21", "31");
+        var women = await c.AddGroupAsync("Ж21", "31");
+        var holder = await c.AddRunnerAsync("Holder", "1", "7001", "Ч21", CompetitionBuilder.At(10, 0));
+        var readout = await c.AddReadoutAsync(1, "7001", "31", CompetitionBuilder.At(10, 0), CompetitionBuilder.At(10, 20));
+        await c.SelectAsync();
+        var editor = Sp.GetRequiredService<ICompetitionEditorService>();
+
+        // The modal is told each member's group, so it can open the group picker on it.
+        var data = await editor.GetFinishReadoutEditAsync(readout.Id);
+        Assert.NotNull(data);
+        Assert.Equal(men.Id, data.Participants.Single(p => p.ParticipantId == holder.Id).GroupId);
+
+        await editor.UpdateFinishReadoutAsync(new FinishReadoutEdit
+        {
+            Id = readout.Id, ChipNumber = "7001", StartTime = readout.StartTime, FinishTime = readout.FinishTime,
+            Punches = [new ChipPunch("31", null)], GroupId = women.Id,
+        });
+
+        var link = await c.GetLinkAsync("Holder", 1);
+        Assert.Equal(women.Id, link.GroupId);
+        Assert.Equal("7001", link.Chip);
+        Assert.Equal("Ж21", (await editor.GetFinishReadoutRowsAsync()).Single(x => x.Id == readout.Id).GroupName);
+    }
 }

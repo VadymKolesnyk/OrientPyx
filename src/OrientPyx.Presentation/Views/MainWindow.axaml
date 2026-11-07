@@ -605,6 +605,44 @@
                     Background="#80000000">
                 <ContentControl Content="{Binding Dialogs.Current}" Margin="40" />
             </Border>
+
+            <!-- Toasts: non-blocking notices (e.g. «заберіть прокатний чіп») stacked in the bottom-right corner.
+                 Declared after the dialog overlay so they show above a modal too. Pinned to the corner, the stack
+                 covers only itself — every click elsewhere still reaches the page or dialog underneath — and the
+                 ✕ takes no focus, so typing in a cell or a dialog field is never interrupted. -->
+            <ItemsControl ItemsSource="{Binding Toasts.Items}"
+                          HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                          Width="360" Margin="0,0,20,20">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Spacing="8" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="services:ToastItem">
+                        <Border Background="{DynamicResource SurfaceCard}"
+                                BorderBrush="#F6C343" BorderThickness="5,1,1,1"
+                                CornerRadius="10" Padding="14,12"
+                                BoxShadow="0 8 24 0 #33000000">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                <controls:Icon Grid.Column="0" Kind="CreditCard" Size="20"
+                                               Foreground="#B7791F"
+                                               VerticalAlignment="Top" Margin="0,2,0,0" />
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding Message}" Classes="subtitle" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <Button Grid.Column="2" Classes="ghost small" Padding="4"
+                                        VerticalAlignment="Top" Focusable="False"
+                                        Command="{Binding DismissCommand}"
+                                        ToolTip.Tip="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).Localization[Common.Close]}">
+                                    <controls:Icon Kind="X" Size="14" />
+                                </Button>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
         </Panel>
 
         </DockPanel>

@@ -224,6 +224,12 @@ public sealed partial class SheetColumn : ObservableObject
     public bool Filterable => Kind != SheetCellKind.Actions && !string.IsNullOrEmpty(FilterPath);
 
     /// <summary>
+    /// False for a column the table's search box skips — a running sequence number («Id» of the finish-read log),
+    /// whose digits would otherwise match nearly every number typed. Its own column filter still works.
+    /// </summary>
+    public bool Searchable { get; set; } = true;
+
+    /// <summary>
     /// True when the filter popup should offer the "by status" mode (payment-status categories: empty /
     /// over / under / equal / not-a-number). Opt-in; set by the participant payment column. Its
     /// <see cref="FilterPath"/> must read a <c>PaymentStatus</c> token (the row's <c>PaymentStatusKey</c>).

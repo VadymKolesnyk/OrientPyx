@@ -275,6 +275,16 @@ public sealed class SheetColumnBuilder
     }
 
     /// <summary>
+    /// Leaves the column just added out of the table's search box (see <see cref="SheetColumn.Searchable"/>) — for a
+    /// running sequence number that would otherwise match almost any typed number. Fluent.
+    /// </summary>
+    public SheetColumnBuilder NotSearchable()
+    {
+        _bands[^1].Columns[^1].Searchable = false;
+        return this;
+    }
+
+    /// <summary>
     /// Sums the column just added in the table's status bar: <paramref name="path"/> is the numeric row property
     /// (an indexed path such as <c>Counts[0]</c> works) totalled over the displayed rows. Fluent — chain it right
     /// after the column. See <see cref="SheetColumn.SummaryPath"/>.

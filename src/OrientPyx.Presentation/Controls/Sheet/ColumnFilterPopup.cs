@@ -28,13 +28,16 @@ internal sealed class ColumnFilterPopup
     // Working copy of the filter being edited (seeded from the existing one, if any).
     private readonly SheetFilter _draft;
 
-    // Mode panels (only one visible at a time).
+    // Mode panels (only one shown at a time), all in one cell of _modeArea — see SetMode.
+    private readonly Grid _modeArea = new();
     private readonly StackPanel _valuesPanel = new() { Spacing = 6 };
     private readonly StackPanel _conditionPanel = new() { Spacing = 6 };
     private readonly StackPanel _statusPanel = new() { Spacing = 6 };
     private readonly StackPanel _valuesList = new() { Spacing = 2 };
     private readonly List<CheckBox> _valueChecks = new();
     private readonly List<CheckBox> _statusChecks = new();
+    // Every distinct value of the column, incl. those the other filters hide from the list.
+    private HashSet<string> _allValues = new();
     private TextBox? _valuesSearch;
     private ComboBox? _conditionCombo;
     private TextBox? _conditionText;
@@ -69,6 +72,14 @@ internal sealed class ColumnFilterPopup
                 Child = root
             }
         };
+        // The popup never resizes while open (macOS shows a resized popup squashed — PopupSizeLock): the width
+        // stays, and the mode area keeps its height while the search shortens the value list, so the buttons
+        // under it don't move either.
+        _flyout.Opened += (_, _) =>
+        {
+            PopupSizeLock.Pin(root, height: false);
+            PopupSizeLock.Pin(_modeArea, width: false);
+        };
     }
 
     public void Show(Control anchor) => _flyout.ShowAt(anchor);
@@ -77,12 +88,32 @@ internal sealed class ColumnFilterPopup
     {
         var stack = new StackPanel { Spacing = 8, Margin = new Thickness(10), MinWidth = 240, MaxWidth = 320 };
 
-        // Title: the column name.
-        stack.Children.Add(new TextBlock
+        // Title: the column name, and «Інші дії ▾» on the right — the column menu (remove filter, bulk edit,
+        // hide column) that a header right-click used to open before it opened this editor directly.
+        var title = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        var name = new TextBlock
         {
             Text = _draft.Header,
-            FontWeight = Avalonia.Media.FontWeight.SemiBold
-        });
+            FontWeight = Avalonia.Media.FontWeight.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = Avalonia.Media.TextTrimming.CharacterEllipsis
+        };
+        var moreContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        moreContent.Children.Add(new TextBlock { Text = _loc.Get("Sheet.Filter.MoreActions"), VerticalAlignment = VerticalAlignment.Center });
+        moreContent.Children.Add(new Icon { Kind = "ChevronDown", Size = 12, VerticalAlignment = VerticalAlignment.Center });
+        var more = new Button
+        {
+            Classes = { "ghost", "small" },
+            Content = moreContent,
+            Margin = new Thickness(8, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        more.Click += (_, _) => { _flyout.Hide(); _table.ShowColumnMenu(_column); };
+        Grid.SetColumn(name, 0);
+        Grid.SetColumn(more, 1);
+        title.Children.Add(name);
+        title.Children.Add(more);
+        stack.Children.Add(title);
 
         // Mode radio toggles. A status column (payment) offers "by status" + "by condition"; the generic
         // "by values" list is hidden there because its cell value is a status token, not the visible text.
@@ -114,9 +145,10 @@ internal sealed class ColumnFilterPopup
         BuildConditionPanel();
         if (_column.StatusFilter)
             BuildStatusPanel();
-        stack.Children.Add(_valuesPanel);
-        stack.Children.Add(_conditionPanel);
-        stack.Children.Add(_statusPanel);
+        _modeArea.Children.Add(_valuesPanel);
+        _modeArea.Children.Add(_conditionPanel);
+        _modeArea.Children.Add(_statusPanel);
+        stack.Children.Add(_modeArea);
 
         var clear = new Button { Classes = { "ghost" }, Content = _loc.Get("Sheet.Filter.Clear") };
         var apply = new Button { Classes = { "accent" }, Content = _loc.Get("Sheet.Filter.Apply") };
@@ -139,9 +171,18 @@ internal sealed class ColumnFilterPopup
     private void SetMode(SheetFilterMode mode)
     {
         _draft.Mode = mode;
-        _valuesPanel.IsVisible = mode == SheetFilterMode.Values;
-        _conditionPanel.IsVisible = mode == SheetFilterMode.Condition;
-        _statusPanel.IsVisible = mode == SheetFilterMode.Status;
+        ShowPanel(_valuesPanel, mode == SheetFilterMode.Values);
+        ShowPanel(_conditionPanel, mode == SheetFilterMode.Condition);
+        ShowPanel(_statusPanel, mode == SheetFilterMode.Status);
+    }
+
+    // An inactive panel is see-through and inert but still laid out, so the mode area is as large as its largest
+    // mode from the first layout on and a mode switch never resizes the popup.
+    private static void ShowPanel(Control panel, bool active)
+    {
+        panel.Opacity = active ? 1 : 0;
+        panel.IsHitTestVisible = active;
+        panel.IsEnabled = active;
     }
 
     // ── Values mode
@@ -170,9 +211,11 @@ internal sealed class ColumnFilterPopup
         toggles.Children.Add(selectAll);
         toggles.Children.Add(clearAll);
 
-        // Build a checkbox per distinct value; checked = kept. A null AllowedValues (no filter yet) means
-        // everything is currently shown, so start all checked.
-        var distinct = _table.DistinctValues(_column);
+        // Build a checkbox per distinct value of the rows the OTHER filters (and the search) leave — filtered
+        // by «Представник», the «Прізвище» list holds only that representative's runners; checked = kept.
+        // A null AllowedValues (no filter yet) means everything is currently shown, so start all checked.
+        _allValues = new HashSet<string>(_table.DistinctValues(_column));
+        var distinct = _table.DistinctValues(_column, passingOtherFilters: true);
         var allowed = _draft.AllowedValues;
         foreach (var value in distinct)
         {
@@ -193,14 +236,15 @@ internal sealed class ColumnFilterPopup
         _valuesPanel.Children.Add(new ScrollViewer { MaxHeight = 260, Content = _valuesList });
     }
 
+    // Layout-tolerant like the table's own search: «Rjktc» finds «Колес» (wrong keyboard layout), s/i→ы and
+    // Latin/Cyrillic look-alikes too — the term is expanded once into TextSearch variants.
     private void FilterValueList(string? query)
     {
-        var q = query?.Trim() ?? string.Empty;
+        var variants = TextSearch.Variants(query);
         foreach (var check in _valueChecks)
         {
             var value = check.Tag as string ?? string.Empty;
-            check.IsVisible = q.Length == 0
-                || TextSearch.Contains(value, q);
+            check.IsVisible = variants.Count == 0 || TextSearch.ContainsAny(value, variants);
         }
     }
 
@@ -276,10 +320,12 @@ internal sealed class ColumnFilterPopup
     {
         if (_draft.Mode == SheetFilterMode.Values)
         {
-            // Keep only the checked values. If every value is checked, treat it as "no filter" (null).
-            var keep = new HashSet<string>(
-                _valueChecks.Where(c => c.IsChecked == true).Select(c => c.Tag as string ?? string.Empty));
-            _draft.AllowedValues = keep.Count == _valueChecks.Count ? null : keep;
+            // The checked values are kept; a value the list didn't show (another filter hides its rows) keeps
+            // the state it had. All values kept ⇒ "no filter" (null).
+            _draft.ApplyPickedValues(
+                _valueChecks.Select(c => c.Tag as string ?? string.Empty),
+                _valueChecks.Where(c => c.IsChecked == true).Select(c => c.Tag as string ?? string.Empty),
+                _allValues);
         }
         else if (_draft.Mode == SheetFilterMode.Status)
         {

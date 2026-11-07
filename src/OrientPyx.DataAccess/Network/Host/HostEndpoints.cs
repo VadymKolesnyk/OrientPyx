@@ -233,14 +233,16 @@ internal sealed class HostEndpoints
             return;
         }
 
-        Task<RpcOutcome> Execute() => _dispatcher.InvokeAsync(iface, method, args, station,
-            identifier => _stations.Touch(station.Token, identifier), cancellationToken);
+        Task<RpcOutcome> Execute(CancellationToken callToken) => _dispatcher.InvokeAsync(iface, method, args, station,
+            identifier => _stations.Touch(station.Token, identifier), callToken);
 
-        // Any call that carries a key (the station sends one per write) is answered once per key.
+        // Any call that carries a key (the station sends one per write) is answered once per key. Such a call runs to
+        // its end even when the station gives up waiting (a timed-out attempt on a dropped connection): the station
+        // retries with the same key and must get the real outcome, not a stored «cancelled».
         var key = context.Request.Headers[Wire.IdempotencyKeyHeader].ToString();
         var outcome = !string.IsNullOrEmpty(key)
-            ? await _idempotency.RunAsync($"{station.Token}:{key}", Execute, cancellationToken)
-            : await Execute();
+            ? await _idempotency.RunAsync($"{station.Token}:{key}", () => Execute(CancellationToken.None), cancellationToken)
+            : await Execute(cancellationToken);
 
         _changed();
         await WriteOutcomeAsync(context, outcome);

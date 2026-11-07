@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -24,10 +23,13 @@ namespace OrientPyx.Presentation.ViewModels.Dialogs;
 ///
 /// Times are edited in <b>local time</b> as <c>hh:mm:ss</c> (an empty time clears it), reusing the
 /// participant grid's lenient <see cref="StartTimeFormat"/> parser — so "9:30" / "9:99" auto-resolve and
-/// an invalid shape reverts. The read's stored times keep their own UTC offset; we display and re-parse in
-/// local time anchored on the read's local date, so the value round-trips without a timezone shift.
-/// Punch rows re-sort by time as they are edited / added. Callers <c>await</c> <see cref="Completion"/>
-/// for the confirmed edit, or null on cancel/close.
+/// an invalid shape reverts. The view commits a time only when its box loses focus, so the parser never
+/// rewrites a half-typed value. The read's stored times keep their own UTC offset; we display and re-parse
+/// in local time anchored on the read's local date, so the value round-trips without a timezone shift.
+/// Punch rows carry a running number and stay where they are while edited (a moving row would steal the
+/// focus); they are saved in chronological order. The chip's holder (current or newly picked) can also be
+/// moved to another group of the day. Callers <c>await</c> <see cref="Completion"/> for the confirmed edit,
+/// or null on cancel/close.
 /// </summary>
 public sealed partial class FinishReadoutEditViewModel : ObservableObject
 {
@@ -48,6 +50,15 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     // The competition's bib numbers already handed out, mapped to their holder's name — snapshotted when
     // the modal opened, so the new-participant form can flag a duplicate as it is typed.
     private readonly IReadOnlyDictionary<string, string> _takenNumbers;
+    // The participant who held the chip when the modal opened (null for an unknown chip) — what the
+    // "(не змінювати)" entry means for the group picker.
+    private readonly Guid? _currentHolderId;
+    // Each day member's group on the day, so picking a holder shows (and lets the operator change) theirs.
+    private readonly Dictionary<Guid, Guid?> _participantGroups;
+    // Each day member's start by the start protocol, shown under the read-out's own start for the holder.
+    private readonly Dictionary<Guid, TimeSpan?> _participantStarts;
+    // The shown holder's group when they were picked — a save sends a group only when it differs.
+    private Guid? _holderGroupOriginal;
 
     public FinishReadoutEditViewModel(
         ILocalizationService localization,
@@ -72,8 +83,9 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
         _finishTimeOfDay = ToLocalTimeOfDay(data.FinishTime);
 
         Punches = new ObservableCollection<PunchEditViewModel>(
-            data.Punches.Select(MakePunch));
-        SortPunches();
+            OrderByTime(data.Punches.Select(p => new PunchEditViewModel(p.ControlCode, ToLocalTimeOfDay(p.Time)))));
+        Punches.CollectionChanged += (_, _) => RenumberPunches();
+        RenumberPunches();
 
         // Reassign dropdown: a leading "(не змінювати)" sentinel, then the "create a new participant"
         // action, then each day member. Opens on the current holder when the chip is recognised, else on
@@ -89,12 +101,20 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
             ? Participants.FirstOrDefault(o => o.ParticipantId == id) ?? keep
             : keep;
         _chosen = _selectedParticipant;
+        _currentHolderId = data.CurrentHolderId;
+        _participantGroups = data.Participants
+            .GroupBy(p => p.ParticipantId)
+            .ToDictionary(g => g.Key, g => g.First().GroupId);
+        _participantStarts = data.Participants
+            .GroupBy(p => p.ParticipantId)
+            .ToDictionary(g => g.Key, g => g.First().StartTime);
 
         // Lookups for the new-participant form. Region / club / ДЮСШ / rank each get a leading "(none)"
         // sentinel; the group list has none — a group is mandatory, so it opens on the first one.
         Groups = new ObservableCollection<FinishReadoutLookupOption>(data.Groups);
         _newGroup = Groups.FirstOrDefault();
         _chosenGroup = _newGroup;
+        SyncHolderGroup();
         Regions = BuildOptional(data.Regions, localization.Get("Participants.Region.None"));
         _newRegion = Regions[0];
         Clubs = BuildOptional(data.Clubs, localization.Get("Participants.Club.None"));
@@ -118,7 +138,9 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
             OnPropertyChanged(nameof(Title));
             OnPropertyChanged(nameof(ChipLine));
             OnPropertyChanged(nameof(HolderLabel));
+            OnPropertyChanged(nameof(HolderGroupLabel));
             OnPropertyChanged(nameof(StartLabel));
+            OnPropertyChanged(nameof(ProtocolStartText));
             OnPropertyChanged(nameof(FinishLabel));
             OnPropertyChanged(nameof(PunchesLabel));
             OnPropertyChanged(nameof(StatusLabel));
@@ -157,6 +179,7 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     public string ChipLine => string.Format(Localization.Get("FinishRead.Edit.ChipLine"), ChipNumber);
 
     public string HolderLabel => Localization.Get("FinishRead.Edit.Holder");
+    public string HolderGroupLabel => Localization.Get("FinishRead.Edit.Group");
     public string StartLabel => Localization.Get("FinishRead.Col.StartTime");
     public string FinishLabel => Localization.Get("FinishRead.Col.FinishTime");
     public string PunchesLabel => Localization.Get("FinishRead.Edit.Punches");
@@ -186,8 +209,8 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
         {
             if (StartTimeFormat.TryParse(value, out var parsed))
                 StartTimeOfDay = parsed;
-            else
-                OnPropertyChanged();
+            // Always re-read: "12:30" committed over an unchanged 12:30:00 must still snap to the full form.
+            OnPropertyChanged();
         }
     }
 
@@ -199,10 +222,22 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
         {
             if (StartTimeFormat.TryParse(value, out var parsed))
                 FinishTimeOfDay = parsed;
-            else
-                OnPropertyChanged();
+            OnPropertyChanged();
         }
     }
+
+    /// <summary>
+    /// The holder's start by the start protocol, e.g. «За стартовим протоколом: 10:24:00» (or «не призначено»), shown
+    /// under the read-out's start so the judge can compare the two. Follows the holder picked above.
+    /// </summary>
+    public string ProtocolStartText => string.Format(
+        Localization.Get("FinishRead.Edit.ProtocolStart"),
+        EffectiveHolderId is { } id && _participantStarts.TryGetValue(id, out var start) && start is not null
+            ? StartTimeFormat.Format(start)
+            : Localization.Get("FinishRead.Edit.ProtocolStartNone"));
+
+    /// <summary>True when the chip has a holder (current or picked) whose protocol start can be shown.</summary>
+    public bool ShowProtocolStart => EffectiveHolderId is not null;
 
     partial void OnStartTimeOfDayChanged(TimeSpan? value) => OnPropertyChanged(nameof(StartTimeText));
     partial void OnFinishTimeOfDayChanged(TimeSpan? value) => OnPropertyChanged(nameof(FinishTimeText));
@@ -233,14 +268,58 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     // allowed, since the form then has its own required fields).
     partial void OnSelectedParticipantChanged(ReassignOption? value)
     {
-        if (value is not null)
+        // A real pick of another entry re-seeds the group picker with that runner's group; a transient
+        // search-filter null (or the same entry re-selected after filtering) keeps the operator's group pick.
+        if (value is not null && !ReferenceEquals(value, _chosen))
+        {
             _chosen = value;
+            SyncHolderGroup();
+        }
         OnPropertyChanged(nameof(IsCreatingNew));
+        OnPropertyChanged(nameof(ShowHolderGroup));
+        OnPropertyChanged(nameof(ShowProtocolStart));
+        OnPropertyChanged(nameof(ProtocolStartText));
         ConfirmCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>True while the "create a new participant" form is showing instead of a plain reassignment.</summary>
     public bool IsCreatingNew => Chosen.IsCreateNew;
+
+    // The participant who ends up holding the chip: the picked runner, or — for "(не змінювати)" — the
+    // current holder. Null while creating a new participant or when an unknown chip is left unassigned.
+    private Guid? EffectiveHolderId => Chosen.IsCreateNew ? null : Chosen.ParticipantId ?? _currentHolderId;
+
+    /// <summary>True when there is a holder whose group can be changed (and the day has groups to pick).</summary>
+    public bool ShowHolderGroup => EffectiveHolderId is not null && Groups.Count > 0;
+
+    /// <summary>
+    /// The holder's group on the day, editable. Nullable for the searchable-combo reason above (and because
+    /// a runner may have no group yet) — <see cref="ChosenHolderGroup"/> is what a save acts on.
+    /// </summary>
+    [ObservableProperty]
+    private FinishReadoutLookupOption? _holderGroup;
+
+    // The last real holder-group pick, so a mid-search null does not read as "no group".
+    private FinishReadoutLookupOption? _chosenHolderGroup;
+
+    private FinishReadoutLookupOption? ChosenHolderGroup => HolderGroup ?? _chosenHolderGroup;
+
+    partial void OnHolderGroupChanged(FinishReadoutLookupOption? value)
+    {
+        if (value is not null)
+            _chosenHolderGroup = value;
+    }
+
+    // Shows the effective holder's current group in the group picker (blank when they have none).
+    private void SyncHolderGroup()
+    {
+        _holderGroupOriginal = EffectiveHolderId is { } id && _participantGroups.TryGetValue(id, out var groupId)
+            ? groupId
+            : null;
+        var match = _holderGroupOriginal is { } gid ? Groups.FirstOrDefault(g => g.Id == gid) : null;
+        _chosenHolderGroup = match;
+        HolderGroup = match;
+    }
 
     /// <summary>The day's groups a new participant can be put in (mandatory — no "(none)" entry).</summary>
     public ObservableCollection<FinishReadoutLookupOption> Groups { get; }
@@ -379,7 +458,7 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
 
     /// <summary>Appends a blank punch row for the user to fill in.</summary>
     [RelayCommand]
-    private void AddPunch() => Punches.Add(MakePunch(new ChipPunch(string.Empty, null)));
+    private void AddPunch() => Punches.Add(new PunchEditViewModel(string.Empty, null));
 
     [RelayCommand]
     private void RemovePunch(PunchEditViewModel? punch)
@@ -388,39 +467,24 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
             Punches.Remove(punch);
     }
 
-    // Builds a punch row from a stored punch (its time shown in local time) and wires it to re-sort the
-    // list whenever its time changes — so a freshly-entered punch slots into chronological order.
-    private PunchEditViewModel MakePunch(ChipPunch punch)
+    // The running «№» of each punch row (1-based, in the list's current order).
+    private void RenumberPunches()
     {
-        var vm = new PunchEditViewModel(punch.ControlCode, ToLocalTimeOfDay(punch.Time));
-        vm.PropertyChanged += OnPunchChanged;
-        return vm;
-    }
-
-    private void OnPunchChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(PunchEditViewModel.TimeOfDay))
-            SortPunches();
+        for (var i = 0; i < Punches.Count; i++)
+            Punches[i].Number = i + 1;
     }
 
     // Stable sort by time of day; timed punches first (ascending), untimed rows keep their tail order.
-    private void SortPunches()
-    {
-        var ordered = Punches
+    // Applied when the modal opens and when it saves — never while editing, where a row jumping to its new
+    // place would take the focus with it.
+    private static List<PunchEditViewModel> OrderByTime(IEnumerable<PunchEditViewModel> punches) =>
+        punches
             .Select((p, i) => (p, i))
             .OrderBy(t => t.p.TimeOfDay is null)
             .ThenBy(t => t.p.TimeOfDay ?? TimeSpan.Zero)
             .ThenBy(t => t.i)
             .Select(t => t.p)
             .ToList();
-
-        for (var target = 0; target < ordered.Count; target++)
-        {
-            var current = Punches.IndexOf(ordered[target]);
-            if (current != target)
-                Punches.Move(current, target);
-        }
-    }
 
     /// <summary>
     /// Save is blocked only while the "create a new participant" form is open and either a required field
@@ -434,10 +498,15 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanConfirm))]
     private void Confirm()
     {
-        var punches = Punches
+        var punches = OrderByTime(Punches)
             .Where(p => p.Code.Trim().Length > 0)
             .Select(p => new ChipPunch(p.Code.Trim(), Combine(p.TimeOfDay)))
             .ToList();
+
+        // A group is sent only when the operator actually changed the holder's group.
+        var group = ShowHolderGroup && ChosenHolderGroup is { } picked && picked.Id != _holderGroupOriginal
+            ? picked.Id
+            : (Guid?)null;
 
         _completion.TrySetResult(new FinishReadoutEdit
         {
@@ -448,6 +517,7 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
             Punches = punches,
             ManualStatus = SelectedStatus.Status,
             ReassignToParticipantId = Chosen.ParticipantId,
+            GroupId = group,
             NewParticipant = BuildNewParticipant()
         });
     }
@@ -506,10 +576,11 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
 }
 
 /// <summary>
-/// One editable punch row in the finish-read edit modal: a control code and its local time of day. The
-/// time text reuses the participant grid's lenient <see cref="StartTimeFormat"/> parsing — a valid entry
-/// is normalized to <c>hh:mm:ss</c> in place, an unparseable shape reverts to the last good text, and
-/// <see cref="TimeOfDay"/> exposes the parsed value (null when blank) for sorting and saving.
+/// One editable punch row in the finish-read edit modal: a running number, a control code and its local
+/// time of day. The time text reuses the participant grid's lenient <see cref="StartTimeFormat"/> parsing
+/// — the view commits it on focus loss, where a valid entry is normalized to <c>hh:mm:ss</c> in place, an
+/// unparseable shape reverts to the last good text, and <see cref="TimeOfDay"/> exposes the parsed value
+/// (null when blank) for sorting and saving.
 /// </summary>
 public sealed partial class PunchEditViewModel : ObservableObject
 {
@@ -522,6 +593,10 @@ public sealed partial class PunchEditViewModel : ObservableObject
         _timeOfDay = timeOfDay;
         _timeText = StartTimeFormat.Format(timeOfDay);
     }
+
+    /// <summary>The row's 1-based position in the list («№»), kept up to date by the owning modal.</summary>
+    [ObservableProperty]
+    private int _number;
 
     [ObservableProperty]
     private string _code;

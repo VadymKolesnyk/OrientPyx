@@ -113,7 +113,8 @@
                         </StackPanel>
                     </StackPanel>
 
-                    <!-- Enable toggles: auto-read on/off, and auto-print of each new read -->
+                    <!-- Enable toggles: auto-read on/off, auto-print of each new read, and the «заберіть
+                         прокатний чіп» toast (remembered across runs, on by default) -->
                     <StackPanel Grid.Column="2" VerticalAlignment="Bottom" Margin="12,0,0,0" Spacing="2">
                         <ToggleSwitch IsChecked="{Binding AutoReadEnabled, Mode=TwoWay}"
                                       OnContent="{Binding Localization[FinishRead.AutoRead.Enabled]}"
@@ -121,6 +122,10 @@
                         <ToggleSwitch IsChecked="{Binding AutoPrintEnabled, Mode=TwoWay}"
                                       OnContent="{Binding Localization[FinishRead.AutoRead.AutoPrint]}"
                                       OffContent="{Binding Localization[FinishRead.AutoRead.AutoPrint]}" />
+                        <ToggleSwitch IsChecked="{Binding CollectChipToastEnabled, Mode=TwoWay}"
+                                      OnContent="{Binding Localization[FinishRead.AutoRead.CollectToast]}"
+                                      OffContent="{Binding Localization[FinishRead.AutoRead.CollectToast]}"
+                                      ToolTip.Tip="{Binding Localization[FinishRead.AutoRead.CollectToast.Tooltip]}" />
                     </StackPanel>
                 </Grid>
 
@@ -152,6 +157,8 @@
                                      SelectedItem="{Binding SelectedReadout, Mode=TwoWay}"
                                      Localization="{Binding Localization}"
                                      RowHighlightPath="IsUnknown"
+                                     FollowNewRows="True"
+                                     StatusInfo="{Binding StatusInfo}"
                                      RentalChips="{Binding RentalChips}"
                                      LayoutStore="{Binding LayoutStore}"
                                      LayoutKey="finishread.log" />

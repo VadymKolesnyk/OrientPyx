@@ -13,14 +13,24 @@ namespace OrientPyx.DataAccess.Network.Host;
 /// <summary>
 /// <c>GET /changes</c>: streams the host's <see cref="IDataChangeBus"/> to one station as Server-Sent Events
 /// (<c>id:</c> the global event number, <c>event: change</c>, <c>data:</c> the <see cref="ChangeEvent"/>), with a
-/// heartbeat comment every 10 s. A station that reconnects sends <c>Last-Event-ID</c>: the missed events are replayed
-/// from the bus buffer, or <c>event: full-refresh</c> is sent when it fell behind the buffer.
+/// heartbeat comment every <see cref="Heartbeat"/> (announced in <see cref="Wire.HeartbeatHeader"/>) — frequent, because
+/// a mobile router may drop a long-lived connection silently and the station only notices by the missing heartbeat.
+/// <para>
+/// A station that reconnects sends <c>Last-Event-ID</c> (and the <see cref="Wire.StreamEpochHeader"/> it saw): the
+/// missed events are replayed from the bus buffer, or <c>event: full-refresh</c> is sent when it fell behind the buffer
+/// or the host restarted since (another epoch). Whenever the station's position is not known exactly, an <c>id:</c>
+/// line with the current number follows, so its next reconnect can resume.
+/// </para>
 /// </summary>
 internal sealed class ChangeStream
 {
-    private static readonly TimeSpan Heartbeat = TimeSpan.FromSeconds(10);
+    /// <summary>The heartbeat interval (whole seconds — it goes into a header).</summary>
+    public static readonly TimeSpan Heartbeat = TimeSpan.FromSeconds(3);
 
     private readonly IDataChangeBus _bus;
+
+    /// <summary>One per host process: the bus numbers events from zero again after a restart.</summary>
+    private readonly string _epoch = Guid.NewGuid().ToString("N");
 
     public ChangeStream(IDataChangeBus bus) => _bus = bus;
 
@@ -31,6 +41,8 @@ internal sealed class ChangeStream
         response.StatusCode = 200;
         response.ContentType = Wire.EventStreamContentType;
         response.Headers.CacheControl = "no-cache";
+        response.Headers[Wire.HeartbeatHeader] = ((int)Heartbeat.TotalSeconds).ToString();
+        response.Headers[Wire.StreamEpochHeader] = _epoch;
         context.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
 
         var channel = Channel.CreateUnbounded<DataChange>(new UnboundedChannelOptions { SingleReader = true });
@@ -39,9 +51,13 @@ internal sealed class ChangeStream
         try
         {
             long lastSent = 0;
-            if (long.TryParse(context.Request.Headers[Wire.LastEventIdHeader], out var since) && since > 0)
+            var positionKnown = false;
+            var request = context.Request;
+            if (long.TryParse(request.Headers[Wire.LastEventIdHeader], out var since) && since >= 0)
             {
-                var missed = _bus.Since(since);
+                // An epoch the station saw on another run of this host: its number means nothing here.
+                var stationEpoch = request.Headers[Wire.StreamEpochHeader].ToString();
+                var missed = stationEpoch.Length > 0 && stationEpoch != _epoch ? null : _bus.Since(since);
                 if (missed is null)
                 {
                     await WriteAsync(response, $"event: {Wire.FullRefreshEvent}\ndata: {{}}\n\n", cancellationToken);
@@ -53,10 +69,13 @@ internal sealed class ChangeStream
                         await WriteChangeAsync(response, change, cancellationToken);
                         lastSent = Math.Max(lastSent, change.Sequence);
                     }
+                    positionKnown = true;
                 }
             }
 
-            await WriteAsync(response, ": connected\n\n", cancellationToken);
+            // Read after subscribing: an event in between is still in the channel and goes out after this line.
+            var baseline = positionKnown ? string.Empty : $"id: {_bus.Sequence}\n";
+            await WriteAsync(response, $"{baseline}: connected\n\n", cancellationToken);
 
             while (!cancellationToken.IsCancellationRequested)
             {

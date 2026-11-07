@@ -40,6 +40,11 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     private readonly IActivityLog _log;
     private readonly IDayLockService _dayLock;
     private readonly IEventFiles _eventFiles;
+    private readonly IUiPreferencesService _preferences;
+    private readonly IToastService _toasts;
+
+    /// <summary>The day's head count from the last load — shown under the table and in the top-bar activity.</summary>
+    private FinishReadoutCounts _counts = FinishReadoutCounts.Empty;
 
     /// <summary>Top-bar activity handle while auto-read runs; null when off.</summary>
     private FinishReadActivity? _activity;
@@ -78,7 +83,8 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         IDayLockService dayLock,
         IDataChangeBus bus,
         IWorkspaceMode mode,
-        IEventFiles eventFiles)
+        IEventFiles eventFiles,
+        IToastService toasts)
         : base(localization)
     {
         UseDayLock(dayLock);
@@ -95,6 +101,15 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         _printer = printer;
         _log = log;
         _eventFiles = eventFiles;
+        _preferences = preferences;
+        _toasts = toasts;
+        _collectChipToastEnabled = preferences.CollectChipToast;
+        // The head count's labels follow the language like everything else.
+        localization.PropertyChanged += (_, _) =>
+        {
+            RefreshCounts();
+            UpdateActivityStatus();
+        };
         // Live data: everything a log row and its splits are judged from.
         ObserveData(bus, session, mode,
             DataArea.Readouts, DataArea.ParticipantDays, DataArea.Participants, DataArea.Groups, DataArea.GroupDaySettings,
@@ -178,6 +193,23 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     private bool _autoPrintEnabled;
 
     /// <summary>
+    /// When on (the default), a read-out of a rental chip due back — the holder's last day with it — pops a toast
+    /// whatever page is open, so the finish judge takes the chip. Unlike the rest of the panel it is remembered
+    /// across runs (<see cref="IUiPreferencesService.CollectChipToast"/>): it is the operator's standing choice.
+    /// </summary>
+    [ObservableProperty]
+    private bool _collectChipToastEnabled;
+
+    partial void OnCollectChipToastEnabledChanged(bool value) => _preferences.CollectChipToast = value;
+
+    /// <summary>
+    /// The head count shown in the table's status bar: runners read out, still on course and (when any) unknown
+    /// chips. Blank while no day is selected.
+    /// </summary>
+    [ObservableProperty]
+    private string _statusInfo = string.Empty;
+
+    /// <summary>
     /// A localized problem shown as a banner on the auto-read panel, set when the watched file is
     /// missing or is not a Config+ card-readout export; empty when there's nothing to report.
     /// </summary>
@@ -239,18 +271,22 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     public async Task LoadAsync()
     {
         var hasDay = _session.CurrentDay is not null;
-        var (days, rows, chips, usesScore, readoutType) = await _busy.RunAsync(async () =>
+        var (days, log, chips, usesScore, readoutType) = await _busy.RunAsync(async () =>
         {
             var d = await _editor.GetDaysAsync();
-            var r = hasDay ? await _editor.GetFinishReadoutRowsAsync() : (IReadOnlyList<FinishReadoutRow>)[];
+            var l = hasDay ? await _editor.GetFinishReadoutLogAsync() : new FinishReadoutLog([], FinishReadoutCounts.Empty);
             var c = await _editor.GetRentalChipsAsync();
             var s = hasDay && await _editor.CurrentDayUsesScoreAsync();
             var rt = await _appSettings.GetReadoutTypeAsync();
-            return (d, r, c, s, rt);
+            return (d, l, c, s, rt);
         });
+        var rows = log.Rows;
         RentalChips.Reset(chips.Select(c => c.Number));
         ShowScoreColumn = usesScore;
         _readoutType = readoutType;
+        _counts = hasDay ? log.Counts : FinishReadoutCounts.Empty;
+        RefreshCounts();
+        UpdateActivityStatus();
 
         _syncingDay = true;
         try
@@ -444,7 +480,8 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
 
         try
         {
-            if (!await PrintReadoutAsync(row.Id, settings))
+            // A slip printed from the log is a re-print: the place counts everyone read out so far.
+            if (!await PrintReadoutAsync(row.Id, settings, reprint: true))
                 return;
         }
         catch (PrintNotSupportedException)
@@ -456,9 +493,10 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     // Builds and prints the split printout for one readout id to the given printer, logging on success.
     // Returns false when there was nothing to print (the row resolved to no document). Shared by the
     // manual «друк» action and the auto-print path; the caller owns any user-facing error handling.
-    private async Task<bool> PrintReadoutAsync(Guid readoutId, PrintSettings settings)
+    // reprint: the slip's place counts the read-outs logged after this one too (see GetSplitPrintDocumentAsync).
+    private async Task<bool> PrintReadoutAsync(Guid readoutId, PrintSettings settings, bool reprint)
     {
-        var doc = await _busy.RunAsync(() => _editor.GetSplitPrintDocumentAsync(readoutId));
+        var doc = await _busy.RunAsync(() => _editor.GetSplitPrintDocumentAsync(readoutId, reprint));
         if (doc is null)
             return false;
 
@@ -787,7 +825,11 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
                 }
             }
             else
+            {
+                // A rental chip due back: tell the judge before the slip prints (printing may take a moment).
+                NotifyCollectChip(row);
                 await AutoPrintNewReadsAsync([id]);
+            }
         }
     }
 
@@ -837,7 +879,10 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         {
             var chip = byId.TryGetValue(repeat.ReadoutId, out var row) ? row.ChipNumber : string.Empty;
             _log.Action(string.Format(Localization.Get("FinishRead.Repeat.Log"), chip));
-            await AutoPrintNewReadsAsync([repeat.ReadoutId]);
+            // The runner is back at the station with the chip in hand — it still has to be taken.
+            NotifyCollectChip(row);
+            // A second slip: its place counts everyone read out since the first one.
+            await AutoPrintNewReadsAsync([repeat.ReadoutId], reprint: true);
         }
     }
 
@@ -874,6 +919,9 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
             _log.Action(edit.NewParticipant is { } created
                 ? string.Format(Localization.Get("FinishRead.Unknown.CreatedLog"), created.FullName, edit.ChipNumber)
                 : string.Format(Localization.Get("FinishRead.Unknown.AssignedLog"), edit.ChipNumber));
+            // With a holder now, the chip may turn out to be a rental one due back.
+            if (CollectChipToastEnabled)
+                NotifyCollectChip((await _editor.GetFinishReadoutRowsAsync()).FirstOrDefault(r => r.Id == readoutId));
             await AutoPrintNewReadsAsync([readoutId]);
         }
         else
@@ -889,7 +937,8 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     // Silently prints each newly-read row when auto-print is on and a printer is configured. No-op when the
     // toggle is off, no printer is set (or it's gone), or printing isn't supported on this build — auto-read
     // must never block on a dialog or throw out of the poll loop. Runs on the poller's thread.
-    private async Task AutoPrintNewReadsAsync(IReadOnlyList<Guid> readoutIds)
+    // reprint: a repeat read's second slip, whose place counts the later read-outs too.
+    private async Task AutoPrintNewReadsAsync(IReadOnlyList<Guid> readoutIds, bool reprint = false)
     {
         if (!AutoPrintEnabled || readoutIds.Count == 0 || !_printer.IsSupported)
             return;
@@ -902,7 +951,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         {
             try
             {
-                await PrintReadoutAsync(id, settings);
+                await PrintReadoutAsync(id, settings, reprint);
             }
             catch (PrintNotSupportedException)
             {
@@ -971,6 +1020,48 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
 
         var fileName = string.IsNullOrWhiteSpace(AutoReadFilePath) ? "—" : Path.GetFileName(AutoReadFilePath);
         var key = IsAutoReadPaused ? "Activity.FinishRead.StatusPaused" : "Activity.FinishRead.Status";
-        _activity.StatusText = string.Format(Localization.Get(key), fileName, AutoReadIntervalSeconds);
+        var status = string.Format(Localization.Get(key), fileName, AutoReadIntervalSeconds);
+        // The head count on a second line, so the top-bar block answers «скільки ще в лісі» from any page.
+        _activity.StatusText = _session.CurrentDay is null ? status : status + Environment.NewLine + CountsText(" · ");
+    }
+
+    // The status-bar head count («Зчиталося: N • На дистанції: M», plus unknown chips when there are any); blank
+    // without a day.
+    private void RefreshCounts() =>
+        StatusInfo = _session.CurrentDay is null ? string.Empty : CountsText("    •    ");
+
+    private string CountsText(string separator)
+    {
+        var parts = new List<string>(3)
+        {
+            string.Format(Localization.Get("FinishRead.Counts.ReadOut"), _counts.ReadOut),
+            string.Format(Localization.Get("FinishRead.Counts.OnCourse"), _counts.OnCourse),
+        };
+        if (_counts.Unknown > 0)
+            parts.Add(string.Format(Localization.Get("FinishRead.Counts.Unknown"), _counts.Unknown));
+        return string.Join(separator, parts);
+    }
+
+    // --- «Заберіть прокатний чіп» toast
+
+    // Pops the toast for a fresh read of a rental chip due back (the holder's last day with it), over whatever page
+    // is open; it blocks nothing and closes by itself. Silent when the operator switched the reminder off. Called
+    // from the poller's thread — the toast service marshals onto the UI thread.
+    private void NotifyCollectChip(FinishReadoutRow? row)
+    {
+        if (row is null || !CollectChipToastEnabled || !row.IsKnown || !row.CollectRentalChip)
+            return;
+
+        var parts = new List<string>(3);
+        if (!string.IsNullOrWhiteSpace(row.ParticipantNumber))
+            parts.Add("№" + row.ParticipantNumber);
+        if (!string.IsNullOrWhiteSpace(row.FullName))
+            parts.Add(row.FullName);
+        if (!string.IsNullOrWhiteSpace(row.GroupName))
+            parts.Add($"({row.GroupName})");
+
+        _toasts.Show(
+            Localization.Get("FinishRead.CollectToast.Title"),
+            string.Format(Localization.Get("FinishRead.CollectToast.Message"), row.ChipNumber, string.Join(" ", parts)));
     }
 }

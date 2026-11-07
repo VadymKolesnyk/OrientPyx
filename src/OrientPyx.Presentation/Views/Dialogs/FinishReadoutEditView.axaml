@@ -54,20 +54,37 @@
                     <!-- Chip number, read-only, shown as a plain line above the editable fields -->
                     <TextBlock Text="{Binding ChipLine}" FontWeight="Medium" />
 
-                    <!-- Reassign chip holder -->
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="{Binding HolderLabel}" Classes="label" />
-                        <controls:SearchableComboBox ItemsSource="{Binding Participants}"
-                                  SelectedItem="{Binding SelectedParticipant, Mode=TwoWay}"
-                                  SearchWatermark="{Binding Localization[Common.Search]}"
-                                  HorizontalAlignment="Stretch">
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate x:DataType="dialogs:ReassignOption">
-                                    <TextBlock Text="{Binding Label}" />
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </controls:SearchableComboBox>
-                    </StackPanel>
+                    <!-- Reassign chip holder + the holder's group on the day (hidden while there is no
+                         holder, e.g. an unknown chip left unassigned, or the new-participant form is open). -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="6">
+                            <TextBlock Text="{Binding HolderLabel}" Classes="label" />
+                            <controls:SearchableComboBox ItemsSource="{Binding Participants}"
+                                      SelectedItem="{Binding SelectedParticipant, Mode=TwoWay}"
+                                      SearchWatermark="{Binding Localization[Common.Search]}"
+                                      HorizontalAlignment="Stretch">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="dialogs:ReassignOption">
+                                        <TextBlock Text="{Binding Label}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </controls:SearchableComboBox>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="6" Width="150" Margin="12,0,0,0"
+                                    IsVisible="{Binding ShowHolderGroup}">
+                            <TextBlock Text="{Binding HolderGroupLabel}" Classes="label" />
+                            <controls:SearchableComboBox ItemsSource="{Binding Groups}"
+                                      SelectedItem="{Binding HolderGroup, Mode=TwoWay}"
+                                      SearchWatermark="{Binding Localization[Common.Search]}"
+                                      HorizontalAlignment="Stretch">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="models:FinishReadoutLookupOption">
+                                        <TextBlock Text="{Binding Name}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </controls:SearchableComboBox>
+                        </StackPanel>
+                    </Grid>
 
                     <!-- "Create a new participant" form: shown only when that entry is picked above.
                          ПІБ + група are required (Save is disabled until both are set); the rest are the
@@ -173,16 +190,20 @@
                         <TextBlock Text="{Binding NewParticipantHint}" Classes="subtitle" TextWrapping="Wrap" />
                     </StackPanel>
 
-                    <!-- Start + finish times on one row -->
+                    <!-- Start + finish times on one row. Committed on focus loss (not per keystroke), so the
+                         lenient parser never rewrites a half-typed "12:3" into 12:03:00 under the caret. -->
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
                         <StackPanel Grid.Column="0" Spacing="6">
                             <TextBlock Text="{Binding StartLabel}" Classes="label" />
-                            <TextBox Text="{Binding StartTimeText, Mode=TwoWay}"
+                            <TextBox Text="{Binding StartTimeText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                      behaviors:NumericInput.Time="True" PlaceholderText="—" />
+                            <!-- The holder's start by the start protocol, for comparison (read-only). -->
+                            <TextBlock Text="{Binding ProtocolStartText}" Classes="subtitle"
+                                       IsVisible="{Binding ShowProtocolStart}" TextWrapping="Wrap" />
                         </StackPanel>
                         <StackPanel Grid.Column="1" Spacing="6">
                             <TextBlock Text="{Binding FinishLabel}" Classes="label" />
-                            <TextBox Text="{Binding FinishTimeText, Mode=TwoWay}"
+                            <TextBox Text="{Binding FinishTimeText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                      behaviors:NumericInput.Time="True" PlaceholderText="—" />
                         </StackPanel>
                     </Grid>
@@ -214,12 +235,15 @@
                         <ItemsControl ItemsSource="{Binding Punches}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="dialogs:PunchEditViewModel">
-                                    <Grid ColumnDefinitions="*,120,Auto" ColumnSpacing="8" Margin="0,3">
-                                        <TextBox Grid.Column="0" Text="{Binding Code, Mode=TwoWay}"
+                                    <Grid ColumnDefinitions="26,*,120,Auto" ColumnSpacing="8" Margin="0,3">
+                                        <TextBlock Grid.Column="0" Text="{Binding Number}"
+                                                   Foreground="{DynamicResource TextSecondary}"
+                                                   HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        <TextBox Grid.Column="1" Text="{Binding Code, Mode=TwoWay}"
                                                  PlaceholderText="{Binding $parent[ItemsControl].((dialogs:FinishReadoutEditViewModel)DataContext).Localization[FinishRead.Splits.Col.Code]}" />
-                                        <TextBox Grid.Column="1" Text="{Binding TimeText, Mode=TwoWay}"
+                                        <TextBox Grid.Column="2" Text="{Binding TimeText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                                  behaviors:NumericInput.Time="True" PlaceholderText="—" />
-                                        <Button Grid.Column="2" Classes="ghost small danger"
+                                        <Button Grid.Column="3" Classes="ghost small danger"
                                                 VerticalAlignment="Center"
                                                 Command="{Binding $parent[ItemsControl].((dialogs:FinishReadoutEditViewModel)DataContext).RemovePunchCommand}"
                                                 CommandParameter="{Binding}"

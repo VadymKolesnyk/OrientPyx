@@ -59,10 +59,12 @@ public sealed class UiStallWatchdog : IDisposable
         var running = _activities.Activities.Select(a => $"{a.Title}={a.State}").ToList();
         var activities = running.Count == 0 ? "none" : string.Join(", ", running);
         var memoryMb = Environment.WorkingSet / (1024 * 1024);
+        // The managed heap next to the working set tells a .NET leak (both grow) from native memory (only the set).
+        var managedMb = GC.GetTotalMemory(forceFullCollection: false) / (1024 * 1024);
 
         _log.Info(
             $"UI thread stalled for {stall.TotalSeconds:0.0} s — role={_mode.Role}, activities: {activities}, " +
-            $"gen2 GCs since last stall={gen2Delta}, working set={memoryMb} MB");
+            $"gen2 GCs since last stall={gen2Delta}, working set={memoryMb} MB, managed heap={managedMb} MB");
     }
 
     public void Dispose() => _timer.Dispose();

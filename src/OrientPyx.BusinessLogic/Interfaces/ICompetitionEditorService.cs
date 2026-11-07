@@ -575,6 +575,12 @@ public interface ICompetitionEditorService
     Task<IReadOnlyList<FinishReadoutRow>> GetFinishReadoutRowsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The current day's finish-read log (the rows of <see cref="GetFinishReadoutRowsAsync"/>) plus the finish
+    /// desk's head count — runners read out, still on course, unknown chips — computed from the same read.
+    /// </summary>
+    Task<FinishReadoutLog> GetFinishReadoutLogAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// True when the current day scores points — its default discipline is point-scoring (rogaine), or
     /// any group on the day overrides to one. Drives the finish-read log's optional «Бали» column.
     /// </summary>
@@ -595,8 +601,10 @@ public interface ICompetitionEditorService
     /// wrapping the same <see cref="SplitsView"/> the panel shows. Used by the finish-read print action.
     /// Returns null when no day is selected or the readout is unknown; an unrecognised chip still prints
     /// its raw passage (no holder header).
+    /// <paramref name="reprint"/> false (the slip printed as the chip reads out) places the runner among the
+    /// read-outs logged up to this one; true (a slip printed again later) among every read-out logged so far.
     /// </summary>
-    Task<SplitPrintDocument?> GetSplitPrintDocumentAsync(Guid readoutId, CancellationToken cancellationToken = default);
+    Task<SplitPrintDocument?> GetSplitPrintDocumentAsync(Guid readoutId, bool reprint = false, CancellationToken cancellationToken = default);
 
     /// <summary> Imports parsed read-out records into the current day's finish log. Append-only: each record
     /// that is not already logged (by content — chip + start/finish + punches) is added; identical records

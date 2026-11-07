@@ -60,6 +60,8 @@ public sealed class SearchableComboBox : ComboBox
     private IList? _source;
     private TextBox? _searchBox;
     private Border? _searchHost;
+    // The dropdown's content (search row + list); kept at its opening size while open — see PopupSizeLock.
+    private DockPanel? _dropDown;
     private INotifyCollectionChanged? _sourceIncc;
     private bool _suppressItemsChanged;
 
@@ -198,6 +200,7 @@ public sealed class SearchableComboBox : ComboBox
         dock.Children.Add(_searchHost);
         dock.Children.Add(surface);
         popup.Child = dock;
+        _dropDown = dock;
 
         // Handle navigation keys in TUNNEL on the popup so we beat both the TextBox's own handling and
         // the ComboBox's OnKeyDown (which would otherwise move/commit the real selection).
@@ -304,6 +307,9 @@ public sealed class SearchableComboBox : ComboBox
 
     private void OnDropDownOpenedHandler(object? sender, EventArgs e)
     {
+        // Typing shortens the list; the dropdown keeps its opening size (macOS shows a resized popup squashed).
+        if (_dropDown is not null)
+            PopupSizeLock.Pin(_dropDown);
         UpdateSearchVisibility();
         // Start with no highlight; the first ↓ lands on the top match.
         SetHighlight(-1);
@@ -313,6 +319,8 @@ public sealed class SearchableComboBox : ComboBox
 
     private void OnDropDownClosedHandler(object? sender, EventArgs e)
     {
+        if (_dropDown is not null)
+            PopupSizeLock.Release(_dropDown);
         SetHighlight(-1);
         // Clear the filter so the next open starts fresh and the full list is intact.
         if (_searchBox is not null && !string.IsNullOrEmpty(_searchBox.Text))

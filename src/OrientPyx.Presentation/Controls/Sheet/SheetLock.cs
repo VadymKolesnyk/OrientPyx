@@ -14,10 +14,11 @@ namespace OrientPyx.Presentation.Controls;
 /// ordinary controls built straight into a column — a boolean column's CheckBox, the trailing delete
 /// button — and those would stay live on a closed day.
 ///
-/// Marked controls are tagged when they are built (the builder has no table yet) and bound when the
-/// table realises the cell, in <see cref="ApplyTo"/>. Binding at realisation rather than walking up on
-/// attach matters because cells are virtualised and recycled: the walk can run before the cell reaches
-/// the tree, and a recycled control would keep a stale subscription.
+/// Marked controls are tagged when they are built (the builder has no table yet) and set when the table
+/// realises the cell (<see cref="ApplyTo"/>), when a row container is prepared, and again on every change of
+/// the table's lock (<see cref="SheetTable"/> walks its realised cells). Deliberately <b>no subscription</b> to
+/// the table: the table outlives every row it scrolls past, so a binding to it from a cell control kept each
+/// discarded row alive — about 1 MB a row, several GB over an hour of scrolling the roster.
 /// </summary>
 internal static class SheetLock
 {
@@ -39,18 +40,16 @@ internal static class SheetLock
     /// <summary>Hides the control while its table is locked (row actions).</summary>
     public static void HideWhenLocked(Control control) => control.SetValue(LockModeProperty, Mode.Hide);
 
-    /// <summary>
-    /// Binds every marked control inside a freshly built cell to the table's lock. Called by the table
-    /// as it realises each cell, so the binding is re-established on every recycle.
-    /// </summary>
-    public static void ApplyTo(Control cellContent, SheetTable table)
+    /// <summary>Puts every marked control inside a freshly built cell in step with the table's lock.</summary>
+    public static void ApplyTo(Control cellContent, SheetTable table) => Apply(cellContent, table.IsLocked);
+
+    /// <summary>Greys out / hides the marked controls under <paramref name="root"/> for the given lock state.</summary>
+    public static void Apply(Control root, bool locked)
     {
-        foreach (var control in Marked(cellContent))
+        foreach (var control in Marked(root))
         {
             var mode = control.GetValue(LockModeProperty)!.Value;
-            control.Bind(
-                mode == Mode.Hide ? Visual.IsVisibleProperty : InputElement.IsEnabledProperty,
-                table.GetObservable(SheetTable.IsLockedProperty, locked => !locked));
+            control.SetValue(mode == Mode.Hide ? Visual.IsVisibleProperty : InputElement.IsEnabledProperty, !locked);
         }
     }
 

@@ -85,6 +85,24 @@ public sealed class SheetFilter
     private bool MatchesValues(string value)
         => AllowedValues is null || AllowedValues.Contains(value);
 
+    /// <summary>
+    /// Sets <see cref="AllowedValues"/> from the values picker, which lists only the values of the rows the
+    /// OTHER filters leave: the <paramref name="checkedValues"/> of the <paramref name="listedValues"/> are
+    /// kept, and a value of <paramref name="allValues"/> the list didn't show keeps the state it had (like
+    /// Google Sheets' hidden values) — so clearing that other filter later brings its rows back instead of
+    /// leaving them hidden by this one. Every value kept ⇒ no filter (null).
+    /// </summary>
+    public void ApplyPickedValues(
+        IEnumerable<string> listedValues, IEnumerable<string> checkedValues, IReadOnlySet<string> allValues)
+    {
+        var listed = new HashSet<string>(listedValues);
+        var keep = new HashSet<string>(checkedValues);
+        foreach (var value in allValues)
+            if (!listed.Contains(value) && (AllowedValues is null || AllowedValues.Contains(value)))
+                keep.Add(value);
+        AllowedValues = keep.IsSupersetOf(allValues) ? null : keep;
+    }
+
     private bool MatchesCondition(string value)
     {
         // Text conditions are layout-tolerant: the typed term is expanded (wrong keyboard layout, s/i→ы)

@@ -10,11 +10,16 @@ namespace OrientPyx.BusinessLogic.Models;
 /// <param name="Number">The participant's bib number (may be blank).</param>
 /// <param name="FullName">The participant's full name.</param>
 /// <param name="GroupName">The participant's group on the day (may be blank).</param>
+/// <param name="GroupId">The participant's group id on the day, or null when no group is set.</param>
+/// <param name="StartTime">The participant's start by the start protocol (the drawn time of day), or null when
+/// none is assigned — shown in the modal next to the read-out's own start.</param>
 public sealed record FinishReadoutParticipantOption(
     Guid ParticipantId,
     string Number,
     string FullName,
-    string GroupName);
+    string GroupName,
+    Guid? GroupId = null,
+    TimeSpan? StartTime = null);
 
 /// <summary>
 /// One pickable entry of a competition-level lookup (group / region / club / ДЮСШ) offered by the
@@ -133,6 +138,12 @@ public sealed class FinishReadoutEdit
     public IReadOnlyList<ChipPunch> Punches { get; init; } = [];
     public FinishStatus? ManualStatus { get; init; }
     public Guid? ReassignToParticipantId { get; init; }
+
+    /// <summary>
+    /// The day group to move the chip's final holder into (after any reassignment), or null to leave their
+    /// group unchanged. Ignored when <see cref="NewParticipant"/> is set — the form carries its own group.
+    /// </summary>
+    public Guid? GroupId { get; init; }
 
     /// <summary>
     /// Set when the operator filled in the "create a new participant" form instead of picking an existing

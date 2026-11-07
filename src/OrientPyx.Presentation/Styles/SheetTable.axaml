@@ -244,15 +244,32 @@
             </ControlTemplate>
         </Setter>
     </Style>
-    <!-- Selected row: wash every cell (including tinted ones) so the selection reads across all columns. -->
+    <!-- Selected row: wash every cell (including tinted ones) so the selection reads across all columns.
+         The wash is TRANSLUCENT, so a tinted cell (checked-in green, chip amber, problem red…) blends with it
+         instead of disappearing under the selection. -->
     <Style Selector="controls|SheetTable controls|SheetCell:selected /template/ Border#PART_SelectionOverlay">
-        <Setter Property="Background" Value="{DynamicResource AccentSurface}" />
+        <Setter Property="Background" Value="{DynamicResource SheetSelectionWash}" />
     </Style>
-    <!-- Cells inside an Excel-style multi-cell selection: a translucent accent wash painted on the
+    <!-- Cells inside an Excel-style multi-cell selection: the same translucent wash painted on the
          overlay (above any custom cell tint), so range selection reads under tinted columns too. The
          anchor cell keeps the :focus outline below (border vs. overlay, so they stack rather than conflict). -->
     <Style Selector="controls|SheetTable controls|SheetCell:range /template/ Border#PART_SelectionOverlay">
-        <Setter Property="Background" Value="{DynamicResource AccentSurface}" />
+        <Setter Property="Background" Value="{DynamicResource SheetSelectionWash}" />
+    </Style>
+    <!-- Fluent paints its own selected-row fill (a strong accent) under the cells. The opaque cell wash used
+         to hide it; with the translucent wash it would show through every untinted cell, so drop it — the
+         cells paint the selection themselves. -->
+    <Style Selector="controls|SheetTable ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter, controls|SheetTable ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter, controls|SheetTable ListBoxItem:selected:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- Selected-row frame (a Border added over each row's cells in SheetTable.BuildRow): keeps the selection
+         readable even on a row whose every cell is tinted (e.g. the finish log's red unknown-chip row). -->
+    <Style Selector="controls|SheetTable Border.sheetRowOutline">
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="controls|SheetTable ListBoxItem:selected Border.sheetRowOutline">
+        <Setter Property="BorderThickness" Value="1" />
     </Style>
     <!-- The focused cell (keyboard-selected) OR a cell whose editor is live (:editing) keeps the accent
          outline, so entering edit mode — which moves focus onto the editor inside — doesn't drop it. -->

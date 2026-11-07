@@ -110,6 +110,13 @@ public sealed class SheetTable : TemplatedControl
         AvaloniaProperty.Register<SheetTable, bool>(nameof(IsLocked));
 
     /// <summary>
+    /// A live log's behaviour: when the body is scrolled to the very bottom and rows are added, it stays at the
+    /// bottom so the new rows show at once (the finish read-out). Scrolled anywhere else, nothing moves.
+    /// </summary>
+    public static readonly StyledProperty<bool> FollowNewRowsProperty =
+        AvaloniaProperty.Register<SheetTable, bool>(nameof(FollowNewRows));
+
+    /// <summary>
     /// True while a cell of this table is being edited: from <c>BeginEdit</c> on a lazy cell until its editor retires
     /// (commit, cancel, focus moved away), and while a bare combo's dropdown the table opened is up. Set by the
     /// table itself; pages mirror it into <c>PageViewModelBase.IsEditingCell</c> (see <c>Views/Pages/SheetEditing</c>)
@@ -296,6 +303,12 @@ public sealed class SheetTable : TemplatedControl
         set => SetValue(IsLockedProperty, value);
     }
 
+    public bool FollowNewRows
+    {
+        get => GetValue(FollowNewRowsProperty);
+        set => SetValue(FollowNewRowsProperty, value);
+    }
+
     /// <summary>See <see cref="IsEditingProperty"/>. Only the table sets it.</summary>
     public bool IsEditing
     {
@@ -452,6 +465,17 @@ public sealed class SheetTable : TemplatedControl
             return;
         }
 
+        // The frozen header and the status-bar sums row are slaved to the body through their own
+        // (scrollbar-hidden) ScrollViewers, which would still take a Shift+wheel / touchpad swipe and scroll
+        // only themselves — the header drifting away from its columns. The body drives the offset: hand the
+        // wheel to it, and the slaves follow through OffsetSync.
+        if (IsInSlaveScroller(source))
+        {
+            ScrollBodyByWheel(e);
+            e.Handled = true;
+            return;
+        }
+
         var combo = source as ComboBox ?? source.FindAncestorOfType<ComboBox>();
         if (combo is null || combo.IsDropDownOpen)
             return;
@@ -460,17 +484,23 @@ public sealed class SheetTable : TemplatedControl
         e.Handled = true;
     }
 
-    // Applies one wheel notch to the body offset (Shift = horizontal), the way the ScrollViewer would.
+    private bool IsInSlaveScroller(Visual source) =>
+        (_headerScroll is not null && (source == _headerScroll || _headerScroll.IsVisualAncestorOf(source))) ||
+        (_statusScroll is not null && (source == _statusScroll || _statusScroll.IsVisualAncestorOf(source)));
+
+    // Applies one wheel notch to the body offset, the way the ScrollViewer would: a vertical wheel
+    // scrolls rows, Shift turns it horizontal, and a horizontal delta (touchpad swipe, tilt wheel)
+    // scrolls columns.
     private void ScrollBodyByWheel(PointerWheelEventArgs e)
     {
         if (_bodyScroll is null)
             return;
         const double step = 50;
-        var delta = e.Delta.Y != 0 ? e.Delta.Y : e.Delta.X;
+        var delta = e.Delta;
+        if ((e.KeyModifiers & KeyModifiers.Shift) != 0 && delta.X == 0)
+            delta = new Vector(delta.Y, 0);
         var offset = _bodyScroll.Offset;
-        _bodyScroll.Offset = (e.KeyModifiers & KeyModifiers.Shift) != 0
-            ? offset.WithX(offset.X - delta * step)
-            : offset.WithY(offset.Y - delta * step);
+        _bodyScroll.Offset = new Vector(offset.X - delta.X * step, offset.Y - delta.Y * step);
     }
 
     // A focused cell that scrolls out of the viewport is recycled by the virtualizing body: its container
@@ -521,6 +551,13 @@ public sealed class SheetTable : TemplatedControl
         else if (change.Property == StatusInfoProperty)
         {
             UpdateStatusBar();
+        }
+        else if (change.Property == IsLockedProperty && _body is not null)
+        {
+            // Pushed, not bound: a binding to the table would keep every row it ever built alive (see SheetLock).
+            foreach (var d in _body.GetVisualDescendants())
+                if (d is SheetCell { Content: Control content })
+                    SheetLock.Apply(content, IsLocked);
         }
     }
 
@@ -581,7 +618,14 @@ public sealed class SheetTable : TemplatedControl
             _body.SelectionChanged += (_, _) => SelectedItem = _body.SelectedItem;
             // A row container realized/recycled during scroll may carry a stale range highlight; refresh
             // its cells against the current selection rectangle as soon as it's prepared.
-            _body.ContainerPrepared += (_, args) => UpdateContainerRange(args.Container);
+            _body.ContainerPrepared += (_, args) =>
+            {
+                UpdateContainerRange(args.Container);
+                // A container made while the lock was different picks up the current state here.
+                foreach (var d in args.Container.GetVisualDescendants())
+                    if (d is SheetCell { Content: Control content })
+                        SheetLock.Apply(content, IsLocked);
+            };
             // The body's own ScrollViewer is created with its template; grab it once realized and
             // slave the header's horizontal offset to it so the two scroll left/right together.
             _body.TemplateApplied += (_, args) =>
@@ -915,12 +959,16 @@ public sealed class SheetTable : TemplatedControl
     /// </summary>
     public IReadOnlyList<object?> VisibleItems => _sortedItems;
 
-    /// <summary>Naturally sorted, for the values picker.</summary>
-    public IReadOnlyList<string> DistinctValues(SheetColumn column)
+    /// <summary>
+    /// Naturally sorted, for the values picker. <paramref name="passingOtherFilters"/> keeps only the rows
+    /// that pass every OTHER column's filter and the search — the column's own filter is ignored, so the
+    /// values it currently hides stay listed (unchecked) and can be brought back.
+    /// </summary>
+    public IReadOnlyList<string> DistinctValues(SheetColumn column, bool passingOtherFilters = false)
     {
         var set = new HashSet<string>();
         foreach (var item in ItemsSource ?? Array.Empty<object?>())
-            if (item is not null)
+            if (item is not null && (!passingOtherFilters || PassesFilters(item, exceptColumnKey: column.Key)))
                 set.Add(CellText(column, item));
         var list = new List<string>(set);
         list.Sort(NaturalCompare);
@@ -971,13 +1019,16 @@ public sealed class SheetTable : TemplatedControl
         };
 
     // True when a row passes every active filter (an absent/now-hidden column's filter is ignored) AND
-    // the global search term. The two are independent gates; both must pass.
-    private bool PassesFilters(object? row)
+    // the global search term. The two are independent gates; both must pass. `exceptColumnKey` skips that
+    // one column's filter (the values picker lists what the other filters leave).
+    private bool PassesFilters(object? row, string? exceptColumnKey = null)
     {
         if (row is null)
             return true;
         foreach (var filter in _filters.Values)
         {
+            if (filter.ColumnKey == exceptColumnKey)
+                continue;
             var col = FindColumnByKey(filter.ColumnKey);
             if (col is null)
                 continue;
@@ -1001,7 +1052,7 @@ public sealed class SheetTable : TemplatedControl
         foreach (var band in _visibleBands)
             foreach (var col in band.Columns)
             {
-                if (!col.Filterable)
+                if (!col.Filterable || !col.Searchable)
                     continue;
                 if (TextSearch.ContainsAny(CellText(col, row), _searchVariants))
                     return true;
@@ -1018,12 +1069,15 @@ public sealed class SheetTable : TemplatedControl
         popup.Show(anchor);
     }
 
-    // Header-menu entry point: anchor the popup at the header cell that was right-clicked.
+    // Header entry point (a right-click): anchor the popup at the header cell that was right-clicked.
     private void ShowColumnFilter(SheetColumn column)
     {
         var anchor = _header is not null && _header.HeaderCellFor(column) is { } cell ? cell : (Control)this;
         ShowColumnFilter(column, anchor);
     }
+
+    /// <summary>The filter editor's «Інші дії»: the column menu (remove filter, bulk edit, hide) at its header.</summary>
+    internal void ShowColumnMenu(SheetColumn column) => _header?.ShowColumnMenu(column);
 
     /// <summary>
     /// The leaf columns the user can show/hide, in display order, with a readable label each. The
@@ -1310,7 +1364,44 @@ public sealed class SheetTable : TemplatedControl
     }
 
     private void OnSourceCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-        => ApplySortedView();
+    {
+        // Read before the view takes the change: layout hasn't run yet, so the scroller still measures the old rows.
+        var follow = FollowNewRows && e.Action == NotifyCollectionChangedAction.Add && IsScrolledToBottom();
+        ApplySortedView();
+        if (follow)
+            ScheduleScrollToBottom();
+    }
+
+    // At the bottom = no more rows below the viewport (also true while every row fits). An empty table is not
+    // following anything: a day switch / first load refills it from empty and must open at the top.
+    private bool IsScrolledToBottom()
+    {
+        if (_bodyScroll is null || _sortedItems.Count == 0)
+            return false;
+        var max = _bodyScroll.Extent.Height - _bodyScroll.Viewport.Height;
+        return _bodyScroll.Offset.Y >= max - 1;
+    }
+
+    private bool _scrollToBottomPending;
+
+    // Once the added rows are laid out (Loaded runs after the layout pass), scroll to the new bottom. One pass per
+    // batch: a read-out sync adding several rows posts once. The horizontal offset is kept — ScrollIntoView would
+    // reset it on a table wider than the viewport.
+    private void ScheduleScrollToBottom()
+    {
+        if (_scrollToBottomPending)
+            return;
+        _scrollToBottomPending = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _scrollToBottomPending = false;
+            if (_bodyScroll is null)
+                return;
+            var maxY = Math.Max(0, _bodyScroll.Extent.Height - _bodyScroll.Viewport.Height);
+            if (_bodyScroll.Offset.Y < maxY)
+                _bodyScroll.Offset = new Vector(_bodyScroll.Offset.X, maxY);
+        }, DispatcherPriority.Loaded);
+    }
 
     // ── Sorting
     // One level of a multi-column sort: the column and its direction. The sort is an ordered list of
@@ -2086,6 +2177,16 @@ public sealed class SheetTable : TemplatedControl
                 grid.Children.Add(cell);
                 col++;
             }
+        }
+        if (col > 0)
+        {
+            // The selected-row frame, drawn over the cells (see Border.sheetRowOutline in
+            // Styles/SheetTable.axaml): the cell wash is translucent so tints show through, and the frame
+            // keeps the selection visible on a fully tinted row. Not hit-testable — clicks reach the cells.
+            var outline = new Border { IsHitTestVisible = false, ZIndex = 1 };
+            outline.Classes.Add("sheetRowOutline");
+            Grid.SetColumnSpan(outline, col);
+            grid.Children.Add(outline);
         }
         return grid;
     }

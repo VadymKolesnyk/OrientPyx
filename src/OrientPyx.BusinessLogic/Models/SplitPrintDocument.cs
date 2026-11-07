@@ -92,15 +92,17 @@ public sealed class SplitPrintDocument
     public string AvgPaceText { get; init; } = string.Empty;
 
     /// <summary>
-    /// The runner's place in their group <b>at the moment of the finish</b>: the group ranked as if only the
-    /// read-outs finished by then existed (so a slip re-printed later still shows the standing the runner saw at
-    /// the finish). Null for a non-OK result, an unknown chip, «поза конкурсом» or a group that awards no places.
-    /// Printed on its own header line ("МІСЦЕ НА ФІНІШІ: 3 з 7").
+    /// The runner's current place in their group. The first slip ranks the group as if only the read-outs logged
+    /// up to this one existed (the standing at the read-out); a re-printed slip counts every read-out logged so
+    /// far, later ones included. Null for a non-OK result, an unknown chip, «поза конкурсом» or a group that
+    /// awards no places. Printed on its own header line ("МІСЦЕ НА ФІНІШІ: 3 з 7").
     /// </summary>
     public int? Place { get; init; }
 
-    /// <summary>How many of the group had a place at that moment (this runner included) — the "з N" of the place line.</summary>
-    public int? PlacedCount { get; init; }
+    /// <summary>How many of the group had read out in that same set (this runner included) — every read-out
+    /// competitor, withdrawn ones (MP, DNF, DSQ…) and «поза конкурсом» too; a team counts once. The "з N" of the
+    /// place line.</summary>
+    public int? ReadOutCount { get; init; }
 
     public DateTimeOffset PrintedAt { get; init; } = DateTimeOffset.Now;
 

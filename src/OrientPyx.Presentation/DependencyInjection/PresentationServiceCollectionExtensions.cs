@@ -36,6 +36,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<ResultsDebugSnapshot>();
         services.AddSingleton<IFileReadoutPoller, FileReadoutPoller>();
         services.AddSingleton<IBackgroundActivityService, BackgroundActivityService>();
+        services.AddSingleton<IToastService, ToastService>();
         services.AddSingleton<ITableLayoutStore, TableLayoutStore>();
         services.AddSingleton<IDayLockService, DayLockService>();
         services.AddSingleton<IUiPreferencesService, UiPreferencesService>();

@@ -260,6 +260,14 @@ process that opens it), the others are **stations** that edit the same data live
   must connect first), the role indicator in the top bar, the `NetworkActivity` in the activities block and the
   «немає зв'язку» banner (`NetworkNoticeViewModel`) that disables editing while reconnecting. «Очки» / «Розряди» are
   read-only on a station.
+- **Flaky networks** (a mobile router silently drops long-lived connections; field test 2026-11-07): the station's
+  offline state comes only from `Station/ConnectionHealth` — offline = a failure **and** no answer of any kind for 15 s;
+  any answer clears it. A silent `/changes` (3 s heartbeat, ~10 s silence) is reopened quietly and resumed from
+  `Last-Event-ID` + stream epoch — never a banner by itself. `RpcChannel` retries within a window (`RpcRetryPolicy`:
+  reads 20 s, writes 60 s with one idempotency key; short first attempt; idle pooled connections closed after 4 s),
+  sends writes one at a time in call order, shows «Зберігається…» (`INetworkClient.DelayedWrites`) and a toast when a
+  write is abandoned (`WriteFailed`). The host runs keyed calls with `CancellationToken.None`. Details:
+  `docs/network-protocol.md`.
 - **Last session**: `LastSessionRow.Mode/HostId` — a station pointer is restored only after reconnecting to the same
   host, never from the local folder. Builds: run `scripts/locked-build.ps1` when several terminals/agents build the
   same checkout.
@@ -355,6 +363,15 @@ roster uses it for **«Мандатку пройдено»** (`Participant.Check
 green (`DayColumnBuilder.CheckedInBrush`), the toggle marks all selected rows when any is unmarked, else clears
 them, written by `SetParticipantsCheckedInAsync` (its own writer — `UpdateParticipantAsync` leaves the flag
 alone, like `PaysRaisedFee`); the roster's `StatusInfo` adds «Мандатка: пройшли X з Y». No column, no filter.
+
+**Cell controls must not be held by anything that outlives the row.** The body `ListBox` clears a container's content
+when it recycles it, so every scroll (and every arrow key that scrolls) builds the rows it reaches anew; a row that
+a long-lived object still references (the table, the page, a shared registry or options list) is never collected —
+≈1 MB a row, ~6 GB on a host after an hour of «Мандатка» (2026-11-07). So no `table.GetObservable(...)` /
+`registry.Changed +=` from a cell: push table-wide state onto the realised cells (`SheetLock.Apply`, called on build,
+on `ContainerPrepared` and on `IsLocked` change), or subscribe only while the control is in the visual tree
+(`ChipHighlight.Subscription`). Plain `Binding`s (DataContext or `Source =` an INPC/Avalonia object) are weak and fine.
+`tests/Ui/SheetSelectionMemoryTests` guards it (arrow keys + scrolling, roster and day grid).
 
 Column widths are content-sized then user-resizable; explicit fixed widths are set via the builder's
 `width:` argument. There is no star/`*` sizing — the table left-aligns content-width columns and

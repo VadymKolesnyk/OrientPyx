@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 using OrientPyx.Presentation.ViewModels.Pages;
 
 namespace OrientPyx.Presentation.Behaviors;
@@ -59,9 +60,7 @@ public static class ChipHighlight
             return;
 
         block.PropertyChanged += OnLabelTextChanged;
-        void OnRegistryChanged(object? _, EventArgs __) => ApplyLabel(block, registry);
-        registry.Changed += OnRegistryChanged;
-        block.SetValue(LabelSubscriptionProperty, new Subscription(() => registry.Changed -= OnRegistryChanged));
+        block.SetValue(LabelSubscriptionProperty, new Subscription(block, registry, () => ApplyLabel(block, registry)));
 
         ApplyLabel(block, registry);
     }
@@ -105,9 +104,7 @@ public static class ChipHighlight
             return;
 
         box.PropertyChanged += OnBoxTextChanged;
-        void OnRegistryChanged(object? _, EventArgs __) => Apply(box, registry);
-        registry.Changed += OnRegistryChanged;
-        box.SetValue(SubscriptionProperty, new Subscription(() => registry.Changed -= OnRegistryChanged));
+        box.SetValue(SubscriptionProperty, new Subscription(box, registry, () => Apply(box, registry)));
 
         Apply(box, registry);
     }
@@ -133,13 +130,66 @@ public static class ChipHighlight
         }
     }
 
-    // Stores the registry-unsubscribe action on the box so it can be released when the registry
-    // changes or the box is re-attached.
+    // Stores the registry subscription on the box so it can be released when the registry changes or the box is
+    // re-attached.
     private static readonly AttachedProperty<Subscription?> SubscriptionProperty =
         AvaloniaProperty.RegisterAttached<TextBox, Subscription?>("Subscription", typeof(ChipHighlight));
 
-    private sealed class Subscription(Action dispose) : IDisposable
+    /// <summary>
+    /// Listens to the registry only while the control is in the visual tree. The registry lives as long as the
+    /// page; a cell's controls come and go as the table scrolls, and a subscription kept past that held every
+    /// discarded row alive (through the control's parents). Re-applies on re-attach — the registry may have
+    /// changed while the control was out of the tree.
+    /// </summary>
+    private sealed class Subscription : IDisposable
     {
-        public void Dispose() => dispose();
+        private readonly Control _control;
+        private readonly RentalChipRegistry _registry;
+        private readonly Action _apply;
+        private bool _listening;
+
+        public Subscription(Control control, RentalChipRegistry registry, Action apply)
+        {
+            _control = control;
+            _registry = registry;
+            _apply = apply;
+            control.AttachedToVisualTree += OnAttached;
+            control.DetachedFromVisualTree += OnDetached;
+            if (control.IsAttachedToVisualTree())
+                Listen();
+        }
+
+        private void OnAttached(object? sender, VisualTreeAttachmentEventArgs e)
+        {
+            Listen();
+            _apply();
+        }
+
+        private void OnDetached(object? sender, VisualTreeAttachmentEventArgs e) => StopListening();
+
+        private void OnRegistryChanged(object? sender, EventArgs e) => _apply();
+
+        private void Listen()
+        {
+            if (_listening)
+                return;
+            _registry.Changed += OnRegistryChanged;
+            _listening = true;
+        }
+
+        private void StopListening()
+        {
+            if (!_listening)
+                return;
+            _registry.Changed -= OnRegistryChanged;
+            _listening = false;
+        }
+
+        public void Dispose()
+        {
+            StopListening();
+            _control.AttachedToVisualTree -= OnAttached;
+            _control.DetachedFromVisualTree -= OnDetached;
+        }
     }
 }

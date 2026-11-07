@@ -38,6 +38,7 @@ public sealed class NetworkStation : INetworkClient, IDisposable
     private SnapshotCache? _cache;
     private StationState _state = StationState.Disconnected;
     private string? _currentEvent;
+    private DateTimeOffset _offlineSince;
 
     public NetworkStation(
         WorkspaceMode mode,
@@ -80,6 +81,10 @@ public sealed class NetworkStation : INetworkClient, IDisposable
     public string? LastErrorDetail { get; private set; }
 
     public event EventHandler? Changed;
+
+    public int DelayedWrites => _channel?.Health.DelayedWrites ?? 0;
+
+    public event EventHandler? WriteFailed;
 
     /// <summary>The live channel while connected (the tests call it directly); null otherwise.</summary>
     public RpcChannel? Channel => _channel;
@@ -211,8 +216,10 @@ public sealed class NetworkStation : INetworkClient, IDisposable
                 await _appStore.SaveNetworkSettingsAsync(settings, cancellationToken);
 
                 channel.Token = pair.Token;
-                channel.Unreachable += OnUnreachable;
+                channel.Log = _log.Info;
                 channel.Unauthorized += OnUnauthorized;
+                channel.WriteAbandoned += OnWriteAbandoned;
+                channel.Health.Changed += OnHealthChanged;
                 _channel = channel;
                 _cache = new SnapshotCache(_bus);
                 _remote.Set(
@@ -230,9 +237,9 @@ public sealed class NetworkStation : INetworkClient, IDisposable
                 _mode.SetStation(Host);
 
                 _listener = new RemoteChangeListener(channel, _bus, _log, pair.HostName) { CurrentEvent = _currentEvent };
-                _listener.ConnectionChanged += OnStreamChanged;
                 _listener.Unauthorized += OnUnauthorized;
                 _listener.Start();
+                channel.Health.Start();
 
                 if (_log is FileActivityLog fileLog)
                 {
@@ -372,7 +379,6 @@ public sealed class NetworkStation : INetworkClient, IDisposable
         _forwarder = null;
         if (_listener is { } listener)
         {
-            listener.ConnectionChanged -= OnStreamChanged;
             listener.Unauthorized -= OnUnauthorized;
             listener.Dispose();
             _listener = null;
@@ -382,10 +388,12 @@ public sealed class NetworkStation : INetworkClient, IDisposable
         _cache = null;
         if (_channel is { } channel)
         {
-            channel.Unreachable -= OnUnreachable;
+            channel.Health.Changed -= OnHealthChanged;
+            channel.WriteAbandoned -= OnWriteAbandoned;
             channel.Unauthorized -= OnUnauthorized;
-            channel.Dispose();
+            channel.Log = null;
             _channel = null;
+            channel.Dispose();
         }
         if (_mode.Role == WorkspaceRole.Station)
             _mode.SetLocal();
@@ -407,29 +415,38 @@ public sealed class NetworkStation : INetworkClient, IDisposable
         }
     }
 
-    private void OnUnreachable(Exception ex)
+    // The health decides: offline only after ConnectionHealth.OfflineGrace without any answer from the host (a dropped
+    // stream or a blip of a few seconds never blocks editing); back the moment anything answers. Coming back refreshes
+    // every page once — they were disabled and may show stale data. A change of the delayed-writes count only re-raises.
+    private void OnHealthChanged()
     {
-        if (State == StationState.Connected)
+        if (_channel is not { } channel)
+            return;
+        var health = channel.Health;
+        if (health.IsOffline && State == StationState.Connected)
         {
+            _offlineSince = health.LastSuccess;
             LastErrorKey = "Unreachable";
-            LastErrorDetail = ex.Message;
+            LastErrorDetail = health.LastFailure;
+            _log.Info($"Network: no answer from the host for {ConnectionHealth.OfflineGrace.TotalSeconds:0} s — editing paused (last failure: {health.LastFailure})");
             State = StationState.Reconnecting;
+        }
+        else if (!health.IsOffline && State == StationState.Reconnecting)
+        {
+            var away = DateTimeOffset.UtcNow - _offlineSince;
+            _log.Info($"Network: connection to the host restored after {away.TotalSeconds:0} s");
+            LastErrorKey = null;
+            LastErrorDetail = null;
+            State = StationState.Connected;
+            _bus.Replay(new DataChange(DataChangeBus.AnyEvent, DataArea.Any, 0, Host?.HostName ?? string.Empty));
+        }
+        else
+        {
+            Changed?.Invoke(this, EventArgs.Empty);
         }
     }
 
-    private void OnStreamChanged(bool up)
-    {
-        if (up && State == StationState.Reconnecting)
-        {
-            _log.Info("Network: connection to the host restored");
-            State = StationState.Connected;
-        }
-        else if (!up && State == StationState.Connected)
-        {
-            LastErrorKey = "Unreachable";
-            State = StationState.Reconnecting;
-        }
-    }
+    private void OnWriteAbandoned(string call, Exception ex) => WriteFailed?.Invoke(this, EventArgs.Empty);
 
     private void OnUnauthorized()
     {

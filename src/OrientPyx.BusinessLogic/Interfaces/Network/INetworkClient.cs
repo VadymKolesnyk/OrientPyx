@@ -21,8 +21,17 @@ public interface INetworkClient
     /// <summary>Free-text detail of the last failure (an exception message), or null.</summary>
     string? LastErrorDetail { get; }
 
-    /// <summary>Raised on every <see cref="State"/> change and when the host list changes.</summary>
+    /// <summary>Raised on every <see cref="State"/> change, when <see cref="DelayedWrites"/> moves and when the host list
+    /// changes.</summary>
     event EventHandler? Changed;
+
+    /// <summary>Writes that have been waiting for the host for more than a moment — they keep retrying through a short
+    /// outage (the page stays editable); the UI says «зберігається…» while this is above zero.</summary>
+    int DelayedWrites { get; }
+
+    /// <summary>Raised when a write could not reach the host within its retry window (about a minute) and was not
+    /// saved — the operator must repeat it once the connection is back.</summary>
+    event EventHandler? WriteFailed;
 
     /// <summary>
     /// Pairs with the host at <paramref name="endpoint"/> (<c>ip:port</c>). With a PIN a new token is requested; without

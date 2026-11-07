@@ -131,10 +131,24 @@
              breaks a DataGrid (it then renders all rows and loses its own horizontal/vertical
              scrollbars). Instead the padded Border fills the area with a bounded height, so grid
              pages let the DataGrid scroll itself. Tall static pages add their own ScrollViewer. -->
-        <Border Padding="28">
-            <ContentControl Content="{Binding SelectedPage}"
-                            IsEnabled="{Binding NetworkNotices.IsOnline}" />
-        </Border>
+        <Panel>
+            <Border Padding="28">
+                <ContentControl Content="{Binding SelectedPage}"
+                                IsEnabled="{Binding NetworkNotices.IsOnline}" />
+            </Border>
+            <!-- Network: writes waiting for the host through a short outage. A pill over the top padding, so it neither
+                 shifts the page nor covers it, and editing goes on — the writes retry by themselves. -->
+            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,3,28,0"
+                    Background="#FEF3C7" BorderBrush="#F59E0B" BorderThickness="1" CornerRadius="11"
+                    Padding="10,2"
+                    IsVisible="{Binding NetworkNotices.IsSaving}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <controls:Icon Kind="RefreshCw" Size="13" Foreground="#92400E" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding NetworkNotices.SavingText}" Foreground="#92400E" FontSize="12"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
+        </Panel>
 
     </DockPanel>
 

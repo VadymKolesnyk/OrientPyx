@@ -300,6 +300,9 @@
         <SolidColorBrush x:Key="AccentBrush" Color="#7C3AED" />
         <SolidColorBrush x:Key="AccentBrushHover" Color="#6D28D9" />
         <SolidColorBrush x:Key="AccentSurface" Color="#EDE9FE" />
+        <!-- Translucent selection wash for SheetTable rows/ranges: over white it reads as AccentSurface,
+             over a tinted cell (checked-in green, chip amber, problem red…) the tint still shows through. -->
+        <SolidColorBrush x:Key="SheetSelectionWash" Color="#33A78BFA" />
 
         <SolidColorBrush x:Key="SurfacePage" Color="#F8FAFC" />
         <SolidColorBrush x:Key="SurfaceCard" Color="#FFFFFF" />

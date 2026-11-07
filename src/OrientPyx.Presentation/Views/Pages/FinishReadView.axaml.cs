@@ -218,7 +218,10 @@ public partial class FinishReadView : UserControl
             return;
 
         var builder = new SheetColumnBuilder(_vm.Localization)
+            // The running sequence number stays out of the search box: typing a bib or chip number must not
+            // also match every row whose «Id» happens to contain those digits.
             .Text("FinishRead.Col.Id", nameof(FinishReadRowViewModel.Order), minWidth: 60)
+            .NotSearchable()
             // Tint the sequence-number («Id») cell from the finish status: red for a missing punch (MP),
             // yellow for any other non-OK status (OVT/DNF/DNS/DSQ), with a tooltip explaining why — so a
             // problem read is spotted at a glance at the finish desk.

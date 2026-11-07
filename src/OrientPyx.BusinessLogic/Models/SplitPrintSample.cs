@@ -67,7 +67,7 @@ public static class SplitPrintSample
             TotalDistanceText = SplitPrintFormat.DistanceMetres(totalKm),
             AvgPaceText = SplitPrintFormat.Pace(SplitPrintFormat.SecondsPerKm(elapsed, totalKm)),
             Place = 3,
-            PlacedCount = 7,
+            ReadOutCount = 7,
             Rows = rows
         };
     }

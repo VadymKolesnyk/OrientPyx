@@ -433,11 +433,10 @@ internal sealed class SheetHeaderPanel : Grid
         return border;
     }
 
-    // A right-click context menu on a header cell: Filter… / Remove filter (when set) / Hide column.
-    // Bound to the leaf column the header sits over; the items call back into the table. Uses a Flyout
-    // (not a ContextMenu) so its content can be wrapped in a UiScale LayoutTransformControl — a
-    // ContextMenu's own popup lives outside the window's root transform and would render unscaled (see
-    // PopupScaling). Also records the header cell so the table can anchor the filter popup here.
+    // A right-click on a header cell opens the column's filter editor straight away; the column menu
+    // (Remove filter / Bulk edit / Hide column) is its «Інші дії» button — or the right-click itself on a
+    // column that can't be filtered. Bound to the leaf column the header sits over. Also records the header
+    // cell so the table can anchor the filter popup (and the menu) here.
     private void AttachHideMenu(Control header, SheetColumn column)
     {
         _headerCells[column.Key] = header;
@@ -446,10 +445,19 @@ internal sealed class SheetHeaderPanel : Grid
             if (e.InitialPressMouseButton != MouseButton.Right)
                 return;
             e.Handled = true;
-            ShowHeaderMenu(header, column);
+            if (column.Filterable && FilterColumn is not null)
+                FilterColumn.Invoke(column);
+            else
+                ShowHeaderMenu(header, column);
         };
     }
 
+    /// <summary>The column menu (Remove filter / Bulk edit / Hide column) at the column's header cell.</summary>
+    public void ShowColumnMenu(SheetColumn column) => ShowHeaderMenu(HeaderCellFor(column) ?? this, column);
+
+    // The column menu. Uses a Flyout (not a ContextMenu) so its content can be wrapped in a UiScale
+    // LayoutTransformControl — a ContextMenu's own popup lives outside the window's root transform and
+    // would render unscaled (see PopupScaling).
     private void ShowHeaderMenu(Control header, SheetColumn column)
     {
         var menu = new StackPanel { Spacing = 2, Margin = new Thickness(4) };
@@ -497,14 +505,9 @@ internal sealed class SheetHeaderPanel : Grid
             return b;
         }
 
-        if (column.Filterable && FilterColumn is not null)
-        {
-            var hasFilter = HasFilter?.Invoke(column) == true;
-            menu.Children.Add(MenuItem(hasFilter ? "Sheet.Filter.Edit" : "Sheet.Filter.Add", null,
-                () => FilterColumn.Invoke(column)));
-            if (hasFilter)
-                menu.Children.Add(MenuItem("Sheet.Filter.Remove", "Shift+F3", () => RemoveFilter?.Invoke(column)));
-        }
+        // No «Filter…» item: the menu is opened from the filter editor itself (a right-click opens that).
+        if (column.Filterable && HasFilter?.Invoke(column) == true)
+            menu.Children.Add(MenuItem("Sheet.Filter.Remove", "Shift+F3", () => RemoveFilter?.Invoke(column)));
 
         if (BulkEditColumn is not null && CanBulkEdit?.Invoke(column) == true)
             menu.Children.Add(MenuItem("Sheet.Columns.BulkEdit", "F6", () => BulkEditColumn.Invoke(column)));
