@@ -11,8 +11,9 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 /// "(default: 45 42 40…)". A non-null id carries the rule's own name. <see cref="None"/> is an explicit
 /// "no points" choice (<see cref="Id"/> == <see cref="NoneId"/>): the group is scored without any rule,
 /// regardless of the competition default. An id that no longer matches any known rule is shown via a
-/// one-off "unknown" option so the row's stored choice is not silently lost. The label re-resolves when
-/// the language changes.
+/// one-off "unknown" option so the row's stored choice is not silently lost. A rule known only from the
+/// competition's own copy (made by another instance, or deleted from this catalogue) is marked "(зі змагань)".
+/// The label re-resolves when the language changes.
 /// </summary>
 public sealed partial class PointsRuleOption : ObservableObject
 {
@@ -28,6 +29,7 @@ public sealed partial class PointsRuleOption : ObservableObject
     private string? _defaultName;
     private readonly bool _unknown;
     private readonly bool _none;
+    private readonly bool _fromCompetition;
 
     private PointsRuleOption(
         Guid? id,
@@ -35,7 +37,8 @@ public sealed partial class PointsRuleOption : ObservableObject
         string? ruleName,
         string? defaultName,
         bool unknown,
-        bool none)
+        bool none,
+        bool fromCompetition = false)
     {
         Id = id;
         _localization = localization;
@@ -43,6 +46,7 @@ public sealed partial class PointsRuleOption : ObservableObject
         _defaultName = defaultName;
         _unknown = unknown;
         _none = none;
+        _fromCompetition = fromCompetition;
         _localization.PropertyChanged += OnLocalizationChanged;
     }
 
@@ -73,9 +77,12 @@ public sealed partial class PointsRuleOption : ObservableObject
     public static PointsRuleOption None(ILocalizationService localization, bool explicitChoice)
         => new(explicitChoice ? NoneId : null, localization, ruleName: null, defaultName: null, unknown: false, none: true);
 
-    /// <summary>A concrete rule option carrying the rule's name.</summary>
-    public static PointsRuleOption ForRule(Guid id, string name, ILocalizationService localization)
-        => new(id, localization, ruleName: name, defaultName: null, unknown: false, none: false);
+    /// <summary>
+    /// A concrete rule option carrying the rule's name; <paramref name="fromCompetition"/> marks a rule known only
+    /// from the competition's own copy.
+    /// </summary>
+    public static PointsRuleOption ForRule(Guid id, string name, ILocalizationService localization, bool fromCompetition = false)
+        => new(id, localization, ruleName: name, defaultName: null, unknown: false, none: false, fromCompetition);
 
     /// <summary>A one-off option for a stored id that no longer matches a known rule (shown "(unknown)").</summary>
     public static PointsRuleOption Unknown(Guid id, ILocalizationService localization)
@@ -93,7 +100,10 @@ public sealed partial class PointsRuleOption : ObservableObject
                 return _localization.Get("Points.Rule.None");
 
             if (Id is not null)
-                return string.IsNullOrWhiteSpace(_ruleName) ? _localization.Get("Points.Unnamed") : _ruleName!;
+            {
+                var name = string.IsNullOrWhiteSpace(_ruleName) ? _localization.Get("Points.Unnamed") : _ruleName!;
+                return _fromCompetition ? string.Format(_localization.Get("Points.Rule.FromCompetition"), name) : name;
+            }
 
             // The "(default)" sentinel: name the competition default rule when one is set.
             if (string.IsNullOrWhiteSpace(_defaultName))

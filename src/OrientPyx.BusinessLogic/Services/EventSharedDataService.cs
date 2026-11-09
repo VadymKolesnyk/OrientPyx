@@ -30,7 +30,9 @@ public sealed class EventSharedDataService : IEventSharedDataService
             }
         }
 
-        var rules = (await _appStore.GetPointsRulesAsync(cancellationToken))
+        // A rule this app.db does not know (made by another instance) travels as the competition's own copy.
+        var catalogue = PointsRuleCopies.WithCopies(await _appStore.GetPointsRulesAsync(cancellationToken), info?.PointsRulesJson);
+        var rules = catalogue
             .Where(r => ruleIds.Contains(r.Id))
             .Select(r => new SharedPointsRule(r.Id, r.Name, r.Kind, r.TableJson, r.Formula))
             .ToList();

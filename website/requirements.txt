@@ -1,0 +1,4 @@
+# Documentation site (MkDocs Material). Pinned so the CI build is reproducible; bump deliberately.
+mkdocs==1.6.1
+mkdocs-material==9.7.7
+mkdocs-glightbox==0.5.3

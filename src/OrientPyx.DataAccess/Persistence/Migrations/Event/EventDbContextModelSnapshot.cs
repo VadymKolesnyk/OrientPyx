@@ -138,6 +138,9 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.Property<bool>("PaymentPerDay")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("PointsRulesJson")
+                        .HasColumnType("TEXT");
+
                     b.Property<decimal?>("RaisedFeeAmount")
                         .HasColumnType("TEXT");
 

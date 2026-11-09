@@ -1,51 +1,71 @@
 # Packaging & updates (Velopack)
 
 OrientPyx ships as a **Velopack** app: `publish.ps1` builds a Windows installer (`Setup.exe`) and an
-update package, `publish-mac.sh` (run by GitHub Actions on a macOS runner) builds the macOS `.pkg` /
-`.app`, and the running app checks GitHub Releases for newer versions. One GitHub Release holds every
+update package, `publish-mac.sh` builds the macOS `.pkg` / `.app` — both run by GitHub Actions on the release
+tag — and the running app checks GitHub Releases for newer versions. One GitHub Release holds every
 platform; each platform reads its own Velopack **channel**: `win`, `osx-arm64` (Apple Silicon), `osx-x64`
 (Intel).
 
 ## One-time setup
 
 ```powershell
-dotnet tool install -g vpk        # the Velopack CLI
+dotnet tool install -g vpk        # the Velopack CLI (only for local builds; CI installs its own)
 ```
 
 ## Cut a release
 
-1. Bump `<Version>` in `src/OrientPyx.Presentation/OrientPyx.Presentation.csproj` (or just pass `-Version`).
-2. Build the package:
+1. Bump `<Version>` in `src/OrientPyx.Presentation/OrientPyx.Presentation.csproj`, commit, tag `v<version>`,
+   push both, and create the GitHub Release `v<version>` with the changelog (`/new-version` does all of it).
+2. The tag push starts two workflows; both merge into that one release (`--merge`):
+   - **`Release Windows`** (`.github/workflows/release-windows.yml`, `windows-latest`): creates the release if it
+     is missing, downloads the previous Windows release into `build/releases` (`vpk download github`, for the
+     delta), runs `build/publish.ps1`, **code-signs** through SignPath when configured (see below), checks the
+     signatures and runs `vpk upload github`. Packages are kept as the run's `orientpyx-windows-<version>` artifact.
+   - **`Release macOS`** (`.github/workflows/release-macos.yml`, `macos-latest`): waits for the published release
+     (up to 20 min; creates it only if nobody did), then `build/publish-mac.sh` publishes `osx-arm64` and
+     `osx-x64`, packs each and uploads.
 
-   ```powershell
-   ./build/publish.ps1 -Version 1.1.0
-   ```
+   Both can also be started by hand from the Actions tab (inputs: version, upload).
 
-   Output lands in `build/releases/`:
-   - `OrientPyx-win-Setup.exe` — the installer to hand to users for a **first install**.
-   - `*-full.nupkg` (+ `*-delta.nupkg` from the 2nd release on) — the **update** feed.
+   One published release must exist before any upload: a `vpk upload` that finds none creates a draft of its
+   own, and when two drafts share one tag the first to publish wins and the other fails with
+   `tag_name already_exists` (0.7.12).
 
-3. Publish so installed apps can update — either let the script upload to GitHub Releases:
+### Building locally
 
-   ```powershell
-   $env:GITHUB_TOKEN = '...'          # a token with 'repo' scope
-   ./build/publish.ps1 -Version 1.1.0 -Upload
-   ```
+```powershell
+./build/publish.ps1 -Version 1.1.0
+```
 
-   …or attach the whole `build/releases/` contents to a GitHub Release manually.
+Output lands in `build/releases/`:
+- `OrientPyx-win-Setup.exe` — the installer to hand to users for a **first install**.
+- `*-full.nupkg` (+ `*-delta.nupkg` from the 2nd release on) — the **update** feed.
 
-   With `-Upload` the script first **creates the GitHub Release** `v<version>` (via `gh`, so push the tag
-   first) and then merges the packages into it. Creating it up front is what keeps the two uploads (this
-   one and the macOS workflow's) from each making a draft of their own: when two drafts share one tag the
-   first to publish wins and the other fails with `tag_name already_exists`.
+The local package is **unsigned**. `-Upload` (needs `$env:GITHUB_TOKEN` with `repo` scope and the pushed tag)
+still publishes it — a fallback only for when the Windows workflow cannot run; never for a tag the workflow
+already builds, or the two uploads collide.
 
-4. **macOS** is built by the `Release macOS` workflow (`.github/workflows/release-macos.yml`): pushing the
-   `v<version>` tag starts it on a `macos-latest` runner. It first waits for the published release
-   `v<version>` to exist (up to 20 min; creates it only if nobody did), then `build/publish-mac.sh`
-   publishes `osx-arm64` and `osx-x64`, packs each with `vpk` and uploads into that release with `--merge`
-   (the Windows upload also passes `--merge`, so the order of the two uploads does not matter). It can also
-   be started by hand from the Actions tab (inputs: version, upload). The packages are kept as a workflow
-   artifact too.
+## Windows code signing (SignPath)
+
+Free certificate from the SignPath Foundation open-source programme; the full how-to (application, SignPath and
+GitHub setup, test run, troubleshooting) is [`docs/code-signing.md`](../docs/code-signing.md). In short:
+
+- SignPath signs only artifacts uploaded by a GitHub Actions job that ran on GitHub-hosted runners — so a signed
+  Windows release can come only from `release-windows.yml`, never from a local build.
+- Switched on by the secret `SIGNPATH_API_TOKEN` + the variable `SIGNPATH_ORGANIZATION_ID` (optional:
+  `SIGNPATH_PROJECT_SLUG`, `SIGNPATH_SIGNING_POLICY_SLUG` = `test-signing` → `release-signing`,
+  `SIGNPATH_ARTIFACT_CONFIGURATION_SLUG`). Without them the workflow builds unsigned, as before.
+- Velopack has to sign during `vpk pack`, so the workflow packs twice from one build: a throwaway pack whose
+  `--signTemplate` hook (`signpath/vpk-sign-hook.ps1 -Mode Collect`) collects the files to sign → **request 1** →
+  the real pack swaps the signed copies in (`-Mode Swap`, matched by SHA-256). `OrientPyx-win-Setup.exe` is built
+  last and is not in the feed's hashes → **request 2** after packing. Then `signpath/Test-ReleaseSignatures.ps1`.
+  With `release-signing` each request waits (up to an hour) for an Approver in SignPath.
+- Only the project's own binaries are signed (`signpath/SigningRules.ps1`, mirrored in
+  `signpath/artifact-configuration.xml`): `OrientPyx.exe`, `OrientPyx*.dll`, the standard plugins, Velopack's
+  launcher stub and `Update.exe` (`Squirrel.exe`), and `Setup.exe`. They must carry product name `OrientPyx` and
+  product version = the release (`src/Directory.Build.props`, `plugins/Directory.Build.props`, plugin build with
+  `-p:InformationalVersion`).
+- `vpk` is pinned in the workflow (the hook depends on how it calls the template) — re-check the hook before bumping.
 
 ## macOS specifics
 
@@ -74,7 +94,8 @@ dotnet tool install -g vpk        # the Velopack CLI
 
 > **Deltas need history.** `vpk` builds delta packages by diffing against the previous packages already
 > in `build/releases/`. That folder is git-ignored, so before packing a new version, restore the prior
-> release's `*.nupkg` there (e.g. `vpk download github ...`) — otherwise you only get a full package.
+> release's `*.nupkg` there (e.g. `vpk download github ...`, as `release-windows.yml` does) — otherwise you
+> only get a full package.
 
 ## How updating works at runtime
 

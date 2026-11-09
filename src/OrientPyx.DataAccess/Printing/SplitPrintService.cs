@@ -74,9 +74,7 @@ public sealed class SplitPrintService : ISplitPrintService
         if (settings.HasPrinter)
             doc.PrinterSettings.PrinterName = settings.PrinterName;
 
-        var widthHundredths = settings.WidthMm <= 56 ? 215 : 302;
-        var paper = new System.Drawing.Printing.PaperSize("Receipt", widthHundredths, 3276);
-        doc.DefaultPageSettings.PaperSize = paper;
+        doc.DefaultPageSettings.PaperSize = RollPaper.Choose(doc.PrinterSettings, settings.WidthMm);
         doc.DefaultPageSettings.Margins = new System.Drawing.Printing.Margins(0, 0, 0, 0);
         doc.OriginAtMargins = false;
 
@@ -102,11 +100,8 @@ public sealed class SplitPrintService : ISplitPrintService
         if (settings.HasPrinter)
             doc.PrinterSettings.PrinterName = settings.PrinterName;
 
-        // Roll width in hundredths of an inch (the printer's unit): 56 mm ≈ 215, 80 mm ≈ 302. A tall page
-        // lets the whole receipt flow as one continuous strip; the driver cuts at the printed end.
-        var widthHundredths = settings.WidthMm <= 56 ? 215 : 302;
-        var paper = new System.Drawing.Printing.PaperSize("Receipt", widthHundredths, 3276); // ~33 in tall
-        doc.DefaultPageSettings.PaperSize = paper;
+        // A tall page lets the whole receipt flow as one continuous strip; the driver cuts at the printed end.
+        doc.DefaultPageSettings.PaperSize = RollPaper.Choose(doc.PrinterSettings, settings.WidthMm);
         doc.DefaultPageSettings.Margins = new System.Drawing.Printing.Margins(0, 0, 0, 0);
 
         // Draw in true paper coordinates: (0,0) is the physical paper corner, not the inside of the printer's
@@ -187,7 +182,7 @@ internal sealed class ReceiptRenderer
         }
 
         var rowHeight = monoFont.GetHeight(g) + 1.5f;
-        float bottom = e.PageBounds.Height - SideInset;
+        float bottom = PrintPageArea.Bottom(e) - SideInset;
         for (; _nextRow < _doc.Rows.Count; _nextRow++)
         {
             if (y + rowHeight > bottom)
@@ -524,16 +519,22 @@ internal sealed class WinnersRenderer
         }
 
         var lineHeight = font.GetHeight(g) + 1.5f;
-        float bottom = e.PageBounds.Height - SideInset;
+        float bottom = PrintPageArea.Bottom(e) - SideInset;
+        var pageTop = y;
         for (; _nextLine < _lines.Count; _nextLine++)
         {
-            if (y + lineHeight > bottom)
+            var line = _lines[_nextLine];
+
+            // A group moves whole to the next page when it doesn't fit the rest of this one: a roll printer cuts
+            // every page off, so a group must not be torn in two (one taller than a page still flows line by line).
+            // Something is always drawn on a fresh page, so a page too short for even one line can't loop forever.
+            var needed = line.Kind == LineKind.Group ? GroupHeight(_nextLine, lineHeight) : lineHeight;
+            if (y > pageTop && y + needed > bottom)
             {
                 e.HasMorePages = true;
                 return;
             }
 
-            var line = _lines[_nextLine];
             switch (line.Kind)
             {
                 case LineKind.Group:
@@ -571,6 +572,15 @@ internal sealed class WinnersRenderer
                 }
             }
         }
+    }
+
+    // Height of the group whose caption is line `start`: the gap above the caption plus every line up to the next group.
+    private float GroupHeight(int start, float lineHeight)
+    {
+        var end = start + 1;
+        while (end < _lines.Count && _lines[end].Kind != LineKind.Group)
+            end++;
+        return 2f + (end - start) * lineHeight;
     }
 
     // Largest Consolas size (≤ 12 pt, ≥ 6 pt) at which the widest winner/heading line still fits the roll width.
@@ -612,4 +622,63 @@ internal sealed class WinnersRenderer
     private enum LineKind { Group, PlaceHeading, Winner }
 
     private sealed record Line(LineKind Kind, string Text);
+}
+
+/// <summary>
+/// The paper a receipt is printed on. Roll-printer drivers ignore a made-up custom size and fall back to their
+/// default — on XP-80C / GP-U80 that is 297 mm, so a long winners list came out cut into 297 mm pieces. Instead they
+/// list their own roll sizes, the longest being «80(72.1) x 3276 mm» (XP-80C, GP-U80, POS-58), and feed only up to
+/// the last drawn line: the spooled job for a short slip is byte-identical on 297 mm and 3276 mm paper (2026-11-08).
+/// So the driver's longest roll paper is taken — narrow (≤ ~90 mm) and at least three times taller than wide, which no
+/// sheet, envelope or card is, so an office printer is never sent a "roll". The roll width closest to the chosen one
+/// wins a tie (EPSON lists 58 and 80 mm rolls). A printer with no roll paper (A4 laser, PDF) gets the custom size and
+/// the renderers page it by its real height (<see cref="PrintPageArea"/>).
+/// </summary>
+[SupportedOSPlatform("windows")]
+internal static class RollPaper
+{
+    // Hundredths of an inch (the printer's unit): 56 mm ≈ 215, 80 mm ≈ 302, the widest roll ≈ 90 mm.
+    private const int MaxRollWidth = 354;
+
+    public static System.Drawing.Printing.PaperSize Choose(System.Drawing.Printing.PrinterSettings printer, int widthMm)
+    {
+        var wanted = widthMm <= 56 ? 215 : 302;
+        System.Drawing.Printing.PaperSize? best = null;
+        try
+        {
+            foreach (System.Drawing.Printing.PaperSize p in printer.PaperSizes)
+            {
+                if (p.Width <= 0 || p.Width > MaxRollWidth || p.Height < 3 * p.Width)
+                    continue;
+                if (best is null
+                    || p.Height > best.Height
+                    || (p.Height == best.Height && Math.Abs(p.Width - wanted) < Math.Abs(best.Width - wanted)))
+                    best = p;
+            }
+        }
+        catch (Exception ex) when (ex is System.Drawing.Printing.InvalidPrinterException or System.ComponentModel.Win32Exception)
+        {
+            // Unknown/offline printer: keep the custom size; Print() reports the real problem.
+        }
+
+        return best ?? new System.Drawing.Printing.PaperSize("Receipt", wanted, 3276);
+    }
+}
+
+/// <summary>
+/// The page the printer driver really prints. <see cref="System.Drawing.Printing.PrintPageEventArgs.PageBounds"/> only
+/// echoes the paper size we asked for (the ~83 cm roll), but many drivers silently cap it — XP-80C, EPSON TM-T88 and
+/// GP-U80 at 297 mm, Microsoft Print to PDF at A4 — and whatever is drawn below the real page is dropped without an
+/// error (a long winners list lost every group past the first 297 mm, 2026-11-08). The Graphics' visible clip is the
+/// driver's actual printable area in the same 1/100" units, so the usable bottom is the smaller of the two.
+/// </summary>
+[SupportedOSPlatform("windows")]
+internal static class PrintPageArea
+{
+    public static float Bottom(System.Drawing.Printing.PrintPageEventArgs e)
+    {
+        float requested = e.PageBounds.Height;
+        var clip = e.Graphics!.VisibleClipBounds;
+        return clip.Height > 0 && float.IsFinite(clip.Bottom) ? Math.Min(requested, clip.Bottom) : requested;
+    }
 }

@@ -39,6 +39,10 @@ public sealed partial class ProtocolColumnItemViewModel : ObservableObject
     [ObservableProperty]
     private bool _visible;
 
+    /// <summary>False hides the checkbox: the column cannot appear on this day (e.g. «Бали» with nobody scoring).</summary>
+    [ObservableProperty]
+    private bool _isAvailable = true;
+
     /// <summary>Snapshots this item back into the persisted setting.</summary>
     public ProtocolColumnSetting ToSetting() => new() { Column = Column, Visible = Visible, Key = Key };
 }

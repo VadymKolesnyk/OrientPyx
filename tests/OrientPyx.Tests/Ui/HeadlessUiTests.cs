@@ -185,11 +185,18 @@ public sealed class HeadlessUiTests
         AssertNoUiErrors();
     }
 
+    // The synthetic competition specifically: other tests in the collection leave the competitions they create or
+    // import open (both open by themselves), and those have no participants.
     private async Task EnsureCompetitionOpenAsync()
     {
-        if (_app.Vm.IsEventSelected)
-            return;
         var env = TestEnvironment.Instance;
+        if (_app.Vm.IsEventSelected && CurrentIdentifier() == env.SyntheticId)
+            return;
+        if (_app.Vm.IsEventSelected)
+        {
+            await _app.OnUiAsync(() => _app.Vm.ChangeEventCommand.ExecuteAsync(null));
+            await _app.WaitUntilAsync(() => _app.Vm.CurrentView is EventSelectionViewModel, what: "picker shown");
+        }
         await _app.SettleAsync();
         var selection = await _app.OnUiAsync(() => Assert.IsType<EventSelectionViewModel>(_app.Vm.CurrentView));
         await _app.WaitUntilAsync(() => selection.Events.Any(e => e.Identifier == env.SyntheticId), what: "synthetic competition listed");
@@ -206,6 +213,12 @@ public sealed class HeadlessUiTests
     {
         var field = typeof(MainWindowViewModel).GetField("_shell", BindingFlags.NonPublic | BindingFlags.Instance)!;
         return (ShellViewModel)field.GetValue(_app.Vm)!;
+    }
+
+    private string? CurrentIdentifier()
+    {
+        var field = typeof(MainWindowViewModel).GetField("_session", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        return ((OrientPyx.BusinessLogic.Interfaces.ISessionService)field.GetValue(_app.Vm)!).CurrentEvent?.Identifier;
     }
 
     private void AssertNoUiErrors(string? step = null)

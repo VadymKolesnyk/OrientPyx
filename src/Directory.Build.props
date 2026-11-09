@@ -1,0 +1,13 @@
+<Project>
+  <!-- Shared identity of every application assembly under src/. SignPath Foundation (Windows code signing,
+       docs/code-signing.md) signs only files whose product name is the project's and whose product version is
+       the release's, so all of them carry Product=OrientPyx and a plain ProductVersion = <Version> (no
+       "+<commit sha>" suffix the SDK appends by default). The release version itself is set in
+       OrientPyx.Presentation.csproj and passed to every project by build/publish.ps1 (-p:Version). -->
+  <PropertyGroup>
+    <Product>OrientPyx</Product>
+    <Company>OrientPyx</Company>
+    <Authors>OrientPyx</Authors>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+</Project>

@@ -95,7 +95,8 @@
                                         <TextBlock Grid.Column="2" Text="{Binding Preview.FooterPage}" FontFamily="Times New Roman"
                                                    FontSize="10" Foreground="#555" HorizontalAlignment="Right" />
                                     </Grid>
-                                    <StackPanel Spacing="4">
+                                    <!-- Clipped to the space above the footer: a long document runs off the page, never over the footer. -->
+                                    <StackPanel Spacing="4" ClipToBounds="True">
                                         <!-- Multi-line header fields (Enter inserts a new line). Order, top to bottom:
                                              organising body (subtitle), competition name, then the title — as the
                                              .docx stacks them. -->

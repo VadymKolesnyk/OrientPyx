@@ -6,7 +6,7 @@ namespace OrientPyx.BusinessLogic.Models.Network;
 /// a host and a station with different versions refuse to pair.</summary>
 public static class NetworkProtocol
 {
-    public const int Version = 2;
+    public const int Version = 3;
 
     /// <summary>UDP port of the host discovery broadcast (the same on every machine).</summary>
     public const int DiscoveryPort = 47831;
@@ -152,4 +152,11 @@ public sealed record DiagnosticFix(string Key, bool NeedsElevation);
 
 /// <summary>One self-check: a key (localised by the page as <c>Network.Check.&lt;Key&gt;</c>), its state, a free-text detail
 /// (addresses, port numbers, the error) and an optional fix.</summary>
-public sealed record DiagnosticCheck(string Key, CheckState State, string Detail, DiagnosticFix? Fix = null);
+public sealed record DiagnosticCheck(string Key, CheckState State, string Detail, DiagnosticFix? Fix = null)
+{
+    /// <summary>Localization key of <see cref="Detail"/> for the screen (formatted with <see cref="DetailArgs"/>); null when
+    /// the detail is plain data (addresses, a port, an OS error). <see cref="Detail"/> stays the English text for the log.</summary>
+    public string? DetailKey { get; init; }
+
+    public string[] DetailArgs { get; init; } = [];
+}

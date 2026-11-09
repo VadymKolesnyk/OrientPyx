@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration of OrientPyx (Windows). Paste it as the project's DEFAULT artifact
+  configuration in SignPath (docs/code-signing.md). One configuration serves both signing requests of a
+  release made by .github/workflows/release-windows.yml:
+    1. the files Velopack signs during `vpk pack`, collected into one flat folder by vpk-sign-hook.ps1:
+       OrientPyx.exe, OrientPyx*.dll, the standard plugins' DLLs, OrientPyx_ExecutionStub.exe, Squirrel.exe;
+    2. the installer OrientPyx-win-Setup.exe, signed after packing.
+  Every element is optional (min-matches="0") so either zip passes; vpk-sign-hook.ps1 and
+  Test-ReleaseSignatures.ps1 fail the release when a file came back unsigned. Only the project's own binaries
+  are listed (SigningRules.ps1 picks the same files): SignPath Foundation does not sign third-party libraries.
+  Product name / version restrictions: every OrientPyx assembly and plugin is built with Product=OrientPyx and
+  ProductVersion=<release version> (src/Directory.Build.props, plugins/Directory.Build.props, build/publish.ps1).
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <!-- The release version, e.g. 0.7.17 — passed by the workflow with every request. -->
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <!-- The application executable. -->
+    <pe-file path="OrientPyx.exe" min-matches="0" product-name="OrientPyx" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+    <!-- The application's libraries and the standard plugins (all built as product OrientPyx). -->
+    <pe-file path="*.dll" min-matches="0" max-matches="unbounded" product-name="OrientPyx" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+    <!-- Velopack's launcher stub: a copy of Velopack's stub carrying OrientPyx.exe's icon and version resources;
+         installed as <install dir>\OrientPyx.exe, the target of the Start-menu and desktop shortcuts. -->
+    <pe-file path="OrientPyx_ExecutionStub.exe" min-matches="0" product-name="OrientPyx" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+    <!-- Velopack's updater (installed as Update.exe; runs installs, updates and uninstall). Keeps Velopack's own
+         version resources, so no product restriction. -->
+    <pe-file path="Squirrel.exe" min-matches="0">
+      <authenticode-sign />
+    </pe-file>
+    <!-- The installer users download. Velopack stamps it with the package's title and version. -->
+    <pe-file path="OrientPyx-win-Setup.exe" min-matches="0" product-name="OrientPyx" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

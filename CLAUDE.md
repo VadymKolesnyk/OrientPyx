@@ -74,8 +74,13 @@ the UI shows only the selection / creation screens (gating in `MainWindowViewMod
   DataAccess); BusinessLogic talks to it only through `IEventStore`.
 - Paths `./data` and `./events` default to the application directory and are editable on
   the Settings page (`IAppSettingsService`). **Installed (Velopack) builds redirect the data
-  root** to `%LocalAppData%\OrientDesk\data-root` (see `AppDatabasePaths` / `Program.cs`) so
-  data survives auto-updates — the app-dir default is for local dev only.
+  root** — Windows `%LocalAppData%\OrientPyx-data`, macOS `~/Library/Application Support/OrientPyx/data-root`
+  (see `AppDatabasePaths` / `Program.cs`) — so data survives auto-updates AND an uninstall: Velopack's uninstall
+  deletes the whole `%LocalAppData%\OrientPyx` install folder, so the data root must never live inside it. Builds up
+  to 0.7.16 used `%LocalAppData%\OrientPyx\data-root`; `AppDatabasePaths.MoveLegacyDataRoot` renames it once on
+  start (if a file is open it keeps using it in place and retries next launch — it never copies an open SQLite db)
+  and `RemapLegacyPath` reads a stored path under it as the same path under the new root. The app-dir default is for
+  local dev only.
 - The competition list is built by **scanning** `./events` (`IEventFolderScanner`).
 - The identifier can be changed later on the Information page (`IEventCatalogService.RenameIdentifierAsync`):
   it renames the folder *and* rewrites `CompetitionInfo.Identifier` (the scanner reads it from the DB, so both
@@ -87,6 +92,16 @@ the UI shows only the selection / creation screens (gating in `MainWindowViewMod
 startup restore — read once at launch, written on selection change. Never resolve "current
 event/day" by querying the app DB during normal operation; the program may run as multiple
 instances over the same `./data`, and runtime state must not be shared through it.
+
+**App-level ids are per app.db.** Points rules (app.db) get their id where they are created — the seeded ones too,
+so two installs (or the dev build and the installed one) have different ids for the same rule. A competition
+references a rule by id (`CompetitionInfo.DefaultPointsRuleId`, `GroupDaySettings.PointsRuleId`) **and keeps its
+own copy** of every referenced rule in `CompetitionInfo.PointsRulesJson` (`Models/PointsRuleCopies`): results take
+the rule from the catalogue first, else from the copy, so every instance scores the same. `PointsRuleCopySync`
+refreshes the copy on opening (`SessionService`), after a group/default is pointed at a rule, and after a rule is
+edited on «Очки»; the copy has its own writer (`IEventStore.SetPointsRulesJsonAsync`) — `SaveCompetitionInfoAsync`
+leaves it alone. Rule pickers list `ICompetitionEditorService.GetPointsRuleChoicesAsync` (catalogue through
+`IResultsAppData` + copies marked «(зі змагань)»), never `IAppStore` directly.
 
 ## Localization rules
 
@@ -136,14 +151,17 @@ Day results are computed by `Services/Results/DayResultsCalculator` (internal, n
 `DayResultsAppData` (points rules, rank tables). Stages: competitors → start + finish status (`FinishEvaluator`) →
 `AdjustTime` (changed times rounded to a second; built-ins unchanged) → `Rank` per group (rogaine team ranking lives
 in `RogaineStrategy.Rank`) → points (formula uses `AdjustedTime`) → ranks (actual time, only if `AwardsRanks`).
-`CompetitionEditorService.ComputeDayResultsAsync` only reads the snapshot and calls it — pass the caller's snapshot
+A read-out with no start from anywhere (no chip start, no start-protocol time, no relay leg start) is DNS in
+`FinishEvaluator` (both the calculator and the finish log go through it); «Мін. КП» is lowered by the disabled
+controls of the group's list. `CompetitionEditorService.ComputeDayResultsAsync` only reads the snapshot and calls it — pass the caller's snapshot
 when it has one. `FinishStatusResult.Missed` lists every missed control (maximum match, `MissedControls`); status
 and `Detail` still come from the greedy checks. Debug builds have «Файл → (Debug) Знімок результатів…» (JSON of
 every day's results) + `scripts/diff-results.ps1` to prove a refactoring left results unchanged.
 
 ### Plugins
 
-Author-facing guide (contract, contexts, toolkit, versioning, examples): `docs/plugin-api.md`.
+Author-facing guide (contract, contexts, toolkit, versioning, examples): `website/content/plugins/` (published on the
+documentation site, «Власні плагіни»; `docs/plugin-api.md` only points there).
 
 A plugin is a DLL with one `IOrientPyxPlugin`; it registers `Discipline` subclasses (each `BasedOn` a built-in —
 the format's structure comes from it, the plugin overrides rules: `EvaluateFinish`, `BuildSplits`, `ResolveStart`,
@@ -194,12 +212,21 @@ the format's structure comes from it, the plugin overrides rules: `EvaluateFinis
 
 ## Platforms & packaging
 
-Windows and macOS are shipped; Linux runs from source only. `build/publish.ps1` (Windows, run locally) and
-`build/publish-mac.sh` (macOS, run by `.github/workflows/release-macos.yml` on the `v<version>` tag) pack with
-Velopack into one GitHub Release, each platform on its own channel (`win`, `osx-arm64`, `osx-x64`; both uploads
-use `--merge`). The release is created first — `publish.ps1 -Upload` runs `gh release create` and the macOS
-workflow waits for it — so neither `vpk upload` ever creates a draft of its own (two drafts for one tag = the
-second publish fails with `tag_name already_exists`). Details and the optional Apple signing secrets: `build/README.md`. Keep the code portable:
+Windows and macOS are shipped; Linux runs from source only. On the `v<version>` tag GitHub Actions runs
+`build/publish.ps1` (Windows, `.github/workflows/release-windows.yml`) and `build/publish-mac.sh` (macOS,
+`release-macos.yml`); both pack with Velopack into one GitHub Release, each platform on its own channel (`win`,
+`osx-arm64`, `osx-x64`; both uploads use `--merge`). The release is created first — by `/new-version` (or the
+Windows workflow) with `gh release create`, the macOS workflow waits for it — so neither `vpk upload` ever creates
+a draft of its own (two drafts for one tag = the second publish fails with `tag_name already_exists`). A local
+`publish.ps1` builds the same package **unsigned** (`-Upload` = emergency fallback only). **Windows code signing**
+goes through the SignPath Foundation (free OSS certificate, publisher «SignPath Foundation»), which signs only
+artifacts of a GitHub-hosted Actions run: the workflow packs twice (`build/signpath/vpk-sign-hook.ps1`
+collects the files `vpk` would sign, request 1; the real pack swaps the signed copies in) and signs `Setup.exe`
+after packing (request 2); on for `secrets.SIGNPATH_API_TOKEN` + `vars.SIGNPATH_ORGANIZATION_ID`, unsigned
+otherwise. Signed files must say product `OrientPyx` and product version = the release — keep
+`src/Directory.Build.props` / `plugins/Directory.Build.props` on every project and list a new own binary in
+`build/signpath/SigningRules.ps1` + `artifact-configuration.xml`. How-to and status: `docs/code-signing.md`.
+Details and the optional Apple signing secrets: `build/README.md`. Keep the code portable:
 anything Windows-only (GDI printing in `DataAccess/Printing`, `FileAssociation`, Explorer) must be guarded by
 `OperatingSystem.IsWindows()` and degrade gracefully (the print services expose `IsSupported`); reveal/open
 files through `Presentation/Services/FileReveal.cs`, never by launching `explorer.exe` directly. On macOS the
@@ -218,6 +245,17 @@ group's course, or — per `GroupDaySettings.CourseAssignmentMode` (Р-41) — a
 `GroupCourseVariant` rows: `ByLeg` (leg → code, `LegCoursesJson`), `ByBib` (`LegCourseAssignment` per leg
 number, typed on «Команди» or imported from IOF `TeamCourseAssignment` / CSV), `TeamSet` (a course set per
 team/group distributed over the read legs by `Toolkit.TeamCourseAssignment`, least missed controls, Р-42).
+
+### The day a call works on
+
+`CompetitionEditorService` works on the session's day, except the finish-log methods (`ImportFinishReadoutsAsync`,
+`GetFinishReadoutLogAsync`/`RowsAsync`, `GetFinishSplitsAsync`, `GetSplitPrintDocumentAsync`,
+`GetFinishReadoutEditAsync`, `UpdateFinishReadoutAsync`) which take an optional `forDayId`: the method sets an
+`AsyncLocal` day override (`ResolveDayAsync` + `_dayOverride`, set in the calling method itself — an AsyncLocal set
+inside an awaited helper does not flow back) that every nested call sees through `CurrentDay`/`CurrentDayId`. The finish
+auto-read, the results monitor and online publishing each remember the day (and competition) they were started on and
+keep working for it when a page switches the session's day; only another competition (and, for the auto-read, its own
+day closed/deleted) stops them.
 
 ## Network mode («Спільна робота»: host + stations)
 
@@ -362,7 +400,7 @@ selection covers whatever columns it spans. A page may give a table one **row ac
 roster uses it for **«Мандатку пройдено»** (`Participant.CheckedIn`, competition-level): the «Номер» cell turns
 green (`DayColumnBuilder.CheckedInBrush`), the toggle marks all selected rows when any is unmarked, else clears
 them, written by `SetParticipantsCheckedInAsync` (its own writer — `UpdateParticipantAsync` leaves the flag
-alone, like `PaysRaisedFee`); the roster's `StatusInfo` adds «Мандатка: пройшли X з Y». No column, no filter.
+alone, like `PaysRaisedFee`); the roster's `StatusInfo` adds «Мандатка: пройшли X з Y». No column of its own; the «Номер» column's filter has a «За станом» mode (`CheckedInStatus`).
 
 **Cell controls must not be held by anything that outlives the row.** The body `ListBox` clears a container's content
 when it recycles it, so every scroll (and every arrow key that scrolls) builds the rows it reaches anew; a row that
@@ -420,6 +458,34 @@ platform with Skia (`Support/HeadlessApp.cs`), open every page through the root 
 screenshots to `tests/TestResults/<timestamp>/`. The snapshot format equals the Debug «Знімок результатів»
 (`scripts/diff-results.ps1`). Run the suite before a release and after any change to results, protocols or
 plugin loading; when a results change is intended, replace the golden with the written `.actual.json`.
+
+## Documentation site (`website/`)
+
+User documentation, **Ukrainian only**, for the people running competitions — not for developers: task-first pages,
+on-screen names and menu paths («Старт → Жеребкування»), no class names. Writing rules: `website/README.md`. The one
+developer section is «Власні плагіни» (`website/content/plugins/`, the plugin API guide; authors get the SDK by cloning
+this repo and adding a project under `plugins/`). MkDocs Material, versions pinned in `website/requirements.txt` (keep
+`mkdocs` 1.x). `.github/workflows/docs.yml` publishes to GitHub Pages (`https://vadymkolesnyk.github.io/OrientPyx/`)
+on every `v*` tag (texts + screenshots of the release); a manual run republishes the branch's texts with the latest
+release's screenshots.
+- **Screenshots and demo competitions are generated, never committed** (`website/content/shots|demo/`, git-ignored):
+  the `DocShots` tests (`tests/OrientPyx.Tests/DocShots/`, `[DocShotFact]`, skipped unless `ORIENTPYX_DOCSHOTS` is set)
+  drive the headless app over the demo competitions of `DemoCompetitions.cs` (fictional people, seeded, one per format
+  + a two-day cup) and save `shots/<name>.png` + `manifest.json`; `DocShooter` crops to a control, frames controls,
+  draws open popups/flyouts in place. Never put a real path or machine name on a shot (mask it like the finish page's
+  read-out file). `scripts/docs.ps1` renders them when missing (`-Shots` = again) then previews; `-Build` = the strict
+  CI build.
+- **Generated pages** (`website/hooks.py`): «Довідник екранів» — one page per `Help.<Screen>` (sections per
+  `Help.<Screen>.<Block>`) straight from `uk-UA.json`; «Що нового» from the GitHub releases. The «?» dialog's
+  «Детальніше в документації» and «Довідка → Документація» open them through `Presentation/Services/DocsLinks.cs` —
+  its kebab rule must stay the hook's (`DocsLinksTests`).
+- **Keeping it current**: `/new-version` Step 2b — `python website/tools/affected.py` lists the pages whose code changed
+  since the last tag (`website/docs-map.yml`), UI names renamed while still quoted in the docs, new strings and changed
+  help; update the pages, add shots, `scripts/docs.ps1 -Shots -Build`. A new page → `mkdocs.yml` nav + `docs-map.yml`.
+- The in-app «?» texts (`Help.*`) are the short form of the same content: `LocalizationTests.EveryHelpButtonHasItsText`
+  / `EveryHelpTextHasAButton` keep every «?» backed by uk + en text and every help text reachable (a page whose
+  view-model name differs from its help prefix overrides `HelpKeyPrefix`). `PluginDocsTests` keeps every public SDK
+  type in `website/content/plugins/api.md`.
 
 ## How to run
 

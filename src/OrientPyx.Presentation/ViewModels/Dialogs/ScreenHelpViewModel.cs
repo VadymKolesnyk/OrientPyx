@@ -42,6 +42,9 @@ public sealed partial class ScreenHelpViewModel : ObservableObject
     /// <summary>Screen-specific key prefix; used to resolve the section keys below.</summary>
     public string KeyPrefix { get; }
 
+    /// <summary>This screen's (or block's) page in the online documentation — the «Детальніше» button.</summary>
+    public Uri DocsUri => Services.DocsLinks.ForHelp(KeyPrefix);
+
     public string Title => Localization.Get($"{KeyPrefix}.Title");
     public string What => Localization.Get($"{KeyPrefix}.What");
     public string Why => Localization.Get($"{KeyPrefix}.Why");

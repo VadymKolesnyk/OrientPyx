@@ -11,6 +11,10 @@ namespace OrientPyx.Presentation.Views.Pages;
 
 public partial class GroupsView : UserControl
 {
+    // The «Порядок / список КП» cell naming a code that is no control point of the day (same red as a duplicate chip).
+    private static readonly Avalonia.Media.ISolidColorBrush UnknownCodeBrush =
+        new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(0x55, 0xDC, 0x26, 0x26));
+
     private GroupsViewModel? _vm;
 
     public GroupsView()
@@ -68,6 +72,9 @@ public partial class GroupsView : UserControl
                   placeholder: "S1 31 32 33 F",
                   enabledPath: nameof(GroupDayRowViewModel.CanEditCourseOrderInline),
                   opacityPath: nameof(GroupDayRowViewModel.UsesCourseOrder))
+            // Red when the course names a code that is no control point of the day (S1/F without start/finish КП):
+            // judging would give the whole group MP.
+            .CellTint(nameof(GroupDayRowViewModel.HasUnknownCodes), UnknownCodeBrush, nameof(GroupDayRowViewModel.UnknownCodesTooltip))
             // Control count: auto-computed from the course/control list, read-only.
             .Text("Groups.Col.ControlCount", nameof(GroupDayRowViewModel.ControlCountText), minWidth: 90)
             // Participant count: how many participants are in this group on the day, read-only.

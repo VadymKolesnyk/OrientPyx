@@ -84,9 +84,18 @@ public class CompetitionInfo
     /// <summary>
     /// Competition-wide default points rule (правило нарахування очок). References an application-level
     /// <c>PointsRule</c> (app.db) by id; null = no default. A group on a given day may override it
-    /// (see <see cref="GroupDaySettings.PointsRuleId"/>). Scoring with the rule is a later feature.
+    /// (see <see cref="GroupDaySettings.PointsRuleId"/>).
     /// </summary>
     public Guid? DefaultPointsRuleId { get; set; }
+
+    /// <summary>
+    /// The competition's own copy of every points rule it references (the default and the group overrides), as a
+    /// JSON array — see <c>Models.PointsRuleCopies</c>. A rule's id is minted by the app.db it was created in (the
+    /// seeded ones too), so another instance (another install, the dev build, another computer) does not know it;
+    /// results fall back to this copy, so every instance scores the same. Written only through
+    /// <c>IEventStore.SetPointsRulesJsonAsync</c> — <c>SaveCompetitionInfoAsync</c> leaves it alone.
+    /// </summary>
+    public string? PointsRulesJson { get; set; }
 
     // --- Participants page view
 

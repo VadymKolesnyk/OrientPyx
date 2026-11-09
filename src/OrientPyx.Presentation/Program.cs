@@ -81,7 +81,8 @@ internal static class Program
 
     /// <summary>
     /// When running as a Velopack-installed app, redirect data/events/logs to a stable per-user folder
-    /// so they survive updates. On Windows Velopack lays the app out as <c>&lt;root&gt;\current\OrientPyx.exe</c>
+    /// so they survive updates and an uninstall (Windows: <c>%LocalAppData%\OrientPyx-data</c>; macOS:
+    /// <c>~/Library/Application Support/OrientPyx/data-root</c>). On Windows Velopack lays the app out as <c>&lt;root&gt;\current\OrientPyx.exe</c>
     /// with <c>&lt;root&gt;\Update.exe</c> one level up; on macOS the whole app is the bundle
     /// <c>OrientPyx.app/Contents/MacOS/</c> holding <c>OrientPyx</c> and <c>UpdateMac</c> side by side. The presence
     /// of that updater is our "installed" signal (see <see cref="IsVelopackInstallLayout"/>). A plain build (no
@@ -92,6 +93,9 @@ internal static class Program
     /// their <c>events</c>/<c>data</c> straight into <c>current</c>; if that data is still there we rescue
     /// it into <c>data-root</c> before anything opens the databases (see <see cref="RescueDataFromInstallDir"/>).
     /// </summary>
+    /// <summary>What the data-root redirection did before the activity log existed; App logs these once it does.</summary>
+    internal static List<string> StartupNotes { get; } = [];
+
     private static void RedirectDataRootIfInstalled()
     {
         try
@@ -108,9 +112,23 @@ internal static class Program
             // pick it up. Dev builds never register (the association belongs to the installed app).
             FileAssociation.Register(Environment.ProcessPath);
 
-            var root = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "OrientPyx", "data-root");
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string root;
+            if (OperatingSystem.IsWindows())
+            {
+                // The data root must live OUTSIDE the Velopack install folder %LocalAppData%\OrientPyx: an
+                // uninstall deletes that folder whole. Builds up to 0.7.16 kept it at OrientPyx\data-root —
+                // move it out once (a rename on the same volume); if a file is open (another instance), keep
+                // using it in place this launch and retry next time.
+                var legacy = Path.Combine(localAppData, "OrientPyx", "data-root");
+                root = AppDatabasePaths.MoveLegacyDataRoot(legacy, Path.Combine(localAppData, "OrientPyx-data"), StartupNotes.Add);
+                AppDatabasePaths.UseLegacyDataRoots(legacy);
+            }
+            else
+            {
+                // macOS: outside the .app bundle already (deleting the app leaves it).
+                root = Path.Combine(localAppData, "OrientPyx", "data-root");
+            }
 
             // Rescue any data an earlier build left inside the (update-volatile) install folder BEFORE we
             // point the app at data-root — otherwise the next update wipes it, as happened for existing users.

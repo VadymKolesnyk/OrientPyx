@@ -24,6 +24,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     private readonly IEntryFeeCalculator _entryFees;
     private readonly IEventFiles _files;
     private readonly IResultsAppData _resultsAppData;
+    private readonly PointsRuleCopySync _ruleCopies;
     private readonly IPluginCatalog? _plugins;
 
     public CompetitionEditorService(
@@ -35,9 +36,11 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         IEntryFeeCalculator entryFees,
         IEventFiles files,
         IResultsAppData resultsAppData,
+        PointsRuleCopySync ruleCopies,
         IPluginCatalog? plugins = null)
     {
         _plugins = plugins;
+        _ruleCopies = ruleCopies;
         _session = session;
         _eventStore = eventStore;
         _appStore = appStore;
@@ -53,12 +56,32 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         _session.CurrentEvent?.FolderPath
         ?? throw new InvalidOperationException("No competition is currently selected.");
 
+    // The day a call works on: the session's, unless the call named another one (ResolveDayAsync). AsyncLocal, so the
+    // override covers exactly that call and everything it awaits — the finish auto-read keeps reading into its own
+    // day while the pages show another.
+    private readonly AsyncLocal<EventDay?> _dayOverride = new();
+
+    private EventDay? CurrentDay => _dayOverride.Value ?? _session.CurrentDay;
+
     private Guid CurrentDayId =>
-        _session.CurrentDay?.Id
+        CurrentDay?.Id
         ?? throw new InvalidOperationException("No competition day is currently selected.");
 
     private DisciplineId CurrentDayDefaultDiscipline =>
-        _session.CurrentDay?.DefaultDiscipline ?? DisciplineId.SetCourse;
+        CurrentDay?.DefaultDiscipline ?? DisciplineId.SetCourse;
+
+    /// <summary>
+    /// The day a call named instead of the session's: (true, null) for none / the session's own day, (true, day) for
+    /// another existing day, (false, null) for an unknown one (the caller returns its "nothing" value). The CALLER
+    /// sets <see cref="_dayOverride"/> — an AsyncLocal set inside this async helper would not flow back to it.
+    /// </summary>
+    private async Task<(bool Known, EventDay? Day)> ResolveDayAsync(Guid? dayId, CancellationToken cancellationToken)
+    {
+        if (dayId is not { } id || id == _session.CurrentDay?.Id || _session.CurrentEvent is null)
+            return (true, null);
+        var day = (await _eventStore.GetDaysAsync(FolderPath, cancellationToken)).FirstOrDefault(d => d.Id == id);
+        return (day is not null, day);
+    }
 
     /// <summary>
     /// Refuses the write when the day is closed for editing. Every per-day write goes through this,
@@ -139,11 +162,36 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         return Group.DeriveAgeWindow(name, startYear);
     }
 
-    public Task SaveInfoAsync(CompetitionInfo info, CancellationToken cancellationToken = default)
+    public async Task SaveInfoAsync(CompetitionInfo info, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(info);
-        return _eventStore.SaveCompetitionInfoAsync(FolderPath, info, cancellationToken);
+        await _eventStore.SaveCompetitionInfoAsync(FolderPath, info, cancellationToken);
+        // The competition keeps a copy of the default rule, so an instance that does not know its id scores the same.
+        await _ruleCopies.EnsureAsync(FolderPath, info.DefaultPointsRuleId, cancellationToken);
     }
+
+    public async Task<IReadOnlyList<PointsRuleChoice>> GetPointsRuleChoicesAsync(CancellationToken cancellationToken = default)
+    {
+        // Through IResultsAppData, as the results are: on a station the host's catalogue, so a picked rule is one
+        // the host knows.
+        var catalogue = await _resultsAppData.GetPointsRulesAsync(cancellationToken);
+        var choices = catalogue.Select(r => new PointsRuleChoice(r, IsCompetitionCopy: false)).ToList();
+        if (_session.CurrentEvent is null)
+            return choices;
+
+        var info = await _eventStore.GetCompetitionInfoAsync(FolderPath, cancellationToken);
+        var known = catalogue.Select(r => r.Id).ToHashSet();
+        choices.AddRange(PointsRuleCopies.Parse(info?.PointsRulesJson)
+            .Where(c => !known.Contains(c.Id))
+            .OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Select(c => new PointsRuleChoice(c, IsCompetitionCopy: true)));
+        return choices;
+    }
+
+    public Task RefreshPointsRuleCopiesAsync(CancellationToken cancellationToken = default)
+        => _session.CurrentEvent is null
+            ? Task.CompletedTask
+            : _ruleCopies.RefreshAsync(FolderPath, cancellationToken);
 
     public async Task<bool> GetRosterEnabledAsync(CancellationToken cancellationToken = default)
     {
@@ -165,7 +213,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     public async Task<DashboardInfo> GetDashboardAsync(CancellationToken cancellationToken = default)
     {
         var ev = _session.CurrentEvent;
-        var day = _session.CurrentDay;
+        var day = CurrentDay;
         if (ev is null || day is null)
             return new DashboardInfo { HasSelection = false };
 
@@ -325,7 +373,13 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     public async Task DeleteDayAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
         await EnsureDayEditableAsync(dayId, cancellationToken);
-        await _eventStore.DeleteDayAsync(FolderPath, dayId, cancellationToken);
+        var folder = FolderPath;
+        var day = (await _eventStore.GetDaysAsync(folder, cancellationToken)).FirstOrDefault(d => d.Id == dayId);
+        await _eventStore.DeleteDayAsync(folder, dayId, cancellationToken);
+        // Its folder too (imported XML, monitor screens, the default read-out file): a later day with this number
+        // must not inherit them.
+        if (day is not null)
+            await _files.DeleteDayFolderAsync(folder, day.Number, cancellationToken);
     }
 
     public async Task<EventDay?> ChangeDayNumberAsync(Guid dayId, int newNumber, CancellationToken cancellationToken = default)
@@ -366,7 +420,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     public async Task<string?> SaveDayFileAsync(string fileName, byte[] content, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(content);
-        if (_session.CurrentDay is not { } day)
+        if (CurrentDay is not { } day)
             return null;
 
         // The file lands in the day's folder (on a station: on the host); the stored name comes back.
@@ -375,7 +429,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public Task<IReadOnlyList<ControlPoint>> GetControlPointsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+        if (_session.CurrentEvent is null || CurrentDay is null)
             return Task.FromResult<IReadOnlyList<ControlPoint>>([]);
 
         return _eventStore.GetControlPointsAsync(FolderPath, CurrentDayId, cancellationToken);
@@ -416,7 +470,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         IReadOnlyCollection<Guid> disabledPointIds, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(disabledPointIds);
-        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+        if (_session.CurrentEvent is null || CurrentDay is null)
             return 0;
 
         var dayId = CurrentDayId;
@@ -494,7 +548,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<IReadOnlyList<GroupDayRow>> GetGroupDayRowsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+        if (_session.CurrentEvent is null || CurrentDay is null)
             return [];
 
         var settings = await _eventStore.GetGroupDaySettingsAsync(FolderPath, CurrentDayId, cancellationToken);
@@ -537,7 +591,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<IReadOnlyList<CourseVariantRow>> GetCourseVariantsAsync(Guid groupId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+        if (_session.CurrentEvent is null || CurrentDay is null)
             return [];
 
         var rows = await _eventStore.GetCourseVariantsAsync(FolderPath, CurrentDayId, cancellationToken);
@@ -550,7 +604,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task SaveCourseVariantsAsync(Guid groupId, IReadOnlyList<CourseVariantRow> variants, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+        if (_session.CurrentEvent is null || CurrentDay is null)
             return;
 
         var dayId = CurrentDayId;
@@ -644,6 +698,34 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         return await GetGroupDayRowsAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<RequiredFieldsEntry>> GetRequiredFieldsAsync(CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        var result = new List<RequiredFieldsEntry>();
+        foreach (var day in await _eventStore.GetDaysAsync(folder, cancellationToken))
+        {
+            foreach (var gs in await _eventStore.GetGroupDaySettingsAsync(folder, day.Id, cancellationToken))
+            {
+                var required = _strategies.For(gs.DisciplineOverride ?? day.DefaultDiscipline).RequiredFields;
+                if (required.Count > 0)
+                    result.Add(new RequiredFieldsEntry(day.Id, gs.GroupId, required));
+            }
+        }
+        return result;
+    }
+
+    public async Task<GroupNameClash?> FindGroupNameClashAsync(Guid groupId, string name, CancellationToken cancellationToken = default)
+    {
+        var target = (name ?? string.Empty).Trim();
+        if (target.Length == 0)
+            return null;
+        var groups = await _eventStore.GetGroupsAsync(FolderPath, cancellationToken);
+        var other = groups.FirstOrDefault(g => g.Id != groupId && TextKey.Same(g.Name, target));
+        return other is null
+            ? null
+            : new GroupNameClash(other.Name.Trim(), groups.FirstOrDefault(g => g.Id == groupId)?.Name.Trim() ?? string.Empty);
+    }
+
     public async Task<bool> UpdateGroupDayRowAsync(GroupDayRow row, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(row);
@@ -688,6 +770,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             RankLevel = row.RankLevel,
             MasterCount = row.MasterCount
         }, cancellationToken);
+        await _ruleCopies.EnsureAsync(FolderPath, row.PointsRuleId, cancellationToken);
         if (row.DisciplineOverride is { } overrideId && _strategies.For(overrideId).PluginId is not null)
             await EnsurePluginFieldsAsync(cancellationToken);
         return false;
@@ -825,18 +908,37 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
             if (settingsByGroupId.TryGetValue(group.Id, out var existing))
             {
-                // Already on the day. In add-only mode leave it as-is; otherwise overwrite the course
-                // order/distance and set the discipline override to Scatter for a scatter course, else reset it
-                // to the day default (null).
+                // Already on the day. In add-only mode leave it as-is. Otherwise refresh the course from the file
+                // but keep what the file cannot know: a type the judge chose for the group, a hand-written mixed
+                // pattern, a relay group's named leg courses.
                 if (!updateExisting)
                     continue;
 
-                existing.CourseOrder = courseOrder;
-                existing.DistanceKm = distanceKm;
-                existing.DisciplineOverride = disciplineOverride;
+                var effective = _strategies.For(existing.DisciplineOverride ?? CurrentDayDefaultDiscipline);
+                var isRelay = effective.Competitors == CompetitorModel.TeamWithLegs;
+                var keepsPattern = effective.UsesCoursePattern && CourseVariantData.IsPatternText(existing.CourseOrder);
+
+                if (!keepsPattern)
+                {
+                    existing.CourseOrder = courseOrder;
+                    existing.DistanceKm = distanceKm;
+                }
+
+                // The type: a multi-order course makes a (non-relay) group Scatter; a group that was Scatter and is
+                // single-order now gets the import's own fallback; any other chosen type stays.
+                var wasScatter = existing.DisciplineOverride == DisciplineId.Scatter;
+                if (isScatter && !isRelay)
+                    existing.DisciplineOverride = DisciplineId.Scatter;
+                else if (!isScatter && wasScatter)
+                    existing.DisciplineOverride = disciplineOverride;
+
                 await _eventStore.UpdateGroupDaySettingsAsync(folder, existing, cancellationToken);
-                await SaveCourseVariantsAsync(folder, dayId, group.Id, course, cancellationToken);
-                if (scatterFallbackHere)
+
+                // Variants: a scatter course replaces them; a relay group keeps its named leg courses unless the file
+                // brings variations of its own; a hand-kept mixed pattern keeps whatever it had.
+                if (isScatter || (!isRelay && !keepsPattern))
+                    await SaveCourseVariantsAsync(folder, dayId, group.Id, course, cancellationToken);
+                if (scatterFallbackHere && wasScatter)
                     scatterFallback.Add(name);
                 updated++;
             }
@@ -1417,7 +1519,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<IReadOnlyList<ParticipantDayRow>> GetParticipantDayRowsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+        if (_session.CurrentEvent is null || CurrentDay is null)
             return [];
 
         var folder = FolderPath;
@@ -1443,7 +1545,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             .ToDictionary(g => g.Key, g => g.ToList());
 
         // Keyed by participant-day link id.
-        var results = await ComputeDayResultsAsync(folder, _session.CurrentDay, cancellationToken);
+        var results = await ComputeDayResultsAsync(folder, CurrentDay, cancellationToken);
         var fieldValues = await LoadFieldValuesAsync(folder, cancellationToken);
 
         var rows = new List<ParticipantDayRow>(links.Count);
@@ -1684,9 +1786,13 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task RemoveParticipantFromDayAsync(Guid linkId, Guid participantId, CancellationToken cancellationToken = default)
     {
-        await EnsureDayEditableAsync(CurrentDayId, cancellationToken);
-
         var folder = FolderPath;
+        // The lock that matters is the link's own day («Мандатка» edits any day, not the session's).
+        var link = (await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken)).FirstOrDefault(l => l.Id == linkId);
+        if (link is null)
+            return;
+        await EnsureDayEditableAsync(link.EventDayId, cancellationToken);
+
         await _eventStore.DeleteParticipantDayAsync(folder, linkId, cancellationToken);
 
         // A participant that no longer runs on any day is removed entirely.
@@ -1695,8 +1801,29 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             await _eventStore.DeleteParticipantAsync(folder, participantId, cancellationToken);
     }
 
-    public Task DeleteParticipantAsync(Guid participantId, CancellationToken cancellationToken = default)
-        => _eventStore.DeleteParticipantAsync(FolderPath, participantId, cancellationToken);
+    public async Task DeleteParticipantAsync(Guid participantId, CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        // Deleting the person deletes every day of theirs: none of them may be closed.
+        foreach (var link in (await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken)).Where(l => l.ParticipantId == participantId))
+            await EnsureDayEditableAsync(link.EventDayId, cancellationToken);
+        await _eventStore.DeleteParticipantAsync(folder, participantId, cancellationToken);
+    }
+
+    public async Task<NumberConflict?> FindNumberConflictAsync(Guid participantId, string number, CancellationToken cancellationToken = default)
+    {
+        var trimmed = (number ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+            return null;
+        var participants = await _eventStore.GetParticipantsAsync(FolderPath, cancellationToken);
+        var holder = participants.FirstOrDefault(p => p.Id != participantId && TextKey.Same(p.Number.Trim(), trimmed));
+        return holder is null
+            ? null
+            : new NumberConflict(holder.FullName.Trim(), participants.FirstOrDefault(p => p.Id == participantId)?.Number ?? string.Empty);
+    }
+
+    public Task<int> CountParticipantDaysAsync(Guid participantId, CancellationToken cancellationToken = default)
+        => _eventStore.CountParticipantDaysForParticipantAsync(FolderPath, participantId, cancellationToken);
 
     // Joining a day and changing a group are the same operation here; the store does the look-up and the
     // insert in one transaction so two concurrent edits can't each create a link for the same (day, person).
@@ -3444,12 +3571,17 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         return await _eventStore.SetParticipantDayStartTimesBatchAsync(FolderPath, batch, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<FinishReadoutRow>> GetFinishReadoutRowsAsync(CancellationToken cancellationToken = default)
-        => (await GetFinishReadoutLogAsync(cancellationToken)).Rows;
+    public async Task<IReadOnlyList<FinishReadoutRow>> GetFinishReadoutRowsAsync(CancellationToken cancellationToken = default, Guid? forDayId = null)
+        => (await GetFinishReadoutLogAsync(cancellationToken, forDayId)).Rows;
 
-    public async Task<FinishReadoutLog> GetFinishReadoutLogAsync(CancellationToken cancellationToken = default)
+    public async Task<FinishReadoutLog> GetFinishReadoutLogAsync(CancellationToken cancellationToken = default, Guid? forDayId = null)
     {
-        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+        var (knownDay, otherDay) = await ResolveDayAsync(forDayId, cancellationToken);
+        if (!knownDay)
+            return new FinishReadoutLog([], FinishReadoutCounts.Empty);
+        if (otherDay is not null)
+            _dayOverride.Value = otherDay;
+        if (_session.CurrentEvent is null || CurrentDay is null)
             return new FinishReadoutLog([], FinishReadoutCounts.Empty);
 
         var folder = FolderPath;
@@ -3508,7 +3640,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var rentalChipSet = new HashSet<string>(
             (await _eventStore.GetRentalChipsAsync(folder, cancellationToken)).Select(c => c.Number.Trim()),
             TextKey.Comparer);
-        var currentDayNumber = _session.CurrentDay.Number;
+        var currentDayNumber = CurrentDay.Number;
         var allDays = await _eventStore.GetDaysAsync(folder, cancellationToken);
         var dayNumberById = allDays.ToDictionary(d => d.Id, d => d.Number);
         var allLinks = await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
@@ -3528,7 +3660,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         // Computed per-group placement (keyed by link id) so each known row can show the runner's place in
         // their group; the same ranking the participant tables use. A place is only assigned to an OK,
         // in-competition result — null otherwise.
-        var placeByLink = await ComputeDayResultsAsync(folder, _session.CurrentDay, cancellationToken, snapshot: snapshot);
+        var placeByLink = await ComputeDayResultsAsync(folder, CurrentDay, cancellationToken, snapshot: snapshot);
 
         // Each group's leader time (the place-1 OK result), so a placed runner's «Відставання» is their
         // result time minus it. Only time-based results carry a ResultTime; a scoring day leaves it null,
@@ -3646,7 +3778,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<bool> CurrentDayUsesScoreAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+        if (_session.CurrentEvent is null || CurrentDay is null)
             return false;
 
         var dayDefault = CurrentDayDefaultDiscipline;
@@ -3721,9 +3853,14 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         return common;
     }
 
-    public async Task<SplitsView?> GetFinishSplitsAsync(Guid readoutId, CancellationToken cancellationToken = default)
+    public async Task<SplitsView?> GetFinishSplitsAsync(Guid readoutId, CancellationToken cancellationToken = default, Guid? forDayId = null)
     {
-        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+        var (knownDay, otherDay) = await ResolveDayAsync(forDayId, cancellationToken);
+        if (!knownDay)
+            return null;
+        if (otherDay is not null)
+            _dayOverride.Value = otherDay;
+        if (_session.CurrentEvent is null || CurrentDay is null)
             return null;
 
         var folder = FolderPath;
@@ -3819,7 +3956,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         if (link?.RelayTeamId is not null && _strategies.For(discipline).Competitors == CompetitorModel.TeamWithLegs
             && !readouts.Any(o => o.Order > readout.Order && TextKey.Same(o.ChipNumber.Trim(), readout.ChipNumber.Trim())))
         {
-            var dayResults = await ComputeDayResultsAsync(folder, _session.CurrentDay, cancellationToken);
+            var dayResults = await ComputeDayResultsAsync(folder, CurrentDay, cancellationToken);
             if (dayResults.TryGetValue(link.Id, out var legResult) && legResult.Leg is { } leg)
             {
                 start = leg.Start;
@@ -3868,8 +4005,13 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         return legCourse is null ? view : view with { VariantCode = legCourse.Code };
     }
 
-    public async Task<SplitPrintDocument?> GetSplitPrintDocumentAsync(Guid readoutId, bool reprint = false, CancellationToken cancellationToken = default)
+    public async Task<SplitPrintDocument?> GetSplitPrintDocumentAsync(Guid readoutId, bool reprint = false, CancellationToken cancellationToken = default, Guid? forDayId = null)
     {
+        var (knownDay, otherDay) = await ResolveDayAsync(forDayId, cancellationToken);
+        if (!knownDay)
+            return null;
+        if (otherDay is not null)
+            _dayOverride.Value = otherDay;
         // The splits view (passage in order) is the printout's body; the resolved row carries the header
         // metadata (name/number/group/result/status). Both already resolve the chip's holder on the day,
         // so we just zip them by id rather than duplicating the resolution.
@@ -3999,7 +4141,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     private async Task<(int? Place, int? ReadOutCount)> CurrentPlaceAsync(
         FinishReadoutRow row, bool reprint, CancellationToken cancellationToken)
     {
-        if (!row.IsKnown || _session.CurrentDay is null)
+        if (!row.IsKnown || CurrentDay is null)
             return (null, null);
 
         var snapshot = await _eventStore.GetDaySnapshotAsync(FolderPath, CurrentDayId, cancellationToken);
@@ -4014,7 +4156,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 .Where(r => r.Order <= row.Order || (reprint && !TextKey.Same(r.ChipNumber.Trim(), chip)))
                 .ToList()
         };
-        var results = await ComputeDayResultsAsync(FolderPath, _session.CurrentDay, cancellationToken, snapshot: readSoFar);
+        var results = await ComputeDayResultsAsync(FolderPath, CurrentDay, cancellationToken, snapshot: readSoFar);
         if (!results.TryGetValue(link.Id, out var mine) || mine.Place is not { } place)
             return (null, null);
 
@@ -4161,10 +4303,15 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             _strategies, rows, settingsByGroup, dayDefault, startFinishCodes, disabledCodes);
     }
 
-    public async Task<FinishReadoutImportResult> ImportFinishReadoutsAsync(ChipReadData data, CancellationToken cancellationToken = default)
+    public async Task<FinishReadoutImportResult> ImportFinishReadoutsAsync(ChipReadData data, CancellationToken cancellationToken = default, Guid? forDayId = null)
     {
+        var (knownDay, otherDay) = await ResolveDayAsync(forDayId, cancellationToken);
+        if (!knownDay)
+            return default;
+        if (otherDay is not null)
+            _dayOverride.Value = otherDay;
         ArgumentNullException.ThrowIfNull(data);
-        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+        if (_session.CurrentEvent is null || CurrentDay is null)
             return default;
 
         var folder = FolderPath;
@@ -4251,7 +4398,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<int> ClearFinishReadoutsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+        if (_session.CurrentEvent is null || CurrentDay is null)
             return 0;
 
         var dayId = CurrentDayId;
@@ -4259,9 +4406,14 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         return await _eventStore.DeleteFinishReadoutsForDayAsync(FolderPath, dayId, cancellationToken);
     }
 
-    public async Task<FinishReadoutEditData?> GetFinishReadoutEditAsync(Guid readoutId, CancellationToken cancellationToken = default)
+    public async Task<FinishReadoutEditData?> GetFinishReadoutEditAsync(Guid readoutId, CancellationToken cancellationToken = default, Guid? forDayId = null)
     {
-        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+        var (knownDay, otherDay) = await ResolveDayAsync(forDayId, cancellationToken);
+        if (!knownDay)
+            return null;
+        if (otherDay is not null)
+            _dayOverride.Value = otherDay;
+        if (_session.CurrentEvent is null || CurrentDay is null)
             return null;
 
         var folder = FolderPath;
@@ -4353,10 +4505,15 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         };
     }
 
-    public async Task UpdateFinishReadoutAsync(FinishReadoutEdit edit, CancellationToken cancellationToken = default)
+    public async Task UpdateFinishReadoutAsync(FinishReadoutEdit edit, CancellationToken cancellationToken = default, Guid? forDayId = null)
     {
+        var (knownDay, otherDay) = await ResolveDayAsync(forDayId, cancellationToken);
+        if (!knownDay)
+            return;
+        if (otherDay is not null)
+            _dayOverride.Value = otherDay;
         ArgumentNullException.ThrowIfNull(edit);
-        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+        if (_session.CurrentEvent is null || CurrentDay is null)
             return;
 
         var folder = FolderPath;
@@ -4760,23 +4917,23 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     changes.Add(new ImportPreviewChange(field, day, before.Trim(), after.Trim()));
             }
 
-            // Participant-level fields, with the import's own rules: number/team/payment only when the file has
-            // a value; everything else is overwritten by an all-days import.
+            // Participant-level fields, with the import's own rules (EventStore.ImportParticipants): a field changes
+            // only when the file has a value for it — a blank never clears a stored value; membership can only be set.
             Change("FullName", existing.FullName, src.FullName);
             if (src.Number.Trim() is { Length: > 0 } and not "0") Change("Number", existing.Number, src.Number);
             if (src.Team.Trim().Length > 0) Change("Team", existing.Team, src.Team);
-            Change("Rank", existing.Rank, src.Rank);
-            Change("Coach", existing.Coach, src.Coach);
-            if (existing.BirthDate?.Date != src.BirthDate?.Date)
+            if (src.Rank.Trim().Length > 0) Change("Rank", existing.Rank, src.Rank);
+            if (src.Coach.Trim().Length > 0) Change("Coach", existing.Coach, src.Coach);
+            if (src.BirthDate is not null && existing.BirthDate?.Date != src.BirthDate?.Date)
                 changes.Add(new ImportPreviewChange("BirthDate", null,
                     existing.BirthDate?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) ?? string.Empty,
                     src.BirthDate?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) ?? string.Empty));
-            Change("Region", Name<Region>(existing.RegionId, regions), src.Region);
-            Change("Club", Name<Club>(existing.ClubId, clubs), src.Club);
-            Change("Dussh", Name<Dussh>(existing.DusshId, dusshes), src.Dussh);
-            Change("Representative", existing.Representative, src.Representative);
-            if (existing.IsFsouMember != src.IsFsouMember)
-                changes.Add(new ImportPreviewChange("IsFsouMember", null, existing.IsFsouMember ? "+" : "−", src.IsFsouMember ? "+" : "−"));
+            if (src.Region.Trim().Length > 0) Change("Region", Name<Region>(existing.RegionId, regions), src.Region);
+            if (src.Club.Trim().Length > 0) Change("Club", Name<Club>(existing.ClubId, clubs), src.Club);
+            if (src.Dussh.Trim().Length > 0) Change("Dussh", Name<Dussh>(existing.DusshId, dusshes), src.Dussh);
+            if (src.Representative.Trim().Length > 0) Change("Representative", existing.Representative, src.Representative);
+            if (src.IsFsouMember && !existing.IsFsouMember)
+                changes.Add(new ImportPreviewChange("IsFsouMember", null, "−", "+"));
             if (src.Payment.Trim().Length > 0) Change("Payment", existing.Payment, src.Payment);
 
             // Additional fields: a blank cell never clears a stored value.
@@ -5249,7 +5406,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     }
 
     public string? GetMonitorOutputDirectory() =>
-        _session.CurrentEvent is not { } ev || _session.CurrentDay is not { } day
+        _session.CurrentEvent is not { } ev || CurrentDay is not { } day
             ? null
             : _files.MonitorOutputDirectory(ev.FolderPath, ev.Identifier, day.Number);
 

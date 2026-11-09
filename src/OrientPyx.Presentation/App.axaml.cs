@@ -44,6 +44,8 @@ public partial class App : Application
         var activityLog = services.GetRequiredService<IActivityLog>();
         Program.ActivityLog = activityLog;
         activityLog.Info("Application services built; initializing database.");
+        foreach (var note in Program.StartupNotes)
+            activityLog.Info(note);
 
         services.InitializeOrientPyxDatabase();
 

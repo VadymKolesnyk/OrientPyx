@@ -20,10 +20,13 @@ public sealed class AboutViewModel : PageViewModelBase
 
     /// <summary>Assembly version (e.g. "0.1.1"); shown next to the app name.</summary>
     public string AppVersion =>
-        System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "—";
+        typeof(AboutViewModel).Assembly.GetName().Version?.ToString(3) ?? "—";   // this assembly, not the host (a test runner)
 
     /// <summary>Public source repository.</summary>
     public string GitHubUrl => "https://github.com/VadymKolesnyk/OrientPyx";
+
+    /// <summary>The user documentation site (GitHub Pages).</summary>
+    public string DocsUrl => Services.DocsLinks.Site;
 
     /// <summary>Sergiy Sukharev's original «Orientir» program that inspired this one.</summary>
     public string OrientirUrl => "https://events.orienteering.org.ua/po.htm";

@@ -73,10 +73,19 @@
                     </StackPanel>
                 </Border>
 
+                <!-- The watch keeps reading into the day it was started on while the pages show another one. -->
+                <Border IsVisible="{Binding HasAutoReadOtherDayNote}"
+                        Background="{DynamicResource AccentSurface}" CornerRadius="8" Padding="12,8">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <controls:Icon Kind="Info" Size="16" VerticalAlignment="Top" Margin="0,2,0,0" />
+                        <TextBlock Text="{Binding AutoReadOtherDayNote}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
                 <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto"
                       ColumnSpacing="10" RowSpacing="10"
                       IsVisible="{Binding IsAutoReadExpanded}"
-                      IsEnabled="{Binding !IsDayLocked}">
+                      IsEnabled="{Binding IsAutoReadPanelEnabled}">
 
                     <!-- File path + picker. The TextBox takes the remaining width and the buttons dock to
                          its right, so the row stays inside column 0 instead of overflowing into the stepper. -->

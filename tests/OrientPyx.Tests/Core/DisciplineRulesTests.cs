@@ -112,9 +112,10 @@ public sealed class DisciplineRulesTests
         Assert.Equal(FinishStatus.Ok, r["Exact"].Status);
         Assert.Equal(FinishStatus.Ovt, r["Over"].Status);
         Assert.Null(r["Over"].ResultTime);
-        // No group, no assigned start, no chip start: nothing to measure against, so no limit and no time.
-        Assert.Equal(FinishStatus.Ok, r["NoStart"].Status);
+        // Read out, but no start anywhere (no chip start, no start-protocol time): DNS, never a placed OK.
+        Assert.Equal(FinishStatus.Dns, r["NoStart"].Status);
         Assert.Null(r["NoStart"].ResultTime);
+        Assert.Null(r["NoStart"].Place);
     }
 
     [Fact]
@@ -249,7 +250,7 @@ public sealed class DisciplineRulesTests
     // ---- Score by time -------------------------------------------------------------------------------------
 
     [Fact]
-    public async Task ScoreByTime_ScoresPointsWithPenaltyButNeedsAStatusOverrideToPlace()
+    public async Task ScoreByTime_FinishIsOkLateCostsPointsNoFinishIsDnf()
     {
         var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("sbt"), discipline: DisciplineId.ScoreByTime);
         var cps = await c.AddControlsAsync(1, "31", "32", "33");
@@ -257,23 +258,33 @@ public sealed class DisciplineRulesTests
         foreach (var cp in cps) { cp.Points = int.Parse(cp.Code) / 10; await store.UpdateControlPointAsync(c.Folder, cp); } // 3 points each
         await c.AddGroupAsync("Ч21", "31 32 33", s => { s.TimeLimitSeconds = 20 * 60; s.PenaltyPerMinute = 2m; });
         await c.AddRunnerAsync("Clean", "1", "1001", "Ч21", T(10, 0));
-        await c.AddRunnerAsync("Late", "2", "1002", "Ч21", T(10, 0), configureDay: d => d.ResultStatusOverride = FinishStatus.Ok);
-        await c.AddRunnerAsync("Bonus", "3", "1003", "Ч21", T(10, 0), configureDay: d => { d.Bonus = 4; d.ResultStatusOverride = FinishStatus.Ok; });
+        await c.AddRunnerAsync("Late", "2", "1002", "Ч21", T(10, 0));
+        await c.AddRunnerAsync("Bonus", "3", "1003", "Ч21", T(10, 0), configureDay: d => d.Bonus = 4);
+        await c.AddRunnerAsync("NoFinish", "4", "1004", "Ч21", T(10, 0));
+        await c.AddRunnerAsync("Judged", "5", "1005", "Ч21", T(10, 0), configureDay: d => d.ResultStatusOverride = FinishStatus.Dsq);
         await c.AddReadoutAsync(1, "1001", "31 32 33", T(10, 0), T(10, 20));
         await c.AddReadoutAsync(1, "1002", "31 32 33", T(10, 0), T(10, 21, 30)); // 1:30 late → 2 started minutes × 2 = 4
         await c.AddReadoutAsync(1, "1003", "31 32", T(10, 0), T(10, 15));
+        await c.AddReadoutAsync(1, "1004", "31 32 33", T(10, 0), T(10, 18));
+        await c.AddReadoutAsync(1, "1005", "31 32 33", T(10, 0), T(10, 19));
+        var noFinish = (await store.GetFinishReadoutsAsync(c.Folder, c.Day(1).Id)).Single(r => r.ChipNumber == "1004");
+        noFinish.FinishTime = null;
+        await store.UpdateFinishReadoutAsync(c.Folder, noFinish);
 
         var r = await c.ResultsAsync();
-        Assert.Equal(FinishStatus.None, r["Clean"].Status);   // the built-in never says Ok by itself
+        Assert.Equal(FinishStatus.Ok, r["Clean"].Status);     // a finish is OK by itself, like the rogaine
         Assert.Equal(9, r["Clean"].Score);
-        Assert.Null(r["Clean"].Place);
-        Assert.Equal(FinishStatus.Ok, r["Late"].Status);
+        Assert.Equal(FinishStatus.Ok, r["Late"].Status);      // late only costs points, never OVT
         Assert.Equal(5, r["Late"].Score);                     // 9 − 2 started minutes × 2
         Assert.Equal(3, r["Late"].ScoreBreakdown.Count);
         Assert.Equal(10, r["Bonus"].Score);                   // 6 + bonus 4
         Assert.Equal(4, r["Bonus"].Bonus);
+        Assert.Equal(FinishStatus.Dnf, r["NoFinish"].Status);
+        Assert.Null(r["NoFinish"].Place);
+        Assert.Equal(FinishStatus.Dsq, r["Judged"].Status);   // the judge's status still wins
         Assert.Equal(1, r["Bonus"].Place);
-        Assert.Equal(2, r["Late"].Place);
+        Assert.Equal(2, r["Clean"].Place);
+        Assert.Equal(3, r["Late"].Place);
     }
 
     // ---- Rogaine -------------------------------------------------------------------------------------------
@@ -463,6 +474,80 @@ public sealed class DisciplineRulesTests
 
         var r = await c.ResultsAsync();
         Assert.Equal(5m, r["First"].Points);
+    }
+
+    // Another instance (another install, the dev build, another computer) has its own app.db, where the rule's id
+    // does not exist — simulated by deleting the rule after the competition was opened once.
+    [Fact]
+    public async Task Points_RuleUnknownToThisAppDbScoresFromTheCompetitionCopy()
+    {
+        var app = Sp.GetRequiredService<IAppStore>();
+        var table = await app.AddPointsRuleAsync(PointsRuleKind.Table);
+        table.Name = "copied table"; table.TableJson = "[7,4]";
+        await app.UpdatePointsRuleAsync(table);
+
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("ptsc"));
+        await c.AddControlsAsync(1, "31");
+        await c.AddGroupAsync("G", "31", s => s.PointsRuleId = table.Id);
+        await c.AddRunnerAsync("First", "1", "1001", "G", T(10, 0));
+        await c.AddRunnerAsync("Second", "2", "1002", "G", T(10, 0));
+        await c.AddReadoutAsync(1, "1001", "31", T(10, 0), T(10, 10));
+        await c.AddReadoutAsync(1, "1002", "31", T(10, 0), T(10, 12));
+
+        // Opening the competition writes the copy.
+        Assert.Equal(7m, (await c.ResultsAsync())["First"].Points);
+        var store = Sp.GetRequiredService<IEventStore>();
+        var copy = Assert.Single(PointsRuleCopies.Parse((await store.GetCompetitionInfoAsync(c.Folder))!.PointsRulesJson));
+        Assert.Equal(table.Id, copy.Id);
+        Assert.Equal("[7,4]", copy.TableJson);
+
+        await app.DeletePointsRuleAsync(table.Id);
+
+        var r = await c.ResultsAsync();
+        Assert.Equal(7m, r["First"].Points);
+        Assert.Equal(4m, r["Second"].Points);
+        // Reopening keeps a copy this catalogue cannot refresh, and the Groups page offers it as the competition's.
+        Assert.Single(PointsRuleCopies.Parse((await store.GetCompetitionInfoAsync(c.Folder))!.PointsRulesJson));
+        var choices = await Sp.GetRequiredService<ICompetitionEditorService>().GetPointsRuleChoicesAsync();
+        Assert.True(Assert.Single(choices, ch => ch.Rule.Id == table.Id).IsCompetitionCopy);
+    }
+
+    [Fact]
+    public async Task Points_CompetitionCopyFollowsTheDefaultRuleAndItsEdits()
+    {
+        var app = Sp.GetRequiredService<IAppStore>();
+        var table = await app.AddPointsRuleAsync(PointsRuleKind.Table);
+        table.Name = "copied default"; table.TableJson = "[9]";
+        await app.UpdatePointsRuleAsync(table);
+
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("ptse"));
+        await c.SelectAsync();
+        var editor = Sp.GetRequiredService<ICompetitionEditorService>();
+        var store = Sp.GetRequiredService<IEventStore>();
+        async Task<IReadOnlyList<PointsRule>> CopiesAsync()
+            => PointsRuleCopies.Parse((await store.GetCompetitionInfoAsync(c.Folder))!.PointsRulesJson);
+
+        var info = (await editor.GetInfoAsync())!;
+        info.DefaultPointsRuleId = table.Id;
+        await editor.SaveInfoAsync(info);
+        Assert.Equal("[9]", Assert.Single(await CopiesAsync()).TableJson);
+
+        // A page saving an older CompetitionInfo leaves the copy alone.
+        info.Name = "renamed";
+        info.PointsRulesJson = null;
+        await store.SaveCompetitionInfoAsync(c.Folder, info);
+        Assert.Single(await CopiesAsync());
+
+        table.TableJson = "[11]";
+        await app.UpdatePointsRuleAsync(table);
+        await editor.RefreshPointsRuleCopiesAsync();
+        Assert.Equal("[11]", Assert.Single(await CopiesAsync()).TableJson);
+
+        info = (await editor.GetInfoAsync())!;
+        info.DefaultPointsRuleId = null;
+        await editor.SaveInfoAsync(info);
+        await editor.RefreshPointsRuleCopiesAsync();
+        Assert.Empty(await CopiesAsync());
     }
 
     [Fact]

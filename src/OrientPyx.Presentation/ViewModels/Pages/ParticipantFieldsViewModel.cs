@@ -43,6 +43,13 @@ public sealed class ParticipantFieldsViewModel
     public ParticipantFieldCellViewModel this[string key] =>
         _cells.TryGetValue(key, out var cell) ? cell : ParticipantFieldCellViewModel.Missing;
 
+    /// <summary>Marks the fields the participant's discipline requires (a plugin's RequiredFields): an empty one tints red.</summary>
+    public void MarkRequired(IReadOnlyCollection<string> keys)
+    {
+        foreach (var (key, cell) in _cells)
+            cell.IsRequired = keys.Contains(key, StringComparer.OrdinalIgnoreCase);
+    }
+
     /// <summary>The current value of every field, by key (blank values included as empty).</summary>
     public IReadOnlyDictionary<string, string> Values =>
         _cells.ToDictionary(c => c.Key, c => c.Value.Value);
@@ -92,7 +99,14 @@ public sealed partial class ParticipantFieldCellViewModel : ObservableObject
         set => Value = value ? "1" : string.Empty;
     }
 
-    public bool IsInvalid => _field.IsInvalid(Value);
+    /// <summary>A value outside the choice list / a non-number, or — when the participant's discipline requires
+    /// this field (<see cref="IsRequired"/>) — no value at all.</summary>
+    public bool IsInvalid => _field.IsInvalid(Value) || (IsRequired && Value.Trim().Length == 0);
+
+    /// <summary>Set by the page for a member of a group whose discipline requires this field (a plugin's RequiredFields).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsInvalid))]
+    private bool _isRequired;
 
     /// <summary>The choice options: blank first, then the field's options, plus (red) the stored value when it is
     /// outside the list so the dropdown still shows it (Р-18).</summary>

@@ -14,6 +14,13 @@ namespace OrientPyx.BusinessLogic.Services;
 /// </summary>
 public sealed class ResultProtocolBuilder : IResultProtocolBuilder
 {
+    /// <summary>
+    /// True when a runner of the day has a score («Бали» — вибір за часом, рогейн). Without one the protocol leaves the
+    /// «Бали» column out whatever the template says; the page's preview and column list mirror it.
+    /// </summary>
+    public static bool HasScores(ResultProtocolData data) =>
+        data.Groups.Any(g => g.Rows.Any(r => r.Result.Score is not null));
+
     public ResultProtocolDocument Build(ResultProtocolData data, ResultProtocolSettings settings, ProtocolLabels labels)
     {
         ArgumentNullException.ThrowIfNull(data);
@@ -30,6 +37,10 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
                 : c.Key is { } key && extras.TryGetValue(key, out var extra) ? new Col(ProtocolColumn.Extra, extra) : (Col?)null)
             .OfType<Col>()
             .ToList();
+        // «Бали» only means something for a scored format (вибір за часом, рогейн): a day where no runner has a score
+        // leaves the column out, whatever the template says — it would be an empty column in every set-course protocol.
+        if (!HasScores(data))
+            columns.RemoveAll(c => c.Column == ProtocolColumn.Score);
         // Always have at least the name column, so a stripped-empty config still produces a usable table.
         if (columns.Count == 0)
             columns.Add(new Col(ProtocolColumn.FullName, null));
@@ -257,9 +268,12 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         foreach (var team in teams)
         {
             teamSeq++;
-            // The team place/score is stamped on every member; take it from the first member. The caption
-            // row shows the team name (in the name column), its place and score, and the team sequence no.
-            var lead = team.First();
+            // The team place/score is stamped on every member. The team's time is its slowest in-competition member's —
+            // what the team is ranked by — so the caption takes that member, not whoever happens to be listed first.
+            // The caption row shows the team name (in the name column), its place, score, time and the sequence no.
+            var lead = team
+                .Where(r => r.Result.ResultTime is not null && !r.Result.OutOfCompetition)
+                .MaxBy(r => r.Result.ResultTime) ?? team.First();
             body.Add(new ResultProtocolBodyRow(
                 columns.Select(c => TeamCell(c, lead, team.Key, teamSeq, leader)).ToList(),
                 IsTeamHeader: true,

@@ -115,11 +115,14 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
             DataArea.Readouts, DataArea.ParticipantDays, DataArea.Participants, DataArea.Groups, DataArea.GroupDaySettings,
             DataArea.ControlPoints, DataArea.CourseVariants, DataArea.Relay, DataArea.Chips, DataArea.Days, DataArea.Settings);
 
-        // Singleton VM: on a competition/day change, stop the watch (the file belongs to the old day)
-        // and reload. SessionChanged may be raised on a pool thread, so marshal onto the UI thread.
+        // Singleton VM: reload on every session change. The watch belongs to the competition and day it was started
+        // on — another competition stops it; another day on the pages does not (it keeps reading into its own day,
+        // see _autoReadDay); LoadAsync stops it when its day was closed or deleted. SessionChanged may be raised on
+        // a pool thread, so marshal onto the UI thread.
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() =>
         {
-            StopAutoRead();
+            if (AutoReadEnabled && !string.Equals(_autoReadEvent, _session.CurrentEvent?.FolderPath, StringComparison.Ordinal))
+                StopAutoRead();
             _ = LoadAsync();
         });
 
@@ -316,6 +319,17 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         RefreshDayLock();
         OnPropertyChanged(nameof(ShowAutoReadDayLockedNote));
 
+        // The running watch's own day: follow its fresh entity; stop when it was closed or deleted meanwhile.
+        if (AutoReadEnabled && _autoReadDay is { } readDay)
+        {
+            var fresh = days.FirstOrDefault(d => d.Id == readDay.Id);
+            if (fresh is null || fresh.IsLocked)
+                StopAutoRead();
+            else
+                _autoReadDay = fresh;
+        }
+        RaiseAutoReadDayNote();
+
         // Default the watched file to the current day's folder (day{N}/event.csv) unless the user
         // already typed a path. Done after the day is resolved so it follows the selected day.
         SyncDefaultFilePath();
@@ -358,7 +372,8 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     {
         var ev = _session.CurrentEvent;
         var day = _session.CurrentDay;
-        if (ev is null || day is null)
+        // A running watch keeps its file even while the pages show another day.
+        if (ev is null || day is null || AutoReadEnabled)
             return;
 
         var def = DefaultPathFor(ev, day.Number);
@@ -494,9 +509,9 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     // Returns false when there was nothing to print (the row resolved to no document). Shared by the
     // manual «друк» action and the auto-print path; the caller owns any user-facing error handling.
     // reprint: the slip's place counts the read-outs logged after this one too (see GetSplitPrintDocumentAsync).
-    private async Task<bool> PrintReadoutAsync(Guid readoutId, PrintSettings settings, bool reprint)
+    private async Task<bool> PrintReadoutAsync(Guid readoutId, PrintSettings settings, bool reprint, Guid? dayId = null)
     {
-        var doc = await _busy.RunAsync(() => _editor.GetSplitPrintDocumentAsync(readoutId, reprint));
+        var doc = await _busy.RunAsync(() => _editor.GetSplitPrintDocumentAsync(readoutId, reprint, forDayId: dayId));
         if (doc is null)
             return false;
 
@@ -610,7 +625,10 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
             HideActivity();
             AutoReadError = string.Empty;
             ResetSeenInFile();
+            _autoReadDay = null;
+            _autoReadEvent = null;
         }
+        RaiseAutoReadDayNote();
     }
 
     partial void OnAutoReadFilePathChanged(string value)
@@ -650,6 +668,10 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         if (!AutoReadEnabled)
             return;
 
+        // The watch reads into the day it is started on, whatever day the pages show later.
+        _autoReadDay = _session.CurrentDay;
+        _autoReadEvent = _session.CurrentEvent?.FolderPath;
+        RaiseAutoReadDayNote();
         StartAutoRead();
         ShowActivity();
     }
@@ -741,7 +763,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     // stay off the UI thread; only the reload hops back. Silent: it just appends new reads.
     private async Task OnPolledContentAsync(string content)
     {
-        if (string.IsNullOrWhiteSpace(content) || _session.CurrentDay is null)
+        if (string.IsNullOrWhiteSpace(content) || _autoReadDay is not { } readDay)
             return;
 
         try
@@ -764,7 +786,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
             if (HasAutoReadError)
                 await Dispatcher.UIThread.InvokeAsync(() => AutoReadError = string.Empty);
 
-            var result = await _editor.ImportFinishReadoutsAsync(data);
+            var result = await _editor.ImportFinishReadoutsAsync(data, forDayId: readDay.Id);
             MarkAddedSeenInFile(result.AddedReads ?? []);
             if (result.Added > 0)
             {
@@ -801,8 +823,8 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         if (readoutIds.Count == 0)
             return;
 
-        // Classify each new id as known / unknown from the freshly-computed rows.
-        var rows = await _editor.GetFinishReadoutRowsAsync();
+        // Classify each new id as known / unknown from the freshly-computed rows (of the watch's day).
+        var rows = await _editor.GetFinishReadoutRowsAsync(forDayId: AutoReadDayId);
         var byId = rows.ToDictionary(r => r.Id);
 
         // Once the operator picks "cancel for all" on any unknown read, we stop prompting for the rest of
@@ -873,7 +895,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
 
         // Chip numbers for the log line come from the store, not the bound collection — this runs on the
         // poller's thread and Readouts belongs to the UI.
-        var rows = await _editor.GetFinishReadoutRowsAsync();
+        var rows = await _editor.GetFinishReadoutRowsAsync(forDayId: AutoReadDayId);
         var byId = rows.ToDictionary(r => r.Id);
         foreach (var repeat in repeats)
         {
@@ -902,7 +924,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     // Returns true when the operator chose "cancel for all" so the caller skips the rest of the batch.
     private async Task<bool> PromptUnknownReadAsync(Guid readoutId)
     {
-        var data = await _editor.GetFinishReadoutEditAsync(readoutId);
+        var data = await _editor.GetFinishReadoutEditAsync(readoutId, forDayId: AutoReadDayId);
         if (data is null)
             return false;
 
@@ -915,13 +937,13 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         {
             // Save: persist the edit + reassignment (creating the participant first when the operator
             // filled in the new-participant form), then (if auto-print on) print for the assigned runner.
-            await _editor.UpdateFinishReadoutAsync(edit);
+            await _editor.UpdateFinishReadoutAsync(edit, forDayId: AutoReadDayId);
             _log.Action(edit.NewParticipant is { } created
                 ? string.Format(Localization.Get("FinishRead.Unknown.CreatedLog"), created.FullName, edit.ChipNumber)
                 : string.Format(Localization.Get("FinishRead.Unknown.AssignedLog"), edit.ChipNumber));
             // With a holder now, the chip may turn out to be a rental one due back.
             if (CollectChipToastEnabled)
-                NotifyCollectChip((await _editor.GetFinishReadoutRowsAsync()).FirstOrDefault(r => r.Id == readoutId));
+                NotifyCollectChip((await _editor.GetFinishReadoutRowsAsync(forDayId: AutoReadDayId)).FirstOrDefault(r => r.Id == readoutId));
             await AutoPrintNewReadsAsync([readoutId]);
         }
         else
@@ -951,7 +973,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         {
             try
             {
-                await PrintReadoutAsync(id, settings, reprint);
+                await PrintReadoutAsync(id, settings, reprint, AutoReadDayId);
             }
             catch (PrintNotSupportedException)
             {
@@ -960,8 +982,32 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         }
     }
 
-    // Used on competition/day switch: turning the toggle off runs OnAutoReadEnabledChanged → Stop.
+    // Used on a competition switch / the watch's day closed: turning the toggle off runs OnAutoReadEnabledChanged → Stop.
     private void StopAutoRead() => AutoReadEnabled = false;
+
+    // The day and competition the running watch writes to (set when it starts, cleared when it stops).
+    private EventDay? _autoReadDay;
+    private string? _autoReadEvent;
+
+    private Guid? AutoReadDayId => _autoReadDay?.Id;
+
+    /// <summary>Under the auto-read panel while the pages show another day than the one being read into.</summary>
+    public string AutoReadOtherDayNote => AutoReadEnabled && _autoReadDay is { } d && d.Id != _session.CurrentDay?.Id
+        ? string.Format(Localization.Get("FinishRead.AutoRead.OtherDay"), d.Number)
+        : string.Empty;
+
+    public bool HasAutoReadOtherDayNote => AutoReadOtherDayNote.Length > 0;
+
+    /// <summary>The auto-read fields: dead on a closed day, except to stop a watch that reads into another day.</summary>
+    public bool IsAutoReadPanelEnabled => !IsDayLocked || AutoReadEnabled;
+
+    private void RaiseAutoReadDayNote()
+    {
+        OnPropertyChanged(nameof(AutoReadOtherDayNote));
+        OnPropertyChanged(nameof(HasAutoReadOtherDayNote));
+        OnPropertyChanged(nameof(IsAutoReadPanelEnabled));
+        UpdateActivityStatus();
+    }
 
     // Drops what this watch has seen in the file, so the next tick primes afresh instead of treating the
     // file's existing rows as repeat reads to print.
@@ -1021,6 +1067,12 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         var fileName = string.IsNullOrWhiteSpace(AutoReadFilePath) ? "—" : Path.GetFileName(AutoReadFilePath);
         var key = IsAutoReadPaused ? "Activity.FinishRead.StatusPaused" : "Activity.FinishRead.Status";
         var status = string.Format(Localization.Get(key), fileName, AutoReadIntervalSeconds);
+        // Reading into another day than the pages show: name it; the head count below is the shown day's, so leave it out.
+        if (_autoReadDay is { } readDay && readDay.Id != _session.CurrentDay?.Id)
+        {
+            _activity.StatusText = status + Environment.NewLine + string.Format(Localization.Get("Activity.FinishRead.Day"), readDay.Number);
+            return;
+        }
         // The head count on a second line, so the top-bar block answers «скільки ще в лісі» from any page.
         _activity.StatusText = _session.CurrentDay is null ? status : status + Environment.NewLine + CountsText(" · ");
     }

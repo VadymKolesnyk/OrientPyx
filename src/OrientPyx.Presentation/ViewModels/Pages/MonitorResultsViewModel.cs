@@ -71,11 +71,13 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
             ScheduleAutoSave();
         };
 
-        // Singleton VM: on a competition/day change, stop generating, drop the cached preview snapshot (it's
-        // per-day), and reload for the new selection.
+        // Singleton VM: on a session change drop the cached preview snapshot (it's per-day) and reload. Generation
+        // belongs to the competition and day it was started on (_runDay): another competition stops it, another day
+        // on the pages (or saving «Інформація», a station's edit…) does not.
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() =>
         {
-            StopGenerating();
+            if (IsGenerating && !string.Equals(_runEvent, _session.CurrentEvent?.FolderPath, StringComparison.Ordinal))
+                StopGenerating();
             _previewSource = null;
             _ = LoadAsync();
         });
@@ -88,6 +90,7 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
     public override string NavKey => "Nav.Monitor";
     public override string TitleKey => "Page.Monitor.Title";
     public override string TextKey => "Page.Monitor.Text";
+    public override string HelpKeyPrefix => "Help.Monitor";
 
     /// <summary>Raised when "go to settings" is clicked on the top-bar activity — asks the shell to show this page.</summary>
     public event EventHandler? NavigateToSelfRequested;
@@ -484,6 +487,8 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
 
         IsGenerating = true;
         IsPaused = false;
+        _runDay = _session.CurrentDay;
+        _runEvent = _session.CurrentEvent?.FolderPath;
         ShowActivity();
 
         _runCts = new CancellationTokenSource();
@@ -541,9 +546,13 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
         }
     }
 
+    // The day and competition a running generation writes for (set on start).
+    private BusinessLogic.Entities.EventDay? _runDay;
+    private string? _runEvent;
+
     private async Task GenerateDueAsync(Dictionary<string, DateTime> nextDue, CancellationToken ct)
     {
-        var day = _session.CurrentDay;
+        var day = _runDay;
         if (day is null)
             return;
 

@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using OrientPyx.Presentation.ViewModels.Dialogs;
 
 namespace OrientPyx.Presentation.Views.Dialogs;
@@ -19,5 +20,12 @@ public partial class ScreenHelpView : UserControl
         }
 
         base.OnKeyDown(e);
+    }
+
+    // «Детальніше в документації»: this screen's page on the documentation site, in the default browser.
+    private void OnDocsClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is ScreenHelpViewModel vm && TopLevel.GetTopLevel(this)?.Launcher is { } launcher)
+            _ = launcher.LaunchUriAsync(vm.DocsUri);
     }
 }

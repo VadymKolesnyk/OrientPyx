@@ -282,14 +282,16 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         // • By time: only members with a result on every counted day are ranked.
         // • By points + RequireAllDays: same rule.
         // • By points without the option: everyone is ranked (missing days just sort lower).
+        // • By time, a day run поза конкурсом makes the whole sum поза конкурсом (the time still shows, no place).
         var requireAll = !byPoints || settings.RequireAllDays;
 
         List<Aggregate> ranked;
         List<Aggregate> outOfRanking;
         if (requireAll)
         {
-            ranked = aggregates.Where(a => a.CountedResults == countedDays.Count && countedDays.Count > 0).ToList();
-            outOfRanking = aggregates.Where(a => !(a.CountedResults == countedDays.Count && countedDays.Count > 0)).ToList();
+            bool Ranks(Aggregate a) => a.CountedResults == countedDays.Count && countedDays.Count > 0 && (byPoints || !a.OutOfCompetition);
+            ranked = aggregates.Where(Ranks).ToList();
+            outOfRanking = aggregates.Where(a => !Ranks(a)).ToList();
         }
         else
         {
@@ -376,6 +378,7 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         var counted = 0;
         decimal priorityPoints = 0;
         double? prioritySeconds = null;
+        var outOfCompetition = false;
 
         foreach (var day in countedDays)
         {
@@ -398,13 +401,14 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
                 {
                     totalSeconds += t.TotalSeconds;
                     counted++;
+                    outOfCompetition |= r.OutOfCompetition;
                     if (priorityDay is { } pd && pd.Id == day.Id)
                         prioritySeconds = t.TotalSeconds;
                 }
             }
         }
 
-        return new Aggregate(member, totalPoints, totalSeconds, counted, priorityPoints, prioritySeconds);
+        return new Aggregate(member, totalPoints, totalSeconds, counted, priorityPoints, prioritySeconds, outOfCompetition);
     }
 
     // Formats one member's flat cell row: leading identity columns, then each counted day's sub-cells, then Сума.
@@ -512,5 +516,6 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         double TotalTimeSeconds,
         int CountedResults,
         decimal PriorityPoints,
-        double? PriorityTimeSeconds);
+        double? PriorityTimeSeconds,
+        bool OutOfCompetition);
 }

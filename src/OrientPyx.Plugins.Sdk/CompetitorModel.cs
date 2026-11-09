@@ -1,6 +1,6 @@
 namespace OrientPyx.Plugins.Sdk;
 
-/// <summary>Who a discipline's result belongs to (see <see cref="IDisciplineStrategy.Competitors"/>).</summary>
+/// <summary>Who a discipline's result belongs to (set by the <see cref="Discipline.BasedOn"/> built-in).</summary>
 public enum CompetitorModel
 {
     /// <summary>Every runner is ranked on their own.</summary>

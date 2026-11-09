@@ -12,6 +12,13 @@ public sealed class ScoreByTimeStrategy : DisciplineStrategyBase
 
     public override bool UsesControlPointPoints => true;
 
+    /// <summary>
+    /// Like the rogaine: a read-out with a finish is OK (finishing late only costs points, never OVT), one without a
+    /// finish is DNF. A judge's manual status still overrides it.
+    /// </summary>
+    public override FinishStatusResult EvaluateFinish(FinishContext context) =>
+        FinishStatusResult.Of(context.FinishTime is null ? FinishStatus.Dnf : FinishStatus.Ok);
+
     public override bool UsesColumn(GroupColumn column) => column switch
     {
         GroupColumn.CourseOrder => true,           // the list of allowed control points

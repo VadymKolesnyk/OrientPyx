@@ -143,13 +143,15 @@ public partial class EntryFeesView : UserControl
     }
 
     // A centred checkbox bound to the discount row's "applies to chip rental" flag (TwoWay). The cell
-    // inherits the row's DataContext, so the plain property-name binding resolves against the row VM.
+    // inherits the row's DataContext, so the plain property-name binding resolves against the row VM. Hidden on the
+    // FSOU-member row: that discount only ever reduces the entry fee, so a box there would promise what it can't do.
     private static Control BuildAppliesToChipsCell() => new CheckBox
     {
         HorizontalAlignment = HorizontalAlignment.Center,
         VerticalAlignment = VerticalAlignment.Center,
         [!ToggleButton.IsCheckedProperty] =
-            new Binding(nameof(EntryFeeDiscountRowViewModel.AppliesToChipRental)) { Mode = BindingMode.TwoWay }
+            new Binding(nameof(EntryFeeDiscountRowViewModel.AppliesToChipRental)) { Mode = BindingMode.TwoWay },
+        [!Visual.IsVisibleProperty] = new Binding(nameof(EntryFeeDiscountRowViewModel.ShowsChipRentalOption)),
     };
 
     private void Unsubscribe()

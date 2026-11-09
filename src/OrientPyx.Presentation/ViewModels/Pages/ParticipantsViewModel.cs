@@ -60,6 +60,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private readonly IEntryFeeCalculator _entryFeeCalculator;
     private readonly IActivityLog _log;
     private readonly IEventFiles _eventFiles;
+    private readonly IToastService _toasts;
     private readonly IWorkspaceMode _mode;
 
     /// <summary>The per-machine key the chip-scan file path is stored under on a station (<see cref="IEventFiles.GetMachineValueAsync"/>).</summary>
@@ -91,9 +92,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         IAppSettingsService appSettings,
         IDataChangeBus bus,
         IWorkspaceMode mode,
-        IEventFiles eventFiles)
+        IEventFiles eventFiles,
+        IToastService toasts)
         : base(localization)
     {
+        _toasts = toasts;
         UseDayLock(dayLock);
         _appSettings = appSettings;
         LayoutStore = layoutStore;
@@ -583,6 +586,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         var fields = hasEvent ? await _busy.RunAsync(() => _editor.GetCustomFieldsAsync()) : [];
         if (!CustomFieldsEqual(CustomFields, fields))
             CustomFields = fields;
+        // Which (day, group) requires which fields (a plugin discipline's RequiredFields) — only worth asking with fields.
+        _requiredFields = hasEvent && fields.Count > 0
+            ? (await _busy.RunAsync(() => _editor.GetRequiredFieldsAsync()))
+                .ToDictionary(e => (e.DayId, e.GroupId), e => e.FieldKeys)
+            : [];
 
         _lockedDayIds = days.Where(d => d.IsLocked).Select(d => d.Id).ToHashSet();
 
@@ -672,6 +680,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         var fields = hasEvent ? await _busy.RunAsync(() => _editor.GetCustomFieldsAsync()) : [];
         if (!CustomFieldsEqual(CustomFields, fields))
             CustomFields = fields;
+        // Which (day, group) requires which fields (a plugin discipline's RequiredFields) — only worth asking with fields.
+        _requiredFields = hasEvent && fields.Count > 0
+            ? (await _busy.RunAsync(() => _editor.GetRequiredFieldsAsync()))
+                .ToDictionary(e => (e.DayId, e.GroupId), e => e.FieldKeys)
+            : [];
 
         _lockedDayIds = days.Where(d => d.IsLocked).Select(d => d.Id).ToHashSet();
 
@@ -979,7 +992,24 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             RebuildDayBands();
         }
 
+        MarkRequiredFields();
         RecomputeStatusInfo();
+    }
+
+    // (day, group) → the fields its discipline requires; empty when no plugin discipline asks for any.
+    private Dictionary<(Guid DayId, Guid GroupId), IReadOnlyList<string>> _requiredFields = [];
+
+    // Tints an empty required field red: a day row by its group on the shown day, a roster row by every day it runs.
+    private void MarkRequiredFields()
+    {
+        IReadOnlyList<string> For(Guid? dayId, Guid? groupId) =>
+            dayId is { } d && groupId is { } g && _requiredFields.TryGetValue((d, g), out var keys) ? keys : [];
+
+        var dayId = EffectiveDayId;
+        foreach (var row in Participants)
+            row.Fields.MarkRequired(For(dayId, row.SelectedGroup?.Id).ToList());
+        foreach (var row in Roster)
+            row.Fields.MarkRequired(row.Days.Where(c => c.IsMember).SelectMany(c => For(c.DayId, c.SelectedGroup?.Id)).Distinct().ToList());
     }
 
     // Value equality for a group option list (what the combos show and what the age / chip checks read).
@@ -1231,6 +1261,17 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     {
         if (row.IsApplying)
             return;
+        _ = LeaveDayAsync(row);
+    }
+
+    private async Task LeaveDayAsync(ParticipantDayRowViewModel row)
+    {
+        // Their last day: leaving it deletes the person from the competition — say so first; a «no» puts the row back.
+        if (!await ConfirmLastDayAsync(row.ParticipantId))
+        {
+            await LoadAsync();
+            return;
+        }
         if (_saveTimers.TryGetValue(row.Id, out var cts))
         {
             cts.Cancel();
@@ -1243,6 +1284,15 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
         var (linkId, participantId) = (row.Id, row.ParticipantId);
         _ = Task.Run(() => _editor.RemoveParticipantFromDayAsync(linkId, participantId));
+    }
+
+    // Removing someone from their only day deletes them from the competition (RemoveParticipantFromDayAsync): ask.
+    private async Task<bool> ConfirmLastDayAsync(Guid participantId)
+    {
+        if (await Task.Run(() => _editor.CountParticipantDaysAsync(participantId)) > 1)
+            return true;
+        return await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+            Localization, titleKey: "Participants.Delete.ConfirmTitle", messageKey: "Participants.LeaveLastDay.Message"));
     }
 
     // The grid's delete button binds to this command (plain click confirms; Ctrl+Click skips).
@@ -1268,10 +1318,12 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         var confirmed = false;
         if (!skipConfirm)
         {
+            // The last day of the person deletes them from the competition — the question says which it is.
+            var lastDay = await Task.Run(() => _editor.CountParticipantDaysAsync(row.ParticipantId)) <= 1;
             confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
                 Localization,
                 titleKey: "Participants.Delete.ConfirmTitle",
-                messageKey: "Participants.Delete.ConfirmMessage"));
+                messageKey: lastDay ? "Participants.Delete.LastDayMessage" : "Participants.Delete.ConfirmMessage"));
             if (!confirmed)
                 return;
         }
@@ -1310,12 +1362,19 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (row is null)
             return;
 
+        // Deleting from «Мандатка» deletes the person with every day — not while one of those days is closed.
+        if (RosterDays.FirstOrDefault(d => d.IsLocked && row.Days.Any(c => c.IsMember && c.DayId == d.Id)) is { } closed)
+        {
+            await ExplainDayLockAsync(closed.Number);
+            return;
+        }
+
         if (!skipConfirm)
         {
             var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
                 Localization,
                 titleKey: "Participants.Delete.ConfirmTitle",
-                messageKey: "Participants.Delete.ConfirmMessage"));
+                messageKey: "Participants.Roster.Delete.ConfirmMessage"));
             if (!confirmed)
                 return;
         }
@@ -1472,11 +1531,24 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         try
         {
             await Task.Delay(SaveDebounce, token);
+            await RefuseTakenNumberAsync(row.ParticipantId, row.Number, kept => row.Number = kept);
             var dto = row.ToRow();
             await Task.Run(() => _editor.UpdateParticipantDayRowAsync(dto, token), token);
         }
         catch (OperationCanceledException) { }
         catch { /* never crash the UI over an autosave */ }
+    }
+
+    // A start number another participant already holds is not saved (numbers are unique per competition): say whose
+    // it is and put the cell back to the number the participant keeps — instead of a silent revert on the next reload.
+    private async Task RefuseTakenNumberAsync(Guid participantId, string? number, Action<string> putBack)
+    {
+        if (await Task.Run(() => _editor.FindNumberConflictAsync(participantId, number ?? string.Empty)) is not { } conflict)
+            return;
+        _toasts.Show(
+            Localization.Get("Participants.NumberTaken.Title"),
+            string.Format(Localization.Get("Participants.NumberTaken.Message"), (number ?? string.Empty).Trim(), conflict.HolderName));
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => putBack(conflict.KeptNumber));
     }
 
     // ── Roster identity autosave (debounced per row)
@@ -1497,6 +1569,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         try
         {
             await Task.Delay(SaveDebounce, token);
+            await RefuseTakenNumberAsync(row.ParticipantId, row.Number, kept => row.Number = kept);
             var dto = new ParticipantRosterRow(
                 row.ParticipantId,
                 (row.FullName ?? string.Empty).Trim(),
@@ -3118,9 +3191,17 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         {
             if (groupId is null)
             {
-                // "не участвує": leave the day. Nothing to do if not currently a member.
+                // "не бере участі": leave the day. Nothing to do if not currently a member. Their last day deletes the
+                // person — ask first; a «no» puts the cell back.
                 if (cell.LinkId is { } linkId)
+                {
+                    if (!await ConfirmLastDayAsync(participantId))
+                    {
+                        await LoadAsync();
+                        return;
+                    }
                     await Task.Run(() => _editor.RemoveParticipantFromDayAsync(linkId, participantId));
+                }
                 cell.ApplyMembership(isMember: false, linkId: null);
             }
             else

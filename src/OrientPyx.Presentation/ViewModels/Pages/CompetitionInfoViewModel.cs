@@ -235,7 +235,9 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
         {
             _log.UseEventFolder(current.FolderPath);
             _log.Error("Не вдалося змінити ідентифікатор змагань", ex);
-            await ShowMessageAsync("CompetitionInfo.Rename.Error");
+            await ShowMessageAsync(ex is StationsActiveException
+                ? "CompetitionInfo.Rename.StationsActive"
+                : "CompetitionInfo.Rename.Error");
             return;
         }
 

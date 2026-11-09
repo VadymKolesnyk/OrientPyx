@@ -117,7 +117,8 @@ public sealed class RankingContext
     /// <summary>The group's name.</summary>
     public string Group { get; init; } = string.Empty;
 
-    /// <summary>Every competitor of the group on the day.</summary>
+    /// <summary>The group's competitors handed to ranking: for an individual discipline the placeable ones (the same
+    /// rows as <see cref="Finished"/>); only <c>Place</c> is read back from <see cref="Discipline.Rank"/>.</summary>
     public IReadOnlyList<ResultRow> Competitors { get; init; } = [];
 
     /// <summary>The placeable competitors: OK, in competition, not marked unranked.</summary>

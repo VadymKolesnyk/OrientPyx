@@ -28,6 +28,20 @@ public interface ICompetitionEditorService
     Task SaveInfoAsync(CompetitionInfo info, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The points rules a group or the competition default can point at: the catalogue the results are computed
+    /// with (this machine's; the host's on a station), then the competition's own copies of rules that catalogue
+    /// does not know (<see cref="PointsRuleChoice.IsCompetitionCopy"/> — made by another instance, or deleted here).
+    /// With no competition, the catalogue alone.
+    /// </summary>
+    Task<IReadOnlyList<PointsRuleChoice>> GetPointsRuleChoicesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Brings the current competition's copy of its points rules up to date with the catalogue — after a rule was
+    /// edited on «Очки» (see <see cref="Models.PointsRuleCopies"/>).
+    /// </summary>
+    Task RefreshPointsRuleCopiesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Whether the participants page offers the roster («Мандатка») view for this competition. True
     /// (the default) with no competition selected, so the page starts in its usual shape.
     /// </summary>
@@ -337,6 +351,24 @@ public interface ICompetitionEditorService
     /// </summary>
     Task DeleteParticipantAsync(Guid participantId, CancellationToken cancellationToken = default);
 
+    /// <summary>How many days the participant runs on — 1 means removing them from that day deletes them.</summary>
+    Task<int> CountParticipantDaysAsync(Guid participantId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Another participant already holding <paramref name="number"/> (bibs are unique per competition — a save drops
+    /// a colliding number), with the number this participant keeps; null when it is free.
+    /// </summary>
+    Task<NumberConflict?> FindNumberConflictAsync(Guid participantId, string number, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Another group already named <paramref name="name"/> (the same TextKey — a look-alike counts): renaming onto it
+    /// merges the two groups for good (<see cref="UpdateGroupDayRowAsync"/>). Null when the name is free.
+    /// </summary>
+    Task<GroupNameClash?> FindGroupNameClashAsync(Guid groupId, string name, CancellationToken cancellationToken = default);
+
+    /// <summary>Every (day, group) whose discipline requires participant fields, with those field keys.</summary>
+    Task<IReadOnlyList<RequiredFieldsEntry>> GetRequiredFieldsAsync(CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Sets a participant's group on a specific day (roster edit). Creates the day link when missing
     /// (joining the day); passing a null group clears the assignment but keeps the membership.
@@ -572,13 +604,14 @@ public interface ICompetitionEditorService
 
     /// <summary> Loads the current day's finish-read log (ordered by sequence), each row resolved against the
     /// day's participants so a known chip carries its holder's number, full name and group. </summary>
-    Task<IReadOnlyList<FinishReadoutRow>> GetFinishReadoutRowsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<FinishReadoutRow>> GetFinishReadoutRowsAsync(CancellationToken cancellationToken = default, Guid? forDayId = null);
 
     /// <summary>
-    /// The current day's finish-read log (the rows of <see cref="GetFinishReadoutRowsAsync"/>) plus the finish
+    /// The current day's (or <c>forDayId</c>'s — the finish auto-read's own day) finish-read log (the rows of
+    /// <see cref="GetFinishReadoutRowsAsync"/>) plus the finish
     /// desk's head count — runners read out, still on course, unknown chips — computed from the same read.
     /// </summary>
-    Task<FinishReadoutLog> GetFinishReadoutLogAsync(CancellationToken cancellationToken = default);
+    Task<FinishReadoutLog> GetFinishReadoutLogAsync(CancellationToken cancellationToken = default, Guid? forDayId = null);
 
     /// <summary>
     /// True when the current day scores points — its default discipline is point-scoring (rogaine), or
@@ -593,7 +626,7 @@ public interface ICompetitionEditorService
     /// Returns null when no day is selected, the readout is unknown, or its chip is not held by anyone
     /// on the day (an unrecognised read has no course to compare against).
     /// </summary>
-    Task<SplitsView?> GetFinishSplitsAsync(Guid readoutId, CancellationToken cancellationToken = default);
+    Task<SplitsView?> GetFinishSplitsAsync(Guid readoutId, CancellationToken cancellationToken = default, Guid? forDayId = null);
 
     /// <summary>
     /// Builds a ready-to-print split printout for one logged read-out (by its id) on the current day: the
@@ -604,14 +637,14 @@ public interface ICompetitionEditorService
     /// <paramref name="reprint"/> false (the slip printed as the chip reads out) places the runner among the
     /// read-outs logged up to this one; true (a slip printed again later) among every read-out logged so far.
     /// </summary>
-    Task<SplitPrintDocument?> GetSplitPrintDocumentAsync(Guid readoutId, bool reprint = false, CancellationToken cancellationToken = default);
+    Task<SplitPrintDocument?> GetSplitPrintDocumentAsync(Guid readoutId, bool reprint = false, CancellationToken cancellationToken = default, Guid? forDayId = null);
 
     /// <summary> Imports parsed read-out records into the current day's finish log. Append-only: each record
     /// that is not already logged (by content — chip + start/finish + punches) is added; identical records
     /// already present are skipped, so re-reading the same file never doubles rows. Duplicates of a chip with
     /// different content are kept. Skipped records are still reported back (with the id of the row they
     /// duplicate) so the caller can act on a re-read — e.g. print the slip again — without a second row. </summary>
-    Task<FinishReadoutImportResult> ImportFinishReadoutsAsync(ChipReadData data, CancellationToken cancellationToken = default);
+    Task<FinishReadoutImportResult> ImportFinishReadoutsAsync(ChipReadData data, CancellationToken cancellationToken = default, Guid? forDayId = null);
 
     /// <summary>Returns how many rows were removed.</summary>
     Task<int> ClearFinishReadoutsAsync(CancellationToken cancellationToken = default);
@@ -622,7 +655,7 @@ public interface ICompetitionEditorService
     /// participants the chip can be reassigned to (with the current holder, when any, pre-selected).
     /// Returns null when no day is selected or the read-out is unknown.
     /// </summary>
-    Task<FinishReadoutEditData?> GetFinishReadoutEditAsync(Guid readoutId, CancellationToken cancellationToken = default);
+    Task<FinishReadoutEditData?> GetFinishReadoutEditAsync(Guid readoutId, CancellationToken cancellationToken = default, Guid? forDayId = null);
 
     /// <summary>
     /// Saves an edited read-out: its chip, start/finish times, punches and manual status override, and —
@@ -630,7 +663,7 @@ public interface ICompetitionEditorService
     /// chip to that participant on the current day, taking it from any previous holder. A no-op when no
     /// day is selected or the read-out is unknown.
     /// </summary>
-    Task UpdateFinishReadoutAsync(FinishReadoutEdit edit, CancellationToken cancellationToken = default);
+    Task UpdateFinishReadoutAsync(FinishReadoutEdit edit, CancellationToken cancellationToken = default, Guid? forDayId = null);
 
     /// <summary>
     /// Finds the participant who already holds <paramref name="chip"/> on <paramref name="dayId"/>,

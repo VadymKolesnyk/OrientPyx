@@ -14,7 +14,7 @@ public sealed record CourseVariant(IReadOnlyList<string> Controls)
 
 /// <summary>
 /// The result of expanding a pattern into every valid passage order. Expansion is capped
-/// (<see cref="CoursePatternVariants.Limit"/>) because a wide <c>[N: …]</c> block grows factorially —
+/// (<see cref="CoursePattern.VariantLimit"/>) because a wide <c>[N: …]</c> block grows factorially —
 /// <see cref="Truncated"/> says the list was cut short, and <see cref="TotalCount"/> is the true number of
 /// orders the pattern allows (computed combinatorially, without materialising them).
 /// </summary>

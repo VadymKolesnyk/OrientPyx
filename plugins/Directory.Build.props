@@ -8,6 +8,12 @@
     <OutputPath>$(MSBuildThisFileDirectory)..\artifacts\plugins\$(MSBuildProjectName)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <EnableDynamicLoading>true</EnableDynamicLoading>
+    <!-- The standard plugins ship inside the OrientPyx package and are code-signed with it (SignPath,
+         docs/code-signing.md), which requires the project's product name. Their own Version stays; the
+         release build sets the product version to the app's (-p:InformationalVersion in build/publish.ps1). -->
+    <Product>OrientPyx</Product>
+    <Company>OrientPyx</Company>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
   <ItemGroup>
     <!-- Compile against the SDK but do not copy it: at run time the application provides it. -->

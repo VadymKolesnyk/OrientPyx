@@ -46,6 +46,12 @@ public interface IEventStore
     /// </summary>
     Task SetRosterEnabledAsync(string eventFolderPath, bool enabled, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Sets only the competition's copy of the points rules it references (<see cref="CompetitionInfo.PointsRulesJson"/>,
+    /// null = none), leaving every other field alone.
+    /// </summary>
+    Task SetPointsRulesJsonAsync(string eventFolderPath, string? json, CancellationToken cancellationToken = default);
+
     /// <summary>Ordered by number.</summary>
     Task<IReadOnlyList<EventDay>> GetDaysAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 

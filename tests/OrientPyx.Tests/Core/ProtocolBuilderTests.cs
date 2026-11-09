@@ -144,6 +144,24 @@ public sealed class ProtocolBuilderTests
         Assert.Equal("", rows[1].Cells[place]);
         Assert.True(rows[3].IsTeamHeader);
         Assert.Equal("Yak", rows[3].TeamName);
+        // The team row's time is the team's (its slowest member, 0:55), not whoever is listed first (X1, 0:50).
+        var result = Col(doc, "Result");
+        Assert.Equal(rows[2].Cells[result], rows[0].Cells[result]);
+    }
+
+    [Fact]
+    public async Task Protocol_LeavesOutTheScoreColumnWhenNobodyHasAScore()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("noscore"));
+        await c.AddControlsAsync(1, "31");
+        await c.AddGroupAsync("Ч21", "31");
+        await c.AddRunnerAsync("A", "1", "1001", "Ч21", T(10, 0));
+        await c.AddReadoutAsync(1, "1001", "31", T(10, 0), T(10, 20));
+
+        var doc = Sp.GetRequiredService<IResultProtocolBuilder>().Build(
+            await c.ProtocolDataAsync(), new ResultProtocolSettings(), ResultLabels());
+        Assert.DoesNotContain("Score", doc.ColumnHeaders); // set course: no «Бали» even though the template ticks it
+        Assert.Contains("Result", doc.ColumnHeaders);
     }
 
     [Fact]

@@ -526,8 +526,13 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         Preview.Columns.Clear();
         // The builder's visible set: an extra column the day lacks is skipped, as the builder does.
         var dayExtras = data.ExtraColumns.Select(e => e.Key).ToHashSet(StringComparer.Ordinal);
+        var hasScores = BusinessLogic.Services.ResultProtocolBuilder.HasScores(data);
+        // «Бали» only on a day with scores — the builder leaves it out otherwise, and so does the column list below.
+        foreach (var item in Columns)
+            item.IsAvailable = item.Column != ProtocolColumn.Score || hasScores;
         var visible = settings.Columns
-            .Where(c => c.Visible && (c.Column != ProtocolColumn.Extra || c.Key is { } k && dayExtras.Contains(k)))
+            .Where(c => c.Visible && (c.Column != ProtocolColumn.Extra || c.Key is { } k && dayExtras.Contains(k))
+                        && (c.Column != ProtocolColumn.Score || hasScores))
             .Select(c => c.ColumnKey)
             .ToList();
         if (visible.Count == 0)

@@ -31,6 +31,7 @@ public sealed partial class PointsViewModel : PageViewModelBase
     private static readonly TimeSpan SaveDebounce = TimeSpan.FromMilliseconds(600);
 
     private readonly IAppStore _appStore;
+    private readonly ICompetitionEditorService _editor;
     private readonly IBusyService _busy;
     private readonly IDialogService _dialogs;
     private readonly IWorkspaceMode _mode;
@@ -45,6 +46,7 @@ public sealed partial class PointsViewModel : PageViewModelBase
     public PointsViewModel(
         ILocalizationService localization,
         IAppStore appStore,
+        ICompetitionEditorService editor,
         IBusyService busy,
         IDialogService dialogs,
         ITableLayoutStore layoutStore,
@@ -55,6 +57,7 @@ public sealed partial class PointsViewModel : PageViewModelBase
     {
         LayoutStore = layoutStore;
         _appStore = appStore;
+        _editor = editor;
         _busy = busy;
         _dialogs = dialogs;
         _mode = mode;
@@ -384,7 +387,12 @@ public sealed partial class PointsViewModel : PageViewModelBase
         try
         {
             await Task.Delay(SaveDebounce, token);
-            await Task.Run(() => _appStore.UpdatePointsRuleAsync(entity, token), token);
+            await Task.Run(async () =>
+            {
+                await _appStore.UpdatePointsRuleAsync(entity, token);
+                // The open competition keeps a copy of the rules it uses (for instances that do not know their ids).
+                await _editor.RefreshPointsRuleCopiesAsync(token);
+            }, token);
         }
         catch (OperationCanceledException)
         {

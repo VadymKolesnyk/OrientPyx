@@ -278,9 +278,11 @@ internal sealed partial class DayResultsCalculator
         }
 
         // (e) Points pass: award «Очки» from each group's effective points rule (its override, else the
-        // competition default), keyed off the place/time/score just computed.
-        AwardPoints(links, settingsByGroup, dayDefault, snapshot.Info, app, results);
-        AwardRelayPoints(relayInput, app, teams, results);
+        // competition default), keyed off the place/time/score just computed. A rule this catalogue does not know
+        // (made by another instance) is taken from the competition's own copy, so every instance scores the same.
+        var pointsApp = app with { PointsRules = PointsRuleCopies.WithCopies(app.PointsRules, snapshot.Info?.PointsRulesJson) };
+        AwardPoints(links, settingsByGroup, dayDefault, snapshot.Info, pointsApp, results);
+        AwardRelayPoints(relayInput, pointsApp, teams, results);
 
         // Ranks pass: award «виконаний розряд» (Додаток 89) per group from its rank level, the course rank
         // (sum of the members' current-rank points) and the result-vs-leader percentage.

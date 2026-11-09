@@ -1,0 +1,29 @@
+/* The app's accent (App.axaml: AccentColor #7C3AED, hover #6D28D9) so the site looks like the program. */
+:root,
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #7c3aed;
+  --md-primary-fg-color--light: #8b5cf6;
+  --md-primary-fg-color--dark: #6d28d9;
+  --md-accent-fg-color: #6d28d9;
+  --md-accent-fg-color--transparent: rgba(124, 58, 237, 0.1);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #7c3aed;
+  --md-primary-fg-color--light: #a78bfa;
+  --md-primary-fg-color--dark: #6d28d9;
+  --md-accent-fg-color: #a78bfa;
+  --md-accent-fg-color--transparent: rgba(167, 139, 250, 0.1);
+}
+
+/* Screenshots: a thin frame so a white app window stands out on a white page. */
+.md-typeset img.shot {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 6px;
+}
+
+/* Menu paths written as «Старт → Жеребкування». */
+.md-typeset .menu {
+  font-weight: 600;
+  white-space: nowrap;
+}

@@ -89,6 +89,7 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
     public override string NavKey => "Nav.SummaryProtocol";
     public override string TitleKey => "Page.SummaryProtocol.Title";
     public override string TextKey => "Page.SummaryProtocol.Text";
+    public override string HelpKeyPrefix => "Help.SummaryProtocol";
 
     // Lucide "table".
     public override string IconData =>

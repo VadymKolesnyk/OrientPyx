@@ -1,0 +1,133 @@
+# OrientPyx user documentation — https://vadymkolesnyk.github.io/OrientPyx/
+# Build: scripts/docs.ps1 (local preview) or .github/workflows/docs.yml (GitHub Pages). Rules: website/README.md.
+site_name: OrientPyx
+site_description: Документація OrientPyx — програми для проведення змагань зі спортивного орієнтування
+site_url: https://vadymkolesnyk.github.io/OrientPyx/
+repo_url: https://github.com/VadymKolesnyk/OrientPyx
+repo_name: VadymKolesnyk/OrientPyx
+edit_uri: ""
+copyright: OrientPyx · відкритий код під ліцензією MIT
+
+docs_dir: content
+site_dir: site
+
+theme:
+  name: material
+  language: uk
+  logo: img/logo.png
+  favicon: img/logo.png
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Темна тема
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Світла тема
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - navigation.tracking
+    - navigation.top
+    - navigation.footer
+    - navigation.instant
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - toc.follow
+
+extra_css:
+  - stylesheets/extra.css
+
+# Generated pages: «Довідник екранів» from the app's Help.* texts, «Що нового» from GitHub Releases.
+hooks:
+  - hooks.py
+
+extra:
+  generator: false
+
+plugins:
+  # lunr.js has no Ukrainian; Russian splits and stems Cyrillic (і/ї/є/ґ included) closest, English covers
+  # the Latin terms (SportIdent, IOF XML, CSV).
+  - search:
+      lang: [ru, en]
+  - glightbox:
+      touchNavigation: true
+      loop: false
+      effect: zoom
+      zoomable: true
+      draggable: false
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.keys
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Головна: index.md
+  - Початок роботи:
+      - start/install.md
+      - start/quick-start.md
+      - start/overview.md
+  - Підготовка змагань:
+      - prepare/competition.md
+      - prepare/courses.md
+      - prepare/chips.md
+      - prepare/participants.md
+      - prepare/entry-fees.md
+      - prepare/draw.md
+  - День змагань:
+      - race-day/finish.md
+      - race-day/withdrawals.md
+      - race-day/results.md
+      - race-day/monitor-online.md
+      - race-day/network.md
+  - Гайди за типом змагань:
+      - guides/index.md
+      - guides/set-course.md
+      - guides/score-count.md
+      - guides/score-time.md
+      - guides/rogaine.md
+      - guides/mixed.md
+      - guides/scatter.md
+      - guides/relay.md
+      - guides/multi-day.md
+      - guides/standard-plugins.md
+  - Після змагань:
+      - after/summary.md
+      - after/points-ranks.md
+      - after/archive.md
+  - Довідник екранів: screens/index.md
+  - Питання і проблеми: faq.md
+  - Власні плагіни:
+      - plugins/index.md
+      - plugins/first-plugin.md
+      - plugins/api.md
+      - plugins/examples.md
+      - plugins/sharing.md
+      - plugins/debugging.md
+  - Що нового: changelog.md

@@ -17,6 +17,10 @@ public interface IEventFiles
     /// Best-effort: a locked folder does not fail the renumbering.</summary>
     Task MoveDayFolderAsync(string eventFolderPath, int oldNumber, int newNumber, CancellationToken cancellationToken = default);
 
+    /// <summary>Deletes a deleted day's folder (<c>day{N}</c>) with its files, so a later day with that number starts
+    /// empty. Best-effort: a locked file does not fail the day's deletion.</summary>
+    Task DeleteDayFolderAsync(string eventFolderPath, int dayNumber, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Stores a file imported for a day (an IOF XML) in the day's folder: identical content is reused, a name clash
     /// with different content gets a short content hash appended. Returns the stored file name.

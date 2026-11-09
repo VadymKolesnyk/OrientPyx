@@ -38,6 +38,21 @@ public sealed class LocalEventFiles : IEventFiles
         return Task.CompletedTask;
     }
 
+    public Task DeleteDayFolderAsync(string eventFolderPath, int dayNumber, CancellationToken cancellationToken = default)
+    {
+        var folder = DayFolders.PathFor(eventFolderPath, dayNumber);
+        try
+        {
+            if (Directory.Exists(folder))
+                Directory.Delete(folder, recursive: true);
+        }
+        catch
+        {
+            // A file open elsewhere (the reader's CSV, a monitor screen in a browser) leaves the folder; the day is gone anyway.
+        }
+        return Task.CompletedTask;
+    }
+
     public async Task<string> SaveDayFileAsync(
         string eventFolderPath, int dayNumber, string fileName, byte[] content, CancellationToken cancellationToken = default)
     {

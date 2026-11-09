@@ -216,7 +216,12 @@
          (payment/age/row-highlight tints). A ContentControl's default template paints Background
          then Content, leaving no layer for a selection overlay; here PART_SelectionOverlay sits
          between the (tinted) background border and the content, so a selected row stays visible
-         even under tinted columns. -->
+         even under tinted columns.
+         The focus outline is a separate, non-hit-testable PART_FocusOutline laid OVER the whole cell
+         (gridline included), with a constant thickness — only its brush changes. Growing the cell's own
+         BorderThickness on :focus (0,0,1,0 → 1.5) added 3 px of height, which a cell whose content already
+         fills the row (a CheckBox or a Button.small, both MinHeight 32 > the 28 row) passed on to the row:
+         the row jumped taller every time such a cell was selected. -->
     <Style Selector="controls|SheetTable controls|SheetCell">
         <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtle}" />
         <Setter Property="BorderThickness" Value="0,0,1,0" />
@@ -226,21 +231,29 @@
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Template">
             <ControlTemplate>
-                <Border Background="{TemplateBinding Background}"
-                        BorderBrush="{TemplateBinding BorderBrush}"
-                        BorderThickness="{TemplateBinding BorderThickness}">
-                    <Panel>
-                        <!-- Translucent selection/range wash, toggled by the :selected / :range
-                             pseudo-classes below. Transparent by default so it's invisible. -->
-                        <Border Name="PART_SelectionOverlay" Background="Transparent" />
-                        <ContentPresenter Name="PART_ContentPresenter"
-                                          Content="{TemplateBinding Content}"
-                                          ContentTemplate="{TemplateBinding ContentTemplate}"
-                                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
-                                          Padding="{TemplateBinding Padding}" />
-                    </Panel>
-                </Border>
+                <Panel>
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}">
+                        <Panel>
+                            <!-- Translucent selection/range wash, toggled by the :selected / :range
+                                 pseudo-classes below. Transparent by default so it's invisible. -->
+                            <Border Name="PART_SelectionOverlay" Background="Transparent" />
+                            <ContentPresenter Name="PART_ContentPresenter"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              Padding="{TemplateBinding Padding}" />
+                        </Panel>
+                    </Border>
+                    <!-- The focused/editing cell's accent outline (styles below). Fixed thickness, so it
+                         never changes the cell's size; transparent until the cell is focused. -->
+                    <Border Name="PART_FocusOutline"
+                            BorderThickness="1.5"
+                            BorderBrush="Transparent"
+                            IsHitTestVisible="False" />
+                </Panel>
             </ControlTemplate>
         </Setter>
     </Style>
@@ -252,7 +265,7 @@
     </Style>
     <!-- Cells inside an Excel-style multi-cell selection: the same translucent wash painted on the
          overlay (above any custom cell tint), so range selection reads under tinted columns too. The
-         anchor cell keeps the :focus outline below (border vs. overlay, so they stack rather than conflict). -->
+         anchor cell keeps the :focus outline below (a separate overlay above the wash, so they stack). -->
     <Style Selector="controls|SheetTable controls|SheetCell:range /template/ Border#PART_SelectionOverlay">
         <Setter Property="Background" Value="{DynamicResource SheetSelectionWash}" />
     </Style>
@@ -272,14 +285,13 @@
         <Setter Property="BorderThickness" Value="1" />
     </Style>
     <!-- The focused cell (keyboard-selected) OR a cell whose editor is live (:editing) keeps the accent
-         outline, so entering edit mode — which moves focus onto the editor inside — doesn't drop it. -->
-    <Style Selector="controls|SheetTable controls|SheetCell:focus">
+         outline, so entering edit mode — which moves focus onto the editor inside — doesn't drop it.
+         Only the overlay's brush changes: the cell's size stays put (see PART_FocusOutline above). -->
+    <Style Selector="controls|SheetTable controls|SheetCell:focus /template/ Border#PART_FocusOutline">
         <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
-        <Setter Property="BorderThickness" Value="1.5" />
     </Style>
-    <Style Selector="controls|SheetTable controls|SheetCell:editing">
+    <Style Selector="controls|SheetTable controls|SheetCell:editing /template/ Border#PART_FocusOutline">
         <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
-        <Setter Property="BorderThickness" Value="1.5" />
     </Style>
 
     <!-- In-cell editors: borderless, fill the cell, no rounded corners  -->

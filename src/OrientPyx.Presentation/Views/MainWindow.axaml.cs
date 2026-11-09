@@ -154,4 +154,11 @@ public partial class MainWindow : Window, IArchiveFilePicker
         _topMenu.Close();
         Dispatcher.UIThread.Post(() => restore?.Focus());
     }
+
+    // «Довідка → Документація»: the documentation site in the default browser.
+    private void OnDocumentationClick(object? sender, RoutedEventArgs e)
+    {
+        if (Launcher is { } launcher)
+            _ = launcher.LaunchUriAsync(DocsLinks.Home);
+    }
 }

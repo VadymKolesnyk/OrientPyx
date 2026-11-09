@@ -1,7 +1,7 @@
 # Builds the macOS packages (Apple Silicon + Intel) with Velopack and attaches them to the GitHub Release
-# of the same version. Runs when a v<version> tag is pushed (the Windows release is built locally by
-# build/publish.ps1, which creates the GitHub Release and uploads into it; this job waits for that release
-# and merges into it - both sides use --merge), or by hand.
+# of the same version. Runs when a v<version> tag is pushed (the same tag starts release-windows.yml, which
+# creates the GitHub Release if /new-version has not, and uploads the Windows packages into it; this job waits
+# for that release and merges into it - both sides use --merge), or by hand.
 #
 # Signing / notarization is optional and switched on by repository secrets:
 #   MACOS_CERTIFICATE_P12        base64 of a .p12 holding "Developer ID Application" (+ "Developer ID Installer")
@@ -63,8 +63,8 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
       - name: Wait for the GitHub release
-        # The Windows side (build/publish.ps1 -Upload, run locally) creates the published release
-        # v<version> and merges its packages into it; this job merges into the same one. Uploading into a
+        # /new-version or the Windows workflow (release-windows.yml) creates the published release
+        # v<version>; this job merges into the same one. Uploading into a
         # release that does not exist yet makes vpk create a draft of its own - two drafts for one tag, the
         # first to publish wins and the other fails with "tag_name already_exists" (0.7.12). So wait for the
         # release; if it never comes (tag pushed by hand, no Windows upload) create it here so macOS still ships.

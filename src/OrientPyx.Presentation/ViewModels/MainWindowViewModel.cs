@@ -185,7 +185,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         _selection.CreateRequested += (_, _) => ShowCreate();
         // Runs inside the create operation's busy scope, so the loader stays up until the list is ready.
-        _create.OnCreatedAsync = async _ => await ShowSelectionAsync();
+        // A new competition opens straight away on its first day; the refreshed picker stays only if it cannot.
+        _create.OnCreatedAsync = async created =>
+        {
+            await ShowSelectionAsync();
+            if (await _selection.TryOpenAsync(created.Identifier, dayNumber: null))
+                _log.Action($"Opened the new competition '{created.Identifier}'");
+        };
         _create.Cancelled += async (_, _) => await ShowSelectionAsync();
         _shell.ChangeEventRequested += async (_, _) => await ChangeEventInternalAsync();
         // The dashboard's live tiles auto-refresh only while it is the shown page — start that when it
@@ -797,7 +803,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     // Imports a competition archive as a new competition (File → Import competition). Available even
-    // with no competition open; on success we land on the selection screen with the list refreshed.
+    // with no competition open; on success the imported competition opens straight away.
     [RelayCommand]
     private Task ImportCompetitionAsync() => AfterImportAsync(_archiveFlow.ImportAsync);
 
@@ -814,11 +820,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         if (imported is null)
             return;
 
-        // Refresh the picker so the new competition shows; if we're already on it, this repopulates it.
-        // We don't auto-open the imported competition — the user returns to the list and picks it.
+        // Refresh the picker so the new competition is in the list, then open it on its first day. If it cannot be
+        // opened (no days, gone from the list), the user stays on the refreshed picker.
         _dashboard.StopAutoRefresh();
         _session.Clear();
         await ShowSelectionAsync();
+        if (await _selection.TryOpenAsync(imported.Identifier, dayNumber: null))
+            _log.Action($"Opened the imported competition '{imported.Identifier}'");
     }
 
     private async Task ChangeEventInternalAsync()

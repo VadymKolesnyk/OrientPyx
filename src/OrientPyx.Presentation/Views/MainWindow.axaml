@@ -402,6 +402,8 @@
                       Command="{Binding OpenDashboardCommand}" />
 
             <MenuItem Header="{Binding Localization[Menu.Help]}">
+                <MenuItem Header="{Binding Localization[Menu.Help.Docs]}"
+                          Click="OnDocumentationClick" />
                 <MenuItem Header="{Binding Localization[Menu.Help.About]}"
                           Command="{Binding OpenAboutCommand}" />
             </MenuItem>

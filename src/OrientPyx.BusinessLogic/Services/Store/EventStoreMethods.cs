@@ -17,6 +17,7 @@ public static class EventStoreMethods
         [nameof(IEventStore.SaveCompetitionInfoAsync)] = [DataArea.Competition],
         [nameof(IEventStore.SetHiddenAsync)] = [DataArea.Competition],
         [nameof(IEventStore.SetRosterEnabledAsync)] = [DataArea.Competition],
+        [nameof(IEventStore.SetPointsRulesJsonAsync)] = [DataArea.Competition],
         [nameof(IEventStore.SetPaymentPerDayAsync)] = [DataArea.Competition, DataArea.Participants, DataArea.ParticipantDays],
 
         // Days

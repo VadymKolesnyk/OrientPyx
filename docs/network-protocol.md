@@ -1,6 +1,6 @@
 # Мережевий протокол OrientPyx (хост ↔ станція)
 
-Версія протоколу: `NetworkProtocol.Version = 2` (`BusinessLogic/Models/Network/NetworkModels.cs`). Інкрементується при
+Версія протоколу: `NetworkProtocol.Version = 3` (`BusinessLogic/Models/Network/NetworkModels.cs`). Інкрементується при
 будь-якій зміні сигнатур мережевих інтерфейсів або формату нижче; хост і станція з різними версіями відмовляють у `/pair`.
 
 Типи DTO: `DataAccess/Network/Protocol/Wire.cs` (спільні для хоста й станції). Серіалізація — завжди

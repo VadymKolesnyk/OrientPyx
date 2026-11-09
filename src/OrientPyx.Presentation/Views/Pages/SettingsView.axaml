@@ -175,7 +175,7 @@
                                 IsVisible="{Binding OnlineSaved}">
                         <controls:Icon Kind="Check" Size="17"
                                   Foreground="{DynamicResource SuccessBrush}" />
-                        <TextBlock Text="{Binding Localization[Settings.PathsSavedHint]}"
+                        <TextBlock Text="{Binding Localization[Settings.OnlineSavedHint]}"
                                    Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
                     </StackPanel>
                 </StackPanel>

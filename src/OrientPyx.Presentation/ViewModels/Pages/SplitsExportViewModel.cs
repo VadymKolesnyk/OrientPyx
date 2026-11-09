@@ -68,6 +68,7 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
     public override string NavKey => "Nav.Splits";
     public override string TitleKey => "Page.Splits.Title";
     public override string TextKey => "Page.Splits.Text";
+    public override string HelpKeyPrefix => "Help.Splits";
 
     // Lucide "chart-column" (bars).
     public override string IconData =>
@@ -84,8 +85,10 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
 
     // ── Header text
 
+    // The printed sheet's title. Not «Title»: that name is the page's own heading (PageViewModelBase.Title), which
+    // this field used to hide — the page then showed no heading at all.
     [ObservableProperty]
-    private string _title = string.Empty;
+    private string _headerTitle = string.Empty;
 
     [ObservableProperty]
     private string _subtitle = string.Empty;
@@ -225,7 +228,7 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
         // that is itself empty leaves the field blank (an empty header line). The builder applies its own
         // localized default title when the title resolves to empty.
         var header = new SplitExportHeader(
-            FoldPlaceholder(Title, TitlePlaceholder),
+            FoldPlaceholder(HeaderTitle, TitlePlaceholder),
             FoldPlaceholder(Subtitle, SubtitlePlaceholder),
             FoldPlaceholder(CompetitionType, CompetitionTypePlaceholder),
             FoldPlaceholder(Venue, VenuePlaceholder),

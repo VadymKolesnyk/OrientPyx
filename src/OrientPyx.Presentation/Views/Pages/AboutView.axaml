@@ -46,7 +46,7 @@
 
         <!-- Author, license, source link -->
         <Border Classes="card" Padding="22">
-            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto"
+            <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto"
                   RowSpacing="10" ColumnSpacing="16">
                 <TextBlock Grid.Row="0" Grid.Column="0" Classes="label"
                            Text="{Binding Localization[About.Author]}" VerticalAlignment="Center" />
@@ -65,6 +65,15 @@
                         Click="OnLinkClick" Tag="{Binding GitHubUrl}"
                         ToolTip.Tip="{Binding GitHubUrl}">
                     <TextBlock Text="{Binding GitHubUrl}" />
+                </Button>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Classes="label"
+                           Text="{Binding Localization[About.Docs]}" VerticalAlignment="Center" />
+                <Button Grid.Row="3" Grid.Column="1" Classes="textlink"
+                        HorizontalAlignment="Left"
+                        Click="OnLinkClick" Tag="{Binding DocsUrl}"
+                        ToolTip.Tip="{Binding DocsUrl}">
+                    <TextBlock Text="{Binding DocsUrl}" />
                 </Button>
             </Grid>
         </Border>

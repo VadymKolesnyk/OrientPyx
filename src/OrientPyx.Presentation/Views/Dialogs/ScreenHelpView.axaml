@@ -48,12 +48,17 @@
             <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
                     BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
                     Padding="22,14">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button behaviors:AutoFocus.OnOpen="True" Content="{Binding Localization[Common.Close]}"
+                <DockPanel LastChildFill="False">
+                    <!-- The same help, in full and with screenshots, on the documentation site. -->
+                    <Button DockPanel.Dock="Left" Classes="ghost"
+                            Content="{Binding Localization[ScreenHelp.Docs]}"
+                            ToolTip.Tip="{Binding DocsUri}"
+                            Click="OnDocsClick" />
+                    <Button DockPanel.Dock="Right" behaviors:AutoFocus.OnOpen="True" Content="{Binding Localization[Common.Close]}"
                             Classes="accent"
                             IsDefault="True" IsCancel="True"
                             Command="{Binding CloseCommand}" />
-                </StackPanel>
+                </DockPanel>
             </Border>
 
             <ScrollViewer MaxHeight="480" HorizontalScrollBarVisibility="Disabled"

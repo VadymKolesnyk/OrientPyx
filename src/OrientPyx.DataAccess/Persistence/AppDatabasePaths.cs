@@ -17,8 +17,8 @@ public static class AppDatabasePaths
     /// The root under which <c>data</c>, <c>events</c> and diagnostic logs live. By default this is the
     /// application directory (so a <c>dotnet run</c> / xcopy build keeps its files next to the exe). An
     /// installed build calls <see cref="UseDataRoot"/> at startup to point it at a stable per-user folder
-    /// (e.g. <c>%LocalAppData%\OrientPyx\data-root</c>) so competition data survives auto-updates, which
-    /// replace the application directory wholesale.
+    /// (Windows <c>%LocalAppData%\OrientPyx-data</c>, outside the Velopack install folder) so competition data
+    /// survives auto-updates, which replace the application directory wholesale, and an uninstall.
     /// </summary>
     public static string BaseDirectory => _overrideBaseDirectory ?? AppContext.BaseDirectory;
 
@@ -33,6 +33,75 @@ public static class AppDatabasePaths
 
         Directory.CreateDirectory(path);
         _overrideBaseDirectory = path;
+    }
+
+    private static string[] _legacyDataRoots = [];
+
+    /// <summary>
+    /// Data roots an earlier build used (e.g. <c>%LocalAppData%\OrientPyx\data-root</c>, inside the Velopack install
+    /// folder that an uninstall deletes). A stored path under one of them is read as the same path under
+    /// <see cref="BaseDirectory"/> (see <see cref="RemapLegacyPath"/>) — <see cref="MoveLegacyDataRoot"/> moved the
+    /// files there.
+    /// </summary>
+    public static void UseLegacyDataRoots(params string[] roots) => _legacyDataRoots = roots;
+
+    /// <summary>
+    /// One-time move of a whole data root from <paramref name="legacyRoot"/> to <paramref name="targetRoot"/>
+    /// (a rename on the same volume). Returns the root to use: <paramref name="targetRoot"/> when it already exists
+    /// (it wins; the legacy one is left alone), when there was nothing to move, or after a successful move;
+    /// <paramref name="legacyRoot"/> when the move failed (a file is open in another instance) — the app keeps
+    /// working there and the next launch retries. Never copies: a half-copied open SQLite database is worse than
+    /// one more launch from the old place.
+    /// </summary>
+    public static string MoveLegacyDataRoot(string legacyRoot, string targetRoot, Action<string>? log = null)
+    {
+        try
+        {
+            if (Directory.Exists(targetRoot) && Directory.EnumerateFileSystemEntries(targetRoot).Any())
+            {
+                if (Directory.Exists(legacyRoot))
+                    log?.Invoke($"Both data roots exist; using {targetRoot}, leaving {legacyRoot} untouched.");
+                return targetRoot;
+            }
+            if (!Directory.Exists(legacyRoot))
+                return targetRoot;
+
+            if (Directory.Exists(targetRoot))
+                Directory.Delete(targetRoot);            // an empty leftover would block the rename
+            var parent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(targetRoot));
+            if (!string.IsNullOrEmpty(parent))
+                Directory.CreateDirectory(parent);
+            Directory.Move(legacyRoot, targetRoot);
+            log?.Invoke($"Moved the data root {legacyRoot} → {targetRoot}.");
+            return targetRoot;
+        }
+        catch (Exception ex)
+        {
+            log?.Invoke($"Could not move the data root {legacyRoot} → {targetRoot} ({ex.Message}); using it in place this launch.");
+            return Directory.Exists(legacyRoot) ? legacyRoot : targetRoot;
+        }
+    }
+
+    /// <summary>
+    /// A stored absolute path under a legacy data root (<see cref="UseLegacyDataRoots"/>), rewritten under
+    /// <see cref="BaseDirectory"/>; any other path unchanged.
+    /// </summary>
+    public static string RemapLegacyPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathRooted(path))
+            return path;
+        foreach (var legacy in _legacyDataRoots)
+        {
+            var root = Path.TrimEndingDirectorySeparator(legacy);
+            if (string.Equals(root, Path.TrimEndingDirectorySeparator(BaseDirectory), StringComparison.OrdinalIgnoreCase))
+                continue;
+            var candidate = Path.TrimEndingDirectorySeparator(path);
+            if (candidate.Equals(root, StringComparison.OrdinalIgnoreCase))
+                return BaseDirectory;
+            if (candidate.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                return Path.Combine(BaseDirectory, candidate[(root.Length + 1)..]);
+        }
+        return path;
     }
 
     /// <summary>Absolute.</summary>

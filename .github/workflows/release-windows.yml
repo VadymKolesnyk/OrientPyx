@@ -1,0 +1,224 @@
+# Builds the Windows package (installer + update feed) with Velopack and attaches it to the GitHub Release of the
+# same version, code-signed through SignPath Foundation when signing is configured. Runs when a v<version> tag is
+# pushed (together with release-macos.yml, which waits for the release this job creates), or by hand.
+#
+# Signing (docs/code-signing.md) is switched on by:
+#   secret   SIGNPATH_API_TOKEN                    API token of a SignPath user allowed to submit requests
+#   variable SIGNPATH_ORGANIZATION_ID              the SignPath organization id
+#   variable SIGNPATH_PROJECT_SLUG                 optional, default: OrientPyx
+#   variable SIGNPATH_SIGNING_POLICY_SLUG          optional, default: test-signing (release-signing once it works)
+#   variable SIGNPATH_ARTIFACT_CONFIGURATION_SLUG  optional, default: the project's default configuration
+#                                                  (build/signpath/artifact-configuration.xml)
+# Without the token and the organization id the package is built unsigned, as before.
+#
+# A signed release makes TWO signing requests — approve both in SignPath (each waits up to an hour):
+#   1. the files Velopack signs inside the package: a throwaway `vpk pack` collects them, SignPath signs them,
+#      and the real pack swaps the signed copies in (build/signpath/vpk-sign-hook.ps1);
+#   2. OrientPyx-win-Setup.exe, which Velopack builds last (not part of the update feed's hashes).
+# SignPath's open-source programme accepts only builds that ran entirely on GitHub-hosted runners, hence
+# windows-latest and no self-hosted steps.
+name: Release Windows
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build, e.g. 1.2.0 (default: taken from the current tag)'
+        required: false
+        default: ''
+      upload:
+        description: 'Upload to the GitHub Release v<version> (merging into it)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write   # create the release and upload into it
+  actions: read     # SignPath's connector reads this run and downloads the uploaded artifacts
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      SIGN: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
+      UPLOAD: ${{ github.event_name == 'push' || github.event.inputs.upload == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install Velopack CLI
+        # Pinned: the signing hook relies on how vpk calls --signTemplate and when it signs Setup.exe
+        # (checked against the 1.2.161 sources). Re-check build/signpath/vpk-sign-hook.ps1 before bumping.
+        run: dotnet tool install -g vpk --version 1.2.161
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          v="$INPUT_VERSION"
+          if [[ -z "$v" ]]; then
+            v="${GITHUB_REF_NAME#v}"
+          fi
+          if [[ ! "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Not a release version: '$v' (push a v<MAJOR.MINOR.PATCH> tag or pass the version input)" >&2
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Create the GitHub release
+        # One published release per tag, created before any upload: a `vpk upload` that finds no release makes a
+        # draft of its own, and two drafts for one tag fail the second publish with "tag_name already_exists"
+        # (0.7.12). /new-version usually creates it first (with the changelog); this covers a bare tag push.
+        # release-macos.yml waits for it.
+        if: env.UPLOAD == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json id >/dev/null 2>&1; then
+            echo "Release v$VERSION exists."
+            exit 0
+          fi
+          notes="OrientPyx $VERSION"$'\n\n'"[Code signing policy](https://github.com/$GITHUB_REPOSITORY#code-signing-policy)"
+          if ! gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag \
+                 --title "OrientPyx $VERSION" --notes "$notes"; then
+            # Lost a race with /new-version or the macOS job: fine as long as the release exists now.
+            gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json id >/dev/null
+          fi
+
+      - name: Download the previous release (for delta packages)
+        # Velopack diffs against the latest full package in build/releases; releases with no Windows feed (e.g. the
+        # one just created) are skipped. Without it the release still works, users just download the full package.
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          vpk download github --repoUrl "https://github.com/$GITHUB_REPOSITORY" --channel win \
+            --outputDir build/releases --token "$GH_TOKEN" \
+            || echo "::warning::No previous Windows release downloaded - no delta package this time."
+
+      # ---- Unsigned build (signing not configured) ------------------------------------------------------------
+
+      - name: Build and pack (unsigned)
+        if: env.SIGN != 'true'
+        shell: pwsh
+        run: ./build/publish.ps1 -Version '${{ steps.version.outputs.version }}'
+
+      # ---- Signed build ----------------------------------------------------------------------------------------
+
+      - name: Build and collect the files to sign
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          $work = Join-Path $env:GITHUB_WORKSPACE 'build/signing'
+          $hook = Join-Path $env:GITHUB_WORKSPACE 'build/signpath/vpk-sign-hook.ps1'
+          New-Item -ItemType Directory -Path $work -Force | Out-Null
+          ./build/publish.ps1 -Version '${{ steps.version.outputs.version }}' -NoDelta `
+            -OutputDir (Join-Path $work 'probe') `
+            -SignTemplate "pwsh -NoProfile -NonInteractive -File `"$hook`" -Mode Collect -WorkDir `"$work`" {{file...}}"
+
+      - name: Upload the files to sign
+        id: upload-payload
+        if: env.SIGN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: signpath-payload-unsigned
+          path: build/signing/unsigned/
+          if-no-files-found: error
+
+      - name: Sign the package files (SignPath request 1 of 2)
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'OrientPyx' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'test-signing' }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload-payload.outputs.artifact-id }}
+          parameters: |
+            version: "${{ steps.version.outputs.version }}"
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: build/signing/signed
+
+      - name: Pack with the signed files
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          $work = Join-Path $env:GITHUB_WORKSPACE 'build/signing'
+          $hook = Join-Path $env:GITHUB_WORKSPACE 'build/signpath/vpk-sign-hook.ps1'
+          ./build/publish.ps1 -Version '${{ steps.version.outputs.version }}' -SkipBuild `
+            -SignTemplate "pwsh -NoProfile -NonInteractive -File `"$hook`" -Mode Swap -WorkDir `"$work`" {{file...}}"
+
+      - name: Upload the installer to sign
+        id: upload-setup
+        if: env.SIGN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: signpath-setup-unsigned
+          path: build/releases/OrientPyx-win-Setup.exe
+          if-no-files-found: error
+
+      - name: Sign the installer (SignPath request 2 of 2)
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'OrientPyx' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'test-signing' }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload-setup.outputs.artifact-id }}
+          parameters: |
+            version: "${{ steps.version.outputs.version }}"
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: build/signing/setup-signed
+
+      - name: Put the signed installer in place and check every signature
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          Copy-Item build/signing/setup-signed/OrientPyx-win-Setup.exe build/releases/OrientPyx-win-Setup.exe -Force
+          ./build/signpath/Test-ReleaseSignatures.ps1 -ReleaseDir build/releases -Version '${{ steps.version.outputs.version }}'
+
+      # ---- Publish -----------------------------------------------------------------------------------------------
+
+      - name: Keep packages as workflow artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orientpyx-windows-${{ steps.version.outputs.version }}
+          path: |
+            build/releases/*${{ steps.version.outputs.version }}*
+            build/releases/OrientPyx-win-*
+            build/releases/*.win.json
+          if-no-files-found: ignore
+
+      - name: Upload to the GitHub release
+        if: env.UPLOAD == 'true'
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $v = '${{ steps.version.outputs.version }}'
+          vpk upload github `
+            --outputDir build/releases `
+            --repoUrl "https://github.com/$env:GITHUB_REPOSITORY" `
+            --token $env:GITHUB_TOKEN `
+            --publish `
+            --merge `
+            --releaseName "OrientPyx $v" `
+            --tag "v$v"
+          if ($LASTEXITCODE -ne 0) { throw 'vpk upload failed.' }

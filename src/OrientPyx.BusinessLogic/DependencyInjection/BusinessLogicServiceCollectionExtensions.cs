@@ -27,6 +27,8 @@ public static class BusinessLogicServiceCollectionExtensions
         services.AddSingleton<EventCatalogService>();
         // The results' app-data (points rules, ranks) — local reader; DataAccess routes the interface.
         services.AddSingleton<LocalResultsAppData>();
+        // Keeps each competition's copy of its points rules in step (CompetitionInfo.PointsRulesJson).
+        services.AddSingleton<PointsRuleCopySync>();
         services.AddSingleton<ISessionService, SessionService>();
         services.AddSingleton<CompetitionEditorService>();
         services.AddSingleton<ICompetitionEditorService>(sp => UiOffloadProxy<ICompetitionEditorService>.Create(sp.GetRequiredService<CompetitionEditorService>()));

@@ -113,7 +113,11 @@ public sealed partial class CreateEventViewModel : ViewModelBase
         if (token != _identifierToken)
             return; // superseded by a newer edit
 
-        IdentifierError = available ? null : Localization.Get("CreateEvent.Error.Duplicate");
+        // Not available = taken or not a valid folder name — say which while typing, like the create button does.
+        IdentifierError = available ? null
+            : BusinessLogic.Models.EventIdentifier.IsValid(trimmed)
+                ? Localization.Get("CreateEvent.Error.Duplicate")
+                : Localization.Get("CreateEvent.Error.Invalid");
     }
 
     public void Reset()

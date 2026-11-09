@@ -140,7 +140,7 @@ public sealed class EventCatalogService : IEventCatalogService
         // Stations address the competition by its identifier; renaming it under them would strand their session.
         var activeStations = _host?.ActiveStationsOn(competition.Identifier) ?? [];
         if (activeStations.Count > 0)
-            throw new InvalidOperationException($"Stations are working on this competition: {string.Join(", ", activeStations)}.");
+            throw new StationsActiveException(activeStations.ToList());
 
         var paths = await _settings.GetPathsAsync(cancellationToken);
         var oldFolder = competition.FolderPath;

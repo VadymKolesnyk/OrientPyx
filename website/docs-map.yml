@@ -1,0 +1,153 @@
+# Which documentation pages describe which part of the code. The release step of /new-version runs
+# `python website/tools/affected.py` (changes since the previous release tag) and re-reads the pages listed for every
+# changed file. Patterns are fnmatch-style over repo-relative paths («*» also crosses «/»). Keep it coarse: a page
+# that is listed once too often costs a re-read; a page that is missing goes stale. Screens («Довідник екранів»)
+# and screenshots are regenerated on every build and need no entry here.
+pages:
+  start/install.md:
+    - build/*
+    - .github/workflows/release-*
+    - src/OrientPyx.Presentation/Program.cs
+    - src/OrientPyx.Presentation/*About*
+    - src/OrientPyx.Presentation/*Update*
+    - src/OrientPyx.DataAccess/*AppDatabasePaths*
+  start/quick-start.md:
+    - src/OrientPyx.Presentation/*CreateEvent*
+    - src/OrientPyx.Presentation/*EventSelection*
+  start/overview.md:
+    - src/OrientPyx.Presentation/Controls/Sheet/*
+    - src/OrientPyx.Presentation/Controls/TextSearch*
+    - src/OrientPyx.Presentation/Views/MainWindow*
+    - src/OrientPyx.Presentation/Views/ShellView*
+    - src/OrientPyx.Presentation/*Dashboard*
+    - src/OrientPyx.Presentation/*Settings*
+    - src/OrientPyx.Presentation/*BackgroundActivit*
+    - src/OrientPyx.Presentation/*Toast*
+  faq.md:
+    - src/OrientPyx.Presentation/Services/UiStallWatchdog*
+    - src/OrientPyx.*ActivityLog*
+    - src/OrientPyx.*FileReveal*
+  prepare/competition.md:
+    - src/OrientPyx.*CompetitionInfo*
+    - src/OrientPyx.*CompetitionDays*
+    - src/OrientPyx.*CreateEvent*
+    - src/OrientPyx.*EventCatalog*
+    - src/OrientPyx.*EventIdentifier*
+  prepare/courses.md:
+    - src/OrientPyx.*ControlPoint*
+    - src/OrientPyx.*Groups*
+    - src/OrientPyx.*GroupDay*
+    - src/OrientPyx.*Iof*
+    - src/OrientPyx.*CourseDistance*
+  prepare/chips.md:
+    - src/OrientPyx.*Chip*
+    - src/OrientPyx.*Statement*
+    - src/OrientPyx.Plugins.Sdk/Toolkit/SiCard*
+    - src/OrientPyx.*ReadoutParserSelector*
+  prepare/participants.md:
+    - src/OrientPyx.*Participant*
+    - src/OrientPyx.*Roster*
+    - src/OrientPyx.*Import*
+    - src/OrientPyx.*CustomField*
+    - src/OrientPyx.*Region*
+    - src/OrientPyx.*Club*
+    - src/OrientPyx.*Dussh*
+    - src/OrientPyx.*Uof*
+  prepare/entry-fees.md:
+    - src/OrientPyx.*EntryFee*
+  prepare/draw.md:
+    - src/OrientPyx.*Draw*
+    - src/OrientPyx.*StartProtocol*
+    - src/OrientPyx.*MapCount*
+    - src/OrientPyx.*StartOrder*
+  race-day/finish.md:
+    - src/OrientPyx.*FinishRead*
+    - src/OrientPyx.*Readout*
+    - src/OrientPyx.*SplitPrint*
+    - src/OrientPyx.*FinishSplits*
+    - src/OrientPyx.*UnknownChip*
+  race-day/withdrawals.md:
+    - src/OrientPyx.*QuickWithdrawal*
+    - src/OrientPyx.*StatusOverride*
+  race-day/results.md:
+    - src/OrientPyx.BusinessLogic/Services/Results/*
+    - src/OrientPyx.*ResultProtocol*
+    - src/OrientPyx.*ProtocolPreview*
+    - src/OrientPyx.*Protocols*
+    - src/OrientPyx.*Winners*
+    - src/OrientPyx.*SplitsExport*
+    - src/OrientPyx.*SplitsHtml*
+    - src/OrientPyx.*Docx*
+  race-day/monitor-online.md:
+    - src/OrientPyx.*Monitor*
+    - src/OrientPyx.*OnlineResults*
+    - src/OrientPyx.*OnlinePublish*
+    - src/OrientPyx.*Supabase*
+    - docs/online-snapshot.md
+  race-day/network.md:
+    - src/OrientPyx.DataAccess/Network/*
+    - src/OrientPyx.*Network*
+    - docs/network-*
+  guides/index.md:
+    - src/OrientPyx.BusinessLogic/Disciplines/*Strategy*
+    - src/OrientPyx.*DisciplineId*
+  guides/set-course.md:
+    - src/OrientPyx.BusinessLogic/Disciplines/SetCourse*
+    - src/OrientPyx.BusinessLogic/Disciplines/DisciplineStrategyBase*
+    - src/OrientPyx.*FinishEvaluator*
+    - src/OrientPyx.Plugins.Sdk/Toolkit/Punches*
+  guides/score-count.md:
+    - src/OrientPyx.BusinessLogic/Disciplines/ScoreByCount*
+  guides/score-time.md:
+    - src/OrientPyx.BusinessLogic/Disciplines/ScoreByTime*
+  guides/rogaine.md:
+    - src/OrientPyx.BusinessLogic/Disciplines/Rogaine*
+  guides/mixed.md:
+    - src/OrientPyx.BusinessLogic/Disciplines/Mixed*
+    - src/OrientPyx.Plugins.Sdk/Toolkit/CourseMatcher*
+    - src/OrientPyx.Plugins.Sdk/Toolkit/CoursePattern*
+    - src/OrientPyx.*CoursePattern*
+  guides/scatter.md:
+    - src/OrientPyx.BusinessLogic/Disciplines/Scatter*
+    - src/OrientPyx.Plugins.Sdk/Toolkit/VariantMatcher*
+    - src/OrientPyx.*CourseVariant*
+  guides/relay.md:
+    - src/OrientPyx.*Relay*
+    - src/OrientPyx.Plugins.Sdk/Toolkit/TeamCourseAssignment*
+    - docs/relay-scenarios.md
+  guides/multi-day.md:
+    - src/OrientPyx.*SummaryProtocol*
+    - src/OrientPyx.*DrawHistory*
+  guides/standard-plugins.md:
+    - plugins/*
+    - src/OrientPyx.*PluginSettings*
+    - src/OrientPyx.Presentation/*Plugins*
+  after/summary.md:
+    - src/OrientPyx.*SummaryProtocol*
+  after/points-ranks.md:
+    - src/OrientPyx.*Points*
+    - src/OrientPyx.*Ranks*
+    - src/OrientPyx.*RankQualification*
+    - src/OrientPyx.*PointsRule*
+  after/archive.md:
+    - src/OrientPyx.*EventArchive*
+    - src/OrientPyx.*FileAssociation*
+    - build/mac/Info.plist
+  plugins/index.md:
+    - src/OrientPyx.Plugins.Sdk/*
+  plugins/first-plugin.md:
+    - plugins/Directory.Build.props
+    - plugins/OrientPyx.Plugins.sln
+    - src/OrientPyx.Plugins.Sdk/IOrientPyxPlugin*
+    - src/OrientPyx.Plugins.Sdk/Discipline*
+  plugins/api.md:
+    - src/OrientPyx.Plugins.Sdk/*
+  plugins/examples.md:
+    - plugins/MissedControlPenalty/*
+    - plugins/WeightedRelay/*
+  plugins/sharing.md:
+    - src/OrientPyx.DataAccess/Plugins/*
+    - src/OrientPyx.Plugins.Sdk/OrientPyx.Plugins.Sdk.csproj
+  plugins/debugging.md:
+    - src/OrientPyx.DataAccess/Plugins/*
+    - src/OrientPyx.BusinessLogic/Disciplines/Plugins/*

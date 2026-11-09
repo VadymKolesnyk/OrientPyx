@@ -31,15 +31,15 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     private readonly IBusyService _busy;
     private readonly IDisciplineStrategyProvider _strategies;
     private readonly IDialogService _dialogs;
-    private readonly IAppStore _appStore;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
     private readonly PendingSaves _pendingSaves = new();
 
     // Used to debounce the competition-level settings strip (course-setter + default points rule).
     private CancellationTokenSource? _infoSaveCts;
 
-    // The app-level points rules, loaded once per LoadAsync (shared across every row's combo).
-    private IReadOnlyList<PointsRule> _pointsRules = [];
+    // The points rules on offer (the catalogue + the competition's own copies), loaded once per LoadAsync and shared
+    // across every row's combo.
+    private IReadOnlyList<PointsRuleChoice> _pointsRules = [];
 
     // The current competition metadata being edited by the top settings strip.
     private CompetitionInfo? _info;
@@ -52,7 +52,6 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         IBusyService busy,
         IDisciplineStrategyProvider strategies,
         IDialogService dialogs,
-        IAppStore appStore,
         ITableLayoutStore layoutStore,
         IDayLockService dayLock,
         IDataChangeBus bus,
@@ -67,7 +66,6 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         _busy = busy;
         _strategies = strategies;
         _dialogs = dialogs;
-        _appStore = appStore;
         Localization.PropertyChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(SelectedCourseHeader));
@@ -182,6 +180,9 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     // the first structural error (invalid). The day's start/finish codes label the S/F markers.
 
     private string? _startCode;
+
+    // The day's control point codes (start/finish included) — a course naming any other code shows red.
+    private IReadOnlySet<string> _dayCodes = new HashSet<string>();
     private string? _finishCode;
 
     /// <summary>True when the selected group runs the «mixed» discipline, so the pattern preview shows.</summary>
@@ -460,7 +461,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         {
             var d = await _editor.GetDaysAsync();
             var r = hasDay ? await _editor.GetGroupDayRowsAsync() : (IReadOnlyList<GroupDayRow>)[];
-            var p = await _appStore.GetPointsRulesAsync();
+            var p = await _editor.GetPointsRuleChoicesAsync();
             var i = await _editor.GetInfoAsync();
             var cp = hasDay ? await _editor.GetControlPointsAsync() : (IReadOnlyList<ControlPoint>)[];
             return (d, r, p, i, cp);
@@ -470,6 +471,10 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         // S … F markers with the actual boxes (falls back to "S"/"F" when a day has none set).
         _startCode = controlPoints.FirstOrDefault(c => c.Type == ControlPointType.Start)?.Code.Trim();
         _finishCode = controlPoints.FirstOrDefault(c => c.Type == ControlPointType.Finish)?.Code.Trim();
+        // Every code of the day, so a course naming a code that is no КП (S1/F typed without start/finish boxes)
+        // shows red before it turns the whole group MP.
+        _dayCodes = controlPoints.Select(c => c.Code.Trim()).Where(c => c.Length > 0)
+            .ToHashSet(OrientPyx.Plugins.Sdk.Toolkit.TextKey.Comparer);
 
         // The rule set is the one input the shared option lists are built from: a merge keeps the lists (and so
         // every row's combo items) while it is unchanged.
@@ -542,19 +547,23 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             create: CreateRow,
             update: (vm, row) => vm.Apply(row, _rowPointsRuleOptions, courseSetter, courseSetterCategory),
             removed: vm => vm.PropertyChanged -= OnRowPropertyChanged);
+        foreach (var group in Groups)
+            group.SetDayCodes(_dayCodes);
 
         // A column rebuild repaints the whole grid, so a merge raises it only when the visible set moved.
         if (!merge || showRequired != ShowRequiredCountColumn || showPenalty != ShowPenaltyColumn)
             RaiseColumnVisibility();
     }
 
-    // True when the loaded rule set (ids and names, in order) is the one the option lists were built from.
-    private bool SameRules(IReadOnlyList<PointsRule> rules)
+    // True when the loaded rule set (ids, names and origin, in order) is the one the option lists were built from.
+    private bool SameRules(IReadOnlyList<PointsRuleChoice> rules)
     {
         if (_pointsRules.Count != rules.Count)
             return false;
         for (var i = 0; i < rules.Count; i++)
-            if (_pointsRules[i].Id != rules[i].Id || _pointsRules[i].Name != rules[i].Name)
+            if (_pointsRules[i].Rule.Id != rules[i].Rule.Id
+                || _pointsRules[i].Rule.Name != rules[i].Rule.Name
+                || _pointsRules[i].IsCompetitionCopy != rules[i].IsCompetitionCopy)
                 return false;
         return true;
     }
@@ -565,7 +574,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     // Name of a points rule by id, or null when unset/unknown — used to label the per-group "(default: …)"
     // sentinel and the competition default combo.
     private string? RuleName(Guid? id) =>
-        id is { } gid ? _pointsRules.FirstOrDefault(r => r.Id == gid)?.Name : null;
+        id is { } gid ? _pointsRules.FirstOrDefault(r => r.Rule.Id == gid)?.Rule.Name : null;
 
     // Fills the top settings strip from the loaded CompetitionInfo, and (re)builds both the competition
     // default-rule options and the seed for each row's per-group options. Guarded so the property setters
@@ -584,8 +593,8 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             {
                 DefaultPointsRuleOptions.Clear();
                 DefaultPointsRuleOptions.Add(PointsRuleOption.None(Localization, explicitChoice: false));
-                foreach (var rule in _pointsRules)
-                    DefaultPointsRuleOptions.Add(PointsRuleOption.ForRule(rule.Id, rule.Name, Localization));
+                foreach (var choice in _pointsRules)
+                    DefaultPointsRuleOptions.Add(ToOption(choice));
             }
 
             var defId = _info?.DefaultPointsRuleId;
@@ -613,9 +622,12 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             PointsRuleOption.Default(Localization, RuleName(_info?.DefaultPointsRuleId)),
             PointsRuleOption.None(Localization, explicitChoice: true)
         };
-        options.AddRange(_pointsRules.Select(r => PointsRuleOption.ForRule(r.Id, r.Name, Localization)));
+        options.AddRange(_pointsRules.Select(ToOption));
         return options;
     }
+
+    private PointsRuleOption ToOption(PointsRuleChoice choice)
+        => PointsRuleOption.ForRule(choice.Rule.Id, choice.Rule.Name, Localization, choice.IsCompetitionCopy);
 
     // Builds a row VM wired with the discipline provider and a watch on its discipline so the grid's
     // column visibility refreshes when a group's effective type changes.
@@ -892,6 +904,23 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             // ToRow() reads VM state, so snapshot it here (UI thread) before offloading the
             // synchronous SQLite write to the pool. Autosave bypasses the busy overlay on purpose.
             var dto = row.ToRow();
+
+            // A name another group already has merges the two for good (participants, courses, settings): ask
+            // first; a «no» puts the old name back.
+            if (await Task.Run(() => _editor.FindGroupNameClashAsync(dto.GroupId, dto.Name ?? string.Empty, token), token) is { } clash)
+            {
+                var merge = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+                    Localization, titleKey: "Groups.Merge.Title", messageKey: "Groups.Merge.Message", confirmKey: "Groups.Merge.Confirm")
+                {
+                    MessageArgs = [clash.CurrentName, clash.ExistingName]
+                });
+                if (!merge)
+                {
+                    await LoadAsync();
+                    return;
+                }
+            }
+
             var merged = await Task.Run(() => _editor.UpdateGroupDayRowAsync(dto, token), token);
 
             // Renamed onto an existing group ⇒ this row was folded into it; reload to show the merged group.

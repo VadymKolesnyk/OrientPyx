@@ -82,6 +82,9 @@ public sealed partial class EntryFeeDiscountRowViewModel : ObservableObject
     /// the delete button's visibility.</summary>
     public bool CanDelete => !_isFsouMemberDiscount;
 
+    /// <summary>The «Також на оренду чіпів» box: not on the FSOU-member row, whose discount only reduces the entry fee.</summary>
+    public bool ShowsChipRentalOption => !_isFsouMemberDiscount;
+
     public EntryFeeDiscount ToEntity() => new()
     {
         Id = _id,

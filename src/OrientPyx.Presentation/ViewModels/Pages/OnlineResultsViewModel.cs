@@ -30,7 +30,6 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
     private readonly ICompetitionEditorService _editor;
     private readonly ISessionService _session;
     private readonly IAppSettingsService _appSettings;
-    private readonly IAppStore _appStore;
     private readonly IResultPublisher _publisher;
     private readonly IBackgroundActivityService _activities;
     private readonly IBusyService _busy;
@@ -56,7 +55,6 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         ICompetitionEditorService editor,
         ISessionService session,
         IAppSettingsService appSettings,
-        IAppStore appStore,
         IResultPublisher publisher,
         IBackgroundActivityService activities,
         IBusyService busy,
@@ -69,7 +67,6 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         _editor = editor;
         _session = session;
         _appSettings = appSettings;
-        _appStore = appStore;
         _publisher = publisher;
         _activities = activities;
         _busy = busy;
@@ -89,11 +86,13 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
             ScheduleAutoSave();
         };
 
-        // Singleton VM: on a competition/day change, stop publishing (it belongs to the old selection) and
-        // reload. SessionChanged may be raised on a pool thread, so marshal onto the UI thread.
+        // Singleton VM: reload on a session change. Publishing belongs to the competition and day it was started on
+        // (_runDay): another competition stops it; another day on the pages, closing the day, saving «Інформація» or
+        // a station's edit do not. SessionChanged may be raised on a pool thread, so marshal onto the UI thread.
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() =>
         {
-            StopPublishing();
+            if (IsPublishing && !string.Equals(_runEvent, _session.CurrentEvent?.FolderPath, StringComparison.Ordinal))
+                StopPublishing();
             _previewSource = null; // the day's cached snapshot no longer applies
             _previewSourceDay = Guid.Empty;
             _ = LoadAsync();
@@ -227,7 +226,8 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         {
             var a = await _appSettings.GetOnlineApiSettingsAsync();
             var p = await _editor.GetOnlinePublishSettingsAsync();
-            var r = await _appStore.GetPointsRulesAsync();
+            // The same rules the results use: the catalogue plus the competition's own copies.
+            var r = (await _editor.GetPointsRuleChoicesAsync()).Select(c => c.Rule).ToList();
             var i = await _editor.GetInfoAsync();
             // The published day is the active session day; describe its groups (null when no day).
             var g = _session.CurrentDay is null
@@ -506,6 +506,8 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
 
         IsPublishing = true;
         IsPaused = false;
+        _runDay = _session.CurrentDay;
+        _runEvent = _session.CurrentEvent?.FolderPath;
         _lastDuplicates = string.Empty;
         _lastSkippedNoNumber = -1; // a fresh run should warn again about un-numbered participants
         _consecutiveFailures = 0;
@@ -580,9 +582,13 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         }
     }
 
+    // The day and competition a running publication is for (set on start).
+    private BusinessLogic.Entities.EventDay? _runDay;
+    private string? _runEvent;
+
     private async Task PublishOnceAsync(CancellationToken ct)
     {
-        var day = _session.CurrentDay;
+        var day = _runDay;
         if (day is null)
             return;
 

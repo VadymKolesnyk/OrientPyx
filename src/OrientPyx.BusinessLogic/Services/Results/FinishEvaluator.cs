@@ -63,12 +63,21 @@ internal static class FinishEvaluator
             FinishTime = readout.FinishTime,
             // A relay's time limit applies to the team (Р-31), never to one leg.
             TimeLimit = relayLeg is null && gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
-            RequiredControlCount = gs?.RequiredControlCount,
+            // «Мін. КП» counts only controls that can be taken: each disabled («проблемний») control of the group's
+            // list lowers it by one, so nobody needs a control that was taken out.
+            RequiredControlCount = gs?.RequiredControlCount is { } required
+                ? Math.Max(0, required - CourseCodes.DisabledInCourse(courseOrder, startFinishCodes, disabledCodes).Count)
+                : null,
             CourseVariants = effectiveGroup is { } vgid && variantsByGroup.TryGetValue(vgid, out var vs)
                 ? vs
                 : NoCourseVariants,
             Settings = settingsOf?.Invoke(strategy) ?? SettingValues.Empty
         };
+
+        // No start from anywhere — no start punch on the chip, no time in the start protocol, no relay leg start:
+        // DNS whatever the punches say (a time can't be measured, so the read-out can't be placed).
+        if (start is null)
+            return (FinishStatusResult.Of(FinishStatus.Dns), null);
 
         // Р-41: a leg whose course could not be assigned is MP («дистанцію не призначено») once it finished.
         if (relayLeg is { CourseUnassigned: true } && readout.FinishTime is not null)

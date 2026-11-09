@@ -186,7 +186,9 @@ public sealed class RogaineStrategy : DisciplineStrategyBase
         // even when поза конкурсом — they just don't count toward the score (filtered to `scoring` below).
         var teams = members
             .Where(m => m.TeamKey.Length > 0)
-            .GroupBy(m => (m.GroupId, m.TeamKey));
+            // The same matching key the rest of the app uses for names (case, look-alike Latin/Cyrillic, spaces):
+            // «Альфа» and «альфа» are one team here exactly as they are one block in the protocol.
+            .GroupBy(m => (m.GroupId, TextKey.Of(m.TeamKey)));
 
         // Each ranked team carries its net score and tie-break time, grouped back by GroupId for placing.
         var ranked = new List<(Guid? GroupId, int Net, TimeSpan Time, List<Guid> LinkIds)>();

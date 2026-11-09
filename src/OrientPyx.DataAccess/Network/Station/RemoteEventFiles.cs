@@ -30,6 +30,9 @@ public sealed class RemoteEventFiles : IEventFiles
     public Task MoveDayFolderAsync(string eventFolderPath, int oldNumber, int newNumber, CancellationToken cancellationToken = default)
         => _remote.MoveDayFolderAsync(eventFolderPath, oldNumber, newNumber, cancellationToken);
 
+    public Task DeleteDayFolderAsync(string eventFolderPath, int dayNumber, CancellationToken cancellationToken = default)
+        => _remote.DeleteDayFolderAsync(eventFolderPath, dayNumber, cancellationToken);
+
     public Task<string> SaveDayFileAsync(string eventFolderPath, int dayNumber, string fileName, byte[] content, CancellationToken cancellationToken = default)
         => _remote.SaveDayFileAsync(eventFolderPath, dayNumber, fileName, content, cancellationToken);
 

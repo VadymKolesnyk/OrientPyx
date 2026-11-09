@@ -373,7 +373,44 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     partial void OnCourseOrderChanged(string value)
     {
         OnPropertyChanged(nameof(ControlCountText));
+        RaiseUnknownCodes();
         QueueSave();
+    }
+
+    // ── Codes the course names that the day has no control point for (Р: S1/F1 typed without start/finish КП)
+
+    private IReadOnlySet<string> _dayCodes = new HashSet<string>();
+
+    /// <summary>The day's control point codes (start/finish included), set by the page on load.</summary>
+    public void SetDayCodes(IReadOnlySet<string> codes)
+    {
+        _dayCodes = codes;
+        RaiseUnknownCodes();
+    }
+
+    /// <summary>
+    /// Codes in the course order that are not control points of the day — e.g. «S1»/«F» typed while no КП has that code
+    /// with type «Старт»/«Фініш». Judging treats such a code as a control nobody can punch: the whole group gets MP.
+    /// Blank when the day has no control points yet (nothing to check against) or the group's format ignores the order.
+    /// </summary>
+    public string UnknownCodes => _dayCodes.Count == 0 || !UsesCourseOrder
+        ? string.Empty
+        : string.Join(", ", System.Text.RegularExpressions.Regex.Matches(CourseOrder ?? string.Empty, @"\b[\p{L}\p{N}]+\b(?!\s*:)")
+            .Select(m => m.Value)
+            .Where(code => !_dayCodes.Contains(code))
+            .Distinct(OrientPyx.Plugins.Sdk.Toolkit.TextKey.Comparer));
+
+    public bool HasUnknownCodes => UnknownCodes.Length > 0;
+
+    public string UnknownCodesTooltip => HasUnknownCodes
+        ? string.Format(Localization.Get("Groups.UnknownCodes.Tooltip"), UnknownCodes)
+        : string.Empty;
+
+    private void RaiseUnknownCodes()
+    {
+        OnPropertyChanged(nameof(UnknownCodes));
+        OnPropertyChanged(nameof(HasUnknownCodes));
+        OnPropertyChanged(nameof(UnknownCodesTooltip));
     }
 
     partial void OnDistanceTextChanged(string value) => QueueSave();

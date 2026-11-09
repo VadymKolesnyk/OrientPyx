@@ -108,11 +108,12 @@ public sealed partial class PluginsViewModel : PageViewModelBase
         try
         {
             Directory.CreateDirectory(folder);
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(folder) { UseShellExecute = true });
         }
         catch (Exception)
         {
-            // Opening Explorer is best-effort.
+            // Best-effort: FileReveal below still tries.
         }
+        // Through the shared helper (Explorer / Finder / xdg-open), never a raw Process.Start.
+        Services.FileReveal.TryOpenFolder(folder);
     }
 }

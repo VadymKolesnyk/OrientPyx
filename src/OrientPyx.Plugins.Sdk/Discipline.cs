@@ -82,7 +82,7 @@ public abstract class Discipline
     /// <summary>Extra result columns (values from <see cref="ResultRow.Set"/>).</summary>
     public virtual IEnumerable<ResultColumnDef> Columns => [];
 
-    /// <summary>The discipline's settings, edited in «Налаштування дисципліни…».</summary>
+    /// <summary>The discipline's settings, edited on the plugin's own page (menu «Плагіни» → the plugin).</summary>
     public virtual IEnumerable<SettingDef> Settings => [];
 
     /// <summary>Participant field keys the discipline needs (shown as columns on the roster).</summary>

@@ -88,8 +88,22 @@ public sealed partial class EventStore : IEventStore
             // PaymentPerDay is deliberately NOT copied here: switching that mode also migrates every
             // participant's payment value, so it has its own writer (SetPaymentPerDayAsync). A page that
             // saves a stale CompetitionInfo must not silently flip the mode back.
+            // PointsRulesJson likewise has its own writer (SetPointsRulesJsonAsync): a page holding an older
+            // CompetitionInfo must not drop the rule copies written since.
         }
 
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SetPointsRulesJsonAsync(string eventFolderPath, string? json, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+
+        var existing = await db.Competition.FirstOrDefaultAsync(cancellationToken);
+        if (existing is null)
+            return;
+
+        existing.PointsRulesJson = string.IsNullOrWhiteSpace(json) ? null : json;
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -168,10 +182,23 @@ public sealed partial class EventStore : IEventStore
         if (existing is null)
             return;
 
+        // Everything that belongs to the day goes with it, in one transaction (the links are convention-only, so
+        // nothing cascades by itself). Participants stay: one left with no day shows in «Мандатка» with none.
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.ParticipantDays.Where(x => x.EventDayId == dayId).ExecuteDeleteAsync(cancellationToken);
+        await db.FinishReadouts.Where(x => x.EventDayId == dayId).ExecuteDeleteAsync(cancellationToken);
+        await db.ControlPoints.Where(x => x.EventDayId == dayId).ExecuteDeleteAsync(cancellationToken);
+        await db.GroupDaySettings.Where(x => x.EventDayId == dayId).ExecuteDeleteAsync(cancellationToken);
+        await db.GroupCourseVariants.Where(x => x.EventDayId == dayId).ExecuteDeleteAsync(cancellationToken);
+        await db.RelayTeams.Where(x => x.EventDayId == dayId).ExecuteDeleteAsync(cancellationToken);
+        await db.LegCourseAssignments.Where(x => x.EventDayId == dayId).ExecuteDeleteAsync(cancellationToken);
+        await db.ResultProtocolSettings.Where(x => x.EventDayId == dayId).ExecuteDeleteAsync(cancellationToken);
+        await db.StartProtocolSettings.Where(x => x.EventDayId == dayId).ExecuteDeleteAsync(cancellationToken);
+        await db.DrawSettings.Where(x => x.EventDayId == dayId).ExecuteDeleteAsync(cancellationToken);
+        await db.PluginSettings.Where(x => x.EventDayId == dayId).ExecuteDeleteAsync(cancellationToken);
         db.Days.Remove(existing);
-        db.RelayTeams.RemoveRange(db.RelayTeams.Where(t => t.EventDayId == dayId));
-        db.LegCourseAssignments.RemoveRange(db.LegCourseAssignments.Where(a => a.EventDayId == dayId));
         await db.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<ControlPoint>> GetControlPointsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
@@ -2095,9 +2122,10 @@ public sealed partial class EventStore : IEventStore
             }
             else
             {
-                // All-days mode overwrites every participant field (legacy behaviour). Current-day-only mode
-                // only touches the fields the caller ticked (default: none — a day-scoped import shouldn't
-                // silently rewrite an athlete's shared details across their other days).
+                // All-days mode updates every participant field the file has a value for; current-day-only mode
+                // only the fields the caller ticked (default: none — a day-scoped import shouldn't silently rewrite
+                // an athlete's shared details across their other days). A blank value never clears a stored one —
+                // a file without the column (or with an empty cell) leaves the field as it is, like Р-19.
                 bool Update(ParticipantUpdateFields field) =>
                     !currentDayOnly || scope.UpdateFields.HasFlag(field);
 
@@ -2109,22 +2137,23 @@ public sealed partial class EventStore : IEventStore
                     participant.Number = number;
                 if (Update(ParticipantUpdateFields.Team) && src.Team.Length > 0)
                     participant.Team = src.Team;
-                if (Update(ParticipantUpdateFields.Rank))
+                if (Update(ParticipantUpdateFields.Rank) && src.Rank.Length > 0)
                     participant.Rank = src.Rank;
-                if (Update(ParticipantUpdateFields.Coach))
+                if (Update(ParticipantUpdateFields.Coach) && src.Coach.Length > 0)
                     participant.Coach = src.Coach;
-                if (Update(ParticipantUpdateFields.BirthDate))
+                if (Update(ParticipantUpdateFields.BirthDate) && src.BirthDate is not null)
                     participant.BirthDate = src.BirthDate;
-                if (Update(ParticipantUpdateFields.Region))
+                if (Update(ParticipantUpdateFields.Region) && regionId is not null)
                     participant.RegionId = regionId;
-                if (Update(ParticipantUpdateFields.Club))
+                if (Update(ParticipantUpdateFields.Club) && clubId is not null)
                     participant.ClubId = clubId;
-                if (Update(ParticipantUpdateFields.Dussh))
+                if (Update(ParticipantUpdateFields.Dussh) && dusshId is not null)
                     participant.DusshId = dusshId;
-                if (Update(ParticipantUpdateFields.Representative))
+                if (Update(ParticipantUpdateFields.Representative) && src.Representative.Length > 0)
                     participant.Representative = src.Representative;
-                if (Update(ParticipantUpdateFields.IsFsouMember))
-                    participant.IsFsouMember = src.IsFsouMember;
+                // A yes/no flag has no blank: the file can set the membership, never take it away.
+                if (Update(ParticipantUpdateFields.IsFsouMember) && src.IsFsouMember)
+                    participant.IsFsouMember = true;
                 // Never wipe a stored payment with a blank cell (see srcPayment above); in per-day mode the
                 // value belongs on the day link, so the participant-level column is left alone entirely. An
                 // all-days re-import told not to update payments leaves the desk's value alone too.

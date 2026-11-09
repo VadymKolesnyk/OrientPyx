@@ -29,6 +29,13 @@ artifacts/
 *.db-shm
 *.db-wal
 
+# Documentation site (website/): build output, generated screenshots, local Python env (scripts/docs.ps1)
+website/site/
+website/content/shots/
+website/content/demo/
+.venv-docs/
+__pycache__/
+
 # Logs and temp
 *.log
 *.tmp
@@ -54,6 +61,7 @@ Thumbs.db
 /build/releases/
 /build/publish-mac/
 /build/releases-mac/
+/build/signing/
 *.snupkg
 .nuget/
 

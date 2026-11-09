@@ -40,12 +40,10 @@
   </PropertyGroup>
 
   <!-- Release identity. Bump <Version> for each release; the publish script passes the same value to
-       Velopack so the installed app can tell it is out of date. See build/publish.ps1. -->
+       Velopack so the installed app can tell it is out of date. See build/publish.ps1. Product / Company /
+       Authors are shared by every src project in src/Directory.Build.props. -->
   <PropertyGroup>
-    <Version>0.7.16</Version>
-    <Product>OrientPyx</Product>
-    <Company>OrientPyx</Company>
-    <Authors>OrientPyx</Authors>
+    <Version>0.8.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

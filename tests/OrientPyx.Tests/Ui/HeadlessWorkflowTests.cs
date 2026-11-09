@@ -54,13 +54,14 @@ public sealed class HeadlessWorkflowTests
             create.DayCount = 2;
             await create.CreateCommand.ExecuteAsync(null);
         });
-        await _app.WaitUntilAsync(() => _app.Vm.CurrentView is EventSelectionViewModel, what: "back on the picker");
+        // The new competition opens straight away on its first day.
+        await _app.WaitUntilAsync(() => _app.Vm.IsEventSelected && Session().CurrentEvent?.Identifier == id,
+            what: "the new competition opened");
         await _app.SettleAsync();
-        var picker = (EventSelectionViewModel)_app.Vm.CurrentView;
-        var row = picker.Events.Single(e => e.Identifier == id);
-        Assert.Equal("Кубок тесту", row.Name);
-        Assert.Equal(2, row.DayCount);
-        await _app.ScreenshotAsync("11-create-listed");
+        Assert.Equal("Кубок тесту", Session().CurrentEvent!.Name);
+        Assert.Equal(1, Session().CurrentDay!.Number);
+        Assert.IsType<ShellViewModel>(_app.Vm.CurrentView);
+        await _app.ScreenshotAsync("11-create-opened");
 
         var summary = await TestEnvironment.Instance.GetEventAsync(id);
         Assert.Equal(2, (await Core.GetRequiredService<IEventStore>().GetDaysAsync(summary.FolderPath)).Count);
@@ -478,6 +479,12 @@ public sealed class HeadlessWorkflowTests
     {
         var field = typeof(MainWindowViewModel).GetField("_shell", BindingFlags.NonPublic | BindingFlags.Instance)!;
         return (ShellViewModel)field.GetValue(_app.Vm)!;
+    }
+
+    private ISessionService Session()
+    {
+        var field = typeof(MainWindowViewModel).GetField("_session", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        return (ISessionService)field.GetValue(_app.Vm)!;
     }
 
     private void AssertNoUiErrors()

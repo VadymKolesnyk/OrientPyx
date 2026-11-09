@@ -910,13 +910,17 @@ public sealed partial class CheckRowViewModel : ObservableObject
         _check = check;
         Title = localization.Get($"Network.Check.{check.Key}");
         FixLabel = check.Fix is null ? string.Empty : localization.Get($"Network.Fix.{check.Fix.Key}");
+        // The detail in the UI language when the check names a key (the English Detail stays for the log).
+        Detail = check.DetailKey is { } key
+            ? string.Format(localization.Get(key), check.DetailArgs.Cast<object>().ToArray())
+            : check.Detail;
     }
 
     public string Key => _check.Key;
     public CheckState State => _check.State;
     public string Title { get; }
-    public string Detail => _check.Detail;
-    public bool HasDetail => !string.IsNullOrWhiteSpace(_check.Detail);
+    public string Detail { get; }
+    public bool HasDetail => !string.IsNullOrWhiteSpace(Detail);
     public string? FixKey => _check.Fix?.Key;
     public bool HasFix => _check.Fix is not null;
     public bool NeedsElevation => _check.Fix?.NeedsElevation ?? false;

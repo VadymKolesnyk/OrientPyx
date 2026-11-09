@@ -23,6 +23,7 @@ public sealed class SessionService : ISessionService
     private readonly IEventStore _eventStore;
     private readonly IActivityLog _log;
     private readonly IWorkspaceMode _mode;
+    private readonly PointsRuleCopySync _ruleCopies;
     private readonly INetworkClient? _station;
 
     // Serialises the bus-driven refreshes so two quick events cannot interleave their reads and writes.
@@ -35,6 +36,7 @@ public sealed class SessionService : ISessionService
         IActivityLog log,
         IWorkspaceMode mode,
         IDataChangeBus bus,
+        PointsRuleCopySync ruleCopies,
         INetworkClient? station = null)
     {
         _appStore = appStore;
@@ -42,6 +44,7 @@ public sealed class SessionService : ISessionService
         _eventStore = eventStore;
         _log = log;
         _mode = mode;
+        _ruleCopies = ruleCopies;
         _station = station;
         bus.Changed += OnDataChanged;
     }
@@ -65,6 +68,7 @@ public sealed class SessionService : ISessionService
         // Move logging into this competition's own folder so its diagnostics live alongside its data.
         _log.UseEventFolder(competition.FolderPath);
         _log.Action($"Select competition '{competition.Identifier}', day {day.Number}");
+        await RefreshPointsRuleCopiesAsync(competition.FolderPath, cancellationToken);
         CurrentEvent = competition;
         CurrentDay = day;
 
@@ -159,6 +163,7 @@ public sealed class SessionService : ISessionService
         // Apply any pending migrations to the restored event database before reading from it.
         await _eventStore.EnsureCreatedAsync(summary.FolderPath, cancellationToken);
         _log.UseEventFolder(summary.FolderPath);
+        await RefreshPointsRuleCopiesAsync(summary.FolderPath, cancellationToken);
 
         var days = await _eventStore.GetDaysAsync(summary.FolderPath, cancellationToken);
         if (days.Count == 0)
@@ -170,6 +175,21 @@ public sealed class SessionService : ISessionService
         CurrentDay = day;
         SessionChanged?.Invoke(this, EventArgs.Empty);
         return true;
+    }
+
+    // The competition keeps its own copy of the points rules it references (another instance may not know their ids);
+    // bring it up to date with this machine's — or, on a station, the host's — catalogue on opening. Never fails the
+    // selection: the copy is a fallback, and the next opening retries.
+    private async Task RefreshPointsRuleCopiesAsync(string folderPath, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _ruleCopies.RefreshAsync(folderPath, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _log.Error("Refresh points rule copies", ex);
+        }
     }
 
     private Task SavePointerAsync(string identifier, int dayNumber, CancellationToken cancellationToken)
