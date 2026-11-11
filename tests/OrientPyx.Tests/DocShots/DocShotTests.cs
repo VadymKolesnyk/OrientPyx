@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using OrientPyx.Presentation.Controls;
 using OrientPyx.Presentation.ViewModels;
 using OrientPyx.Presentation.ViewModels.Pages;
 using OrientPyx.Tests.Support;
@@ -75,11 +76,34 @@ public sealed partial class DocShotTests
         await _s.PageAsync<ClubsViewModel>(vm => vm.OpenClubsCommand);
         await _s.ShotAsync("clubs", "«Змагання → Довідники → Клуби».");
 
+        // Both participant views start with the same personal columns; the shots keep only the ones that tell the views
+        // apart, so the day blocks (roster, «Група» expanded per day) and the day's group / start / result columns are in
+        // the frame (the view is reset afterwards).
         var participants = await _s.PageAsync<ParticipantsViewModel>(vm => vm.OpenParticipantsCommand);
         await SelectParticipantsDayAsync(participants, roster: true);
-        await _s.ShotAsync("participants-roster", "«Учасники», режим «Мандатка»: усі учасники з блоками днів.");
+        var groupsBlock = participants.Blocks.First(b => b.Field == RosterField.Groups);
+        await _s.OnUiAsync(() => participants.ToggleBlockCommand.Execute(groupsBlock));
+        await _s.SettleLongAsync();
+        var roster = await _s.FindAsync<SheetTable>("RosterTable");
+        await KeepColumnsAsync(roster, "id:Participants.Col.Number", "id:Participants.Col.FullName", "id:Participants.Col.Club",
+            "block:Groups:day1", "block:Groups:day2", "block:Chips", "block:StartTimes", "block:OutOfCompetition");
+        await _s.ShotAsync("participants-roster",
+            "«Учасники», режим «Мандатка»: блок «Група» розгорнуто по днях, «Чіп», «Час старту», «Поза конкурсом» згорнуті.");
+        await _s.OnUiAsync(() =>
+        {
+            roster.ResetLayout();
+            participants.ToggleBlockCommand.Execute(groupsBlock);
+        });
+        await _s.SettleLongAsync();
+
         await SelectParticipantsDayAsync(participants, roster: false);
-        await _s.ShotAsync("participants-day", "«Учасники», таблиця дня 1 з колонками результатів.");
+        var day = await _s.FindAsync<SheetTable>("DayTable");
+        await KeepColumnsAsync(day, "id:Participants.Col.Number", "id:Participants.Col.FullName", "id:Participants.Col.Group",
+            "id:Participants.Col.Chip", "id:Participants.Col.StartTime", "id:Participants.Col.ActualStart",
+            "id:Participants.Col.Finish", "id:Participants.Col.Result", "id:Participants.Col.Place");
+        await _s.ShotAsync("participants-day", "«Учасники», таблиця дня 1: група, чіп, старт цього дня і колонки результатів.");
+        await _s.OnUiAsync(() => day.ResetLayout());
+        await _s.SettleLongAsync();
 
         await _s.PageAsync<EntryFeesViewModel>(vm => vm.OpenEntryFeesCommand);
         await _s.ShotAsync("entry-fees", "«Змагання → Довідники → Стартові внески».");
@@ -89,6 +113,9 @@ public sealed partial class DocShotTests
 
         await _s.PageAsync<ClassicDrawViewModel>(vm => vm.OpenClassicDrawCommand);
         await _s.ShotAsync("classic-draw", "«Старт → Класичне жеребкування».");
+
+        await _s.PageAsync<MassStartDrawViewModel>(vm => vm.OpenMassStartDrawCommand);
+        await _s.ShotAsync("mass-start-draw", "«Старт → Масовий старт»: один старт на групу.");
 
         await _s.PageAsync<StartProtocolsViewModel>(vm => vm.OpenStartProtocolCommand);
         await _s.ShotAsync("start-protocol", "«Старт → Стартовий протокол»: налаштування і попередній перегляд.");
@@ -142,6 +169,19 @@ public sealed partial class DocShotTests
         await _s.OnUiAsync(() => page.SelectedDay = page.DayOptions.First(d => roster ? d.IsRoster : !d.IsRoster && d.Day?.Number == day));
         await _s.SettleLongAsync();
         await _s.WaitUntilAsync(() => roster ? page.Roster.Count > 0 : page.Participants.Count > 0, "participant rows");
+        await _s.SettleLongAsync();
+    }
+
+    /// <summary>Hides every column of <paramref name="table"/> but the ones with the given keys (undo with
+    /// <see cref="SheetTable.ResetLayout"/>).</summary>
+    private async Task KeepColumnsAsync(SheetTable table, params string[] keys)
+    {
+        var keep = keys.ToHashSet(StringComparer.Ordinal);
+        await _s.OnUiAsync(() =>
+        {
+            foreach (var column in table.ToggleableColumns().Where(c => !keep.Contains(c.Key)).ToList())
+                table.SetColumnHidden(column.Key, true);
+        });
         await _s.SettleLongAsync();
     }
 }

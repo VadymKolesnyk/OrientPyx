@@ -159,7 +159,9 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         Action<ParticipantDayRowViewModel, Guid, bool> requestDiscountChange,
         Action<ParticipantDayRowViewModel> requestResultStatusChange,
         Action<ParticipantDayRowViewModel> requestBonusChange,
-        Action<ParticipantDayRowViewModel> requestDayPaymentChange)
+        Action<ParticipantDayRowViewModel> requestDayPaymentChange,
+        Action<RelayCellsViewModel, RelayPlacementRequest> requestRelayPlace,
+        Action<RelayCellsViewModel, RelayTeamField, string> requestRelayTeamEdit)
     {
         _linkId = row.LinkId;
         _dayId = row.DayId;
@@ -243,6 +245,14 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
             DiscountFlags.Add(new DiscountFlagViewModel(d.Id, d.IsFsouMemberDiscount, on, OnDiscountFlagChanged));
         }
         _totalEntryFee = row.TotalEntryFee;
+
+        // The relay cells (team / leg / «100.2» / team name) edit the stored place through their own page callbacks.
+        Relay = new RelayCellsViewModel(row.ParticipantId, row.DayId, row.Relay, localization, requestRelayPlace, requestRelayTeamEdit);
+        Relay.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(RelayCellsViewModel.HasTeam))
+                OnPropertyChanged(nameof(IsGroupEditable));
+        };
 
         _initialized = true;
 
@@ -586,6 +596,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
             if (!ReferenceEquals(_resultColumns, resultColumns))
                 SetResultColumns(resultColumns);
             ApplyResult(row.Result);
+            Relay.Apply(row.Relay);
 
             RecomputeTotal();
         }
@@ -677,20 +688,12 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
 
     public int PlaceSort => _result.Place ?? int.MaxValue;
 
-    // ── Relay (Р-22, Р-23): the team, the leg and the leg number «100.2», from the computed result.
-    /// <summary>The relay team number; blank outside a relay.</summary>
-    public string RelayTeamText => _result.Team?.Number.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+    // ── Relay (Р-21…Р-23): the runner's team, leg, leg number «100.2» and team name, as stored — editable here.
+    /// <summary>The relay cells of this runner on the day (blank outside a relay).</summary>
+    public RelayCellsViewModel Relay { get; }
 
-    public int RelayTeamSort => _result.Team?.Number ?? int.MaxValue;
-
-    /// <summary>The runner's leg; blank outside a relay.</summary>
-    public string RelayLegText => _result.Leg?.Leg.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
-
-    /// <summary>The leg number «100.2»; blank outside a relay.</summary>
-    public string RelayBibText => _result.LegBib ?? string.Empty;
-
-    /// <summary>False for a relay runner: their group on the day is the team's (Р-22), changed on «Команди».</summary>
-    public bool IsGroupEditable => _result.Team is null;
+    /// <summary>False for a relay runner: their group on the day is the team's (Р-22) and follows it.</summary>
+    public bool IsGroupEditable => !Relay.HasTeam;
     public int ScoreSort => _result.Score ?? -1;
     /// <summary>Raw points for sorting (min when none, so awarded points sort together).</summary>
     public decimal PointsSort => _result.Points ?? decimal.MinValue;
@@ -1092,11 +1095,6 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         [nameof(PointsText)] = PointsText,
         [nameof(AwardedRankText)] = AwardedRankText,
         [nameof(PlaceSort)] = PlaceSort,
-        [nameof(RelayTeamText)] = RelayTeamText,
-        [nameof(RelayTeamSort)] = RelayTeamSort,
-        [nameof(RelayLegText)] = RelayLegText,
-        [nameof(RelayBibText)] = RelayBibText,
-        [nameof(IsGroupEditable)] = IsGroupEditable,
         [nameof(ScoreSort)] = ScoreSort,
         [nameof(PointsSort)] = PointsSort,
     };

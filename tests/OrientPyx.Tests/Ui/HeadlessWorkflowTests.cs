@@ -319,7 +319,7 @@ public sealed class HeadlessWorkflowTests
         await _app.OnUiAsync(() =>
         {
             page.AutoReadFilePath = file;
-            page.AutoReadIntervalSeconds = 5;
+            page.AutoReadIntervalSeconds = 1;
             page.AutoReadEnabled = true;
         });
         try
@@ -368,30 +368,113 @@ public sealed class HeadlessWorkflowTests
     }
 
     [Fact]
-    public async Task RelayTeamsPageCreatesTeamsInBulk()
+    public async Task GroupsPageEditsRelayLegsInTheGrid()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Core, TestIds.Next("ui_legs"), discipline: DisciplineId.Relay);
+        await c.AddGroupAsync("R1", "31", s => s.LegCount = 3);
+        await c.AddGroupAsync("R2", "31", s => s.LegCount = 2);
+        var store = Core.GetRequiredService<IEventStore>();
+        await OpenCompetitionAsync(c.Summary.Identifier);
+        await _app.OnUiAsync(() => _app.Vm.OpenGroupsCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        var page = Assert.IsType<GroupsViewModel>(Shell().SelectedPage);
+        await _app.WaitUntilAsync(() => page.Groups.Count == 2, what: "two relay groups listed");
+        Assert.True(page.ShowLegCountColumn);
+        var r1 = page.Groups.Single(g => g.Name == "R1");
+        var r2 = page.Groups.Single(g => g.Name == "R2");
+        Assert.Equal("3", r1.LegCountDisplay);
+
+        // The selected group: the relay settings under the grid take the count (and save it).
+        await _app.OnUiAsync(() => page.SelectedGroup = r1);
+        await _app.WaitUntilAsync(() => page.IsRelayEditorVisible, what: "relay settings shown");
+        await _app.OnUiAsync(() => r1.LegCountText = "4");
+        Assert.Equal("4", page.RelayLegCountText);
+
+        // Another group: saved in the background, the settings strip of the selected one stays.
+        await _app.OnUiAsync(() => r2.LegCountText = "5");
+        await WaitForLegsAsync("R1", 4);
+        await WaitForLegsAsync("R2", 5);
+        Assert.Equal("4", page.RelayLegCountText);
+
+        // «Старт → Масовий старт» sets the mass start and restarts while the strip is open; the strip's own save
+        // must not put back the values it was shown with.
+        await c.SetRelaySettingsAsync("R1", 1, 4, new TimeSpan(10, 0, 0), """{"2":"11:00:00","4":"12:00:00"}""");
+
+        // The strip's box edits the cell back.
+        await _app.OnUiAsync(() => page.RelayLegCountText = "2");
+        Assert.Equal("2", r1.LegCountText);
+        await WaitForLegsAsync("R1", 2);
+        var saved = await c.GetGroupSettingsAsync("R1", 1);
+        Assert.Equal(new TimeSpan(10, 0, 0), saved.MassStartTime);
+        Assert.Equal("""{"2":"11:00:00"}""", saved.RestartTimesJson);   // leg 4 is gone with the leg
+        AssertNoUiErrors();
+
+        // Polled off the UI thread: blocking it on a store call would deadlock.
+        async Task WaitForLegsAsync(string group, int legs)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            while ((await store.GetGroupDaySettingsAsync(c.Folder, c.Day(1).Id))
+                   .Single(s => s.GroupId == c.Groups[group].Id).LegCount != legs)
+            {
+                if (DateTime.UtcNow > deadline)
+                    throw new TimeoutException($"{group}: {legs} legs not saved in time");
+                await Task.Delay(100);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task RelayTeamsPageAssignsTeamNumbers()
     {
         var c = await CompetitionBuilder.CreateAsync(Core, TestIds.Next("ui_relay"), discipline: DisciplineId.Relay);
         await c.AddGroupAsync("R", "31", s => { s.LegCount = 3; s.MassStartTime = new TimeSpan(10, 0, 0); });
+        var store = Core.GetRequiredService<IEventStore>();
+        var groupId = c.Groups["R"].Id;
+        // Three teams without a number (as a UOF import makes them) and one already numbered.
+        await store.AddRelayTeamsAsync(c.Folder,
+        [
+            new() { EventDayId = c.Day(1).Id, GroupId = groupId, Name = "Гамма" },
+            new() { EventDayId = c.Day(1).Id, GroupId = groupId, Name = "Альфа" },
+            new() { EventDayId = c.Day(1).Id, GroupId = groupId, Name = "Бета", Number = 101 },
+            new() { EventDayId = c.Day(1).Id, GroupId = groupId, Name = "Дельта" },
+        ]);
         await OpenCompetitionAsync(c.Summary.Identifier);
         await _app.OnUiAsync(() => _app.Vm.OpenRelayTeamsCommand.ExecuteAsync(null));
         await _app.SettleAsync();
         var page = Assert.IsType<RelayTeamsViewModel>(Shell().SelectedPage);
-        await _app.WaitUntilAsync(() => page.HasRelayGroups, what: "relay group offered");
-        await _app.OnUiAsync(async () =>
-        {
-            page.BulkGroup = page.GroupOptions[0];
-            page.BulkCountText = "4";
-            page.BulkFirstNumberText = "101";
-            await page.CreateTeamsCommand.ExecuteAsync(null);
-        });
-        await _app.SettleAsync();
-        await _app.WaitUntilAsync(() => page.Teams.Count == 4, what: "four teams created");
-        Assert.Equal(["101", "102", "103", "104"], page.Teams.Select(t => t.NumberText).OrderBy(x => x));
-        await _app.ScreenshotAsync("16-relay-teams");
+        await _app.WaitUntilAsync(() => page.Teams.Count == 4, what: "four teams listed");
 
-        var teams = await Core.GetRequiredService<IEventStore>().GetRelayTeamsAsync(c.Folder, c.Day(1).Id);
-        Assert.Equal(4, teams.Count);
+        // By name, from 100, keeping existing numbers: «Бета» keeps 101, which the counter steps over.
+        await AssignAsync(page.Teams.OrderBy(t => t.Name), start: 100, reassign: false);
+        Assert.Equal(new Dictionary<string, int?> { ["Альфа"] = 100, ["Бета"] = 101, ["Гамма"] = 102, ["Дельта"] = 103 },
+            await NumbersAsync());
+
+        // Reversed, from 100, renumbering all: every number passes to another team (one write, past the unique index).
+        await AssignAsync(page.Teams.OrderByDescending(t => t.Name), start: 100, reassign: true);
+        Assert.Equal(new Dictionary<string, int?> { ["Альфа"] = 103, ["Бета"] = 102, ["Гамма"] = 101, ["Дельта"] = 100 },
+            await NumbersAsync());
+        await _app.WaitUntilAsync(() => page.Teams.Single(t => t.Name == "Дельта").NumberText == "100", what: "table refreshed");
+        await _app.ScreenshotAsync("16-relay-teams");
         AssertNoUiErrors();
+
+        async Task AssignAsync(IEnumerable<RelayTeamRowViewModel> shown, int start, bool reassign)
+        {
+            var order = shown.Cast<object?>().ToList();
+            var run = _app.OnUiAsync(() => page.AssignNumbersCommand.ExecuteAsync(order));
+            await _app.WaitUntilAsync(() => _app.Vm.Dialogs.Current is AssignNumbersViewModel, what: "assign-numbers dialog");
+            var dialog = (AssignNumbersViewModel)_app.Vm.Dialogs.Current!;
+            await _app.OnUiAsync(() =>
+            {
+                dialog.StartNumber = start;
+                dialog.ReassignExisting = reassign;
+                dialog.ConfirmCommand.Execute(null);
+            });
+            await run;
+            await _app.SettleAsync();
+        }
+
+        async Task<Dictionary<string, int?>> NumbersAsync() =>
+            (await store.GetRelayTeamsAsync(c.Folder, c.Day(1).Id)).ToDictionary(t => t.Name, t => t.Number);
     }
 
     [Fact]

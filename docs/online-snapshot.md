@@ -44,13 +44,14 @@
 | `rk` | int? | місце команди; `null` — без місця (не OK, «поза конкурсом», неповна, Р-48) |
 | `result_time` / `result_seconds` | text? / int? | час команди = Σ скоригованих часів етапів (Р-32) |
 | `points` | numeric? | очки команди (однакові кожному члену, Р-37) |
-| `status`, `reason` | text | як у `results` |
+| `status`, `reason` | text | як у `results`; команда без статусу (ще на дистанції) — завжди `running`, скільки б етапів не було зчитано |
 | `out_of_competition`, `restarted` | bool | «П/К» / «з перезапуском» |
 | `columns` | jsonb | `[{key, label}]` — додаткові колонки плагіна, що є в `legs[].extra` (підписи вже перекладені) |
 | `legs` | jsonb | масив етапів (нижче) |
 | `updated_at` | text | ISO-8601 UTC |
 
-Ключ upsert — **`event,day,num`** (потрібен унікальний індекс). Етап у `legs`:
+Ключ upsert — **`event,day,num`** (потрібен унікальний індекс). Команда **без номера** (імпорт UOF створює команди
+без номерів — їх вписують пізніше) не публікується, доки номер не з'явиться. Етап у `legs`:
 
 ```json
 { "leg": 2, "bib": "100.2", "full_name": "…", "birth": "dd.MM.yyyy", "course": "B",
@@ -81,4 +82,7 @@ create table relay_teams (
 (`IResultPublisher.TeamsUnsupported`), одноразово пише в журнал попередження і далі публікує лише особисті
 результати; помилкою тіку це не вважається. Повторна спроба — після зміни налаштувань публікації / перезапуску.
 
-Фронтенд під команди (крок 7.2) — окремий репозиторій, не в цьому коміті.
+Фронтенд глядачів — окремий репозиторій [VadymKolesnyk/o-results](https://github.com/VadymKolesnyk/o-results)
+(`web/` — React-сайт на GitHub Pages, `online-db/schema.sql` — схема Supabase разом із `relay_teams`; команди
+естафет він уже показує, крок 7.2). Як розгорнути власну копію (Supabase + GitHub Pages) і підключити OrientPyx —
+сторінка документації `website/content/race-day/online-site.md`.

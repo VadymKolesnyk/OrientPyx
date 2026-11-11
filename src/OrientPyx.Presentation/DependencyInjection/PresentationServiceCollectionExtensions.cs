@@ -82,8 +82,10 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<MonitorResultsViewModel>();
         services.AddSingleton<SplitsExportViewModel>();
         services.AddSingleton<MapCountsViewModel>();
+        services.AddSingleton<NumberVariantsViewModel>();
         services.AddSingleton<DrawViewModel>();
         services.AddSingleton<ClassicDrawViewModel>();
+        services.AddSingleton<MassStartDrawViewModel>();
         services.AddSingleton<PluginsViewModel>();
         services.AddSingleton<PluginSettingsViewModel>();
 

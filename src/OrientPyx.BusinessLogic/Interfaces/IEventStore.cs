@@ -348,9 +348,13 @@ public interface IEventStore
     /// coarse progress through <paramref name="progress"/> as it works. One <see cref="SaveChangesAsync"/>
     /// at the end keeps it fast for large files (instead of a transaction per row).
     /// </summary>
-    /// <remarks><paramref name="relayDayNumbers"/>: the days on which a row's relay team/leg is applied (the days running
-    /// a relay group). The teams are created/matched by number on the day and the legs assigned in the same
-    /// transaction.</remarks>
+    /// <remarks><paramref name="relayDayNumbers"/>: the days on which a row's numbered relay team/leg is applied (the days
+    /// running a relay group). A row's own relay days (<see cref="UofParticipant.RelayDayNumbers"/>, UOF «3Е») put the
+    /// runner in its relay group there and on the team of that exact name in the group (created without a number when
+    /// missing). <paramref name="relayGroupsToMark"/>: the group-days whose discipline becomes the relay. A group-day
+    /// with no leg count gets one from the file (the highest leg, else the largest team); each runner goes on their leg
+    /// (the team's next free leg when the file names none or it is taken) and, with no leg free, onto the team
+    /// «без етапу». All in the same transaction.</remarks>
     Task<ParticipantImportResult> ImportParticipantsBatchAsync(
         string eventFolderPath,
         UofParticipantData data,
@@ -359,7 +363,8 @@ public interface IEventStore
         ParticipantImportScope scope,
         IProgress<ImportProgress>? progress,
         CancellationToken cancellationToken = default,
-        IReadOnlyCollection<int>? relayDayNumbers = null);
+        IReadOnlyCollection<int>? relayDayNumbers = null,
+        IReadOnlyCollection<RelayGroupDay>? relayGroupsToMark = null);
 
     /// <summary>Ordered by Order (read sequence).</summary>
     Task<IReadOnlyList<FinishReadout>> GetFinishReadoutsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
@@ -478,13 +483,21 @@ public interface IEventStore
     /// <summary>Updates number/name/club/region/«П/К»/status override and the group (the runners follow, Р-22).</summary>
     Task UpdateRelayTeamAsync(string eventFolderPath, RelayTeam team, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Gives teams of the day new numbers (null = no number) in one transaction; a number may move from one team to
+    /// another. False — and nothing written — when two teams of the day would end up with one number (Р-20).
+    /// </summary>
+    Task<bool> SetRelayTeamNumbersAsync(
+        string eventFolderPath, Guid dayId, IReadOnlyList<RelayTeamNumberChange> numbers, CancellationToken cancellationToken = default);
+
     /// <summary>Deletes a team and frees its legs (the runners stay on the day).</summary>
     Task DeleteRelayTeamAsync(string eventFolderPath, Guid teamId, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes every team of a group on a day (the group left the day), freeing their legs.</summary>
     Task DeleteRelayTeamsForGroupDayAsync(string eventFolderPath, Guid dayId, Guid groupId, CancellationToken cancellationToken = default);
 
-    /// <summary>The day's leg-number courses (<see cref="Enums.RelayCourseMode.ByBib"/>, Р-41).</summary>
+    /// <summary>The day's number courses (relay leg numbers, <see cref="Enums.RelayCourseMode.ByBib"/>, Р-41; scatter map
+    /// variants).</summary>
     Task<IReadOnlyList<LegCourseAssignment>> GetLegCourseAssignmentsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -494,10 +507,24 @@ public interface IEventStore
     Task UpsertLegCourseAssignmentsAsync(string eventFolderPath, Guid dayId, IReadOnlyList<LegCourseAssignment> assignments, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Replaces a group's number courses on the day (a course import): the rows naming the group are deleted, then the
+    /// given ones written — a row for a number and leg another row already holds takes it over. One transaction.
+    /// </summary>
+    Task ReplaceGroupLegCourseAssignmentsAsync(
+        string eventFolderPath, Guid dayId, Guid groupId, IReadOnlyList<LegCourseAssignment> assignments,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Puts a runner (participant-day link of the team's day) on a leg — or, with a null link, clears the leg. The
     /// leg's previous runner and the runner's previous leg are freed; the runner takes the team's group (Р-22).
     /// </summary>
     Task<bool> AssignRelayLegAsync(string eventFolderPath, Guid teamId, int leg, Guid? linkId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Takes a runner (participant-day link) off their relay team — with or without a leg; they stay on the day in
+    /// their group. False when there is no such link; true otherwise (also when the runner was on no team).
+    /// </summary>
+    Task<bool> ReleaseRelayRunnerAsync(string eventFolderPath, Guid linkId, CancellationToken cancellationToken = default);
 
     /// <summary>Saves a relay group's settings (legs, mass start, restarts, restart ranking).</summary>
     Task UpdateRelaySettingsAsync(
@@ -506,6 +533,6 @@ public interface IEventStore
 
     /// <summary>Saves how a relay group gives its legs their courses (Р-41).</summary>
     Task UpdateRelayCourseSettingsAsync(
-        string eventFolderPath, Guid settingsId, RelayCourseMode mode, string legCoursesJson, string teamCourseSet,
+        string eventFolderPath, Guid settingsId, RelayCourseMode mode, string teamCourseSet,
         CancellationToken cancellationToken = default);
 }

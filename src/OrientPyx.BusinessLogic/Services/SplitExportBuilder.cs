@@ -21,10 +21,7 @@ public sealed class SplitExportBuilder : ISplitExportBuilder
         var groups = new List<SplitExportGroup>(data.Groups.Count);
         foreach (var g in data.Groups.OrderBy(g => g.Order))
         {
-            var rows = g.Rows
-                // Placed finishers first by ascending place, then the rest by name (the classic order).
-                .OrderBy(r => r.Result.Place is { } p ? p : int.MaxValue)
-                .ThenBy(r => r.FullName, StringComparer.CurrentCultureIgnoreCase)
+            var rows = Order(g.Rows)
                 .Select(r => BuildRow(r, labels))
                 .ToList();
 
@@ -43,6 +40,20 @@ public sealed class SplitExportBuilder : ISplitExportBuilder
             Groups: groups,
             Labels: labels);
     }
+
+    // Placed finishers first by ascending place, then the rest by name (the classic order). A relay group's runners
+    // go team by team in standing order (RelayTeamOrder), each team's legs in order; runners on no team last.
+    private static IEnumerable<SplitExportDataRow> Order(IReadOnlyList<SplitExportDataRow> rows) =>
+        rows.Any(r => r.Result.Team is not null)
+            ? rows
+                .OrderBy(r => r.Result.Team is null ? 1 : 0)
+                .ThenBy(r => RelayTeamOrder.Key(r.Result.Team))
+                .ThenBy(r => RelayTeamNumbers.SortKey(r.Result.Team?.Number))
+                .ThenBy(r => r.Result.Leg?.Leg ?? 0)
+                .ThenBy(r => r.FullName, StringComparer.CurrentCultureIgnoreCase)
+            : rows
+                .OrderBy(r => r.Result.Place is { } p ? p : int.MaxValue)
+                .ThenBy(r => r.FullName, StringComparer.CurrentCultureIgnoreCase);
 
     private static SplitExportRow BuildRow(SplitExportDataRow row, SplitExportLabels labels)
     {

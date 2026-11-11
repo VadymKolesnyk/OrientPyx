@@ -748,7 +748,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     public int LockedMemberDayNumber => Days.FirstOrDefault(d => d.IsMember && d.IsDayLocked)?.DayNumber ?? 0;
 
     /// <summary>True when the merged Groups cell may be edited (a shared value AND no closed day).</summary>
-    public bool GroupMergedEditable => GroupShowsInput && !GroupsHaveLockedDay;
+    public bool GroupMergedEditable => GroupShowsInput && !GroupsHaveLockedDay && !Days.Any(d => d.Relay.HasTeam);
 
     /// <summary>
     /// The closed day blocking the merged Groups cell (0 when none). Bound by the cell so a refused
@@ -1122,6 +1122,34 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     // merged cell): the shared entered value across member days, or "різні" when they disagree.
     public string CollapsedBonus => MergedResult(c => c.BonusText);
 
+    // The merged relay cells over the relay days (read-only; the relay is set per day).
+    public string CollapsedRelayBib => MergedRelay(r => r.BibText);
+    public string CollapsedRelayTeam => MergedRelay(r => r.TeamName);
+    public string CollapsedRelayTeamNumber => MergedRelay(r => r.TeamText);
+    public string CollapsedRelayLeg => MergedRelay(r => r.LegText);
+
+    // One relay value over the relay days: the value when every relay day has the same one, else each day's own
+    // («Д2: 100.2 · Д3: 205.1»); blank when no day has one.
+    private string MergedRelay(Func<RelayCellsViewModel, string> selector)
+    {
+        var relayDays = Days.Where(d => d.IsRelayDay).ToList();
+        var held = relayDays.Where(d => selector(d.Relay).Length > 0).ToList();
+        if (held.Count == 0)
+            return string.Empty;
+        if (held.Count == relayDays.Count && held.Select(d => selector(d.Relay)).Distinct().Count() == 1)
+            return selector(held[0].Relay);
+        var format = Localization.Get("Participants.Roster.RelayDayValue");
+        return string.Join(" · ", held.Select(d => string.Format(format, d.DayNumber, selector(d.Relay))));
+    }
+
+    private void RaiseRelayAggregates()
+    {
+        OnPropertyChanged(nameof(CollapsedRelayBib));
+        OnPropertyChanged(nameof(CollapsedRelayTeam));
+        OnPropertyChanged(nameof(CollapsedRelayTeamNumber));
+        OnPropertyChanged(nameof(CollapsedRelayLeg));
+    }
+
     // The shared value of a read-only per-day result text across member days, or the localized "різні"
     // when they disagree; blank when no member day. Mirrors the collapsed start-time behaviour.
     private string MergedResult(Func<RosterDayCellViewModel, string> selector)
@@ -1145,6 +1173,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         OnPropertyChanged(nameof(CollapsedPoints));
         OnPropertyChanged(nameof(CollapsedAwardedRank));
         OnPropertyChanged(nameof(CollapsedBonus));
+        RaiseRelayAggregates();
     }
 
     private void OnDayCellChanged(object? sender, PropertyChangedEventArgs e)
@@ -1159,6 +1188,12 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             case nameof(RosterDayCellViewModel.SelectedGroup):
                 RaiseGroupAggregates();
                 RecomputeTotal();
+                break;
+            // A relay place moves the merged «Естафета» cell, and a team holds the runner's group (Р-22).
+            case nameof(RosterDayCellViewModel.Relay):
+            case nameof(RosterDayCellViewModel.CanEditGroup):
+                RaiseRelayAggregates();
+                OnPropertyChanged(nameof(GroupMergedEditable));
                 break;
             case nameof(RosterDayCellViewModel.Chip):
                 RaiseChipAggregates();

@@ -193,9 +193,9 @@ internal sealed class RosterCellFactory
             cell[!Visual.OpacityProperty] =
                 new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.IsMember)}") { Converter = DimWhenNotMember };
             // Joining a day happens through this combo, so it stays live for non-members — but a closed
-            // day accepts no joins either.
+            // day accepts no joins either, and a relay runner's group is the team's (Р-22).
             cell[!InputElement.IsEnabledProperty] =
-                new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.CanEdit)}");
+                new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.CanEditGroup)}");
             cell[!LazyEditCell.LockedDayNumberProperty] =
                 new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.LockedDayNumber)}");
             return cell;

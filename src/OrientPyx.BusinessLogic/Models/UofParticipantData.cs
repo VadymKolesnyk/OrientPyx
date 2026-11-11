@@ -48,18 +48,31 @@ public sealed class UofParticipant
     /// <summary>Chip number; blank when none (the file's "0"/empty is normalised to blank).</summary>
     public string Chip { get; init; } = string.Empty;
 
-    /// <summary>Relay: the team number the runner runs for (Р-20); null when the file names no team. Applied on the
-    /// import's relay days only.</summary>
+    /// <summary>Relay: the team number the runner runs for (Р-20); null when the file names no team number. Applied on
+    /// the import's relay days only.</summary>
     public int? RelayTeamNumber { get; init; }
 
-    /// <summary>Relay: the team name (used when the team is created, or to fill a blank name).</summary>
+    /// <summary>Relay: the team name (used when the team is created, or to fill a blank name). With no
+    /// <see cref="RelayTeamNumber"/> (UOF) the team is found by this exact name in the relay group on the day, else
+    /// created without a number — the numbers are given later.</summary>
     public string RelayTeamName { get; init; } = string.Empty;
 
-    /// <summary>Relay: the runner's leg; null ⇒ the team's next free leg.</summary>
+    /// <summary>Relay: the runner's leg; null ⇒ the team's next free leg (none free ⇒ on the team «без етапу»).</summary>
     public int? RelayLeg { get; init; }
 
     /// <summary>1-based day numbers the athlete runs (from ProgEvent). Empty means no days listed.</summary>
     public IReadOnlyList<int> DayNumbers { get; init; } = [];
+
+    /// <summary>The days of <see cref="DayNumbers"/> the file marks as the runner's relay («3Е» in UOF ProgEvent): there
+    /// the runner is in <see cref="RelayGroup"/> and runs for the team <see cref="RelayTeamName"/>.</summary>
+    public IReadOnlyList<int> RelayDayNumbers { get; init; } = [];
+
+    /// <summary>The relay group on <see cref="RelayDayNumbers"/> (UOF <c>GrupRel</c>, «МІКС12»); blank — no group on
+    /// those days (the runner is entered there without one, to be sorted out by hand).</summary>
+    public string RelayGroup { get; init; } = string.Empty;
+
+    /// <summary>The group the runner is in on the day: <see cref="RelayGroup"/> on a relay day, else <see cref="Group"/>.</summary>
+    public string GroupOn(int dayNumber) => RelayDayNumbers.Contains(dayNumber) ? RelayGroup : Group;
 
     /// <summary>Additional-field values by field key, as read from the file (normalised by the import, Р-18/Р-19).
     /// A blank value is "no information" and never clears a stored one. Empty for UOF files.</summary>

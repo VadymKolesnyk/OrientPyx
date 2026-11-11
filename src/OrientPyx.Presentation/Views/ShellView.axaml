@@ -77,11 +77,17 @@
         <DataTemplate DataType="pages:MapCountsViewModel">
             <views:MapCountsView />
         </DataTemplate>
+        <DataTemplate DataType="pages:NumberVariantsViewModel">
+            <views:NumberVariantsView />
+        </DataTemplate>
         <DataTemplate DataType="pages:DrawViewModel">
             <views:DrawView />
         </DataTemplate>
         <DataTemplate DataType="pages:ClassicDrawViewModel">
             <views:ClassicDrawView />
+        </DataTemplate>
+        <DataTemplate DataType="pages:MassStartDrawViewModel">
+            <views:MassStartDrawView />
         </DataTemplate>
         <DataTemplate DataType="pages:StartProtocolsViewModel">
             <views:StartProtocolsView />

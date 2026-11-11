@@ -305,7 +305,7 @@ public override FinishStatusResult EvaluateFinish(FinishContext ctx)
 | Член | Опис |
 |---|---|
 | `ResultRow Row` | результат команди: `AdjustedTime` — сума скоригованих часів етапів, `Time` — сума фактичних |
-| `int Number` | номер команди (100 у «100.2») |
+| `int Number` | номер команди (100 у «100.2»); 0, поки команді не дали номер (імпорт UOF створює команди без номерів) |
 | `string Name` | назва команди |
 | `IReadOnlyList<ResultRow?> Members` | рядки етапів по порядку (індекс 0 — етап 1); null, якщо на етап нікого не призначено |
 | `bool Restarted` | хоча б один етап стартував з перезапуску |

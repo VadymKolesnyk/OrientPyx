@@ -70,7 +70,9 @@ public class ParticipantDay
     /// runner's <see cref="GroupId"/> is kept equal to the team's group (Р-22).</summary>
     public Guid? RelayTeamId { get; set; }
 
-    /// <summary>The leg (1…<c>LegCount</c>) this runner runs in <see cref="RelayTeamId"/>; null outside a relay.</summary>
+    /// <summary>The leg (1…<c>LegCount</c>) this runner runs in <see cref="RelayTeamId"/>; null outside a relay — or on
+    /// a team without a leg yet («без етапу»: an import brought more runners than the team has legs; the «Команди» page
+    /// asks to fix it). Such a runner is evaluated alone and never placed, like a runner without a team (Р-22).</summary>
     public int? Leg { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;

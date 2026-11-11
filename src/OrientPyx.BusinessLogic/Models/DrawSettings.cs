@@ -8,6 +8,9 @@ public enum DrawSettingsKind
 
     /// <summary>The table-based «Класичне жеребкування» page (one row per group).</summary>
     Classic = 1,
+
+    /// <summary>The «Масовий старт» page (one start per group, relay restarts).</summary>
+    MassStart = 2,
 }
 
 /// <summary>
@@ -29,7 +32,8 @@ public sealed class DrawSettings
     /// </summary>
     public bool ConsiderPreviousDays { get; set; } = true;
 
-    /// <summary>Lane page: "hh:mm:ss" global start of the first competitor in every lane.</summary>
+    /// <summary>Lane page: "hh:mm:ss" global start of the first competitor in every lane. Mass-start page: the
+    /// start the «Задати обраним» button copies onto the checked groups.</summary>
     public string GlobalStart { get; set; } = "11:00:00";
 
     /// <summary>Lane page: "hh:mm:ss" gap between consecutive competitors.</summary>
@@ -47,7 +51,7 @@ public sealed class DrawSettings
     /// <summary>Lane page: the arrangement — one entry per lane, each an ordered list of group ids.</summary>
     public List<DrawLaneSettings> Lanes { get; set; } = [];
 
-    /// <summary>Classic page: one entry per group row.</summary>
+    /// <summary>Classic and mass-start pages: one entry per group row.</summary>
     public List<DrawGroupRowSettings> Rows { get; set; } = [];
 }
 
@@ -67,4 +71,7 @@ public sealed class DrawGroupRowSettings
     public string Start { get; set; } = "11:00:00";
 
     public string Interval { get; set; } = "00:01:00";
+
+    /// <summary>Mass-start page, relay group: the "hh:mm:ss" restart text per leg (2…N) as typed; blank = none.</summary>
+    public Dictionary<int, string> Restarts { get; set; } = [];
 }

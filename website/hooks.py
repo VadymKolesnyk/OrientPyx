@@ -44,6 +44,7 @@ SCREENS: dict[str, dict] = {
     "Participants": {"menu": ["Menu.Participants"], "shot": "participants-day", "see": ["prepare/participants.md", "prepare/chips.md"]},
     "Draw": {"menu": ["Menu.Start", "Menu.Start.Draw"], "shot": "draw", "see": ["prepare/draw.md"]},
     "ClassicDraw": {"menu": ["Menu.Start", "Menu.Start.ClassicDraw"], "shot": "classic-draw", "see": ["prepare/draw.md"]},
+    "MassStartDraw": {"menu": ["Menu.Start", "Menu.Start.MassStartDraw"], "shot": "mass-start-draw", "see": ["prepare/draw.md"]},
     "StartProtocols": {"menu": ["Menu.Start", "Menu.Start.StartProtocol"], "shot": "start-protocol", "see": ["prepare/draw.md"]},
     "MapCounts": {"menu": ["Menu.Start", "Menu.Start.MapCounts"], "shot": "map-counts", "see": ["prepare/draw.md"]},
     "FinishRead": {"menu": ["Menu.Finish", "Menu.Finish.Read"], "shot": "finish-read", "see": ["race-day/finish.md"]},

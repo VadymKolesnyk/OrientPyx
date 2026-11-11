@@ -121,6 +121,14 @@ public interface ICompetitionEditorService
     /// </summary>
     Task<MapCountsData> GetMapCountsAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// «Варіанти за номерами» for the current day: every number's variation (relay leg numbers «101.2», scatter bibs)
+    /// as imported from the course-setting program or typed on «Команди», with its group, control order and runner;
+    /// plus the leg numbers of «за номером етапу» relay teams that have none. In the groups' order, then by number and
+    /// leg. Empty when no competition/day is selected.
+    /// </summary>
+    Task<NumberVariantsData> GetNumberVariantsAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Loads a group's scatter («розсіювання») variants for the current day, in order (Code + raw
     /// course order). Empty when the group has none.</summary>
     Task<IReadOnlyList<CourseVariantRow>> GetCourseVariantsAsync(Guid groupId, CancellationToken cancellationToken = default);
@@ -588,6 +596,20 @@ public interface ICompetitionEditorService
     Task<int> SaveDrawStartTimesAsync(IReadOnlyList<DrawStartAssignment> assignments, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// «Масовий старт»: every group that runs on the day with its runner (relay: team) count, the start its runners
+    /// have now and — for a relay group — its legs, mass start and restart times.
+    /// </summary>
+    Task<MassStartData> GetMassStartDataAsync(Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Applies a mass start to the given groups of the day: every runner of a group gets the group's start time. In
+    /// a relay group the leg-1 runners (and runners on no leg) get it, and the group's mass start and restart times
+    /// (Р-27, Р-29) are replaced by the assignment's; later legs keep starting at the handoff. A group no longer on
+    /// the day is skipped. Refused on a closed day.
+    /// </summary>
+    Task<MassStartResult> ApplyMassStartAsync(Guid dayId, IReadOnlyList<MassStartAssignment> groups, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gathers the data for the manual start-order editor on one day: every group that runs on the day with
     /// its members carrying their current start time (and display fields), ordered by start time. The editor
     /// re-orders members within a group and re-hands out the same set of start minutes in the new order.
@@ -925,18 +947,51 @@ public interface ICompetitionEditorService
 
     Task SaveRelayGroupSettingsAsync(RelayGroupSettings settings, CancellationToken cancellationToken = default);
 
-    /// <summary>«Масове створення команд»: <paramref name="count"/> teams numbered from <paramref name="firstNumber"/>
-    /// (taken numbers skipped). Returns how many were created.</summary>
+    /// <summary><paramref name="count"/> teams of a group numbered from <paramref name="firstNumber"/> (taken numbers
+    /// skipped) — «Додати команду» makes one. Returns how many were created.</summary>
     Task<int> CreateRelayTeamsAsync(Guid groupId, int count, int firstNumber, CancellationToken cancellationToken = default);
 
     /// <summary>Saves a team's own fields; false when the number is taken on the day (Р-20) or not positive.</summary>
     Task<bool> UpdateRelayTeamAsync(RelayTeamEdit edit, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// «Присвоєння номерів» on «Команди»: gives the current day's teams new numbers in one write (null = no number);
+    /// a number may pass from one team to another. False — nothing written — when a number is not positive or two
+    /// teams of the day would share one (Р-20).
+    /// </summary>
+    Task<bool> SetRelayTeamNumbersAsync(IReadOnlyList<RelayTeamNumberChange> numbers, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes a team; its runners stay on the day without a leg.</summary>
     Task DeleteRelayTeamAsync(Guid teamId, CancellationToken cancellationToken = default);
 
     /// <summary>Puts a participant on a leg (adding them to the day when needed) or, with null, clears the leg.</summary>
     Task<bool> AssignRelayLegAsync(Guid teamId, int leg, Guid? participantId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The participant tables' relay cells («Команда №» / «Етап» / «Номер етапу», typed on a runner's row) on the
+    /// request's day — any day, not only the session's. A team number the day has no team for creates the team
+    /// (in the runner's relay group, else the day's only relay group); no leg = the runner's leg when free, else the
+    /// first free one; a leg a teammate holds swaps the two; a leg another runner holds is refused with
+    /// <see cref="RelayPlacementStatus.LegTaken"/> until asked again with <see cref="RelayPlacementRequest.ReplaceOccupant"/>.
+    /// A runner who does not run the day yet joins it in the team's group (Р-22).
+    /// </summary>
+    Task<RelayPlacementOutcome> PlaceRelayRunnerAsync(RelayPlacementRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// A runner's «Команда» / «Номер команди» cell in the participant tables (any day). «Команда» works like a rogaine
+    /// team: the runner joins the team of that name (their group's first), a new name makes a new team, an empty cell
+    /// takes them off the team. «Номер команди» belongs to the team: on a runner already on a team the change is asked
+    /// (<see cref="RelayPlacementStatus.ConfirmTeamChange"/> — renumber the team, or move only this runner — and
+    /// <see cref="RelayPlacementStatus.NumberTaken"/>), then repeated with the answer in <see cref="RelayTeamCellEdit.Choice"/>.
+    /// </summary>
+    Task<RelayPlacementOutcome> EditRunnerRelayTeamAsync(RelayTeamCellEdit change, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every runner's relay place on the day as stored (team, leg, filled legs), keyed by participant id; a runner on no
+    /// team is absent. A cheap read (no results), so the participant tables repaint every row a relay edit moved — the
+    /// swapped teammate, the replaced holder, a renamed team's runners — at once, before the full reload.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, RelayPlacement>> GetRelayPlacementsAsync(Guid dayId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Sets the courses of leg numbers on the current day (<see cref="RelayCourseMode.ByBib"/>, Р-41) — typed on the
@@ -956,7 +1011,20 @@ public interface ICompetitionEditorService
 /// <param name="Added">How many participants were newly created.</param>
 /// <param name="Updated">How many existing participants were matched by FOU code and updated.</param>
 /// <param name="DaysCreated">How many days were created to satisfy referenced ProgEvent numbers.</param>
-public readonly record struct ParticipantImportResult(int Added, int Updated, int DaysCreated);
+/// <param name="RelayTeamsCreated">Relay teams the import created (a UOF file's teams come without numbers).</param>
+/// <param name="RelayUnplaced">Relay runners put on a team without a leg — more runners than the team's legs.</param>
+/// <param name="RelayWithoutTeam">Relay-day runners the file gives no team (or no relay group) — entered on the day
+/// without one.</param>
+public readonly record struct ParticipantImportResult(
+    int Added, int Updated, int DaysCreated, int RelayTeamsCreated = 0, int RelayUnplaced = 0, int RelayWithoutTeam = 0)
+{
+    /// <summary>The import touched relay teams — the result is worth reporting.</summary>
+    public bool HasRelay => RelayTeamsCreated > 0 || RelayUnplaced > 0 || RelayWithoutTeam > 0;
+}
+
+/// <summary>A relay group on a day that the import must make a relay one (its discipline override set to the relay):
+/// the file marks the day as the runners' relay («3Е») and neither the day nor the group runs a relay yet.</summary>
+public sealed record RelayGroupDay(int DayNumber, string GroupName);
 
 /// <summary>Outcome of a bulk rental-chip range add, for reporting back to the user.</summary>
 /// <param name="Added">How many chips were newly added.</param>

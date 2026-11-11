@@ -156,7 +156,8 @@ public sealed class TeamCompetitor
     /// <summary>The team's result; its <see cref="ResultRow.Place"/> is the team's place.</summary>
     public required ResultRow Row { get; init; }
 
-    /// <summary>The team number (100 in «100.2»).</summary>
+    /// <summary>The team number (100 in «100.2»); 0 while the team has no number yet (an imported team gets its
+    /// numbers later).</summary>
     public int Number { get; init; }
 
     public string Name { get; init; } = string.Empty;

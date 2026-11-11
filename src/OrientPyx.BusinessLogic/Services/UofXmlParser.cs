@@ -15,6 +15,10 @@ namespace OrientPyx.BusinessLogic.Services;
 /// Field meanings: FIO=full name, Predst=representative, FOUCode=FSOU code, FSOU=membership flag,
 /// Birthday=dd.MM.yyyy, Qualification=rank, PAY=payment, Trener=coach (repeated), Region/Club/DUSSH=
 /// lookups, Group=group, Chip=chip ("0"=none), ProgEvent="1,2"=day numbers.
+/// Relay: a day written with «Е» in ProgEvent («1,2,3Е») is the runner's relay day; there the runner is in the relay
+/// group <c>GrupRel</c> («МІКС12»), runs for the team named in <c>Prim</c> and on the leg <c>PsRel</c> (0 = not given).
+/// The file has no team numbers — the import creates the teams without them. (<c>RelayLeg</c>, despite its name, is
+/// the number of a region's team — «Київська1» — and is not read.)
 /// An IOF 3.0 <c>&lt;EntryList&gt;</c> (relay <c>TeamEntry</c> included) is accepted too — see <see cref="IofEntryListReader"/>.
 /// </summary>
 public sealed class UofXmlParser : IUofXmlParser
@@ -66,6 +70,17 @@ public sealed class UofXmlParser : IUofXmlParser
         if (chip is "0")
             chip = string.Empty;
 
+        var (days, relayDays) = ParseDays(ChildValue(sportsman, "ProgEvent"));
+        // The relay fields mean something only for a runner with a relay day and a relay group («Prim» is a plain
+        // note otherwise).
+        var relayGroup = relayDays.Count > 0 ? Trim(ChildValue(sportsman, "GrupRel")) : string.Empty;
+        var teamName = relayGroup.Length > 0 ? Trim(ChildValue(sportsman, "Prim")) : string.Empty;
+        int? leg = relayGroup.Length > 0
+                   && int.TryParse(Trim(ChildValue(sportsman, "PsRel")), NumberStyles.None, CultureInfo.InvariantCulture, out var l)
+                   && l > 0
+            ? l
+            : null;
+
         return new UofParticipant
         {
             FullName = Trim(ChildValue(sportsman, "FIO")),
@@ -81,23 +96,38 @@ public sealed class UofXmlParser : IUofXmlParser
             Dussh = Trim(ChildValue(sportsman, "DUSSH")),
             Group = Trim(ChildValue(sportsman, "Group")),
             Chip = chip,
-            DayNumbers = ParseDays(ChildValue(sportsman, "ProgEvent"))
+            DayNumbers = days,
+            RelayDayNumbers = relayDays,
+            RelayGroup = relayGroup,
+            RelayTeamName = teamName,
+            RelayLeg = leg
         };
     }
 
-    // ProgEvent is a comma-separated list of 1-based day numbers, e.g. "1,2" or just "1".
-    private static IReadOnlyList<int> ParseDays(string? value)
+    // ProgEvent is a comma-separated list of 1-based day numbers, e.g. "1,2" or just "1"; a number followed by «Е»
+    // (Cyrillic or Latin, any case) — «3Е» — is a relay day. Any other trailing letters are ignored.
+    private static (IReadOnlyList<int> Days, IReadOnlyList<int> RelayDays) ParseDays(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
-            return [];
+            return ([], []);
 
         var days = new List<int>();
+        var relayDays = new List<int>();
         foreach (var part in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            if (int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n > 0 && !days.Contains(n))
+            var digits = 0;
+            while (digits < part.Length && char.IsAsciiDigit(part[digits]))
+                digits++;
+            if (digits == 0
+                || !int.TryParse(part[..digits], NumberStyles.None, CultureInfo.InvariantCulture, out var n) || n <= 0)
+                continue;
+            if (!days.Contains(n))
                 days.Add(n);
+            var suffix = part[digits..].Trim();
+            if (suffix.Length > 0 && (suffix[0] is 'Е' or 'е' or 'E' or 'e') && !relayDays.Contains(n))
+                relayDays.Add(n);
         }
-        return days;
+        return (days, relayDays);
     }
 
     private static DateTimeOffset? ParseDate(string? value)

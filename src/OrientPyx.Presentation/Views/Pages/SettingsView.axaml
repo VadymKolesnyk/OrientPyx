@@ -152,7 +152,7 @@
                 <StackPanel Spacing="6">
                     <TextBlock Text="{Binding Localization[Settings.Online.PublicUrl]}" Classes="label" />
                     <TextBox Text="{Binding OnlinePublicBaseUrl, Mode=TwoWay}"
-                             PlaceholderText="https://login.github.io/orientir-results" />
+                             PlaceholderText="https://login.github.io/o-results" />
                 </StackPanel>
 
                 <StackPanel Spacing="6">

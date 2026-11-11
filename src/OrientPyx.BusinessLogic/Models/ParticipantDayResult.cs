@@ -143,8 +143,9 @@ public sealed record ParticipantDayResult(
     /// <summary>How <see cref="StatusDetail"/> reads.</summary>
     public FinishDetailKind StatusDetailKind { get; init; } = FinishDetailKind.MissingControl;
 
-    /// <summary>Relay: the leg number «100.2» shown instead of the participant number (Р-23); null outside a relay.</summary>
-    public string? LegBib => Team is { } t && Leg is { } l ? t.Bib(l.Leg) : null;
+    /// <summary>Relay: the leg number «100.2» shown instead of the participant number (Р-23); null outside a relay and
+    /// while the team has no number (the participant number shows then).</summary>
+    public string? LegBib => Team is { Number: not null } t && Leg is { } l ? t.Bib(l.Leg) : null;
 
     private static readonly IReadOnlyDictionary<string, object?> EmptyExtra = new Dictionary<string, object?>();
 }

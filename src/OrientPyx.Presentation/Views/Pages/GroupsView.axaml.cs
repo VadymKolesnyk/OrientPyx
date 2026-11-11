@@ -80,6 +80,17 @@ public partial class GroupsView : UserControl
             // Participant count: how many participants are in this group on the day, read-only.
             .Text("Groups.Col.ParticipantCount", nameof(GroupDayRowViewModel.ParticipantCountText), minWidth: 90);
 
+        // Relay legs (when some group of the day runs a relay): the same value as «Кількість етапів» in the relay
+        // settings under the grid, editable here for every relay group at once; red when it holds no usable count.
+        if (_vm.ShowLegCountColumn)
+            builder.Text("Groups.Col.LegCount", nameof(GroupDayRowViewModel.LegCountDisplay),
+                         editPath: nameof(GroupDayRowViewModel.LegCountText), minWidth: 80,
+                         mask: SheetColumnBuilder.NumericMask.Integer,
+                         enabledPath: nameof(GroupDayRowViewModel.IsRelay),
+                         opacityPath: nameof(GroupDayRowViewModel.IsRelay),
+                         commitOnLostFocus: true)
+                .CellTint(nameof(GroupDayRowViewModel.LegCountInvalid), UnknownCodeBrush);
+
         // Required minimum control count (score by count).
         if (_vm.ShowRequiredCountColumn)
             builder.Text("Groups.Col.RequiredCount", nameof(GroupDayRowViewModel.RequiredCountText),

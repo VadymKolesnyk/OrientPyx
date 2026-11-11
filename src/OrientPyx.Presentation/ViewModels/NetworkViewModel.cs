@@ -252,8 +252,8 @@ public sealed partial class NetworkViewModel : PageViewModelBase
 
     public bool IsHostRunning => _host.IsRunning;
 
-    /// <summary>The PIN in groups of three («482 913»).</summary>
-    public string PinDisplay => FormatPin(_host.Info?.Pin);
+    /// <summary>The 4-digit PIN as shown on the host card.</summary>
+    public string PinDisplay => _host.Info?.Pin ?? string.Empty;
 
     public string ConnectionCode => _host.IsRunning ? _host.ConnectionCode : string.Empty;
 
@@ -517,13 +517,6 @@ public sealed partial class NetworkViewModel : PageViewModelBase
         UpdateActivity();
     }
 
-    private static string FormatPin(string? pin)
-    {
-        if (string.IsNullOrEmpty(pin))
-            return string.Empty;
-        return pin.Length == 6 ? $"{pin[..3]} {pin[3..]}" : pin; // 4-digit PINs read fine unsplit
-    }
-
     // ── Station card
 
     public ObservableCollection<DiscoveredHostRowViewModel> DiscoveredHosts { get; } = [];
@@ -539,7 +532,7 @@ public sealed partial class NetworkViewModel : PageViewModelBase
 
     private string _pin = string.Empty;
 
-    /// <summary>The 6-digit PIN shown on the host; anything but digits is dropped.</summary>
+    /// <summary>The 4-digit PIN shown on the host; anything but digits is dropped.</summary>
     public string Pin
     {
         get => _pin;

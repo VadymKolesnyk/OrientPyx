@@ -411,6 +411,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     // (Course order, control count and time limit are used by every discipline, so they have no toggle.)
     public bool ShowRequiredCountColumn => Groups.Any(r => r.UsesRequiredCount);
     public bool ShowPenaltyColumn => Groups.Any(r => r.UsesPenalty);
+    public bool ShowLegCountColumn => Groups.Any(r => r.IsRelay);
 
     /// <summary>Raised when the set of visible type-specific columns may have changed; the view
     /// re-applies column visibility in response (columns live outside the visual tree).</summary>
@@ -539,6 +540,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
 
         var showRequired = ShowRequiredCountColumn;
         var showPenalty = ShowPenaltyColumn;
+        var showLegs = ShowLegCountColumn;
         var courseSetter = (DefaultCourseSetter ?? string.Empty).Trim();
         var courseSetterCategory = (DefaultCourseSetterCategory ?? string.Empty).Trim();
         RowSync.Sync(Groups, rows,
@@ -551,7 +553,8 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             group.SetDayCodes(_dayCodes);
 
         // A column rebuild repaints the whole grid, so a merge raises it only when the visible set moved.
-        if (!merge || showRequired != ShowRequiredCountColumn || showPenalty != ShowPenaltyColumn)
+        if (!merge || showRequired != ShowRequiredCountColumn || showPenalty != ShowPenaltyColumn
+            || showLegs != ShowLegCountColumn)
             RaiseColumnVisibility();
     }
 
@@ -637,7 +640,8 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             row, Localization, _strategies, _rowPointsRuleOptions,
             (DefaultCourseSetter ?? string.Empty).Trim(),
             (DefaultCourseSetterCategory ?? string.Empty).Trim(),
-            RequestRowSave);
+            RequestRowSave,
+            RequestLegCountSave);
         vm.PropertyChanged += OnRowPropertyChanged;
         return vm;
     }
@@ -686,6 +690,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     {
         OnPropertyChanged(nameof(ShowRequiredCountColumn));
         OnPropertyChanged(nameof(ShowPenaltyColumn));
+        OnPropertyChanged(nameof(ShowLegCountColumn));
         ColumnsChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -941,6 +946,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             cts.Cancel();
         _saveTimers.Clear();
         _scatterSaveCts?.Cancel();
+        CancelLegCountTimers();
     }
 }
 

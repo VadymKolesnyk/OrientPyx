@@ -72,7 +72,8 @@ public sealed class SheetColumnBuilder
         string? placeholder = "—",
         string? placeholderPath = null,
         RentalChipRegistry? rentalChips = null,
-        string? lockedDayPath = null)
+        string? lockedDayPath = null,
+        bool commitOnLostFocus = false)
     {
         var column = NewColumn(headerKey, width, minWidth, sortPath ?? displayPath);
         // An editable text column supports fill-down paste straight to its bound property.
@@ -93,9 +94,11 @@ public sealed class SheetColumnBuilder
                 EnabledPath = enabledPath,
                 OpacityPath = opacityPath,
                 RentalChips = rentalChips,
+                // The value lands once, when the edit ends (a typed «12» is never seen as «1» on the way).
+                CommitOnLostFocus = commitOnLostFocus,
             }), lockedDayPath);
         };
-        return Add(column);
+        return Add(column, headerKey);
     }
 
     // ── ComboBox
@@ -113,10 +116,12 @@ public sealed class SheetColumnBuilder
         string? sortPath = null,
         string? lockedDayPath = null)
     {
-        var column = NewColumn(headerKey, width, minWidth, sortPath ?? string.Empty);
-        // The combo is filtered by the selected option's visible label, so the user filters on the text
-        // they see — even though the column is left unsortable (empty SortPath) by default.
-        column.FilterPath = $"{selectedPath}.{labelPath}";
+        // Sorted and filtered by the selected option's visible label (the text the user sees) unless the page
+        // passes a better key (e.g. an enum value). Never left without a sort path: that made every such combo
+        // share one column Key, so a filter, a hidden column or the filter popup's anchor hit all of them at once.
+        var labelValuePath = $"{selectedPath}.{labelPath}";
+        var column = NewColumn(headerKey, width, minWidth, sortPath ?? labelValuePath);
+        column.FilterPath = labelValuePath;
         // Combo paste: a pasted value (single or fill-down) resolves to an option by exact label match
         // and only then sets the selection — see SheetColumn.IsComboPaste / SheetTable's paste flow.
         column.ComboItemsPath = itemsPath;
@@ -140,7 +145,7 @@ public sealed class SheetColumnBuilder
             },
             $"{selectedPath}.{labelPath}",
             selectedPath: selectedPath), lockedDayPath);
-        return Add(column);
+        return Add(column, headerKey);
     }
 
     // ── CalendarDatePicker (DateTimeOffset)
@@ -159,7 +164,7 @@ public sealed class SheetColumnBuilder
         var column = NewColumn(headerKey, width, minWidth, path);
         var placeholder = placeholderKey is not null ? _loc.Get(placeholderKey) : null;
         column.CellBuilder = () => WithRowLock(new LazyDateCell(path, placeholder), lockedDayPath);
-        return Add(column);
+        return Add(column, headerKey);
     }
 
     // ── Fully custom cell
@@ -177,7 +182,7 @@ public sealed class SheetColumnBuilder
         // collide across all of them on a page. The headerKey is a stable, language-independent id, so
         // fold it into the key — this keeps per-column width/hidden persistence distinct (LayoutKey pages).
         column.Key = $"Custom:{headerKey}:{sortPath ?? string.Empty}";
-        return Add(column);
+        return Add(column, headerKey);
     }
 
     // ── CheckBox (bool)
@@ -209,7 +214,7 @@ public sealed class SheetColumnBuilder
             SheetLock.DisableWhenLocked(box);
             return box;
         };
-        return Add(column);
+        return Add(column, headerKey);
     }
 
     // ── Trailing delete action
@@ -225,6 +230,8 @@ public sealed class SheetColumnBuilder
             Width = 48,
             WidthCapped = true,
             MinWidth = 48,
+            // Its own key: the derived one («Custom:::0») is the same as any other unsortable column's.
+            Key = "Action:Delete",
         };
         column.CellBuilder = () => DeleteButton(onDelete, tooltipKey);
         _bands.Add(new SheetBand(SheetBand.BandKind.Identity, [column]) { Header = string.Empty });
@@ -255,8 +262,12 @@ public sealed class SheetColumnBuilder
         return column;
     }
 
-    private SheetColumnBuilder Add(SheetColumn column)
+    private SheetColumnBuilder Add(SheetColumn column, string headerKey)
     {
+        // Two columns on one key would share a filter, a hidden flag, a saved width and the filter popup's
+        // anchor. Fold the header key (stable, language-independent) into the later one.
+        if (_bands.Exists(b => b.Columns.Any(c => c.Key == column.Key)))
+            column.Key = $"{column.Key}:{headerKey}";
         _bands.Add(new SheetBand(SheetBand.BandKind.Identity, [column]) { Header = column.Header });
         return this;
     }

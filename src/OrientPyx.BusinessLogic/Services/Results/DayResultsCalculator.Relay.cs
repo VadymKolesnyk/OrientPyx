@@ -217,9 +217,10 @@ internal sealed partial class DayResultsCalculator
 
     /// <summary>
     /// The course of each leg (Р-40…Р-43), or null when the group runs its own course order on every leg
-    /// (<see cref="RelayCourseMode.Group"/>). <see cref="RelayCourseMode.ByLeg"/> / <see cref="RelayCourseMode.ByBib"/>
-    /// look the leg / leg number up; <see cref="RelayCourseMode.TeamSet"/> distributes the team's set over its read
-    /// legs with the least total penalty (<see cref="TeamCourseAssignment"/>), re-done from scratch every time.
+    /// (<see cref="RelayCourseMode.Group"/>). <see cref="RelayCourseMode.ByBib"/> looks the leg number up;
+    /// <see cref="RelayCourseMode.TeamSet"/> distributes the team's set (its own, else its leg numbers' courses, else
+    /// the group's) over its read legs with the least total penalty (<see cref="TeamCourseAssignment"/>), re-done
+    /// from scratch every time.
     /// <paramref name="setOpen"/>: the set cannot be closed (its size differs from the legs, or names an unknown course).
     /// </summary>
     private static Dictionary<int, LegCourse>? ResolveLegCourses(
@@ -242,17 +243,9 @@ internal sealed partial class DayResultsCalculator
         var result = new Dictionary<int, LegCourse>();
         switch (mode)
         {
-            case RelayCourseMode.ByLeg:
-            {
-                var map = RelayLegCourses.Parse(gs!.LegCoursesJson);
-                for (var leg = 1; leg <= legCount; leg++)
-                    result[leg] = ByCode(map.GetValueOrDefault(leg));
-                break;
-            }
             case RelayCourseMode.ByBib:
             {
-                var map = input.Snapshot.LegCourseAssignments
-                    .Where(a => a.TeamNumber == team.Number)
+                var map = TeamAssignments(input, team)
                     .GroupBy(a => a.Leg)
                     .ToDictionary(g => g.Key, g => g.First().CourseKey);
                 for (var leg = 1; leg <= legCount; leg++)
@@ -261,7 +254,15 @@ internal sealed partial class DayResultsCalculator
             }
             case RelayCourseMode.TeamSet:
             {
+                // The team's own set, else the courses assigned to its leg numbers (OCAD's team combination, in leg
+                // order), else the group's.
                 var codes = RelayLegCourses.ParseSet(team.CourseSet);
+                if (codes.Count == 0)
+                    codes = TeamAssignments(input, team)
+                        .Where(a => a.CourseKey.Trim().Length > 0)
+                        .OrderBy(a => a.Leg)
+                        .Select(a => a.CourseKey.Trim())
+                        .ToList();
                 if (codes.Count == 0)
                     codes = RelayLegCourses.ParseSet(gs!.TeamCourseSet);
                 var slots = codes.Where(courses.ContainsKey).Select(c => courses[c]).ToList();
@@ -296,6 +297,13 @@ internal sealed partial class DayResultsCalculator
         }
         return result;
     }
+
+    // The leg-number courses of a team: its number's rows that name its group or none (a row another group's import
+    // left on the same number never applies).
+    private static IEnumerable<LegCourseAssignment> TeamAssignments(RelayInputs input, RelayTeam team) =>
+        team.Number is { } number
+            ? input.Snapshot.LegCourseAssignments.Where(a => a.TeamNumber == number && (a.GroupId is null || a.GroupId == team.GroupId))
+            : [];
 
     // Р-42: 0 for a clean run of the course, else the missed controls (at least 1 for an MP).
     private static int CoursePenalty(CourseVariantData course, IReadOnlyList<string> punched)

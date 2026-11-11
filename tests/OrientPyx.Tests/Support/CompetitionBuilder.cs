@@ -227,10 +227,10 @@ public sealed class CompetitionBuilder
         await _store.UpdateRelaySettingsAsync(Folder, settings.Id, legCount, massStart, restartTimesJson, ranking);
     }
 
-    public async Task SetRelayCourseModeAsync(string groupName, int dayNumber, RelayCourseMode mode, string legCoursesJson = "", string teamCourseSet = "")
+    public async Task SetRelayCourseModeAsync(string groupName, int dayNumber, RelayCourseMode mode, string teamCourseSet = "")
     {
         var settings = await GetGroupSettingsAsync(groupName, dayNumber);
-        await _store.UpdateRelayCourseSettingsAsync(Folder, settings.Id, mode, legCoursesJson, teamCourseSet);
+        await _store.UpdateRelayCourseSettingsAsync(Folder, settings.Id, mode, teamCourseSet);
     }
 
     public async Task SetCourseVariantsAsync(string groupName, int dayNumber, params (string Code, string Order)[] variants)

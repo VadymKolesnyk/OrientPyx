@@ -47,7 +47,7 @@ public sealed record StartProtocolGroup(
 /// <summary>One relay team on the start sheet: its identity and leg 1's start (the runner's drawn start, else the
 /// group's mass start, Р-27), with one entry per leg.</summary>
 public sealed record StartProtocolTeam(
-    int Number,
+    int? Number,
     string Name,
     string ClubName,
     string RegionName,

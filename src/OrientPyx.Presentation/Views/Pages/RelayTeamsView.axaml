@@ -9,6 +9,12 @@
              x:Class="OrientPyx.Presentation.Views.Pages.RelayTeamsView"
              x:DataType="pages:RelayTeamsViewModel">
 
+    <UserControl.Styles>
+        <Style Selector="TextBlock.warning">
+            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+        </Style>
+    </UserControl.Styles>
+
     <DockPanel LastChildFill="True">
 
         <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" Margin="0,0,0,12">
@@ -35,6 +41,11 @@
                         IsEnabled="{Binding HasRelayGroups}"
                         ToolTip.Tip="{Binding Localization[RelayTeams.ImportCourses.Hint]}"
                         Content="{Binding Localization[RelayTeams.ImportCourses]}" />
+                <!-- «Присвоєння номерів» (Ctrl+B): the shown teams in their on-screen order, as on «Учасники». -->
+                <Button Classes="ghost" Margin="0,0,8,8" Click="OnAssignNumbersClick"
+                        IsEnabled="{Binding HasRelayGroups}"
+                        ToolTip.Tip="{Binding Localization[RelayTeams.AssignNumbers.Hint]}"
+                        Content="{Binding Localization[RelayTeams.AssignNumbers]}" />
                 <Button Command="{Binding AddTeamCommand}" Classes="accent" Margin="0,0,8,8"
                         IsEnabled="{Binding HasRelayGroups}">
                     <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
@@ -50,29 +61,12 @@
                    IsVisible="{Binding !HasRelayGroups}"
                    Text="{Binding Localization[RelayTeams.NoRelayGroups]}" />
 
-        <!-- «Масове створення команд»: N teams of a group numbered from X. -->
-        <Border DockPanel.Dock="Top" Classes="card" Padding="10,7" Margin="0,0,0,12"
-                IsVisible="{Binding HasRelayGroups}" IsEnabled="{Binding !IsDayLocked}">
-            <WrapPanel Orientation="Horizontal">
-                <TextBlock Text="{Binding Localization[RelayTeams.Bulk.Title]}" FontWeight="SemiBold"
-                           VerticalAlignment="Center" Margin="0,2,16,2" />
-                <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,16,2">
-                    <TextBlock Text="{Binding Localization[RelayTeams.Bulk.Group]}" VerticalAlignment="Center" />
-                    <ComboBox MinWidth="140" ItemsSource="{Binding GroupOptions}"
-                              SelectedItem="{Binding BulkGroup, Mode=TwoWay}" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,16,2">
-                    <TextBlock Text="{Binding Localization[RelayTeams.Bulk.Count]}" VerticalAlignment="Center" />
-                    <TextBox Width="60" Text="{Binding BulkCountText, Mode=TwoWay}" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,16,2">
-                    <TextBlock Text="{Binding Localization[RelayTeams.Bulk.FirstNumber]}" VerticalAlignment="Center" />
-                    <TextBox Width="70" Text="{Binding BulkFirstNumberText, Mode=TwoWay}" />
-                </StackPanel>
-                <Button Classes="ghost" Margin="0,2,0,2" Command="{Binding CreateTeamsCommand}"
-                        Content="{Binding Localization[RelayTeams.Bulk.Create]}" />
-            </WrapPanel>
-        </Border>
+        <!-- What still needs a hand: runners without a leg (red), teams without a number. -->
+        <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Margin="2,0,0,12"
+                   IsVisible="{Binding HasTeamsNotice}"
+                   Text="{Binding TeamsNotice}"
+                   Classes.muted="{Binding !TeamsNoticeIsWarning}"
+                   Classes.warning="{Binding TeamsNoticeIsWarning}" />
 
         <Grid ColumnDefinitions="*,6,360">
             <Border Grid.Column="0" Classes="card" ClipToBounds="True">
@@ -105,12 +99,14 @@
                                         <TextBlock Text="{Binding CourseText}" Classes="muted" FontSize="12"
                                                    IsVisible="{Binding HasCourseText}" />
                                         <!-- «За номером етапу» (Р-41): the course of this leg number. -->
-                                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,0,0"
-                                                    IsVisible="{Binding IsBibCourseEditable}">
-                                            <TextBlock VerticalAlignment="Center" FontSize="12"
+                                        <!-- The box fills the rest of the row: OCAD codes («1ABABA») outgrow a fixed width. -->
+                                        <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0"
+                                              IsVisible="{Binding IsBibCourseEditable}">
+                                            <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="12" Margin="0,0,6,0"
                                                        Text="{ReflectionBinding $parent[UserControl].DataContext.Localization[RelayTeams.Leg.Course]}" />
-                                            <TextBox Width="70" Text="{Binding BibCourseText, Mode=TwoWay}" PlaceholderText="A" />
-                                        </StackPanel>
+                                            <TextBox Grid.Column="1" MinWidth="120" HorizontalAlignment="Stretch"
+                                                     Text="{Binding BibCourseText, Mode=TwoWay}" PlaceholderText="A" />
+                                        </Grid>
                                     </StackPanel>
                                     <Button Grid.Column="1" Classes="ghost" Padding="8,2" Margin="6,0,0,0"
                                             VerticalAlignment="Center"
@@ -130,6 +126,37 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <!-- «Без етапу»: the team's runners with no leg (more runners than legs after an import). -->
+                    <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,12" IsVisible="{Binding HasUnplaced}">
+                        <TextBlock Classes="warning" FontWeight="SemiBold"
+                                   Text="{Binding Localization[RelayTeams.Unplaced.Title]}" />
+                        <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                                   Text="{Binding Localization[RelayTeams.Unplaced.Hint]}" />
+                        <ItemsControl ItemsSource="{Binding Unplaced}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:RelayUnplacedRunner">
+                                    <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2,0,2">
+                                        <StackPanel Grid.Column="0" Spacing="1">
+                                            <TextBlock Classes="warning" Text="{Binding FullName}" TextWrapping="Wrap" />
+                                            <TextBlock Classes="muted" FontSize="12" Text="{Binding Chip}" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Classes="ghost" Padding="8,2" Margin="6,0,0,0"
+                                                VerticalAlignment="Center"
+                                                Command="{ReflectionBinding $parent[UserControl].DataContext.PickUnplacedCommand}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip.Tip="{ReflectionBinding $parent[UserControl].DataContext.Localization[RelayTeams.Unplaced.Pick.Hint]}"
+                                                Content="{ReflectionBinding $parent[UserControl].DataContext.Localization[RelayTeams.Unplaced.Pick]}" />
+                                        <Button Grid.Column="2" Classes="ghost" Padding="6,2" Margin="4,0,0,0"
+                                                VerticalAlignment="Center"
+                                                Command="{ReflectionBinding $parent[UserControl].DataContext.ReleaseUnplacedCommand}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip.Tip="{ReflectionBinding $parent[UserControl].DataContext.Localization[RelayTeams.Unplaced.Release]}"
+                                                Content="✕" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
                     <TextBox DockPanel.Dock="Top" Margin="0,0,0,6"
                              Text="{Binding RunnerQuery, Mode=TwoWay}"
                              PlaceholderText="{Binding Localization[RelayTeams.Runner.Search]}" />

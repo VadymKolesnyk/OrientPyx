@@ -242,9 +242,23 @@ orders (variants) per (day, group) stored in the `GroupCourseVariant` event-DB t
 `Toolkit.VariantMatcher`) and then judged like a set course against it. A variant may also be a mixed
 pattern (matched through `CourseMatcher`, never expanded into orders). **Relay** (естафета) legs run the
 group's course, or — per `GroupDaySettings.CourseAssignmentMode` (Р-41) — a named course from the same
-`GroupCourseVariant` rows: `ByLeg` (leg → code, `LegCoursesJson`), `ByBib` (`LegCourseAssignment` per leg
-number, typed on «Команди» or imported from IOF `TeamCourseAssignment` / CSV), `TeamSet` (a course set per
-team/group distributed over the read legs by `Toolkit.TeamCourseAssignment`, least missed controls, Р-42).
+`GroupCourseVariant` rows: `ByBib` (`LegCourseAssignment` per leg number, typed on «Команди», imported from IOF
+`TeamCourseAssignment` / CSV, or brought by the course import), `TeamSet` (a course set per team — its own, else its
+leg numbers' `LegCourseAssignment` codes, else the group's — distributed over the read legs by
+`Toolkit.TeamCourseAssignment`, least missed controls, Р-42). The former `ByLeg` mode is gone (migration
+`DropRelayByLeg` turns it into `ByBib` rows). `LegCourseAssignment.GroupId` (nullable) tells the row's group; the
+calculator ignores a row naming another group.
+
+**OCAD variations by number.** `IofXmlParser` keeps every variation in `IofCourse.AllVariants` (nothing merged — a
+relay's «1AAAAA» and «4AAAAA» run the same controls) besides the distinct `Variants`, and reads the file's number/leg
+assignments into `IofCourse.TeamCombinations` (2.0.3 `<TeamCombination>` by `CourseVariationId`, 3.0
+`TeamCourseAssignment` / `PersonCourseAssignment` by course name). «Розділення груп» (`SplitGroupsViewModel`) asks per
+course with variations «Розсіювання» / «Естафета» + «варіант за номером етапу» / «набір на команду»
+(`IofCourse.VariationUse`, default relay for a multi-leg OCAD relay, a relay day or an existing relay group);
+`ImportGroupsAsync` then makes a relay group (`LegCount` from the file, all variations, the assignments via
+`IEventStore.ReplaceGroupLegCourseAssignmentsAsync`) or a scatter one (all variations when numbered, else the distinct
+orders). «Старт → Варіанти за номерами» (`NumberVariantsViewModel`, `GetNumberVariantsAsync`) lists number → variation
+for map handout (plus «за номером етапу» legs without one), exportable like «Кількість карт».
 
 ### The day a call works on
 
@@ -288,7 +302,7 @@ process that opens it), the others are **stations** that edit the same data live
   `Directory.`/`File.` (day folders and imported XML go through `IEventFiles`; results app-data through
   `IResultsAppData`).
 - **Host** (`DataAccess/Network/Host`, Kestrel via `FrameworkReference Microsoft.AspNetCore.App`, minimal API, no
-  URL ACL): `/pair` (6-digit PIN → bearer token stored in `app.db` `StationTokens`), `/rpc/{iface}/{method}` (JSON
+  URL ACL): `/pair` (4-digit PIN → bearer token stored in `app.db` `StationTokens`), `/rpc/{iface}/{method}` (JSON
   array of args; `Idempotency-Key` on writes; `/jobs` for the import), `/changes`, `/version`, `/files/*`, `/log`,
   `/ping`; UDP discovery on 47831 (`DataAccess/Network/Discovery`), spoken `ConnectionCode` fallback. **Station**
   (`DataAccess/Network/Station`): `RpcChannel` (timeouts/retries), `RpcProxy` (`DispatchProxy`), `RemoteChangeListener`,
@@ -340,6 +354,32 @@ Pages/outputs: «Команди» (teams + legs), day-grid team/leg columns, rea
 (`ResultProtocolGroup.RelayTeams`, sub-rows), import (CSV `relay.*` targets, IOF `EntryList` `TeamEntry`), draw
 (a team is the unit, leg 1 gets the minute), monitor (`MonitorRowKind.Team/Leg`), HTML splits (leg start + leg
 course), summary («за очками» counts relay points; «за часом» skips relay days, Р-39), online (`relay_teams`).
+- **A team may have no number** (`RelayTeam.Number` is `int?`): a UOF import makes its teams without numbers, the user
+  types them later (in step with OCAD). Show/sort it through `Models/RelayTeamNumbers` (`Text`/`Bib`/`SortKey`/`Label`
+  — blank number, blank «100.2», sorted last); such a team is skipped online (`relay_teams.num` is the key) and gets
+  no «за номером етапу» course; plugins see `TeamCompetitor.Number` = 0.
+- **A runner may be on a team without a leg** (`RelayTeamId` set, `Leg` null — «без етапу»): an import with more
+  runners than legs leaves the extras so; evaluated alone, never placed; listed in `RelayTeamRow.Unplaced` and in red
+  on «Команди»; `IEventStore.ReleaseRelayRunnerAsync` takes a runner off the team.
+- **UOF relay** (`UofXmlParser`): «3Е» in `ProgEvent` = the runner's relay day (`UofParticipant.RelayDayNumbers`),
+  `GrupRel` = the relay group there (`GroupOn(day)`), `Prim` = team name, `PsRel` = leg (`<RelayLeg>` is a region-team
+  number, not read). The import matches a number-less team by its exact name in the group, sets a missing `LegCount`
+  from the file, marks the relay group-days (`RelayGroupDay`) or makes a new all-relay day a relay day, never skips a
+  runner, and reports teams created / without a leg / without a team (`ParticipantImportResult`, `RelayImportReport`).
+
+## Mass start («Масовий старт»)
+
+«Старт → Масовий старт» (`MassStartDrawViewModel` / `MassStartDrawView`, beside the two draws): one start per group,
+no minutes drawn. A row per group of the day (checkbox, «Поточний старт», editable «Старт»); with a relay on the day
+also «Етапів» and one «Перезапуск етапу N» column per leg 2…(longest relay) — `Restarts[i]` cells, disabled where the
+group has no such leg. Nothing is written until «Призначити старт» → `ICompetitionEditorService.ApplyMassStartAsync`
+(`CompetitionEditorService.MassStart.cs`, existing store writers only — no RPC change): every runner's
+`ParticipantDay.StartTime`; in a relay the leg-1 runners (and runners on no leg) get it, and the group's
+`MassStartTime` + `RestartTimesJson` are replaced (blank = no restart; legs beyond `LegCount` dropped). The typed
+values are page memory per day (`DrawSettingsKind.MassStart`, `DrawGroupRowSettings.Restarts`); a group with nothing
+remembered seeds from the competition (relay settings, else the runners' common start). Tests: `Core/MassStartTests`.
+This page is the only editor of a relay's mass start and restarts: the «Групи» relay strip edits legs, restart ranking
+and leg courses only, and its save re-reads the group's relay settings first so it never writes back stale ones.
 
 ## Map counts («Кількість карт»)
 
@@ -548,7 +588,9 @@ the open command) → `IStartProtocolBuilder`/`StartProtocolBuilder` (BusinessLo
 `ParticipantDay.StartTime`/`Chip`.)
 
 (**Online live results** — «Онлайн-результати» (in the «Протоколи» top menu) publishes the active session day's
-already-computed results to a Supabase project that a separate, already-deployed React spectator frontend reads.
+already-computed results to a Supabase project that a separate, already-deployed React spectator frontend reads
+(repo `VadymKolesnyk/o-results`: `web/` + `online-db/schema.sql`; self-hosting how-to for users —
+`website/content/race-day/online-site.md`).
 OrientPyx only does the publisher side: a background process (`OnlineResultsViewModel`, surfaced in the top-bar
 activity block via `OnlineResultsActivity`) builds a snapshot each tick with `ICompetitionEditorService.
 GetOnlineResultsSnapshotAsync(dayId)` — which reuses `GetResultProtocolDataAsync`, so it's the same computed data

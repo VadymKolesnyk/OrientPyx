@@ -126,7 +126,7 @@ public sealed partial class ChipsViewModel : PageViewModelBase
 
     /// <summary>Poll interval in seconds. Bound to a +/- stepper (floored at 1s by the poller).</summary>
     [ObservableProperty]
-    private int _autoReadIntervalSeconds = 5;
+    private int _autoReadIntervalSeconds = 1;
 
     /// <summary>When true, the watched file is read every N seconds and new chips are added silently.</summary>
     [ObservableProperty]

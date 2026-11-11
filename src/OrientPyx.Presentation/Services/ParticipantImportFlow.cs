@@ -89,9 +89,10 @@ public sealed class ParticipantImportFlow : IParticipantImportFlow
             return false; // cancelled in the preview modal
         var (finalScope, deleteIds) = previewed.Value;
 
-        await _busy.RunAsync(reporter =>
+        var imported = await _busy.RunAsync(reporter =>
             _editor.ImportParticipantsAsync(data, clearFirst, finalScope, new ProgressRelay(this, reporter)));
         await ImportPreviewStep.DeleteAsync(deleteIds, _editor, _busy);
+        await RelayImportReport.ShowAsync(imported, data, _dialogs, _localization);
         return true;
     }
 

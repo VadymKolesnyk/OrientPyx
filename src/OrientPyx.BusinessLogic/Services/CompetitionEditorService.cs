@@ -804,6 +804,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         await EnsureDayEditableAsync(CurrentDayId, cancellationToken);
 
         await _eventStore.DeleteRelayTeamsForGroupDayAsync(FolderPath, CurrentDayId, groupId, cancellationToken);
+        await _eventStore.ReplaceGroupLegCourseAssignmentsAsync(FolderPath, CurrentDayId, groupId, [], cancellationToken);
         await _eventStore.DeleteGroupDaySettingsAsync(FolderPath, settingsId, cancellationToken);
 
         // A group that no longer runs on any day is removed entirely.
@@ -870,6 +871,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         // напрямок» (SetCourse) and reported. On a non-Scatter day a single-order course simply clears its
         // override (day default applies).
         var dayIsScatter = _strategies.For(CurrentDayDefaultDiscipline).UsesCourseVariants;
+        var dayIsRelay = IsRelay(CurrentDayDefaultDiscipline);
 
         // Collapse duplicate course names within the file (keep the first), so a repeated course
         // does not create a second group or fight itself for the same day row.
@@ -881,17 +883,41 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             if (name.Length == 0 || !seenNames.Add(name))
                 continue;
 
-            // A scatter («розсіювання») course carries more than one distinct running order. The group's own
-            // course order/distance mirror the first (representative) variant; the full set of orders is stored
-            // separately per (day, group) and the group's discipline is overridden to Scatter.
-            var isScatter = course.Variants.Count > 1;
+            // How the file's variations are used — chosen per course in «Розділення груп». A relay («Естафета», за
+            // номером етапу / набір на команду) keeps every variation under its own code, its legs from the file's team
+            // combinations. Otherwise a course with more than one distinct running order is a scatter («розсіювання»)
+            // course: the distinct orders — or, when the file hands the variations out to numbers, all of them, so each
+            // number's map code is a stored variant. The group's own course order/distance mirror the first variation.
+            var relayMode = course.HasVariations
+                ? course.VariationUse switch
+                {
+                    CourseVariationUse.RelayByBib => RelayCourseMode.ByBib,
+                    CourseVariationUse.RelayTeamSet => RelayCourseMode.TeamSet,
+                    _ => (RelayCourseMode?)null
+                }
+                : null;
+            var isRelayCourse = relayMode is not null;
+            var isScatter = !isRelayCourse && course.Variants.Count > 1;
+            var variants = isRelayCourse || (isScatter && course.TeamCombinations.Count > 0)
+                ? course.AllVariants
+                : isScatter ? course.Variants : [];
+            var assignments = isRelayCourse || isScatter
+                ? course.TeamCombinations
+                    .SelectMany(t => t.Legs.Select(l => new LegCourseAssignment
+                    {
+                        EventDayId = dayId, TeamNumber = t.Number, Leg = l.Leg, CourseKey = l.Code
+                    }))
+                    .ToList()
+                : [];
+            var legCount = isRelayCourse && course.CombinationLegCount > 0 ? course.CombinationLegCount : (int?)null;
 
-            // The discipline override to store: Scatter for a genuine multi-order course; on a Scatter day a
-            // single-order course is pinned to SetCourse so it doesn't wrongly inherit Scatter; otherwise no
-            // override (the day default applies).
-            var scatterFallbackHere = !isScatter && dayIsScatter;
+            // The discipline override to store: Scatter for a genuine multi-order course; Relay for a relay course (none
+            // on a relay day — the day's own relay type applies); on a Scatter day a single-order course is pinned to
+            // SetCourse so it doesn't wrongly inherit Scatter; otherwise no override (the day default applies).
+            var scatterFallbackHere = !isScatter && !isRelayCourse && dayIsScatter;
             var disciplineOverride =
                 isScatter ? DisciplineId.Scatter
+                : isRelayCourse ? (dayIsRelay ? null : DisciplineId.Relay)
                 : scatterFallbackHere ? DisciplineId.SetCourse
                 : (DisciplineId?)null;
             var courseOrder = string.Join(' ', course.ControlCodes.Select(c => c.Trim()).Where(c => c.Length > 0));
@@ -910,7 +936,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             {
                 // Already on the day. In add-only mode leave it as-is. Otherwise refresh the course from the file
                 // but keep what the file cannot know: a type the judge chose for the group, a hand-written mixed
-                // pattern, a relay group's named leg courses.
+                // pattern, a relay group's named leg courses (unless the file brings a relay of its own).
                 if (!updateExisting)
                     continue;
 
@@ -924,20 +950,36 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     existing.DistanceKm = distanceKm;
                 }
 
-                // The type: a multi-order course makes a (non-relay) group Scatter; a group that was Scatter and is
-                // single-order now gets the import's own fallback; any other chosen type stays.
+                // The type: the chosen relay makes the group a relay (a relay type it already has — a plugin's — stays);
+                // a multi-order course makes it Scatter; a group that was Scatter and is single-order now gets the
+                // import's own fallback; any other chosen type stays.
                 var wasScatter = existing.DisciplineOverride == DisciplineId.Scatter;
-                if (isScatter && !isRelay)
+                if (isRelayCourse)
+                {
+                    if (!isRelay)
+                        existing.DisciplineOverride = disciplineOverride;
+                }
+                else if (isScatter)
                     existing.DisciplineOverride = DisciplineId.Scatter;
-                else if (!isScatter && wasScatter)
+                else if (wasScatter)
                     existing.DisciplineOverride = disciplineOverride;
 
                 await _eventStore.UpdateGroupDaySettingsAsync(folder, existing, cancellationToken);
+                if (relayMode is { } mode)
+                {
+                    if (legCount is { } legs && legs != existing.LegCount)
+                        await _eventStore.UpdateRelaySettingsAsync(folder, existing.Id, legs, existing.MassStartTime,
+                            existing.RestartTimesJson, existing.RestartRanking, cancellationToken);
+                    await _eventStore.UpdateRelayCourseSettingsAsync(folder, existing.Id, mode, existing.TeamCourseSet, cancellationToken);
+                }
 
-                // Variants: a scatter course replaces them; a relay group keeps its named leg courses unless the file
-                // brings variations of its own; a hand-kept mixed pattern keeps whatever it had.
-                if (isScatter || (!isRelay && !keepsPattern))
-                    await SaveCourseVariantsAsync(folder, dayId, group.Id, course, cancellationToken);
+                // Variants: a relay or scatter course replaces them (and its number assignments); a relay group keeps
+                // its named leg courses when the file brings none; a hand-kept mixed pattern keeps whatever it had.
+                if (isRelayCourse || isScatter || (!isRelay && !keepsPattern))
+                {
+                    await SaveCourseVariantsAsync(folder, dayId, group.Id, variants, cancellationToken);
+                    await _eventStore.ReplaceGroupLegCourseAssignmentsAsync(folder, dayId, group.Id, assignments, cancellationToken);
+                }
                 if (scatterFallbackHere && wasScatter)
                     scatterFallback.Add(name);
                 updated++;
@@ -951,11 +993,14 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     Order = nextOrder++,
                     CourseOrder = courseOrder,
                     DistanceKm = distanceKm,
-                    DisciplineOverride = disciplineOverride
+                    DisciplineOverride = disciplineOverride,
+                    LegCount = legCount,
+                    CourseAssignmentMode = relayMode ?? RelayCourseMode.Group
                 };
                 await _eventStore.AddGroupDaySettingsAsync(folder, row, cancellationToken);
                 settingsByGroupId[group.Id] = row;
-                await SaveCourseVariantsAsync(folder, dayId, group.Id, course, cancellationToken);
+                await SaveCourseVariantsAsync(folder, dayId, group.Id, variants, cancellationToken);
+                await _eventStore.ReplaceGroupLegCourseAssignmentsAsync(folder, dayId, group.Id, assignments, cancellationToken);
                 if (scatterFallbackHere)
                     scatterFallback.Add(name);
                 added++;
@@ -965,18 +1010,17 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         return new GroupImportResult(Added: added, Updated: updated, ScatterFallbackGroups: scatterFallback);
     }
 
-    // Persists a course's scatter («розсіювання») variants for a group on a day, replacing any existing set.
-    // A scatter course (more than one variant) writes one row per variant, coded and ordered as parsed; a
-    // non-scatter course clears the group's variants (so re-importing a formerly-scatter group as a normal
-    // course leaves no stale orders behind).
+    // Persists a course's named variants (scatter orders / relay courses) for a group on a day, replacing any existing
+    // set: one row per variant, coded and ordered as parsed. Fewer than two clear the group's variants (so re-importing
+    // a formerly-scatter group as a normal course leaves no stale orders behind).
     private Task SaveCourseVariantsAsync(
-        string folder, Guid dayId, Guid groupId, IofCourse course, CancellationToken cancellationToken)
+        string folder, Guid dayId, Guid groupId, IReadOnlyList<IofCourseVariant> variants, CancellationToken cancellationToken)
     {
         var rows = new List<GroupCourseVariant>();
-        if (course.Variants.Count > 1)
+        if (variants.Count > 1)
         {
             var order = 0;
-            foreach (var v in course.Variants)
+            foreach (var v in variants)
                 rows.Add(new GroupCourseVariant
                 {
                     EventDayId = dayId,
@@ -1547,6 +1591,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         // Keyed by participant-day link id.
         var results = await ComputeDayResultsAsync(folder, CurrentDay, cancellationToken);
         var fieldValues = await LoadFieldValuesAsync(folder, cancellationToken);
+        var (relayPlaces, _) = await LoadRelayPlacementsAsync(folder, CurrentDay, links, cancellationToken);
 
         var rows = new List<ParticipantDayRow>(links.Count);
         foreach (var link in links)
@@ -1569,7 +1614,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 paymentPerDay ? link.PaysRaisedFee : participant.PaysRaisedFee,
                 fees.SelectedDiscountIds(participant.Id),
                 fees.Total(participant, memberDays), otherDays, result, paymentPerDay)
-                with { Fields = FieldsOf(fieldValues, participant.Id) });
+                with { Fields = FieldsOf(fieldValues, participant.Id), Relay = relayPlaces.GetValueOrDefault(link.Id) });
         }
         return rows;
     }
@@ -1601,6 +1646,11 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         foreach (var day in days)
             resultsByDay[day.Id] = await ComputeDayResultsAsync(folder, day, cancellationToken, appData: appData);
 
+        // Each day's relay places and whether it runs a relay at all (the roster's «Естафета» cells).
+        var relayByDay = new Dictionary<Guid, (Dictionary<Guid, RelayPlacement> ByLink, bool IsRelayDay)>(days.Count);
+        foreach (var day in days)
+            relayByDay[day.Id] = await LoadRelayPlacementsAsync(folder, day, links, cancellationToken);
+
         // Keyed for per-cell lookup.
         var linkByKey = links.ToDictionary(l => (l.ParticipantId, l.EventDayId));
         var fieldValues = await LoadFieldValuesAsync(folder, cancellationToken);
@@ -1612,17 +1662,25 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             var memberDays = new List<EntryFeeDay>();
             foreach (var day in days)
             {
+                var relay = relayByDay[day.Id];
                 if (linkByKey.TryGetValue((participant.Id, day.Id), out var link))
                 {
                     var name = link.GroupId is { } gid && groupName.TryGetValue(gid, out var n) ? n : string.Empty;
                     var result = resultsByDay.TryGetValue(day.Id, out var dr) && dr.TryGetValue(link.Id, out var r)
                         ? r : ParticipantDayResult.Empty;
-                    cells.Add(new RosterDayCell(day.Id, day.Number, link.Id, IsMember: true, link.GroupId, name, link.Chip, link.Payment, link.PaysRaisedFee, link.StartTime, link.OutOfCompetition, link.Bonus, result));
+                    cells.Add(new RosterDayCell(day.Id, day.Number, link.Id, IsMember: true, link.GroupId, name, link.Chip, link.Payment, link.PaysRaisedFee, link.StartTime, link.OutOfCompetition, link.Bonus, result)
+                    {
+                        IsRelayDay = relay.IsRelayDay,
+                        Relay = relay.ByLink.GetValueOrDefault(link.Id)
+                    });
                     memberDays.Add(new EntryFeeDay(day.Id, link.GroupId, link.Chip, link.PaysRaisedFee));
                 }
                 else
                 {
-                    cells.Add(new RosterDayCell(day.Id, day.Number, LinkId: null, IsMember: false, GroupId: null, GroupName: string.Empty, Chip: string.Empty, Payment: string.Empty, PaysRaisedFee: false, StartTime: null, OutOfCompetition: false, Bonus: null, ParticipantDayResult.Empty));
+                    cells.Add(new RosterDayCell(day.Id, day.Number, LinkId: null, IsMember: false, GroupId: null, GroupName: string.Empty, Chip: string.Empty, Payment: string.Empty, PaysRaisedFee: false, StartTime: null, OutOfCompetition: false, Bonus: null, ParticipantDayResult.Empty)
+                    {
+                        IsRelayDay = relay.IsRelayDay
+                    });
                 }
             }
             var region = participant.RegionId is { } rid && regionName.TryGetValue(rid, out var rn) ? rn : string.Empty;
@@ -2768,7 +2826,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             if (link.RelayTeamId is { } tid && link.Leg is { } leg && teamNumberById.TryGetValue(tid, out var teamNo))
             {
                 relayRowByLink[link.Id] = new StartProtocolRow(
-                    link.StartTime, RelayBib.Format(teamNo, leg), p.FullName, p.BirthDate, club, region, dussh,
+                    link.StartTime, RelayTeamNumbers.Bib(teamNo, leg), p.FullName, p.BirthDate, club, region, dussh,
                     p.Coach, p.Rank, link.Chip.Trim(), gname, p.Team.Trim());
                 continue;
             }
@@ -3231,9 +3289,12 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     /// <summary>Cross-day key of an individual draw unit (see <see cref="DrawParticipant.HistoryKey"/>).</summary>
     private static string DrawHistoryKeyOf(Guid participantId) => participantId.ToString("N");
 
-    /// <summary>Cross-day key of a relay team: the group and the team number (its runners may change).</summary>
-    private static string DrawHistoryKeyOf(Guid groupId, int teamNumber)
-        => $"team:{groupId:N}:{teamNumber.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+    /// <summary>Cross-day key of a relay team: the group and the team number (its runners may change); a team without
+    /// a number yet is keyed by itself (it has no history on other days).</summary>
+    private static string DrawHistoryKeyOf(Guid groupId, int? teamNumber, Guid teamId)
+        => teamNumber is { } n
+            ? $"team:{groupId:N}:{n.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+            : $"team:{teamId:N}";
 
     /// <summary>
     /// Builds every draw unit's start positions on the days before <paramref name="day"/> (by day number):
@@ -3263,7 +3324,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             if (prevLinks.Count == 0)
                 continue;
 
-            var teamNumber = new Dictionary<Guid, int>();
+            var teamNumber = new Dictionary<Guid, int?>();
             if (prevLinks.Any(l => l.RelayTeamId is not null))
             {
                 var teams = await _eventStore.GetRelayTeamsAsync(folder, prev.Id, cancellationToken);
@@ -3280,7 +3341,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     // The team is the unit; only its leg-1 link carries the drawn start.
                     if (l.Leg != 1 || !teamNumber.TryGetValue(tid, out var n))
                         continue;
-                    units.Add((gid, l.StartTime!.Value, n.ToString("D6"), DrawHistoryKeyOf(gid, n)));
+                    units.Add((gid, l.StartTime!.Value, n?.ToString("D6") ?? string.Empty, DrawHistoryKeyOf(gid, n, tid)));
                 }
                 else
                 {
@@ -3382,12 +3443,12 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                          == CompetitorModel.TeamWithLegs))
             {
                 var units = new List<DrawParticipant>();
-                foreach (var team in teams.Where(t => t.GroupId == s.GroupId).OrderBy(t => t.Number))
+                foreach (var team in teams.Where(t => t.GroupId == s.GroupId).OrderBy(t => RelayTeamNumbers.SortKey(t.Number)))
                 {
                     if (!leg1ByTeam.TryGetValue(team.Id, out var leg1))
                         continue;
-                    var number = team.Number.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                    var key = DrawHistoryKeyOf(team.GroupId, team.Number);
+                    var number = RelayTeamNumbers.Text(team.Number);
+                    var key = DrawHistoryKeyOf(team.GroupId, team.Number, team.Id);
                     units.Add(new DrawParticipant(
                         leg1.Id, leg1.ParticipantId,
                         team.Name.Length > 0 ? team.Name : number,
@@ -4447,7 +4508,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 continue;
             var group = link.GroupId is { } gid && groupName.TryGetValue(gid, out var gn) ? gn : string.Empty;
             var number = link.RelayTeamId is { } tid && link.Leg is { } leg && teamNumbers.TryGetValue(tid, out var tn)
-                ? RelayBib.Format(tn, leg)
+                         && RelayTeamNumbers.Bib(tn, leg) is { Length: > 0 } bib
+                ? bib
                 : p.Number;
             options.Add(new FinishReadoutParticipantOption(p.Id, number, p.FullName, group, link.GroupId, link.StartTime));
         }
@@ -4844,18 +4906,61 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             var highestExisting = days.Count == 0 ? 0 : days.Max(d => d.Number);
             for (var n = highestExisting + 1; n <= maxDay; n++)
             {
-                await AddDayAsync(cancellationToken);
+                var day = await AddDayAsync(cancellationToken);
                 daysCreated++;
+                // A new day every runner of the file runs as their relay («3Е») is a relay day.
+                var runners = data.Participants.Where(p => p.DayNumbers.Contains(day.Number)).ToList();
+                if (runners.Count > 0 && runners.All(p => p.RelayDayNumbers.Contains(day.Number)))
+                {
+                    day.DefaultDiscipline = DisciplineId.Relay;
+                    await _eventStore.UpdateDayAsync(FolderPath, day, cancellationToken);
+                }
             }
         }
 
-        // The days that run a relay group: a row's team/leg is applied there (Р-20).
+        // The days that run a relay group: a numbered row's team/leg is applied there (Р-20).
         var relayDays = data.Participants.Any(p => p.RelayTeamNumber is not null)
             ? await RelayDayNumbersAsync(cancellationToken)
             : [];
+        var relayGroupsToMark = await RelayGroupsToMarkAsync(data, scope, cancellationToken);
 
         return await _eventStore.ImportParticipantsBatchAsync(
-            FolderPath, data, clearFirst, daysCreated, scope, progress, cancellationToken, relayDays);
+            FolderPath, data, clearFirst, daysCreated, scope, progress, cancellationToken, relayDays, relayGroupsToMark);
+    }
+
+    // The relay groups of the file's relay days («3Е» + GrupRel) that run no relay yet — neither the day's default
+    // discipline nor the group's own on the day is a relay one: the import makes them relay groups.
+    private async Task<List<RelayGroupDay>> RelayGroupsToMarkAsync(
+        UofParticipantData data, ParticipantImportScope scope, CancellationToken cancellationToken)
+    {
+        var wanted = data.Participants
+            .SelectMany(p => p.RelayDayNumbers
+                .Where(d => scope.Mode == ParticipantImportMode.AllDays || d == scope.TargetDayNumber)
+                .Select(d => (Day: d, Group: p.RelayGroup.Trim())))
+            .Where(x => x.Group.Length > 0)
+            .DistinctBy(x => (x.Day, TextKey.Of(x.Group)))
+            .ToList();
+        if (wanted.Count == 0)
+            return [];
+
+        var folder = FolderPath;
+        var days = (await _eventStore.GetDaysAsync(folder, cancellationToken)).ToDictionary(d => d.Number);
+        var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
+        var settingsByDay = new Dictionary<Guid, IReadOnlyList<GroupDaySettings>>();
+        var marks = new List<RelayGroupDay>();
+        foreach (var (dayNumber, groupName) in wanted)
+        {
+            if (!days.TryGetValue(dayNumber, out var day) || IsRelay(day.DefaultDiscipline))
+                continue;
+            if (!settingsByDay.TryGetValue(day.Id, out var settings))
+                settingsByDay[day.Id] = settings = await _eventStore.GetGroupDaySettingsAsync(folder, day.Id, cancellationToken);
+            var group = groups.FirstOrDefault(g => TextKey.Same(g.Name, groupName));
+            var own = group is null ? null : settings.FirstOrDefault(s => s.GroupId == group.Id);
+            if (own?.DisciplineOverride is { } overridden && IsRelay(overridden))
+                continue;
+            marks.Add(new RelayGroupDay(dayNumber, groupName));
+        }
+        return marks;
     }
 
     public async Task<ImportPreview> PreviewParticipantImportAsync(
@@ -4959,7 +5064,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     changes.Add(new ImportPreviewChange("Day", dayNumber, string.Empty, string.Empty));
                     continue;
                 }
-                Change("Group", Name<Group>(link.GroupId, groups), src.Group, dayNumber);
+                Change("Group", Name<Group>(link.GroupId, groups), src.GroupOn(dayNumber), dayNumber);
                 var chip = src.Chip.Trim();
                 if (chip.Length > 0 && chip != "0")
                     Change("Chip", link.Chip, chip, dayNumber);
@@ -5322,7 +5427,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         };
     }
 
-    // §11.1: one row per relay team of the day, each with its legs (number «100.N», runner, course, times, status).
+    // §11.1: one row per relay team of the day, each with its legs (number «100.N», runner, course, times, status),
+    // in standing order (RelayTeamOrder; the spectator site sorts the same way on its own).
     private static List<OnlineTeamRow> OnlineTeams(
         ResultProtocolData data, Func<string, string> groupName, IReadOnlyList<ExtraResultColumn> pluginColumns)
     {
@@ -5331,9 +5437,11 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         {
             if (g.RelayTeams is null)
                 continue;
-            foreach (var t in g.RelayTeams)
+            // The site keys a team by its number (relay_teams primary key), so a team without one is not published yet.
+            foreach (var t in RelayTeamOrder.Sort(g.RelayTeams.Where(x => x.Number is not null), x => x.Result, x => x.Number))
             {
                 var result = t.Result;
+                var number = t.Number!.Value;
                 var legs = t.Legs.Select(l =>
                 {
                     var runner = l.Runner;
@@ -5346,7 +5454,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                             .ToDictionary(x => x.Key, x => x.Value);
                     return new OnlineLegRow(
                         Leg: l.Leg,
-                        Bib: RelayBib.Format(t.Number, l.Leg),
+                        Bib: RelayBib.Format(number, l.Leg),
                         FullName: runner?.FullName ?? string.Empty,
                         Birth: runner?.BirthDate is { } bd ? bd.ToString("dd.MM.yyyy") : string.Empty,
                         Course: leg?.CourseCode,
@@ -5360,7 +5468,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
                 teams.Add(new OnlineTeamRow(
                     GroupName: groupName(g.Name),
-                    Number: t.Number,
+                    Number: number,
                     Name: t.Name,
                     Club: t.ClubName,
                     Region: t.RegionName,
@@ -5629,17 +5737,13 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     // §11.4: a relay group on the monitor — one bold team row (place, №, name, club, team time, gap, status, points)
     // with its legs under it (100.N, runner + course, leg start, leg time, cumulative in the gap column, status,
-    // plugin columns). Placed teams by place first, then the rest by time and number.
+    // plugin columns). Teams in standing order (RelayTeamOrder), like the protocol.
     private static List<MonitorRow> BuildRelayMonitorRows(
         ResultProtocolGroup g, IReadOnlyList<MonitorColumn> columns, MonitorLabels labels)
     {
         static bool Placed(TeamDayResult? r) => r?.Place is not null && !r.OutOfCompetition;
 
-        var teams = g.RelayTeams!
-            .OrderBy(t => Placed(t.Result) ? t.Result!.Place!.Value : int.MaxValue)
-            .ThenBy(t => t.Result?.Time ?? TimeSpan.MaxValue)
-            .ThenBy(t => t.Number)
-            .ToList();
+        var teams = RelayTeamOrder.Sort(g.RelayTeams!, t => t.Result, t => t.Number).ToList();
         var leader = teams
             .Where(t => Placed(t.Result) && t.Result!.Time is not null)
             .Select(t => t.Result!.Time)
@@ -5654,7 +5758,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             {
                 ResultColumn.Place => res?.OutOfCompetition == true ? "—" : res?.Place?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
                 ResultColumn.FullName => t.Name,
-                ResultColumn.Bib => t.Number.ToString(CultureInfo.InvariantCulture),
+                ResultColumn.Bib => RelayTeamNumbers.Text(t.Number),
                 ResultColumn.Team => t.Name,
                 ResultColumn.Club => t.ClubName,
                 ResultColumn.Region => t.RegionName,
@@ -5678,7 +5782,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 var legValues = columns.Select(col => col.Column switch
                 {
                     ResultColumn.FullName => name,
-                    ResultColumn.Bib => RelayBib.Format(t.Number, leg.Leg),
+                    ResultColumn.Bib => RelayTeamNumbers.Bib(t.Number, leg.Leg),
                     ResultColumn.Birth => runner?.BirthDate is { } bd ? bd.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) : string.Empty,
                     ResultColumn.Qual => runner?.Rank ?? string.Empty,
                     ResultColumn.Club => runner?.ClubName ?? string.Empty,
@@ -5947,5 +6051,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         MaxBirthYear: group.MaxBirthYear,
         ParticipantCount: participantCount,
         ScatterVariantCount: scatterVariantCount,
-        ScatterMaxControlCount: scatterMaxControlCount);
+        ScatterMaxControlCount: scatterMaxControlCount,
+        LegCount: Math.Max(1, s.LegCount ?? 1),
+        CourseMode: s.CourseAssignmentMode);
 }

@@ -1,0 +1,76 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="980" d:DesignHeight="720"
+             x:Class="OrientPyx.Presentation.Views.Pages.MassStartDrawView"
+             x:Name="Root"
+             x:DataType="pages:MassStartDrawViewModel">
+
+    <DockPanel LastChildFill="True">
+
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="{Binding Localization[Page.MassStartDraw.Title]}" Classes="h1"
+                           FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+                <TextBlock Text="{Binding Localization[Page.MassStartDraw.Text]}" Classes="subtitle" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button Classes="help" Command="{Binding ShowHelpCommand}"
+                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                <controls:DaySelector VerticalAlignment="Center"
+                                      ShowDays="{Binding ShowDaySelector}"
+                                      ShowLock="{Binding CanToggleDayLock}"
+                                      IsDayLocked="{Binding IsDayLocked}"
+                                      ToggleLockCommand="{Binding ToggleDayLockCommand}"
+                                      LockTooltip="{Binding Localization[DayLock.Lock.Tooltip]}"
+                                      UnlockTooltip="{Binding Localization[DayLock.Unlock.Tooltip]}"
+                                      SearchWatermark="{Binding Localization[Common.Search]}"
+                                      DayOptions="{Binding DayOptions}"
+                                      SelectedDay="{Binding SelectedDay, Mode=TwoWay}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Toolbar: one start for the checked groups, select all/none, apply. -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*" ColumnSpacing="10"
+              Margin="0,0,0,12" VerticalAlignment="Center">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Localization[MassStartDraw.CommonStart]}" Classes="label"
+                           VerticalAlignment="Center" />
+                <TextBox Width="90" Text="{Binding CommonStart, Mode=TwoWay}"
+                         PlaceholderText="{Binding Localization[Common.TimePlaceholder]}" />
+                <Button Classes="ghost small" VerticalAlignment="Center"
+                        Content="{Binding Localization[MassStartDraw.CommonStart.Apply]}"
+                        ToolTip.Tip="{Binding Localization[MassStartDraw.CommonStart.Tooltip]}"
+                        Command="{Binding ApplyCommonStartCommand}" />
+            </StackPanel>
+            <Button Grid.Column="1" Classes="ghost small" VerticalAlignment="Center"
+                    Content="{Binding Localization[ClassicDraw.SelectAll]}"
+                    Command="{Binding SelectAllCommand}" />
+            <Button Grid.Column="2" Classes="ghost small" VerticalAlignment="Center"
+                    Content="{Binding Localization[ClassicDraw.SelectNone]}"
+                    Command="{Binding SelectNoneCommand}" />
+            <Button Grid.Column="3" Classes="accent" VerticalAlignment="Center"
+                    Content="{Binding Localization[MassStartDraw.Run]}"
+                    IsEnabled="{Binding !IsDayLocked}"
+                    Command="{Binding RunCommand}" />
+            <TextBlock Grid.Column="5" Text="{Binding StatusMessage}" Classes="subtitle"
+                       VerticalAlignment="Center" TextWrapping="Wrap" />
+        </Grid>
+
+        <!-- Groups table (shared SheetTable); columns are built in code-behind. -->
+        <Border Classes="card" ClipToBounds="True">
+            <controls:SheetTable Name="GroupsSheet"
+                                 IsLocked="{Binding IsDayLocked}"
+                                 LockedEditAttempted="OnLockedEditAttempted"
+                                 ItemsSource="{Binding Groups}"
+                                 Localization="{Binding Localization}"
+                                 LayoutStore="{Binding LayoutStore}"
+                                 LayoutKey="massstartdraw.groups" />
+        </Border>
+
+    </DockPanel>
+
+</UserControl>

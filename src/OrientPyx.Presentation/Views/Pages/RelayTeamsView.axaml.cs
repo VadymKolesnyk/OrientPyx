@@ -22,6 +22,26 @@ public partial class RelayTeamsView : UserControl
         DetachedFromVisualTree += (_, _) => Unsubscribe();
         // Ctrl+Click on a row's delete button skips the confirmation (same approach as the other grids).
         AddHandler(PointerPressedEvent, OnTunnelPointerPressed, RoutingStrategies.Tunnel);
+        AddHandler(KeyDownEvent, OnPageKeyDown, RoutingStrategies.Tunnel);
+    }
+
+    // Ctrl+B = «Присвоєння номерів», the same key as on «Учасники».
+    private void OnPageKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.B && e.KeyModifiers == KeyModifiers.Control && _vm is { HasRelayGroups: true })
+        {
+            _ = AssignNumbersAsync();
+            e.Handled = true;
+        }
+    }
+
+    private void OnAssignNumbersClick(object? sender, RoutedEventArgs e) => _ = AssignNumbersAsync();
+
+    // The teams as the table shows them (filtered, sorted) are numbered in that order.
+    private async System.Threading.Tasks.Task AssignNumbersAsync()
+    {
+        if (_vm is not null)
+            await _vm.AssignNumbersCommand.ExecuteAsync(Sheet.VisibleItems);
     }
 
     private void OnTunnelPointerPressed(object? sender, PointerPressedEventArgs e)
@@ -115,7 +135,8 @@ public partial class RelayTeamsView : UserControl
         var builder = new SheetColumnBuilder(_vm.Localization)
             .Text("RelayTeams.Col.Number", nameof(RelayTeamRowViewModel.NumberText),
                   editPath: nameof(RelayTeamRowViewModel.NumberText), minWidth: 80,
-                  mask: SheetColumnBuilder.NumericMask.Integer)
+                  mask: SheetColumnBuilder.NumericMask.Integer,
+                  sortPath: nameof(RelayTeamRowViewModel.NumberSort))
             .CellTint(nameof(RelayTeamRowViewModel.NumberError), Avalonia.Media.Brushes.MistyRose)
             .Text("RelayTeams.Col.Name", nameof(RelayTeamRowViewModel.Name),
                   editPath: nameof(RelayTeamRowViewModel.Name), minWidth: 200)
@@ -143,6 +164,7 @@ public partial class RelayTeamsView : UserControl
                    nameof(RelayTeamRowViewModel.SelectedStatus),
                    nameof(FinishStatusOption.Label), minWidth: 130)
             .Text("RelayTeams.Col.Legs", nameof(RelayTeamRowViewModel.LegsText), minWidth: 70)
+            .CellTint(nameof(RelayTeamRowViewModel.HasUnplaced), Avalonia.Media.Brushes.MistyRose)
             .Text("RelayTeams.Col.Status", nameof(RelayTeamRowViewModel.StatusText), minWidth: 110)
             .Text("RelayTeams.Col.Time", nameof(RelayTeamRowViewModel.TimeText), minWidth: 90)
             .Text("RelayTeams.Col.Place", nameof(RelayTeamRowViewModel.PlaceText), minWidth: 70,

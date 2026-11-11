@@ -74,7 +74,9 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         Action<RosterDayCellViewModel> requestResultStatusChange,
         Action<RosterDayCellViewModel> requestBonusChange,
         Action<RosterDayCellViewModel> requestPaymentChange,
-        Action<RosterDayCellViewModel> requestRaisedFeeChange)
+        Action<RosterDayCellViewModel> requestRaisedFeeChange,
+        Action<RelayCellsViewModel, RelayPlacementRequest> requestRelayPlace,
+        Action<RelayCellsViewModel, RelayTeamField, string> requestRelayTeamEdit)
     {
         _participantId = participantId;
         DayId = cell.DayId;
@@ -107,8 +109,46 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         _statusOptions = FinishStatusOptions.Build(localization, cell.Result.Computed);
         _selectedStatus = FinishStatusOptions.Select(StatusOptions, cell.Result.Override);
 
+        _isRelayDay = cell.IsRelayDay;
+        Relay = new RelayCellsViewModel(participantId, cell.DayId, cell.Relay, localization, requestRelayPlace, requestRelayTeamEdit);
+        // The row's merged relay cells, the leg cell's lock and the group cell's lock follow the relay place.
+        Relay.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(RelayCellsViewModel.HasTeam))
+            {
+                OnPropertyChanged(nameof(CanEditGroup));
+                OnPropertyChanged(nameof(CanEditRelayLeg));
+            }
+            else if (e.PropertyName is nameof(RelayCellsViewModel.BibText) or nameof(RelayCellsViewModel.TeamName)
+                     or nameof(RelayCellsViewModel.TeamText) or nameof(RelayCellsViewModel.LegText))
+            {
+                OnPropertyChanged(nameof(Relay));
+            }
+        };
+
         _initialized = true;
     }
+
+    /// <summary>This day's relay cells («Команда», «Номер команди», «Етап», «Номер етапу»); live only on a relay day.
+    /// A change of any of them is raised as <c>Relay</c> too, so the row's merged cells follow.</summary>
+    public RelayCellsViewModel Relay { get; }
+
+    /// <summary>The day runs a relay (a relay group or at least one team) — the relay cells are live on it.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanEditRelay))]
+    [NotifyPropertyChangedFor(nameof(CanEditRelayLeg))]
+    private bool _isRelayDay;
+
+    /// <summary>The team cells accept an edit: a relay day that is still open. A runner who does not run the day yet
+    /// may be put on a team too — they join the day in the team's group.</summary>
+    public bool CanEditRelay => IsRelayDay && !IsDayLocked;
+
+    /// <summary>The «Етап» cell accepts an edit: as <see cref="CanEditRelay"/>, on a team.</summary>
+    public bool CanEditRelayLeg => CanEditRelay && Relay.HasTeam;
+
+    /// <summary>The group cell accepts an edit: an open day, and the runner is not on a relay team — a relay runner's
+    /// group is the team's (Р-22).</summary>
+    public bool CanEditGroup => CanEdit && !Relay.HasTeam;
 
     /// <summary>The finish-status choices: a descriptive "(<computed> — автоматично)" sentinel, then the
     /// settable statuses. Rebuilt when the result changes.</summary>
@@ -130,6 +170,9 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
+    [NotifyPropertyChangedFor(nameof(CanEditGroup))]
+    [NotifyPropertyChangedFor(nameof(CanEditRelay))]
+    [NotifyPropertyChangedFor(nameof(CanEditRelayLeg))]
     [NotifyPropertyChangedFor(nameof(CanEditStatus))]
     [NotifyPropertyChangedFor(nameof(CanEditMemberFields))]
     [NotifyPropertyChangedFor(nameof(LockedDayNumber))]
@@ -286,6 +329,8 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
                 OnPropertyChanged(nameof(BonusText));
             }
             ApplyResult(cell.Result);
+            IsRelayDay = cell.IsRelayDay;
+            Relay.Apply(cell.Relay);
         }
         finally
         {
@@ -353,7 +398,8 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         // The course length the chip must hold comes from the group, so a group change can flip the flag.
         OnPropertyChanged(nameof(ChipTooSmall));
         OnPropertyChanged(nameof(ChipCapacityTooltip));
-        if (_initialized && !IsDayLocked)
+        // A relay runner's group is the team's (Р-22): the cell is read-only, so a paste never moves them either.
+        if (_initialized && !IsDayLocked && !Relay.HasTeam)
             _requestGroupChange(this);
     }
 

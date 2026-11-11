@@ -257,6 +257,20 @@ public sealed class DrawFeesAndHelpersTests
     }
 
     [Theory]
+    [InlineData("M21E", "Ч21Е")]
+    [InlineData("W21A", "Ж21А")]
+    [InlineData("МЖ55", "Ч55|Ж55")]
+    [InlineData("MW12; Ж14", "Ч12|Ж12|Ж14")]
+    [InlineData("МІКС20", "МІКС20")]
+    [InlineData("МАЛЮКИ", "МАЛЮКИ")]
+    [InlineData("OPEN", "OPEN")]
+    public void CourseNameSplitter_MapsGenderLettersOnlyInGroupCodes(string course, string expected)
+    {
+        var groups = new CourseNameSplitter().Split(course);
+        Assert.Equal(expected.Split('|'), groups);
+    }
+
+    [Theory]
     [InlineData("kubok-2026", true)]
     [InlineData("Кубок міста", true)]
     [InlineData("", false)]

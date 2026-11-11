@@ -229,7 +229,7 @@ public interface IResultsAppData
   `StationsChanged`. Усередині `WebApplication.CreateEmptyBuilder(new())` + `builder.WebHost.UseKestrelCore()` (П:
   `CreateSlimBuilder` усе ще читає `appsettings.json` і `ASPNETCORE_*`), `Listen(IPAddress.Any, port)`,
   `UseResponseCompression()`, `Logging.ClearProviders()`.
-- `PairingEndpoint` — `POST /pair`: перевірка `protocolVersion`, PIN (6 цифр, генерується при старті, показується
+- `PairingEndpoint` — `POST /pair`: перевірка `protocolVersion`, PIN (4 цифри, генерується при старті, показується
   в UI; 5 помилок → пауза 30 с), відповідь `PairResponse(token, hostId, hostName, appVersion, protocolVersion,
   plugins[], serverTimeUtc)`. Токени — `StationTokenRow` в `app.db` (міграція `AppDbContext`: `StationTokens(Token PK,
   StationName, IssuedAt, LastSeenAt)`), щоб переживали перезапуск хоста.

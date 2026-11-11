@@ -130,14 +130,15 @@ public sealed class IofXmlParser : IIofXmlParser
     private static IReadOnlyList<IofCourse> ReadCoursesV2(XElement data, IReadOnlySet<string> startFinishCodes)
     {
         var courses = new List<IofCourse>();
+        var combinations = ReadTeamCombinationsV2(data);
 
         foreach (var course in data.Elements().Where(e => LocalNameIs(e, "Course")))
         {
             var name = Trim(ChildValue(course, "CourseName"));
 
-            // 2.0.3 nests each running order inside a <CourseVariation>; a scatter course carries several
-            // (with an optional <Name> per variation). Read them all, de-duplicating identical sequences, and
-            // fall back to the course itself when there is no <CourseVariation> at all.
+            // 2.0.3 nests each running order inside a <CourseVariation>; a scatter or relay course carries several
+            // (with an optional <Name> per variation). Read them all and fall back to the course itself when there
+            // is no <CourseVariation> at all.
             var variations = course.Elements().Where(e => LocalNameIs(e, "CourseVariation")).ToList();
             var sources = variations.Count > 0 ? variations : [course];
 
@@ -152,15 +153,45 @@ public sealed class IofXmlParser : IIofXmlParser
 
                 raw.Add(new ParsedVariation(
                     Trim(ChildValue(variation, "Name")),
+                    Trim(ChildValue(variation, "CourseVariationId")),
                     codes,
                     ParseInt(ChildValue(variation, "CourseLength")),
                     ParseInt(ChildValue(variation, "CourseClimb"))));
             }
 
-            courses.Add(BuildCourse(name, raw, startFinishCodes));
+            var courseId = Trim(ChildValue(course, "CourseId"));
+            var picks = courseId.Length > 0 && combinations.TryGetValue(courseId, out var list) ? list : [];
+            courses.Add(BuildCourse(name, raw, startFinishCodes, picks));
         }
 
         return courses;
+    }
+
+    /// <summary>
+    /// OCAD's 2.0.3 relay export lists, after the courses, one &lt;TeamCombination&gt; per team: its &lt;StartNo&gt;,
+    /// the &lt;CourseId&gt; and per &lt;Leg&gt; the &lt;LegNo&gt; with the &lt;CourseVariationId&gt; (and &lt;Name&gt;) of
+    /// the variation that leg runs. Grouped by course id; entries without a number or a leg are skipped.
+    /// </summary>
+    private static Dictionary<string, List<VariationPick>> ReadTeamCombinationsV2(XElement data)
+    {
+        var result = new Dictionary<string, List<VariationPick>>(StringComparer.Ordinal);
+        foreach (var combination in data.Elements().Where(e => LocalNameIs(e, "TeamCombination")))
+        {
+            var number = LeadingNumber(ChildValue(combination, "StartNo"));
+            var courseId = Trim(ChildValue(combination, "CourseId"));
+            if (number is null || courseId.Length == 0)
+                continue;
+            foreach (var leg in combination.Elements().Where(e => LocalNameIs(e, "Leg")))
+            {
+                if (ParseInt(ChildValue(leg, "LegNo")) is not { } legNo || legNo < 1)
+                    continue;
+                if (!result.TryGetValue(courseId, out var list))
+                    result[courseId] = list = [];
+                list.Add(new VariationPick(number.Value, legNo,
+                    Trim(ChildValue(leg, "CourseVariationId")), Trim(ChildValue(leg, "Name"))));
+            }
+        }
+        return result;
     }
 
     /// <summary>
@@ -296,8 +327,28 @@ public sealed class IofXmlParser : IIofXmlParser
             }
         }
 
-        foreach (var (_, displayName, familyCourses) in families)
+        // The relay / per-runner assignments, each to the family its course belongs to: the <CourseFamily> it names,
+        // else the family holding a course of that name.
+        var familyOfCourse = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < families.Count; i++)
+            foreach (var course in families[i].Courses)
+                familyOfCourse.TryAdd(Trim(ChildValue(course, "Name")), i);
+        var picksByFamily = new Dictionary<int, List<VariationPick>>();
+        foreach (var (family, courseName, pick) in ReadCourseAssignmentsV3(data))
         {
+            var index = family.Length > 0 && byKey.TryGetValue(family, out var f) ? f
+                : familyOfCourse.TryGetValue(courseName, out var c) ? c
+                : -1;
+            if (index < 0)
+                continue;
+            if (!picksByFamily.TryGetValue(index, out var list))
+                picksByFamily[index] = list = [];
+            list.Add(pick);
+        }
+
+        for (var i = 0; i < families.Count; i++)
+        {
+            var (_, displayName, familyCourses) = families[i];
             var raw = new List<ParsedVariation>();
             foreach (var course in familyCourses)
             {
@@ -306,18 +357,69 @@ public sealed class IofXmlParser : IIofXmlParser
                     AddCode(codes, Trim(ChildValue(cc, "Control")));
 
                 // The variant code is the course-name suffix past the family name (e.g. "…_розсіювання_A" → "A");
-                // BuildCourse falls back to A/B/… by order when the suffix is blank or duplicated.
+                // BuildCourse falls back to A/B/… by order when the suffix is blank or duplicated. The full course
+                // name is the key the assignments refer to it by.
+                var courseName = Trim(ChildValue(course, "Name"));
                 raw.Add(new ParsedVariation(
-                    VariantSuffix(Trim(ChildValue(course, "Name")), displayName),
+                    VariantSuffix(courseName, displayName),
+                    courseName,
                     codes,
                     ParseInt(ChildValue(course, "Length")),
                     ParseInt(ChildValue(course, "Climb"))));
             }
 
-            courses.Add(BuildCourse(displayName, raw, startFinishCodes));
+            courses.Add(BuildCourse(displayName, raw, startFinishCodes, picksByFamily.GetValueOrDefault(i) ?? []));
         }
 
         return courses;
+    }
+
+    /// <summary>
+    /// The 3.0 course assignments: a &lt;TeamCourseAssignment&gt; (team &lt;BibNumber&gt;, one
+    /// &lt;TeamMemberCourseAssignment&gt; per leg with &lt;Leg&gt; — else the leg part of its own bib «101-2» — and the
+    /// &lt;CourseName&gt; / &lt;CourseFamily&gt; it runs) and a &lt;PersonCourseAssignment&gt; (a runner's bib and
+    /// course, as leg 1). The pick's key is the course name.
+    /// </summary>
+    private static IEnumerable<(string Family, string CourseName, VariationPick Pick)> ReadCourseAssignmentsV3(XElement data)
+    {
+        foreach (var team in data.Elements().Where(e => LocalNameIs(e, "TeamCourseAssignment")))
+        {
+            var teamNumber = LeadingNumber(ChildValue(team, "BibNumber"));
+            foreach (var member in team.Elements().Where(e => LocalNameIs(e, "TeamMemberCourseAssignment")))
+            {
+                var courseName = Trim(ChildValue(member, "CourseName"));
+                if (courseName.Length == 0)
+                    continue;
+                var number = teamNumber;
+                var leg = ParseInt(ChildValue(member, "Leg"));
+                if (SplitMemberBib(ChildValue(member, "BibNumber")) is { } bib)
+                {
+                    number ??= bib.Team;
+                    leg ??= bib.Leg;
+                }
+                if (number is { } n && leg is { } l && l >= 1)
+                    yield return (Trim(ChildValue(member, "CourseFamily")), courseName, new VariationPick(n, l, courseName, string.Empty));
+            }
+        }
+
+        foreach (var person in data.Elements().Where(e => LocalNameIs(e, "PersonCourseAssignment")))
+        {
+            var courseName = Trim(ChildValue(person, "CourseName"));
+            if (courseName.Length > 0 && LeadingNumber(ChildValue(person, "BibNumber")) is { } number)
+                yield return (Trim(ChildValue(person, "CourseFamily")), courseName, new VariationPick(number, 1, courseName, string.Empty));
+        }
+    }
+
+    // A team member's bib «101-2» / «101.2» / «101/2» → (101, 2); anything else → null.
+    private static (int Team, int Leg)? SplitMemberBib(string? text)
+    {
+        var parts = Trim(text).Split(['-', '.', '/'], StringSplitOptions.TrimEntries);
+        return parts.Length == 2
+               && int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var team)
+               && int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var leg)
+               && team > 0 && leg > 0
+            ? (team, leg)
+            : null;
     }
 
     // The trailing part of a variant's course name past the family name and a separating '_' — e.g.
@@ -337,74 +439,76 @@ public sealed class IofXmlParser : IIofXmlParser
 
     // --- Course / variant assembly (shared by both standards)
 
-    // A single running order read from the file, before de-duplication: its file-supplied name (may be blank),
-    // its control codes in order, and its stated length/climb.
-    private readonly record struct ParsedVariation(string Name, IReadOnlyList<string> Codes, int? Length, int? Climb);
+    // A single running order read from the file, before de-duplication: its file-supplied name (may be blank), the
+    // key the file's assignments refer to it by (2.0.3 variation id, 3.0 course name), its control codes in order,
+    // and its stated length/climb.
+    private readonly record struct ParsedVariation(string Name, string Key, IReadOnlyList<string> Codes, int? Length, int? Climb);
+
+    // One assignment read from the file: number + leg → the variation with this key (or, failing that, this name).
+    private readonly record struct VariationPick(int Number, int Leg, string Key, string Name);
 
     /// <summary>
-    /// Turns the raw variations read for one course/family into an <see cref="IofCourse"/>. Variations with an
-    /// <b>identical</b> control-code sequence (trimmed, case-insensitive) are collapsed to one — OCAD exports
-    /// repeat identical relay/estafette legs, and only genuinely distinct orders count as scatter variants. A
-    /// course left with a single distinct order is an ordinary course (empty <c>Variants</c>); more than one
-    /// makes it a scatter course whose <c>Variants</c> carry every distinct order, coded from the file's variant
-    /// name when present and unique, else A/B/C… by order. The course's own codes/length/climb mirror the first
-    /// (representative) variant.
+    /// Turns the raw variations read for one course/family into an <see cref="IofCourse"/>.
+    /// <list type="bullet">
+    ///   <item><c>Variants</c> — the distinct running orders: variations with an <b>identical</b> control-code
+    ///   sequence (trimmed, case-insensitive, start/finish excluded) are collapsed to the first, since only genuinely
+    ///   distinct orders count as scatter variants. A single distinct order leaves it empty (an ordinary course).</item>
+    ///   <item><c>AllVariants</c> — every variation, nothing collapsed (a relay's «1AAAAA» and «4AAAAA» stay apart even
+    ///   when they run the same controls); empty when the file has fewer than two.</item>
+    ///   <item><c>TeamCombinations</c> — the file's number/leg assignments, resolved to those codes.</item>
+    /// </list>
+    /// A variation is coded by its file name when present and unique, else A/B/C… by order — the distinct ones first,
+    /// so their codes don't depend on the repeats. The course's own codes/length/climb mirror the first variation.
     /// </summary>
     private static IofCourse BuildCourse(
-        string name, IReadOnlyList<ParsedVariation> variations, IReadOnlySet<string> startFinishCodes)
+        string name, IReadOnlyList<ParsedVariation> variations, IReadOnlySet<string> startFinishCodes,
+        IReadOnlyList<VariationPick> picks)
     {
         // Normalise each running order first: drop any start/finish box that isn't the very first or last
         // code (some exports scatter S/F markers mid-course), then collapse consecutive duplicate codes.
-        // So "31 32 S1 F1 32 33" → "31 32 33".
+        // So "31 32 S1 F1 32 33" → "31 32 33". Variations left with no codes at all are dropped.
         variations = variations
             .Select(v => v with { Codes = CleanCourseCodes(v.Codes, startFinishCodes) })
+            .Where(v => v.Codes.Count > 0)
             .ToList();
-
-        // De-duplicate by the ordered RUNNING sequence (start/finish markers excluded), keeping first-seen
-        // order: two variations that differ only by whether they list the start/finish box are the same
-        // running order, not distinct petals, and must not read as a scatter course.
-        var distinct = new List<ParsedVariation>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var v in variations)
-        {
-            var running = v.Codes.Where(c => !startFinishCodes.Contains(c));
-            var key = string.Join(" ", running).ToUpperInvariant();
-            if (seen.Add(key))
-                distinct.Add(v);
-        }
-
-        if (distinct.Count == 0)
+        if (variations.Count == 0)
             return new IofCourse { Name = name, ControlCodes = [] };
 
-        var first = distinct[0];
-
-        // Single distinct order → ordinary course, no variants.
-        if (distinct.Count == 1)
-            return new IofCourse
-            {
-                Name = name,
-                Length = first.Length,
-                Climb = first.Climb,
-                ControlCodes = first.Codes
-            };
-
-        // Several distinct orders → a scatter course. Assign each variant a code: its file name when non-blank
-        // and not already used, else the next letter A, B, C… (skipping any letter a file name already took).
-        var usedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var variants = new List<IofCourseVariant>(distinct.Count);
-        var letter = 0;
-        foreach (var v in distinct)
+        // The distinct RUNNING sequences (start/finish markers excluded), first seen kept: two variations that differ
+        // only by whether they list the start/finish box are the same running order, not distinct petals.
+        var distinct = new List<int>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < variations.Count; i++)
         {
-            string code;
-            if (v.Name.Length > 0 && usedCodes.Add(v.Name))
-                code = v.Name;
-            else
-            {
-                do { code = NextLetter(letter++); } while (!usedCodes.Add(code));
-            }
-
-            variants.Add(new IofCourseVariant(code, v.Codes, v.Length, v.Climb));
+            var running = variations[i].Codes.Where(c => !startFinishCodes.Contains(c));
+            if (seen.Add(string.Join(" ", running).ToUpperInvariant()))
+                distinct.Add(i);
         }
+
+        var first = variations[0];
+        if (variations.Count == 1)
+            return new IofCourse { Name = name, Length = first.Length, Climb = first.Climb, ControlCodes = first.Codes };
+
+        // Codes: the file name when non-blank and not already used, else the next letter A, B, C… (skipping any
+        // letter a file name already took). Distinct orders are coded first, then the repeats.
+        var codes = new string[variations.Count];
+        var usedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var letter = 0;
+        string NextCode(ParsedVariation v)
+        {
+            if (v.Name.Length > 0 && usedCodes.Add(v.Name))
+                return v.Name;
+            string code;
+            do { code = NextLetter(letter++); } while (!usedCodes.Add(code));
+            return code;
+        }
+        foreach (var i in distinct)
+            codes[i] = NextCode(variations[i]);
+        for (var i = 0; i < variations.Count; i++)
+            codes[i] ??= NextCode(variations[i]);
+
+        IofCourseVariant Variant(int i) =>
+            new(codes[i], variations[i].Codes, variations[i].Length, variations[i].Climb);
 
         return new IofCourse
         {
@@ -412,8 +516,42 @@ public sealed class IofXmlParser : IIofXmlParser
             Length = first.Length,
             Climb = first.Climb,
             ControlCodes = first.Codes,
-            Variants = variants
+            Variants = distinct.Count > 1 ? distinct.Select(Variant).ToList() : [],
+            AllVariants = Enumerable.Range(0, variations.Count).Select(Variant).ToList(),
+            TeamCombinations = Combinations(picks, variations, codes)
         };
+    }
+
+    // The file's assignments as number → legs, each leg resolved to a variation code: by the variation's key (2.0.3 id,
+    // 3.0 course name), else by its name; an unknown one keeps the name the file gave (so the import can report it).
+    // The first assignment of a number's leg wins; numbers in file order, legs in leg order.
+    private static IReadOnlyList<IofTeamCombination> Combinations(
+        IReadOnlyList<VariationPick> picks, IReadOnlyList<ParsedVariation> variations, IReadOnlyList<string> codes)
+    {
+        if (picks.Count == 0)
+            return [];
+        var byKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var byCode = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < variations.Count; i++)
+            if (variations[i].Key.Length > 0)
+                byKey.TryAdd(variations[i].Key, codes[i]);
+
+        var result = new List<IofTeamCombination>();
+        foreach (var number in picks.GroupBy(p => p.Number))
+        {
+            var legs = new List<IofLegVariant>();
+            foreach (var pick in number.GroupBy(p => p.Leg).OrderBy(g => g.Key).Select(g => g.First()))
+            {
+                var code = byKey.TryGetValue(pick.Key, out var c) ? c
+                    : byCode.TryGetValue(pick.Name, out var named) ? named
+                    : pick.Name;
+                if (code.Length > 0)
+                    legs.Add(new IofLegVariant(pick.Leg, code));
+            }
+            if (legs.Count > 0)
+                result.Add(new IofTeamCombination(number.Key, legs));
+        }
+        return result;
     }
 
     /// <summary>
@@ -500,6 +638,13 @@ public sealed class IofXmlParser : IIofXmlParser
         Child(parent, localName)?.Value;
 
     private static string Trim(string? value) => value?.Trim() ?? string.Empty;
+
+    // The leading digits of a number field («101», « 101 », «101A») as a positive number; null otherwise.
+    private static int? LeadingNumber(string? text)
+    {
+        var digits = new string(Trim(text).TakeWhile(char.IsAsciiDigit).ToArray());
+        return int.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out var n) && n > 0 ? n : null;
+    }
 
     private static int? ParseInt(string? value) =>
         int.TryParse(value?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)

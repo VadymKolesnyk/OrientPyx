@@ -250,8 +250,9 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
             .ToList();
         return snapshot.Teams.Select(t =>
         {
-            var anyRead = t.Legs.Any(l => l.Status != FinishStatus.None);
-            var status = MapStatus(t.Status, t.Place, anyRead);
+            // A team with no status yet is still on the course («running»), however many legs are read — never
+            // «finished_pending», which the site counts as finished. The site orders the running ones by legs done.
+            var status = MapStatus(t.Status, t.Place, hasReadout: false);
             return new Dictionary<string, object?>
             {
                 ["event"] = p.Slug,

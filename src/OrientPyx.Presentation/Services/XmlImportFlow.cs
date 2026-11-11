@@ -1,3 +1,5 @@
+using OrientPyx.BusinessLogic.Disciplines;
+using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
@@ -23,6 +25,7 @@ public sealed class XmlImportFlow : IXmlImportFlow
     private readonly ICourseNameSplitter _splitter;
     private readonly IDialogService _dialogs;
     private readonly IBusyService _busy;
+    private readonly IDisciplineStrategyProvider _strategies;
 
     public XmlImportFlow(
         ILocalizationService localization,
@@ -31,7 +34,8 @@ public sealed class XmlImportFlow : IXmlImportFlow
         IIofXmlParser xmlParser,
         ICourseNameSplitter splitter,
         IDialogService dialogs,
-        IBusyService busy)
+        IBusyService busy,
+        IDisciplineStrategyProvider strategies)
     {
         _localization = localization;
         _editor = editor;
@@ -40,6 +44,7 @@ public sealed class XmlImportFlow : IXmlImportFlow
         _splitter = splitter;
         _dialogs = dialogs;
         _busy = busy;
+        _strategies = strategies;
     }
 
     public async Task<bool> RunAsync(string xml, string? fileName = null, byte[]? content = null)
@@ -59,10 +64,16 @@ public sealed class XmlImportFlow : IXmlImportFlow
             return false;
         }
 
-        // Preprocessing: review/edit the groups each course splits into (e.g. "ЧЖ55" → "Ч55", "Ж55")
-        // before importing. Returns the rewritten course data, or null if the user cancelled here.
-        var split = await _dialogs.ShowSplitGroupsAsync(
-            new SplitGroupsViewModel(_localization, _splitter, outcome.Data!));
+        // Preprocessing: review/edit the groups each course splits into (e.g. "ЧЖ55" → "Ч55", "Ж55") and choose how a
+        // course with variations imports (scatter / relay) before importing. The day's relay groups and type seed that
+        // choice. Returns the rewritten course data, or null if the user cancelled here.
+        var dayRows = await _busy.RunAsync(() => _editor.GetGroupDayRowsAsync());
+        bool IsRelay(DisciplineId id) => _strategies.For(id).Competitors == CompetitorModel.TeamWithLegs;
+        var relayGroups = new Dictionary<string, RelayCourseMode>(TextKey.Comparer);
+        foreach (var row in dayRows.Where(r => IsRelay(r.DisciplineOverride ?? r.DayDefaultDiscipline)))
+            relayGroups.TryAdd(row.Name.Trim(), row.CourseMode);
+        var split = await _dialogs.ShowSplitGroupsAsync(new SplitGroupsViewModel(
+            _localization, _splitter, outcome.Data!, _session.CurrentDay is { } day && IsRelay(day.DefaultDiscipline), relayGroups));
         if (split is null)
             return false; // cancelled in the splitter
 

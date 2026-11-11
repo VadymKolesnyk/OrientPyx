@@ -17,17 +17,22 @@ public sealed partial class AssignNumbersViewModel : ObservableObject
     private readonly TaskCompletionSource<AssignNumbersResult?> _completion =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+    private readonly string _titleKey;
+
     /// <param name="startNumber">The pre-filled start number (typically the largest assigned number + 1).</param>
-    public AssignNumbersViewModel(ILocalizationService localization, int startNumber = 1)
+    /// <param name="titleKey">The dialog title (the relay teams page numbers teams, not participants).</param>
+    public AssignNumbersViewModel(
+        ILocalizationService localization, int startNumber = 1, string titleKey = "Participants.AssignNumbers.Title")
     {
         Localization = localization;
+        _titleKey = titleKey;
         _startNumber = startNumber < 1 ? 1 : startNumber;
         Localization.PropertyChanged += (_, _) => OnPropertyChanged(nameof(Title));
     }
 
     public ILocalizationService Localization { get; }
 
-    public string Title => Localization.Get("Participants.AssignNumbers.Title");
+    public string Title => Localization.Get(_titleKey);
 
     /// <summary>The number the first assigned participant receives. Bound to a +/- stepper.</summary>
     [ObservableProperty]

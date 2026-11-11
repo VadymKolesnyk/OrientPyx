@@ -6,6 +6,12 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 public enum RosterField
 {
     Groups,
+    // Relay, only on the days that run one (DayIds): the leg number «100.2» (read-only, Р-23) beside «Номер», and the
+    // team's name («Команда», like a rogaine team), its number and the runner's leg after the identity columns.
+    Relay,
+    RelayTeam,
+    RelayTeamNumber,
+    RelayLeg,
     Chips,
     // Per-day «Оплата», only while the competition charges the entry fee per day (CompetitionInfo.PaymentPerDay);
     // otherwise the payment is one competition-level identity column and this block is not built at all.
@@ -67,4 +73,10 @@ public sealed partial class RosterFieldBlockViewModel : ObservableObject
 
     /// <summary>True when this block's merged view should consider/write the given day cell.</summary>
     public bool IsRelevant(RosterDayCellViewModel cell) => _isRelevant(cell);
+
+    /// <summary>
+    /// The days this block has columns for; null = every day. The «Естафета» block spans only the relay days (an empty
+    /// set drops it), set by the page on each load.
+    /// </summary>
+    public IReadOnlyCollection<Guid>? DayIds { get; set; }
 }

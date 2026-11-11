@@ -11,7 +11,7 @@ namespace OrientPyx.BusinessLogic.Models;
 /// <param name="ActualTime">Finish of the last leg − start of leg 1; the time limit applies to it (Р-31).</param>
 public sealed record TeamDayResult(
     Guid TeamId,
-    int Number,
+    int? Number,
     string Name,
     Guid GroupId,
     FinishStatus Status,
@@ -46,7 +46,8 @@ public sealed record TeamDayResult(
     /// <summary>Discipline values of the team row (a plugin's ranking may set them).</summary>
     public IReadOnlyDictionary<string, object?> Extra { get; init; } = new Dictionary<string, object?>();
 
-    public string Bib(int leg) => RelayBib.Format(Number, leg);
+    /// <summary>The leg number «100.2»; blank while the team has no number.</summary>
+    public string Bib(int leg) => RelayTeamNumbers.Bib(Number, leg);
 }
 
 /// <summary>One leg of a relay team (Р-27…Р-32).</summary>

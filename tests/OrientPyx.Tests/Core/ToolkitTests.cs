@@ -259,8 +259,6 @@ public sealed class ToolkitTests
         Assert.Empty(RelayRestartTimes.Parse("not json"));
         Assert.Equal("", RelayRestartTimes.Format(new Dictionary<int, TimeSpan>()));
 
-        var courses = RelayLegCourses.Parse("{\"1\":\"A\",\"2\":\"B\",\"3\":\" \"}");
-        Assert.Equal(new Dictionary<int, string> { [1] = "A", [2] = "B" }, courses);
         Assert.Equal(["A", "B", "B"], RelayLegCourses.ParseSet("A, B;B"));
     }
 

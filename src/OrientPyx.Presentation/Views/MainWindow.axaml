@@ -354,6 +354,8 @@
                           Command="{Binding OpenDrawCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Start.ClassicDraw]}"
                           Command="{Binding OpenClassicDrawCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Start.MassStartDraw]}"
+                          Command="{Binding OpenMassStartDrawCommand}" />
                 <Separator />
                 <MenuItem Header="{Binding Localization[Menu.Start.StartProtocol]}"
                           Command="{Binding OpenStartProtocolCommand}" />
@@ -362,6 +364,8 @@
                 <Separator />
                 <MenuItem Header="{Binding Localization[Menu.Start.MapCounts]}"
                           Command="{Binding OpenMapCountsCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Start.NumberVariants]}"
+                          Command="{Binding OpenNumberVariantsCommand}" />
             </MenuItem>
 
             <!-- Finish: read-out of finishing chips, while a competition is open -->
@@ -621,18 +625,21 @@
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
+                    <!-- An amber card, not a white one: it must stand out against the white tables and dialogs it
+                         floats over. Dark amber text keeps the contrast on the tinted background. -->
                     <DataTemplate x:DataType="services:ToastItem">
-                        <Border Background="{DynamicResource SurfaceCard}"
-                                BorderBrush="#F6C343" BorderThickness="5,1,1,1"
+                        <Border Background="#FEF3C7"
+                                BorderBrush="#F59E0B" BorderThickness="5,1,1,1"
                                 CornerRadius="10" Padding="14,12"
-                                BoxShadow="0 8 24 0 #33000000">
+                                BoxShadow="0 10 28 0 #40000000">
                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                <controls:Icon Grid.Column="0" Kind="CreditCard" Size="20"
-                                               Foreground="#B7791F"
+                                <controls:Icon Grid.Column="0" Kind="Info" Size="20"
+                                               Foreground="#B45309"
                                                VerticalAlignment="Top" Margin="0,2,0,0" />
                                 <StackPanel Grid.Column="1" Spacing="2">
-                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding Message}" Classes="subtitle" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"
+                                               Foreground="#78350F" />
+                                    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Foreground="#92400E" />
                                 </StackPanel>
                                 <Button Grid.Column="2" Classes="ghost small" Padding="4"
                                         VerticalAlignment="Top" Focusable="False"

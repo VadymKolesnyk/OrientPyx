@@ -126,6 +126,16 @@ public sealed class RosterColumnBuilder
             bands.Add(new SheetBand(SheetBand.BandKind.Identity, [col]) { Header = col.Header });
         }
 
+        // Relay: the leg number «100.2» (Р-23, read-only) right beside the runner's own «Номер» — they are different
+        // numbers — and «Команда» / «Номер команди» / «Етап» after the identity columns, where a rogaine «Команда» sits.
+        // Only the days that run a relay get columns; none ⇒ no relay column at all.
+        if (blocks.FirstOrDefault(b => b.Field == RosterField.Relay) is { } bibBlock
+            && BuildRelayBand(days, bibBlock) is { } bibBand)
+            bands.Insert(Math.Min(1, bands.Count), bibBand);
+        foreach (var block in blocks.Where(b => b.Field is RosterField.RelayTeam or RosterField.RelayTeamNumber or RosterField.RelayLeg))
+            if (BuildRelayBand(days, block) is { } relayBand)
+                bands.Add(relayBand);
+
         // The competition's additional participant fields (Р-13), after the identity columns.
         CustomFieldColumns.Append(bands, customFields, _loc);
 
@@ -137,6 +147,9 @@ public sealed class RosterColumnBuilder
         // Field blocks: collapsed ⇒ one merged column; expanded ⇒ one column per day.
         foreach (var block in blocks)
         {
+            // Built with the identity columns above.
+            if (RelayColumns.IsRelay(block.Field))
+                continue;
             // The «Бали» (score) and editable «Бонус» blocks only appear on point-scoring days.
             if (block.Field is RosterField.Score or RosterField.Bonus && !showScore)
                 continue;
@@ -306,6 +319,68 @@ public sealed class RosterColumnBuilder
         // Carry user-set widths forward where a column at the same position/kind still exists.
         CarryWidths(previous, bands);
         return bands;
+    }
+
+    // A relay field's band over the relay days: one plain column when a single day runs a relay (the usual case — no
+    // block toggle for one column), else a block with a column per relay day whose merged cell lists them read-only.
+    // Null when no day runs a relay.
+    private SheetBand? BuildRelayBand(IReadOnlyList<EventDay> days, RosterFieldBlockViewModel block)
+    {
+        var relayDays = block.DayIds ?? [];
+        var span = Enumerable.Range(0, days.Count).Where(i => relayDays.Contains(days[i].Id)).ToList();
+        if (span.Count == 0)
+            return null;
+
+        var label = _loc.Get(block.LabelKey);
+        string DayLabel(int i) => $"{_loc.Get("Header.Day")} {days[i].Number}";
+        if (span.Count == 1)
+        {
+            var i = span[0];
+            var header = days.Count == 1 ? label : $"{label} — {DayLabel(i)}";
+            // Wide enough for its header with the sort handle («Номер етапу — День 2»).
+            var single = RelayLeaf(block.Field, i, header, $"block:{block.Field}", header,
+                RelayColumns.Width(block.Field) + (days.Count == 1 ? 0 : 60));
+            return new SheetBand(SheetBand.BandKind.Identity, [single]) { Header = header };
+        }
+
+        var cols = new List<SheetColumn>();
+        if (block.IsCollapsed)
+        {
+            var merged = block.Field switch
+            {
+                RosterField.RelayTeam => nameof(ParticipantRosterRowViewModel.CollapsedRelayTeam),
+                RosterField.RelayTeamNumber => nameof(ParticipantRosterRowViewModel.CollapsedRelayTeamNumber),
+                RosterField.RelayLeg => nameof(ParticipantRosterRowViewModel.CollapsedRelayLeg),
+                _ => nameof(ParticipantRosterRowViewModel.CollapsedRelayBib),
+            };
+            cols.Add(new SheetColumn(SheetCellKind.CollapsedResultText)
+            {
+                Header = string.Empty,
+                IdentityPath = merged,
+                SortPath = merged,
+                Width = 160,
+                WidthCapped = true,
+                Key = $"block:{block.Field}",
+                PickerLabel = label,
+            });
+        }
+        else
+        {
+            foreach (var i in span)
+                cols.Add(RelayLeaf(block.Field, i, DayLabel(i), $"block:{block.Field}:day{days[i].Number}", $"{label} — {DayLabel(i)}",
+                    Math.Max(100, RelayColumns.Width(block.Field))));
+        }
+        return new SheetBand(SheetBand.BandKind.FieldBlock, cols) { Header = label, Block = block };
+    }
+
+    // One relay day's column of a relay field, bound to that day's cell (see RelayColumns).
+    private static SheetColumn RelayLeaf(RosterField field, int dayIndex, string header, string key, string pickerLabel, double width)
+    {
+        var day = $"Days[{dayIndex}].";
+        var column = RelayColumns.Column(field, header, key, pickerLabel,
+            day + nameof(RosterDayCellViewModel.Relay) + ".", day, width);
+        column.DayIndex = dayIndex;
+        return column;
     }
 
     // Points a per-day «Оплата» leaf at its own day cell's status, so each day column tints against that

@@ -60,6 +60,10 @@ public sealed class DayColumnBuilder
         var numberBand = Identity(SheetCellKind.IdentityText, "Participants.Col.Number", nameof(ParticipantDayRowViewModel.Number));
         numberBand.Columns[0].ShowCount = true; // the status bar renders the row count under «Номер»
         bands.Add(numberBand);
+        // Relay day (Р-23): the leg number «100.2» right beside the runner's own «Номер» — the two are different
+        // numbers. Read-only (it follows the team's number and the leg), searchable and filterable (Р-24).
+        if (showRelay)
+            bands.Add(RelayBand(RosterField.Relay, "Participants.Col.RelayBib"));
         bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.FullName", nameof(ParticipantDayRowViewModel.FullName), fixedWidth: 220));
         // Rank: a combo bound on the row (RankOptions/SelectedRank); sorted by the selected label.
         bands.Add(Identity(SheetCellKind.RowRank, "Participants.Col.Rank", path: string.Empty,
@@ -93,14 +97,13 @@ public sealed class DayColumnBuilder
         // This day's group (combo bound directly on the row) and chip (free text, unique per day).
         bands.Add(Identity(SheetCellKind.RowGroup, "Participants.Col.Group", path: string.Empty,
             sortPath: $"{nameof(ParticipantDayRowViewModel.SelectedGroup)}.{nameof(GroupOption.Label)}"));
-        // Relay day (Р-23): the runner's team, leg and leg number «100.2» — read-only, set on the «Команди» page.
-        // The leg number is searchable/filterable like any column, so «100.2» or «100» finds the runner/team (Р-24).
+        // Relay day: «Команда» (the team's name, like a rogaine team), «Номер команди» (the team's own number — a change
+        // is asked) and «Етап» (a teammate's leg swaps the two) — edited here as well as on «Команди».
         if (showRelay)
         {
-            bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.RelayTeam", nameof(ParticipantDayRowViewModel.RelayTeamText),
-                sortPath: nameof(ParticipantDayRowViewModel.RelayTeamSort), fixedWidth: 90));
-            bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.RelayLeg", nameof(ParticipantDayRowViewModel.RelayLegText), fixedWidth: 60));
-            bands.Add(Identity(SheetCellKind.RowResultText, "Participants.Col.RelayBib", nameof(ParticipantDayRowViewModel.RelayBibText), fixedWidth: 100));
+            bands.Add(RelayBand(RosterField.RelayTeam, "Participants.Col.RelayTeamName"));
+            bands.Add(RelayBand(RosterField.RelayTeamNumber, "Participants.Col.RelayTeam"));
+            bands.Add(RelayBand(RosterField.RelayLeg, "Participants.Col.RelayLeg"));
         }
         var chipBand = Identity(SheetCellKind.ChipText, "Participants.Col.Chip", nameof(ParticipantDayRowViewModel.Chip));
         chipBand.Columns[0].RentalChipColumn = true; // right-click offers the rental toggle
@@ -212,6 +215,16 @@ public sealed class DayColumnBuilder
         col.CopyPath = paymentPath;
         // Both row VMs expose the numeric computed total fee used for the still-owed tooltip line.
         col.SummaryOwedPath = nameof(ParticipantRosterRowViewModel.TotalEntryFee);
+    }
+
+    // A relay column of the day grid, bound to the row's Relay.<path> (see RelayColumns). Keyed off the header key, as
+    // the relay columns always were, so a saved view (hidden / order / width) still applies.
+    private SheetBand RelayBand(RosterField field, string headerKey)
+    {
+        var header = _loc.Get(headerKey);
+        var column = RelayColumns.Column(field, header, $"id:{headerKey}", header,
+            nameof(ParticipantDayRowViewModel.Relay) + ".", dayPrefix: null, RelayColumns.Width(field));
+        return new SheetBand(SheetBand.BandKind.Identity, [column]) { Header = header };
     }
 
     private SheetBand Identity(SheetCellKind kind, string headerKey, string path, double? fixedWidth = null, string? sortPath = null)

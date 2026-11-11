@@ -94,12 +94,9 @@ public class GroupDaySettings
     /// <see cref="GroupCourseVariant"/> rows.</summary>
     public RelayCourseMode CourseAssignmentMode { get; set; } = RelayCourseMode.Group;
 
-    /// <summary>Relay <see cref="RelayCourseMode.ByLeg"/>: course code by leg (JSON object «leg → code»). Read and
-    /// written through <c>RelayLegCourses</c>.</summary>
-    public string LegCoursesJson { get; set; } = string.Empty;
-
     /// <summary>Relay <see cref="RelayCourseMode.TeamSet"/>: the group's default course set, codes separated by
-    /// spaces («A B B»); a team's own <see cref="RelayTeam.CourseSet"/> overrides it.</summary>
+    /// spaces («A B B»); a team's own <see cref="RelayTeam.CourseSet"/> and the courses assigned to its leg numbers
+    /// (<see cref="LegCourseAssignment"/>, e.g. from OCAD) override it.</summary>
     public string TeamCourseSet { get; set; } = string.Empty;
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;

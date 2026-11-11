@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Reflection;
+using Avalonia.VisualTree;
 using CommunityToolkit.Mvvm.Input;
 using OrientPyx.Presentation.ViewModels;
 using OrientPyx.Presentation.ViewModels.Pages;
@@ -94,6 +95,7 @@ public sealed class HeadlessUiTests
             var name = property.Name["Open".Length..^"Command".Length];
             visited.Add($"{name} → {page.GetType().Name} «{page.Title}»");
             await _app.ScreenshotAsync($"03-page-{name}");
+            await AssertDistinctColumnKeysAsync(name);
             AssertNoUiErrors(property.Name);
         }
 
@@ -219,6 +221,24 @@ public sealed class HeadlessUiTests
     {
         var field = typeof(MainWindowViewModel).GetField("_session", BindingFlags.NonPublic | BindingFlags.Instance)!;
         return ((OrientPyx.BusinessLogic.Interfaces.ISessionService)field.GetValue(_app.Vm)!).CurrentEvent?.Identifier;
+    }
+
+    // A table keys a column's filter, hidden flag, saved width and the filter popup's anchor by SheetColumn.Key, so
+    // two columns on one key act as one (a combo with no sort path once shared the delete column's key: its filter
+    // popup opened over the delete column).
+    private async Task AssertDistinctColumnKeysAsync(string page)
+    {
+        var bandsField = typeof(OrientPyx.Presentation.Controls.SheetTable)
+            .GetField("_bands", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var duplicates = await _app.OnUiAsync(() => _app.Window.GetVisualDescendants()
+            .OfType<OrientPyx.Presentation.Controls.SheetTable>()
+            .SelectMany(table => ((IReadOnlyList<OrientPyx.Presentation.Controls.SheetBand>)bandsField.GetValue(table)!)
+                .SelectMany(band => band.Columns)
+                .GroupBy(column => column.Key)
+                .Where(group => group.Count() > 1)
+                .Select(group => $"{table.LayoutKey ?? table.Name}: «{group.Key}» × {group.Count()}"))
+            .ToList());
+        Assert.True(duplicates.Count == 0, $"{page}: columns sharing a key — {string.Join("; ", duplicates)}");
     }
 
     private void AssertNoUiErrors(string? step = null)

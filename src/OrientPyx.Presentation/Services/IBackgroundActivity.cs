@@ -37,7 +37,7 @@ public interface IBackgroundActivity : INotifyPropertyChanged
     /// <summary>Short, already-localized name shown as the row title (e.g. "Reading chips").</summary>
     string Title { get; }
 
-    /// <summary>Live one-line status (e.g. "Watching rentchip.csv every 5 s"). May be empty.</summary>
+    /// <summary>Live one-line status (e.g. "Watching rentchip.csv every 1 s"). May be empty.</summary>
     string StatusText { get; }
 
     /// <summary>Current run state, driving the row's icon/label and the pause-vs-resume affordance.</summary>

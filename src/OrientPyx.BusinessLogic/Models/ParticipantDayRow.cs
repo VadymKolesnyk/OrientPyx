@@ -62,6 +62,10 @@ public sealed record ParticipantDayRow(
     /// <summary>The participant's additional-field values by field key (participant-level, Р-13). Read-only here;
     /// edits go through <c>ICompetitionEditorService.SetParticipantFieldAsync</c>.</summary>
     public IReadOnlyDictionary<string, string> Fields { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>The runner's relay team and leg on this day, as stored (null when not on a team). Edited through
+    /// <c>ICompetitionEditorService.PlaceRelayRunnerAsync</c>, never by the row save.</summary>
+    public RelayPlacement? Relay { get; init; }
 }
 
 /// <summary>One participating day's fee inputs: which day it is, the group assigned (null = none), the

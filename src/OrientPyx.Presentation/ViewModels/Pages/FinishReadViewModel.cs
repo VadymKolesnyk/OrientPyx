@@ -179,7 +179,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     private string _autoReadFilePath = string.Empty;
 
     [ObservableProperty]
-    private int _autoReadIntervalSeconds = 5;
+    private int _autoReadIntervalSeconds = 1;
 
     [ObservableProperty]
     private bool _autoReadEnabled;

@@ -67,4 +67,12 @@ public sealed record RosterDayCell(
     // on point-scoring days, already folded into Result.Score by ComputeDayResultsAsync.
     int? Bonus,
     // This day's computed run result (read-only except Status). Empty for a non-member or an unread chip.
-    ParticipantDayResult Result);
+    ParticipantDayResult Result)
+{
+    /// <summary>The day runs a relay (a relay group, or at least one relay team): the roster's «Естафета» cell is
+    /// live on it.</summary>
+    public bool IsRelayDay { get; init; }
+
+    /// <summary>The runner's relay team and leg on the day, as stored (null when not on a team).</summary>
+    public RelayPlacement? Relay { get; init; }
+}

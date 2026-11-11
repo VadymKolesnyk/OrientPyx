@@ -34,16 +34,25 @@ public sealed class CourseNameSplitter : ICourseNameSplitter
         return result;
     }
 
-    // Map Latin aliases to the Ukrainian letters used by the groups (W→Ж, M/М→Ч, E→Е, A→А), then
-    // trim. Order matches the original tool: Latin M and Cyrillic М both collapse to Ч.
-    private static string Normalize(string token) =>
-        token
+    // Map Latin aliases to the Ukrainian letters used by the groups (W→Ж, M/М→Ч, E→Е, A→А) — only in a
+    // token shaped like a group code: a prefix of group letters followed by a digit («M21E», «МЖ55»).
+    // Any other name is a name, not a code, and stays as typed («МІКС20» must not become «ЧІКС20»).
+    private static string Normalize(string token)
+    {
+        token = token.Trim();
+        var digit = 0;
+        while (digit < token.Length && !char.IsDigit(token[digit]))
+            digit++;
+        if (digit == 0 || digit == token.Length || !token[..digit].All(PrefixChars.Contains))
+            return token;
+
+        return token
             .Replace("W", "Ж")
             .Replace("M", "Ч")
             .Replace("М", "Ч")
             .Replace("E", "Е")
-            .Replace("A", "А")
-            .Trim();
+            .Replace("A", "А");
+    }
 
     // "ЧЖ55" → ["Ч55", "Ж55"] when the first two chars are both prefixes and the third is a digit;
     // otherwise the token is returned unchanged.

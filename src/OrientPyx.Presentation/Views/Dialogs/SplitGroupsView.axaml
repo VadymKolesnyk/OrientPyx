@@ -63,7 +63,7 @@
                                         <TextBlock Text="{Binding VariantsLabel}"
                                                    Classes="muted" FontSize="12"
                                                    TextWrapping="Wrap"
-                                                   IsVisible="{Binding HasVariants}" />
+                                                   IsVisible="{Binding HasVariations}" />
                                     </StackPanel>
 
                                     <!-- Split groups: each a compact chip; add button trails inline. -->
@@ -105,6 +105,36 @@
                                                 Padding="8,4" FontSize="13"
                                                 HorizontalAlignment="Left"
                                                 Command="{Binding AddGroupCommand}" />
+
+                                        <!-- A course with several variations: scatter or relay, and the relay's leg
+                                             courses. Each radio pair sits in its own panel (grouped by parent). -->
+                                        <Border IsVisible="{Binding HasVariations}"
+                                                Background="{DynamicResource SurfaceSubtle}"
+                                                CornerRadius="6" Padding="10,8">
+                                            <StackPanel Spacing="6">
+                                                <StackPanel Orientation="Horizontal" Spacing="14">
+                                                    <TextBlock Text="{Binding Localization[Split.Kind]}"
+                                                               Classes="label" VerticalAlignment="Center" />
+                                                    <RadioButton Content="{Binding Localization[Split.Kind.Scatter]}"
+                                                                 IsChecked="{Binding IsScatter, Mode=TwoWay}" />
+                                                    <RadioButton Content="{Binding Localization[Split.Kind.Relay]}"
+                                                                 IsChecked="{Binding IsRelay, Mode=TwoWay}" />
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="14"
+                                                            IsVisible="{Binding IsRelay}">
+                                                    <TextBlock Text="{Binding Localization[Split.RelayMode]}"
+                                                               Classes="label" VerticalAlignment="Center" />
+                                                    <RadioButton Content="{Binding Localization[Split.RelayMode.ByBib]}"
+                                                                 ToolTip.Tip="{Binding Localization[Split.RelayMode.ByBib.Hint]}"
+                                                                 IsChecked="{Binding IsByBib, Mode=TwoWay}" />
+                                                    <RadioButton Content="{Binding Localization[Split.RelayMode.TeamSet]}"
+                                                                 ToolTip.Tip="{Binding Localization[Split.RelayMode.TeamSet.Hint]}"
+                                                                 IsChecked="{Binding IsTeamSet, Mode=TwoWay}" />
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding CombinationsLabel}"
+                                                           Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Border>
                                     </StackPanel>
                                 </Grid>
                             </Border>

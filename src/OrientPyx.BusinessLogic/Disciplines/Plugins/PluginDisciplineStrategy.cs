@@ -175,7 +175,7 @@ public sealed class PluginDisciplineStrategy : IDisciplineStrategy
                 : null).ToList();
             return new TeamCompetitor
             {
-                Row = row, Number = team.Number, Name = team.Name, Members = members, Restarted = team.Restarted
+                Row = row, Number = team.Number ?? 0, Name = team.Name, Members = members, Restarted = team.Restarted
             };
         }).ToList();
 

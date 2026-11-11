@@ -154,8 +154,8 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
     {
         StartProtocolColumn.StartTime => team.StartTime is { } t ? t.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture) : string.Empty,
         StartProtocolColumn.Sequence => seq.ToString(CultureInfo.InvariantCulture),
-        StartProtocolColumn.Number => team.Number.ToString(CultureInfo.InvariantCulture),
-        StartProtocolColumn.FullName => team.Name.Length > 0 ? team.Name : team.Number.ToString(CultureInfo.InvariantCulture),
+        StartProtocolColumn.Number => RelayTeamNumbers.Text(team.Number),
+        StartProtocolColumn.FullName => team.Name.Length > 0 ? team.Name : RelayTeamNumbers.Text(team.Number),
         StartProtocolColumn.Club => team.ClubName,
         StartProtocolColumn.Region => team.RegionName,
         StartProtocolColumn.Group => groupName,
@@ -167,7 +167,7 @@ public sealed class StartProtocolBuilder : IStartProtocolBuilder
     private static string LegCell(StartProtocolColumn column, StartProtocolTeam team, StartProtocolLeg leg,
         StartProtocolLabels labels) => column switch
     {
-        StartProtocolColumn.Number => RelayBib.Format(team.Number, leg.Leg),
+        StartProtocolColumn.Number => RelayTeamNumbers.Bib(team.Number, leg.Leg),
         StartProtocolColumn.FullName => leg.Runner?.FullName ?? labels.RelayVacantLeg,
         StartProtocolColumn.StartTime or StartProtocolColumn.Sequence or StartProtocolColumn.Group
             or StartProtocolColumn.Team => string.Empty,

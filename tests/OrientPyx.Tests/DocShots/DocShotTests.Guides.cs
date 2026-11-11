@@ -100,13 +100,35 @@ public sealed partial class DocShotTests
         await _s.OnUiAsync(() => groups.SelectedGroup = groups.Groups.First(g => g.Name == "Ч21"));
         await _s.SettleLongAsync();
         await _s.SetBottomPaneHeightAsync(400);
-        await _s.ShotAsync("relay-groups", "«Групи» естафети з вибраною групою: кількість етапів, масовий старт, призначення дистанцій.");
+        await _s.ShotAsync("relay-groups", "«Групи» естафети з вибраною групою: кількість етапів, ранжування з перезапуском, призначення дистанцій.");
         await _s.ResizeAsync(DocShooter.Width, DocShooter.Height);
         var teams = await _s.PageAsync<RelayTeamsViewModel>(vm => vm.OpenRelayTeamsCommand);
         await _s.WaitUntilAsync(() => teams.Teams.Count > 0, "relay teams listed");
         await _s.OnUiAsync(() => teams.SelectedTeam = teams.Teams[0]);
         await _s.SettleLongAsync();
         await _s.ShotAsync("relay-teams", "«Змагання → Команди (естафета)»: команди і їхні етапи.");
+
+        await _s.PageAsync<MassStartDrawViewModel>(vm => vm.OpenMassStartDrawCommand);
+        await _s.ShotAsync("relay-mass-start", "«Старт → Масовий старт» для естафети: старт 1-го етапу і перезапуски етапів.");
+
+        // The participants' day table: «Номер етапу» beside «Номер», «Команда» / «Номер команди» / «Етап» after «Група» — only the
+        // columns that tell the story (the view is reset afterwards).
+        var participants = await _s.PageAsync<ParticipantsViewModel>(vm => vm.OpenParticipantsCommand);
+        await SelectParticipantsDayAsync(participants, roster: false);
+        var table = await _s.FindAsync<SheetTable>("DayTable");
+        var keep = new[] { "Participants.Col.Number", "Participants.Col.RelayBib", "Participants.Col.FullName",
+            "Participants.Col.Group", "Participants.Col.RelayTeam", "Participants.Col.RelayLeg", "Participants.Col.RelayTeamName",
+            "Participants.Col.Chip" }.Select(L).ToHashSet();
+        await _s.OnUiAsync(() =>
+        {
+            foreach (var column in table.Bands!.SelectMany(b => b.Columns).Where(c => c.Key.Length > 0 && !keep.Contains(c.Header)).ToList())
+                table.SetColumnHidden(column.Key, true);
+        });
+        await _s.SettleLongAsync();
+        await _s.ShotAsync("relay-participants", "Учасники естафети: «Номер етапу» поруч із номером учасника; «Команда», «Номер команди» й «Етап» редагуються в таблиці.");
+        await _s.OnUiAsync(() => table.ResetLayout());
+        await _s.SettleLongAsync();
+
         await FinishShotAsync("relay-finish", "Зчитка естафети: етап учасника і номер на кшталт «101.2».", null, index: 1);
         await ProtocolPreviewShotAsync("relay-protocol", "Протокол естафети: команди з результатами етапів.");
     }

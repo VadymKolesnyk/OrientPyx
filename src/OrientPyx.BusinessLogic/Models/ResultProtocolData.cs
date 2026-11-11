@@ -66,7 +66,7 @@ public sealed record ResultProtocolGroup(
 
 /// <summary>One relay team in a protocol group: its identity, its computed result and one entry per leg.</summary>
 public sealed record RelayProtocolTeam(
-    int Number,
+    int? Number,
     string Name,
     string ClubName,
     string RegionName,

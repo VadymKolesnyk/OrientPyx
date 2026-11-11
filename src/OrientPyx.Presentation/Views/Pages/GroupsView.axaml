@@ -203,9 +203,9 @@
                         </Button>
                     </StackPanel>
                 </Grid>
-                <!-- Relay group settings (Р-27…Р-29, Р-35): legs, mass start of leg 1, a restart time per leg
-                     2…N and how a restarted team ranks. Shown only for a relay group; the course below is
-                     the leg course every leg runs. -->
+                <!-- Relay group settings (Р-35, Р-41): legs, how a restarted team ranks and the leg courses. Shown
+                     only for a relay group; the course below is the leg course every leg runs. The mass start of
+                     leg 1 and the restarts are set on «Старт → Масовий старт». -->
                 <Border DockPanel.Dock="Top"
                         IsVisible="{Binding IsRelayEditorVisible}"
                         IsEnabled="{Binding !IsDayLocked}"
@@ -217,53 +217,18 @@
                             <TextBox Width="60" Text="{Binding RelayLegCountText, Mode=TwoWay}" />
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,16,2">
-                            <TextBlock Text="{Binding Localization[Groups.Relay.MassStart]}" VerticalAlignment="Center" />
-                            <TextBox Width="90" Text="{Binding RelayMassStartText, Mode=TwoWay}"
-                                     PlaceholderText="hh:mm:ss" />
-                        </StackPanel>
-                        <ItemsControl ItemsSource="{Binding RelayRestarts}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <WrapPanel Orientation="Horizontal" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="pages:RelayRestartItemViewModel">
-                                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,16,2">
-                                        <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
-                                        <TextBox Width="90" Text="{Binding Text, Mode=TwoWay}" PlaceholderText="hh:mm:ss" />
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,16,2">
                             <TextBlock Text="{Binding Localization[Groups.Relay.RestartRanking]}" VerticalAlignment="Center" />
                             <ComboBox MinWidth="200"
                                       ItemsSource="{Binding RelayRestartRankingOptions}"
                                       SelectedItem="{Binding SelectedRelayRestartRanking, Mode=TwoWay}" />
                         </StackPanel>
-                        <!-- Leg courses (Р-41): one course for every leg, by leg, by leg number, or a team set. -->
+                        <!-- Leg courses (Р-41): one course for every leg, by leg number, or a team set. -->
                         <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,16,2">
                             <TextBlock Text="{Binding Localization[Groups.Relay.CourseMode]}" VerticalAlignment="Center" />
                             <ComboBox MinWidth="200"
                                       ItemsSource="{Binding RelayCourseModeOptions}"
                                       SelectedItem="{Binding SelectedRelayCourseMode, Mode=TwoWay}" />
                         </StackPanel>
-                        <ItemsControl ItemsSource="{Binding RelayLegCourses}" IsVisible="{Binding IsRelayByLeg}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <WrapPanel Orientation="Horizontal" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="pages:RelayLegCourseItemViewModel">
-                                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,16,2">
-                                        <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
-                                        <TextBox Width="60" Text="{Binding Text, Mode=TwoWay}" PlaceholderText="A" />
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
                         <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,16,2"
                                     IsVisible="{Binding IsRelayTeamSet}">
                             <TextBlock Text="{Binding Localization[Groups.Relay.TeamCourseSet]}" VerticalAlignment="Center" />

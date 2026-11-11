@@ -25,8 +25,10 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     private int _participantCount;
     private readonly IDisciplineStrategyProvider _strategies;
     private readonly Action<GroupDayRowViewModel> _requestSave;
+    private readonly Action<GroupDayRowViewModel>? _requestLegCountSave;
 
     private bool _initialized;
+    private bool _showingLegCount;
 
     [ObservableProperty]
     private string _name;
@@ -60,6 +62,13 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
 
     [ObservableProperty]
     private string _timeLimitText;
+
+    /// <summary>«Етапів»: the relay group's leg count as typed in the grid. It is saved with the relay settings (not
+    /// with the row), so a change goes to the page's own callback.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LegCountDisplay))]
+    [NotifyPropertyChangedFor(nameof(LegCountInvalid))]
+    private string _legCountText;
 
     [ObservableProperty]
     private DisciplineOverrideOption _selectedDiscipline;
@@ -119,7 +128,8 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         IReadOnlyList<PointsRuleOption> pointsRuleOptions,
         string courseSetterPlaceholder,
         string courseSetterCategoryPlaceholder,
-        Action<GroupDayRowViewModel> requestSave)
+        Action<GroupDayRowViewModel> requestSave,
+        Action<GroupDayRowViewModel>? requestLegCountSave = null)
     {
         _settingsId = row.SettingsId;
         _groupId = row.GroupId;
@@ -128,6 +138,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         _participantCount = row.ParticipantCount;
         _strategies = strategies;
         _requestSave = requestSave;
+        _requestLegCountSave = requestLegCountSave;
         Localization = localization;
 
         _disciplineOptions = BuildDisciplineOptions(row);
@@ -140,6 +151,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         _requiredCountText = FormatInt(row.RequiredControlCount);
         _penaltyText = FormatDecimal(row.PenaltyPerMinute);
         _timeLimitText = FormatTime(row.TimeLimitSeconds);
+        _legCountText = FormatInt(row.LegCount);
         _courseSetter = row.CourseSetter;
         _courseSetterCategory = row.CourseSetterCategory;
         _courseSetterPlaceholder = courseSetterPlaceholder ?? string.Empty;
@@ -244,6 +256,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
             DistanceText = FormatDecimal(row.DistanceKm);
             RequiredCountText = FormatInt(row.RequiredControlCount);
             TimeLimitText = FormatTime(row.TimeLimitSeconds);
+            LegCountText = FormatInt(row.LegCount);
             CourseSetter = row.CourseSetter;
             CourseSetterCategory = row.CourseSetterCategory;
             CourseSetterPlaceholder = courseSetterPlaceholder ?? string.Empty;
@@ -308,6 +321,37 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
 
     /// <summary>True when the group runs a relay (teams on consecutive legs) — the page shows the relay settings.</summary>
     public bool IsRelay => Strategy.Competitors == CompetitorModel.TeamWithLegs;
+
+    /// <summary>What the «Етапів» cell shows: the leg count of a relay group, blank for any other.</summary>
+    public string LegCountDisplay => IsRelay ? LegCountText : string.Empty;
+
+    /// <summary>The typed leg count when it is a usable one (1…50); null otherwise (not saved).</summary>
+    public int? LegCount =>
+        int.TryParse((LegCountText ?? string.Empty).Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var n)
+        && n is >= 1 and <= 50 ? n : null;
+
+    /// <summary>A relay group's «Етапів» cell holds no usable count (blank, 0, more than 50) — tinted red.</summary>
+    public bool LegCountInvalid => IsRelay && LegCount is null;
+
+    /// <summary>Shows a leg count saved elsewhere (the relay settings under the grid) without saving it again.</summary>
+    public void ShowLegCount(int legs)
+    {
+        _showingLegCount = true;
+        try
+        {
+            LegCountText = legs.ToString(CultureInfo.InvariantCulture);
+        }
+        finally
+        {
+            _showingLegCount = false;
+        }
+    }
+
+    partial void OnLegCountTextChanged(string value)
+    {
+        if (_initialized && !_showingLegCount)
+            _requestLegCountSave?.Invoke(this);
+    }
 
     /// <summary>True when the course order is a «mixed» pattern (previewed and validated on the page).</summary>
     public bool UsesCoursePattern => Strategy.UsesCoursePattern;
@@ -443,6 +487,8 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         OnPropertyChanged(nameof(UsesTimeLimit));
         OnPropertyChanged(nameof(IsScatter));
         OnPropertyChanged(nameof(IsRelay));
+        OnPropertyChanged(nameof(LegCountDisplay));
+        OnPropertyChanged(nameof(LegCountInvalid));
         OnPropertyChanged(nameof(UsesCoursePattern));
         OnPropertyChanged(nameof(CourseOrderDisplay));
         OnPropertyChanged(nameof(CanEditCourseOrderInline));

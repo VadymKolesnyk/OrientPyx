@@ -70,6 +70,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // Serialises chip-reassignment prompts so a collapsed-block edit that fans a chip out to several
     // days never stacks overlapping confirm dialogs (the overlay shows one dialog at a time).
     private readonly SemaphoreSlim _chipGate = new(1, 1);
+    // Serialises the relay cells' edits: a fill-down paste of «100.1, 100.2, …» must create a team once and see
+    // each leg the previous row took, and a «leg taken» question shows one at a time.
+    private readonly SemaphoreSlim _relayGate = new(1, 1);
 
     public ParticipantsViewModel(
         ILocalizationService localization,
@@ -119,6 +122,12 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         // Singleton VM: reload when the competition/day changes. SessionChanged may be raised on a
         // pool thread (session writes run inside RunAsync), so marshal onto the UI thread.
         _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        // A drill-in's day grid lasts while the page is on screen (see _drillInDayGrid).
+        PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(IsActive) && !IsActive)
+                _drillInDayGrid = false;
+        };
         // Live data (another station's writes) — see ReloadAsync.
         ObserveData(bus, session, mode,
             DataArea.Participants, DataArea.ParticipantDays, DataArea.Groups, DataArea.GroupDaySettings, DataArea.Regions, DataArea.Clubs, DataArea.Dusshes, DataArea.Chips, DataArea.Fees, DataArea.CustomFields, DataArea.Relay, DataArea.Readouts, DataArea.Days, DataArea.Competition, DataArea.ControlPoints, DataArea.CourseVariants, DataArea.Settings, DataArea.AppData);
@@ -152,6 +161,12 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     public ObservableCollection<RosterFieldBlockViewModel> Blocks { get; } =
     [
         new(RosterField.Groups, "Participants.Roster.Block.Groups", _ => true),
+        // The relay leg number «100.2» — only on the days that run a relay (DayIds, set on load); the column builder
+        // drops the block when no day does.
+        new(RosterField.Relay, "Participants.Roster.Block.Relay", c => c.IsRelayDay),
+        new(RosterField.RelayTeam, "Participants.Col.RelayTeamName", c => c.IsRelayDay),
+        new(RosterField.RelayTeamNumber, "Participants.Col.RelayTeam", c => c.IsRelayDay),
+        new(RosterField.RelayLeg, "Participants.Col.RelayLeg", c => c.IsRelayDay),
         new(RosterField.Chips, "Participants.Roster.Block.Chips", c => c.IsMember),
         // Per-day «Оплата» — relevant on the days the participant runs, like «Чіпи». The column builder
         // drops the block entirely unless the competition charges per day.
@@ -473,12 +488,22 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // exists — still applies it.
     private ParticipantQuickFilter _pendingQuickFilter = ParticipantQuickFilter.None;
 
+    // Set by a drill-in: the page shows the day grid its filter targets even on a one-day competition, where it
+    // otherwise always shows the roster (see ResolveSelectedDay), and keeps it through reloads while the page stays
+    // on screen. Leaving the page clears it, so the next plain open shows the roster again.
+    private bool _drillInDayGrid;
+
     /// <summary>
     /// Asks the page to open with a day-grid filter pre-applied (e.g. only chipless participants). Must be
     /// called before <see cref="LoadAsync"/>; the filter targets the current day's grid, so it forces day
-    /// mode on load. <see cref="ParticipantQuickFilter.None"/> clears any pending request.
+    /// mode on load — on a one-day competition too. <see cref="ParticipantQuickFilter.None"/> clears any
+    /// pending request.
     /// </summary>
-    public void RequestQuickFilter(ParticipantQuickFilter filter) => _pendingQuickFilter = filter;
+    public void RequestQuickFilter(ParticipantQuickFilter filter)
+    {
+        _pendingQuickFilter = filter;
+        _drillInDayGrid = filter != ParticipantQuickFilter.None;
+    }
 
     /// <summary>
     /// Returns the pending quick filter and clears it (so it applies once). Day-grid filters only apply in
@@ -816,11 +841,12 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
     // Picks the option to show: honour a remembered roster choice, else follow the session day, else the
     // first real day. When the picker is hidden (a single real day) the roster wins while it is enabled —
-    // there is no UI to switch back to it, so a stale day choice must not leave the page stuck in day mode.
-    // With the roster off there is no sentinel to fall back to, so a real day is always chosen.
+    // there is no UI to switch back to it, so a stale day choice must not leave the page stuck in day mode. The one
+    // exception is a dashboard drill-in (_drillInDayGrid): its filter lives on the day grid, and it ends when the
+    // page is left. With the roster off there is no sentinel to fall back to, so a real day is always chosen.
     private DayOption? ResolveSelectedDay()
     {
-        if (RosterEnabled && (_rosterChosen || RosterDays.Count <= 1))
+        if (RosterEnabled && (_rosterChosen || (RosterDays.Count <= 1 && !_drillInDayGrid)))
             return DayOptions.FirstOrDefault(o => o.IsRoster);
 
         var current = _session.CurrentDay?.Number;
@@ -890,7 +916,17 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                     groupsByDay[dayId] = previous;
             _groupsByDay = groupsByDay;
 
-            var columnsChanged = !merge || _rosterShowsTeam != showsTeam || _rosterShowsScore != showsScore;
+            // The «Естафета» block spans the days that run a relay (a relay group or a team) — the same on every row.
+            var relayDays = roster.Count == 0
+                ? []
+                : roster[0].Days.Where(c => c.IsRelayDay).Select(c => c.DayId).ToList();
+            var relayBlocks = Blocks.Where(b => b.Field is RosterField.Relay or RosterField.RelayTeam
+                or RosterField.RelayTeamNumber or RosterField.RelayLeg).ToList();
+            var relayDaysChanged = relayBlocks.Any(b => b.DayIds is not { } before || !before.SequenceEqual(relayDays));
+            foreach (var block in relayBlocks)
+                block.DayIds = relayDays;
+
+            var columnsChanged = !merge || _rosterShowsTeam != showsTeam || _rosterShowsScore != showsScore || relayDaysChanged;
             _rosterShowsTeam = showsTeam;
             _rosterShowsScore = showsScore;
 
@@ -936,11 +972,13 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 _strategies.For(day.DefaultDiscipline).UsesParticipantColumn(BusinessLogic.Enums.ParticipantColumn.Team)
                 || dayGroups.Any(g => _strategies.For(g.DisciplineOverride ?? day.DefaultDiscipline)
                     .UsesParticipantColumn(BusinessLogic.Enums.ParticipantColumn.Team));
-            // Relay columns (team / leg / «100.2») when the day or any group runs a relay.
+            // Relay columns («Номер етапу», team, leg, team name) when the day or any group runs a relay, or some
+            // runner of the day is on a relay team.
             var usesRelay =
                 _strategies.For(day.DefaultDiscipline).Competitors == CompetitorModel.TeamWithLegs
                 || dayGroups.Any(g => _strategies.For(g.DisciplineOverride ?? day.DefaultDiscipline).Competitors
-                    == CompetitorModel.TeamWithLegs);
+                    == CompetitorModel.TeamWithLegs)
+                || rows.Any(r => r.Relay is not null);
             // «Бали» applies when the day's discipline scores points, or any group overrides to one.
             var usesScore =
                 _strategies.For(day.DefaultDiscipline).UsesControlPointPoints
@@ -1152,7 +1190,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             RequestDayRowClubChange, RequestDayRowAddClub,
             RequestDayRowDusshChange, RequestDayRowAddDussh,
             RequestRowRaisedFeeChange, RequestRowDiscountChange,
-            RequestDayRowResultStatusChange, RequestDayRowBonusChange, RequestDayRowPaymentChange);
+            RequestDayRowResultStatusChange, RequestDayRowBonusChange, RequestDayRowPaymentChange,
+            RequestRelayPlace, RequestRelayTeamEdit);
 
     private ParticipantRosterRowViewModel CreateRosterRow(
         ParticipantRosterRow row,
@@ -1184,7 +1223,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             : [new GroupOption(null, string.Empty, Localization)];
         return new RosterDayCellViewModel(participantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange,
             RequestCellStartTimeChange, RequestCellOutOfCompetitionChange, RequestCellResultStatusChange, RequestCellBonusChange,
-            RequestCellPaymentChange, RequestCellRaisedFeeChange);
+            RequestCellPaymentChange, RequestCellRaisedFeeChange, RequestRelayPlace, RequestRelayTeamEdit);
     }
 
     // Driven by the day ComboBox. A real day switches the session (so other pages follow); the roster
@@ -3022,6 +3061,180 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             RefreshResults(dayId, results);
         }
         catch { /* never crash the UI over a status edit */ }
+    }
+
+    // ── Relay cells (day grid + roster): «Команда» / «Номер команди» / «Етап» typed on a runner's row («Номер етапу» is
+    // read-only). The cell already shows the edit; the page saves it (asking first when it could change the team itself
+    // or another runner holds the leg), says what else moved, and reloads — or puts the cell back and says why.
+    private void RequestRelayPlace(RelayCellsViewModel cells, RelayPlacementRequest request)
+        => _pendingSaves.Track(RunRelayEditAsync(cells, () => PlaceRelayAsync(request)));
+
+    private void RequestRelayTeamEdit(RelayCellsViewModel cells, RelayTeamField field, string value)
+        => _pendingSaves.Track(RunRelayEditAsync(cells, () => EditRelayTeamAsync(
+            new RelayTeamCellEdit(cells.ParticipantId, cells.DayId, field, value))));
+
+    // One relay edit at a time (a fill-down paste must create a team once and see each leg the previous row took; a
+    // question shows one at a time), then the common ending.
+    private async Task RunRelayEditAsync(RelayCellsViewModel cells, Func<Task<RelayPlacementOutcome>> edit)
+    {
+        await _relayGate.WaitAsync();
+        try
+        {
+            var outcome = await edit();
+            if (!outcome.Changed)
+            {
+                cells.Revert();
+                if (RelayRefusal(outcome) is { } refusal)
+                    _toasts.Show(Localization.Get("Participants.Relay.Title"), refusal);
+                return;
+            }
+            // The edited row shows its new place now (a team just created gets its id, so its leg can be typed straight
+            // away); the rest follows on the reload.
+            cells.Apply(outcome.Place);
+            if (RelayNotice(outcome) is { } notice)
+                _toasts.Show(Localization.Get("Participants.Relay.Title"), notice);
+            // Other rows moved too (a swapped teammate, a replaced holder, a renamed team, the team's filled legs): their
+            // relay cells follow at once — the full reload (results) comes a second later and waits while a cell is typed in.
+            await ApplyRelayPlacementsAsync(cells.DayId);
+            RequestReload();
+        }
+        catch (DayLockedException locked)
+        {
+            cells.Revert();
+            await ExplainDayLockAsync(locked.DayNumber);
+        }
+        catch (Exception ex)
+        {
+            cells.Revert();
+            _log.Error("Participants.Relay", ex);
+        }
+        finally
+        {
+            _relayGate.Release();
+        }
+    }
+
+    // Repaints the relay cells of every row on the day from the stored places (only the cells that changed raise).
+    private async Task ApplyRelayPlacementsAsync(Guid dayId)
+    {
+        try
+        {
+            var places = await Task.Run(() => _editor.GetRelayPlacementsAsync(dayId));
+            foreach (var row in Participants)
+                if (row.Relay.DayId == dayId)
+                    row.Relay.Apply(places.GetValueOrDefault(row.ParticipantId));
+            foreach (var row in Roster)
+                foreach (var cell in row.Days)
+                    if (cell.DayId == dayId)
+                        cell.Relay.Apply(places.GetValueOrDefault(row.ParticipantId));
+        }
+        catch (Exception ex)
+        {
+            // The edit itself is saved; the reload that follows repaints the rows anyway.
+            _log.Error("Participants.Relay", ex);
+        }
+    }
+
+    // A leg / team placement; a leg another runner holds is taken after «Замінити».
+    private async Task<RelayPlacementOutcome> PlaceRelayAsync(RelayPlacementRequest request)
+    {
+        var outcome = await Task.Run(() => _editor.PlaceRelayRunnerAsync(request));
+        if (outcome.Status != RelayPlacementStatus.LegTaken)
+            return outcome;
+        var replace = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+            Localization, "Participants.Relay.LegTaken.Title", "Participants.Relay.LegTaken.Message",
+            confirmKey: "Participants.Relay.LegTaken.Replace")
+        {
+            MessageArgs = [outcome.TeamLabel, outcome.Leg, outcome.OtherRunner],
+            IsDestructive = false
+        });
+        return replace
+            ? await Task.Run(() => _editor.PlaceRelayRunnerAsync(request with { ReplaceOccupant = true }))
+            : new RelayPlacementOutcome(RelayPlacementStatus.Unchanged);
+    }
+
+    // «Команда» / «Номер команди»: when the edit could change the team itself, ask — change the team for all its runners,
+    // or move only this one — then repeat it with the answer.
+    private async Task<RelayPlacementOutcome> EditRelayTeamAsync(RelayTeamCellEdit change)
+    {
+        var outcome = await Task.Run(() => _editor.EditRunnerRelayTeamAsync(change));
+        var choice = outcome.Status switch
+        {
+            RelayPlacementStatus.ConfirmTeamChange => await AskTeamChangeAsync(change.Field, outcome),
+            RelayPlacementStatus.NumberTaken => await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
+                    Localization, "Participants.Relay.NumberTaken.Title", "Participants.Relay.NumberTaken.Message",
+                    confirmKey: "Participants.Relay.MoveRunner")
+                {
+                    MessageArgs = [change.Value.Trim(), outcome.OtherTeam],
+                    IsDestructive = false
+                })
+                ? RelayTeamChoice.MoveRunner : (RelayTeamChoice?)null,
+            _ => RelayTeamChoice.Ask
+        };
+        if (choice == RelayTeamChoice.Ask)
+            return outcome;
+        return choice is { } answer
+            ? await Task.Run(() => _editor.EditRunnerRelayTeamAsync(change with { Choice = answer }))
+            : new RelayPlacementOutcome(RelayPlacementStatus.Unchanged);
+    }
+
+    // «Змінити номер команди 101 на 105?» / «Перейменувати команду…?» — confirm changes the team, the alternate moves
+    // only this runner; null when cancelled.
+    private async Task<RelayTeamChoice?> AskTeamChangeAsync(RelayTeamField field, RelayPlacementOutcome outcome)
+    {
+        var cleared = outcome.NewValue.Length == 0;
+        var (title, message, confirm, alternate) = field == RelayTeamField.Number
+            ? cleared
+                ? ("Participants.Relay.ClearNumber.Title", "Participants.Relay.ClearNumber.Message",
+                    "Participants.Relay.ClearNumber.Confirm", "Participants.Relay.ReleaseRunner")
+                : ("Participants.Relay.Renumber.Title", "Participants.Relay.Renumber.Message",
+                    "Participants.Relay.Renumber.Confirm", "Participants.Relay.MoveToNewNumber")
+            : ("Participants.Relay.Rename.Title", "Participants.Relay.Rename.Message",
+                "Participants.Relay.Rename.Confirm", "Participants.Relay.MoveToNewName");
+        var dialog = new ConfirmDialogViewModel(Localization, title, message, confirmKey: confirm)
+        {
+            AlternateKey = outcome.CanMoveRunner ? alternate : null,
+            MessageArgs = [outcome.TeamLabel, outcome.NewValue, outcome.MemberCount],
+            IsDestructive = false
+        };
+        return await _dialogs.ChooseAsync(dialog) switch
+        {
+            ConfirmDialogResult.Confirm => RelayTeamChoice.ChangeTeam,
+            ConfirmDialogResult.Alternate => RelayTeamChoice.MoveRunner,
+            _ => null
+        };
+    }
+
+    // Why a relay edit did nothing; null when there is nothing to say (the runner is already there / a question was
+    // cancelled).
+    private string? RelayRefusal(RelayPlacementOutcome outcome) => outcome.Status switch
+    {
+        RelayPlacementStatus.TeamFull => string.Format(Localization.Get("Participants.Relay.TeamFull"),
+            outcome.TeamLabel, outcome.LegCount),
+        RelayPlacementStatus.LegOutOfRange => string.Format(Localization.Get("Participants.Relay.LegOutOfRange"),
+            outcome.TeamLabel, outcome.LegCount, outcome.Leg),
+        RelayPlacementStatus.NoRelayGroup => string.Format(Localization.Get("Participants.Relay.NoRelayGroup"), outcome.TeamLabel),
+        RelayPlacementStatus.AmbiguousGroup => string.Format(Localization.Get("Participants.Relay.AmbiguousGroup"), outcome.TeamLabel),
+        RelayPlacementStatus.AmbiguousTeam => string.Format(Localization.Get("Participants.Relay.AmbiguousTeam"),
+            outcome.TeamLabel, outcome.MemberCount),
+        _ => null
+    };
+
+    // What else a relay edit changed besides the edited cell; null when nothing.
+    private string? RelayNotice(RelayPlacementOutcome outcome)
+    {
+        var parts = new List<string>();
+        if (outcome.TeamCreated)
+            parts.Add(string.Format(Localization.Get("Participants.Relay.TeamCreated"), outcome.TeamLabel));
+        if (outcome.Status == RelayPlacementStatus.TeamChanged && outcome.MemberCount > 1)
+            parts.Add(string.Format(Localization.Get("Participants.Relay.TeamChanged"), outcome.TeamLabel, outcome.MemberCount));
+        if (outcome.Status == RelayPlacementStatus.Swapped)
+            parts.Add(string.Format(Localization.Get("Participants.Relay.Swapped"), outcome.OtherRunner));
+        else if (outcome.Status == RelayPlacementStatus.Placed && outcome.OtherRunner.Length > 0)
+            parts.Add(string.Format(Localization.Get("Participants.Relay.Replaced"), outcome.OtherRunner));
+        if (outcome.MovedToGroup.Length > 0)
+            parts.Add(string.Format(Localization.Get("Participants.Relay.GroupMoved"), outcome.MovedToGroup, outcome.TeamLabel));
+        return parts.Count == 0 ? null : string.Join(" ", parts);
     }
 
     // ── Bonus (points correction) edit (day grid + roster)

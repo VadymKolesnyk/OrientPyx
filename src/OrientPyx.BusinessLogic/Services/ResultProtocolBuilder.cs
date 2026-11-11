@@ -292,9 +292,10 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         return body;
     }
 
-    // A relay section (Р-23, §8.4): teams by place (placed first, then by number), each as a bold team row (place,
-    // team number, name, club/region, team time or status, points) followed by its leg rows (100.1, runner, leg
-    // time, cumulative). Runners of the group who are on no team (Р-22 «без команди») are listed last.
+    // A relay section (Р-23, §8.4): teams in standing order (RelayTeamOrder — placed, finished, still running by
+    // legs done, then the rest), each as a bold team row (place, team number, name, club/region, team time or
+    // status, points) followed by its leg rows (100.1, runner, leg time, cumulative). Runners of the group who are
+    // on no team (Р-22 «без команди») are listed last.
     private static List<ResultProtocolBodyRow> BuildRelayRows(
         IReadOnlyList<RelayProtocolTeam> teams, IReadOnlyList<ResultProtocolRow> rows,
         IReadOnlyList<Col> columns, ProtocolLabels labels)
@@ -307,11 +308,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
 
         var body = new List<ResultProtocolBodyRow>();
         var seq = 0;
-        foreach (var team in teams
-                     .OrderBy(t => t.Result?.Place ?? int.MaxValue)
-                     .ThenBy(t => t.Result is { Status: FinishStatus.Ok } ? 0 : 1)
-                     .ThenBy(t => t.Result?.Time ?? TimeSpan.MaxValue)
-                     .ThenBy(t => t.Number))
+        foreach (var team in RelayTeamOrder.Sort(teams, t => t.Result, t => t.Number))
         {
             seq++;
             body.Add(new ResultProtocolBodyRow(
@@ -337,8 +334,8 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         return column.Column switch
         {
             ProtocolColumn.Sequence => seq.ToString(CultureInfo.InvariantCulture),
-            ProtocolColumn.Number => team.Number.ToString(CultureInfo.InvariantCulture),
-            ProtocolColumn.FullName => team.Name.Length > 0 ? team.Name : team.Number.ToString(CultureInfo.InvariantCulture),
+            ProtocolColumn.Number => RelayTeamNumbers.Text(team.Number),
+            ProtocolColumn.FullName => team.Name.Length > 0 ? team.Name : RelayTeamNumbers.Text(team.Number),
             ProtocolColumn.Club => team.ClubName,
             ProtocolColumn.Region => team.RegionName,
             ProtocolColumn.Result => r is null ? string.Empty
@@ -362,7 +359,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         switch (column.Column)
         {
             case ProtocolColumn.Number:
-                return RelayBib.Format(team.Number, leg.Leg);
+                return RelayTeamNumbers.Bib(team.Number, leg.Leg);
             case ProtocolColumn.FullName:
                 if (runner is null)
                     return labels.RelayVacantLeg;

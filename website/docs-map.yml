@@ -39,6 +39,7 @@ pages:
     - src/OrientPyx.*GroupDay*
     - src/OrientPyx.*Iof*
     - src/OrientPyx.*CourseDistance*
+    - src/OrientPyx.*SplitGroups*
   prepare/chips.md:
     - src/OrientPyx.*Chip*
     - src/OrientPyx.*Statement*
@@ -57,8 +58,10 @@ pages:
     - src/OrientPyx.*EntryFee*
   prepare/draw.md:
     - src/OrientPyx.*Draw*
+    - src/OrientPyx.*MassStart*
     - src/OrientPyx.*StartProtocol*
     - src/OrientPyx.*MapCount*
+    - src/OrientPyx.*NumberVariant*
     - src/OrientPyx.*StartOrder*
   race-day/finish.md:
     - src/OrientPyx.*FinishRead*
@@ -83,6 +86,10 @@ pages:
     - src/OrientPyx.*OnlineResults*
     - src/OrientPyx.*OnlinePublish*
     - src/OrientPyx.*Supabase*
+    - docs/online-snapshot.md
+  race-day/online-site.md:
+    - src/OrientPyx.*Supabase*
+    - src/OrientPyx.*OnlineApiSettings*
     - docs/online-snapshot.md
   race-day/network.md:
     - src/OrientPyx.DataAccess/Network/*
@@ -114,6 +121,7 @@ pages:
   guides/relay.md:
     - src/OrientPyx.*Relay*
     - src/OrientPyx.Plugins.Sdk/Toolkit/TeamCourseAssignment*
+    - src/OrientPyx.*LegCourse*
     - docs/relay-scenarios.md
   guides/multi-day.md:
     - src/OrientPyx.*SummaryProtocol*

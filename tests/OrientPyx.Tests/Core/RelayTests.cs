@@ -187,18 +187,19 @@ public sealed class RelayTests
     }
 
     [Fact]
-    public async Task LegCoursesByLegByBibAndTeamSet()
+    public async Task LegCoursesByBibAndTeamSet()
     {
         var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("rcourse"), discipline: DisciplineId.Relay);
         await c.AddControlsAsync(1, "31", "32");
-        foreach (var g in new[] { "ByLeg", "ByBib", "TeamSet" })
+        foreach (var g in new[] { "ByBib", "TeamSet", "OcadSet" })
         {
             await c.AddGroupAsync(g, "31 32", s => { s.LegCount = 2; s.MassStartTime = T(10, 0); });
             await c.SetCourseVariantsAsync(g, 1, ("A", "31 32"), ("B", "32 31"));
         }
-        await c.SetRelayCourseModeAsync("ByLeg", 1, RelayCourseMode.ByLeg, legCoursesJson: "{\"1\":\"A\",\"2\":\"B\"}");
         await c.SetRelayCourseModeAsync("ByBib", 1, RelayCourseMode.ByBib);
         await c.SetRelayCourseModeAsync("TeamSet", 1, RelayCourseMode.TeamSet, teamCourseSet: "A B");
+        // No set of its own: each team's set is the courses assigned to its leg numbers (OCAD's team combination).
+        await c.SetRelayCourseModeAsync("OcadSet", 1, RelayCourseMode.TeamSet);
 
         async Task Team(string g, int number, string leg1, string leg2)
         {
@@ -209,12 +210,12 @@ public sealed class RelayTests
             await c.AddReadoutAsync(1, $"{number}2", leg2, null, T(10, 40));
         }
 
-        await Team("ByLeg", 401, "31 32", "32 31");   // A then B → OK
-        await Team("ByLeg", 402, "31 32", "31 32");   // leg 2 ran A instead of B → MP
         await Team("ByBib", 411, "32 31", "31 32");   // assigned B then A
         await Team("ByBib", 412, "31 32", "31 32");   // leg 2 has no assignment → course not assigned
         await Team("TeamSet", 421, "32 31", "31 32"); // set {A, B}: legs matched to B and A → OK
         await Team("TeamSet", 422, "31 32", "31 32"); // both ran A: one leg must take B → MP
+        await Team("OcadSet", 431, "31 32", "32 31"); // assigned B, A; the legs swapped them → still the set → OK
+        await Team("OcadSet", 432, "31 32", "31 32"); // assigned A, B; both ran A → MP
 
         var store = Sp.GetRequiredService<IEventStore>();
         await store.UpsertLegCourseAssignmentsAsync(c.Folder, c.Day(1).Id,
@@ -222,12 +223,15 @@ public sealed class RelayTests
             new LegCourseAssignment { EventDayId = c.Day(1).Id, TeamNumber = 411, Leg = 1, CourseKey = "B" },
             new LegCourseAssignment { EventDayId = c.Day(1).Id, TeamNumber = 411, Leg = 2, CourseKey = "A" },
             new LegCourseAssignment { EventDayId = c.Day(1).Id, TeamNumber = 412, Leg = 1, CourseKey = "A" },
+            // Another group's row on the same leg number never applies to this team.
+            new LegCourseAssignment { EventDayId = c.Day(1).Id, TeamNumber = 412, Leg = 2, CourseKey = "A", GroupId = c.Groups["TeamSet"].Id },
+            new LegCourseAssignment { EventDayId = c.Day(1).Id, TeamNumber = 431, Leg = 1, CourseKey = "B" },
+            new LegCourseAssignment { EventDayId = c.Day(1).Id, TeamNumber = 431, Leg = 2, CourseKey = "A" },
+            new LegCourseAssignment { EventDayId = c.Day(1).Id, TeamNumber = 432, Leg = 1, CourseKey = "A" },
+            new LegCourseAssignment { EventDayId = c.Day(1).Id, TeamNumber = 432, Leg = 2, CourseKey = "B" },
         ]);
 
         var r = await c.ResultsAsync();
-        Assert.Equal(FinishStatus.Ok, r["ByLeg-401-1"].Team!.Status);
-        Assert.Equal("B", r["ByLeg-401-2"].Leg!.CourseCode);
-        Assert.Equal(FinishStatus.Mp, r["ByLeg-402-2"].Status);
         Assert.Equal(FinishStatus.Ok, r["ByBib-411-1"].Team!.Status);
         Assert.True(r["ByBib-412-2"].Leg!.CourseUnassigned);
         Assert.Equal(FinishStatus.Mp, r["ByBib-412-2"].Status);
@@ -236,6 +240,10 @@ public sealed class RelayTests
         Assert.Equal("B", r["TeamSet-421-1"].Leg!.CourseCode);
         Assert.Equal("A", r["TeamSet-421-2"].Leg!.CourseCode);
         Assert.Equal(FinishStatus.Mp, r["TeamSet-422-1"].Team!.Status);
+        Assert.Equal(FinishStatus.Ok, r["OcadSet-431-1"].Team!.Status);
+        Assert.Equal("A", r["OcadSet-431-1"].Leg!.CourseCode);
+        Assert.Equal("B", r["OcadSet-431-2"].Leg!.CourseCode);
+        Assert.Equal(FinishStatus.Mp, r["OcadSet-432-1"].Team!.Status);
     }
 
     [Fact]
@@ -278,6 +286,35 @@ public sealed class RelayTests
     }
 
     [Fact]
+    public async Task RunningTeamsWithCleanLegsComeBeforeWithdrawnOnes()
+    {
+        var c = await BuildBasicAsync();
+        // 108: legs 1–2 done; 109: leg 1 done faster than 103's; 110: nothing read yet.
+        var extra = new (int Number, (string Chip, TimeSpan? Finish)[] Legs)[]
+        {
+            (108, [("1081", T(10, 22)), ("1082", T(10, 50)), ("1083", null)]),
+            (109, [("1091", T(10, 15)), ("1092", null), ("1093", null)]),
+            (110, [("1101", null), ("1102", null), ("1103", null)])
+        };
+        foreach (var (number, legs) in extra)
+        {
+            foreach (var (chip, _) in legs)
+                await c.AddRunnerAsync(chip, "", chip, "R");
+            await c.AddRelayTeamAsync("R", number, $"Team {number}", 1, legs.Select((l, i) => (l.Chip, i + 1)).ToArray());
+            foreach (var (chip, finish) in legs)
+                if (finish is { } f)
+                    await c.AddReadoutAsync(1, chip, "31 32 33", null, f);
+        }
+
+        await c.SelectAsync();
+        var editor = Sp.GetRequiredService<ICompetitionEditorService>();
+        var online = await editor.GetOnlineResultsSnapshotAsync(c.Day(1).Id);
+        // Placed by place → finished «П/К» (105) → running by legs done, then cumulative (108; 109 before 103) →
+        // nothing done yet (110) → withdrawn (102, MP).
+        Assert.Equal([101, 106, 107, 105, 108, 109, 103, 110, 102], online.Teams.Select(t => t.Number));
+    }
+
+    [Fact]
     public async Task RelayRunnersNeverGetSportsRanksButTeamsGetPoints()
     {
         var app = Sp.GetRequiredService<IAppStore>();
@@ -293,5 +330,29 @@ public sealed class RelayTests
         Assert.Equal(6m, r["107-3"].Points);
         Assert.Null(r["102-1"].Points);
         Assert.All(r.Values, x => Assert.Null(x.AwardedRank));
+    }
+
+    [Fact]
+    public async Task TeamNumbersMoveBetweenTeamsInOneWriteAndNeverRepeat()
+    {
+        var c = await BuildBasicAsync();
+        var store = Sp.GetRequiredService<IEventStore>();
+        var day = c.Day(1).Id;
+        var teams = (await store.GetRelayTeamsAsync(c.Folder, day)).ToDictionary(t => t.Number!.Value);
+
+        // 101 ↔ 102 swap and 103 loses its number — one write, past the (day, number) unique index.
+        Assert.True(await store.SetRelayTeamNumbersAsync(c.Folder, day,
+            [new(teams[101].Id, 102), new(teams[102].Id, 101), new(teams[103].Id, null)]));
+        var after = (await store.GetRelayTeamsAsync(c.Folder, day)).ToDictionary(t => t.Id, t => t.Number);
+        Assert.Equal(102, after[teams[101].Id]);
+        Assert.Equal(101, after[teams[102].Id]);
+        Assert.Null(after[teams[103].Id]);
+
+        // A number another team keeps is refused (Р-20), and nothing of the set is written.
+        Assert.False(await store.SetRelayTeamNumbersAsync(c.Folder, day,
+            [new(teams[103].Id, 105), new(teams[106].Id, 200)]));
+        var unchanged = (await store.GetRelayTeamsAsync(c.Folder, day)).ToDictionary(t => t.Id, t => t.Number);
+        Assert.Null(unchanged[teams[103].Id]);
+        Assert.Equal(106, unchanged[teams[106].Id]);
     }
 }

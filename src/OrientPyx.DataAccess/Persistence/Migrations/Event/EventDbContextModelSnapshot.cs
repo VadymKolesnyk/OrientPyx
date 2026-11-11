@@ -15,7 +15,7 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.9");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
 
             modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.ChipPriceOverride", b =>
                 {
@@ -495,10 +495,6 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.Property<int?>("LegCount")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("LegCoursesJson")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
                     b.Property<TimeSpan?>("MassStartTime")
                         .HasColumnType("TEXT");
 
@@ -574,6 +570,9 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                         .HasColumnType("TEXT");
 
                     b.Property<Guid>("EventDayId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("GroupId")
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Leg")
@@ -871,7 +870,7 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("Number")
+                    b.Property<int?>("Number")
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("OutOfCompetition")

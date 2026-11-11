@@ -77,7 +77,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly SplitsExportViewModel _splitsExport;
     private readonly DrawViewModel _draw;
     private readonly ClassicDrawViewModel _classicDraw;
+    private readonly MassStartDrawViewModel _massStartDraw;
     private readonly MapCountsViewModel _mapCounts;
+    private readonly NumberVariantsViewModel _numberVariants;
     private readonly PluginsViewModel _plugins;
     private readonly PluginSettingsViewModel _pluginSettings;
     private readonly IPluginCatalog _pluginCatalog;
@@ -113,7 +115,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         SplitsExportViewModel splitsExport,
         DrawViewModel draw,
         ClassicDrawViewModel classicDraw,
+        MassStartDrawViewModel massStartDraw,
         MapCountsViewModel mapCounts,
+        NumberVariantsViewModel numberVariants,
         PluginsViewModel plugins,
         PluginSettingsViewModel pluginSettings,
         NetworkViewModel network,
@@ -163,7 +167,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _splitsExport = splitsExport;
         _draw = draw;
         _classicDraw = classicDraw;
+        _massStartDraw = massStartDraw;
         _mapCounts = mapCounts;
+        _numberVariants = numberVariants;
         _plugins = plugins;
         _pluginSettings = pluginSettings;
         _pluginCatalog = pluginCatalog;
@@ -245,7 +251,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                      _dashboard, _competitionInfo, _competitionDays, _controlPoints, _groups, _chips,
                      _finishRead, _participants, _relayTeams, _regions, _clubs, _dussh, _ranks, _points, _entryFees,
                      _protocols, _summaryProtocols, _startProtocols, _onlineResults, _monitorResults,
-                     _splitsExport, _draw, _classicDraw, _mapCounts, _plugins, _pluginSettings, Settings, _network,
+                     _splitsExport, _draw, _classicDraw, _massStartDraw, _mapCounts, _numberVariants, _plugins, _pluginSettings, Settings, _network,
                  })
         {
             page.HelpRequested += OnPageHelpRequested;
@@ -504,10 +510,24 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenNumberVariantsAsync()
+    {
+        await _numberVariants.LoadAsync();
+        _shell.SelectedPage = _numberVariants;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
     private async Task OpenClassicDrawAsync()
     {
         await _classicDraw.LoadAsync();
         _shell.SelectedPage = _classicDraw;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenMassStartDrawAsync()
+    {
+        await _massStartDraw.LoadAsync();
+        _shell.SelectedPage = _massStartDraw;
     }
 
     // ── «Плагіни» menu: the management page, then one item per switched-on plugin (its settings page).
@@ -889,6 +909,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenSplitsExportCommand.NotifyCanExecuteChanged();
         OpenDrawCommand.NotifyCanExecuteChanged();
         OpenClassicDrawCommand.NotifyCanExecuteChanged();
+        OpenMassStartDrawCommand.NotifyCanExecuteChanged();
         OpenPluginsCommand.NotifyCanExecuteChanged();
         OpenPluginSettingsCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsEventSelected));

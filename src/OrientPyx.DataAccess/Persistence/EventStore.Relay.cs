@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Enums;
+using OrientPyx.BusinessLogic.Models;
 
 namespace OrientPyx.DataAccess.Persistence;
 
@@ -10,11 +11,18 @@ public sealed partial class EventStore
     public async Task<IReadOnlyList<RelayTeam>> GetRelayTeamsAsync(string eventFolderPath, Guid dayId, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
-        return await db.RelayTeams.AsNoTracking()
+        return OrderTeams(await db.RelayTeams.AsNoTracking()
             .Where(t => t.EventDayId == dayId)
-            .OrderBy(t => t.Number)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken));
     }
+
+    // Numbered teams by number, then the teams without a number in the order they were made (an import's file order);
+    // in memory, because SQLite sorts NULL first and cannot order by DateTimeOffset.
+    private static List<RelayTeam> OrderTeams(List<RelayTeam> teams) => teams
+        .OrderBy(t => t.Number is null)
+        .ThenBy(t => t.Number)
+        .ThenBy(t => t.CreatedAt)
+        .ToList();
 
     public async Task AddRelayTeamsAsync(string eventFolderPath, IReadOnlyList<RelayTeam> teams, CancellationToken cancellationToken = default)
     {
@@ -52,6 +60,37 @@ public sealed partial class EventStore
         await tx.CommitAsync(cancellationToken);
     }
 
+    public async Task<bool> SetRelayTeamNumbersAsync(
+        string eventFolderPath, Guid dayId, IReadOnlyList<RelayTeamNumberChange> numbers, CancellationToken cancellationToken = default)
+    {
+        if (numbers.Count == 0)
+            return true;
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var teams = await db.RelayTeams.Where(t => t.EventDayId == dayId).ToListAsync(cancellationToken);
+        var byId = teams.ToDictionary(t => t.Id);
+        var wanted = new Dictionary<Guid, int?>();
+        foreach (var change in numbers)
+            if (byId.ContainsKey(change.TeamId))
+                wanted[change.TeamId] = change.Number;
+        if (wanted.Count == 0)
+            return true;
+
+        var after = teams.Select(t => wanted.TryGetValue(t.Id, out var n) ? n : t.Number).OfType<int>().ToList();
+        if (after.Count != after.Distinct().Count())
+            return false;
+
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+        // Every touched team gives its number up first, so a number can pass to another team past the unique index.
+        foreach (var id in wanted.Keys)
+            byId[id].Number = null;
+        await db.SaveChangesAsync(cancellationToken);
+        foreach (var (id, number) in wanted)
+            byId[id].Number = number;
+        await db.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+        return true;
+    }
+
     public async Task DeleteRelayTeamAsync(string eventFolderPath, Guid teamId, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
@@ -78,6 +117,42 @@ public sealed partial class EventStore
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
         var existing = (await db.LegCourseAssignments.Where(a => a.EventDayId == dayId).ToListAsync(cancellationToken))
             .ToDictionary(a => (a.TeamNumber, a.Leg));
+        ApplyLegCourseAssignments(db, dayId, existing, assignments);
+        await db.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+    }
+
+    public async Task ReplaceGroupLegCourseAssignmentsAsync(
+        string eventFolderPath, Guid dayId, Guid groupId, IReadOnlyList<LegCourseAssignment> assignments,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
+        var rows = await db.LegCourseAssignments.Where(a => a.EventDayId == dayId).ToListAsync(cancellationToken);
+        var existing = new Dictionary<(int, int), LegCourseAssignment>();
+        foreach (var row in rows)
+        {
+            if (row.GroupId == groupId)
+                db.LegCourseAssignments.Remove(row);
+            else
+                existing[(row.TeamNumber, row.Leg)] = row;
+        }
+        // Rows deleted above must be gone before a new row reuses their (number, leg) key — the index is unique.
+        await db.SaveChangesAsync(cancellationToken);
+        ApplyLegCourseAssignments(db, dayId, existing, assignments.Select(a => new LegCourseAssignment
+        {
+            EventDayId = dayId, GroupId = groupId, TeamNumber = a.TeamNumber, Leg = a.Leg, CourseKey = a.CourseKey
+        }).ToList());
+        await db.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+    }
+
+    // Writes each assignment over the day's rows by (number, leg): an existing row takes the new course (and group,
+    // when given), a blank course removes it, a new key adds a row.
+    private static void ApplyLegCourseAssignments(
+        EventDbContext db, Guid dayId, Dictionary<(int, int), LegCourseAssignment> existing,
+        IReadOnlyList<LegCourseAssignment> assignments)
+    {
         foreach (var assignment in assignments)
         {
             var key = (assignment.TeamNumber, assignment.Leg);
@@ -90,17 +165,22 @@ public sealed partial class EventStore
                     existing.Remove(key);
                 }
                 else
+                {
                     row.CourseKey = code;
+                    row.GroupId = assignment.GroupId ?? row.GroupId;
+                }
             }
             else if (code.Length > 0 && assignment.TeamNumber > 0 && assignment.Leg >= 1)
             {
-                row = new LegCourseAssignment { EventDayId = dayId, TeamNumber = assignment.TeamNumber, Leg = assignment.Leg, CourseKey = code };
+                row = new LegCourseAssignment
+                {
+                    EventDayId = dayId, GroupId = assignment.GroupId, TeamNumber = assignment.TeamNumber, Leg = assignment.Leg,
+                    CourseKey = code
+                };
                 db.LegCourseAssignments.Add(row);
                 existing[key] = row;
             }
         }
-        await db.SaveChangesAsync(cancellationToken);
-        await tx.CommitAsync(cancellationToken);
     }
 
     public async Task DeleteRelayTeamsForGroupDayAsync(string eventFolderPath, Guid dayId, Guid groupId, CancellationToken cancellationToken = default)
@@ -147,6 +227,20 @@ public sealed partial class EventStore
         return true;
     }
 
+    public async Task<bool> ReleaseRelayRunnerAsync(string eventFolderPath, Guid linkId, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var link = await db.ParticipantDays.FirstOrDefaultAsync(p => p.Id == linkId, cancellationToken);
+        if (link is null)
+            return false;
+        if (link.RelayTeamId is null && link.Leg is null)
+            return true;
+        link.RelayTeamId = null;
+        link.Leg = null;
+        await db.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public async Task UpdateRelaySettingsAsync(
         string eventFolderPath, Guid settingsId, int? legCount, TimeSpan? massStartTime, string restartTimesJson,
         RelayRestartRanking restartRanking, CancellationToken cancellationToken = default)
@@ -163,7 +257,7 @@ public sealed partial class EventStore
     }
 
     public async Task UpdateRelayCourseSettingsAsync(
-        string eventFolderPath, Guid settingsId, RelayCourseMode mode, string legCoursesJson, string teamCourseSet,
+        string eventFolderPath, Guid settingsId, RelayCourseMode mode, string teamCourseSet,
         CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
@@ -171,7 +265,6 @@ public sealed partial class EventStore
         if (existing is null)
             return;
         existing.CourseAssignmentMode = mode;
-        existing.LegCoursesJson = legCoursesJson;
         existing.TeamCourseSet = teamCourseSet;
         await db.SaveChangesAsync(cancellationToken);
     }

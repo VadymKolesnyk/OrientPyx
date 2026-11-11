@@ -136,10 +136,13 @@ public static class EventStoreMethods
         // Relay
         [nameof(IEventStore.AddRelayTeamsAsync)] = [DataArea.Relay],
         [nameof(IEventStore.UpdateRelayTeamAsync)] = [DataArea.Relay, DataArea.ParticipantDays],
+        [nameof(IEventStore.SetRelayTeamNumbersAsync)] = [DataArea.Relay],
         [nameof(IEventStore.DeleteRelayTeamAsync)] = [DataArea.Relay, DataArea.ParticipantDays],
         [nameof(IEventStore.DeleteRelayTeamsForGroupDayAsync)] = [DataArea.Relay, DataArea.ParticipantDays],
         [nameof(IEventStore.UpsertLegCourseAssignmentsAsync)] = [DataArea.Relay],
+        [nameof(IEventStore.ReplaceGroupLegCourseAssignmentsAsync)] = [DataArea.Relay],
         [nameof(IEventStore.AssignRelayLegAsync)] = [DataArea.Relay, DataArea.ParticipantDays],
+        [nameof(IEventStore.ReleaseRelayRunnerAsync)] = [DataArea.Relay, DataArea.ParticipantDays],
     };
 
     private static readonly IReadOnlySet<string> ReadNames = new HashSet<string>(StringComparer.Ordinal)

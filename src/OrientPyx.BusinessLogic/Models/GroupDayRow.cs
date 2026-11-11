@@ -48,4 +48,9 @@ public sealed record GroupDayRow(
     /// <summary>Control-point count of the <b>longest</b> scatter variant (розсіювання) on this day — the
     /// grid's control-count cell reports this for a scatter group instead of counting the unused
     /// single-order field. 0 for a non-scatter group or one with no variants.</summary>
-    int ScatterMaxControlCount = 0);
+    int ScatterMaxControlCount = 0,
+    /// <summary>Relay legs of the group on this day (unset = 1). Read here for the grid's «Етапів» column; it is
+    /// written with the relay settings (<c>SaveRelayGroupSettingsAsync</c>), not by <c>UpdateGroupDayRowAsync</c>.</summary>
+    int LegCount = 1,
+    /// <summary>Relay: how the legs get their courses (read-only here, like <see cref="LegCount"/>).</summary>
+    RelayCourseMode CourseMode = RelayCourseMode.Group);
