@@ -97,7 +97,13 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
                 RankCalculationText = columns.Any(c => c.Column == ProtocolColumn.AwardedRank)
                     ? FormatRankCalculation(group.RankCalculation, labels)
                     : string.Empty,
-                Rows = rows
+                Rows = rows,
+                // Another discipline's plugin columns («K», «T·K» of a weighted relay) stay out of this group's table.
+                HiddenColumns = columns
+                    .Select((c, i) => (c, i))
+                    .Where(x => x.c.Extra is { } e && !group.Shows(e))
+                    .Select(x => x.i)
+                    .ToList()
             });
         }
 

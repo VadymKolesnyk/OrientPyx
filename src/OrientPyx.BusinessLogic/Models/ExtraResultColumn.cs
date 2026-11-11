@@ -30,6 +30,13 @@ public sealed record ExtraResultColumn(string Key, string LabelKey, ColumnKind K
         Plugin is not null && result.Extra.Count > 0
         && Plugin.IsProblem(new ResultRow(new Dictionary<string, object?>(result.Extra)));
 
+    /// <summary>The keys of the plugin columns a discipline shows (<c>"&lt;pluginId&gt;.&lt;key&gt;"</c>); empty for a
+    /// built-in — a group of it has none of the day's plugin columns.</summary>
+    public static IReadOnlyCollection<string> PluginKeys(IDisciplineStrategy strategy) =>
+        strategy.PluginId is { } pluginId
+            ? strategy.ResultColumns.Select(c => PluginStrings.Key(pluginId, c.Key)).ToHashSet(StringComparer.Ordinal)
+            : [];
+
     /// <summary>The extra columns of a day: the plugin columns of <paramref name="disciplines"/> (once per key), then
     /// one per additional participant field, in field order.</summary>
     public static IReadOnlyList<ExtraResultColumn> ForDay(

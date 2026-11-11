@@ -2285,7 +2285,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 result.LegBib ?? p.Number, p.FullName, p.BirthDate, club, region, dussh, p.Coach, p.Rank,
                 p.Team.Trim(), result)
             {
-                Fields = fieldsByParticipant.TryGetValue(p.Id, out var fv) ? fv : new Dictionary<string, string>()
+                Fields = fieldsByParticipant.TryGetValue(p.Id, out var fv) ? fv : new Dictionary<string, string>(),
+                ParticipantId = p.Id,
             };
             bucket.Add(protocolRow);
             rowByLink[link.Id] = protocolRow;
@@ -2321,7 +2322,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 : null;
             sections.Add(new ResultProtocolGroup(
                 name, s.Order, s.DistanceKm, controlCount, s.TimeLimitSeconds, isTeam, rows, setter, setterCat,
-                rankCalc, relayTeams));
+                rankCalc, relayTeams)
+            {
+                PluginColumnKeys = ExtraResultColumn.PluginKeys(strategy),
+            });
         }
 
         var fieldDefs = await _eventStore.GetCustomFieldDefsAsync(folder, cancellationToken);
@@ -5361,14 +5365,15 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             .DistinctBy(g => g.Name, TextKey.Comparer)
             .ToList();
 
-        // The frontend keys results by (event, bib, day) with bib an integer, so a participant with no
-        // (positive integer) start number can't be addressed and is left out of the snapshot. Count them so
-        // the publish log can warn that some runners won't appear online until they're given a number.
+        // The frontend keys results by (event, bib, day) with bib an integer. A runner with no (positive integer)
+        // start number goes under a stand-in negative key from the participant id, which the site doesn't show —
+        // so a competition run without numbers publishes too.
         var rows = new List<OnlineResultRow>();
-        var skippedNoNumber = 0;
+        var unnumbered = 0;
         // bib -> every holder's name. Two participants with one number (e.g. after merging people) would put two
-        // rows with the same key into one upsert, which the server rejects wholesale — so only the first is sent.
+        // rows with the same key into one upsert, which the server rejects wholesale — so only the first keeps it.
         var holders = new Dictionary<int, List<string>>();
+        var standIns = new HashSet<int>();
         foreach (var g in data.Groups)
         {
             // A relay group is published as teams (below): its runners' leg numbers («100.2») are not bibs.
@@ -5378,22 +5383,30 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             foreach (var r in g.Rows)
             {
                 var trimmed = (r.Number ?? string.Empty).Trim();
-                if (!int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bib) || bib <= 0)
-                {
-                    skippedNoNumber++;
-                    continue;
-                }
+                var hasNumber = int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bib)
+                                && bib > 0;
+                var keepsNumber = hasNumber && !holders.ContainsKey(bib);
+                if (hasNumber && !keepsNumber)
+                    holders[bib].Add(r.FullName);
+                else if (!hasNumber)
+                    unnumbered++;
 
-                if (holders.TryGetValue(bib, out var names))
+                int key;
+                if (keepsNumber)
                 {
-                    names.Add(r.FullName);
-                    continue;
+                    holders[bib] = [r.FullName];
+                    key = bib;
                 }
-                holders[bib] = [r.FullName];
+                else
+                {
+                    key = OnlineResultRow.UnnumberedKey(r.ParticipantId);
+                    while (!standIns.Add(key))
+                        key = key == -int.MaxValue ? -1 : key - 1;
+                }
 
                 var res = r.Result;
                 rows.Add(new OnlineResultRow(
-                    Bib: bib,
+                    Key: key,
                     GroupName: OnlineGroupName(g.Name),
                     FullName: r.FullName,
                     Team: r.Team,
@@ -5409,7 +5422,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     Points: res.Points,
                     Status: res.Status,
                     HasReadout: res.HasReadout,
-                    OutOfCompetition: res.OutOfCompetition));
+                    OutOfCompetition: res.OutOfCompetition)
+                {
+                    Extra = OnlineExtras(data.ExtraColumns, res, r.Fields),
+                });
             }
         }
 
@@ -5419,18 +5435,26 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             .Select(h => $"{h.Key} ({string.Join(", ", h.Value)})")
             .ToList();
 
-        var pluginColumns = data.ExtraColumns.Where(c => c.Plugin is not null).ToList();
-        return new OnlineResultsSnapshot(onlineDays, day.Number, groups, rows, skippedNoNumber, duplicates)
+        return new OnlineResultsSnapshot(onlineDays, day.Number, groups, rows, unnumbered, duplicates)
         {
-            Teams = OnlineTeams(data, OnlineGroupName, pluginColumns),
-            ExtraColumns = pluginColumns.Select(c => new OnlineExtraColumn(c.Key, c.LabelKey)).ToList(),
+            Teams = OnlineTeams(data, OnlineGroupName),
+            ExtraColumns = data.ExtraColumns
+                .Select(c => new OnlineExtraColumn(c.Key, c.LabelKey, IsPlugin: c.Plugin is not null))
+                .ToList(),
         };
     }
 
+    // A result's extra column values (plugin columns + additional fields, §10.2), formatted; blanks left out.
+    private static Dictionary<string, string> OnlineExtras(
+        IReadOnlyList<ExtraResultColumn> columns, ParticipantDayResult result, IReadOnlyDictionary<string, string>? fields) =>
+        columns
+            .Select(c => (c.Key, Value: c.Format(result, fields)))
+            .Where(x => x.Value.Length > 0)
+            .ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
+
     // §11.1: one row per relay team of the day, each with its legs (number «100.N», runner, course, times, status),
     // in standing order (RelayTeamOrder; the spectator site sorts the same way on its own).
-    private static List<OnlineTeamRow> OnlineTeams(
-        ResultProtocolData data, Func<string, string> groupName, IReadOnlyList<ExtraResultColumn> pluginColumns)
+    private static List<OnlineTeamRow> OnlineTeams(ResultProtocolData data, Func<string, string> groupName)
     {
         var teams = new List<OnlineTeamRow>();
         foreach (var g in data.Groups)
@@ -5448,10 +5472,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     var leg = runner?.Result.Leg ?? result?.Legs.FirstOrDefault(x => x.Leg == l.Leg);
                     var extra = runner is null
                         ? new Dictionary<string, string>()
-                        : pluginColumns
-                            .Select(c => (c.Key, Value: c.Format(runner.Result, runner.Fields)))
-                            .Where(x => x.Value.Length > 0)
-                            .ToDictionary(x => x.Key, x => x.Value);
+                        : OnlineExtras(data.ExtraColumns, runner.Result, runner.Fields);
                     return new OnlineLegRow(
                         Leg: l.Leg,
                         Bib: RelayBib.Format(number, l.Leg),
@@ -5463,7 +5484,14 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                         Status: leg?.Status ?? FinishStatus.None,
                         Pending: leg?.Pending ?? false,
                         Restarted: leg?.Restarted ?? false,
-                        Extra: extra);
+                        Extra: extra)
+                    {
+                        Result = leg?.AdjustedTime ?? leg?.LegTime,
+                        StartTime = leg?.Start?.ToLocalTime().TimeOfDay,
+                        Qual = runner?.Rank ?? string.Empty,
+                        Club = runner?.ClubName ?? string.Empty,
+                        Region = runner?.RegionName ?? string.Empty,
+                    };
                 }).ToList();
 
                 teams.Add(new OnlineTeamRow(
@@ -5620,15 +5648,6 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         MonitorFile file, ResultColumnSelection columnSelection, ResultProtocolData data,
         IReadOnlyDictionary<string, ResultProtocolGroup> groupsByName, string subtitle, MonitorLabels labels)
     {
-        // The chosen columns; an extra column (plugin / field, §10.2) shows when the day has it.
-        var extras = data.ExtraColumns.ToDictionary(e => e.Key, StringComparer.Ordinal);
-        var columns = columnSelection.Resolve(data.ExtraColumns.Select(ResultColumnInfo.ForExtra))
-            .Select(d => d.Column == ResultColumn.Extra
-                ? new MonitorColumn(d.Column, labels.Translate?.Invoke(d.LabelKey) ?? d.LabelKey)
-                    { Key = d.Key, Extra = extras[d.Key] }
-                : new MonitorColumn(d.Column, labels.ColumnHeaders.GetValueOrDefault(d.Column, d.Key)) { Key = d.Key })
-            .ToList();
-
         // The chosen groups in day order; an empty selection means "all groups of the day".
         var chosen = file.GroupNames.Count == 0
             ? data.Groups
@@ -5638,12 +5657,34 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 .Select(g => g!)
                 .ToList();
 
+        // The chosen columns; an extra column (plugin / field, §10.2) shows when the day has it, «Наростаючий» only
+        // on a screen with a relay group (it is blank on every other row).
+        var hasRelay = chosen.Any(g => g.RelayTeams is not null);
+        var extras = data.ExtraColumns.ToDictionary(e => e.Key, StringComparer.Ordinal);
+        var columns = columnSelection.Resolve(data.ExtraColumns.Select(ResultColumnInfo.ForExtra))
+            .Where(d => d.Column != ResultColumn.Cumulative || hasRelay)
+            .Select(d => d.Column == ResultColumn.Extra
+                ? new MonitorColumn(d.Column, labels.Translate?.Invoke(d.LabelKey) ?? d.LabelKey)
+                    { Key = d.Key, Extra = extras[d.Key] }
+                : new MonitorColumn(d.Column, labels.ColumnHeaders.GetValueOrDefault(d.Column, d.Key)) { Key = d.Key })
+            .ToList();
+
         var monitorGroups = new List<MonitorGroup>(chosen.Count);
         foreach (var g in chosen.OrderBy(g => g.Name, StringComparer.CurrentCulture))
         {
+            // Another discipline's plugin columns («K», «T·K» of a weighted relay) stay out of this group's table.
+            var hidden = columns
+                .Select((c, i) => (c, i))
+                .Where(x => x.c.Extra is { } e && !g.Shows(e))
+                .Select(x => x.i)
+                .ToList();
+
             if (g.RelayTeams is not null)
             {
-                monitorGroups.Add(new MonitorGroup(g.Name, BuildGroupCaption(g, labels), BuildRelayMonitorRows(g, columns, labels)));
+                monitorGroups.Add(new MonitorGroup(g.Name, BuildGroupCaption(g, labels), BuildRelayMonitorRows(g, columns, labels))
+                {
+                    HiddenColumns = hidden,
+                });
                 continue;
             }
 
@@ -5662,7 +5703,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 .Select(r => BuildMonitorRow(r, columns, leader, labels))
                 .ToList();
 
-            monitorGroups.Add(new MonitorGroup(g.Name, BuildGroupCaption(g, labels), rows));
+            monitorGroups.Add(new MonitorGroup(g.Name, BuildGroupCaption(g, labels), rows) { HiddenColumns = hidden });
         }
 
         return new MonitorDocument(
@@ -5736,8 +5777,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     };
 
     // §11.4: a relay group on the monitor — one bold team row (place, №, name, club, team time, gap, status, points)
-    // with its legs under it (100.N, runner + course, leg start, leg time, cumulative in the gap column, status,
-    // plugin columns). Teams in standing order (RelayTeamOrder), like the protocol.
+    // with its legs under it (100.N, runner + course, leg start, leg result, «Наростаючий», status, plugin columns
+    // and fields). Teams in standing order (RelayTeamOrder), like the protocol.
     private static List<MonitorRow> BuildRelayMonitorRows(
         ResultProtocolGroup g, IReadOnlyList<MonitorColumn> columns, MonitorLabels labels)
     {
@@ -5788,8 +5829,11 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     ResultColumn.Club => runner?.ClubName ?? string.Empty,
                     ResultColumn.Region => runner?.RegionName ?? string.Empty,
                     ResultColumn.StartTime => FormatClock(legResult?.Start?.ToLocalTime().TimeOfDay),
-                    ResultColumn.ResultTime => legResult?.Status == FinishStatus.Ok ? FormatSpan(legResult.LegTime) : string.Empty,
-                    ResultColumn.Gap => legResult?.Cumulative is { } cum ? FormatSpan(cum) : string.Empty,
+                    // The leg's counted time — adjusted by the discipline (weighted relay: T·K), as in the protocol.
+                    ResultColumn.ResultTime => legResult?.Status == FinishStatus.Ok
+                        ? FormatSpan(legResult.AdjustedTime ?? legResult.LegTime)
+                        : string.Empty,
+                    ResultColumn.Cumulative => legResult?.Cumulative is { } cum ? FormatSpan(cum) : string.Empty,
                     ResultColumn.Status => legResult is null || legResult.Pending
                         ? string.Empty
                         : StatusCode(legResult.Status, legResult.Status != FinishStatus.None, labels),

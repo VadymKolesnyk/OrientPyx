@@ -557,7 +557,7 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
             remaining -= rows.Count;
             Preview.Sections.Add(new ProtocolPreviewSection(
                 section.GroupName, BuildSubcaption(section), rows, section.CourseSetterText,
-                rankCalculation: section.RankCalculationText));
+                rankCalculation: section.RankCalculationText, hiddenColumns: section.HiddenColumns));
         }
         Preview.IsEmpty = Preview.Sections.Count == 0 || Preview.Sections.All(s => s.Rows.Count == 0);
 

@@ -987,6 +987,15 @@ public interface ICompetitionEditorService
     Task<RelayPlacementOutcome> EditRunnerRelayTeamAsync(RelayTeamCellEdit change, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Another group for a runner on a relay team (any day), as the page's question was answered: only this runner — off
+    /// the team, into the group, still on the day (<see cref="RelayPlacementStatus.Released"/>) — or the whole team into
+    /// another relay group of the day, its runners following (<see cref="RelayPlacementStatus.TeamChanged"/>, Р-22).
+    /// Unchanged for a runner on no team, the team's own group, a group not on the day, or a team move into a group that
+    /// runs no relay.
+    /// </summary>
+    Task<RelayPlacementOutcome> ChangeRelayRunnerGroupAsync(RelayGroupEdit change, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Every runner's relay place on the day as stored (team, leg, filled legs), keyed by participant id; a runner on no
     /// team is absent. A cheap read (no results), so the participant tables repaint every row a relay edit moved — the
     /// swapped teammate, the replaced holder, a renamed team's runners — at once, before the full reload.
@@ -995,16 +1004,10 @@ public interface ICompetitionEditorService
 
     /// <summary>
     /// Sets the courses of leg numbers on the current day (<see cref="RelayCourseMode.ByBib"/>, Р-41) — typed on the
-    /// «Команди» page or imported (IOF <c>TeamCourseAssignment</c>, CSV «Номер етапу; Дистанція»). Returns how many
-    /// were stored.
+    /// «Команди» page (a file's assignments come with the course import, <see cref="ImportGroupsAsync"/>). Returns how
+    /// many were stored.
     /// </summary>
     Task<int> SetLegCoursesAsync(IReadOnlyList<LegCourseEntry> entries, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Imports leg-number courses from a file's text — IOF 3.0 <c>CourseData</c> with <c>TeamCourseAssignment</c>, or
-    /// lines «100.2;B» / «100;2;B». Returns how many were stored; throws <see cref="FormatException"/> on broken XML.
-    /// </summary>
-    Task<int> ImportLegCoursesAsync(string content, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Outcome of a participant import, for reporting back to the user.</summary>

@@ -190,6 +190,8 @@ public sealed class RosterColumnBuilder
                 };
                 if (isChips)
                     ConfigureChipCapacityTint(col, 0);
+                if (block.Field == RosterField.Groups)
+                    ConfigureNoGroupTint(col, 0);
                 // Single-day group/status cell binds under Days[0]. too — wire combo-paste the same way.
                 ConfigureDayComboPaste(col, block.Field, 0);
                 ConfigureDayPaymentColumn(col, block.Field, 0);
@@ -230,6 +232,8 @@ public sealed class RosterColumnBuilder
                 // The merged chip cell flags a card too small for ANY member day's course.
                 if (isChips)
                     ConfigureChipCapacityTint(cols[0], dayIndex: null);
+                if (block.Field == RosterField.Groups)
+                    ConfigureNoGroupTint(cols[0], dayIndex: null);
                 if (block.Field == RosterField.Payment)
                 {
                     // The merged cell shows one value for the whole competition, so it tints (and sums) by
@@ -264,6 +268,8 @@ public sealed class RosterColumnBuilder
                     };
                     if (isChips)
                         ConfigureChipCapacityTint(leaf, i);
+                    if (block.Field == RosterField.Groups)
+                        ConfigureNoGroupTint(leaf, i);
                     // Per-day combo leaves (group / status) resolve a paste to an option on that day by
                     // exact label match — bound under Days[i]. like the cell factory binds them.
                     ConfigureDayComboPaste(leaf, block.Field, i);
@@ -426,7 +432,8 @@ public sealed class RosterColumnBuilder
         {
             case RosterField.Groups:
                 col.ComboItemsPath = $"{prefix}{nameof(RosterDayCellViewModel.GroupOptions)}";
-                col.ComboSelectedPath = $"{prefix}{nameof(RosterDayCellViewModel.SelectedGroup)}";
+                // Through BulkGroup: a paste can't ask, so it leaves a relay runner in the team's group (Р-22).
+                col.ComboSelectedPath = $"{prefix}{nameof(RosterDayCellViewModel.BulkGroup)}";
                 col.ComboLabelPath = nameof(GroupOption.Label);
                 break;
             case RosterField.ResultStatus:
@@ -514,12 +521,11 @@ public sealed class RosterColumnBuilder
     };
 
     // The merged display value COPY reads for an off-screen collapsed cell. For groups this is the
-    // selected option's label (the all-days-same case); chips/start-times already display their value;
+    // shared value's text (the all-days-same case, «без групи» included); chips/start-times already display their value;
     // out-of-competition is the bool (copied as a flag mark); result blocks copy their merged value.
     private static string CollapsedCopyPath(RosterField field) => field switch
     {
-        RosterField.Groups =>
-            $"{nameof(ParticipantRosterRowViewModel.CollapsedGroupValue)}.{nameof(GroupOption.Label)}",
+        RosterField.Groups => nameof(ParticipantRosterRowViewModel.CollapsedGroupLabel),
         RosterField.Chips => nameof(ParticipantRosterRowViewModel.CollapsedChipValue),
         RosterField.Payment => nameof(ParticipantRosterRowViewModel.CollapsedPaymentValue),
         RosterField.StartTimes => nameof(ParticipantRosterRowViewModel.CollapsedStartTimeText),
@@ -529,7 +535,7 @@ public sealed class RosterColumnBuilder
     };
 
     // The value the collapsed column FILTERS by. Same as the copy value for most fields, but groups use a
-    // dedicated plain-label property — CollapsedCopyPath's "CollapsedGroupValue.Label" is null unless every
+    // dedicated plain-label property — CollapsedCopyPath's "CollapsedGroupLabel" is empty unless every
     // day shares one group, so it would drop single/"різні" rows from the filter; CollapsedGroupFilterText
     // returns the first real group's name in every state. Never the sort key (which packs a control-char
     // separator + tier/index and shows as "Ж14␛00000").
@@ -552,6 +558,24 @@ public sealed class RosterColumnBuilder
         column.CellBackgroundBrush = DayColumnBuilder.ChipCapacityBrush;
     }
 
+    // Amber-tints a group cell of a participant who runs the day with no group on it («без групи»), with a tooltip
+    // saying what to do. A per-day cell reads its own day under Days[i].; the merged all-days cell the row's
+    // aggregate (any such day, named in the tooltip).
+    private static void ConfigureNoGroupTint(SheetColumn column, int? dayIndex)
+    {
+        if (dayIndex is { } i)
+        {
+            column.CellBackgroundPath = $"Days[{i}].{nameof(RosterDayCellViewModel.HasNoGroup)}";
+            column.CellBackgroundTooltipPath = $"Days[{i}].{nameof(RosterDayCellViewModel.NoGroupTooltip)}";
+        }
+        else
+        {
+            column.CellBackgroundPath = nameof(ParticipantRosterRowViewModel.HasDayWithoutGroup);
+            column.CellBackgroundTooltipPath = nameof(ParticipantRosterRowViewModel.NoGroupTooltip);
+        }
+        column.CellBackgroundBrush = DayColumnBuilder.NoGroupBrush;
+    }
+
     private static string? LeafPastePath(RosterField field, int i) => field switch
     {
         RosterField.Chips => $"Days[{i}].{nameof(RosterDayCellViewModel.Chip)}",
@@ -568,7 +592,8 @@ public sealed class RosterColumnBuilder
 
     private static string LeafSortPath(RosterField field, int i) => field switch
     {
-        RosterField.Groups => $"Days[{i}].{nameof(RosterDayCellViewModel.SelectedGroup)}.{nameof(GroupOption.Label)}",
+        // The shown text, so «без групи» is a filter value of its own beside «не бере участі».
+        RosterField.Groups => $"Days[{i}].{nameof(RosterDayCellViewModel.GroupLabel)}",
         RosterField.Chips => $"Days[{i}].{nameof(RosterDayCellViewModel.Chip)}",
         RosterField.Payment => $"Days[{i}].{nameof(RosterDayCellViewModel.Payment)}",
         RosterField.StartTimes => $"Days[{i}].{nameof(RosterDayCellViewModel.StartTime)}",

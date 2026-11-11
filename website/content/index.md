@@ -1,8 +1,3 @@
----
-hide:
-  - navigation
----
-
 # OrientPyx
 
 **OrientPyx** — безкоштовна програма для проведення змагань зі спортивного орієнтування на Windows і macOS.

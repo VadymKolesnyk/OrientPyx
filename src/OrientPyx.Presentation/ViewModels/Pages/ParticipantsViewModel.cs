@@ -1061,7 +1061,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         {
             var (x, y) = (a[i], b[i]);
             if (x.Id != y.Id || x.Label != y.Label || x.MinBirthYear != y.MinBirthYear
-                || x.MaxBirthYear != y.MaxBirthYear || x.ControlCount != y.ControlCount)
+                || x.MaxBirthYear != y.MaxBirthYear || x.ControlCount != y.ControlCount || x.IsRelay != y.IsRelay)
                 return false;
         }
         return true;
@@ -1112,7 +1112,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             // The longest course a member may run that day — what their chip must be able to hold.
             var strategy = _strategies.For(g.DisciplineOverride ?? g.DayDefaultDiscipline);
             options.Add(new GroupOption(g.GroupId, g.Name, Localization, g.MinBirthYear, g.MaxBirthYear,
-                sportIdent ? ChipCapacity.NeededPunches(g, strategy) : 0));
+                sportIdent ? ChipCapacity.NeededPunches(g, strategy) : 0,
+                isRelay: strategy.Competitors == CompetitorModel.TeamWithLegs));
         }
         return options;
     }
@@ -1191,7 +1192,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             RequestDayRowDusshChange, RequestDayRowAddDussh,
             RequestRowRaisedFeeChange, RequestRowDiscountChange,
             RequestDayRowResultStatusChange, RequestDayRowBonusChange, RequestDayRowPaymentChange,
-            RequestRelayPlace, RequestRelayTeamEdit);
+            RequestRelayPlace, RequestRelayTeamEdit, RequestDayRowRelayGroupChange);
 
     private ParticipantRosterRowViewModel CreateRosterRow(
         ParticipantRosterRow row,
@@ -1223,7 +1224,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             : [new GroupOption(null, string.Empty, Localization)];
         return new RosterDayCellViewModel(participantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange,
             RequestCellStartTimeChange, RequestCellOutOfCompetitionChange, RequestCellResultStatusChange, RequestCellBonusChange,
-            RequestCellPaymentChange, RequestCellRaisedFeeChange, RequestRelayPlace, RequestRelayTeamEdit);
+            RequestCellPaymentChange, RequestCellRaisedFeeChange, RequestRelayPlace, RequestRelayTeamEdit,
+            RequestCellRelayGroupChange);
     }
 
     // Driven by the day ComboBox. A real day switches the session (so other pages follow); the roster
@@ -2326,13 +2328,13 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 case ParticipantDayRowViewModel row when IsDayMode && string.IsNullOrWhiteSpace(row.Chip):
                     candidates.Add(new ChipScanCandidate(
                         row.ParticipantId, row.Number ?? string.Empty, row.FullName ?? string.Empty,
-                        row.SelectedGroup?.Label ?? string.Empty, row.Fields.Values, row,
+                        row.GroupLabel, row.Fields.Values, row,
                         NeededPunches: row.SelectedGroup?.ControlCount ?? 0));
                     break;
                 case ParticipantRosterRowViewModel row when IsRosterMode && ChiplessOpenDays(row).Any():
                     var groups = row.Days
                         .Where(d => d.IsMember)
-                        .Select(d => d.SelectedGroup?.Label ?? string.Empty)
+                        .Select(d => d.GroupLabel)
                         .Where(g => g.Length > 0)
                         .Distinct()
                         .ToList();
@@ -2875,7 +2877,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             case "Group":
                 var g = row.GroupOptions.FirstOrDefault(o => o.Id == r.Id);
                 if (g is not null)
-                    row.SelectedGroup = g;
+                    row.BulkGroup = g; // a relay runner keeps the team's group (Р-22)
                 break;
             case "Region":
                 row.SelectedRegion = row.RegionOptions.FirstOrDefault(o => !o.IsAdd && o.Id == r.Id) ?? row.RegionOptions[0];
@@ -3074,8 +3076,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             new RelayTeamCellEdit(cells.ParticipantId, cells.DayId, field, value))));
 
     // One relay edit at a time (a fill-down paste must create a team once and see each leg the previous row took; a
-    // question shows one at a time), then the common ending.
-    private async Task RunRelayEditAsync(RelayCellsViewModel cells, Func<Task<RelayPlacementOutcome>> edit)
+    // question shows one at a time), then the common ending. True when the edit changed something.
+    private async Task<bool> RunRelayEditAsync(RelayCellsViewModel cells, Func<Task<RelayPlacementOutcome>> edit)
     {
         await _relayGate.WaitAsync();
         try
@@ -3086,7 +3088,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 cells.Revert();
                 if (RelayRefusal(outcome) is { } refusal)
                     _toasts.Show(Localization.Get("Participants.Relay.Title"), refusal);
-                return;
+                return false;
             }
             // The edited row shows its new place now (a team just created gets its id, so its leg can be typed straight
             // away); the rest follows on the reload.
@@ -3097,16 +3099,19 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             // relay cells follow at once — the full reload (results) comes a second later and waits while a cell is typed in.
             await ApplyRelayPlacementsAsync(cells.DayId);
             RequestReload();
+            return true;
         }
         catch (DayLockedException locked)
         {
             cells.Revert();
             await ExplainDayLockAsync(locked.DayNumber);
+            return false;
         }
         catch (Exception ex)
         {
             cells.Revert();
             _log.Error("Participants.Relay", ex);
+            return false;
         }
         finally
         {
@@ -3204,6 +3209,104 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             _ => null
         };
     }
+
+    // ── A relay runner's group (Р-22: on a relay day it is the team's). Another group picked in the group cell is asked:
+    // take only this runner off the team and move them, or move the whole team (offered only into a group that runs a
+    // relay too); «не бере участі» (roster) takes them off the team and the day. Cancelled, the cell shows the team's
+    // group again; a paste or bulk edit never gets here (it leaves a relay runner alone).
+    private void RequestCellRelayGroupChange(RosterDayCellViewModel cell, GroupOption target)
+        => _pendingSaves.Track(ChangeRelayGroupAsync(cell.Relay, target, cell.ShowGroup, cell.SetGroupSilently,
+            leaveDay: () => LeaveRelayDayAsync(cell)));
+
+    private void RequestDayRowRelayGroupChange(ParticipantDayRowViewModel row, GroupOption target)
+        => _pendingSaves.Track(ChangeRelayGroupAsync(row.Relay, target, row.ShowGroup, row.SetGroupSilently, leaveDay: null));
+
+    private async Task ChangeRelayGroupAsync(RelayCellsViewModel cells, GroupOption target, Action showGroup,
+        Action<GroupOption> setGroup, Func<Task>? leaveDay)
+    {
+        var name = RunnerName(cells.ParticipantId);
+        var team = cells.Stored is { } place ? RelayTeamNumbers.Label(place.TeamNumber, place.TeamName) : string.Empty;
+        if (target.Id is not { } groupId)
+        {
+            var leave = leaveDay is not null && await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(Localization,
+                "Participants.Relay.GroupChange.Title", "Participants.Relay.GroupChange.LeaveMessage",
+                confirmKey: "Participants.Relay.GroupChange.Leave")
+            {
+                MessageArgs = [name, team]
+            });
+            if (leave)
+                await leaveDay!();
+            else
+                showGroup();
+            return;
+        }
+
+        var changed = await RunRelayEditAsync(cells, async () =>
+            await AskRelayGroupChangeAsync(name, team, target) is { } choice
+                ? await Task.Run(() => _editor.ChangeRelayRunnerGroupAsync(
+                    new RelayGroupEdit(cells.ParticipantId, cells.DayId, groupId, choice)))
+                : new RelayPlacementOutcome(RelayPlacementStatus.Unchanged));
+        if (changed)
+            setGroup(target);
+        else
+            showGroup();
+    }
+
+    // «Змінити групу учасника команди?» — into a relay group: the whole team (confirm) or only this runner, off the team
+    // (alternate); into any other group only the runner can go (confirm). Null when cancelled.
+    private async Task<RelayTeamChoice?> AskRelayGroupChangeAsync(string name, string team, GroupOption target)
+    {
+        var dialog = target.IsRelay
+            ? new ConfirmDialogViewModel(Localization, "Participants.Relay.GroupChange.Title",
+                "Participants.Relay.GroupChange.Message", confirmKey: "Participants.Relay.GroupChange.WholeTeam")
+            {
+                AlternateKey = "Participants.Relay.GroupChange.OnlyRunner",
+                MessageArgs = [name, team, target.Label],
+                IsDestructive = false
+            }
+            : new ConfirmDialogViewModel(Localization, "Participants.Relay.GroupChange.Title",
+                "Participants.Relay.GroupChange.NotRelayMessage", confirmKey: "Participants.Relay.GroupChange.ReleaseAndMove")
+            {
+                MessageArgs = [name, team, target.Label],
+                IsDestructive = false
+            };
+        return await _dialogs.ChooseAsync(dialog) switch
+        {
+            ConfirmDialogResult.Confirm => target.IsRelay ? RelayTeamChoice.ChangeTeam : RelayTeamChoice.MoveRunner,
+            ConfirmDialogResult.Alternate => RelayTeamChoice.MoveRunner,
+            _ => null
+        };
+    }
+
+    // «не бере участі» for a relay runner, once confirmed: off the day — the link goes, and the leg with it.
+    private async Task LeaveRelayDayAsync(RosterDayCellViewModel cell)
+    {
+        try
+        {
+            if (!await LeaveCellDayAsync(cell))
+            {
+                cell.ShowGroup();
+                return;
+            }
+            await ApplyRelayPlacementsAsync(cell.DayId);
+            RequestReload();
+        }
+        catch (DayLockedException locked)
+        {
+            cell.ShowGroup();
+            await ExplainDayLockAsync(locked.DayNumber);
+        }
+        catch (Exception ex)
+        {
+            cell.ShowGroup();
+            _log.Error("Participants.Relay", ex);
+        }
+    }
+
+    private string RunnerName(Guid participantId) =>
+        Roster.FirstOrDefault(r => r.ParticipantId == participantId)?.FullName
+        ?? Participants.FirstOrDefault(r => r.ParticipantId == participantId)?.FullName
+        ?? string.Empty;
 
     // Why a relay edit did nothing; null when there is nothing to say (the runner is already there / a question was
     // cancelled).
@@ -3403,20 +3506,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         try
         {
             if (groupId is null)
-            {
-                // "не бере участі": leave the day. Nothing to do if not currently a member. Their last day deletes the
-                // person — ask first; a «no» puts the cell back.
-                if (cell.LinkId is { } linkId)
-                {
-                    if (!await ConfirmLastDayAsync(participantId))
-                    {
-                        await LoadAsync();
-                        return;
-                    }
-                    await Task.Run(() => _editor.RemoveParticipantFromDayAsync(linkId, participantId));
-                }
-                cell.ApplyMembership(isMember: false, linkId: null);
-            }
+                await LeaveCellDayAsync(cell);
             else
             {
                 var linkId = await Task.Run(() => _editor.SetParticipantDayGroupAsync(participantId, dayId, groupId));
@@ -3430,6 +3520,23 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             }
         }
         catch { }
+    }
+
+    // "не бере участі": takes the participant off the cell's day; nothing to do if not a member. Their last day deletes
+    // the person — ask first; a «no» reloads the page (the cell shows their group again) and returns false.
+    private async Task<bool> LeaveCellDayAsync(RosterDayCellViewModel cell)
+    {
+        if (cell.LinkId is { } linkId)
+        {
+            if (!await ConfirmLastDayAsync(cell.ParticipantId))
+            {
+                await LoadAsync();
+                return false;
+            }
+            await Task.Run(() => _editor.RemoveParticipantFromDayAsync(linkId, cell.ParticipantId));
+        }
+        cell.ApplyMembership(isMember: false, linkId: null);
+        return true;
     }
 
     // ── Region options + per-row region edit

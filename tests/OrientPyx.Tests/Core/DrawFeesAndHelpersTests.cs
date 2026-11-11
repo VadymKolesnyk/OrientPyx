@@ -194,10 +194,17 @@ public sealed class DrawFeesAndHelpersTests
     [Fact]
     public void CustomField_NormalisesChoiceNumberAndBool()
     {
-        var choice = new CustomField("gender", "Стать", CustomFieldKind.Choice, [new ChoiceOption("Ч", "M", "male"), new ChoiceOption("Ж", "F")], CustomField.UserSource, 0);
-        Assert.Equal("Ч", choice.Normalize("m"));
-        Assert.Equal("Ч", choice.Normalize(" MALE "));
+        var choice = new CustomField("gender", "Стать", CustomFieldKind.Choice, [new ChoiceOption("Ч"), new ChoiceOption("Ж")], CustomField.UserSource, 0);
+        Assert.Equal("Ч", choice.Normalize(" ч "));
         Assert.Equal("Ж", choice.Normalize("ж"));
+        Assert.Equal("M", choice.Normalize("M"));            // no synonyms: another spelling is kept as typed
+        Assert.True(choice.IsInvalid("M"));
+        // An event.db written while options still had synonyms reads fine — the synonyms are ignored.
+        Assert.Equal(["Ч", "Ж"], CustomField.ParseOptions("""[{"Value":"Ч","Aliases":["M","Чол"]},{"Value":"Ж","Aliases":null}]""")
+            .Select(o => o.Value));
+        var stored = CustomField.SerializeOptions(choice.Options);
+        Assert.DoesNotContain("Aliases", stored);
+        Assert.Equal(["Ч", "Ж"], CustomField.ParseOptions(stored).Select(o => o.Value));
         Assert.Equal("x", choice.Normalize("x"));
         Assert.True(choice.IsInvalid("x"));
         Assert.False(choice.IsInvalid(""));
@@ -219,6 +226,23 @@ public sealed class DrawFeesAndHelpersTests
     }
 
     [Fact]
+    public void CustomFieldEditor_ReadsChoiceOptionsAsACommaList()
+    {
+        var loc = Sp.GetRequiredService<OrientPyx.Localization.ILocalizationService>();
+        var kinds = Enum.GetValues<CustomFieldKind>()
+            .Select(k => new OrientPyx.Presentation.ViewModels.Dialogs.FieldKindOption(k, loc)).ToList();
+        var field = new CustomField("stat", "Стать", CustomFieldKind.Choice,
+            [new ChoiceOption("Ч"), new ChoiceOption("Ж")], "plugin:x", 0);
+        var row = new OrientPyx.Presentation.ViewModels.Dialogs.CustomFieldRowViewModel(field, false, kinds, loc, _ => { });
+        Assert.Equal("Ч, Ж", row.OptionsText);
+
+        row.OptionsText = " Ч ,Ж; Інше,, ч ";
+        var options = row.ToField().Options;
+        Assert.Equal(["Ч", "Ж", "Інше"], options.Select(o => o.Value));   // separators trimmed, the repeat «ч» dropped
+        Assert.Equal("Ч", row.ToField().Normalize("ч"));
+    }
+
+    [Fact]
     public async Task CustomField_RoundTripsThroughTheServiceAndImportTargets()
     {
         var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("cf"));
@@ -226,10 +250,10 @@ public sealed class DrawFeesAndHelpersTests
         var runner = await c.AddRunnerAsync("A", "1", "", "Ч21");
         await c.SelectAsync();
         var editor = Sp.GetRequiredService<ICompetitionEditorService>();
-        var field = await editor.AddCustomFieldAsync("Стать", CustomFieldKind.Choice, [new ChoiceOption("Ч", "M"), new ChoiceOption("Ж", "F")]);
+        var field = await editor.AddCustomFieldAsync("Стать", CustomFieldKind.Choice, [new ChoiceOption("Ч"), new ChoiceOption("Ж")]);
         Assert.NotNull(field);
         Assert.Equal("stat", field.Key);
-        Assert.Equal("Ч", await editor.SetParticipantFieldAsync(runner.Id, field.Key, "m"));
+        Assert.Equal("Ч", await editor.SetParticipantFieldAsync(runner.Id, field.Key, "ч"));
         var rows = await editor.GetParticipantDayRowsAsync();
         Assert.Equal("Ч", rows.Single().Fields[field.Key]);
         var roster = await editor.GetParticipantRosterAsync();

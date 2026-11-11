@@ -202,8 +202,16 @@ the format's structure comes from it, the plugin overrides rules: `EvaluateFinis
   `ResultProtocolData.ExtraColumns`. The Word protocol stores them as `ProtocolColumn.Extra` + `ProtocolColumnSetting.Key`
   (built-ins keep the enum, so old templates read unchanged; `ColumnKey` = `builtin.<Name>` | extra key); the monitor
   as `ResultColumn.Extra` keys in `ResultColumnSelection`. A stored extra key the day lacks is skipped on build and
-  kept on save. The online `results` table keeps the fixed columns only (the frontend knows no others); relay legs
-  carry plugin columns in `relay_teams.legs[].extra` (`docs/online-snapshot.md`).
+  kept on save. A plugin column shows only in groups of its discipline (`ResultProtocolGroup.PluginColumnKeys` /
+  `Shows`): the protocol section and the monitor group carry `HiddenColumns` — the .docx and the HTML leave them out
+  (the .docx sizes each column set on its own), the code-built previews give their slot to the column before
+  (`PreviewColumnSlots`). Online, extras are `OnlineDisplayConfig` entries (`Resolve(extras)`: a new plugin column shown on the
+  large screen, a field hidden; `Unresolved` keeps another day's) published in `display_config.columns` with a
+  `label`; values go in `results.extra` (jsonb — a project without the column → `IResultPublisher.ExtraUnsupported`,
+  rows sent without it) and `relay_teams.legs[].extra`; the spectator site lays relays out by the same config
+  (`docs/online-snapshot.md`). Everywhere «Час» is the clean time and «Результат» the counted one (a relay leg's
+  `AdjustedTime ?? LegTime`); a relay leg's running time is its own column `ResultColumn.Cumulative`
+  («Наростаючий», monitor/online — never the gap column).
 - **Unknown discipline** (plugin missing/disabled): `UnknownDisciplineStrategy` + the «Потрібен плагін» banner
   above the page (`PluginNoticeViewModel`). `.opyx` export writes `plugins.json` (required plugins); import warns
   about missing ones but proceeds.
@@ -242,8 +250,8 @@ orders (variants) per (day, group) stored in the `GroupCourseVariant` event-DB t
 `Toolkit.VariantMatcher`) and then judged like a set course against it. A variant may also be a mixed
 pattern (matched through `CourseMatcher`, never expanded into orders). **Relay** (естафета) legs run the
 group's course, or — per `GroupDaySettings.CourseAssignmentMode` (Р-41) — a named course from the same
-`GroupCourseVariant` rows: `ByBib` (`LegCourseAssignment` per leg number, typed on «Команди», imported from IOF
-`TeamCourseAssignment` / CSV, or brought by the course import), `TeamSet` (a course set per team — its own, else its
+`GroupCourseVariant` rows: `ByBib` (`LegCourseAssignment` per leg number, typed on «Команди» or brought by the course
+import — there is no separate leg-course file import), `TeamSet` (a course set per team — its own, else its
 leg numbers' `LegCourseAssignment` codes, else the group's — distributed over the read legs by
 `Toolkit.TeamCourseAssignment`, least missed controls, Р-42). The former `ByLeg` mode is gone (migration
 `DropRelayByLeg` turns it into `ByBib` rows). `LegCourseAssignment.GroupId` (nullable) tells the row's group; the
@@ -564,6 +572,15 @@ Keep the app lightweight and the four layers + plugin SDK structure above intact
 publisher below is the one exception to "no cloud sync" — it is publish-only and stays confined to
 DataAccess.)
 
+(**Results monitor** — «Результати на монітор» (`MonitorResultsViewModel`): the generation loop ticks every second,
+builds the day's documents only when a file is due (its «Оновлення», default 5 s) and writes a file only when its
+content changed: the page `rezNN.html` and beside it `rezNN.data.js` (`MonitorFile.DataFileName`,
+`IMonitorHtmlWriter.WriteData` — one `orientPyxMonitor({...})` call, ASCII JSON). The open page (file://, so no
+`fetch`) loads that script every 2 s and swaps its header / groups in place when their stamps changed, keeping the
+group at the top of the screen at the same offset; a data file with another layout (timing, `PageVersion`) or none
+at all ⇒ the old reload at the top of a scroll cycle. Browser-checked in `Core/MonitorLiveDataTests`
+(`[BrowserFact]`: headless Edge/Chrome, skipped without one).)
+
 (The result protocol — «Протоколи результатів» — now exports a per-group results protocol to a
 Word .docx via `IResultProtocolBuilder` (BusinessLogic) + `DocxResultProtocolWriter` (DataAccess,
 Open XML SDK). The template — orientation, ordered/visible columns, header text — is stored **per
@@ -600,6 +617,9 @@ the protocols show — and upserts it via `IResultPublisher`/`SupabaseResultPubl
 `OnlineApiSettings`). The **per-competition publish options** (slug, title, subtitle, standings/points flags) live
 per competition in `event.db` (`OnlinePublishSettingsRow`, JSON) via
 `ICompetitionEditorService.Get/SaveOnlinePublishSettingsAsync` (`OnlinePublishSettings`), seeded from the
-competition metadata. The service-role key never leaves the local app DB. Relay groups publish to a separate
+competition metadata. The service-role key never leaves the local app DB. Start numbers are optional: a runner
+without one (or the second holder of a shared one) goes under a stable negative `bib` (`OnlineResultRow.UnnumberedKey`,
+from the participant id — the same on every day; the site shows only a positive bib), and the publisher deletes that
+stand-in row once the runner gets a number (`PruneUnnumberedAsync`). Relay groups publish to a separate
 `relay_teams` table, never to `results`; a project without it just logs a warning — contract in
 `docs/online-snapshot.md`.)

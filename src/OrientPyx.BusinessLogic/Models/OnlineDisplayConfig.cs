@@ -31,8 +31,9 @@ public sealed record OnlineDisplayConfig(
     [property: JsonPropertyName("separateDsqSm")] bool SeparateDsqSm)
 {
     /// <summary>The default layout — a 1:1 mirror of <c>DEFAULT_DISPLAY_CONFIG</c> in <c>web/src/types.ts</c>:
-    /// place/name/result on both screens, most extras large-only, birth/qual off, and the DSQ split on for the
-    /// large screen only. Keep in lock-step with the frontend default.</summary>
+    /// place/name/region/result (and a relay's running time) on both screens, most others large-only, team (a
+    /// rogaine's)/birth/qual off, and the DSQ split on for the large screen only. Keep in lock-step with the
+    /// frontend default.</summary>
     public static OnlineDisplayConfig Default { get; } = new(
         [
             new("rk",          Lg: true,  Sm: true),
@@ -40,22 +41,34 @@ public sealed record OnlineDisplayConfig(
             new("bib",         Lg: true,  Sm: false),
             new("birth",       Lg: false, Sm: false),
             new("qual",        Lg: false, Sm: false),
-            new("team",        Lg: true,  Sm: true),
+            new("team",        Lg: false, Sm: false),
             new("club",        Lg: true,  Sm: false),
+            new("region",      Lg: true,  Sm: true),
             new("start_time",  Lg: true,  Sm: false),
             new("result_time", Lg: true,  Sm: true),
             new("gap",         Lg: true,  Sm: false),
+            new("cumulative",  Lg: true,  Sm: true),
             new("status",      Lg: true,  Sm: false),
             new("points",      Lg: true,  Sm: false),
         ],
         SeparateDsqLg: true,
         SeparateDsqSm: false);
 
-    /// <summary>Resolves the config to its columns in order, dropping unknown/duplicate keys and pairing each
-    /// with its definition + the two visibility flags. Any catalogue column not present in the config is
-    /// appended hidden (lg=sm=false), so a config saved before a column existed still surfaces it as "off".</summary>
-    public IReadOnlyList<OnlineResolvedColumn> Resolve()
+    /// <summary>
+    /// Resolves the config to its columns in order, dropping unknown/duplicate keys and pairing each with its
+    /// definition + the two visibility flags. <paramref name="extras"/> are the extra columns (plugin columns and
+    /// additional fields, §10.2) that can be shown: a config entry for one of them resolves to it (its definition's
+    /// <see cref="ResultColumnInfo.LabelKey"/> is the extra's label); an entry for an extra not offered is skipped
+    /// (see <see cref="Unresolved"/>). A catalogue column the config lacks (added since it was saved) takes its
+    /// <see cref="Default"/> visibility, right after the column it follows there; an extra the config lacks is
+    /// appended — a plugin column on the large screen, a field hidden.
+    /// </summary>
+    public IReadOnlyList<OnlineResolvedColumn> Resolve(IReadOnlyList<OnlineExtraColumn>? extras = null)
     {
+        var extraByKey = new Dictionary<string, OnlineExtraColumn>(StringComparer.Ordinal);
+        foreach (var e in extras ?? [])
+            extraByKey.TryAdd(e.Key, e);
+
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var result = new List<OnlineResolvedColumn>(Columns.Count);
         foreach (var c in Columns)
@@ -64,11 +77,47 @@ public sealed record OnlineDisplayConfig(
                 continue;
             if (ResultColumnInfo.ByKey(c.Key) is { } def)
                 result.Add(new OnlineResolvedColumn(def, c.Lg, c.Sm));
+            else if (extraByKey.TryGetValue(c.Key, out var extra))
+                result.Add(new OnlineResolvedColumn(ExtraDef(extra), c.Lg, c.Sm));
         }
+
+        var defaults = Default.Columns.ToList();
         foreach (var def in ResultColumnInfo.All.Where(d => !seen.Contains(d.Key)))
-            result.Add(new OnlineResolvedColumn(def, Lg: false, Sm: false));
+        {
+            var at = defaults.FindIndex(d => d.Key == def.Key);
+            var flags = at >= 0 ? defaults[at] : null;
+            // After the nearest column that precedes it in the default order; else at the end.
+            var insert = result.Count;
+            for (var i = at - 1; i >= 0; i--)
+            {
+                var before = result.FindIndex(r => string.Equals(r.Def.Key, defaults[i].Key, StringComparison.OrdinalIgnoreCase));
+                if (before >= 0)
+                {
+                    insert = before + 1;
+                    break;
+                }
+            }
+            result.Insert(insert, new OnlineResolvedColumn(def, flags?.Lg ?? false, flags?.Sm ?? false));
+            seen.Add(def.Key);
+        }
+
+        foreach (var extra in extraByKey.Values.Where(e => !seen.Contains(e.Key)))
+            result.Add(new OnlineResolvedColumn(ExtraDef(extra), Lg: extra.IsPlugin, Sm: false));
         return result;
     }
+
+    /// <summary>The config's entries for extra columns not among <paramref name="extras"/> (another day's plugin, a
+    /// deleted field) — kept by an editor and saved back unchanged, so switching days loses no choice.</summary>
+    public IReadOnlyList<OnlineColumnConfig> Unresolved(IReadOnlyList<OnlineExtraColumn>? extras)
+    {
+        var offered = (extras ?? []).Select(e => e.Key).ToHashSet(StringComparer.Ordinal);
+        return Columns
+            .Where(c => ResultColumnInfo.ByKey(c.Key) is null && !offered.Contains(c.Key))
+            .DistinctBy(c => c.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static ResultColumnInfo ExtraDef(OnlineExtraColumn extra) => new(ResultColumn.Extra, extra.Key, extra.Label);
 
     /// <summary>Builds a config from a legacy flat <see cref="ResultColumnSelection"/> (all chosen columns
     /// visible on both screens) so an old saved layout keeps working when <see cref="Default"/>'s richer

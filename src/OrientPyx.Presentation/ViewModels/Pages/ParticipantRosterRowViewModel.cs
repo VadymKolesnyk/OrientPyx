@@ -716,6 +716,22 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         }
     }
 
+    /// <summary>The collapsed Groups cell's resting text: the shared option's label, but «без групи» when the shared
+    /// "value" is no group and the participant runs one of those days.</summary>
+    public string CollapsedGroupLabel => CollapsedGroupValue is { Id: null } && HasDayWithoutGroup
+        ? Localization.Get("Participants.Group.Missing")
+        : CollapsedGroupValue?.Label ?? string.Empty;
+
+    /// <summary>The participant runs a day with no group on it (<see cref="RosterDayCellViewModel.HasNoGroup"/>) —
+    /// the collapsed Groups cell is amber then, whatever summary it shows.</summary>
+    public bool HasDayWithoutGroup => Days.Any(d => d.HasNoGroup);
+
+    /// <summary>The amber collapsed Groups cell's tooltip, naming the days with no group; null otherwise.</summary>
+    public string? NoGroupTooltip => HasDayWithoutGroup
+        ? string.Format(Localization.Get("Participants.Group.Missing.DaysTooltip"),
+            string.Join(", ", Days.Where(d => d.HasNoGroup).Select(d => d.DayNumber)))
+        : null;
+
     // The collapsed Groups cell has three states, decided by the distinct ACTUAL (non-null) groups
     // across all days — a day with no group / where the participant doesn't run is the null sentinel
     // and is ignored when counting "real" groups:
@@ -815,7 +831,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         get
         {
             var real = RealGroupDays;
-            return real.Count == 0 ? string.Empty : real[0].SelectedGroup.Label;
+            if (real.Count > 0)
+                return real[0].SelectedGroup.Label;
+            return HasDayWithoutGroup ? Localization.Get("Participants.Group.Missing") : string.Empty;
         }
     }
 
@@ -870,9 +888,12 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         // Each day owns a distinct GroupOptions list, and the combo matches its selection by reference.
         // Resolve the equivalent option (by group id) from each day's own list so its per-day combo can
         // find the selected item — assigning the shared instance directly leaves other days' combos blank.
+        // Through ComboGroup, so «не бере участі» also takes the participant off a day they run with no group (where
+        // the selection itself would not move). A relay runner's day is left alone: their group is the team's (Р-22) and
+        // changing it is asked one cell at a time.
         foreach (var cell in Days)
-            cell.SelectedGroup =
-                cell.GroupOptions.FirstOrDefault(o => o.Id == groupId) ?? cell.SelectedGroup;
+            if (!cell.Relay.HasTeam && cell.GroupOptions.FirstOrDefault(o => o.Id == groupId) is { } option)
+                cell.ComboGroup = option;
     }
 
     /// <summary>True when the participant runs at least one day (so a chip can be set).</summary>
@@ -1294,6 +1315,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     private void RaiseGroupAggregates()
     {
         OnPropertyChanged(nameof(CollapsedGroupValue));
+        OnPropertyChanged(nameof(CollapsedGroupLabel));
+        OnPropertyChanged(nameof(HasDayWithoutGroup));
+        OnPropertyChanged(nameof(NoGroupTooltip));
         OnPropertyChanged(nameof(GroupShowsInput));
         OnPropertyChanged(nameof(GroupShowsSingle));
         OnPropertyChanged(nameof(GroupShowsDifferent));

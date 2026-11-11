@@ -10,7 +10,7 @@ namespace OrientPyx.Presentation.ViewModels.Dialogs;
 
 /// <summary>
 /// The «Додаткові поля» modal: the competition's additional participant fields in a table — name, type, choice
-/// options with synonyms, origin — with add and delete (Р-13…Р-15). Edits are saved as they are made; deleting asks
+/// options (comma-separated), origin — with add and delete (Р-13…Р-15). Edits are saved as they are made; deleting asks
 /// for confirmation inline (it removes every participant's value too), and a plugin's field cannot be deleted while
 /// the plugin's discipline is in use. <see cref="Changed"/> tells the caller to reload its tables.
 /// </summary>
@@ -206,7 +206,7 @@ public sealed partial class CustomFieldRowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsChoice))]
     private FieldKindOption _selectedKind;
 
-    /// <summary>The choice options as text: <c>Ч = M, Чол; Ж = F, Жін</c> (value = synonyms; options split by ';').</summary>
+    /// <summary>The choice options as text, comma-separated: <c>Ч, Ж</c>.</summary>
     [ObservableProperty]
     private string _optionsText;
 
@@ -263,25 +263,21 @@ public sealed partial class FieldKindOption : ObservableObject
     public void Refresh() => OnPropertyChanged(nameof(Label));
 }
 
-/// <summary>Reads and writes choice options in the one-line form <c>Ч = M, Чол; Ж = F, Жін</c>.</summary>
+/// <summary>Reads and writes choice options as a comma-separated list: <c>Ч, Ж</c> (a ';' or a new line also
+/// separates; a repeat — compared via <see cref="TextKey"/> — is dropped).</summary>
 internal static class ChoiceOptionsText
 {
     public static string Format(IReadOnlyList<ChoiceOption> options) =>
-        string.Join("; ", options.Select(o => o.Aliases.Length == 0 ? o.Value : $"{o.Value} = {string.Join(", ", o.Aliases)}"));
+        string.Join(", ", options.Select(o => o.Value));
 
     public static IReadOnlyList<ChoiceOption> Parse(string? text)
     {
         var options = new List<ChoiceOption>();
-        foreach (var part in (text ?? string.Empty).Split([';', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        foreach (var part in (text ?? string.Empty).Split([',', ';', '\n'],
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            var eq = part.IndexOf('=');
-            var value = (eq < 0 ? part : part[..eq]).Trim();
-            if (value.Length == 0 || options.Any(o => TextKey.Same(o.Value, value)))
-                continue;
-            var aliases = eq < 0
-                ? []
-                : part[(eq + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            options.Add(new ChoiceOption(value, aliases));
+            if (!options.Any(o => TextKey.Same(o.Value, part)))
+                options.Add(new ChoiceOption(part));
         }
         return options;
     }

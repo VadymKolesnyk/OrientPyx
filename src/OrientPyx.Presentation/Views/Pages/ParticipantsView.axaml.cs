@@ -155,7 +155,8 @@ public partial class ParticipantsView : UserControl
                     break;
 
                 case ParticipantQuickFilter.WithoutGroup:
-                    // A groupless member shows the "no group" label, so keep exactly that value.
+                    // A groupless member shows «без групи» (the group column filters by its shown text), so keep
+                    // exactly that value.
                     DayTable.SetColumnFilter(GroupColumnKey, new SheetFilter
                     {
                         ColumnKey = GroupColumnKey,
@@ -163,7 +164,7 @@ public partial class ParticipantsView : UserControl
                         Mode = SheetFilterMode.Values,
                         AllowedValues = new System.Collections.Generic.HashSet<string>
                         {
-                            _vm.Localization.Get("Participants.Group.None"),
+                            _vm.Localization.Get("Participants.Group.Missing"),
                         },
                     });
                     break;

@@ -140,6 +140,11 @@ public sealed class ResultProtocolSection
 
     /// <summary>The data rows; each is the ordered cell strings matching the column headers.</summary>
     public IReadOnlyList<ResultProtocolBodyRow> Rows { get; init; } = [];
+
+    /// <summary>Indices into the document's columns this group's table leaves out — another discipline's plugin
+    /// columns (see <see cref="ResultProtocolGroup.Shows"/>). The rows still carry a (blank) cell for each; the
+    /// renderers drop them and size this table's columns on their own. Empty ⇒ every column.</summary>
+    public IReadOnlyList<int> HiddenColumns { get; init; } = [];
 }
 
 /// <summary>

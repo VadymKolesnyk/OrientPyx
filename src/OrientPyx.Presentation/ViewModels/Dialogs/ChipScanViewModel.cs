@@ -313,8 +313,8 @@ public sealed partial class ChipScanViewModel : ObservableObject
 
     private void OnRuleChanged(object? sender, EventArgs e) => Refresh();
 
-    // The participant's value of the field, normalised the way the field stores it — so a choice synonym
-    // («свій») reads as its option («власний») and meets the option's rule.
+    // The participant's value of the field, normalised the way the field stores it — so a choice value typed in
+    // another case («ВЛАСНИЙ») reads as its option («власний») and meets the option's rule.
     private static string ValueOf(ChipScanCandidate candidate, CustomField field)
     {
         var raw = candidate.FieldValues.TryGetValue(field.Key, out var v) ? v : string.Empty;

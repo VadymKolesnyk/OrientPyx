@@ -23,15 +23,24 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     private readonly Action<RosterDayCellViewModel> _requestBonusChange;
     private readonly Action<RosterDayCellViewModel> _requestPaymentChange;
     private readonly Action<RosterDayCellViewModel> _requestRaisedFeeChange;
+    private readonly Action<RosterDayCellViewModel, GroupOption> _requestRelayGroupChange;
     private ParticipantDayResult _result;
     // The judge's points correction («бонус») for this day; null = none. Edited via BonusText.
     private int? _bonus;
     private bool _initialized;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNoGroup))]
+    [NotifyPropertyChangedFor(nameof(GroupLabel))]
+    [NotifyPropertyChangedFor(nameof(NoGroupTooltip))]
+    [NotifyPropertyChangedFor(nameof(ComboGroup))]
     private bool _isMember;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNoGroup))]
+    [NotifyPropertyChangedFor(nameof(GroupLabel))]
+    [NotifyPropertyChangedFor(nameof(NoGroupTooltip))]
+    [NotifyPropertyChangedFor(nameof(ComboGroup))]
     private GroupOption _selectedGroup;
 
     [ObservableProperty]
@@ -76,9 +85,11 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         Action<RosterDayCellViewModel> requestPaymentChange,
         Action<RosterDayCellViewModel> requestRaisedFeeChange,
         Action<RelayCellsViewModel, RelayPlacementRequest> requestRelayPlace,
-        Action<RelayCellsViewModel, RelayTeamField, string> requestRelayTeamEdit)
+        Action<RelayCellsViewModel, RelayTeamField, string> requestRelayTeamEdit,
+        Action<RosterDayCellViewModel, GroupOption> requestRelayGroupChange)
     {
         _participantId = participantId;
+        _requestRelayGroupChange = requestRelayGroupChange;
         DayId = cell.DayId;
         DayNumber = cell.DayNumber;
         LinkId = cell.LinkId;
@@ -146,9 +157,9 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     /// <summary>The «Етап» cell accepts an edit: as <see cref="CanEditRelay"/>, on a team.</summary>
     public bool CanEditRelayLeg => CanEditRelay && Relay.HasTeam;
 
-    /// <summary>The group cell accepts an edit: an open day, and the runner is not on a relay team — a relay runner's
-    /// group is the team's (Р-22).</summary>
-    public bool CanEditGroup => CanEdit && !Relay.HasTeam;
+    /// <summary>The group cell accepts an edit: an open day. A relay runner's group is the team's (Р-22), so picking
+    /// another one for them is asked by the page (see <see cref="ComboGroup"/>).</summary>
+    public bool CanEditGroup => CanEdit;
 
     /// <summary>The finish-status choices: a descriptive "(<computed> — автоматично)" sentinel, then the
     /// settable statuses. Rebuilt when the result changes.</summary>
@@ -401,6 +412,74 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         // A relay runner's group is the team's (Р-22): the cell is read-only, so a paste never moves them either.
         if (_initialized && !IsDayLocked && !Relay.HasTeam)
             _requestGroupChange(this);
+    }
+
+    /// <summary>
+    /// The participant runs this day but has no group on it: none was set (a UOF «3Е» with no relay group, a file row
+    /// with no group), or theirs is no longer on the day's list and the cell fell back to the "(none)" option. Shown
+    /// as amber «без групи» — never as «не бере участі», which means "not on this day".
+    /// </summary>
+    public bool HasNoGroup => IsMember && SelectedGroup?.Id is null;
+
+    /// <summary>The group cell's resting text: the group, «без групи» (<see cref="HasNoGroup"/>) or «не бере участі».
+    /// Also the column's sort and filter value.</summary>
+    public string GroupLabel => HasNoGroup
+        ? Localization.Get("Participants.Group.Missing")
+        : SelectedGroup?.Label ?? string.Empty;
+
+    /// <summary>The amber group cell's tooltip; null otherwise, which hides it.</summary>
+    public string? NoGroupTooltip => HasNoGroup ? Localization.Get("Participants.Group.Missing.Tooltip") : null;
+
+    /// <summary>
+    /// What the group combo selects: <see cref="SelectedGroup"/>, except nothing while <see cref="HasNoGroup"/> — the
+    /// "(none)" option would read as the current value there, and picking it would change nothing. With no
+    /// selection, picking «не бере участі» takes the participant off the day. A relay runner's pick is handed to the page
+    /// to ask (their group is the team's, Р-22); the selection moves only once that is answered.
+    /// </summary>
+    public GroupOption? ComboGroup
+    {
+        get => HasNoGroup ? null : SelectedGroup;
+        set
+        {
+            if (value is null)
+                return; // the combo dropping its own selection (a filtered list) is not a choice
+            if (Relay.HasTeam)
+            {
+                if (!ReferenceEquals(value, SelectedGroup) && _initialized && !IsDayLocked)
+                    _requestRelayGroupChange(this, value);
+                return;
+            }
+            if (!ReferenceEquals(value, SelectedGroup))
+                SelectedGroup = value;
+            else if (HasNoGroup && _initialized && !IsDayLocked)
+                _requestGroupChange(this); // «не бере участі» on a member with no group: SelectedGroup does not move
+        }
+    }
+
+    /// <summary>
+    /// The group set by a paste or a bulk edit — never asked, so a relay runner keeps the team's group (Р-22); the
+    /// change is made one cell at a time through the combo, which asks.
+    /// </summary>
+    public GroupOption? BulkGroup
+    {
+        get => SelectedGroup;
+        set
+        {
+            if (value is not null && !Relay.HasTeam)
+                SelectedGroup = value;
+        }
+    }
+
+    /// <summary>Shows the stored group again in the combo — a relay group change was cancelled or refused.</summary>
+    public void ShowGroup() => OnPropertyChanged(nameof(ComboGroup));
+
+    /// <summary>Sets the group a relay group change just saved, without asking or saving again.</summary>
+    public void SetGroupSilently(GroupOption group)
+    {
+        var wasInitialized = _initialized;
+        _initialized = false;
+        SelectedGroup = group;
+        _initialized = wasInitialized;
     }
 
     /// <summary>

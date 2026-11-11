@@ -30,6 +30,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private readonly IDisciplineStrategyProvider _strategies;
     private readonly Action<ParticipantDayRowViewModel> _requestSave;
     private readonly Action<ParticipantDayRowViewModel> _requestLeaveDay;
+    private readonly Action<ParticipantDayRowViewModel, GroupOption> _requestRelayGroupChange;
     private readonly Action<ParticipantDayRowViewModel> _requestChipChange;
     private readonly Action<ParticipantDayRowViewModel> _requestRegionChange;
     private readonly Action<ParticipantDayRowViewModel> _requestAddRegion;
@@ -74,6 +75,10 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private DateTimeOffset? _birthDate;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNoGroup))]
+    [NotifyPropertyChangedFor(nameof(GroupLabel))]
+    [NotifyPropertyChangedFor(nameof(NoGroupTooltip))]
+    [NotifyPropertyChangedFor(nameof(ComboGroup))]
     private GroupOption _selectedGroup;
 
     [ObservableProperty]
@@ -161,8 +166,10 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         Action<ParticipantDayRowViewModel> requestBonusChange,
         Action<ParticipantDayRowViewModel> requestDayPaymentChange,
         Action<RelayCellsViewModel, RelayPlacementRequest> requestRelayPlace,
-        Action<RelayCellsViewModel, RelayTeamField, string> requestRelayTeamEdit)
+        Action<RelayCellsViewModel, RelayTeamField, string> requestRelayTeamEdit,
+        Action<ParticipantDayRowViewModel, GroupOption> requestRelayGroupChange)
     {
+        _requestRelayGroupChange = requestRelayGroupChange;
         _linkId = row.LinkId;
         _dayId = row.DayId;
         _participantId = row.ParticipantId;
@@ -225,8 +232,8 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         _statusOptions = FinishStatusOptions.Build(localization, row.Result.Computed);
         _selectedStatus = FinishStatusOptions.Select(StatusOptions, row.Result.Override);
 
-        // Match by id; fall back to the "(none)" option (the first) when the group is unset/missing.
-        _selectedGroup = groupOptions.FirstOrDefault(o => o.Id == row.GroupId) ?? groupOptions[0];
+        // Match by id; a group that is unset or not on the day's list resolves to "no group" (see ResolveGroup).
+        _selectedGroup = ResolveGroup(groupOptions, row.GroupId);
         // Region/Club match by id across their shared lists; fall back to "(none)" (the first option).
         _selectedRegion = regionOptions.FirstOrDefault(o => !o.IsAdd && o.Id == row.RegionId) ?? regionOptions[0];
         _committedRegion = _selectedRegion;
@@ -251,7 +258,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         Relay.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(RelayCellsViewModel.HasTeam))
-                OnPropertyChanged(nameof(IsGroupEditable));
+                OnPropertyChanged(nameof(GroupFollowsTeam));
         };
 
         _initialized = true;
@@ -537,7 +544,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
 
             if (!ReferenceEquals(GroupOptions, groupOptions))
                 GroupOptions = groupOptions;
-            SelectedGroup = groupOptions.FirstOrDefault(o => o.Id == row.GroupId) ?? groupOptions[0];
+            SelectedGroup = ResolveGroup(groupOptions, row.GroupId);
 
             if (!ReferenceEquals(RegionOptions, regionOptions))
                 RegionOptions = regionOptions;
@@ -692,8 +699,9 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     /// <summary>The relay cells of this runner on the day (blank outside a relay).</summary>
     public RelayCellsViewModel Relay { get; }
 
-    /// <summary>False for a relay runner: their group on the day is the team's (Р-22) and follows it.</summary>
-    public bool IsGroupEditable => !Relay.HasTeam;
+    /// <summary>True for a relay runner: their group on the day is the team's (Р-22) and follows it — picking another
+    /// one is asked by the page (see <see cref="ComboGroup"/>), a paste or bulk edit leaves it.</summary>
+    public bool GroupFollowsTeam => Relay.HasTeam;
     public int ScoreSort => _result.Score ?? -1;
     /// <summary>Raw points for sorting (min when none, so awarded points sort together).</summary>
     public decimal PointsSort => _result.Points ?? decimal.MinValue;
@@ -756,7 +764,8 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         SelectedDiscountIds: DiscountFlags.Where(f => !f.IsFsouMemberDiscount && f.IsSelected).Select(f => f.DiscountId).ToList(),
         TotalEntryFee: TotalEntryFee,
         OtherDays: _otherDays,
-        GroupId: SelectedGroup.Id,
+        // No group picked: keep what is stored (null, or a group no longer on the day) — never the list's first entry.
+        GroupId: HasNoGroup ? _unlistedGroupId : SelectedGroup.Id,
         GroupName: SelectedGroup.Label,
         Chip: (Chip ?? string.Empty).Trim(),
         Team: (Team ?? string.Empty).Trim(),
@@ -812,8 +821,8 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
 
         if (!_initialized)
             return;
-        // A relay runner's group is the team's (Р-22): a paste / bulk edit never moves them.
-        if (!IsGroupEditable)
+        // A relay runner's group is the team's (Р-22): it moves only through the page's question (ComboGroup).
+        if (GroupFollowsTeam)
             return;
 
         // Selecting "не участвує" (the null sentinel) removes the participant from this day; any other
@@ -825,6 +834,93 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
             QueueSave();
             RecomputeTotal();
         }
+    }
+
+    // The "(none)" option of a row with no group, kept outside the day's list (see ResolveGroup).
+    private GroupOption? _noGroupOption;
+
+    // The stored group of a row whose group is not on the day's list, written back unchanged on a row save.
+    private Guid? _unlistedGroupId;
+
+    // The day grid lists only the day's groups (no "(none)" option), so a member with no group on the day — none set,
+    // or theirs no longer on the day — resolves to a "(none)" option of its own outside the list: the cell reads
+    // «без групи» and the combo shows no choice. Falling back to the list's first entry instead showed (and, on the
+    // next save of any other field, wrote) the day's first group. The stored id is kept for the row save.
+    private GroupOption ResolveGroup(IReadOnlyList<GroupOption> options, Guid? groupId)
+    {
+        _unlistedGroupId = null;
+        if (options.FirstOrDefault(o => o.Id == groupId) is { } listed)
+            return listed;
+        _unlistedGroupId = groupId;
+        return options.FirstOrDefault(o => o.Id is null)
+               ?? (_noGroupOption ??= new GroupOption(null, string.Empty, Localization));
+    }
+
+    /// <summary>
+    /// A row of the day with no group on it (none was set, or theirs is no longer on the day's list). Every row here
+    /// runs the day, so the cell shows amber «без групи», not «не бере участі».
+    /// </summary>
+    public bool HasNoGroup => SelectedGroup?.Id is null;
+
+    /// <summary>The group cell's resting text — the group or «без групи»; also the column's sort and filter value.</summary>
+    public string GroupLabel => HasNoGroup
+        ? Localization.Get("Participants.Group.Missing")
+        : SelectedGroup.Label;
+
+    /// <summary>The amber group cell's tooltip; null otherwise, which hides it.</summary>
+    public string? NoGroupTooltip => HasNoGroup ? Localization.Get("Participants.Group.Missing.Tooltip") : null;
+
+    /// <summary>
+    /// What the group combo selects: <see cref="SelectedGroup"/>, except nothing while <see cref="HasNoGroup"/> — the
+    /// "(none)" option would read as the current value, and picking it would change nothing. With no selection,
+    /// picking «не бере участі» takes the participant off the day. A relay runner's pick is handed to the page to ask
+    /// (their group is the team's, Р-22); the selection moves only once that is answered.
+    /// </summary>
+    public GroupOption? ComboGroup
+    {
+        get => HasNoGroup ? null : SelectedGroup;
+        set
+        {
+            if (value is null)
+                return; // the combo dropping its own selection (a filtered list) is not a choice
+            if (GroupFollowsTeam)
+            {
+                if (!ReferenceEquals(value, SelectedGroup) && _initialized)
+                    _requestRelayGroupChange(this, value);
+                return;
+            }
+            if (!ReferenceEquals(value, SelectedGroup))
+                SelectedGroup = value;
+            else if (HasNoGroup && _initialized)
+                _requestLeaveDay(this); // «не бере участі» on a row with no group: SelectedGroup does not move
+        }
+    }
+
+    /// <summary>
+    /// The group set by a paste or a bulk edit — never asked, so a relay runner keeps the team's group (Р-22); the
+    /// change is made one row at a time through the combo, which asks.
+    /// </summary>
+    public GroupOption? BulkGroup
+    {
+        get => SelectedGroup;
+        set
+        {
+            if (value is not null && !GroupFollowsTeam)
+                SelectedGroup = value;
+        }
+    }
+
+    /// <summary>Shows the stored group again in the combo — a relay group change was cancelled or refused.</summary>
+    public void ShowGroup() => OnPropertyChanged(nameof(ComboGroup));
+
+    /// <summary>Sets the group a relay group change just saved, without asking or saving again.</summary>
+    public void SetGroupSilently(GroupOption group)
+    {
+        var wasInitialized = _initialized;
+        _initialized = false;
+        SelectedGroup = group;
+        _unlistedGroupId = null;
+        _initialized = wasInitialized;
     }
 
     /// <summary>

@@ -1,8 +1,8 @@
 namespace OrientPyx.Plugins.Sdk;
 
-/// <summary>One option of a choice field, with synonyms that import and manual entry fold to <see cref="Value"/>
-/// (Р-18). A plain string converts implicitly: <c>FieldKind.Choice("Ч", "Ж")</c>.</summary>
-public sealed record ChoiceOption(string Value, params string[] Aliases)
+/// <summary>One option of a choice field. Import and manual entry fold a value to it regardless of case and of
+/// look-alike Latin/Cyrillic letters (Р-18). A plain string converts implicitly: <c>FieldKind.Choice("Ч", "Ж")</c>.</summary>
+public sealed record ChoiceOption(string Value)
 {
     public static implicit operator ChoiceOption(string value) => new(value);
 }

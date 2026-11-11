@@ -43,8 +43,10 @@ public sealed partial class MonitorPreviewViewModel : ObservableObject
 /// HTML <c>c-name</c>/<c>c-num</c>/<c>c-place</c> classes).</summary>
 public sealed record MonitorPreviewColumn(string Key, string Header, ResultColumn Column);
 
-/// <summary>One group section in the preview: the blue caption, an optional facts sub-caption, and the rows.</summary>
-public sealed record MonitorPreviewSection(string Name, string Caption, IReadOnlyList<MonitorPreviewRow> Rows);
+/// <summary>One group section in the preview: the blue caption, an optional facts sub-caption, the rows, and the
+/// columns its table leaves out (another discipline's plugin columns; indices into the preview's columns).</summary>
+public sealed record MonitorPreviewSection(
+    string Name, string Caption, IReadOnlyList<MonitorPreviewRow> Rows, IReadOnlyList<int>? HiddenColumns = null);
 
 /// <summary>One result row: the cell strings (parallel to <see cref="MonitorPreviewViewModel.Columns"/>) and
 /// whether the runner is unplaced (DNS/MP/…) so the row can be greyed like the HTML output.</summary>

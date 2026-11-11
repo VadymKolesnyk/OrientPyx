@@ -37,10 +37,6 @@
                                       SearchWatermark="{Binding Localization[Common.Search]}"
                                       DayOptions="{Binding DayOptions}"
                                       SelectedDay="{Binding SelectedDay, Mode=TwoWay}" />
-                <Button Classes="ghost" Margin="0,0,8,8" Click="OnImportCoursesClick"
-                        IsEnabled="{Binding HasRelayGroups}"
-                        ToolTip.Tip="{Binding Localization[RelayTeams.ImportCourses.Hint]}"
-                        Content="{Binding Localization[RelayTeams.ImportCourses]}" />
                 <!-- «Присвоєння номерів» (Ctrl+B): the shown teams in their on-screen order, as on «Учасники». -->
                 <Button Classes="ghost" Margin="0,0,8,8" Click="OnAssignNumbersClick"
                         IsEnabled="{Binding HasRelayGroups}"

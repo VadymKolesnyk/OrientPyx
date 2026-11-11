@@ -53,6 +53,13 @@ public enum RelayTeamChoice
 }
 
 /// <summary>
+/// Another group picked for a runner who is on a relay team (Р-22: on a relay day their group is the team's), after the
+/// page asked: <see cref="RelayTeamChoice.MoveRunner"/> takes only this runner off the team and into the group (they stay
+/// on the day); <see cref="RelayTeamChoice.ChangeTeam"/> moves the whole team into it — a relay group of the day only.
+/// </summary>
+public sealed record RelayGroupEdit(Guid ParticipantId, Guid DayId, Guid GroupId, RelayTeamChoice Choice);
+
+/// <summary>
 /// A runner's «Команда» or «Номер команди» cell typed in the participant tables (<paramref name="Value"/> as typed;
 /// blank for a cleared cell).
 /// </summary>

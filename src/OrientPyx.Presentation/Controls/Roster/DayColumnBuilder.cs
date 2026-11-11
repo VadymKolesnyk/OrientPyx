@@ -26,6 +26,13 @@ public sealed class DayColumnBuilder
         new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(0x66, 0xF5, 0x9E, 0x0B));
 
     /// <summary>
+    /// The amber tint of a group cell of a participant who runs the day with no group on it («без групи») — the
+    /// same amber as «Кількість карт»'s «(без групи)» row. Shared with the roster's group columns.
+    /// </summary>
+    public static readonly Avalonia.Media.ISolidColorBrush NoGroupBrush =
+        new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(0x55, 0xF5, 0x9E, 0x0B));
+
+    /// <summary>
     /// The green tint of the roster's «Номер» cell once the participant has been through registration
     /// («Мандатку пройдено», <see cref="ParticipantRosterRowViewModel.CheckedIn"/>).
     /// </summary>
@@ -95,8 +102,13 @@ public sealed class DayColumnBuilder
         bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Note", nameof(ParticipantDayRowViewModel.Note), fixedWidth: 180));
 
         // This day's group (combo bound directly on the row) and chip (free text, unique per day).
-        bands.Add(Identity(SheetCellKind.RowGroup, "Participants.Col.Group", path: string.Empty,
-            sortPath: $"{nameof(ParticipantDayRowViewModel.SelectedGroup)}.{nameof(GroupOption.Label)}"));
+        // Sorted and filtered by the shown text, so «без групи» (amber) is a value of its own in the filter.
+        var groupBand = Identity(SheetCellKind.RowGroup, "Participants.Col.Group", path: string.Empty,
+            sortPath: nameof(ParticipantDayRowViewModel.GroupLabel));
+        groupBand.Columns[0].CellBackgroundPath = nameof(ParticipantDayRowViewModel.HasNoGroup);
+        groupBand.Columns[0].CellBackgroundBrush = NoGroupBrush;
+        groupBand.Columns[0].CellBackgroundTooltipPath = nameof(ParticipantDayRowViewModel.NoGroupTooltip);
+        bands.Add(groupBand);
         // Relay day: «Команда» (the team's name, like a rogaine team), «Номер команди» (the team's own number — a change
         // is asked) and «Етап» (a teammate's leg swaps the two) — edited here as well as on «Команди».
         if (showRelay)
@@ -266,7 +278,8 @@ public sealed class DayColumnBuilder
         const string label = nameof(GroupOption.Label);
         (string Items, string Selected)? paths = col.Kind switch
         {
-            SheetCellKind.RowGroup => (nameof(ParticipantDayRowViewModel.GroupOptions), nameof(ParticipantDayRowViewModel.SelectedGroup)),
+            // Through BulkGroup: a paste can't ask, so it leaves a relay runner in the team's group (Р-22).
+            SheetCellKind.RowGroup => (nameof(ParticipantDayRowViewModel.GroupOptions), nameof(ParticipantDayRowViewModel.BulkGroup)),
             SheetCellKind.RowRegion => (nameof(ParticipantDayRowViewModel.RegionOptions), nameof(ParticipantDayRowViewModel.SelectedRegion)),
             SheetCellKind.RowClub => (nameof(ParticipantDayRowViewModel.ClubOptions), nameof(ParticipantDayRowViewModel.SelectedClub)),
             SheetCellKind.RowDussh => (nameof(ParticipantDayRowViewModel.DusshOptions), nameof(ParticipantDayRowViewModel.SelectedDussh)),

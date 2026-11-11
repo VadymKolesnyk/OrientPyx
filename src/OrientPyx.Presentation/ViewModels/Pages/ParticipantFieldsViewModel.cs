@@ -148,13 +148,15 @@ public sealed partial class ParticipantFieldCellViewModel : ObservableObject
         SyncSelected(stored);
     }
 
-    // Points the dropdown at the value, adding a one-off (red) option when it is outside the list.
+    // Points the dropdown at the value, adding a one-off (red) option when it is outside the list — and dropping a
+    // stale one (a pasted "ж", shown red until the store returned the option «Ж»).
     private void SyncSelected(string value)
     {
         _syncing = true;
         try
         {
-            if (Options.FirstOrDefault(o => o.Value == value) is not { } match)
+            if (Options.FirstOrDefault(o => o.Value == value) is not { } match
+                || Options.Any(o => o.IsUnknown && o.Value != value))
             {
                 Options = BuildOptions(value);
                 match = Options.First(o => o.Value == value);

@@ -313,7 +313,7 @@ public sealed partial class MonitorFileViewModel : ObservableObject
             for (var i = 0; i < take; i++)
                 rows.Add(new MonitorPreviewRow(g.Cells[i].Values, g.Cells[i].Unplaced));
             remaining -= take;
-            Preview.Sections.Add(new MonitorPreviewSection(g.Name, g.Caption, rows));
+            Preview.Sections.Add(new MonitorPreviewSection(g.Name, g.Caption, rows, g.HiddenColumns));
         }
 
         Preview.IsEmpty = Preview.Sections.Count == 0 || Preview.Sections.All(s => s.Rows.Count == 0);

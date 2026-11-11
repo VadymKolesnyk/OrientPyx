@@ -50,8 +50,29 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
             if (document.Sections.Count > 0 && document.Sections.All(s => s.IsBanded))
                 AppendBandedTable(body, document, columnWidths, headers, document.ColumnBodyWrap);
             else
+            {
+                // A group that leaves columns out (another discipline's plugin columns) prints the document projected
+                // onto its own columns, sized together with every group of the same column set.
+                var layouts = new Dictionary<string, (ResultProtocolDocument View, int[] Widths, IReadOnlyList<string> Headers)>();
                 foreach (var section in document.Sections)
-                    AppendSection(body, document, section, columnWidths, headers, document.ColumnBodyWrap);
+                {
+                    if (section.HiddenColumns.Count == 0)
+                    {
+                        AppendSection(body, document, section, columnWidths, headers, document.ColumnBodyWrap);
+                        continue;
+                    }
+                    var key = string.Join(",", section.HiddenColumns);
+                    if (!layouts.TryGetValue(key, out var layout))
+                    {
+                        var view = Project(document, section.HiddenColumns,
+                            document.Sections.Where(s => string.Join(",", s.HiddenColumns) == key));
+                        layout = (view, ComputeColumnWidths(view, out var viewHeaders), viewHeaders);
+                        layouts[key] = layout;
+                    }
+                    AppendSection(body, layout.View, Project(section, section.HiddenColumns), layout.Widths,
+                        layout.Headers, layout.View.ColumnBodyWrap);
+                }
+            }
 
             AppendOfficials(body, document, RightTabPosition(document.Orientation));
 
@@ -65,6 +86,44 @@ public sealed class DocxResultProtocolWriter : IResultProtocolWriter
         }
 
         return stream.ToArray();
+    }
+
+    // The document seen through one column set: the columns not in `hidden`, with these sections projected onto
+    // them — what a group that leaves columns out prints (its widths are computed from this view alone).
+    private static ResultProtocolDocument Project(
+        ResultProtocolDocument doc, IReadOnlyList<int> hidden, IEnumerable<ResultProtocolSection> sections)
+    {
+        var skip = hidden.ToHashSet();
+        IReadOnlyList<T> Keep<T>(IReadOnlyList<T> items) => items.Where((_, i) => !skip.Contains(i)).ToList();
+        return new ResultProtocolDocument
+        {
+            Orientation = doc.Orientation,
+            TableBorders = doc.TableBorders,
+            ColumnHeaders = Keep(doc.ColumnHeaders),
+            ColumnHeadersShort = Keep(doc.ColumnHeadersShort),
+            ColumnBodyWrap = Keep(doc.ColumnBodyWrap),
+            ColumnShrinkPriority = Keep(doc.ColumnShrinkPriority),
+            Sections = sections.Select(s => Project(s, hidden)).ToList(),
+        };
+    }
+
+    private static ResultProtocolSection Project(ResultProtocolSection section, IReadOnlyList<int> hidden)
+    {
+        var skip = hidden.ToHashSet();
+        IReadOnlyList<T> Keep<T>(IReadOnlyList<T> items) => items.Where((_, i) => !skip.Contains(i)).ToList();
+        return new ResultProtocolSection
+        {
+            GroupName = section.GroupName,
+            IsBanded = section.IsBanded,
+            DistanceText = section.DistanceText,
+            ControlCountText = section.ControlCountText,
+            TimeLimitText = section.TimeLimitText,
+            CourseSetterText = section.CourseSetterText,
+            RankCalculationText = section.RankCalculationText,
+            Rows = section.Rows
+                .Select(r => r with { Cells = Keep(r.Cells), BoldCells = r.BoldCells is { } b ? Keep(b) : null })
+                .ToList(),
+        };
     }
 
     // Document defaults: Times New Roman at the compact table size, applied to EVERY run/paragraph unless

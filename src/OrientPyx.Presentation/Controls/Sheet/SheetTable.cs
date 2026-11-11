@@ -3765,7 +3765,9 @@ public sealed class SheetTable : TemplatedControl
             return;
         }
 
-        if (lines.Length > 1 && column?.PastePath is { } path && FillDown(path, lines))
+        // Several lines fill down; a column with no text editor of its own (PasteWritesValue) takes a single
+        // value the same way, written straight to its row.
+        if (column?.PastePath is { } path && (lines.Length > 1 || column.PasteWritesValue) && FillDown(path, lines))
             return;
 
         // Single value (or a column we can't fill down): open the cell's editor and paste into it. The
@@ -3965,7 +3967,8 @@ public sealed class SheetTable : TemplatedControl
             prop.SetValue(current, value);
     }
 
-    // Resolve one path segment: a plain property name, or "Name[index]" for an indexed list access.
+    // Resolve one path segment: a plain property name, "Name[index]" for an indexed list access, or "Name[key]" for a
+    // string indexer (e.g. "Fields[gender]", an additional participant field — whose key may be all digits).
     private static object? ResolveSegment(object target, string segment)
     {
         var bracket = segment.IndexOf('[');
@@ -3974,16 +3977,10 @@ public sealed class SheetTable : TemplatedControl
 
         var name = segment[..bracket];
         var inner = segment[(bracket + 1)..].TrimEnd(']');
-        if (!int.TryParse(inner, out var index))
-        {
-            // A string indexer, e.g. "Fields[gender]" (an additional participant field).
-            var keyed = target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance)?.GetValue(target);
-            return keyed?.GetType().GetProperty("Item", [typeof(string)])?.GetValue(keyed, [inner]);
-        }
-        var list = target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance)?.GetValue(target);
-        if (list is IList items && index >= 0 && index < items.Count)
-            return items[index];
-        return null;
+        var owner = target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance)?.GetValue(target);
+        if (owner is IList items && int.TryParse(inner, out var index))
+            return index >= 0 && index < items.Count ? items[index] : null;
+        return owner?.GetType().GetProperty("Item", [typeof(string)])?.GetValue(owner, [inner]);
     }
 
     private TextBox? FocusedEditor() =>

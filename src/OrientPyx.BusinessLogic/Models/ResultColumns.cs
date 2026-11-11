@@ -35,8 +35,10 @@ public enum ResultColumn
     Status,
     /// <summary>Ranking points / rogaine score («Очки»/«Бали»).</summary>
     Points,
-    /// <summary>An extra column — a plugin's column or an additional field (§10.2); identified by its key.
-    /// Monitor only: the online frontend knows the fixed columns alone.</summary>
+    /// <summary>A relay leg's running team time («Наростаючий», Р-32); blank on any other row.</summary>
+    Cumulative,
+    /// <summary>An extra column — a plugin's column or an additional field (§10.2); identified by its key. Not in
+    /// <see cref="ResultColumnInfo.All"/>: offered per day (monitor) / per publish (online, with its label).</summary>
     Extra,
 }
 
@@ -64,6 +66,7 @@ public sealed record ResultColumnInfo(ResultColumn Column, string Key, string La
         new(ResultColumn.Gap,        "gap",         "ResultColumn.Gap"),
         new(ResultColumn.Status,     "status",      "ResultColumn.Status"),
         new(ResultColumn.Points,     "points",      "ResultColumn.Points"),
+        new(ResultColumn.Cumulative, "cumulative",  "ResultColumn.Cumulative"),
     ];
 
     /// <summary>Looks up a column by its stable key, or null when the key is unknown (e.g. a removed column

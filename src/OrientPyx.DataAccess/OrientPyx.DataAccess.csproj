@@ -21,7 +21,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.14" />
+    <!-- Microsoft.Extensions.DependencyInjection.Abstractions comes with Microsoft.AspNetCore.App (NU1510 if listed). -->
     <!-- GDI printing for split printouts; the API is used only under OperatingSystem.IsWindows(). -->
     <PackageReference Include="System.Drawing.Common" Version="10.0.14" />
   </ItemGroup>

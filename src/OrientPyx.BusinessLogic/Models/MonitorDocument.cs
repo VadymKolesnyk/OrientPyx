@@ -56,7 +56,12 @@ public sealed record MonitorColumn(ResultColumn Column, string Header)
 }
 
 /// <summary>One group section on a monitor page: the group caption and its ordered rows.</summary>
-public sealed record MonitorGroup(string Name, string Caption, IReadOnlyList<MonitorRow> Cells);
+public sealed record MonitorGroup(string Name, string Caption, IReadOnlyList<MonitorRow> Cells)
+{
+    /// <summary>Indices into the page's columns this group's table leaves out — another discipline's plugin columns
+    /// (see <see cref="ResultProtocolGroup.Shows"/>). The rows still carry a blank value for each.</summary>
+    public IReadOnlyList<int> HiddenColumns { get; init; } = [];
+}
 
 /// <summary>
 /// One rendered result row: the cell text for each column of the page (parallel to

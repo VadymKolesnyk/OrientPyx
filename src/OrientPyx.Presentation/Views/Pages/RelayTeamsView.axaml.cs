@@ -1,4 +1,3 @@
-using Avalonia.Platform.Storage;
 using System;
 using System.ComponentModel;
 using Avalonia.Controls;
@@ -91,37 +90,6 @@ public partial class RelayTeamsView : UserControl
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => BuildBands();
 
     private void OnColumnsChanged(object? sender, EventArgs e) => BuildBands();
-
-    // «Імпорт дистанцій етапів»: an IOF CourseData (TeamCourseAssignment) or a «100.2;B» table (Р-41).
-    private async void OnImportCoursesClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (_vm is null || Avalonia.Controls.TopLevel.GetTopLevel(this) is not { } topLevel)
-            return;
-        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
-        {
-            Title = _vm.Localization.Get("RelayTeams.ImportCourses.Title"),
-            AllowMultiple = false,
-            FileTypeFilter =
-            [
-                new Avalonia.Platform.Storage.FilePickerFileType(_vm.Localization.Get("RelayTeams.ImportCourses.FileType"))
-                {
-                    Patterns = ["*.xml", "*.csv", "*.txt"]
-                }
-            ]
-        });
-        if (files.Count == 0 || files[0].TryGetLocalPath() is not { } path)
-            return;
-        string content;
-        try
-        {
-            content = await System.IO.File.ReadAllTextAsync(path);
-        }
-        catch (System.IO.IOException)
-        {
-            return;
-        }
-        await _vm.ImportLegCoursesAsync(content);
-    }
 
     private void OnFocusGridRequested(object? sender, EventArgs e)
         => Avalonia.Threading.Dispatcher.UIThread.Post(() => Sheet.Focus());

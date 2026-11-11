@@ -1,5 +1,6 @@
-using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 
@@ -7,28 +8,41 @@ namespace OrientPyx.DataAccess.Documents;
 
 /// <summary>
 /// Renders a <see cref="MonitorDocument"/> to a self-contained, modern UTF-8 HTML file for an on-screen
-/// results monitor — the successor to the legacy orientir.exe <c>rezNN.htm</c> screens. One dark, large-type
+/// results monitor — the successor to the legacy orientir.exe <c>rezNN.htm</c> screens. One large-type
 /// section per group (caption + a results table), with all CSS inlined and a small inlined script that:
 /// <list type="bullet">
-///   <item><b>auto-refreshes</b> — reloads the page every <see cref="MonitorDocument.RefreshSeconds"/> seconds,
-///   pausing the reload until a full scroll cycle finishes so a refresh never interrupts mid-scroll;</item>
+///   <item><b>keeps the results current in place</b> — every <see cref="PollMs"/> it loads the live-data script
+///   written beside the page (<see cref="WriteData"/>, a <c>&lt;script&gt;</c> tag, because a page opened from disk
+///   (file://) may not <c>fetch</c>) and, when the header or the groups changed, swaps them in, keeping the group at
+///   the top of the screen where it was — a result or a withdrawal shows within seconds, mid-scroll. A page whose
+///   timing changed reloads; without the data file (only the page copied elsewhere) the page falls back to
+///   reloading itself every <see cref="MonitorDocument.RefreshSeconds"/>, at the top of a scroll cycle;</item>
 ///   <item><b>auto-scrolls</b> — smoothly scrolls top→bottom at <see cref="MonitorDocument.ScrollSpeed"/>
-///   px/s, holds briefly at each end, then loops. Disabled when the speed is 0 or the content fits.</item>
+///   px/s, holds briefly at the bottom, jumps back to the top and loops. Still while the content fits.</item>
 /// </list>
-/// No web server is needed: the page reloads itself via <c>location.reload()</c>, so the file works opened
-/// straight from disk (file://) on a venue screen or kiosk browser. Lives in DataAccess as an output writer,
-/// alongside the split/.docx/.xlsx writers; BusinessLogic only produces the values-only document.
+/// No web server is needed. Lives in DataAccess as an output writer, alongside the split/.docx/.xlsx writers;
+/// BusinessLogic only produces the values-only document.
 /// </summary>
 public sealed class HtmlMonitorWriter : IMonitorHtmlWriter
 {
-    public byte[] Write(MonitorDocument document)
+    /// <summary>How often the open page loads its data file. Cheap (a local file, swapped only when it changed), so
+    /// well under the shortest refresh: the delay a viewer sees is about the file's refresh interval.</summary>
+    private const int PollMs = 2000;
+
+    /// <summary>Bumped when the page's markup, CSS or script changes, so a page an older build wrote reloads
+    /// itself into the new one instead of being fed data it doesn't lay out.</summary>
+    private const int PageVersion = 2;
+
+    // ASCII-only JSON (Cyrillic as \uXXXX, «<» escaped): the data script reads the same in any encoding the browser
+    // guesses for a file:// script, and a value can never close the inline <script> of the page.
+    private static readonly JsonSerializerOptions JsonOptions = new();
+
+    public byte[] Write(MonitorDocument document, string? dataFileName = null)
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        var refresh = Math.Max(MonitorFile.MinRefreshSeconds, document.RefreshSeconds);
-        // The configured px/s, given a constant boost so the live monitor scrolls noticeably faster than the
-        // stored value (kept here, not in settings, so existing files speed up without re-saving each one).
-        var scroll = (int)Math.Round(Math.Max(0, document.ScrollSpeed) * 1.6);
+        var head = BuildHead(document);
+        var body = BuildGroups(document);
 
         var sb = new StringBuilder(64 * 1024);
         sb.Append("<!DOCTYPE html>\n<html lang=\"uk\">\n<head>\n");
@@ -40,47 +54,94 @@ public sealed class HtmlMonitorWriter : IMonitorHtmlWriter
         sb.Append("</head>\n<body>\n");
 
         sb.Append("<div id=\"scroll\">\n");
-        WriteHeader(sb, document);
+        sb.Append("<div id=\"head\">\n").Append(head).Append("</div>\n");
 
         // Lead-in blank space so the first runners sit on screen a moment before the scroll starts moving.
         sb.Append("<div class=\"spacer\"></div>\n");
 
-        foreach (var group in document.Groups)
-            WriteGroup(sb, group, document.Columns);
+        sb.Append("<div id=\"groups\">\n").Append(body).Append("</div>\n");
 
         // Trailing blank space so the last runners linger before the page loops back to the top.
         sb.Append("<div class=\"spacer\"></div>\n");
 
         sb.Append("</div>\n"); // #scroll
 
-        WriteScript(sb, refresh, scroll);
+        WriteScript(sb, document, dataFileName, Stamp(head), Stamp(body));
         sb.Append("</body>\n</html>\n");
 
         // UTF-8 without a BOM — the <meta charset> already declares the encoding.
         return new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(sb.ToString());
     }
 
-    private static void WriteHeader(StringBuilder sb, MonitorDocument d)
+    public byte[] WriteData(MonitorDocument document)
     {
+        ArgumentNullException.ThrowIfNull(document);
+
+        var head = BuildHead(document);
+        var body = BuildGroups(document);
+        var data = new
+        {
+            layout = Layout(document),
+            title = document.Title,
+            hv = Stamp(head),
+            head,
+            bv = Stamp(body),
+            body,
+        };
+
+        // One statement: a half-written file (read while the app rewrites it) doesn't parse and so changes nothing.
+        var js = "orientPyxMonitor(" + JsonSerializer.Serialize(data, JsonOptions) + ");\n";
+        return Encoding.ASCII.GetBytes(js);
+    }
+
+    private static int RefreshSeconds(MonitorDocument d) => Math.Max(MonitorFile.MinRefreshSeconds, d.RefreshSeconds);
+
+    // The configured px/s, given a constant boost so the live monitor scrolls noticeably faster than the
+    // stored value (kept here, not in settings, so existing files speed up without re-saving each one).
+    private static int ScrollSpeed(MonitorDocument d) => (int)Math.Round(Math.Max(0, d.ScrollSpeed) * 1.6);
+
+    // What the page's script itself depends on: a data file with another layout makes the page reload.
+    private static string Layout(MonitorDocument d) => $"{PageVersion}:{RefreshSeconds(d)}:{ScrollSpeed(d)}";
+
+    // A short content hash — the page swaps a part only when its hash changed.
+    private static string Stamp(string html) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(html)), 0, 8);
+
+    private static string BuildHead(MonitorDocument d)
+    {
+        var sb = new StringBuilder();
         sb.Append("<header>\n");
         sb.Append("<h1>").Append(Esc(d.Title)).Append("</h1>\n");
         if (!string.IsNullOrWhiteSpace(d.Subtitle) &&
             !string.Equals(d.Subtitle, d.Title, StringComparison.Ordinal))
             sb.Append("<p class=\"sub\">").Append(Esc(d.Subtitle)).Append("</p>\n");
         sb.Append("</header>\n");
+        return sb.ToString();
+    }
+
+    private static string BuildGroups(MonitorDocument d)
+    {
+        var sb = new StringBuilder(64 * 1024);
+        foreach (var group in d.Groups)
+            WriteGroup(sb, group, d.Columns);
+        return sb.ToString();
     }
 
     private static void WriteGroup(StringBuilder sb, MonitorGroup group, IReadOnlyList<MonitorColumn> columns)
     {
-        sb.Append("<section class=\"group\">\n");
+        // data-g: the group the screen keeps in place when the rows are swapped in.
+        sb.Append("<section class=\"group\" data-g=\"").Append(Esc(group.Name)).Append("\">\n");
         sb.Append("<h2>").Append(Esc(group.Name)).Append("</h2>\n");
         if (!string.IsNullOrWhiteSpace(group.Caption))
             sb.Append("<p class=\"caption\">").Append(Esc(group.Caption)).Append("</p>\n");
 
+        // A column the group leaves out (another discipline's plugin column) is not in its table at all.
+        var shown = Enumerable.Range(0, columns.Count).Where(c => !group.HiddenColumns.Contains(c)).ToList();
+
         sb.Append("<table>\n<thead>\n<tr>\n");
-        foreach (var col in columns)
-            sb.Append("<th class=\"").Append(CssClass(col)).Append("\">")
-              .Append(Esc(col.Header)).Append("</th>\n");
+        foreach (var c in shown)
+            sb.Append("<th class=\"").Append(CssClass(columns[c])).Append("\">")
+              .Append(Esc(columns[c].Header)).Append("</th>\n");
         sb.Append("</tr>\n</thead>\n<tbody>\n");
 
         foreach (var row in group.Cells)
@@ -92,7 +153,7 @@ public sealed class HtmlMonitorWriter : IMonitorHtmlWriter
                 row.Kind == MonitorRowKind.Leg ? "leg" : null,
             }.Where(c => c is not null));
             sb.Append(rowClasses.Length > 0 ? "<tr class=\"" + rowClasses + "\">\n" : "<tr>\n");
-            for (var c = 0; c < columns.Count; c++)
+            foreach (var c in shown)
             {
                 var value = c < row.Values.Count ? row.Values[c] : string.Empty;
                 sb.Append("<td class=\"").Append(CssClass(columns[c])).Append("\">")
@@ -104,17 +165,25 @@ public sealed class HtmlMonitorWriter : IMonitorHtmlWriter
         sb.Append("</tbody>\n</table>\n</section>\n");
     }
 
-    // The auto-refresh + smooth auto-scroll behaviour. Kept tiny and dependency-free so it runs from file://.
-    private static void WriteScript(StringBuilder sb, int refreshSeconds, int scrollSpeed)
+    // The live update + smooth auto-scroll behaviour. Kept tiny and dependency-free so it runs from file://.
+    private static void WriteScript(
+        StringBuilder sb, MonitorDocument d, string? dataFileName, string headStamp, string bodyStamp)
     {
+        static string Js(string value) => JsonSerializer.Serialize(value, JsonOptions);
+
         sb.Append("<script>\n");
         sb.Append("(function(){\n");
-        sb.Append("  var refreshMs = ").Append(refreshSeconds * 1000).Append(";\n");
-        sb.Append("  var speed = ").Append(scrollSpeed).Append("; // px per second, 0 = no scroll\n");
+        sb.Append("  var refreshMs = ").Append(RefreshSeconds(d) * 1000).Append(";\n");
+        sb.Append("  var speed = ").Append(ScrollSpeed(d)).Append("; // px per second, 0 = no scroll\n");
         sb.Append("  var holdMs = 2500;     // pause at top/bottom before turning around\n");
+        sb.Append("  var pollMs = ").Append(PollMs).Append(";\n");
+        sb.Append("  var layout = ").Append(Js(Layout(d))).Append(";\n");
+        sb.Append("  var dataSrc = ").Append(Js(dataFileName ?? string.Empty)).Append(";\n");
+        sb.Append("  var hv = ").Append(Js(headStamp)).Append(", bv = ").Append(Js(bodyStamp)).Append(";\n");
         sb.Append("""
+              var live = false;      // the data file answered: the page stays current without reloading
+              var stale = false;     // the data file has another layout: reload (see the fallback below)
               var refreshDue = false;
-              // Reload only at the top of a cycle, so a refresh never cuts a scroll short.
               function reloadNow(){ location.reload(); }
               setTimeout(function(){ refreshDue = true; }, refreshMs);
 
@@ -128,22 +197,75 @@ public sealed class HtmlMonitorWriter : IMonitorHtmlWriter
                 return Math.max(0, h - window.innerHeight);
               }
 
-              // No scroll wanted, or everything already fits → just plain meta-style refresh.
-              if (speed <= 0 || maxScroll() <= 2){
-                setTimeout(reloadNow, refreshMs);
-                return;
-              }
-
-              // One-way scroll: glide top → bottom, hold, then snap straight back to the top and start over
-              // (no slow reverse). The jump to the top is also where a pending refresh is applied.
               var pos = 0;           // tracked scroll position (px from top)
               var holding = true;    // start with a hold at the top
               var last = null;
+
+              // The group at the top of the screen and how far the screen is into it, kept across a swap.
+              function sections(){ return document.querySelectorAll('#groups > section'); }
+              function anchor(){
+                var y = curY(), secs = sections();
+                for (var i = secs.length - 1; i >= 0; i--){
+                  var top = secs[i].getBoundingClientRect().top + y;
+                  if (top <= y) return { g: secs[i].getAttribute('data-g'), i: i, off: y - top };
+                }
+                return null;
+              }
+              function restore(a){
+                if (!a) return;
+                var secs = sections(), t = null;
+                for (var i = 0; i < secs.length; i++){
+                  if (secs[i].getAttribute('data-g') === a.g){ t = secs[i]; break; }
+                }
+                if (!t && secs.length) t = secs[Math.min(a.i, secs.length - 1)];
+                if (!t) return;
+                var y = t.getBoundingClientRect().top + curY() + Math.min(a.off, t.offsetHeight);
+                pos = Math.max(0, Math.min(y, maxScroll()));
+                setY(pos);
+              }
+
+              // Called by the data file: swap in what changed, keeping the screen on the same group.
+              window.orientPyxMonitor = function(d){
+                if (stale) return;
+                if (d.layout !== layout){ stale = true; live = false; return; }
+                live = true;
+                if (d.hv === hv && d.bv === bv) return;
+                var a = anchor();
+                if (d.hv !== hv){
+                  document.getElementById('head').innerHTML = d.head;
+                  document.title = d.title;
+                  hv = d.hv;
+                }
+                if (d.bv !== bv){
+                  document.getElementById('groups').innerHTML = d.body;
+                  bv = d.bv;
+                }
+                restore(a);
+              };
+
+              // A <script> tag, not fetch(): a page opened from disk (file://) may load scripts but not fetch files.
+              function poll(){
+                var s = document.createElement('script');
+                s.src = encodeURIComponent(dataSrc) + '?t=' + new Date().getTime();
+                s.onload = s.onerror = function(){ if (s.parentNode) s.parentNode.removeChild(s); };
+                document.head.appendChild(s);
+              }
+              if (dataSrc) setInterval(poll, pollMs);
+
+              // Without live data (no data file beside the page, or another layout) the page reloads itself —
+              // a scrolling one only at the top of a cycle, so a reload never cuts a scroll short.
+              function scrolls(){ return speed > 0 && maxScroll() > 2; }
+              setInterval(function(){ if (refreshDue && !live && !scrolls()) reloadNow(); }, 1000);
+
+              if (speed <= 0) return;
+
+              // One-way scroll: glide top → bottom, hold, then snap straight back to the top and start over
+              // (no slow reverse). The jump to the top is also where a pending reload is applied.
               setTimeout(function(){ holding = false; }, holdMs);
 
               function restartCycle(){
-                if (refreshDue){ reloadNow(); return; }   // reload at the top instead of looping
-                pos = 0; setY(0);                          // jump straight back to the very top
+                if (refreshDue && !live){ reloadNow(); return; }   // reload at the top instead of looping
+                pos = 0; setY(0);                                  // jump straight back to the very top
                 holding = true;
                 setTimeout(function(){ holding = false; }, holdMs);
               }
@@ -154,14 +276,18 @@ public sealed class HtmlMonitorWriter : IMonitorHtmlWriter
                 var max = maxScroll();
 
                 if (!holding){
-                  pos += speed * dt;
-                  if (pos >= max){
-                    pos = max; setY(max);
-                    holding = true;
-                    // Hold at the bottom, then jump back to the top to begin the next cycle.
-                    setTimeout(restartCycle, holdMs);
+                  if (max <= 2){
+                    pos = 0;                 // everything fits — stay put until the rows outgrow the screen
                   } else {
-                    setY(pos);
+                    pos += speed * dt;
+                    if (pos >= max){
+                      pos = max; setY(max);
+                      holding = true;
+                      // Hold at the bottom, then jump back to the top to begin the next cycle.
+                      setTimeout(restartCycle, holdMs);
+                    } else {
+                      setY(pos);
+                    }
                   }
                 }
                 requestAnimationFrame(step);

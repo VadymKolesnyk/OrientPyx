@@ -9,14 +9,12 @@ namespace WeightedRelay;
 /// </summary>
 public sealed class WeightedRelayPlugin : IOrientPyxPlugin
 {
-    public PluginInfo Info => new("weighted", "Зважена естафета", "1.0",
+    public PluginInfo Info => new("weighted", "Зважена естафета", "1.1",
         Author: "OrientPyx", Description: "Час етапу × коефіцієнт за віком і статтю; час команди = Σ T·K.");
 
     public void Register(IPluginBuilder p)
     {
-        p.AddParticipantField("gender", "Стать", FieldKind.Choice(                    // Р-51
-            new ChoiceOption("Ч", "M", "Чол", "Чоловіча"),
-            new ChoiceOption("Ж", "F", "Жін", "Жіноча")));
+        p.AddParticipantField("gender", "Стать", FieldKind.Choice("Ч", "Ж"));       // Р-51
         p.AddDiscipline<WeightedRelayDiscipline>();
         p.AddStrings("uk-UA", Strings.Uk);
         p.AddStrings("en-US", Strings.En);
@@ -42,6 +40,7 @@ public sealed class WeightedRelayDiscipline : Discipline
 
     public override IEnumerable<ResultColumnDef> Columns =>
     [
+        Column.Time("time", "column.time", r => r.Get<TimeSpan?>("time")),             // the leg's own time T
         Column.Number("k", "column.k", r => r.Get<double?>("k"), format: "0.00",
             problem: r => r.Get<bool>(MissingKey)),                                     // Р-48: red when unknown
         Column.Time("adj", "column.adj", r => r.Get<TimeSpan?>("adj")),
@@ -51,6 +50,9 @@ public sealed class WeightedRelayDiscipline : Discipline
 
     public override TimeSpan AdjustTime(AdjustContext ctx)
     {
+        // «Час» — the clean leg time T beside the weighted one, whether or not K is known.
+        ctx.Row.Set("time", ctx.Time);
+
         double? k = null;
         if (ctx.Participant.BirthYear is { } year && ctx.Participant.Field("gender") is { } gender)
         {
@@ -114,6 +116,7 @@ internal static class Strings
         ["table.age"] = "Вік",
         ["table.male"] = "K (Ч)",
         ["table.female"] = "K (Ж)",
+        ["column.time"] = "Час",
         ["column.k"] = "K",
         ["column.adj"] = "T·K",
         ["k.missing"] = "K не визначено",
@@ -126,6 +129,7 @@ internal static class Strings
         ["table.age"] = "Age",
         ["table.male"] = "K (M)",
         ["table.female"] = "K (F)",
+        ["column.time"] = "Time",
         ["column.k"] = "K",
         ["column.adj"] = "T·K",
         ["k.missing"] = "K not determined",

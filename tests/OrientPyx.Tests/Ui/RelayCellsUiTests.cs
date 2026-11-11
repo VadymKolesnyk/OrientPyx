@@ -77,8 +77,8 @@ public sealed class RelayCellsUiTests
         bool RowIs(string name, Func<ParticipantDayRowViewModel, bool> check) =>
             page.Participants.ToList().FirstOrDefault(r => r.FullName == name) is { } row && check(row);
         var rowC = Row("C");
-        Assert.False(Row("A").IsGroupEditable);                 // a relay runner's group is the team's
-        Assert.True(Row("C").IsGroupEditable);
+        Assert.True(Row("A").GroupFollowsTeam);                 // a relay runner's group is the team's
+        Assert.False(Row("C").GroupFollowsTeam);
 
         // «Азимут» typed in C's «Команда»: C joins the team on the free leg 3; «Етап» was amber (2 of 3) and isn't now.
         Assert.True(Row("A").Relay.IsIncomplete);

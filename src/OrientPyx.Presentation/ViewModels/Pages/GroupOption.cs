@@ -12,7 +12,7 @@ public sealed class GroupOption
     private readonly ILocalizationService _localization;
 
     public GroupOption(Guid? id, string name, ILocalizationService localization,
-        int? minBirthYear = null, int? maxBirthYear = null, int controlCount = 0)
+        int? minBirthYear = null, int? maxBirthYear = null, int controlCount = 0, bool isRelay = false)
     {
         Id = id;
         _name = name;
@@ -20,7 +20,11 @@ public sealed class GroupOption
         MinBirthYear = minBirthYear;
         MaxBirthYear = maxBirthYear;
         ControlCount = controlCount;
+        IsRelay = isRelay;
     }
+
+    /// <summary>The group runs a relay on the day — a team runner's whole team may be moved into it.</summary>
+    public bool IsRelay { get; }
 
     /// <summary>
     /// The most control punches a member of this group may make on the day (<see cref="ChipCapacity.NeededPunches"/>);

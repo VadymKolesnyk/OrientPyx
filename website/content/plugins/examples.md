@@ -133,7 +133,7 @@ public abstract class MissedPenaltyDiscipline : Discipline
 **Що робить.** Естафета, у якій час кожного етапу множиться на коефіцієнт K учасника за віком і статтю; час
 команди — сума зважених часів етапів. Таблиця коефіцієнтів одна на все змагання.
 
-**Чого навчитися:** додаткове поле учасника з синонімами; табличне налаштування на все змагання; `RangeTable` і
+**Чого навчитися:** додаткове поле учасника зі списком; табличне налаштування на все змагання; `RangeTable` і
 `Age`; `MarkUnranked`; червона клітинка; естафета як основа.
 
 ### Поле «Стать»
@@ -146,9 +146,7 @@ public sealed class WeightedRelayPlugin : IOrientPyxPlugin
 
     public void Register(IPluginBuilder p)
     {
-        p.AddParticipantField("gender", "Стать", FieldKind.Choice(
-            new ChoiceOption("Ч", "M", "Чол", "Чоловіча"),
-            new ChoiceOption("Ж", "F", "Жін", "Жіноча")));
+        p.AddParticipantField("gender", "Стать", FieldKind.Choice("Ч", "Ж"));
         p.AddDiscipline<WeightedRelayDiscipline>();
         p.AddStrings("uk-UA", Strings.Uk);
         p.AddStrings("en-US", Strings.En);
@@ -157,8 +155,8 @@ public sealed class WeightedRelayPlugin : IOrientPyxPlugin
 ```
 
 Поле `gender` зі списком «Ч»/«Ж» з'явиться в змаганні, щойно «Зважену естафету» виберуть на сторінці «Дні» чи
-«Групи». Синоніми працюють і в імпорті, і під час введення: «M», «чол» чи «Чоловіча» стануть «Ч». Підпис «Стать» —
-звичайний текст, він не перекладається.
+«Групи». В імпорті й під час введення регістр не важливий: «ч» стане «Ч». Підпис «Стать» — звичайний текст, він не
+перекладається.
 
 ### Вид змагань
 
@@ -178,6 +176,7 @@ public sealed class WeightedRelayDiscipline : Discipline
 
     public override IEnumerable<ResultColumnDef> Columns =>
     [
+        Column.Time("time", "column.time", r => r.Get<TimeSpan?>("time")),   // чистий час етапу T
         Column.Number("k", "column.k", r => r.Get<double?>("k"), format: "0.00",
             problem: r => r.Get<bool>(MissingKey)),          // червона, коли K не визначено
         Column.Time("adj", "column.adj", r => r.Get<TimeSpan?>("adj")),
@@ -191,6 +190,8 @@ public sealed class WeightedRelayDiscipline : Discipline
 - `RequiredFields` — порожня «Стать» червоніє в таблицях учасників у тих, хто біжить у групі «Зваженої естафети»;
   на результати підсвітка не впливає. Саме поле створюється завдяки `AddParticipantField`.
 - Таблиця K має область `SettingScope.Competition`: одна на всі дні й групи з цим видом змагань.
+- Колонки «Час», «K» і «T·K» — у такому порядку вони стоять у таблиці дня й у протоколі. «Час» — чистий час етапу:
+  у колонці «Результат» уже T·K.
 - Колонка «K» з форматом `"0.00"` і `problem` — клітинка червона, коли коефіцієнт визначити не вдалося.
 
 ### Таблиця коефіцієнтів
@@ -223,6 +224,8 @@ internal static class Coefficients
 ```csharp
     public override TimeSpan AdjustTime(AdjustContext ctx)
     {
+        ctx.Row.Set("time", ctx.Time);   // «Час» — і тоді, коли K не визначено
+
         double? k = null;
         if (ctx.Participant.BirthYear is { } year && ctx.Participant.Field("gender") is { } gender)
         {

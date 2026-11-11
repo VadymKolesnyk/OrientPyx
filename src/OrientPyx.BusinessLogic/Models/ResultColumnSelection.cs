@@ -12,11 +12,12 @@ public sealed record ResultColumnSelection(
     [property: JsonPropertyName("keys")] IReadOnlyList<string> Keys)
 {
     /// <summary>The default visible layout: place, name, bib, qualification, club, region, start, result,
-    /// gap, status, points. Mirrors the legacy monitor's columns plus the common online ones.</summary>
+    /// gap, relay running time, status, points. Mirrors the legacy monitor's columns plus the common online ones
+    /// («Наростаючий» only shows on a screen with a relay group).</summary>
     public static ResultColumnSelection Default { get; } = new(
     [
         "rk", "full_name", "bib", "qual", "club", "region",
-        "start_time", "result_time", "gap", "status", "points",
+        "start_time", "result_time", "gap", "cumulative", "status", "points",
     ]);
 
     /// <summary>An empty selection (nothing chosen).</summary>

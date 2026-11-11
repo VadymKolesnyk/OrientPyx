@@ -193,7 +193,7 @@ internal sealed class RosterCellFactory
             cell[!Visual.OpacityProperty] =
                 new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.IsMember)}") { Converter = DimWhenNotMember };
             // Joining a day happens through this combo, so it stays live for non-members — but a closed
-            // day accepts no joins either, and a relay runner's group is the team's (Р-22).
+            // day accepts no joins either. A relay runner's pick is asked (their group is the team's, Р-22).
             cell[!InputElement.IsEnabledProperty] =
                 new Binding($"Days[{i}].{nameof(RosterDayCellViewModel.CanEditGroup)}");
             cell[!LazyEditCell.LockedDayNumberProperty] =
@@ -323,7 +323,8 @@ internal sealed class RosterCellFactory
         var combo = BuildGroupCombo(
             pathPrefix: string.Empty,
             groupOptionsPath: $"Days[0].{nameof(RosterDayCellViewModel.GroupOptions)}",
-            selectedPath: nameof(ParticipantRosterRowViewModel.CollapsedGroupValue));
+            selectedPath: nameof(ParticipantRosterRowViewModel.CollapsedGroupValue),
+            labelPath: nameof(ParticipantRosterRowViewModel.CollapsedGroupLabel));
         combo[!Visual.IsVisibleProperty] = new Binding(nameof(ParticipantRosterRowViewModel.GroupShowsInput));
         // A merged cell writes to every day at once, so a single closed day among them shuts it: the
         // shared value stays readable, but not editable.
@@ -458,27 +459,24 @@ internal sealed class RosterCellFactory
     // SearchableComboBox when the cell is entered (focus / click / keyboard). At 600 rows × N combo
     // columns this keeps the realised visual tree tiny — the combos were the dominant scroll/GC cost.
 
-    // The day grid's group cell: read-only for a relay runner, whose group is the team's (Р-22).
-    private LazyComboCell BuildDayGroupCombo()
-    {
-        var cell = BuildGroupCombo(pathPrefix: string.Empty);
-        cell.Bind(Avalonia.Controls.Control.IsEnabledProperty, new Avalonia.Data.Binding(nameof(ParticipantDayRowViewModel.IsGroupEditable))
-        {
-            FallbackValue = true
-        });
-        return cell;
-    }
+    // The day grid's group cell. A relay runner's group is the team's (Р-22): picking another one is asked by the page.
+    private LazyComboCell BuildDayGroupCombo() => BuildGroupCombo(pathPrefix: string.Empty);
 
+    // A day's group cell (roster day cell or day-grid row — both expose these names) selects ComboGroup and rests on
+    // GroupLabel, so a member with no group reads «без групи» and can still pick «не бере участі»; the collapsed
+    // all-days cell passes its own selected / label paths.
     private LazyComboCell BuildGroupCombo(
         string pathPrefix,
         string? groupOptionsPath = null,
-        string? selectedPath = null)
+        string? selectedPath = null,
+        string? labelPath = null)
     {
         var itemsPath = groupOptionsPath ?? $"{pathPrefix}{nameof(RosterDayCellViewModel.GroupOptions)}";
-        var selected = selectedPath ?? $"{pathPrefix}{nameof(RosterDayCellViewModel.SelectedGroup)}";
+        var selected = selectedPath ?? $"{pathPrefix}{nameof(RosterDayCellViewModel.ComboGroup)}";
+        var label = labelPath ?? $"{pathPrefix}{nameof(RosterDayCellViewModel.GroupLabel)}";
         return new LazyComboCell(
             () => BuildComboCore<GroupOption>(itemsPath, selected, nameof(GroupOption.Label)),
-            $"{selected}.{nameof(GroupOption.Label)}",
+            label,
             selectedPath: selected);
     }
 

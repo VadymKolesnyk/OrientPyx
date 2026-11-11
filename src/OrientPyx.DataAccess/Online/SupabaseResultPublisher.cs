@@ -28,6 +28,17 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
     // Tracks what metadata has already been uploaded: the slug (events + event_days) and "slug:day" (groups).
     private readonly HashSet<string> _metaSent = new();
 
+    // The extra result columns seen so far this session, across the days it published (a full reload goes through
+    // every day): display_config labels them all, and the site hides one that has no value in a group.
+    private readonly List<OnlineExtraColumn> _extras = [];
+
+    // The display_config last uploaded with the events row; a new extra column changes it, which re-sends the row.
+    private string? _sentDisplay;
+
+    // "slug:day" -> the stand-in (negative) bibs online for runners without a number, as last sent. A runner who got a
+    // number (or left the day) is removed from the site under the stand-in; a day not here yet is read from the site.
+    private readonly Dictionary<string, HashSet<int>> _unnumbered = new();
+
     public SupabaseResultPublisher() : this(CreateHttpClient(), ownsHttp: true)
     {
     }
@@ -54,10 +65,15 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
     public void ResetMetadata()
     {
         _metaSent.Clear();
+        _sentDisplay = null;
+        _unnumbered.Clear();
         TeamsUnsupported = false;
+        ExtraUnsupported = false;
     }
 
     public bool TeamsUnsupported { get; private set; }
+
+    public bool ExtraUnsupported { get; private set; }
 
     public async Task PublishAsync(
         OnlinePublishSettings publish,
@@ -80,15 +96,29 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
         // ("results 25" every tick) while the site stayed stale until publishing was restarted. So each key is
         // recorded only after its own push succeeded, and any failure below un-remembers both keys so the next
         // successful tick re-sends the whole metadata set.
+        foreach (var extra in snapshot.ExtraColumns)
+        {
+            var known = _extras.FindIndex(e => e.Key == extra.Key);
+            if (known < 0)
+                _extras.Add(extra);
+            else
+                _extras[known] = extra; // a renamed field / a language switch: the latest label
+        }
+
         try
         {
-            // 1) Competition + days metadata, once per slug.
-            if (!_metaSent.Contains(slug))
+            // 1) Competition + days metadata, once per slug — the events row again whenever its display_config
+            // changes (an extra column appeared).
+            var display = BuildDisplayConfig(publish, _extras);
+            var displayJson = JsonSerializer.Serialize(display);
+            var firstForSlug = !_metaSent.Contains(slug);
+            if (firstForSlug || displayJson != _sentDisplay)
             {
-                await PushAsync(api, "events", "id", [BuildEventRow(publish, snapshot.Days.Count)], cancellationToken);
-                if (snapshot.Days.Count > 0)
+                await PushAsync(api, "events", "id", [BuildEventRow(publish, snapshot.Days.Count, display)], cancellationToken);
+                if (firstForSlug && snapshot.Days.Count > 0)
                     await PushAsync(api, "event_days", "event,day", BuildDayRows(slug, snapshot.Days), cancellationToken);
                 _metaSent.Add(slug);
+                _sentDisplay = displayJson;
             }
 
             // 2) Group metadata for the published day, once per (slug, day).
@@ -99,12 +129,26 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
                 _metaSent.Add(dayKey);
             }
 
-            // 3) Result rows — every tick.
+            // 3) Result rows — every tick. A project set up before the results.extra column answers 4xx naming
+            // it: remember that and send the rows without it (the extra columns just stay off the site).
             if (snapshot.Rows.Count > 0)
             {
-                await PushAsync(api, "results", "event,bib,day",
-                    BuildResultRows(publish, snapshot), cancellationToken);
+                try
+                {
+                    await PushAsync(api, "results", "event,bib,day",
+                        BuildResultRows(publish, snapshot, withExtra: !ExtraUnsupported), cancellationToken);
+                }
+                catch (PublishException ex) when (!ExtraUnsupported && ex.Kind == PublishFailureKind.BadRequest
+                                                  && ex.Message.Contains("extra", StringComparison.OrdinalIgnoreCase))
+                {
+                    ExtraUnsupported = true;
+                    await PushAsync(api, "results", "event,bib,day",
+                        BuildResultRows(publish, snapshot, withExtra: false), cancellationToken);
+                }
             }
+
+            // …and the stand-in rows of runners who have a number by now (or left the day) go.
+            await PruneUnnumberedAsync(api, slug, snapshot, dayKey, cancellationToken);
 
             // 4) Relay teams (§11.1) — every tick, into their own table so the personal-results schema and the
             // frontend that reads it stay untouched. A project without that table (older frontend) answers 4xx:
@@ -130,13 +174,16 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
         {
             _metaSent.Remove(slug);
             _metaSent.Remove(dayKey);
+            _sentDisplay = null;
+            _unnumbered.Remove(dayKey);
             throw;
         }
     }
 
     // ── Row builders
 
-    private static Dictionary<string, object?> BuildEventRow(OnlinePublishSettings p, int daysCount) => new()
+    private static Dictionary<string, object?> BuildEventRow(
+        OnlinePublishSettings p, int daysCount, Dictionary<string, object?> display) => new()
     {
         ["id"] = p.Slug,
         ["title"] = p.Title,
@@ -146,15 +193,17 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
         ["points"] = p.Points,
         // The frontend reads its column layout from display_config (jsonb): the ordered list of visible
         // column keys. PostgREST serialises this nested object straight into the jsonb column.
-        ["display_config"] = BuildDisplayConfig(p),
+        ["display_config"] = display,
         ["updated_at"] = DateTime.UtcNow.ToString("o"),
     };
 
     // The events.display_config payload the spectator frontend reads (1:1 with DisplayConfig in
     // web/src/types.ts): a version marker, the points/standings flags (duplicated so the frontend can read
     // everything from one place), the separate-DSQ-column toggles per screen, and the ordered columns each with
-    // its large/small-screen visibility.
-    private static Dictionary<string, object?> BuildDisplayConfig(OnlinePublishSettings p)
+    // its large/small-screen visibility. An extra column (plugin column / additional field) also carries its
+    // label — the site has no name of its own for it — and its values come in results.extra / legs[].extra.
+    private static Dictionary<string, object?> BuildDisplayConfig(
+        OnlinePublishSettings p, IReadOnlyList<OnlineExtraColumn> extras)
     {
         var display = p.EffectiveDisplay;
         return new()
@@ -164,13 +213,19 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
             ["standings"] = p.Standings,
             ["separateDsqLg"] = display.SeparateDsqLg,
             ["separateDsqSm"] = display.SeparateDsqSm,
-            ["columns"] = display.Resolve()
-                .Select((c, i) => new Dictionary<string, object?>
+            ["columns"] = display.Resolve(extras)
+                .Select((c, i) =>
                 {
-                    ["key"] = c.Def.Key,
-                    ["order"] = i,
-                    ["lg"] = c.Lg,
-                    ["sm"] = c.Sm,
+                    var column = new Dictionary<string, object?>
+                    {
+                        ["key"] = c.Def.Key,
+                        ["order"] = i,
+                        ["lg"] = c.Lg,
+                        ["sm"] = c.Sm,
+                    };
+                    if (c.Def.Column == ResultColumn.Extra)
+                        column["label"] = c.Def.LabelKey;
+                    return column;
                 })
                 .ToList(),
         };
@@ -198,15 +253,11 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
         }).ToList();
 
     private static List<Dictionary<string, object?>> BuildResultRows(
-        OnlinePublishSettings p, OnlineResultsSnapshot snapshot)
+        OnlinePublishSettings p, OnlineResultsSnapshot snapshot, bool withExtra)
     {
         var rows = new List<Dictionary<string, object?>>(snapshot.Rows.Count);
         foreach (var r in snapshot.Rows)
         {
-            // The frontend keys results by (event, bib, day) — a row with no number can't be addressed, skip it.
-            if (r.Bib is not { } bib)
-                continue;
-
             var status = MapStatus(r);
             // The frontend's single "points" column is the ranking points («Очки») the group's points rule
             // awards (PointsRuleEvaluator — time/score ratio vs the leader, or a placement table). Prefer it;
@@ -214,10 +265,10 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
             // rogaine day with no rule still publishes a number rather than a blank.
             decimal? points = r.Points ?? r.Score;
 
-            rows.Add(new Dictionary<string, object?>
+            var row = new Dictionary<string, object?>
             {
                 ["event"] = p.Slug,
-                ["bib"] = bib,
+                ["bib"] = r.Key, // the number, or a runner's negative stand-in the site doesn't show
                 ["day"] = snapshot.PublishedDayNumber,
                 ["grp"] = r.GroupName,
                 ["rk"] = r.OutOfCompetition ? null : r.Place,
@@ -235,7 +286,11 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
                 ["points"] = points,
                 ["status"] = status,
                 ["updated_at"] = DateTime.UtcNow.ToString("o"),
-            });
+            };
+            // Every row carries the key (PostgREST wants the same keys in one batch); null clears a stale value.
+            if (withExtra)
+                row["extra"] = r.Extra.Count > 0 ? r.Extra : null;
+            rows.Add(row);
         }
         return rows;
     }
@@ -245,7 +300,10 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
     private static List<Dictionary<string, object?>> BuildTeamRows(
         OnlinePublishSettings p, OnlineResultsSnapshot snapshot)
     {
+        // The plugin columns, for a site that still lists them under the runner's name (the current one lays the
+        // legs out by display_config instead).
         var columns = snapshot.ExtraColumns
+            .Where(c => c.IsPlugin)
             .Select(c => new Dictionary<string, object?> { ["key"] = c.Key, ["label"] = c.Label })
             .ToList();
         return snapshot.Teams.Select(t =>
@@ -277,8 +335,13 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
                     ["bib"] = l.Bib,
                     ["full_name"] = NullIfEmpty(l.FullName),
                     ["birth"] = NullIfEmpty(l.Birth),
+                    ["qual"] = NullIfEmpty(l.Qual),
+                    ["club"] = NullIfEmpty(l.Club),
+                    ["region"] = NullIfEmpty(l.Region),
                     ["course"] = NullIfEmpty(l.Course),
+                    ["start_time"] = FormatTime(l.StartTime),
                     ["leg_time"] = FormatTime(l.LegTime),
+                    ["result_time"] = FormatTime(l.Result),
                     ["cumulative"] = FormatTime(l.Cumulative),
                     ["status"] = l.Pending ? "pending" : MapStatus(l.Status, place: 1, l.Status != FinishStatus.None),
                     ["reason"] = StatusReason(l.Status),
@@ -313,6 +376,62 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
         _ => null,
     };
 
+    // A runner without a number is online under a stand-in negative bib (OnlineResultRow.UnnumberedKey). Once they
+    // get a number — or leave the day — the upsert writes them elsewhere and the stand-in row would stay on the site
+    // (twice the runner), so the stand-ins that are no longer in the snapshot are deleted. The first tick of a day
+    // asks the site which ones it holds (left by an earlier run); later ticks compare with what they sent. Only
+    // stand-ins are touched: a real number's row is left alone, as before.
+    private async Task PruneUnnumberedAsync(
+        OnlineApiSettings api, string slug, OnlineResultsSnapshot snapshot, string dayKey, CancellationToken cancellationToken)
+    {
+        var current = snapshot.Rows.Where(r => r.Key < 0).Select(r => r.Key).ToHashSet();
+        var day = snapshot.PublishedDayNumber;
+        var filter = $"event=eq.{Uri.EscapeDataString(slug)}&day=eq.{day}";
+
+        if (!_unnumbered.TryGetValue(dayKey, out var online))
+        {
+            var url = $"{api.SupabaseUrl.TrimEnd('/')}/rest/v1/results?select=bib&{filter}&bib=lt.0";
+            using var req = Request(HttpMethod.Get, url, api);
+            var body = await SendAsync(req, "results", cancellationToken);
+            online = ReadBibs(body);
+        }
+
+        // A few dozen per request keeps the URL short whatever the count.
+        foreach (var gone in online.Where(k => !current.Contains(k)).Chunk(50))
+        {
+            var list = string.Join(",", gone.Select(k => k.ToString(CultureInfo.InvariantCulture)));
+            var url = $"{api.SupabaseUrl.TrimEnd('/')}/rest/v1/results?{filter}&bib=in.({list})";
+            using var req = Request(HttpMethod.Delete, url, api);
+            req.Headers.TryAddWithoutValidation("Prefer", "return=minimal");
+            await SendAsync(req, "results", cancellationToken);
+        }
+
+        _unnumbered[dayKey] = current;
+    }
+
+    // The bibs of a PostgREST `select=bib` answer ([{"bib":-5},…]); an empty or unexpected body reads as none.
+    private static HashSet<int> ReadBibs(string body)
+    {
+        var bibs = new HashSet<int>();
+        if (string.IsNullOrWhiteSpace(body))
+            return bibs;
+        using var doc = JsonDocument.Parse(body);
+        if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            return bibs;
+        foreach (var row in doc.RootElement.EnumerateArray())
+            if (row.ValueKind == JsonValueKind.Object && row.TryGetProperty("bib", out var bib) && bib.TryGetInt32(out var n))
+                bibs.Add(n);
+        return bibs;
+    }
+
+    private static HttpRequestMessage Request(HttpMethod method, string url, OnlineApiSettings api)
+    {
+        var req = new HttpRequestMessage(method, url);
+        req.Headers.TryAddWithoutValidation("apikey", api.ServiceRoleKey);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", api.ServiceRoleKey);
+        return req;
+    }
+
     // ── PostgREST upsert
 
     private async Task PushAsync(
@@ -343,6 +462,7 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
             throw new ArgumentException("Slug is required.", nameof(slug));
 
         _metaSent.Clear();
+        _unnumbered.Clear();
 
         // Relay teams (§11.1) live in an optional table — a project without it answers 4xx, which is fine here.
         if (!TeamsUnsupported)
@@ -375,7 +495,8 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
         }
     }
 
-    private async Task SendAsync(HttpRequestMessage req, string table, CancellationToken cancellationToken)
+    // Sends the request; returns the answer's body (empty for `return=minimal`) or throws a PublishException.
+    private async Task<string> SendAsync(HttpRequestMessage req, string table, CancellationToken cancellationToken)
     {
         HttpResponseMessage resp;
         try
@@ -399,10 +520,10 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
 
         using (resp)
         {
-            if (resp.IsSuccessStatusCode)
-                return;
-
             var body = await resp.Content.ReadAsStringAsync(cancellationToken);
+            if (resp.IsSuccessStatusCode)
+                return body;
+
             var code = (int)resp.StatusCode;
             var kind = code switch
             {

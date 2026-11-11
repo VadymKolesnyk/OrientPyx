@@ -127,7 +127,8 @@ public sealed class ProtocolPreviewColumn
 public sealed class ProtocolPreviewSection
 {
     public ProtocolPreviewSection(string groupName, string subcaption, IReadOnlyList<ProtocolPreviewRow> rows,
-        string courseSetter = "", bool isBanded = false, string rankCalculation = "")
+        string courseSetter = "", bool isBanded = false, string rankCalculation = "",
+        IReadOnlyList<int>? hiddenColumns = null)
     {
         GroupName = groupName;
         Subcaption = subcaption;
@@ -136,7 +137,12 @@ public sealed class ProtocolPreviewSection
         IsBanded = isBanded;
         RankCalculation = rankCalculation;
         HasRankCalculation = rankCalculation.Length > 0;
+        HiddenColumns = hiddenColumns ?? [];
     }
+
+    /// <summary>Columns this group's table leaves out (another discipline's plugin columns), as indices into the
+    /// preview's columns — mirrors <c>ResultProtocolSection.HiddenColumns</c>.</summary>
+    public IReadOnlyList<int> HiddenColumns { get; }
 
     public string GroupName { get; }
 

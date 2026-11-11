@@ -24,7 +24,9 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 public sealed partial class MonitorResultsViewModel : PageViewModelBase
 {
     private const int MaxLogLines = 200;
-    private const int TickSeconds = 5; // how often the loop checks whether any file is due to be rewritten
+    // How often the loop checks whether any file is due to be rewritten — short, so a file is rewritten on its own
+    // interval (a few seconds); the day's results are computed only when some file is due.
+    private const int TickSeconds = 1;
 
     private readonly ICompetitionEditorService _editor;
     private readonly ISessionService _session;
@@ -154,6 +156,10 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
     {
         if (_session.CurrentEvent is null)
             return;
+
+        // Opening the page reads the day afresh: a change made on another page of this app (a group's discipline,
+        // a result) is this machine's own write, which the change bus does not replay here (see ObserveData).
+        _previewSource = null;
 
         var (settings, days, groups) = await _busy.RunAsync(async () =>
         {
@@ -389,8 +395,7 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
         if (doc is null)
             return;
 
-        var bytes = _writer.Write(doc.Document);
-        await WriteMonitorFileAsync(doc.Path, bytes, ct);
+        await WriteMonitorAsync(doc, null, ct);
     }
 
     private void OpenInBrowser(string fullPath)
@@ -513,17 +518,18 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
     }
 
     // The generation loop — runs on a pool thread. Each file is rewritten on its own interval; the loop wakes
-    // every few seconds and writes any file whose interval has elapsed (and on the very first pass).
+    // every second and writes any file whose interval has elapsed and whose content changed (and on the first pass).
     private async Task GenerateLoopAsync(CancellationToken ct)
     {
         var nextDue = new Dictionary<string, DateTime>();
+        var written = new Dictionary<string, byte[]>();
         while (!ct.IsCancellationRequested)
         {
             if (!IsPaused)
             {
                 try
                 {
-                    await GenerateDueAsync(nextDue, ct);
+                    await GenerateDueAsync(nextDue, written, ct);
                 }
                 catch (OperationCanceledException)
                 {
@@ -550,23 +556,38 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
     private BusinessLogic.Entities.EventDay? _runDay;
     private string? _runEvent;
 
-    private async Task GenerateDueAsync(Dictionary<string, DateTime> nextDue, CancellationToken ct)
+    private async Task GenerateDueAsync(
+        Dictionary<string, DateTime> nextDue, Dictionary<string, byte[]> written, CancellationToken ct)
     {
         var day = _runDay;
         if (day is null)
             return;
 
+        // The loop ticks every second; the day's results are computed only when some file is due (a file switched on
+        // meanwhile waits for the next one at most one interval).
+        if (nextDue.Count > 0 && nextDue.Values.All(due => DateTime.UtcNow < due))
+            return;
+
         var documents = await _editor.BuildMonitorDocumentsAsync(day.Id, BuildLabels(), ct);
         var now = DateTime.UtcNow;
+
+        // A file switched off or renamed since is no longer tracked.
+        foreach (var gone in nextDue.Keys.Except(documents.Select(d => d.Path)).ToList())
+        {
+            nextDue.Remove(gone);
+            written.Remove(gone);
+        }
 
         foreach (var fileDoc in documents)
         {
             if (nextDue.TryGetValue(fileDoc.Path, out var due) && now < due)
                 continue; // not yet time to rewrite this file
 
-            var bytes = _writer.Write(fileDoc.Document);
-            await WriteMonitorFileAsync(fileDoc.Path, bytes, ct);
             nextDue[fileDoc.Path] = now.AddSeconds(Math.Max(MonitorFile.MinRefreshSeconds, fileDoc.Document.RefreshSeconds));
+            written.TryGetValue(fileDoc.Path, out var previous);
+            if (await WriteMonitorAsync(fileDoc, previous, ct) is not { } data)
+                continue; // nothing changed — the open page already shows it
+            written[fileDoc.Path] = data;
 
             var groupCount = fileDoc.Document.Groups.Count;
             var rowCount = fileDoc.Document.Groups.Sum(g => g.Cells.Count);
@@ -576,6 +597,24 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
         }
 
         UpdateActivityStatus(documents.Count);
+    }
+
+    // Writes one screen: the page and, beside it, its live-data script (MonitorFile.DataFileName), which the open
+    // page loads every few seconds and swaps in without reloading. The page goes first, so a page that reloads for
+    // a data file with new timing finds the new page. Returns the data written, or null when it equals
+    // previousData and both files are still there (nothing to write).
+    private async Task<byte[]?> WriteMonitorAsync(MonitorFileDocument fileDoc, byte[]? previousData, CancellationToken ct)
+    {
+        var dataName = MonitorFile.DataFileName(fileDoc.Path);
+        var dataPath = Path.Combine(Path.GetDirectoryName(fileDoc.Path) ?? string.Empty, dataName);
+        var data = _writer.WriteData(fileDoc.Document);
+        if (previousData is not null && data.AsSpan().SequenceEqual(previousData)
+            && File.Exists(fileDoc.Path) && File.Exists(dataPath))
+            return null;
+
+        await WriteMonitorFileAsync(fileDoc.Path, _writer.Write(fileDoc.Document, dataName), ct);
+        await WriteMonitorFileAsync(dataPath, data, ct);
+        return data;
     }
 
     // Writes a generated monitor file to its location (the built day's folder, events/<id>/day{N}) — the screen

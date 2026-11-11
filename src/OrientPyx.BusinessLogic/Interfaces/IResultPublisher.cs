@@ -38,6 +38,13 @@ public interface IResultPublisher
     bool TeamsUnsupported { get; }
 
     /// <summary>
+    /// True once the service rejected the <c>results.extra</c> column (extra result columns — plugin columns and
+    /// additional fields; missing on a project set up before it). Result rows are then sent without it until
+    /// <see cref="ResetMetadata"/>; everything else keeps publishing normally.
+    /// </summary>
+    bool ExtraUnsupported { get; }
+
+    /// <summary>
     /// Deletes everything published for the competition <paramref name="slug"/> (result rows, groups and days)
     /// from the online service and forgets the uploaded metadata, so the next <see cref="PublishAsync"/> calls
     /// rebuild it from scratch. Throws <see cref="PublishException"/> on a transport / server error.

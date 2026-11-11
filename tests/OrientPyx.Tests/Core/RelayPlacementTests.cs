@@ -125,6 +125,42 @@ public sealed class RelayPlacementTests
     }
 
     [Fact]
+    public async Task AnotherGroupForATeamRunnerMovesTheRunnerOrTheWholeTeam()
+    {
+        var c = await BuildAsync();
+        await c.AddGroupAsync("R2", "31 32", s => s.LegCount = 3);
+        await c.AddGroupAsync("I", "31 32", s => s.DisciplineOverride = DisciplineId.SetCourse);
+        Task<RelayPlacementOutcome> ChangeAsync(string runner, string group, RelayTeamChoice choice) =>
+            Editor.ChangeRelayRunnerGroupAsync(new RelayGroupEdit(c.Runners[runner].Id, c.Day(1).Id, c.Groups[group].Id, choice));
+        async Task<Guid?> GroupOfAsync(string runner) =>
+            (await Editor.GetParticipantDayRowsAsync()).Single(r => r.ParticipantId == c.Runners[runner].Id).GroupId;
+
+        // The team's own group, the whole team into a group that runs no relay, a runner on no team: nothing to do.
+        Assert.Equal(RelayPlacementStatus.Unchanged, (await ChangeAsync("A", "R", RelayTeamChoice.ChangeTeam)).Status);
+        Assert.Equal(RelayPlacementStatus.Unchanged, (await ChangeAsync("A", "I", RelayTeamChoice.ChangeTeam)).Status);
+        Assert.Equal(RelayPlacementStatus.Unchanged, (await ChangeAsync("C", "R2", RelayTeamChoice.MoveRunner)).Status);
+        Assert.Equal(c.Groups["R"].Id, await GroupOfAsync("A"));
+
+        // The whole team into the other relay group: both runners follow, on their legs.
+        var moved = await ChangeAsync("A", "R2", RelayTeamChoice.ChangeTeam);
+        Assert.Equal(RelayPlacementStatus.TeamChanged, moved.Status);
+        Assert.Equal(2, moved.MemberCount);
+        Assert.Equal(c.Groups["R2"].Id, await GroupOfAsync("A"));
+        Assert.Equal(c.Groups["R2"].Id, await GroupOfAsync("B"));
+        Assert.Equal((101, 1), await PlaceOfAsync(c, "A"));
+        Assert.Equal((101, 2), await PlaceOfAsync(c, "B"));
+        Assert.Equal(c.Groups["R2"].Id, (await Editor.GetRelayTeamsDataAsync()).Teams.Single(t => t.Number == 101).GroupId);
+
+        // Only B, into the individual group: off the team, still on the day; A stays on 101 in R2.
+        var released = await ChangeAsync("B", "I", RelayTeamChoice.MoveRunner);
+        Assert.Equal(RelayPlacementStatus.Released, released.Status);
+        Assert.Equal((null, null), await PlaceOfAsync(c, "B"));
+        Assert.Equal(c.Groups["I"].Id, await GroupOfAsync("B"));
+        Assert.Equal((101, 1), await PlaceOfAsync(c, "A"));
+        Assert.Equal(c.Groups["R2"].Id, await GroupOfAsync("A"));
+    }
+
+    [Fact]
     public async Task AnEmptyCellTakesTheRunnerOffTheTeam()
     {
         var c = await BuildAsync();

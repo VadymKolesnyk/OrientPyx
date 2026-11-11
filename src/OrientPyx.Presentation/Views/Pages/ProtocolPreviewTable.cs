@@ -189,12 +189,13 @@ public sealed class ProtocolPreviewTable
 
                 // Per-section header row — boxed; each cell is a drag source + drop target.
                 _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-                for (var c = 0; c < columns.Count; c++)
+                foreach (var (c, start, span) in PreviewColumnSlots.For(columns.Count, section.HiddenColumns))
                 {
                     var header = BuildHeaderCell(columns[c], captions[c]);
                     WireDrag(header);
 
-                    Grid.SetColumn(header, c);
+                    Grid.SetColumn(header, start);
+                    Grid.SetColumnSpan(header, span);
                     Grid.SetRow(header, row);
                     _host.Children.Add(header);
                     _columnCells[c].Add(header);
@@ -207,7 +208,7 @@ public sealed class ProtocolPreviewTable
             foreach (var bodyRow in section.Rows)
             {
                 _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-                for (var c = 0; c < columns.Count; c++)
+                foreach (var (c, start, span) in PreviewColumnSlots.For(columns.Count, section.HiddenColumns))
                 {
                     var text = c < bodyRow.Cells.Count ? bodyRow.Cells[c] : string.Empty;
                     // Per-cell bold (the statement's own-chip cells) OR'd with the whole-row team-caption bold.
@@ -216,7 +217,8 @@ public sealed class ProtocolPreviewTable
                     var cell = BuildBodyCell(text, cellBold, columns[c], boxed: gridded,
                         subRow: bodyRow.IsSubRow, firstColumn: c == 0);
                     WireDrag(cell); // drag anywhere in a column, not just its header
-                    Grid.SetColumn(cell, c);
+                    Grid.SetColumn(cell, start);
+                    Grid.SetColumnSpan(cell, span);
                     Grid.SetRow(cell, row);
                     _host.Children.Add(cell);
                     _columnCells[c].Add(cell);

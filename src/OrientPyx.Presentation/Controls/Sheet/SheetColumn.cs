@@ -327,6 +327,13 @@ public sealed partial class SheetColumn : ObservableObject
     public bool CheckPaste { get; set; }
 
     /// <summary>
+    /// True when the cell has no text editor to paste into but <see cref="PastePath"/> takes free text (an
+    /// additional choice field, whose dropdown also keeps a value outside its list, Р-18): a single value is
+    /// written straight to the row like a one-line fill-down instead of opening the dropdown.
+    /// </summary>
+    public bool PasteWritesValue { get; set; }
+
+    /// <summary>
     /// Option-list column (region/club/group/rank/status). Paste resolves the text against the row's
     /// options by <see cref="ComboLabelPath"/> and assigns <see cref="ComboSelectedPath"/> ONLY on an
     /// exact 1:1 match (case-insensitive, trimmed) — a non-match leaves the cell alone, so paste can

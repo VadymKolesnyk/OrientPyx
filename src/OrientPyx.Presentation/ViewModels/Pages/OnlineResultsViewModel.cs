@@ -222,6 +222,11 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         if (_session.CurrentEvent is null)
             return;
 
+        // Opening the page reads the day afresh: a change made on another page of this app (a group's discipline,
+        // a result) is this machine's own write, which the change bus does not replay here (see ObserveData).
+        _previewSource = null;
+        _previewSourceDay = Guid.Empty;
+
         var (api, publish, rules, info, groups, days) = await _busy.RunAsync(async () =>
         {
             var a = await _appSettings.GetOnlineApiSettingsAsync();
@@ -509,7 +514,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         _runDay = _session.CurrentDay;
         _runEvent = _session.CurrentEvent?.FolderPath;
         _lastDuplicates = string.Empty;
-        _lastSkippedNoNumber = -1; // a fresh run should warn again about un-numbered participants
+        _lastUnnumbered = -1; // a fresh run notes the un-numbered participants again
         _consecutiveFailures = 0;
         _lastFailureKey = null;
 
@@ -614,14 +619,14 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
             Localization.Get("OnlineResults.Log.Tick"),
             day.Number, snapshot.Rows.Count, finished));
 
-        // Warn (once, until it changes) that some participants are left out because they have no start
-        // number — the frontend can't address an un-numbered runner, so they won't appear online.
-        if (snapshot.SkippedNoNumber != _lastSkippedNoNumber)
+        // Note (once, until it changes) how many runners are online without a start number — published under a
+        // stand-in key and shown without a number, so a forgotten number is still noticed.
+        if (snapshot.Unnumbered != _lastUnnumbered)
         {
-            _lastSkippedNoNumber = snapshot.SkippedNoNumber;
-            if (snapshot.SkippedNoNumber > 0)
+            _lastUnnumbered = snapshot.Unnumbered;
+            if (snapshot.Unnumbered > 0)
                 AppendLog(string.Format(
-                    Localization.Get("OnlineResults.Log.SkippedNoNumber"), snapshot.SkippedNoNumber));
+                    Localization.Get("OnlineResults.Log.Unnumbered"), snapshot.Unnumbered));
         }
 
         var duplicates = DuplicatesText(snapshot);
@@ -639,14 +644,20 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
             _teamsUnsupportedLogged = true;
             AppendLog(Localization.Get("OnlineResults.Log.TeamsUnsupported"));
         }
+        if (_publisher.ExtraUnsupported && !_extraUnsupportedLogged)
+        {
+            _extraUnsupportedLogged = true;
+            AppendLog(Localization.Get("OnlineResults.Log.ExtraUnsupported"));
+        }
 
         UpdateActivityStatus();
     }
 
-    // The «no relay_teams table» warning is logged once per app run.
+    // The «no relay_teams table» / «no results.extra column» warnings are logged once per app run.
     private bool _teamsUnsupportedLogged;
+    private bool _extraUnsupportedLogged;
 
-    // Plugin column labels of the relay legs arrive as localization keys; the spectator site gets the text.
+    // Extra column labels (plugin columns, additional fields) arrive as localization keys; the site gets the text.
     private OnlineResultsSnapshot Localize(OnlineResultsSnapshot snapshot) =>
         snapshot.ExtraColumns.Count == 0
             ? snapshot
@@ -750,9 +761,9 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         }
     }
 
-    // The last skipped-no-number count we warned about, so the warning is logged only when it changes
-    // (not on every tick). Reset when publishing (re)starts so a fresh run warns again.
-    private int _lastSkippedNoNumber = -1;
+    // The last un-numbered count noted, so the note is logged only when it changes (not on every tick). Reset when
+    // publishing (re)starts so a fresh run notes it again.
+    private int _lastUnnumbered = -1;
 
     // --- Top-bar background activity
 
@@ -953,6 +964,8 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
                 ct.ThrowIfCancellationRequested();
                 _previewSource = source;
                 _previewSourceDay = day.Id;
+                // The day's extra columns (plugin columns, additional fields) join the column editor.
+                Columns.SetExtraColumns(source.ExtraColumns);
             }
 
             ApplyPreview(_previewSource);
@@ -979,8 +992,9 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         Preview.Columns.Clear();
         Preview.Sections.Clear();
 
-        // The columns the preview draws = everything visible on at least one screen, in the editor's order.
-        var visible = Columns.Columns.Where(c => c.Lg || c.Sm).ToList();
+        // The columns the preview draws = everything visible on at least one screen, in the editor's order. The
+        // preview shows personal results only, where «Наростаючий» (a relay leg's running time) is always blank.
+        var visible = Columns.Columns.Where(c => (c.Lg || c.Sm) && c.Column != ResultColumn.Cumulative).ToList();
 
         if (snapshot is null || !snapshot.HasData || visible.Count == 0)
         {
@@ -1073,6 +1087,7 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
                 ResultColumn.Status => PreviewStatusText(r),
                 ResultColumn.Points => r.Points?.ToString("0.##", CultureInfo.InvariantCulture)
                     ?? r.Score?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                ResultColumn.Extra => r.Extra.TryGetValue(col.Key, out var extra) ? extra : string.Empty,
                 _ => string.Empty,
             });
 

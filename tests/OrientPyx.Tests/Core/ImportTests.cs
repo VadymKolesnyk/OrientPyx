@@ -349,17 +349,4 @@ public sealed class ImportTests
         Assert.Equal("Коваль Олег", team.Legs.Single(l => l.Leg == 1).FullName);
         Assert.Equal("Бондар Ігор", team.Legs.Single(l => l.Leg == 2).FullName);
     }
-
-    [Fact]
-    public async Task LegCoursesImport_AcceptsPlainLines()
-    {
-        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("legc"), discipline: DisciplineId.Relay);
-        await c.AddGroupAsync("R", "31", s => s.LegCount = 2);
-        await c.SelectAsync();
-        var editor = Sp.GetRequiredService<ICompetitionEditorService>();
-        Assert.Equal(3, await editor.ImportLegCoursesAsync("100.1;A\n100;2;B\n101-1;B\n"));
-        var stored = await Sp.GetRequiredService<IEventStore>().GetLegCourseAssignmentsAsync(c.Folder, c.Day(1).Id);
-        Assert.Equal("B", stored.Single(a => a.TeamNumber == 100 && a.Leg == 2).CourseKey);
-        Assert.Equal(3, stored.Count);
-    }
 }

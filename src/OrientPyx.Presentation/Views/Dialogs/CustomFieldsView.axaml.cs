@@ -47,7 +47,7 @@ public partial class CustomFieldsView : UserControl
 
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => BuildBands();
 
-    // Name (editable), type (combo), choice options with synonyms (editable for a choice field only), origin
+    // Name (editable), type (combo), choice options, comma-separated (editable for a choice field only), origin
     // (read-only) and the delete action. Headers are baked into the bands, so a language switch rebuilds them.
     private void BuildBands()
     {

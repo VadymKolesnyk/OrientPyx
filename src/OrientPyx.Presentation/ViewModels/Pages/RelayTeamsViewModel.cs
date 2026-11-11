@@ -330,32 +330,6 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
         }
     }
 
-    /// <summary>
-    /// Imports leg-number courses (IOF <c>TeamCourseAssignment</c> or «100.2;B» lines) from a file's text the view
-    /// read, then reloads; reports how many were stored.
-    /// </summary>
-    public async Task ImportLegCoursesAsync(string content)
-    {
-        if (!await EnsureDayEditableAsync())
-            return;
-        int count;
-        try
-        {
-            count = await _busy.RunAsync(() => _editor.ImportLegCoursesAsync(content));
-        }
-        catch (FormatException)
-        {
-            await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(Localization,
-                titleKey: "RelayTeams.ImportCourses.Title", messageKey: "RelayTeams.ImportCourses.Invalid",
-                confirmKey: "Common.Ok") { IsMessage = true });
-            return;
-        }
-        await LoadAsync();
-        await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(Localization,
-            titleKey: "RelayTeams.ImportCourses.Title", messageKey: "RelayTeams.ImportCourses.Done",
-            confirmKey: "Common.Ok") { IsMessage = true, MessageArgs = [count] });
-    }
-
     partial void OnRunnerQueryChanged(string value) => RefreshRunnerMatches();
 
     // Layout-tolerant search over every participant (name, number); at most 50 matches.

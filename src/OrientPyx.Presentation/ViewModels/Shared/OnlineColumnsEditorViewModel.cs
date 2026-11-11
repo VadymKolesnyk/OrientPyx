@@ -8,7 +8,8 @@ using OrientPyx.Localization;
 namespace OrientPyx.Presentation.ViewModels.Shared;
 
 /// <summary>
-/// The editor for an <see cref="OnlineDisplayConfig"/>: the full column catalogue as an ordered list where each
+/// The editor for an <see cref="OnlineDisplayConfig"/>: the full column catalogue — plus the day's extra columns
+/// (plugin columns, additional fields; see <see cref="SetExtraColumns"/>) — as an ordered list where each
 /// row carries TWO visibility toggles — large screen (venue / desktop) and small screen (phone) — plus the two
 /// «Статус/DSQ»-column split flags. Unlike the flat <see cref="ResultColumnsEditorViewModel"/> the monitor uses,
 /// a column here can be shown on the big screen yet hidden on a phone. Reorder by drag (from the preview header,
@@ -21,6 +22,11 @@ public sealed partial class OnlineColumnsEditorViewModel : ObservableObject
 
     // Suppresses the Changed event while (re)loading the whole list, so a bulk Load fires at most one refresh.
     private bool _loading;
+
+    // The day's extra columns (labels are localization keys / field labels), and the config's entries for extras the
+    // day does not have — kept unseen and saved back unchanged, so switching days loses no choice.
+    private IReadOnlyList<OnlineExtraColumn> _extras = [];
+    private IReadOnlyList<OnlineColumnConfig> _unavailable = [];
 
     public OnlineColumnsEditorViewModel(ILocalizationService localization)
     {
@@ -60,8 +66,9 @@ public sealed partial class OnlineColumnsEditorViewModel : ObservableObject
             SeparateDsqSmall = cfg.SeparateDsqSm;
 
             Columns.Clear();
-            foreach (var c in cfg.Resolve())
+            foreach (var c in cfg.Resolve(_extras))
                 Columns.Add(MakeItem(c.Def, c.Lg, c.Sm));
+            _unavailable = cfg.Unresolved(_extras);
         }
         finally
         {
@@ -69,9 +76,22 @@ public sealed partial class OnlineColumnsEditorViewModel : ObservableObject
         }
     }
 
-    /// <summary>The current config: every column in order with its lg/sm flags, plus the DSQ split toggles.</summary>
+    /// <summary>Offers the day's extra columns (plugin columns, additional fields): one the layout already has keeps
+    /// its place and toggles; a new plugin column is appended shown on the large screen, a new field hidden — the
+    /// same rule the publisher applies, so the list shows what the site gets.</summary>
+    public void SetExtraColumns(IReadOnlyList<OnlineExtraColumn> extras)
+    {
+        if (_extras.Select(e => (e.Key, e.Label)).SequenceEqual(extras.Select(e => (e.Key, e.Label))))
+            return;
+        var current = BuildConfig();
+        _extras = extras;
+        Load(current);
+    }
+
+    /// <summary>The current config: every column in order with its lg/sm flags (then the extras the day lacks, as
+    /// they were), plus the DSQ split toggles.</summary>
     public OnlineDisplayConfig BuildConfig() =>
-        new(Columns.Select(c => new OnlineColumnConfig(c.Key, c.Lg, c.Sm)).ToList(),
+        new(Columns.Select(c => new OnlineColumnConfig(c.Key, c.Lg, c.Sm)).Concat(_unavailable).ToList(),
             SeparateDsqLarge, SeparateDsqSmall);
 
     private OnlineColumnItem MakeItem(ResultColumnInfo def, bool lg, bool sm)

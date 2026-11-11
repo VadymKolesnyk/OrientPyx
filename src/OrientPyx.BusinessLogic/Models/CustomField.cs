@@ -47,9 +47,9 @@ public sealed record CustomField(
         : null;
 
     /// <summary>
-    /// Normalises a raw value for storage. Blank → empty. Choice: an option value or one of its synonyms (compared
-    /// via <see cref="TextKey"/>, case-insensitive) becomes the option's value; anything else is kept as typed
-    /// (Р-18). Number: comma or dot decimal separator → invariant text; a non-number is kept as typed (Р-19).
+    /// Normalises a raw value for storage. Blank → empty. Choice: a value matching an option (compared via
+    /// <see cref="TextKey"/>: case-insensitive, look-alike Latin/Cyrillic letters folded) becomes the option's value;
+    /// anything else is kept as typed (Р-18). Number: comma or dot decimal separator → invariant text; a non-number is kept as typed (Р-19).
     /// Bool: common yes/no spellings → "1" / "0"; anything else is kept.
     /// </summary>
     public string Normalize(string? raw)
@@ -93,9 +93,9 @@ public sealed record CustomField(
         };
     }
 
-    /// <summary>The option whose value or a synonym matches <paramref name="value"/>; null when none.</summary>
+    /// <summary>The option matching <paramref name="value"/> (via <see cref="TextKey"/>); null when none.</summary>
     public ChoiceOption? MatchOption(string value) =>
-        Options.FirstOrDefault(o => TextKey.Same(o.Value, value) || o.Aliases.Any(a => TextKey.Same(a, value)));
+        Options.FirstOrDefault(o => TextKey.Same(o.Value, value));
 
     private static readonly string[] Truthy = ["1", "+", "так", "т", "yes", "y", "true", "x", "✓"];
     private static readonly string[] Falsy = ["0", "-", "ні", "н", "no", "n", "false"];
@@ -129,7 +129,7 @@ public sealed record CustomField(
     public static string SerializeOptions(IReadOnlyList<ChoiceOption> options) =>
         options.Count == 0
             ? string.Empty
-            : JsonSerializer.Serialize(options.Select(o => new StoredOption(o.Value, o.Aliases.ToList())).ToList());
+            : JsonSerializer.Serialize(options.Select(o => new StoredOption(o.Value)).ToList());
 
     public static IReadOnlyList<ChoiceOption> ParseOptions(string? json)
     {
@@ -137,11 +137,11 @@ public sealed record CustomField(
             return [];
         try
         {
+            // Rows written before synonyms were dropped also carry "Aliases"; it is ignored.
             var stored = JsonSerializer.Deserialize<List<StoredOption>>(json) ?? [];
             return stored
                 .Where(o => !string.IsNullOrWhiteSpace(o.Value))
-                .Select(o => new ChoiceOption(o.Value.Trim(),
-                    (o.Aliases ?? []).Where(a => !string.IsNullOrWhiteSpace(a)).Select(a => a.Trim()).ToArray()))
+                .Select(o => new ChoiceOption(o.Value.Trim()))
                 .ToList();
         }
         catch (JsonException)
@@ -180,5 +180,5 @@ public sealed record CustomField(
         ['я'] = "ia", ['\''] = "", ['’'] = "", ['ʼ'] = "", ['ё'] = "e", ['ы'] = "y", ['э'] = "e", ['ъ'] = ""
     };
 
-    private sealed record StoredOption(string Value, List<string>? Aliases);
+    private sealed record StoredOption(string Value);
 }

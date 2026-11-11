@@ -16,7 +16,8 @@ public class CustomFieldDef
     /// <summary>Kind name: Text | Number | Bool | Choice (stored as text).</summary>
     public string Kind { get; set; } = "Text";
 
-    /// <summary>The choice options with their synonyms, as JSON (<c>[{"Value":"Ч","Aliases":["M"]}]</c>); empty otherwise.</summary>
+    /// <summary>The choice options as JSON (<c>[{"Value":"Ч"},{"Value":"Ж"}]</c>); empty otherwise. Rows written by
+    /// older builds may also carry <c>"Aliases"</c> (synonyms, since dropped) — ignored on read.</summary>
     public string OptionsJson { get; set; } = string.Empty;
 
     /// <summary><c>user</c>, or <c>plugin:&lt;id&gt;</c> for a field a plugin declared.</summary>

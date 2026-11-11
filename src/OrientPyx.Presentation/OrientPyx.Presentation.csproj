@@ -43,7 +43,7 @@
        Velopack so the installed app can tell it is out of date. See build/publish.ps1. Product / Company /
        Authors are shared by every src project in src/Directory.Build.props. -->
   <PropertyGroup>
-    <Version>0.8.1</Version>
+    <Version>0.8.2</Version>
   </PropertyGroup>
 
   <ItemGroup>

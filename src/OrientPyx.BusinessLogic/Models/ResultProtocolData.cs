@@ -62,7 +62,17 @@ public sealed record ResultProtocolGroup(
     /// <summary>Relay group (Р-23): the day's teams of the group with their runners by leg. When set, the builder
     /// prints one team row (place, №, name, time, status) with its leg rows (100.1, runner, leg time, cumulative)
     /// under it, instead of a per-person ranking. Null for a non-relay group.</summary>
-    IReadOnlyList<RelayProtocolTeam>? RelayTeams = null);
+    IReadOnlyList<RelayProtocolTeam>? RelayTeams = null)
+{
+    /// <summary>The plugin columns of the group's discipline (<see cref="ExtraResultColumn.PluginKeys"/>); null when
+    /// unknown — every plugin column is then shown.</summary>
+    public IReadOnlyCollection<string>? PluginColumnKeys { get; init; }
+
+    /// <summary>True when the group has this extra column: an additional field always, a plugin column only in a
+    /// group of that plugin's discipline (a set-course group shows no «K» / «T·K» of a weighted relay on the day).</summary>
+    public bool Shows(ExtraResultColumn column) =>
+        column.Plugin is null || PluginColumnKeys is null || PluginColumnKeys.Contains(column.Key);
+}
 
 /// <summary>One relay team in a protocol group: its identity, its computed result and one entry per leg.</summary>
 public sealed record RelayProtocolTeam(
@@ -128,6 +138,9 @@ public sealed record ResultProtocolRow(
 {
     /// <summary>The participant's additional field values by key (for the «field.*» extra columns).</summary>
     public IReadOnlyDictionary<string, string> Fields { get; init; } = NoFields;
+
+    /// <summary>The participant this row is — the online snapshot keys a runner without a number by it.</summary>
+    public Guid ParticipantId { get; init; }
 
     private static readonly IReadOnlyDictionary<string, string> NoFields = new Dictionary<string, string>();
 }

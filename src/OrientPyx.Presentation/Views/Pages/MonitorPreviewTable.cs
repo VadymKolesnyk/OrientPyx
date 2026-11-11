@@ -109,11 +109,13 @@ public sealed class MonitorPreviewTable
 
             // Column header row — uppercase grey on a light head band; each cell drags.
             _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-            for (var c = 0; c < columns.Count; c++)
+            var slots = PreviewColumnSlots.For(columns.Count, section.HiddenColumns ?? []);
+            foreach (var (c, start, span) in slots)
             {
                 var header = BuildHeaderCell(columns[c]);
                 WireDrag(header);
-                Grid.SetColumn(header, c);
+                Grid.SetColumn(header, start);
+                Grid.SetColumnSpan(header, span);
                 Grid.SetRow(header, row);
                 _host.Children.Add(header);
                 _columnCells[c].Add(header);
@@ -126,12 +128,13 @@ public sealed class MonitorPreviewTable
             {
                 _host.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
                 var stripe = r % 2 == 0 ? Row1 : Row2;
-                for (var c = 0; c < columns.Count; c++)
+                foreach (var (c, start, span) in slots)
                 {
                     var value = c < bodyRow.Values.Count ? bodyRow.Values[c] : string.Empty;
                     var cell = BuildBodyCell(value, columns[c], bodyRow.Unplaced, stripe);
                     WireDrag(cell);
-                    Grid.SetColumn(cell, c);
+                    Grid.SetColumn(cell, start);
+                    Grid.SetColumnSpan(cell, span);
                     Grid.SetRow(cell, row);
                     _host.Children.Add(cell);
                     _columnCells[c].Add(cell);

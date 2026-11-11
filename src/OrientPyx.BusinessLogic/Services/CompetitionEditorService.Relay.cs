@@ -220,9 +220,6 @@ public sealed partial class CompetitionEditorService
         return rows.Count(r => r.CourseKey.Length > 0);
     }
 
-    public Task<int> ImportLegCoursesAsync(string content, CancellationToken cancellationToken = default) =>
-        SetLegCoursesAsync(LegCourseAssignmentReader.Read(content ?? string.Empty), cancellationToken);
-
     // The courses assigned to each number's legs, in leg order, as a «набір на команду» («1A 2B 3A»).
     internal static Dictionary<int, string> LegCourseSets(IEnumerable<LegCourseAssignment> assignments) =>
         assignments
@@ -485,6 +482,37 @@ public sealed partial class CompetitionEditorService
                     ? await PlaceOnNewTeamAsync(edit, newNumber, string.Empty, current.GroupId, leg: null, cancellationToken)
                     : await ReleaseRunnerAsync(edit, cancellationToken);
         }
+    }
+
+    public async Task<RelayPlacementOutcome> ChangeRelayRunnerGroupAsync(
+        RelayGroupEdit change, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        if (await LoadRelayEditAsync(change.DayId, change.ParticipantId, cancellationToken) is not
+                { Own: { } own, Current: { } team } edit
+            || team.GroupId == change.GroupId
+            || edit.Settings.All(s => s.GroupId != change.GroupId))
+            return new RelayPlacementOutcome(RelayPlacementStatus.Unchanged);
+
+        if (change.Choice == RelayTeamChoice.ChangeTeam)
+        {
+            // The whole team, into another relay group: its runners follow it there (Р-22).
+            if (!edit.RelayGroups.ContainsKey(change.GroupId))
+                return new RelayPlacementOutcome(RelayPlacementStatus.Unchanged);
+            team.GroupId = change.GroupId;
+            await _eventStore.UpdateRelayTeamAsync(edit.Folder, team, cancellationToken);
+            return new RelayPlacementOutcome(RelayPlacementStatus.TeamChanged, team.Number, own.Leg ?? 0,
+                LegCount: edit.LegCount(team), Place: await CurrentPlaceAsync(edit, cancellationToken), TeamName: team.Name)
+            {
+                MemberCount = edit.MemberCount(team)
+            };
+        }
+
+        // Only this runner: off the team, then into the group — they stay on the day.
+        await _eventStore.ReleaseRelayRunnerAsync(edit.Folder, own.Id, cancellationToken);
+        await _eventStore.SetParticipantDayGroupAsync(edit.Folder, change.ParticipantId, change.DayId, change.GroupId,
+            cancellationToken);
+        return new RelayPlacementOutcome(RelayPlacementStatus.Released, team.Number, own.Leg ?? 0, TeamName: team.Name);
     }
 
     // Renames / renumbers the runner's team for all its runners (a taken number was ruled out by the caller, Р-20).

@@ -22,7 +22,7 @@ public sealed class ChipScanTests
 
     private static readonly CustomField ChipType = new(
         "chip-type", "Тип чіпа", CustomFieldKind.Choice,
-        [new ChoiceOption("AIR", []), new ChoiceOption("власний", ["свій"])],
+        [new ChoiceOption("AIR"), new ChoiceOption("власний")],
         CustomField.UserSource, 0);
 
     private static ChipScanCandidate Candidate(string name, string chipType) =>
@@ -41,8 +41,8 @@ public sealed class ChipScanTests
     [Fact]
     public void Rules_DefaultFromFieldAndRoutesScans()
     {
-        // Three kinds in table order: plain rental (blank), AIR rental, an own chip (spelled via a synonym).
-        var rows = new[] { Candidate("Плоский", ""), Candidate("Аер", "AIR"), Candidate("Свій", "свій") };
+        // Three kinds in table order: plain rental (blank), AIR rental, an own chip (spelled in capitals).
+        var rows = new[] { Candidate("Плоский", ""), Candidate("Аер", "AIR"), Candidate("Свій", "ВЛАСНИЙ") };
         var vm = Dialog(rows, pool: [new RentalChip { Number = "7001", Note = "AIR" }]);
 
         Assert.Equal("chip-type", vm.SelectedField.Key);          // picked by its label («чіп»)

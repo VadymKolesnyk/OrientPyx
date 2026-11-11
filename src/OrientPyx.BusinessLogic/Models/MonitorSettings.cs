@@ -6,7 +6,7 @@ namespace OrientPyx.BusinessLogic.Models;
 /// Per-competition configuration for the on-screen results monitor («Результати на монітор»): a set of
 /// output HTML files (each a chosen subset of the day's groups + its own title / auto-scroll / auto-refresh
 /// timing) plus ONE column layout shared by every file. The app regenerates every enabled file on an interval
-/// from the day's computed results; the generated page reloads itself and smoothly scrolls, so it can be
+/// from the day's computed results; the open page picks the new data up in place and smoothly scrolls, so it can be
 /// opened straight from disk (file://) on a venue screen — the modern successor to the legacy orientir.exe
 /// <c>rezNN.htm</c> screens. Stored as JSON in the event database; the active day is the session day.
 /// </summary>
@@ -46,13 +46,14 @@ public sealed record MonitorFile(
     /// <summary>Legacy per-file column layout — kept only to read old configs and seed the now-shared
     /// <see cref="MonitorSettings.Columns"/>. New saves leave this null.</summary>
     [property: JsonPropertyName("columns")] ResultColumnSelection? Columns,
-    /// <summary>Seconds between data refreshes — how often the page reloads itself. Min 3.</summary>
+    /// <summary>Seconds between data refreshes — how often the app rewrites the file's data (the open page picks
+    /// it up in place, without reloading). Min 3.</summary>
     [property: JsonPropertyName("refreshSeconds")] int RefreshSeconds,
     /// <summary>Pixels per second of smooth vertical auto-scroll. 0 disables scrolling (static page).</summary>
     [property: JsonPropertyName("scrollSpeed")] int ScrollSpeed,
     [property: JsonPropertyName("enabled")] bool Enabled)
 {
-    public const int DefaultRefreshSeconds = 20;
+    public const int DefaultRefreshSeconds = 5;
     public const int MinRefreshSeconds = 3;
     public const int DefaultScrollSpeed = 55;
 
@@ -60,4 +61,10 @@ public sealed record MonitorFile(
     public static MonitorFile New(string path, string title) =>
         new(path, title, GroupNames: [], Columns: null,
             RefreshSeconds: DefaultRefreshSeconds, ScrollSpeed: DefaultScrollSpeed, Enabled: true);
+
+    /// <summary>The name of the live-data script written beside a monitor page (<c>rez01.html</c> →
+    /// <c>rez01.data.js</c>): the open page loads it every few seconds and swaps its rows in place, so a result or a
+    /// withdrawal shows without waiting for the page to scroll back to the top and reload.</summary>
+    public static string DataFileName(string pagePath) =>
+        System.IO.Path.GetFileNameWithoutExtension(pagePath) + ".data.js";
 }
