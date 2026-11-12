@@ -41,7 +41,11 @@ public sealed record LoadedPlugin(
     string Folder,
     IReadOnlyList<Discipline> Disciplines,
     IReadOnlyList<ParticipantFieldDef> Fields,
-    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Strings);
+    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Strings)
+{
+    /// <summary>The plugin's reports (<see cref="IPluginBuilder.AddReport{T}"/>), in registration order.</summary>
+    public IReadOnlyList<Report> Reports { get; init; } = [];
+}
 
 /// <summary>A plugin that could not be loaded.</summary>
 /// <param name="PluginId">The plugin id when it was readable; null otherwise.</param>

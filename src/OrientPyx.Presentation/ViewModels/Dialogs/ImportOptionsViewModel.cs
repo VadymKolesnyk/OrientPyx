@@ -251,14 +251,18 @@ public sealed partial class LinkFieldOption : ObservableObject
 /// <summary>One labelled toggle inside an <see cref="ImportOptionsViewModel"/>.</summary>
 public sealed partial class ImportOption : ObservableObject
 {
+    private readonly object[] _args;
+
     /// <param name="key">Stable identifier used to read the value back from the result.</param>
     /// <param name="labelKey">Localization key for the checkbox caption.</param>
     /// <param name="isChecked">Initial state.</param>
-    public ImportOption(string key, string labelKey, bool isChecked)
+    /// <param name="args">Values for the caption's <c>{0}</c>, <c>{1}</c>… placeholders (a field's name…).</param>
+    public ImportOption(string key, string labelKey, bool isChecked, params object[] args)
     {
         Key = key;
         LabelKey = labelKey;
         _isChecked = isChecked;
+        _args = args;
     }
 
     public string Key { get; }
@@ -273,7 +277,9 @@ public sealed partial class ImportOption : ObservableObject
     private string _label = string.Empty;
 
     /// <summary>Re-resolves <see cref="Label"/> from the current language.</summary>
-    public void Refresh(ILocalizationService localization) => Label = localization.Get(LabelKey);
+    public void Refresh(ILocalizationService localization) => Label = _args.Length == 0
+        ? localization.Get(LabelKey)
+        : string.Format(System.Globalization.CultureInfo.CurrentCulture, localization.Get(LabelKey), _args);
 }
 
 /// <summary>The confirmed toggle values, keyed by each option's <see cref="ImportOption.Key"/>.</summary>

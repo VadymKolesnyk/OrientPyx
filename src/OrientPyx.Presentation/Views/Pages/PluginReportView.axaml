@@ -1,0 +1,130 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             xmlns:views="using:OrientPyx.Presentation.Views.Pages"
+             xmlns:shared="using:OrientPyx.Presentation.ViewModels.Shared"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="700"
+             x:Class="OrientPyx.Presentation.Views.Pages.PluginReportView"
+             x:DataType="pages:PluginReportViewModel">
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Heading (the report's name) + day picker + refresh + Word -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="{Binding ReportName}" Classes="h1"
+                           FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+                <TextBlock Text="{Binding ReportDetails}" Classes="subtitle" TextWrapping="Wrap" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <Button Classes="help" Command="{Binding ShowHelpCommand}"
+                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                <controls:DaySelector VerticalAlignment="Center"
+                                      ShowDays="{Binding ShowDaySelector}"
+                                      IsVisible="{Binding ShowDaySelector}"
+                                      ShowLock="False"
+                                      IsDayLocked="{Binding IsDayLocked}"
+                                      ToggleLockCommand="{Binding ToggleDayLockCommand}"
+                                      LockTooltip="{Binding Localization[DayLock.Lock.Tooltip]}"
+                                      UnlockTooltip="{Binding Localization[DayLock.Unlock.Tooltip]}"
+                                      SearchWatermark="{Binding Localization[Common.Search]}"
+                                      DayOptions="{Binding DayOptions}"
+                                      SelectedDay="{Binding SelectedDay, Mode=TwoWay}" />
+                <Button Classes="ghost" VerticalAlignment="Center"
+                        Command="{Binding RefreshCommand}"
+                        Content="{Binding Localization[Page.PluginReport.Refresh]}" />
+                <Button Classes="accent" VerticalAlignment="Center"
+                        IsEnabled="{Binding HasDocument}"
+                        Click="OnExportWordClick"
+                        Content="{Binding ExportWordLabel}" />
+            </StackPanel>
+        </Grid>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+            <StackPanel Spacing="16">
+
+                <!-- The report's own settings -->
+                <Border Classes="card" Padding="22" MaxWidth="720" HorizontalAlignment="Left"
+                        IsVisible="{Binding HasSettings}">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="{Binding Localization[Page.PluginReport.Settings]}" Classes="h2"
+                                   FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+                        <ItemsControl ItemsSource="{Binding SettingItems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="shared:SettingItemViewModel">
+                                    <views:SettingItemEditor />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Classes="accent" HorizontalAlignment="Right"
+                                Command="{Binding ApplySettingsCommand}"
+                                Content="{Binding Localization[Page.PluginReport.Apply]}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- The plugin could not build the document -->
+                <Border Classes="card" Padding="16" IsVisible="{Binding HasError}">
+                    <TextBlock Text="{Binding Error}" Foreground="{DynamicResource DangerBrush}" TextWrapping="Wrap" />
+                </Border>
+
+                <TextBlock Text="{Binding TruncatedHint}" Classes="muted" TextWrapping="Wrap"
+                           IsVisible="{Binding IsTruncated}" />
+
+                <!-- The document on a page-wide sheet, in full (the Word export lays it out on pages) -->
+                <Border Background="#EEF0F4" CornerRadius="6" Padding="24" HorizontalAlignment="Left"
+                        IsVisible="{Binding HasDocument}">
+                    <Border Background="White" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                            CornerRadius="2" Padding="26" HorizontalAlignment="Center" VerticalAlignment="Top"
+                            BoxShadow="0 2 10 0 #22000000"
+                            Width="{Binding Preview.IsLandscape, Converter={StaticResource LandscapeToPageSize}, ConverterParameter=width}">
+                        <StackPanel Spacing="4">
+                            <!-- The header, as the .docx stacks it: organisation, competition, title, date / venue,
+                                 the report's own line. -->
+                            <TextBlock Text="{Binding Preview.Subtitle}" FontFamily="Times New Roman" FontSize="12"
+                                       Foreground="Black" TextAlignment="Center" TextWrapping="Wrap"
+                                       IsVisible="{Binding Preview.Subtitle, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <TextBlock Text="{Binding Preview.CompetitionName}" FontFamily="Times New Roman" FontSize="12"
+                                       Foreground="Black" TextAlignment="Center" TextWrapping="Wrap"
+                                       IsVisible="{Binding Preview.CompetitionName, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <TextBlock Text="{Binding Preview.Title}" FontFamily="Times New Roman" FontSize="15"
+                                       FontWeight="Bold" Foreground="Black" TextAlignment="Center" TextWrapping="Wrap" />
+                            <Grid ColumnDefinitions="*,*" Margin="0,4,0,0">
+                                <TextBlock Grid.Column="0" Text="{Binding Preview.DateText}" FontFamily="Times New Roman"
+                                           FontSize="11" Foreground="Black" HorizontalAlignment="Left" />
+                                <TextBlock Grid.Column="1" Text="{Binding Preview.Venue}" FontFamily="Times New Roman"
+                                           FontSize="11" Foreground="Black" HorizontalAlignment="Right" />
+                            </Grid>
+                            <TextBlock Text="{Binding Preview.FilterSummary}" FontFamily="Times New Roman" FontWeight="Bold"
+                                       FontSize="12" Foreground="Black" TextAlignment="Center" TextWrapping="Wrap"
+                                       Margin="0,2,0,0" IsVisible="{Binding Preview.HasFilterSummary}" />
+
+                            <TextBlock Text="{Binding Localization[Page.PluginReport.Empty]}" Foreground="#888"
+                                       FontStyle="Italic" FontSize="11" Margin="0,10,0,0" TextWrapping="Wrap"
+                                       IsVisible="{Binding ShowEmptyHint}" />
+
+                            <!-- The sections + tables, built in code-behind by the shared protocol preview table. -->
+                            <Grid x:Name="PreviewTableHost" Margin="0,8,0,0"
+                                  IsVisible="{Binding !Preview.IsEmpty}" />
+
+                            <ItemsControl ItemsSource="{Binding Preview.Officials}" Margin="60,16,0,0"
+                                          IsVisible="{Binding Preview.HasOfficials}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" FontFamily="Times New Roman" Foreground="Black"
+                                                   FontSize="11" Margin="0,3" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+    </DockPanel>
+
+</UserControl>

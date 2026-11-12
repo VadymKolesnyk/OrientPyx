@@ -100,8 +100,29 @@ public sealed class UofXmlParser : IUofXmlParser
             RelayDayNumbers = relayDays,
             RelayGroup = relayGroup,
             RelayTeamName = teamName,
-            RelayLeg = leg
+            RelayLeg = leg,
+            Raw = RawValues(sportsman)
         };
+    }
+
+    /// <summary>
+    /// Every simple value of a participant record by name — the attributes and the text-only child elements of each
+    /// of <paramref name="records"/> (the first one met wins) — for the additional fields an import fills by name
+    /// (UOF <c>&lt;Pol&gt;</c>, IOF <c>sex</c>).
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string> RawValues(params XElement?[] records)
+    {
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var record in records)
+        {
+            if (record is null)
+                continue;
+            foreach (var attribute in record.Attributes().Where(a => !a.IsNamespaceDeclaration))
+                values.TryAdd(attribute.Name.LocalName, attribute.Value.Trim());
+            foreach (var child in record.Elements().Where(e => !e.HasElements))
+                values.TryAdd(child.Name.LocalName, child.Value.Trim());
+        }
+        return values;
     }
 
     // ProgEvent is a comma-separated list of 1-based day numbers, e.g. "1,2" or just "1"; a number followed by «Е»

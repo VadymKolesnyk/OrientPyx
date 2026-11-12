@@ -95,6 +95,7 @@ internal sealed partial class DayResultsCalculator
                 byLeg.TryAdd(leg, link);
 
         var legCourses = ResolveLegCourses(input, team, gs, legCount, byLeg, out var courseSetOpen);
+        var perLeg = gs?.CourseAssignmentMode == RelayCourseMode.PerLeg;
 
         var legs = new List<RelayLegResult>(legCount);
         DateTimeOffset? previousFinish = null;
@@ -111,7 +112,10 @@ internal sealed partial class DayResultsCalculator
             if (!byLeg.TryGetValue(leg, out var link))
             {
                 legs.Add(new RelayLegResult(leg, null, null, null, null, FinishStatus.None,
-                    null, null, null, Restarted: false, Pending: false) { CourseCode = legCourse?.Course?.Code });
+                    null, null, null, Restarted: false, Pending: false)
+                {
+                    CourseCode = legCourse?.Course?.Code, CoursePerLeg = perLeg
+                });
                 previousFinish = null;
                 cumulative = null;
                 continue;
@@ -161,6 +165,7 @@ internal sealed partial class DayResultsCalculator
                 result.Status, result.ResultTime, result.AdjustedTime, cumulative, restarted, pending)
             {
                 CourseCode = legCourse?.Course?.Code,
+                CoursePerLeg = perLeg,
                 CourseUnassigned = legCourse is { Unassigned: true } && readout is not null
             };
             legs.Add(legResult);
@@ -218,6 +223,7 @@ internal sealed partial class DayResultsCalculator
     /// <summary>
     /// The course of each leg (Р-40…Р-43), or null when the group runs its own course order on every leg
     /// (<see cref="RelayCourseMode.Group"/>). <see cref="RelayCourseMode.ByBib"/> looks the leg number up;
+    /// <see cref="RelayCourseMode.PerLeg"/> takes the course coded with the leg's number;
     /// <see cref="RelayCourseMode.TeamSet"/> distributes the team's set (its own, else its leg numbers' courses, else
     /// the group's) over its read legs with the least total penalty (<see cref="TeamCourseAssignment"/>), re-done
     /// from scratch every time.
@@ -252,6 +258,17 @@ internal sealed partial class DayResultsCalculator
                     result[leg] = ByCode(map.GetValueOrDefault(leg));
                 break;
             }
+            case RelayCourseMode.PerLeg:
+                // «Своя на кожен етап»: leg N runs the group's course coded «N» in every team; a leg with no course
+                // typed is not assigned (never a course without controls that any read-out would pass).
+                for (var leg = 1; leg <= legCount; leg++)
+                {
+                    var code = RelayLegCourses.LegCode(leg);
+                    result[leg] = courses.TryGetValue(code, out var c) && c.CourseOrderText.Trim().Length > 0
+                        ? new LegCourse(c, false, c.Code)
+                        : LegCourse.Missing(code);
+                }
+                break;
             case RelayCourseMode.TeamSet:
             {
                 // The team's own set, else the courses assigned to its leg numbers (OCAD's team combination, in leg

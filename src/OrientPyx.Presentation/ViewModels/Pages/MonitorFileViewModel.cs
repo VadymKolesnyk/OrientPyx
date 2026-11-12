@@ -200,6 +200,11 @@ public sealed partial class MonitorFileViewModel : ObservableObject
     public bool MenAllSelected => AllSelected(MenGroups);
     public bool OtherAllSelected => AllSelected(OtherGroups);
 
+    // A column with no groups (e.g. no «інші» on the day) shows no button — there is nothing to toggle.
+    public bool HasWomenGroups => WomenGroups.Count > 0;
+    public bool HasMenGroups => MenGroups.Count > 0;
+    public bool HasOtherGroups => OtherGroups.Count > 0;
+
     public string WomenToggleLabel => ToggleLabel(WomenAllSelected);
     public string MenToggleLabel => ToggleLabel(MenAllSelected);
     public string OtherToggleLabel => ToggleLabel(OtherAllSelected);
@@ -240,6 +245,9 @@ public sealed partial class MonitorFileViewModel : ObservableObject
         OnPropertyChanged(nameof(WomenAllSelected));
         OnPropertyChanged(nameof(MenAllSelected));
         OnPropertyChanged(nameof(OtherAllSelected));
+        OnPropertyChanged(nameof(HasWomenGroups));
+        OnPropertyChanged(nameof(HasMenGroups));
+        OnPropertyChanged(nameof(HasOtherGroups));
         OnPropertyChanged(nameof(WomenToggleLabel));
         OnPropertyChanged(nameof(MenToggleLabel));
         OnPropertyChanged(nameof(OtherToggleLabel));

@@ -56,7 +56,10 @@ public sealed class ParticipantImportFlow : IParticipantImportFlow
         }
 
         // Ask whether to wipe the participant database first (default off — keep + FOU-code merge), and
-        // whether to import onto every day per the file or only the active day (with a link field).
+        // whether to import onto every day per the file or only the active day (with a link field). The additional
+        // fields the file can fill by name (UOF <Pol> → «Стать» of a plugin, Р-59) get a checkbox each, on by default.
+        var data = outcome.Data!;
+        var fileFields = await _busy.RunAsync(() => _editor.GetImportFileFieldsAsync(data));
         var scope = _session.CurrentDay is { } day ? new ImportScopeChoice(day.Number) : null;
         var dialog = new ImportOptionsViewModel(
             _localization,
@@ -64,7 +67,8 @@ public sealed class ParticipantImportFlow : IParticipantImportFlow
             messageKey: "ParticipantsImport.Message",
             options:
             [
-                new ImportOption(ClearParticipantsKey, "ParticipantsImport.ClearFirst", isChecked: false)
+                new ImportOption(ClearParticipantsKey, "ParticipantsImport.ClearFirst", isChecked: false),
+                .. fileFields.Select(FieldOption)
             ],
             scope: scope);
 
@@ -74,7 +78,13 @@ public sealed class ParticipantImportFlow : IParticipantImportFlow
 
         var clearFirst = result.Get(ClearParticipantsKey, fallback: false);
         var importScope = result.Scope ?? ParticipantImportScope.AllDays;
-        var data = outcome.Data!;
+        data = data with
+        {
+            FileFieldKeys = fileFields
+                .Where(f => result.Get(FieldOptionKey(f), fallback: false))
+                .Select(f => f.Key)
+                .ToList()
+        };
 
         var resolved = await ImportDuplicatesStep.ResolveAsync(
             data, clearFirst, importScope, _editor, _dialogs, _busy, _localization);
@@ -98,6 +108,16 @@ public sealed class ParticipantImportFlow : IParticipantImportFlow
 
     private string Format(string key, params object[] args)
         => string.Format(_localization.Get(key), args);
+
+    // One checkbox per additional field the file can fill: «Стать» from «Pol», and whether it is a plugin field the
+    // import creates.
+    private static ImportOption FieldOption(ImportFileField field) => field.Exists
+        ? new ImportOption(FieldOptionKey(field), "ParticipantsImport.FileField", isChecked: true,
+            field.Label, field.SourceName, field.Count)
+        : new ImportOption(FieldOptionKey(field), "ParticipantsImport.FileField.New", isChecked: true,
+            field.Label, field.PluginName ?? string.Empty, field.SourceName, field.Count);
+
+    private static string FieldOptionKey(ImportFileField field) => "field." + field.Key;
 
     /// <summary>
     /// Turns the import's layer-neutral steps into localized overlay lines. We invoke the reporter

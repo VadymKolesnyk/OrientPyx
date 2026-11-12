@@ -162,7 +162,7 @@ public sealed partial class ImportPreviewViewModel : ObservableObject
             return string.Format(CultureInfo.CurrentCulture, Localization.Get("ParticipantsImport.Preview.NewDay"), change.DayNumber);
 
         var label = change.Field.StartsWith(CustomField.ColumnPrefix, StringComparison.Ordinal)
-            ? change.Field[CustomField.ColumnPrefix.Length..]
+            ? FieldLabel(change.Field[CustomField.ColumnPrefix.Length..])
             : Localization.Get("ParticipantsImport.Preview.Field." + change.Field);
         if (change.DayNumber is { } day)
             label = string.Format(CultureInfo.CurrentCulture, Localization.Get("ParticipantsImport.Preview.DayField"), label, day);
@@ -170,6 +170,9 @@ public sealed partial class ImportPreviewViewModel : ObservableObject
         var after = change.After.Length == 0 ? "—" : change.After;
         return $"{label}: {before} → {after}";
     }
+
+    private string FieldLabel(string key) =>
+        _preview.FieldLabels.TryGetValue(key, out var label) && label.Length > 0 ? label : key;
 
     [RelayCommand]
     private void SelectAllAdded() => Set(Added, true);

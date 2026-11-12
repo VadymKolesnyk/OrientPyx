@@ -41,7 +41,30 @@ public partial class GroupsView : UserControl
         _vm.Localization.PropertyChanged += OnLocalizationChanged;
         _vm.ColumnsChanged += OnColumnsChanged;
         _vm.FocusGridRequested += OnFocusGridRequested;
+        _vm.PropertyChanged += OnViewModelPropertyChanged;
         BuildBands();
+    }
+
+    // The variants table switches between named courses and one row per leg («своя на кожен етап»).
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(GroupsViewModel.IsRelayLegCoursesEditor))
+            BuildScatterBands();
+        if (e.PropertyName is nameof(GroupsViewModel.IsRelayCoursesEditor) or nameof(GroupsViewModel.IsRelayLegCoursesEditor))
+            EnsureRelayCoursesEditorHeight();
+    }
+
+    // The editor's starting height fits a course box, not the relay settings plus the courses table under them.
+    private const double RelayCoursesEditorHeight = 360;
+
+    // Grows the editor row when a relay group's courses table appears — never shrinks it (the splitter is the user's).
+    private void EnsureRelayCoursesEditorHeight()
+    {
+        if (_vm is not { IsRelayCoursesEditor: true })
+            return;
+        var row = EditorGrid.RowDefinitions[2];
+        if (row.Height.IsAbsolute && row.Height.Value < RelayCoursesEditorHeight)
+            row.Height = new GridLength(RelayCoursesEditorHeight);
     }
 
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => BuildBands();
@@ -167,6 +190,22 @@ public partial class GroupsView : UserControl
         if (_vm is null)
             return;
 
+        if (_vm.IsRelayLegCoursesEditor)
+        {
+            // «Своя на кожен етап»: a row per leg — the leg is fixed, only its course is typed; rows follow the leg count.
+            ScatterSheet.LayoutKey = "groups.relayLegs";
+            ScatterSheet.Bands = new SheetColumnBuilder(_vm.Localization)
+                .Text("Groups.Relay.Legs.Col.Leg", nameof(CourseVariantRowViewModel.Code), width: 90)
+                .Text("Groups.Scatter.Col.Order", nameof(CourseVariantRowViewModel.CourseOrder),
+                      editPath: nameof(CourseVariantRowViewModel.CourseOrder), minWidth: 240,
+                      placeholder: "S1 31 32 33 F")
+                .Text("Groups.Scatter.Col.Check", nameof(CourseVariantRowViewModel.Check), minWidth: 120,
+                      placeholder: string.Empty)
+                .Bands;
+            return;
+        }
+
+        ScatterSheet.LayoutKey = "groups.scatter";
         ScatterSheet.Bands = new SheetColumnBuilder(_vm.Localization)
             .Text("Groups.Scatter.Col.Code", nameof(CourseVariantRowViewModel.Code),
                   editPath: nameof(CourseVariantRowViewModel.Code), width: 120,
@@ -189,10 +228,10 @@ public partial class GroupsView : UserControl
     }
 
     // Scatter variants table: keyboard Delete removes the selected variant row (no confirm — the whole
-    // set autosaves, so a mistaken delete is trivially undone by re-adding).
+    // set autosaves, so a mistaken delete is trivially undone by re-adding). A leg row is never removed.
     private void OnScatterDeleteRequested(object? sender, SheetDeleteEventArgs e)
     {
-        if (_vm is null || e.Row is not CourseVariantRowViewModel row)
+        if (_vm is null || e.Row is not CourseVariantRowViewModel row || row.Leg is not null)
             return;
         _vm.RemoveScatterVariantCommand.Execute(row);
     }
@@ -291,6 +330,7 @@ public partial class GroupsView : UserControl
             _vm.Localization.PropertyChanged -= OnLocalizationChanged;
             _vm.ColumnsChanged -= OnColumnsChanged;
             _vm.FocusGridRequested -= OnFocusGridRequested;
+            _vm.PropertyChanged -= OnViewModelPropertyChanged;
         }
         _vm = null;
     }

@@ -10,14 +10,26 @@ internal sealed class ParticipantViews
     private readonly IReadOnlyDictionary<Guid, Participant> _participants;
     private readonly Dictionary<Guid, string> _regions;
     private readonly Dictionary<Guid, string> _clubs;
+    private readonly Dictionary<Guid, string> _dusshes;
     private readonly Dictionary<Guid, Dictionary<string, string?>> _fields;
 
     public ParticipantViews(EventDaySnapshot snapshot)
+        : this(snapshot.Participants, snapshot.Regions, snapshot.Clubs, snapshot.Dusshes, snapshot.FieldValues)
     {
-        _participants = snapshot.Participants.ToDictionary(p => p.Id);
-        _regions = snapshot.Regions.ToDictionary(r => r.Id, r => r.Name);
-        _clubs = snapshot.Clubs.ToDictionary(c => c.Id, c => c.Name);
-        _fields = snapshot.FieldValues
+    }
+
+    public ParticipantViews(
+        IEnumerable<Participant> participants,
+        IEnumerable<Region> regions,
+        IEnumerable<Club> clubs,
+        IEnumerable<Dussh> dusshes,
+        IEnumerable<ParticipantFieldValue> fieldValues)
+    {
+        _participants = participants.ToDictionary(p => p.Id);
+        _regions = regions.ToDictionary(r => r.Id, r => r.Name);
+        _clubs = clubs.ToDictionary(c => c.Id, c => c.Name);
+        _dusshes = dusshes.ToDictionary(d => d.Id, d => d.Name);
+        _fields = fieldValues
             .GroupBy(v => v.ParticipantId)
             .ToDictionary(g => g.Key, g => g.ToDictionary(v => v.Key, v => (string?)v.Value));
     }
@@ -36,6 +48,8 @@ internal sealed class ParticipantViews
                 Club = p.ClubId is { } cid && _clubs.TryGetValue(cid, out var club) ? club : string.Empty,
                 Region = p.RegionId is { } rid && _regions.TryGetValue(rid, out var region) ? region : string.Empty,
                 Team = p.Team,
+                Dussh = p.DusshId is { } did && _dusshes.TryGetValue(did, out var dussh) ? dussh : string.Empty,
+                Qualification = p.Rank ?? string.Empty,
                 Fields = _fields.TryGetValue(participantId, out var fields) ? fields : new Dictionary<string, string?>()
             }
             : new ParticipantView();

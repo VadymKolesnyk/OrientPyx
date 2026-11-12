@@ -24,7 +24,8 @@ public sealed partial class CsvMappingViewModel : ObservableObject
     /// <param name="header">The CSV column captions, in file order.</param>
     /// <param name="rowCount">How many data rows the file holds (shown in the modal's message).</param>
     /// <param name="scope">Optional day-scope + link-field chooser (null hides that section).</param>
-    /// <param name="fields">The competition's additional participant fields (one mapping row each).</param>
+    /// <param name="fields">The additional fields the import can fill (one mapping row each): the competition's own,
+    /// then the ones switched-on plugins declare that the import would create.</param>
     /// <param name="template">The last confirmed mapping for this header set (target key → header caption); null
     /// when there is none, in which case the columns are guessed from their headers.</param>
     /// <param name="includeRelay">The day runs a relay: list the relay targets (team number / name / leg).</param>
@@ -33,7 +34,7 @@ public sealed partial class CsvMappingViewModel : ObservableObject
         IReadOnlyList<string> header,
         int rowCount,
         ImportScopeChoice? scope = null,
-        IReadOnlyList<CustomField>? fields = null,
+        IReadOnlyList<ImportField>? fields = null,
         IReadOnlyDictionary<string, string>? template = null,
         bool includeRelay = false)
     {
@@ -56,9 +57,14 @@ public sealed partial class CsvMappingViewModel : ObservableObject
         foreach (var field in fields ?? [])
         {
             var target = ImportTarget.Field(field.Key);
+            // A plugin field the competition does not have yet says whose it is (the import creates it, Р-60).
+            var label = field.Exists || field.PluginName is null
+                ? field.Field.Label
+                : string.Format(System.Globalization.CultureInfo.CurrentCulture,
+                    Localization.Get("CsvImport.PluginField"), field.Field.Label, field.PluginName);
             rows.Add(new CsvFieldMapping(Localization, target, columns,
-                Pick(target, template, header, columns, () => GuessByName(field.Label, header, columns)),
-                field.Label));
+                Pick(target, template, header, columns, () => GuessByName(field, header, columns)),
+                label));
         }
         Fields = new ObservableCollection<CsvFieldMapping>(rows);
         NewFieldColumns = columns;
@@ -187,14 +193,15 @@ public sealed partial class CsvMappingViewModel : ObservableObject
         return columns[0];
     }
 
-    // An additional field is guessed by its name: the column headed exactly like it.
+    // An additional field is guessed by its name: the column headed exactly like it (its label, its key, or one of
+    // the plugin's import names — «Стать», «Pol», «Gender»).
     private static CsvColumnOption GuessByName(
-        string label,
+        ImportField field,
         IReadOnlyList<string> header,
         IReadOnlyList<CsvColumnOption> columns)
     {
         for (var i = 0; i < header.Count; i++)
-            if (TextKey.Same(header[i], label))
+            if (field.Matches(header[i]))
                 return columns[i + 1];
         return columns[0];
     }

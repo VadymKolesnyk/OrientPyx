@@ -647,6 +647,12 @@ public sealed class ProtocolPreviewTable
     // column in DataContext, so the same handlers serve both — letting the user grab a column anywhere in it.
     private void WireDrag(Border cell)
     {
+        // Fixed columns (a plugin report): no drag, and no «move» cursor promising one.
+        if (_previewHost is { CanReorderColumns: false })
+        {
+            cell.Cursor = Cursor.Default;
+            return;
+        }
         cell.PointerPressed += OnHeaderPointerPressed;
         cell.AddHandler(DragDrop.DragOverEvent, OnHeaderDragOver);
         cell.AddHandler(DragDrop.DropEvent, OnHeaderDrop);

@@ -12,9 +12,15 @@ namespace OrientPyx.BusinessLogic.Disciplines;
 public static class DisciplineSettings
 {
     /// <summary>The effective values of <paramref name="strategy"/> on <paramref name="dayId"/>.</summary>
-    public static SettingValues Resolve(IDisciplineStrategy strategy, IEnumerable<PluginSettingsRow> rows, Guid dayId)
+    public static SettingValues Resolve(IDisciplineStrategy strategy, IEnumerable<PluginSettingsRow> rows, Guid dayId) =>
+        Resolve(strategy.Id, strategy.Settings, rows, dayId);
+
+    /// <summary>The effective values of the settings <paramref name="defs"/> stored under <paramref name="ownerId"/>
+    /// (a discipline, or a plugin report) on <paramref name="dayId"/>; without a day only the competition-scoped row
+    /// counts.</summary>
+    public static SettingValues Resolve(
+        DisciplineId ownerId, IReadOnlyList<SettingDef> defs, IEnumerable<PluginSettingsRow> rows, Guid? dayId)
     {
-        var defs = strategy.Settings;
         if (defs.Count == 0)
             return SettingValues.Empty;
 
@@ -22,9 +28,9 @@ public static class DisciplineSettings
         var competitionValues = new Dictionary<string, object?>();
         foreach (var row in rows)
         {
-            if (row.DisciplineId != strategy.Id)
+            if (row.DisciplineId != ownerId)
                 continue;
-            if (row.EventDayId == dayId)
+            if (dayId is not null && row.EventDayId == dayId)
                 dayValues = Parse(row.Json, defs);
             else if (row.EventDayId is null)
                 competitionValues = Parse(row.Json, defs);

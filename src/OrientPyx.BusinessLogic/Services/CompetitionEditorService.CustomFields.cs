@@ -140,13 +140,7 @@ public sealed partial class CompetitionEditorService
                 // Created once (Р-17); an existing field with the key — the user's own or an earlier copy — is kept.
                 if (!keys.Add(declared.Key))
                     continue;
-                var field = new CustomField(
-                    declared.Key,
-                    string.IsNullOrWhiteSpace(declared.Label) ? declared.Key : declared.Label.Trim(),
-                    CustomField.KindOf(declared.Kind),
-                    declared.Kind.Options,
-                    CustomField.PluginSourcePrefix + plugin.Info.Id,
-                    ++order);
+                var field = NewPluginField(plugin.Info.Id, declared, ++order);
                 await _eventStore.AddCustomFieldDefAsync(folder, field.ToDef(), cancellationToken);
             }
         }

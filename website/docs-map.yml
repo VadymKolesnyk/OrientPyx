@@ -129,6 +129,7 @@ pages:
   guides/standard-plugins.md:
     - plugins/*
     - src/OrientPyx.*PluginSettings*
+    - src/OrientPyx.*PluginReport*
     - src/OrientPyx.Presentation/*Plugins*
   after/summary.md:
     - src/OrientPyx.*SummaryProtocol*

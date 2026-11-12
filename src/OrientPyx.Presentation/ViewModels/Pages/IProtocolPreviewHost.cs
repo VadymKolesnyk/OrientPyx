@@ -18,4 +18,7 @@ public interface IProtocolPreviewHost
     /// columns the preview never shows), so the move is correct regardless of column visibility.
     /// </summary>
     void MoveColumnByKey(string draggedKey, string targetKey, bool insertAfter);
+
+    /// <summary>False when the columns are fixed (a plugin report): the preview then offers no drag-reorder.</summary>
+    bool CanReorderColumns => true;
 }

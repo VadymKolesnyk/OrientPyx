@@ -13,5 +13,10 @@ public enum RelayCourseMode
 
     /// <summary>The team has a set of courses, each run exactly as many times as listed, in any order: the team's own
     /// set, else the courses assigned to its leg numbers, else the group's.</summary>
-    TeamSet
+    TeamSet,
+
+    /// <summary>Each leg has its own course, the same in every team: the group's course variant coded with the leg
+    /// number (<see cref="Models.RelayLegCourses.LegCode"/>), typed as one row per leg on «Групи»; a plain order or a
+    /// mixed pattern.</summary>
+    PerLeg
 }

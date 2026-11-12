@@ -2,6 +2,7 @@ using System.Reflection;
 using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
 using OrientPyx.BusinessLogic.Disciplines;
+using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
@@ -418,6 +419,85 @@ public sealed class HeadlessWorkflowTests
             {
                 if (DateTime.UtcNow > deadline)
                     throw new TimeoutException($"{group}: {legs} legs not saved in time");
+                await Task.Delay(100);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task GroupsPageTypesACoursePerRelayLeg()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Core, TestIds.Next("ui_perleg"), discipline: DisciplineId.Relay);
+        await c.AddControlsAsync(1, "31", "32", "33");
+        await c.AddGroupAsync("R", "31", s => s.LegCount = 3);
+        // A named course from another mode stays when the leg courses are typed.
+        await c.SetCourseVariantsAsync("R", 1, ("A", "33"));
+        var store = Core.GetRequiredService<IEventStore>();
+        await OpenCompetitionAsync(c.Summary.Identifier);
+        await _app.OnUiAsync(() => _app.Vm.OpenGroupsCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        var page = Assert.IsType<GroupsViewModel>(Shell().SelectedPage);
+        await _app.WaitUntilAsync(() => page.Groups.Count == 1, what: "relay group listed");
+        await _app.OnUiAsync(() => page.SelectedGroup = page.Groups[0]);
+        await _app.WaitUntilAsync(() => page.IsRelayEditorVisible, what: "relay settings shown");
+
+        // «своя на кожен етап»: the table shows a row per leg, nothing else.
+        await _app.OnUiAsync(() =>
+            page.SelectedRelayCourseMode = page.RelayCourseModeOptions.Single(o => o.Value == RelayCourseMode.PerLeg));
+        await _app.WaitUntilAsync(() => page.IsRelayLegCoursesEditor && page.CourseVariants.Count == 3, what: "three leg rows");
+        Assert.Equal(["1", "2", "3"], page.CourseVariants.Select(v => v.Code));
+        Assert.All(page.CourseVariants, v => Assert.Equal(string.Empty, v.CourseOrder));
+        // A taller window so the leg table under the relay settings is in the screenshot.
+        var (width, height) = await _app.OnUiAsync(() => (_app.Window.Width, _app.Window.Height));
+        await _app.OnUiAsync(() => { _app.Window.Width = 1100; _app.Window.Height = 900; });
+        await _app.SettleAsync();
+        await _app.ScreenshotAsync("groups-relay-per-leg");
+        await _app.OnUiAsync(() => { _app.Window.Width = width; _app.Window.Height = height; });
+        await _app.SettleAsync();
+
+        await _app.OnUiAsync(() =>
+        {
+            page.CourseVariants[0].CourseOrder = "31 32";
+            page.CourseVariants[1].CourseOrder = "[2: 31 32] 33";
+        });
+        Assert.Equal("✓", page.CourseVariants[1].Check);
+        await WaitForVariantsAsync(v => v.Count == 3);
+        var saved = await GroupVariantsAsync();
+        Assert.Equal("31 32", saved.Single(v => v.Code == "1").CourseOrder);
+        Assert.Equal("[2: 31 32] 33", saved.Single(v => v.Code == "2").CourseOrder);
+        Assert.Contains(saved, v => v.Code == "A");                 // kept
+        Assert.DoesNotContain(saved, v => v.Code == "3");           // a blank leg is not written
+        Assert.Equal(RelayCourseMode.PerLeg, (await c.GetGroupSettingsAsync("R", 1)).CourseAssignmentMode);
+
+        // Fewer legs: the rows follow; the removed leg's course comes back with the leg.
+        await _app.OnUiAsync(() => page.RelayLegCountText = "1");
+        Assert.Single(page.CourseVariants);
+        await _app.OnUiAsync(() => page.RelayLegCountText = "4");
+        Assert.Equal(4, page.CourseVariants.Count);
+        Assert.Equal("[2: 31 32] 33", page.CourseVariants[1].CourseOrder);
+        await _app.OnUiAsync(() => page.CourseVariants[3].CourseOrder = "33");
+        await WaitForVariantsAsync(v => v.Any(x => x.Code == "4"));
+        Assert.Equal("[2: 31 32] 33", (await GroupVariantsAsync()).Single(v => v.Code == "2").CourseOrder);
+
+        // Back to «за номером етапу»: every course is a named one again, the leg ones included.
+        await _app.OnUiAsync(() =>
+            page.SelectedRelayCourseMode = page.RelayCourseModeOptions.Single(o => o.Value == RelayCourseMode.ByBib));
+        await _app.WaitUntilAsync(() => !page.IsRelayLegCoursesEditor && page.CourseVariants.Count == 4, what: "named courses");
+        Assert.Contains(page.CourseVariants, v => v.Code == "A");
+        AssertNoUiErrors();
+
+        async Task<IReadOnlyList<GroupCourseVariant>> GroupVariantsAsync() =>
+            (await store.GetDaySnapshotAsync(c.Folder, c.Day(1).Id)).CourseVariants
+                .Where(v => v.GroupId == c.Groups["R"].Id).ToList();
+
+        // Polled off the UI thread: blocking it on a store call would deadlock.
+        async Task WaitForVariantsAsync(Func<IReadOnlyList<GroupCourseVariant>, bool> done)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            while (!done(await GroupVariantsAsync()))
+            {
+                if (DateTime.UtcNow > deadline)
+                    throw new TimeoutException("leg courses not saved in time");
                 await Task.Delay(100);
             }
         }

@@ -1,0 +1,37 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:shared="using:OrientPyx.Presentation.ViewModels.Shared"
+             mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="40"
+             x:Class="OrientPyx.Presentation.Views.Pages.SettingItemEditor"
+             x:DataType="shared:SettingItemViewModel">
+
+    <!-- One plugin setting (a discipline's or a report's): its label and the editor for its kind. -->
+    <Grid ColumnDefinitions="*,Auto" Margin="0,4">
+        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+            <TextBlock Text="{Binding Label}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding ScopeNote}" Classes="muted" FontSize="11"
+                       IsVisible="{Binding HasScopeNote}" />
+        </StackPanel>
+        <Panel Grid.Column="1" VerticalAlignment="Center">
+            <!-- Integer: a custom +/- stepper, not NumericUpDown (its Windows automation peer crashes on spin). -->
+            <StackPanel Orientation="Horizontal" Spacing="2" IsVisible="{Binding IsInt}">
+                <Button Content="−" Command="{Binding DecrementCommand}" Classes="ghost stepper" />
+                <TextBlock Text="{Binding Number}" MinWidth="44" VerticalAlignment="Center"
+                           TextAlignment="Center" FontWeight="Medium" />
+                <Button Content="+" Command="{Binding IncrementCommand}" Classes="ghost stepper" />
+            </StackPanel>
+            <TextBox Text="{Binding Text}" MinWidth="160" IsVisible="{Binding IsDecimalOrText}" />
+            <CheckBox IsChecked="{Binding Flag}" IsVisible="{Binding IsBool}" />
+            <ComboBox ItemsSource="{Binding Choices}" SelectedItem="{Binding Text}"
+                      MinWidth="160" IsVisible="{Binding IsChoice}" />
+            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsTable}">
+                <TextBlock Text="{Binding TableSummary}" Classes="muted" VerticalAlignment="Center" />
+                <Button Content="{Binding EditTableLabel}"
+                        Command="{Binding EditTableCommand}" Classes="ghost" />
+            </StackPanel>
+        </Panel>
+    </Grid>
+
+</UserControl>

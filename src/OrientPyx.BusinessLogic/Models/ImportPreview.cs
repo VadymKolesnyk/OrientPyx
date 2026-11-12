@@ -14,6 +14,9 @@ public sealed record ImportPreview(
 {
     public static ImportPreview Empty { get; } = new([], [], []);
 
+    /// <summary>The additional fields' labels by key (a <c>field.&lt;key&gt;</c> change is shown under its label).</summary>
+    public IReadOnlyDictionary<string, string> FieldLabels { get; init; } = new Dictionary<string, string>();
+
     public bool IsEmpty => Added.Count == 0 && Updated.Count == 0 && Missing.Count == 0;
 }
 

@@ -57,6 +57,7 @@ SCREENS: dict[str, dict] = {
     "OnlineResults": {"menu": ["Menu.Protocols", "Menu.Protocols.OnlineResults"], "shot": "online-results", "see": ["race-day/monitor-online.md"]},
     "Plugins": {"menu": ["Menu.Plugins", "Menu.Plugins.Manage"], "shot": "plugins", "see": ["guides/standard-plugins.md"]},
     "PluginSettings": {"menu": ["Menu.Plugins"], "shot": "plugin-settings", "see": ["guides/standard-plugins.md"]},
+    "PluginReport": {"menu": ["Menu.Plugins"], "see": ["guides/standard-plugins.md", "plugins/api.md"]},
     "Settings": {"menu": ["Menu.File", "Menu.File.Settings"], "shot": "settings", "see": ["start/overview.md"]},
     "Network": {"menu": ["Menu.File", "Menu.File.Network"], "shot": "network", "see": ["race-day/network.md"]},
 }

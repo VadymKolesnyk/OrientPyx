@@ -21,6 +21,12 @@ public sealed class ParticipantView
 
     public string Team { get; init; } = string.Empty;
 
+    /// <summary>The sports school («ДЮСШ»); empty when none (API 2).</summary>
+    public string Dussh { get; init; } = string.Empty;
+
+    /// <summary>The sports qualification («розряд», «КМС»…) as written; empty when none (API 2).</summary>
+    public string Qualification { get; init; } = string.Empty;
+
     /// <summary>The participant's additional fields, by key.</summary>
     public IReadOnlyDictionary<string, string?> Fields { get; init; } = NoFields;
 

@@ -43,9 +43,11 @@ Three layers plus a shared localization library and the plugin SDK.
   `TimeFormat`, `TextKey`, `CourseOrder`, `SiCard`) plus the shared simple types (`FinishStatus`, `FinishContext`,
   `FinishStatusResult`, `SplitsView`…, `ControlPointType`, `ChipPunch`, `GeoPoint`/`MapPoint`). **No dependencies,
   no knowledge of EF / files / UI — only the contract and pure algorithms.** Everything in it is public API with
-  compatibility obligations: add only what is stable. Its `AssemblyVersion` is set explicitly (`1.0.0.0`) and is
-  the plugin API version — never tie it to the app's `Version`. The three app projects import its namespaces
-  globally (`<Using>` in their `.csproj`).
+  compatibility obligations: add only what is stable. Its `AssemblyVersion` is set explicitly (`1.0.0.0`) — the
+  binary-compat version, bumped only on a breaking change; never tie it to the app's `Version`. `ApiVersion.Current`
+  counts additive feature levels (2 = imported fields + reports); a plugin using them sets `MinApiVersion: 2`. New
+  `IPluginBuilder` members get a default implementation. The three app projects import its namespaces globally
+  (`<Using>` in their `.csproj`).
 
 ### Dependency direction
 
@@ -189,6 +191,20 @@ the format's structure comes from it, the plugin overrides rules: `EvaluateFinis
   `PluginId` set before load): an auto-form card per discipline, day-scoped values for the day picked on the page;
   saving re-points the session so pages recompute. The snapshot carries the rows
   (`EventDaySnapshot.DisciplineSettings`) so the calculator and the read-out log see the same values.
+- **Imported fields** (API 2, Р-59…Р-62): `AddParticipantField(key, label, kind, FieldImport)` names the field in
+  files (`FieldImport.From("Pol", "sex")`) and translates values (`.Value("0", "Ж")`). The XML readers keep every
+  simple value of a record in `UofParticipant.Raw` (`[JsonIgnore]`); `ICompetitionEditorService.GetImportFileFieldsAsync`
+  lists what a file can fill (a checkbox each in the UOF/IOF import window → `UofParticipantData.FileFieldKeys`),
+  `GetImportFieldsAsync` the CSV mapping targets (switched-on plugins' fields not created yet included, matched by
+  label/key/import names). `PrepareImportFieldsAsync` (preview + import) moves the chosen raw values into `Fields` and
+  applies the translations; the import creates a missing plugin field that got a value. User fields match by name too.
+- **Reports** (API 2, Р-63…Р-66): `AddReport<T>()` — `Report.Build(ReportContext)` → `ReportDocument` (columns,
+  sections, `ReportRow` normal/caption/sub). `PluginReports.Enabled/Find` lists them (guarded); a plugin with reports
+  is a submenu in «Плагіни» (settings + reports). `CompetitionEditorService.BuildPluginReportAsync` builds the context
+  from `GetResultProtocolDataAsync` per day (+ `ParticipantViews`), calls the plugin (exception → `Error`), and
+  `PluginReportDocumentBuilder` maps it onto a `ResultProtocolDocument` (protocol header, officials, footer) — shown by
+  `PluginReportViewModel` (shared `ProtocolPreviewTable`, no drag: `IProtocolPreviewHost.CanReorderColumns`) and
+  written by `IResultProtocolWriter`. Report settings: `PluginSettingsRow` under the report id. Reports only read.
 - **Table settings**: `Setting.Table(key, label, columns, TableValue default)` — rows of text cells keyed by column
   key, stored as a JSON array; edited in `SettingTableView` shown over the settings dialog
   (`IDialogService.ShowSettingTableAsync` restores the previous dialog). `Toolkit.RangeTable` reads a «range × key →
@@ -253,7 +269,10 @@ group's course, or — per `GroupDaySettings.CourseAssignmentMode` (Р-41) — a
 `GroupCourseVariant` rows: `ByBib` (`LegCourseAssignment` per leg number, typed on «Команди» or brought by the course
 import — there is no separate leg-course file import), `TeamSet` (a course set per team — its own, else its
 leg numbers' `LegCourseAssignment` codes, else the group's — distributed over the read legs by
-`Toolkit.TeamCourseAssignment`, least missed controls, Р-42). The former `ByLeg` mode is gone (migration
+`Toolkit.TeamCourseAssignment`, least missed controls, Р-42), `PerLeg` («своя на кожен етап»: leg N of every team
+runs the variant coded «N» — `RelayLegCourses.LegCode` — typed on «Групи» in a table of one row per leg that follows
+the leg count; other variants are kept aside and written back; a blank leg = «дистанцію не призначено»; outputs show
+`RelayLegResult.ShownCourseCode`, which is null for such a leg). The former `ByLeg` mode is gone (migration
 `DropRelayByLeg` turns it into `ByBib` rows). `LegCourseAssignment.GroupId` (nullable) tells the row's group; the
 calculator ignores a row naming another group.
 

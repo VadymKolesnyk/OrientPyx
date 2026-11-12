@@ -9,11 +9,12 @@
 
 | Простір імен | Що в ньому |
 |---|---|
-| `OrientPyx.Plugins.Sdk` | контракт плагіна, `Discipline`, контексти правил, налаштування, колонки, поля, спільні прості типи |
+| `OrientPyx.Plugins.Sdk` | контракт плагіна, `Discipline`, `Report`, контексти правил, налаштування, колонки, поля, спільні прості типи |
 | `OrientPyx.Plugins.Sdk.Toolkit` | готові алгоритми, якими користується й сама програма |
 | `OrientPyx.Plugins.Sdk.Toolkit.Patterns` | розбір і перевірка шаблонів змішаного напрямку |
 
-Версія API — `ApiVersion.Current` = 1. Що з цього випливає для сумісності — у [Поширення і версії](sharing.md#versions).
+Версія API — `ApiVersion.Current` = 2 (див. [`ApiVersion`](#apiversion)). Що з цього випливає для сумісності — у
+[Поширення і версії](sharing.md#versions).
 
 ## Плагін {#plugin}
 
@@ -50,17 +51,28 @@
 |---|---|
 | `AddDiscipline<T>() where T : Discipline, new()` | додає вид змагань. Програма одразу створює екземпляр `T`; порожній `Id` або той самий `Id` двічі в одному плагіні — помилка завантаження |
 | `AddParticipantField(string key, string label, FieldKind kind)` | оголошує додаткове поле учасника (див. [Додаткові поля](#fields)); порожній `key` — помилка завантаження |
+| `AddParticipantField(string key, string label, FieldKind kind, FieldImport import)` | API 2. Те саме поле, яке ще й заповнює імпорт учасників: з колонки CSV/Excel чи елемента XML за назвою, з перекладом значень (див. [Імпорт поля](#field-import)) |
+| `AddReport<T>() where T : Report, new()` | API 2. Додає звіт — пункт у меню плагіна з документом на екрані й експортом у Word (див. [Звіти](#reports)). Порожній `Id` або той самий `Id` двічі — помилка завантаження |
 | `AddStrings(string culture, IReadOnlyDictionary<string, string> strings)` | написи однією мовою: `"uk-UA"` або `"en-US"` (див. [Написи](#strings)). Можна викликати кілька разів — ключі зливаються |
 
-### `ApiVersion`
+### `ApiVersion` {#apiversion}
 
-`public const int Current = 1` — версія API, яку надає програма. Нові можливості SDK лише додаються; несумісна
-зміна підняла б цю версію й версію збірки SDK.
+`public const int Current = 2` — версія API, яку надає програма. Нова версія лише **додає** можливості: плагін,
+написаний для старішої, працює й далі. Несумісна зміна підняла б ще й мажорну версію збірки SDK.
+
+| Версія | Що додала |
+|---|---|
+| 1 | перша версія API (OrientPyx 0.7.0) |
+| 2 | імпорт додаткових полів (`FieldImport`, `AddParticipantField(…, FieldImport)`), звіти (`Report`, `AddReport<T>`), `ParticipantView.Dussh` і `Qualification` |
+
+Плагін, який користується можливостями версії 2, ставить `MinApiVersion: 2` — тоді старіша програма чесно скаже
+«Needs plugin API 2» на сторінці «Плагіни», замість помилки під час запуску.
 
 ### `ParticipantFieldDef`
 
 `record ParticipantFieldDef(string Key, string Label, FieldKind Kind)` — так програма запам'ятовує поле,
-оголошене через `AddParticipantField`. Самому плагіну створювати його не потрібно.
+оголошене через `AddParticipantField`; `FieldImport? Import` — як його заповнює імпорт (null — лише за назвою поля).
+Самому плагіну створювати його не потрібно.
 
 ## Вид змагань: `Discipline` {#discipline}
 
@@ -244,8 +256,9 @@ public override FinishStatusResult EvaluateFinish(FinishContext ctx)
 ### `ParticipantView`
 
 Учасник лише для читання: `FullName`, `Number` (номер учасника), `int? BirthYear` (null — дата народження
-невідома), `Club`, `Region`, `Team`, `IReadOnlyDictionary<string, string?> Fields` (додаткові поля за ключем) і
-`string? Field(string key)` — значення поля, обрізане від пробілів; null, якщо поля немає або воно порожнє.
+невідома), `Club`, `Region`, `Team`, `Dussh` і `Qualification` (ДЮСШ і розряд як записано, API 2),
+`IReadOnlyDictionary<string, string?> Fields` (додаткові поля за ключем) і `string? Field(string key)` — значення
+поля, обрізане від пробілів; null, якщо поля немає або воно порожнє.
 
 ### `ResultRow`
 
@@ -525,16 +538,15 @@ public override IEnumerable<ResultColumnDef> Columns =>
 ## Додаткові поля учасника {#fields}
 
 ```csharp
-p.AddParticipantField("gender", "Стать", FieldKind.Choice(
-    new ChoiceOption("Ч", "M", "Чол", "Чоловіча"),
-    new ChoiceOption("Ж", "F", "Жін", "Жіноча")));
+p.AddParticipantField("gender", "Стать", FieldKind.Choice("Ч", "Ж"));
 
 // у правилі:
 var gender = ctx.Participant.Field("gender");   // "Ч", "Ж" або null
 ```
 
-- Поле створюється в змаганні, коли вид змагань увімкненого плагіна вибрано на сторінці «Дні» чи «Групи». Воно
-  стає колонкою в «Мандатці» й таблиці дня, ціллю імпорту з CSV/Excel, колонкою експорту й «Відомості».
+- Поле створюється в змаганні, коли вид змагань увімкненого плагіна вибрано на сторінці «Дні» чи «Групи», або коли
+  імпорт учасників приносить для нього значення (див. [Імпорт поля](#field-import)). Воно стає колонкою в
+  «Мандатці» й таблиці дня, ціллю імпорту з CSV/Excel, колонкою експорту й «Відомості».
 - Поле лишається, коли вид змагань більше не використовується; поки використовується — його не можна видалити.
 - `label` — **звичайний текст**: він записується в змагання під час створення поля і не перекладається.
 - `key` — без префікса плагіна. Якщо в змаганні вже є поле з таким ключем (створене користувачем чи іншим
@@ -553,7 +565,41 @@ var gender = ctx.Participant.Field("gender");   // "Ч", "Ж" або null
 
 !!! note "Синонімів більше немає"
     До версії 0.8.1 включно `ChoiceOption` мав ще синоніми (`Aliases`). Плагін, який їх задавав, треба перезібрати
-    з `FieldKind.Choice("Ч", "Ж")`; збережені синоніми в змаганнях програма ігнорує.
+    з `FieldKind.Choice("Ч", "Ж")`; збережені синоніми в змаганнях програма ігнорує. Як перекласти значення з файлу
+    («0» → «Ж») — див. `FieldImport` нижче: переклад діє лише під час імпорту.
+
+### Імпорт поля з файлів: `FieldImport` {#field-import}
+
+API 2. Поле, оголошене з `FieldImport`, імпорт учасників заповнює сам:
+
+```csharp
+p.AddParticipantField("gender", "Стать", FieldKind.Choice("Ч", "Ж"),
+    FieldImport.From("Pol", "sex", "Gender")      // UOF <Pol>, IOF <Person sex="…">, колонка «Gender»
+        .Value("1", "Ч").Value("0", "Ж")          // UOF: 1 — чоловік, 0 — жінка
+        .Value("M", "Ч").Value("F", "Ж"));        // IOF
+```
+
+| Член | Опис |
+|---|---|
+| `static FieldImport From(params string[] names)` | назви, під якими поле приходить у файлах: заголовок колонки CSV/Excel або назва елемента чи атрибута запису учасника в XML (`<Sportsman>` у UOF; `<Person>`, `<PersonEntry>`, `<TeamEntryPerson>` в IOF 3.0) |
+| `FieldImport Value(string fileValue, string value)` | копія з ще одним перекладом: у файлі `fileValue` — у полі `value`. Перший переклад значення перемагає |
+| `IReadOnlyList<string> Names`, `IReadOnlyList<KeyValuePair<string, string>> Values` | назви й переклади |
+| `bool Matches(string? name)` | чи це одна з назв |
+| `string Translate(string? fileValue)` | значення для запису: переклад, а якщо його немає — саме значення (обрізане) |
+
+Назви й значення порівнюються без огляду на регістр і схожі латинські й кириличні літери (як `TextKey`). Поле
+знаходиться і за власною назвою чи ключем — так само імпортуються й поля, які створив користувач. Що відбувається
+під час імпорту:
+
+- **XML (UOF, IOF EntryList).** Якщо в записах файлу є елемент чи атрибут з однією з назв, у вікні імпорту
+  з'являється позначка «Імпортувати поле «Стать» (у файлі — «Pol», записів: N)», типово ввімкнена. Поля, якого ще
+  немає в змаганні, імпорт створює («— його буде створено»).
+- **CSV/Excel.** У вікні зіставлення колонок поле стоїть серед цілей (навіть якщо його ще немає — тоді з підписом
+  «поле плагіна «…»»), а колонку з однією з назв вибрано наперед.
+- Значення спершу перекладаються (`Translate`), потім зводяться до варіанта списку, як під час введення вручну.
+  Значення без перекладу й поза списком записується як є і червоніє в таблицях. Порожня клітинка не стирає
+  записане значення.
+- Поле плагіна імпорт створює лише тоді, коли плагін увімкнено і файл приніс хоча б одне значення.
 
 ## Написи {#strings}
 
@@ -563,7 +609,11 @@ var gender = ctx.Participant.Field("gender");   // "Ч", "Ж" або null
 - `Discipline.Name`;
 - `label` налаштувань (`SettingDef.Label`) і колонок таблиці (`TableColumnDef.Label`);
 - `label` колонок результатів (`ResultColumnDef.Label`);
-- причину `ResultRow.MarkUnranked`.
+- причину `ResultRow.MarkUnranked`;
+- `Report.Name`, `Report.Description` і `label` колонок звіту (`ReportColumn.Label`).
+
+Текст, який звіт кладе в клітинки, назви розділів і примітки, показується як є — перекладіть його сам через
+`ReportContext.Text(key)`.
 
 Порядок пошуку: поточна мова інтерфейсу → `"en-US"` → сам ключ без префікса. Тож простий плагін може писати в
 `label` готовий текст.
@@ -588,10 +638,167 @@ var gender = ctx.Participant.Field("gender");   // "Ч", "Ж" або null
 | `Settings`, `Columns`, `RequiredFields` | порожньо |
 | `AwardsRanks` | значення основи |
 | `ResultColumnDef.Value`, `Problem` | порожня клітинка, без підсвітки (без запису в журнал) |
+| `Report.Build` | на сторінці звіту замість документа — текст помилки (записується в журнал дій, без банера) |
+| `Report.Id`, `Name`, `Description` | звіт не показується в меню |
+| `Report.Settings` | порожньо |
 
 Кожен виняток записується в журнал дій, і один раз за сеанс для кожного плагіна з'являється банер «Плагін «…» дав
 помилку — результати пораховано за правилами «…»». Помилки під час завантаження (`Info`, `Register`,
 `AddDiscipline`) показуються на сторінці «Плагіни». Детальніше — у [Налагодження](debugging.md).
+
+## Звіти {#reports}
+
+API 2. Звіт — пункт меню плагіна, що відкриває сторінку з документом, який плагін будує з даних змагання:
+командний залік, список для перевірки, особливий протокол. Програма показує документ на екрані цілком і зберігає
+у Word з тією самою шапкою (організатор, назва змагань, дата, місце), підписами суддів і колонтитулом, що й власні
+протоколи. Плагін вирішує лише колонки й рядки.
+
+```csharp
+p.AddReport<ClubRanking>();
+
+// Командний залік: у кожній групі по два найкращі результати клубу, сума очок.
+public sealed class ClubRanking : Report
+{
+    public override string Id => "teams.clubs";
+    public override string Name => "report.clubs";            // ключ рядків плагіна або текст
+    public override IEnumerable<SettingDef> Settings => [Setting.Int("best", "setting.best", defaultValue: 2, min: 1)];
+
+    public override ReportDocument Build(ReportContext ctx)
+    {
+        var best = ctx.Setting<int>("best");
+        var clubs = ctx.Day!.Groups
+            .SelectMany(g => g.Results.Where(r => r.Points is not null && r.Participant.Club.Length > 0)
+                .GroupBy(r => r.Participant.Club)
+                .SelectMany(c => c.OrderByDescending(r => r.Points).Take(best)))
+            .GroupBy(r => r.Participant.Club)
+            .Select(c => (Club: c.Key, Points: c.Sum(r => r.Points!.Value), Runners: c.ToList()))
+            .OrderByDescending(c => c.Points)
+            .ToList();
+
+        var rows = new List<ReportRow>();
+        var place = 0;
+        foreach (var club in clubs)
+        {
+            rows.Add(ReportRow.Caption(++place, club.Club, club.Points));
+            rows.AddRange(club.Runners.Select(r => ReportRow.Sub(null, r.Participant.FullName, r.Points)));
+        }
+        return new ReportDocument
+        {
+            Columns = [new("col.place"), new("col.club") { Wrap = true }, new("col.points")],
+            Sections = [new ReportSection { Title = ctx.Text("section.overall"), Rows = rows }],
+        };
+    }
+}
+```
+
+Сторінка звіту: «Плагіни» → назва плагіна → назва звіту (у плагіна зі звітами пункт меню стає підменю:
+«Налаштування…» і звіти). На сторінці — вибір дня (для звіту одного дня), картка «Параметри звіту» з кнопкою
+«Застосувати» (якщо звіт має налаштування), «Оновити» й «Експорт у Word». Документ перебудовується, коли сторінку
+відкрито, після «Оновити» чи «Застосувати», і коли дані змінив інший комп'ютер «Спільної роботи». Справжній
+приклад — звіт «Перевірка K» плагіна «Зважена естафета» (`plugins/WeightedRelay`).
+
+### `Report`
+
+`abstract class Report` — звіт плагіна. Як і вид змагань — один екземпляр на весь час роботи, без стану в полях,
+без файлів і мережі.
+
+| Член | За замовчуванням | Опис |
+|---|---|---|
+| `string Id` | — (обов'язковий) | стабільний ідентифікатор, за домовленістю `"<Id плагіна>.<назва>"`; під ним зберігаються налаштування звіту |
+| `string Name` | — (обов'язковий) | пункт меню, заголовок сторінки й документа: ключ рядків плагіна або текст |
+| `string? Description` | null | рядок під заголовком сторінки (без нього — назва плагіна) |
+| `ReportScope Scope` | `Day` | один день чи все змагання |
+| `IEnumerable<SettingDef> Settings` | порожньо | власні налаштування (ті самі фабрики `Setting.*`). У звіті дня налаштування з `SettingScope.Day` своє для кожного дня; решта — одне на змагання |
+| `ReportDocument Build(ReportContext ctx)` | — (обов'язковий) | будує документ. Виняток — на сторінці показується його текст |
+
+`Id`, `Name`, `Description`, `Scope` і `Settings` програма читає, коли будує меню й відкриває сторінку.
+
+### `ReportScope`
+
+`Day` — звіт одного дня, вибраного на сторінці (типово — поточного дня програми; вибір дня на сторінці поточний
+день не змінює); `Competition` — усього змагання.
+
+### `ReportContext`
+
+| Член | Опис |
+|---|---|
+| `string CompetitionName` | назва змагань |
+| `IReadOnlyList<ReportDay> Days` | дні звіту за номером: для `Day` — лише вибраний, для `Competition` — усі |
+| `ReportDay? Day` | вибраний день звіту дня; null для звіту змагання |
+| `IReadOnlyList<ParticipantView> Participants` | усі учасники змагання (і ті, що не стоять на жодному дні), за ПІБ |
+| `SettingValues Settings`, `T Setting<T>(string key)` | налаштування звіту |
+| `string Text(string key)` | рядок плагіна мовою програми (сам ключ, якщо перекладу немає) |
+
+Результати — ті самі, що в протоколах, пораховані щойно перед `Build`.
+
+### `ReportDay`
+
+`int Number`, `DateOnly? Date`, `string Discipline` (вид змагань дня: назва вбудованого — `SetCourse`, `Relay`… —
+або `Id` виду змагань плагіна) і `IReadOnlyList<ReportGroup> Groups` — групи дня в порядку дня.
+
+### `ReportGroup`
+
+| Член | Опис |
+|---|---|
+| `string Name` | назва групи |
+| `string Discipline` | вид змагань групи на цей день (свій або дня) |
+| `IReadOnlyList<ReportResult> Results` | усі учасники групи на дні з результатом: спершу з місцем за місцем, далі решта за ПІБ. В естафеті — усі учасники етапів, з місцем і очками команди |
+| `IReadOnlyList<ReportTeam> Teams` | команди естафети (спершу з місцем); порожньо в інших видах змагань |
+
+### `ReportResult`
+
+| Член | Опис |
+|---|---|
+| `ParticipantView Participant` | учасник |
+| `FinishStatus Status` | статус (з урахуванням рішення судді); `None` — ще не зчитано |
+| `TimeSpan? Time` | фактичний час (в естафеті — час етапу) |
+| `TimeSpan? AdjustedTime` | час, за яким ранжують (після `AdjustTime`) |
+| `int? Score` | бали виду змагань з балами |
+| `int? Place` | місце в групі (в естафеті — команди) |
+| `decimal? Points` | очки за правилом очок групи (в естафеті — команди) |
+| `bool OutOfCompetition` | «поза конкурсом» |
+| `string? UnrankedReason` | чому без місця (`MarkUnranked`, з префіксом плагіна) |
+| `string? AwardedRank` | виконаний розряд |
+| `int? TeamNumber`, `int? Leg` | естафета: номер команди (0 — без номера) і етап |
+| `IReadOnlyDictionary<string, object?> Values`, `T? Get<T>(string key)` | значення, які вид змагань записав через `ResultRow.Set` |
+
+### `ReportTeam`
+
+Команда естафети: `int Number` (0 — без номера), `Name`, `Club`, `Region`, `FinishStatus Status`, `TimeSpan? Time`
+(сума скоригованих часів етапів), `int? Place`, `decimal? Points`, `bool OutOfCompetition` і
+`IReadOnlyList<ReportResult?> Legs` — учасники за етапами (індекс 0 — етап 1; null — етап нікому не призначено).
+
+### `ReportDocument`
+
+| Член | За замовчуванням | Опис |
+|---|---|---|
+| `string Title` | порожньо — `Report.Name` | жирний заголовок під назвою змагань |
+| `string Subtitle` | порожньо | жирний рядок під шапкою (після дати й місця) |
+| `bool Landscape` | false | альбомна орієнтація |
+| `bool Officials` | true | підписи головного судді, секретаря й журі в кінці, як у протоколах |
+| `IReadOnlyList<ReportColumn> Columns` | порожньо | колонки — спільні для всіх розділів |
+| `IReadOnlyList<ReportSection> Sections` | порожньо | розділи по черзі |
+
+### `ReportColumn`
+
+`record ReportColumn(string Label)` — колонка; `Label` — ключ рядків плагіна або текст. `bool Wrap` (init) — вільний
+текст, що може переноситися на кілька рядків (ПІБ, клуби); коротких значень (місце, час) не позначайте.
+
+### `ReportSection`
+
+Розділ: `string Title` (жирний підпис — група, залік), `string Subtitle` (рядок під підписом), `string Note` (рядок
+під таблицею) і `IReadOnlyList<ReportRow> Rows`.
+
+### `ReportRow` і `ReportRowKind`
+
+`new ReportRow(params object?[] cells)` — рядок, по клітинці на колонку (коротший доповнюється порожніми, зайві
+клітинки відкидаються). `ReportRow.Caption(...)` — жирний рядок-заголовок над рядками під ним (команда над
+учасниками), `ReportRow.Sub(...)` — рядок другого рівня (з відступом, дрібніше). `ReportRowKind`: `Normal`,
+`Caption`, `Sub`.
+
+Клітинка — будь-яке значення: `null` — порожньо; `TimeSpan` — час результату «0:42:15»; `FinishStatus` — код
+(«MP», «DNF»; `None` — порожньо); `decimal`/`double` — як очки в протоколах; `DateOnly` — «06.06.2026»; `bool` —
+«✓» або порожньо; решта — текстом.
 
 ## Toolkit {#toolkit}
 

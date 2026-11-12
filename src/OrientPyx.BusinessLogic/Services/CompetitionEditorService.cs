@@ -2325,6 +2325,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 rankCalc, relayTeams)
             {
                 PluginColumnKeys = ExtraResultColumn.PluginKeys(strategy),
+                Discipline = discipline,
             });
         }
 
@@ -3812,7 +3813,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     RelayLeg = result?.Leg?.Leg,
                     RelayRestarted = relayLeg?.Restarted ?? false,
                     RelayPending = relayLeg?.Pending ?? false,
-                    RelayCourseCode = result?.Leg?.CourseCode
+                    RelayCourseCode = result?.Leg?.ShownCourseCode
                 });
             }
             else
@@ -4922,6 +4923,12 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             }
         }
 
+        // Additional fields: the XML values by name and the plugin translations go into the rows, and a plugin field
+        // the file brings values for is created first (Р-59…Р-61) — the store skips a field it does not know.
+        var (prepared, importFields) = await PrepareImportFieldsAsync(data, cancellationToken);
+        data = prepared;
+        await CreateImportedPluginFieldsAsync(data, importFields, cancellationToken);
+
         // The days that run a relay group: a numbered row's team/leg is applied there (Р-20).
         var relayDays = data.Participants.Any(p => p.RelayTeamNumber is not null)
             ? await RelayDayNumbersAsync(cancellationToken)
@@ -4977,6 +4984,11 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         if (_session.CurrentEvent is null || scope.Mode != ParticipantImportMode.AllDays)
             return ImportPreview.Empty;
 
+        // The file's additional-field values as the import will write them (XML values by name, plugin translations),
+        // checked against the fields the import knows — a plugin field it would create included.
+        var (prepared, importFields) = await PrepareImportFieldsAsync(data, cancellationToken);
+        data = prepared;
+
         var folder = FolderPath;
         var days = (await _eventStore.GetDaysAsync(folder, cancellationToken)).OrderBy(d => d.Number).ToList();
         var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
@@ -4985,8 +4997,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var clubs = (await _eventStore.GetClubsAsync(folder, cancellationToken)).ToDictionary(c => c.Id, c => c.Name);
         var regions = (await _eventStore.GetRegionsAsync(folder, cancellationToken)).ToDictionary(r => r.Id, r => r.Name);
         var dusshes = (await _eventStore.GetDusshesAsync(folder, cancellationToken)).ToDictionary(d => d.Id, d => d.Name);
-        var fieldDefs = (await _eventStore.GetCustomFieldDefsAsync(folder, cancellationToken))
-            .ToDictionary(d => d.Key, CustomField.From);
+        var fieldDefs = importFields.ToDictionary(f => f.Key, f => f.Field);
         var fieldValues = (await _eventStore.GetParticipantFieldValuesAsync(folder, cancellationToken))
             .ToDictionary(v => (v.ParticipantId, v.Key), v => v.Value);
         var dayById = days.ToDictionary(d => d.Id);
@@ -5097,7 +5108,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             .OrderBy(m => m.FullName, StringComparer.CurrentCulture)
             .ToList();
 
-        return new ImportPreview(added, updated, missing);
+        return new ImportPreview(added, updated, missing)
+        {
+            FieldLabels = importFields.ToDictionary(f => f.Key, f => f.Field.Label, StringComparer.Ordinal)
+        };
     }
 
     public async Task<IReadOnlyList<ImportDuplicateCase>> FindImportDuplicatesAsync(
@@ -5478,7 +5492,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                         Bib: RelayBib.Format(number, l.Leg),
                         FullName: runner?.FullName ?? string.Empty,
                         Birth: runner?.BirthDate is { } bd ? bd.ToString("dd.MM.yyyy") : string.Empty,
-                        Course: leg?.CourseCode,
+                        Course: leg?.ShownCourseCode,
                         LegTime: leg?.LegTime,
                         Cumulative: leg?.Cumulative,
                         Status: leg?.Status ?? FinishStatus.None,
@@ -5818,7 +5832,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 var runner = leg.Runner;
                 var legResult = runner?.Result.Leg ?? res?.Legs.FirstOrDefault(x => x.Leg == leg.Leg);
                 var name = runner?.FullName ?? string.Empty;
-                if (legResult?.CourseCode is { Length: > 0 } course)
+                if (legResult?.ShownCourseCode is { Length: > 0 } course)
                     name = name.Length > 0 ? $"{name} ({course})" : course;
                 var legValues = columns.Select(col => col.Column switch
                 {

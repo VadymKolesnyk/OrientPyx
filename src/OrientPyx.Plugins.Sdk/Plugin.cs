@@ -1,10 +1,12 @@
 namespace OrientPyx.Plugins.Sdk;
 
 /// <summary>The plugin API version this SDK implements. A plugin whose <see cref="PluginInfo.MinApiVersion"/> is
-/// higher is not loaded. A minor change only adds; an incompatible change bumps the assembly's major version.</summary>
+/// higher is not loaded. A new version only adds (a plugin written for an older one keeps working); an incompatible
+/// change would also bump the assembly's major version.</summary>
+/// <remarks>2 — imported participant fields (<see cref="FieldImport"/>) and plugin reports (<see cref="Report"/>).</remarks>
 public static class ApiVersion
 {
-    public const int Current = 1;
+    public const int Current = 2;
 }
 
 /// <summary>
@@ -33,10 +35,26 @@ public interface IPluginBuilder
     /// <see cref="ParticipantView.Field"/>. It is created in a competition when the plugin's discipline is first used.</summary>
     void AddParticipantField(string key, string label, FieldKind kind);
 
+    /// <summary>Declares an additional participant field that the participant import also fills from files (API 2):
+    /// <paramref name="import"/> names the column / XML element it comes from and translates its values. Besides
+    /// being created with the plugin's discipline, the field is created by an import that brings values for it.</summary>
+    void AddParticipantField(string key, string label, FieldKind kind, FieldImport import) =>
+        AddParticipantField(key, label, kind);
+
+    /// <summary>Adds a report (API 2): an item of the plugin's «Плагіни» menu that opens a page with a document the
+    /// plugin builds from the competition's data — shown on screen and exported to Word.</summary>
+    void AddReport<T>() where T : Report, new()
+    {
+    }
+
     /// <summary>Adds translated strings for <paramref name="culture"/> (e.g. "uk-UA"). Labels and names the plugin
     /// declares are looked up here by key; a key with no translation is shown as written.</summary>
     void AddStrings(string culture, IReadOnlyDictionary<string, string> strings);
 }
 
-/// <summary>A participant field a plugin declares (see <see cref="IPluginBuilder.AddParticipantField"/>).</summary>
-public sealed record ParticipantFieldDef(string Key, string Label, FieldKind Kind);
+/// <summary>A participant field a plugin declares (see <see cref="IPluginBuilder.AddParticipantField(string, string, FieldKind)"/>).</summary>
+public sealed record ParticipantFieldDef(string Key, string Label, FieldKind Kind)
+{
+    /// <summary>How the participant import fills the field; null when it is not imported from files by name.</summary>
+    public FieldImport? Import { get; init; }
+}

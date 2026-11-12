@@ -82,11 +82,12 @@ public sealed class CsvImportFlow : ICsvImportFlow
 
         var file = outcome.Data!;
         var scope = _session.CurrentDay is { } day ? new ImportScopeChoice(day.Number) : null;
-        // The competition's additional fields (each a mapping target) and the mapping last confirmed for a file
-        // with the same headers (the competition's own, else the app default).
+        // The additional fields the import can fill (each a mapping target — a switched-on plugin's field the
+        // competition lacks included) and the mapping last confirmed for a file with the same headers (the
+        // competition's own, else the app default).
         var headerHash = ImportMapping.HeaderSetHash(file.Header);
         var (fields, templateJson, relay) = await _busy.RunAsync(async () =>
-            (await _editor.GetCustomFieldsAsync(), await _editor.GetImportMappingAsync(headerHash),
+            (await _editor.GetImportFieldsAsync(), await _editor.GetImportMappingAsync(headerHash),
              await _editor.CurrentDayHasRelayAsync()));
         var template = templateJson is null ? null : ImportMapping.Parse(templateJson);
         var mapping = await _dialogs.ShowCsvMappingAsync(

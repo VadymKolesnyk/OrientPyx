@@ -133,30 +133,47 @@ public abstract class MissedPenaltyDiscipline : Discipline
 **Що робить.** Естафета, у якій час кожного етапу множиться на коефіцієнт K учасника за віком і статтю; час
 команди — сума зважених часів етапів. Таблиця коефіцієнтів одна на все змагання.
 
-**Чого навчитися:** додаткове поле учасника зі списком; табличне налаштування на все змагання; `RangeTable` і
-`Age`; `MarkUnranked`; червона клітинка; естафета як основа.
+**Чого навчитися:** додаткове поле учасника зі списком і його імпорт з файлів; табличне налаштування на все змагання;
+`RangeTable` і `Age`; `MarkUnranked`; червона клітинка; естафета як основа; звіт із результатів дня.
 
 ### Поле «Стать»
 
 ```csharp
 public sealed class WeightedRelayPlugin : IOrientPyxPlugin
 {
-    public PluginInfo Info => new("weighted", "Зважена естафета", "1.0",
+    public PluginInfo Info => new("weighted", "Зважена естафета", "1.2", MinApiVersion: 2,
         Author: "OrientPyx", Description: "Час етапу × коефіцієнт за віком і статтю; час команди = Σ T·K.");
 
     public void Register(IPluginBuilder p)
     {
-        p.AddParticipantField("gender", "Стать", FieldKind.Choice("Ч", "Ж"));
+        p.AddParticipantField("gender", "Стать", FieldKind.Choice("Ч", "Ж"), Gender.Import);
         p.AddDiscipline<WeightedRelayDiscipline>();
+        p.AddReport<CheckReport>();
         p.AddStrings("uk-UA", Strings.Uk);
         p.AddStrings("en-US", Strings.En);
     }
 }
+
+internal static class Gender
+{
+    public const string Male = "Ч";
+    public const string Female = "Ж";
+
+    // UOF <Pol>: 1 = чоловік, 0 = жінка; IOF <Person sex="M|F">; колонка «Стать» / «Gender» у CSV.
+    public static readonly FieldImport Import = FieldImport.From("Pol", "Стать", "sex", "Gender", "Пол")
+        .Value("1", Male).Value("0", Female)
+        .Value("M", Male).Value("F", Female)
+        .Value("male", Male).Value("female", Female)
+        .Value("чол", Male).Value("жін", Female)
+        .Value("чоловік", Male).Value("жінка", Female);
+}
 ```
 
 Поле `gender` зі списком «Ч»/«Ж» з'явиться в змаганні, щойно «Зважену естафету» виберуть на сторінці «Дні» чи
-«Групи». В імпорті й під час введення регістр не важливий: «ч» стане «Ч». Підпис «Стать» — звичайний текст, він не
-перекладається.
+«Групи» — або раніше, коли імпорт учасників принесе стать: `FieldImport` каже, що в UOF вона лежить в `<Pol>`
+(`1`/`0`), в IOF — в атрибуті `sex` (`M`/`F`), а в CSV колонка може зватися «Gender». Переклад діє лише під час
+імпорту; під час введення вручну регістр не важливий («ч» стане «Ч»), а «M» лишиться «M» і почервоніє. Підпис
+«Стать» — звичайний текст, він не перекладається. `MinApiVersion: 2` — бо `FieldImport` і звіти з'явилися в API 2.
 
 ### Вид змагань
 
@@ -266,6 +283,74 @@ internal static class Coefficients
 - Програма складає скориговані часи етапів у час команди й ставить місця вбудованим правилом естафети — разом із
   правилами для перезапусків. `Rank` плагін не перевизначає.
 
+### Звіт «Перевірка K»
+
+```csharp
+public sealed class CheckReport : Report
+{
+    public override string Id => "weighted.check";
+    public override string Name => "report.check";
+    public override string Description => "report.check.description";
+
+    public override IEnumerable<SettingDef> Settings =>
+        [Setting.Bool("onlyProblems", "report.onlyProblems", defaultValue: true, scope: SettingScope.Competition)];
+
+    public override ReportDocument Build(ReportContext ctx)
+    {
+        var onlyProblems = ctx.Setting<bool>("onlyProblems");
+        var sections = new List<ReportSection>();
+        foreach (var group in ctx.Day?.Groups ?? [])
+        {
+            if (!group.Discipline.StartsWith("weighted.", StringComparison.Ordinal))
+                continue;
+
+            var rows = new List<ReportRow>();
+            foreach (var team in group.Teams)
+            {
+                var legs = team.Legs.Select((runner, i) => (Leg: i + 1, Runner: runner, Problem: Problem(ctx, runner))).ToList();
+                if (onlyProblems && legs.All(l => l.Problem is null))
+                    continue;
+                rows.Add(ReportRow.Caption(team.Number > 0 ? team.Number : null, team.Name, null, null, null));
+                foreach (var (leg, runner, problem) in legs)
+                    rows.Add(ReportRow.Sub(leg, runner?.Participant.FullName ?? ctx.Text("report.noRunner"),
+                        runner?.Participant.BirthYear, runner?.Participant.Field("gender"), problem));
+            }
+            if (rows.Count > 0)
+                sections.Add(new ReportSection { Title = group.Name, Rows = rows });
+        }
+
+        return new ReportDocument
+        {
+            Subtitle = sections.Count == 0 ? ctx.Text("report.allGood") : string.Empty,
+            Officials = false,
+            Columns =
+            [
+                new ReportColumn("report.col.number"),
+                new ReportColumn("report.col.name") { Wrap = true },
+                new ReportColumn("report.col.year"),
+                new ReportColumn("report.col.gender"),
+                new ReportColumn("report.col.problem") { Wrap = true },
+            ],
+            Sections = sections,
+        };
+    }
+    // Problem(ctx, runner) — «немає року народження», «не вказано стать», «стать «M» — має бути «Ч» або «Ж»» або null.
+}
+```
+
+Що тут відбувається:
+
+- `AddReport<CheckReport>()` — і в меню «Плагіни» пункт «Зважена естафета» стає підменю: «Налаштування…» і
+  «Перевірка K». Сторінку звіту, вибір дня, експорт у Word і шапку документа дає програма.
+- `ctx.Day.Groups` — групи вибраного дня з уже порахованими результатами; `group.Teams` — команди естафети з
+  учасниками за етапами (`null` — етап нікому не призначено).
+- `ReportRow.Caption` — жирний рядок команди, `ReportRow.Sub` — рядки учасників під нею з відступом. `null` у
+  клітинці — порожньо, число й рік друкуються як є.
+- Текст, який звіт кладе в клітинки, програма не перекладає — тому `ctx.Text("report.noRunner")`. Підписи колонок
+  (`ReportColumn`) — ключі рядків плагіна, їх програма перекладає сама.
+- Налаштування звіту — ті самі `Setting.*`; «Лише команди з проблемами» з `SettingScope.Competition` одне на все
+  змагання.
+
 ## Що з цього взяти у свій плагін
 
 - Починайте з `base.…` і змінюйте відповідь основи, а не пишіть перевірку з нуля.
@@ -273,4 +358,7 @@ internal static class Coefficients
 - Числа, які можуть відрізнятися на різних змаганнях, виносьте в налаштування; одну таблицю на все змагання —
   в налаштування з `SettingScope.Competition`.
 - Учасник без потрібних даних — це `MarkUnranked` з поясненням, а не виняток.
-- Ідентифікатори плагіна, видів змагань, ключі налаштувань і колонок вибирайте один раз і назавжди.
+- Ідентифікатори плагіна, видів змагань, звітів, ключі налаштувань і колонок вибирайте один раз і назавжди.
+- Дані, які плагіну потрібні від учасника, оголошуйте з `FieldImport` — тоді їх принесе імпорт, і нікому не
+  доведеться заповнювати поле вручну.
+- Те, що треба побачити чи роздрукувати (залік, перевірка), — це звіт: плагін лише складає рядки.

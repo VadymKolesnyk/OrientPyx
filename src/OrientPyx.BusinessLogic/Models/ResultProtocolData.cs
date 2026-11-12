@@ -1,3 +1,5 @@
+using OrientPyx.BusinessLogic.Disciplines;
+
 namespace OrientPyx.BusinessLogic.Models;
 
 /// <summary>
@@ -67,6 +69,9 @@ public sealed record ResultProtocolGroup(
     /// <summary>The plugin columns of the group's discipline (<see cref="ExtraResultColumn.PluginKeys"/>); null when
     /// unknown — every plugin column is then shown.</summary>
     public IReadOnlyCollection<string>? PluginColumnKeys { get; init; }
+
+    /// <summary>The group's discipline on the day (its own, else the day's).</summary>
+    public DisciplineId Discipline { get; init; } = DisciplineId.SetCourse;
 
     /// <summary>True when the group has this extra column: an additional field always, a plugin column only in a
     /// group of that plugin's discipline (a set-course group shows no «K» / «T·K» of a weighted relay on the day).</summary>

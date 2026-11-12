@@ -6,7 +6,7 @@ namespace OrientPyx.BusinessLogic.Models.Network;
 /// a host and a station with different versions refuse to pair.</summary>
 public static class NetworkProtocol
 {
-    public const int Version = 4;
+    public const int Version = 5;
 
     /// <summary>UDP port of the host discovery broadcast (the same on every machine).</summary>
     public const int DiscoveryPort = 47831;

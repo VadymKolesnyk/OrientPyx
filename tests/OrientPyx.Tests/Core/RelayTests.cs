@@ -3,6 +3,7 @@ using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Interfaces;
+using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Tests.Support;
 
 namespace OrientPyx.Tests.Core;
@@ -244,6 +245,54 @@ public sealed class RelayTests
         Assert.Equal("A", r["OcadSet-431-1"].Leg!.CourseCode);
         Assert.Equal("B", r["OcadSet-431-2"].Leg!.CourseCode);
         Assert.Equal(FinishStatus.Mp, r["OcadSet-432-1"].Team!.Status);
+    }
+
+    [Fact]
+    public async Task EveryLegItsOwnCourse()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("rperleg"), discipline: DisciplineId.Relay);
+        await c.AddControlsAsync(1, "31", "32", "33");
+        await c.AddGroupAsync("R", "31 32 33", s => { s.LegCount = 3; s.MassStartTime = T(10, 0); });
+        // Leg 1 a plain order, leg 2 a mixed pattern (31 and 32 in any order, then 33), leg 3 none typed.
+        await c.SetCourseVariantsAsync("R", 1, ("1", "31 32"), ("2", "[2: 31 32] 33"), ("A", "33"));
+        await c.SetRelayCourseModeAsync("R", 1, RelayCourseMode.PerLeg);
+
+        async Task Team(int number, string leg1, string leg2, string leg3)
+        {
+            await c.AddRunnerAsync($"{number}-1", "", $"{number}1", "R");
+            await c.AddRunnerAsync($"{number}-2", "", $"{number}2", "R");
+            await c.AddRunnerAsync($"{number}-3", "", $"{number}3", "R");
+            await c.AddRelayTeamAsync("R", number, $"{number}", 1, ($"{number}-1", 1), ($"{number}-2", 2), ($"{number}-3", 3));
+            await c.AddReadoutAsync(1, $"{number}1", leg1, null, T(10, 20));
+            await c.AddReadoutAsync(1, $"{number}2", leg2, null, T(10, 40));
+            if (leg3.Length > 0)
+                await c.AddReadoutAsync(1, $"{number}3", leg3, null, T(11, 0));
+        }
+
+        await Team(501, "31 32", "32 31 33", "");   // leg 2 swapped the any-order block → OK; leg 3 not read
+        await Team(502, "32 31", "31 32 33", "");   // leg 1 is a set order → MP
+        await Team(503, "31 32", "31 33 32", "33"); // leg 2 ran 33 before the block was done → MP; leg 3 has no course
+
+        var r = await c.ResultsAsync();
+        Assert.Equal(FinishStatus.Ok, r["501-1"].Status);
+        Assert.Equal(FinishStatus.Ok, r["501-2"].Status);
+        Assert.Equal("2", r["501-2"].Leg!.CourseCode);
+        Assert.True(r["501-2"].Leg!.CoursePerLeg);
+        Assert.Null(r["501-2"].Leg!.ShownCourseCode);           // the leg number already names it
+        Assert.Equal(FinishStatus.Mp, r["502-1"].Status);
+        Assert.Equal(FinishStatus.Ok, r["502-2"].Status);
+        Assert.Equal(FinishStatus.Mp, r["503-2"].Status);
+        Assert.True(r["503-3"].Leg!.CourseUnassigned);
+        Assert.Equal(FinishStatus.Mp, r["503-3"].Status);
+        Assert.Equal(FinishDetailKind.CourseNotAssigned, r["503-3"].StatusDetailKind);
+
+        // The protocol does not mark «(дистанція 2)» beside the runner — the leg number already names the course.
+        var data = await c.ProtocolDataAsync();
+        var doc = Sp.GetRequiredService<IResultProtocolBuilder>().Build(data, new ResultProtocolSettings(),
+            Labels.Make<ProtocolLabels>() with { RelayCourseMark = "дистанція {0}" });
+        var cells = doc.Sections.SelectMany(x => x.Rows).SelectMany(x => x.Cells).ToList();
+        Assert.Contains(cells, cell => cell == "501-2");
+        Assert.DoesNotContain(cells, cell => cell.Contains("дистанція"));
     }
 
     [Fact]

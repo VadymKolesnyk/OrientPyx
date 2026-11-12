@@ -55,7 +55,8 @@ internal static class IofEntryListReader
                     RelayTeamNumber = number,
                     RelayTeamName = teamName,
                     RelayLeg = int.TryParse(Value(member, "Leg"), NumberStyles.None, CultureInfo.InvariantCulture, out var leg)
-                               && leg > 0 ? leg : null
+                               && leg > 0 ? leg : null,
+                    Raw = UofXmlParser.RawValues(person, member)
                 });
             }
         }
@@ -73,7 +74,8 @@ internal static class IofEntryListReader
                 Club = Value(Child(entry, "Organisation"), "Name"),
                 Group = Value(Child(entry, "Class"), "Name"),
                 Chip = Chip(entry),
-                Number = Value(entry, "BibNumber")
+                Number = Value(entry, "BibNumber"),
+                Raw = UofXmlParser.RawValues(person, entry)
             });
         }
 

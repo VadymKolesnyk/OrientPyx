@@ -2,6 +2,7 @@
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using OrientPyx.BusinessLogic.Disciplines.Plugins;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models.Network;
 using OrientPyx.Localization;
@@ -82,6 +83,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly NumberVariantsViewModel _numberVariants;
     private readonly PluginsViewModel _plugins;
     private readonly PluginSettingsViewModel _pluginSettings;
+    private readonly PluginReportViewModel _pluginReport;
     private readonly IPluginCatalog _pluginCatalog;
 
     public MainWindowViewModel(
@@ -120,6 +122,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         NumberVariantsViewModel numberVariants,
         PluginsViewModel plugins,
         PluginSettingsViewModel pluginSettings,
+        PluginReportViewModel pluginReport,
         NetworkViewModel network,
         IWorkspaceMode mode,
         INetworkHost host,
@@ -172,6 +175,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _numberVariants = numberVariants;
         _plugins = plugins;
         _pluginSettings = pluginSettings;
+        _pluginReport = pluginReport;
         _pluginCatalog = pluginCatalog;
         _network = network;
         _mode = mode;
@@ -233,6 +237,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         {
             OnPropertyChanged(nameof(WindowTitle));
             OnPropertyChanged(nameof(RoleIndicatorText));
+            // The plugins' report names are translated.
+            RefreshPluginMenu();
         };
 
         // Network mode: the picker's «Підключитися до хоста…» and the top-bar activity's «Відкрити налаштування»
@@ -530,16 +536,35 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _shell.SelectedPage = _massStartDraw;
     }
 
-    // ── «Плагіни» menu: the management page, then one item per switched-on plugin (its settings page).
+    // ── «Плагіни» menu: the management page, then one item per switched-on plugin — its settings page, or a submenu
+    // with the settings and the plugin's reports (Р-63).
 
     /// <summary>The switched-on plugins, in catalog order — the dynamic part of the «Плагіни» menu (built by the view).</summary>
     public ObservableCollection<PluginMenuEntry> PluginMenu { get; } = [];
 
     private void RefreshPluginMenu()
     {
+        var reports = PluginReports.Enabled(_pluginCatalog);
         PluginMenu.Clear();
         foreach (var plugin in _pluginCatalog.Plugins.Where(p => _pluginCatalog.IsEnabled(p.Info.Id)))
-            PluginMenu.Add(new PluginMenuEntry(plugin.Info.Id, plugin.Info.Name));
+            PluginMenu.Add(new PluginMenuEntry(plugin.Info.Id, plugin.Info.Name)
+            {
+                Reports = reports
+                    .Where(r => r.PluginId == plugin.Info.Id)
+                    .Select(r => new PluginReportMenuEntry(r.Id, Localization.Get(r.NameKey)))
+                    .ToList()
+            });
+    }
+
+    /// <summary>A plugin report's page: one singleton VM for every report — set the report before loading.</summary>
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenPluginReportAsync(string? reportId)
+    {
+        if (string.IsNullOrEmpty(reportId))
+            return;
+        _pluginReport.ReportId = reportId;
+        await _pluginReport.LoadAsync();
+        _shell.SelectedPage = _pluginReport;
     }
 
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]
@@ -912,6 +937,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenMassStartDrawCommand.NotifyCanExecuteChanged();
         OpenPluginsCommand.NotifyCanExecuteChanged();
         OpenPluginSettingsCommand.NotifyCanExecuteChanged();
+        OpenPluginReportCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsEventSelected));
         OnPropertyChanged(nameof(WindowTitle));
 
@@ -946,4 +972,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 }
 
 /// <summary>One switched-on plugin in the «Плагіни» menu.</summary>
-public sealed record PluginMenuEntry(string Id, string Name);
+public sealed record PluginMenuEntry(string Id, string Name)
+{
+    /// <summary>The plugin's reports; with any, the plugin's item is a submenu (settings + reports).</summary>
+    public IReadOnlyList<PluginReportMenuEntry> Reports { get; init; } = [];
+}
+
+/// <summary>One plugin report in its plugin's submenu: its id and translated name.</summary>
+public sealed record PluginReportMenuEntry(string Id, string Name);

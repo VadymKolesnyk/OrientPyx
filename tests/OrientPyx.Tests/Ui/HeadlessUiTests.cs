@@ -134,6 +134,19 @@ public sealed class HeadlessUiTests
         await _app.WaitUntilAsync(() => _app.Vm.PluginMenu.Count == menuBefore + 1, what: "plugin menu gains the plugin's page");
         await _app.ScreenshotAsync("06-plugins-on");
 
+        // Its report is in its submenu and its page renders the document (API 2).
+        var entry = await _app.OnUiAsync(() => _app.Vm.PluginMenu.Single(e => e.Id == "weighted"));
+        var check = Assert.Single(entry.Reports);
+        Assert.Equal("weighted.check", check.Id);
+        await _app.OnUiAsync(() => _app.Vm.OpenPluginReportCommand.ExecuteAsync(check.Id));
+        await _app.SettleAsync();
+        var report = Assert.IsType<PluginReportViewModel>(await _app.OnUiAsync(() => GetShell().SelectedPage));
+        Assert.False(report.HasError, report.Error);
+        Assert.True(report.HasDocument);
+        Assert.True(report.HasSettings);
+        await _app.ScreenshotAsync("06b-plugin-report");
+        AssertNoUiErrors("plugin report");
+
         await _app.OnUiAsync(() => weighted.Enabled = false);
         await _app.SettleAsync();
         await _app.WaitUntilAsync(() => _app.Vm.PluginMenu.Count == menuBefore, what: "plugin menu drops the plugin's page");

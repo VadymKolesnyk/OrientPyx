@@ -829,10 +829,11 @@ public sealed partial class RelayLegRowViewModel : ObservableObject
     partial void OnBibCourseTextChanged(string value) => _saveBibCourse(this);
 
     /// <summary>The leg's course (Р-44): «дистанція B», «дистанцію не призначено» or — in a team set before the
-    /// leg is read — «не визначено» (Р-43); blank when the group runs one course.</summary>
+    /// leg is read — «не визначено» (Р-43); blank when the group runs one course or every leg its own (only a missing
+    /// one shows).</summary>
     public string CourseText => _courseMode == RelayCourseMode.Group
         ? string.Empty
-        : _leg.Result?.CourseCode is { Length: > 0 } code
+        : _leg.Result?.ShownCourseCode is { Length: > 0 } code
             ? string.Format(_localization.Get("Relay.CourseOf"), code)
             : _leg.Result is { CourseUnassigned: true }
                 ? _localization.Get("Relay.NoCourse")

@@ -790,6 +790,21 @@ public interface ICompetitionEditorService
     /// <summary>Saves a discipline's settings; values are coerced to each setting's type and split by scope.</summary>
     Task SaveDisciplineSettingsAsync(Guid dayId, DisciplineId disciplineId, IReadOnlyDictionary<string, object?> values, CancellationToken cancellationToken = default);
 
+    // ── Plugin reports (Р-63…Р-66)
+
+    /// <summary>A switched-on plugin report's settings with their values for the day (<paramref name="dayId"/>; null
+    /// for a competition report — then only the competition-wide values). Null without a competition or report.</summary>
+    Task<PluginReportSettingsData?> GetPluginReportSettingsAsync(string reportId, Guid? dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>Saves a plugin report's settings (day-scoped values to the day's row, the rest once per competition).</summary>
+    Task SavePluginReportSettingsAsync(string reportId, Guid? dayId, IReadOnlyDictionary<string, object?> values, CancellationToken cancellationToken = default);
+
+    /// <summary>Builds a plugin report for a day (a day report) or the whole competition (<paramref name="dayId"/>
+    /// ignored): the plugin gets the computed results, the document comes back laid out like a protocol (header,
+    /// officials, footer) — for the page's preview and the Word export. A plugin exception comes back as
+    /// <see cref="PluginReportOutput.Error"/>.</summary>
+    Task<PluginReportOutput> BuildPluginReportAsync(string reportId, Guid? dayId, PluginReportLabels labels, CancellationToken cancellationToken = default);
+
     /// <summary> Loads the current competition's online-publish settings (slug, displayed title/subtitle,
     /// standings / points flags, enabled). When the competition has no row yet, returns defaults seeded from
     /// its metadata (slug from identifier, title from name, subtitle from the date range). </summary>
@@ -926,6 +941,16 @@ public interface ICompetitionEditorService
 
     /// <summary>Creates the participant fields declared by the plugins whose disciplines the competition uses (Р-17).</summary>
     Task EnsurePluginFieldsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>The additional fields a participant import can fill (Р-59): the competition's fields, then the fields
+    /// switched-on plugins declare for import that the competition does not have yet (created by an import that
+    /// brings values for them, Р-60), each with the names it goes by in files.</summary>
+    Task<IReadOnlyList<ImportField>> GetImportFieldsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>The additional fields an XML participant file can fill — a field whose name (or plugin import name)
+    /// is an element / attribute of the file's records (UOF <c>&lt;Pol&gt;</c>), with how many records carry it. The
+    /// import fills the ones listed in <see cref="UofParticipantData.FileFieldKeys"/>.</summary>
+    Task<IReadOnlyList<ImportFileField>> GetImportFileFieldsAsync(UofParticipantData data, CancellationToken cancellationToken = default);
 
     /// <summary>The saved column mapping for a CSV/Excel header set: the competition's own, else the app default.</summary>
     Task<string?> GetImportMappingAsync(string headerSetHash, CancellationToken cancellationToken = default);

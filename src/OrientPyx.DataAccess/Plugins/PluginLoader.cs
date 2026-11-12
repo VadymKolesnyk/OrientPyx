@@ -61,7 +61,10 @@ internal sealed class PluginLoader
             var folder = Path.GetDirectoryName(Path.GetFullPath(path)) ?? path;
             var builder = new Builder();
             plugin.Register(builder);
-            return new LoadedPlugin(info, folder, builder.Disciplines, builder.Fields, builder.Strings);
+            return new LoadedPlugin(info, folder, builder.Disciplines, builder.Fields, builder.Strings)
+            {
+                Reports = builder.Reports
+            };
         }
         catch (Exception ex)
         {
@@ -87,6 +90,8 @@ internal sealed class PluginLoader
 
         public List<ParticipantFieldDef> Fields { get; } = [];
 
+        public List<Report> Reports { get; } = [];
+
         public IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Strings =>
             _strings.ToDictionary(kv => kv.Key, kv => (IReadOnlyDictionary<string, string>)kv.Value,
                 StringComparer.OrdinalIgnoreCase);
@@ -101,11 +106,27 @@ internal sealed class PluginLoader
             Disciplines.Add(discipline);
         }
 
-        public void AddParticipantField(string key, string label, FieldKind kind)
+        public void AddParticipantField(string key, string label, FieldKind kind) =>
+            AddField(key, label, kind, null);
+
+        public void AddParticipantField(string key, string label, FieldKind kind, FieldImport import) =>
+            AddField(key, label, kind, import);
+
+        private void AddField(string key, string label, FieldKind kind, FieldImport? import)
         {
             if (string.IsNullOrWhiteSpace(key))
                 throw new ArgumentException("A field key is required.", nameof(key));
-            Fields.Add(new ParticipantFieldDef(key.Trim(), label, kind));
+            Fields.Add(new ParticipantFieldDef(key.Trim(), label, kind) { Import = import });
+        }
+
+        public void AddReport<T>() where T : Report, new()
+        {
+            var report = new T();
+            if (string.IsNullOrWhiteSpace(report.Id))
+                throw new InvalidOperationException($"Report {typeof(T).Name} has an empty id.");
+            if (Reports.Any(r => r.Id == report.Id))
+                throw new InvalidOperationException($"Report id '{report.Id}' is registered twice.");
+            Reports.Add(report);
         }
 
         public void AddStrings(string culture, IReadOnlyDictionary<string, string> strings)

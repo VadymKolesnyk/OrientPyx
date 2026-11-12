@@ -127,8 +127,9 @@
 
         <!-- Grid + a resizable bottom editor for the selected group's course / control list.
              Row 0 (the table) takes the remaining space; the GridSplitter on row 1 drags the
-             editor (row 2) taller/shorter. The editor's starting height is fixed but user-resizable. -->
-        <Grid>
+             editor (row 2) taller/shorter. The editor's starting height is fixed but user-resizable (the code-behind
+             grows it when a relay group's courses table appears under its settings). -->
+        <Grid Name="EditorGrid">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" MinHeight="80" />
                 <RowDefinition Height="Auto" />
@@ -243,7 +244,7 @@
                      when valid, or a ✖ with the first structural error when not. Shown only for a
                      mixed-discipline group; the TextBox fills the space above. -->
                 <Border DockPanel.Dock="Bottom"
-                        IsVisible="{Binding IsPatternPreviewVisible}"
+                        IsVisible="{Binding ShowCoursePatternPreview}"
                         Margin="0,8,0,0" Padding="10,7" CornerRadius="6"
                         Background="{DynamicResource SurfaceSubtle}">
                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -271,12 +272,14 @@
                                Classes="muted" TextWrapping="Wrap" Margin="2,0,0,8" />
                     <TextBlock DockPanel.Dock="Top"
                                IsVisible="{Binding IsRelayCoursesEditor}"
-                               Text="{Binding Localization[Groups.Relay.Courses.Hint]}"
+                               Text="{Binding RelayCoursesHint}"
                                Classes="muted" TextWrapping="Wrap" Margin="2,0,0,8" />
+                    <!-- «Своя на кожен етап»: the rows are the legs, so nothing to add. -->
                     <Button DockPanel.Dock="Bottom"
                             Classes="ghost"
                             HorizontalAlignment="Left"
                             Margin="0,8,0,0"
+                            IsVisible="{Binding !IsRelayLegCoursesEditor}"
                             IsEnabled="{Binding !IsDayLocked}"
                             Content="{Binding Localization[Groups.Scatter.Add]}"
                             Command="{Binding AddScatterVariantCommand}" />

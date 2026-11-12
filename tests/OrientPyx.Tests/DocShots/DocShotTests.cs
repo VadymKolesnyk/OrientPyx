@@ -144,8 +144,9 @@ public sealed partial class DocShotTests
             var file = monitor.Files.Last();
             monitor.SelectedFile = file;
             file.Title = "Діти: Ч12, Ж12";
-            foreach (var group in file.Groups.Where(g => g.Name is "Ч12" or "Ж12"))
-                group.IsSelected = true;
+            // A new file starts with every group ticked (= all groups): leave only the two the title names.
+            foreach (var group in file.Groups)
+                group.IsSelected = group.Name is "Ч12" or "Ж12";
         });
         await _s.SettleLongAsync();
         await _s.ShotAsync("monitor-file", "Файл монітора: заголовок, групи, оновлення й прокрутка.");

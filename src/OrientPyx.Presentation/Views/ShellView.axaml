@@ -41,6 +41,9 @@
         <DataTemplate DataType="pages:PluginSettingsViewModel">
             <views:PluginSettingsView />
         </DataTemplate>
+        <DataTemplate DataType="pages:PluginReportViewModel">
+            <views:PluginReportView />
+        </DataTemplate>
         <DataTemplate DataType="pages:RelayTeamsViewModel">
             <views:RelayTeamsView />
         </DataTemplate>

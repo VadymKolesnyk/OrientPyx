@@ -79,6 +79,14 @@ public sealed record RelayLegResult(
     /// legs, or — in a «набір на команду» — while the leg is not read yet («не визначено», Р-43).</summary>
     public string? CourseCode { get; init; }
 
+    /// <summary>The group gives every leg its own course («своя на кожен етап», <see cref="Enums.RelayCourseMode.PerLeg"/>):
+    /// <see cref="CourseCode"/> is the leg number, so the outputs do not mark it beside the runner.</summary>
+    public bool CoursePerLeg { get; init; }
+
+    /// <summary>The course code to show beside the runner («дистанція B»): <see cref="CourseCode"/>, except for a
+    /// <see cref="CoursePerLeg"/> leg, whose course the leg number already names.</summary>
+    public string? ShownCourseCode => CoursePerLeg ? null : CourseCode;
+
     /// <summary>The group names its leg courses but none could be assigned to this leg (Р-41).</summary>
     public bool CourseUnassigned { get; init; }
 }

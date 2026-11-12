@@ -371,7 +371,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
                     return labels.RelayVacantLeg;
                 // «ПІБ (дистанція B, перезапуск)» — the leg's course (Р-44) and its restart (Р-29).
                 var marks = new List<string>(2);
-                if (result?.CourseCode is { Length: > 0 } course && labels.RelayCourseMark.Length > 0)
+                if (result?.ShownCourseCode is { Length: > 0 } course && labels.RelayCourseMark.Length > 0)
                     marks.Add(string.Format(CultureInfo.CurrentCulture, labels.RelayCourseMark, course));
                 else if (result is { CourseUnassigned: true } && labels.RelayNoCourseMark.Length > 0)
                     marks.Add(labels.RelayNoCourseMark);

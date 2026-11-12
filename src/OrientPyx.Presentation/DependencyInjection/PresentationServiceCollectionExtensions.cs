@@ -88,6 +88,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<MassStartDrawViewModel>();
         services.AddSingleton<PluginsViewModel>();
         services.AddSingleton<PluginSettingsViewModel>();
+        services.AddSingleton<PluginReportViewModel>();
 
         return services.BuildServiceProvider();
     }

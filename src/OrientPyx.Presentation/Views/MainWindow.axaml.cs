@@ -71,12 +71,36 @@ public partial class MainWindow : Window, IArchiveFilePicker
         while (menu.Items.Count > keep)
             menu.Items.RemoveAt(keep);
         foreach (var entry in vm.PluginMenu)
-            menu.Items.Add(new MenuItem
+        {
+            // A plugin with reports gets a submenu: its settings, then a separator and one item per report.
+            if (entry.Reports.Count == 0)
             {
-                Header = entry.Name,
+                menu.Items.Add(new MenuItem
+                {
+                    Header = entry.Name,
+                    Command = vm.OpenPluginSettingsCommand,
+                    CommandParameter = entry.Id,
+                });
+                continue;
+            }
+
+            var sub = new MenuItem { Header = entry.Name };
+            sub.Items.Add(new MenuItem
+            {
+                Header = vm.Localization.Get("Menu.Plugins.Settings"),
                 Command = vm.OpenPluginSettingsCommand,
                 CommandParameter = entry.Id,
             });
+            sub.Items.Add(new Separator());
+            foreach (var report in entry.Reports)
+                sub.Items.Add(new MenuItem
+                {
+                    Header = report.Name,
+                    Command = vm.OpenPluginReportCommand,
+                    CommandParameter = report.Id,
+                });
+            menu.Items.Add(sub);
+        }
         separator.IsVisible = vm.PluginMenu.Count > 0;
     }
 
