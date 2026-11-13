@@ -79,6 +79,12 @@ public sealed record UofParticipant
     /// those days (the runner is entered there without one, to be sorted out by hand).</summary>
     public string RelayGroup { get; init; } = string.Empty;
 
+    /// <summary>A UOF file of a relay event of its own names no relay day: the runner runs the relay (in
+    /// <see cref="RelayGroup"/> = <see cref="Group"/>) on the days the import enters them on. The import sets those days
+    /// as <see cref="RelayDayNumbers"/> before the rows reach the store; never sent over the network.</summary>
+    [JsonIgnore]
+    public bool RelayOnImportedDays { get; init; }
+
     /// <summary>The group the runner is in on the day: <see cref="RelayGroup"/> on a relay day, else <see cref="Group"/>.</summary>
     public string GroupOn(int dayNumber) => RelayDayNumbers.Contains(dayNumber) ? RelayGroup : Group;
 

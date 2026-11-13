@@ -1,3 +1,4 @@
+using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Models;
@@ -28,6 +29,112 @@ public sealed partial class CompetitionEditorService
                 result.Add(day.Number);
         }
         return result;
+    }
+
+    // The relay days of the rows a UOF file of a relay event of its own leaves open (UofParticipant.RelayOnImportedDays):
+    // the target day of a current-day import; in all-days mode the days the file lists for the row, else the
+    // competition's relay days, else every day. The row is entered on those days only.
+    private async Task<UofParticipantData> ResolveImportedRelayDaysAsync(
+        UofParticipantData data, ParticipantImportScope scope, CancellationToken cancellationToken)
+    {
+        if (!data.Participants.Any(p => p.RelayOnImportedDays))
+            return data;
+
+        var allDays = scope.Mode == ParticipantImportMode.AllDays;
+        List<int> fallback;
+        if (allDays)
+        {
+            fallback = await RelayDayNumbersAsync(cancellationToken);
+            if (fallback.Count == 0)
+                fallback = (await _eventStore.GetDaysAsync(FolderPath, cancellationToken)).Select(d => d.Number).Order().ToList();
+        }
+        else
+        {
+            fallback = [scope.TargetDayNumber];
+        }
+
+        return data with
+        {
+            Participants = data.Participants.Select(p =>
+            {
+                if (!p.RelayOnImportedDays)
+                    return p;
+                var days = allDays && p.DayNumbers.Count > 0 ? p.DayNumbers : fallback;
+                return p with { DayNumbers = allDays ? days : p.DayNumbers, RelayDayNumbers = days };
+            }).ToList()
+        };
+    }
+
+    public async Task<IReadOnlyList<RelayDaySwitch>> GetRelayDaySwitchesAsync(
+        UofParticipantData data, ParticipantImportScope scope, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(scope);
+        if (_session.CurrentEvent is null)
+            return [];
+
+        // The days the import put the file's relay rows on: a UOF row's relay days, a numbered row's days.
+        var folder = FolderPath;
+        var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        var allDays = scope.Mode == ParticipantImportMode.AllDays;
+        var allNumbers = days.Select(d => d.Number).ToList();
+        data = await ResolveImportedRelayDaysAsync(data, scope, cancellationToken);
+        var touched = data.Participants.SelectMany(RelayDaysOf).ToHashSet();
+        if (touched.Count == 0)
+            return [];
+
+        IEnumerable<int> RelayDaysOf(UofParticipant p)
+        {
+            if (p.RelayTeamNumber is not null)
+                return !allDays ? [scope.TargetDayNumber] : p.DayNumbers.Count > 0 ? p.DayNumbers : allNumbers;
+            return p.RelayTeamName.Length > 0 ? p.RelayDayNumbers.Where(d => allDays || d == scope.TargetDayNumber) : [];
+        }
+
+        var groups = (await _eventStore.GetGroupsAsync(folder, cancellationToken)).ToDictionary(g => g.Id, g => g.Name);
+        var result = new List<RelayDaySwitch>();
+        foreach (var day in days.Where(d => touched.Contains(d.Number)).OrderBy(d => d.Number))
+        {
+            if (day.IsLocked || IsRelay(day.DefaultDiscipline)
+                || (await _eventStore.GetRelayTeamsAsync(folder, day.Id, cancellationToken)).Count == 0)
+                continue;
+            var settings = await _eventStore.GetGroupDaySettingsAsync(folder, day.Id, cancellationToken);
+            var kept = settings
+                .Where(s => !IsRelay(s.DisciplineOverride ?? day.DefaultDiscipline))
+                .Select(s => groups.GetValueOrDefault(s.GroupId, string.Empty))
+                .Where(n => n.Length > 0)
+                .ToList();
+            result.Add(new RelayDaySwitch(day.Id, day.Number, day.DefaultDiscipline, kept));
+        }
+        return result;
+    }
+
+    public async Task<EventDay?> SwitchDayToRelayAsync(Guid dayId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return null;
+        var folder = FolderPath;
+        var day = (await _eventStore.GetDaysAsync(folder, cancellationToken)).FirstOrDefault(d => d.Id == dayId);
+        if (day is null || IsRelay(day.DefaultDiscipline))
+            return day;
+        await EnsureDayEditableAsync(dayId, cancellationToken);
+
+        // Every group keeps the type it runs: one on the former day type gets it as its own first, then the day becomes
+        // the relay, then a group that ran the relay by its own type follows the day.
+        var former = day.DefaultDiscipline;
+        var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
+        foreach (var s in settings.Where(s => s.DisciplineOverride is null))
+        {
+            s.DisciplineOverride = former;
+            await _eventStore.UpdateGroupDaySettingsAsync(folder, s, cancellationToken);
+        }
+        day.DefaultDiscipline = DisciplineId.Relay;
+        await _eventStore.UpdateDayAsync(folder, day, cancellationToken);
+        foreach (var s in settings.Where(s => s.DisciplineOverride == DisciplineId.Relay))
+        {
+            s.DisciplineOverride = null;
+            await _eventStore.UpdateGroupDaySettingsAsync(folder, s, cancellationToken);
+        }
+        return day;
     }
 
     private bool IsRelay(Disciplines.DisciplineId id) =>

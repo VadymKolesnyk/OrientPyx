@@ -1,3 +1,4 @@
+using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
@@ -21,6 +22,7 @@ public sealed class ParticipantImportFlow : IParticipantImportFlow
     private readonly IUofXmlParser _parser;
     private readonly IDialogService _dialogs;
     private readonly IBusyService _busy;
+    private readonly IDisciplineStrategyProvider _strategies;
 
     public ParticipantImportFlow(
         ILocalizationService localization,
@@ -28,7 +30,8 @@ public sealed class ParticipantImportFlow : IParticipantImportFlow
         ISessionService session,
         IUofXmlParser parser,
         IDialogService dialogs,
-        IBusyService busy)
+        IBusyService busy,
+        IDisciplineStrategyProvider strategies)
     {
         _localization = localization;
         _editor = editor;
@@ -36,6 +39,7 @@ public sealed class ParticipantImportFlow : IParticipantImportFlow
         _parser = parser;
         _dialogs = dialogs;
         _busy = busy;
+        _strategies = strategies;
     }
 
     public async Task<bool> RunAsync(string xml)
@@ -103,6 +107,8 @@ public sealed class ParticipantImportFlow : IParticipantImportFlow
             _editor.ImportParticipantsAsync(data, clearFirst, finalScope, new ProgressRelay(this, reporter)));
         await ImportPreviewStep.DeleteAsync(deleteIds, _editor, _busy);
         await RelayImportReport.ShowAsync(imported, data, _dialogs, _localization);
+        await RelayDaySwitchOffer.RunAsync(
+            imported, data, finalScope, _editor, _session, _strategies, _dialogs, _busy, _localization);
         return true;
     }
 

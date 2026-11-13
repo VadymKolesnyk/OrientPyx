@@ -1,4 +1,5 @@
 using System.Globalization;
+using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
@@ -24,6 +25,7 @@ public sealed class CsvImportFlow : ICsvImportFlow
     private readonly ISpreadsheetParser _spreadsheetParser;
     private readonly IDialogService _dialogs;
     private readonly IBusyService _busy;
+    private readonly IDisciplineStrategyProvider _strategies;
 
     public CsvImportFlow(
         ILocalizationService localization,
@@ -32,7 +34,8 @@ public sealed class CsvImportFlow : ICsvImportFlow
         ICsvParser parser,
         ISpreadsheetParser spreadsheetParser,
         IDialogService dialogs,
-        IBusyService busy)
+        IBusyService busy,
+        IDisciplineStrategyProvider strategies)
     {
         _localization = localization;
         _editor = editor;
@@ -41,6 +44,7 @@ public sealed class CsvImportFlow : ICsvImportFlow
         _spreadsheetParser = spreadsheetParser;
         _dialogs = dialogs;
         _busy = busy;
+        _strategies = strategies;
     }
 
     public async Task<bool> RunAsync(string csv)
@@ -141,6 +145,8 @@ public sealed class CsvImportFlow : ICsvImportFlow
             _editor.ImportParticipantsAsync(data, mapping.ClearFirst, finalScope, new ProgressRelay(this, reporter)));
         await ImportPreviewStep.DeleteAsync(deleteIds, _editor, _busy);
         await RelayImportReport.ShowAsync(imported, data, _dialogs, _localization);
+        await RelayDaySwitchOffer.RunAsync(
+            imported, data, finalScope, _editor, _session, _strategies, _dialogs, _busy, _localization);
         return true;
     }
 

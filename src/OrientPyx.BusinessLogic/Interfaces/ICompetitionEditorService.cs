@@ -757,6 +757,21 @@ public interface ICompetitionEditorService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// After <see cref="ImportParticipantsAsync"/> (same <paramref name="data"/> and <paramref name="scope"/>): the days
+    /// the file's relay rows went on that now have relay teams but whose own type is not the relay — only their relay
+    /// groups run it. Open, existing days only, by number.
+    /// </summary>
+    Task<IReadOnlyList<RelayDaySwitch>> GetRelayDaySwitchesAsync(
+        UofParticipantData data, ParticipantImportScope scope, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Makes the day a relay day without changing what any group runs: a group on the former day type keeps it as its
+    /// own, a group that ran the built-in relay by its own type now follows the day. Returns the updated day (null when
+    /// no competition is open or the day is gone); a day that already runs a relay is left as it is.
+    /// </summary>
+    Task<EventDay?> SwitchDayToRelayAsync(Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Duplicate check for a <see cref="ParticipantImportMode.CurrentDayOnly"/> import, run before it: the rows
     /// the link field would add as new participants although an athlete with the same full name already ran
     /// in the same group on another day (or is on the target day and <paramref name="clearFirst"/> keeps it).

@@ -172,6 +172,131 @@ public sealed class UofRelayImportTests
             new(t.Id, t.GroupId, number, t.Name, t.ClubId, t.RegionId, t.OutOfCompetition, t.StatusOverride, t.CourseSet);
     }
 
+    // A relay event of its own (the ФСОУ export of «2-х етапні естафети»): no ProgEvent, no GrupRel — the relay group is
+    // <Group>, the team <Prim>, the leg <RelayLeg>; PsRel is 0 everywhere. A runner with no <Prim> runs individually.
+    private static string EventRunner(string name, string code, string group, string team, int leg) => $"""
+          <Sportsman><FIO>{name}</FIO><FOUCode>{code}</FOUCode><FSOU>0</FSOU><Birthday>01.01.1980</Birthday>
+            <Group>{group}</Group><Region>Одеська</Region>{(team.Length > 0 ? $"<Prim>{team}</Prim>" : "")}
+            <RelayLeg>{leg}</RelayLeg><Pol>1</Pol><PsRel>0</PsRel></Sportsman>
+        """;
+
+    private static readonly string RelayEventFile = "<UOFData>\n<Events>1</Events>\n" + string.Concat(
+        EventRunner("Бриз Другий", "101", "МіхА", "Бриз", 2),
+        EventRunner("Бриз Перший", "102", "МіхА", "Бриз", 1),
+        EventRunner("Хвиля Перша", "103", "МіхА", "Хвиля", 1),
+        EventRunner("Хвиля Друга", "104", "МіхА", "Хвиля", 2),
+        EventRunner("Лис Перший", "105", "Міх50", "Лис", 1),
+        EventRunner("Лис Другий", "106", "Міх50", "Лис", 2),
+        // A team with no legs in the file: the next free ones.
+        EventRunner("Горіх Один", "107", "Міх50", "Горіх", 0),
+        EventRunner("Горіх Два", "108", "Міх50", "Горіх", 0),
+        // No team: an individual runner in an individual group.
+        EventRunner("Відкритий Бігун", "109", "ОПЕН", "", 0)) + "</UOFData>";
+
+    [Fact]
+    public void Parser_ReadsARelayEventOfItsOwn()
+    {
+        var data = new UofXmlParser().Parse(RelayEventFile);
+        var first = data.Participants.Single(p => p.FullName == "Бриз Перший");
+        Assert.True(first.RelayOnImportedDays);
+        Assert.Empty(first.DayNumbers);
+        Assert.Empty(first.RelayDayNumbers);                 // the import decides the day
+        Assert.Equal("МіхА", first.RelayGroup);
+        Assert.Equal("Бриз", first.RelayTeamName);
+        Assert.Equal(1, first.RelayLeg);                     // <RelayLeg> — PsRel is 0 in such a file
+        Assert.Equal(2, data.Participants.Single(p => p.FullName == "Бриз Другий").RelayLeg);
+        Assert.Null(data.Participants.Single(p => p.FullName == "Горіх Один").RelayLeg);
+
+        var open = data.Participants.Single(p => p.FullName == "Відкритий Бігун");
+        Assert.False(open.RelayOnImportedDays);
+        Assert.Equal("", open.RelayTeamName);
+
+        // A file with a relay day («3Е») keeps reading the leg from PsRel — <RelayLeg> is the region's team there.
+        Assert.All(new UofXmlParser().Parse(File).Participants, p => Assert.False(p.RelayOnImportedDays));
+    }
+
+    [Fact]
+    public async Task Import_RelayEventOfItsOwn_OnAOneDayCompetition_MakesTheTeams()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("uofrelayevt"));
+        await c.SelectAsync();
+        var editor = Sp.GetRequiredService<ICompetitionEditorService>();
+        var store = Sp.GetRequiredService<IEventStore>();
+        var data = new UofXmlParser().Parse(RelayEventFile);
+
+        var result = await editor.ImportParticipantsAsync(data, clearFirst: false, ParticipantImportScope.AllDays);
+        Assert.Equal(data.Participants.Count, result.Added);
+        Assert.Equal(4, result.RelayTeamsCreated);
+        Assert.Equal(0, result.RelayUnplaced);
+        Assert.Equal(0, result.RelayWithoutTeam);
+
+        // The team groups run the relay on the day; the individual group does not.
+        var groups = (await store.GetGroupsAsync(c.Folder)).ToDictionary(g => g.Id, g => g.Name);
+        var settings = (await store.GetGroupDaySettingsAsync(c.Folder, c.Day(1).Id)).ToDictionary(s => groups[s.GroupId]);
+        Assert.Equal(DisciplineId.Relay, settings["МіхА"].DisciplineOverride);
+        Assert.Equal(DisciplineId.Relay, settings["Міх50"].DisciplineOverride);
+        Assert.NotEqual(DisciplineId.Relay, settings["ОПЕН"].DisciplineOverride);
+        Assert.Equal(2, settings["МіхА"].LegCount);
+
+        var teams = (await editor.GetRelayTeamsDataAsync()).Teams;
+        Assert.Equal(["Бриз", "Горіх", "Лис", "Хвиля"], teams.Select(t => t.Name).Order(StringComparer.Ordinal));
+        Assert.All(teams, t => Assert.Null(t.Number));
+        Assert.Equal(["Бриз Перший", "Бриз Другий"],
+            teams.Single(t => t.Name == "Бриз").Legs.OrderBy(l => l.Leg).Select(l => l.FullName));
+        Assert.Equal(["Горіх Один", "Горіх Два"],
+            teams.Single(t => t.Name == "Горіх").Legs.Where(l => l.LinkId is not null).OrderBy(l => l.Leg).Select(l => l.FullName));
+
+        // The day itself is not a relay day yet — offered to switch; the group without teams keeps its type.
+        var former = c.Day(1).DefaultDiscipline;
+        var offer = Assert.Single(await editor.GetRelayDaySwitchesAsync(data, ParticipantImportScope.AllDays));
+        Assert.Equal(1, offer.DayNumber);
+        Assert.Equal(former, offer.Current);
+        Assert.Equal(["ОПЕН"], offer.KeptGroups);
+
+        var day = await editor.SwitchDayToRelayAsync(offer.DayId);
+        Assert.Equal(DisciplineId.Relay, day!.DefaultDiscipline);
+        Assert.Equal(DisciplineId.Relay, (await store.GetDaysAsync(c.Folder)).Single().DefaultDiscipline);
+        settings = (await store.GetGroupDaySettingsAsync(c.Folder, c.Day(1).Id)).ToDictionary(s => groups[s.GroupId]);
+        Assert.Null(settings["МіхА"].DisciplineOverride);    // follows the day now
+        Assert.Null(settings["Міх50"].DisciplineOverride);
+        Assert.Equal(former, settings["ОПЕН"].DisciplineOverride);
+        Assert.Equal(2, settings["МіхА"].LegCount);
+        await Sp.GetRequiredService<ISessionService>().SetCurrentDayAsync(day);
+        Assert.Equal(4, (await editor.GetRelayTeamsDataAsync()).Teams.Count);
+        Assert.Empty(await editor.GetRelayDaySwitchesAsync(data, ParticipantImportScope.AllDays));
+    }
+
+    [Fact]
+    public async Task Import_RelayEventOfItsOwn_GoesOnTheRelayDayOrTheTargetDay()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("uofrelayevt2"), dayCount: 3);
+        var store = Sp.GetRequiredService<IEventStore>();
+        var day3 = c.Day(3);
+        day3.DefaultDiscipline = DisciplineId.Relay;
+        await store.UpdateDayAsync(c.Folder, day3);
+        await c.SelectAsync();
+        var editor = Sp.GetRequiredService<ICompetitionEditorService>();
+        var data = new UofXmlParser().Parse(RelayEventFile);
+
+        // All days: the team members go on the competition's relay day only; the individual runner on every day.
+        await editor.ImportParticipantsAsync(data, clearFirst: false, ParticipantImportScope.AllDays);
+        var roster = await editor.GetParticipantRosterAsync();
+        Assert.Equal([3], roster.Single(r => r.FullName == "Лис Перший").Days.Where(d => d.IsMember).Select(d => d.DayNumber));
+        Assert.Equal(3, roster.Single(r => r.FullName == "Відкритий Бігун").Days.Count(d => d.IsMember));
+        await c.SelectAsync(3);
+        Assert.Equal(4, (await editor.GetRelayTeamsDataAsync()).Teams.Count);
+        Assert.Empty(await editor.GetRelayDaySwitchesAsync(data, ParticipantImportScope.AllDays));   // a relay day already
+
+        // Current day only: the target day is the relay day.
+        await c.SelectAsync(2);
+        var scope = ParticipantImportScope.CurrentDay(2, ParticipantLinkField.FsouCode);
+        var result = await editor.ImportParticipantsAsync(data, clearFirst: false, scope);
+        Assert.Equal(4, result.RelayTeamsCreated);
+        Assert.True(await editor.CurrentDayHasRelayAsync());
+        Assert.Equal(4, (await editor.GetRelayTeamsDataAsync()).Teams.Count);
+        Assert.Equal([2], (await editor.GetRelayDaySwitchesAsync(data, scope)).Select(s => s.DayNumber));
+    }
+
     [Fact]
     public async Task Import_OnAnExistingIndividualDay_MakesOnlyTheRelayGroupsRelay()
     {
@@ -193,5 +318,13 @@ public sealed class UofRelayImportTests
         Assert.True(await editor.CurrentDayHasRelayAsync());
         Assert.Equal(4, (await editor.GetRelayTeamsDataAsync()).Teams.Count);
         Assert.Contains("МІКС140", settings.Select(s => groups[s.GroupId]));
+
+        // Only day 3 got teams; every group there runs the relay, so none keeps the former type.
+        var offer = Assert.Single(await editor.GetRelayDaySwitchesAsync(data, ParticipantImportScope.AllDays));
+        Assert.Equal(3, offer.DayNumber);
+        Assert.Empty(offer.KeptGroups);
+        await editor.SwitchDayToRelayAsync(offer.DayId);
+        Assert.All(await store.GetGroupDaySettingsAsync(c.Folder, day3.Id), s => Assert.Null(s.DisciplineOverride));
+        Assert.Equal(4, (await editor.GetRelayTeamsDataAsync()).Teams.Count);
     }
 }

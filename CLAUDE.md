@@ -393,6 +393,13 @@ course), summary («за очками» counts relay points; «за часом»
   number, not read). The import matches a number-less team by its exact name in the group, sets a missing `LegCount`
   from the file, marks the relay group-days (`RelayGroupDay`) or makes a new all-relay day a relay day, never skips a
   runner, and reports teams created / without a leg / without a team (`ParticipantImportResult`, `RelayImportReport`).
+  A **relay event of its own** (baz4051 «2-х етапні естафети»: no «Е» day and no `GrupRel` anywhere) is read otherwise:
+  `Group` = relay group, `Prim` = team, `RelayLeg` = leg (`PsRel` 0; a file filling `PsRel` keeps it); such rows are
+  `UofParticipant.RelayOnImportedDays` ([JsonIgnore]) and `ResolveImportedRelayDaysAsync` (editor, before the store)
+  gives them the import's days — the target day, else the file's days, else the competition's relay days, else every day.
+  After any participant import, `RelayDaySwitchOffer` asks per day with new teams whose own type is not a relay
+  (`GetRelayDaySwitchesAsync`) to make it one (`SwitchDayToRelayAsync`: groups keep what they run — the former type
+  becomes their own override, a built-in relay override is cleared).
 
 ## Mass start («Масовий старт»)
 

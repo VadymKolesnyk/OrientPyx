@@ -4928,6 +4928,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var (prepared, importFields) = await PrepareImportFieldsAsync(data, cancellationToken);
         data = prepared;
         await CreateImportedPluginFieldsAsync(data, importFields, cancellationToken);
+        // A relay event of its own names no relay day — the import's days are the relay days.
+        data = await ResolveImportedRelayDaysAsync(data, scope, cancellationToken);
 
         // The days that run a relay group: a numbered row's team/leg is applied there (Р-20).
         var relayDays = data.Participants.Any(p => p.RelayTeamNumber is not null)
@@ -4987,7 +4989,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         // The file's additional-field values as the import will write them (XML values by name, plugin translations),
         // checked against the fields the import knows — a plugin field it would create included.
         var (prepared, importFields) = await PrepareImportFieldsAsync(data, cancellationToken);
-        data = prepared;
+        data = await ResolveImportedRelayDaysAsync(prepared, scope, cancellationToken);
 
         var folder = FolderPath;
         var days = (await _eventStore.GetDaysAsync(folder, cancellationToken)).OrderBy(d => d.Number).ToList();

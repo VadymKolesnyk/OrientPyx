@@ -23,7 +23,8 @@ public static class RelayImportReport
             lines.Add(string.Format(localization.Get("ParticipantsImport.Relay.Teams"), result.RelayTeamsCreated));
         // A file whose relay rows carry no team numbers (UOF): the teams wait for their numbers.
         if (result.RelayTeamsCreated > 0
-            && data.Participants.Any(p => p.RelayDayNumbers.Count > 0 && p.RelayTeamName.Length > 0 && p.RelayTeamNumber is null))
+            && data.Participants.Any(p => (p.RelayDayNumbers.Count > 0 || p.RelayOnImportedDays)
+                                          && p.RelayTeamName.Length > 0 && p.RelayTeamNumber is null))
             lines.Add(localization.Get("ParticipantsImport.Relay.NoNumbers"));
         if (result.RelayUnplaced > 0)
             lines.Add(string.Format(localization.Get("ParticipantsImport.Relay.Unplaced"), result.RelayUnplaced));
