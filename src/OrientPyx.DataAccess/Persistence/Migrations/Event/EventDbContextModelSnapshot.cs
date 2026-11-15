@@ -445,6 +445,9 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.Property<Guid>("GroupId")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("Leg")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Order")
                         .HasColumnType("INTEGER");
 

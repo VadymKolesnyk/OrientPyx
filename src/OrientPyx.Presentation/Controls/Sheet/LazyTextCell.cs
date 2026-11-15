@@ -171,8 +171,8 @@ internal sealed class LazyTextCell : LazyEditCell
     // A text editor takes focus and the caret on entry; it never "opens" anything.
     protected override bool ShouldOpenOnActivate(Key key) => false;
 
-    // Honour a per-row enabled binding: a disabled cell (e.g. a scatter group's read-only course-order
-    // cell, which shows «N варіантів дистанції») must not enter edit mode at all — otherwise the click
+    // Honour a per-row enabled binding: a disabled cell (e.g. the read-only course-order cell of a group
+    // with several courses, which shows «(різні)») must not enter edit mode at all — otherwise the click
     // would materialise a disabled TextBox that steals focus. Read the bound bool off the row VM; a
     // missing/unreadable path leaves the cell editable.
     protected override bool CanActivate()

@@ -79,6 +79,15 @@ public static class Wire
     public static string NameOf(Type iface)
         => Interfaces.First(kv => kv.Value == iface).Key;
 
+    /// <summary>
+    /// <c>iface.method</c> pairs only the host's own operator may run: the host refuses them over the network (a
+    /// station never deletes the host's competitions), and the station's proxies fail them without a request.
+    /// </summary>
+    public static readonly IReadOnlySet<string> HostOnlyMethods = new HashSet<string>(StringComparer.Ordinal)
+    {
+        $"Catalog.{nameof(IEventCatalogService.DeleteEventAsync)}",
+    };
+
     /// <summary>SSE event names.</summary>
     public const string ChangeEvent = "change";
     public const string FullRefreshEvent = "full-refresh";

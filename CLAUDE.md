@@ -45,8 +45,8 @@ Three layers plus a shared localization library and the plugin SDK.
   no knowledge of EF / files / UI — only the contract and pure algorithms.** Everything in it is public API with
   compatibility obligations: add only what is stable. Its `AssemblyVersion` is set explicitly (`1.0.0.0`) — the
   binary-compat version, bumped only on a breaking change; never tie it to the app's `Version`. `ApiVersion.Current`
-  counts additive feature levels (2 = imported fields + reports); a plugin using them sets `MinApiVersion: 2`. New
-  `IPluginBuilder` members get a default implementation. The three app projects import its namespaces globally
+  counts additive feature levels (2 = imported fields + reports, 3 = `ReportGroup.Settings`); a plugin using them sets
+  `MinApiVersion` to that level. New `IPluginBuilder` members get a default implementation. The three app projects import its namespaces globally
   (`<Using>` in their `.csproj`).
 
 ### Dependency direction
@@ -88,6 +88,12 @@ the UI shows only the selection / creation screens (gating in `MainWindowViewMod
   it renames the folder *and* rewrites `CompetitionInfo.Identifier` (the scanner reads it from the DB, so both
   must move together). The event DB is released first (`IEventStore.ReleaseAsync` — WAL checkpoint +
   `SqliteConnection.ClearAllPools()`), otherwise Windows refuses to move a folder holding an open file.
+- A competition is deleted from the picker (bin column / Delete key → `EventSelectionViewModel.DeleteCommand`): one
+  `ConfirmDialog` confirms and offers the archive («Зберегти архів і видалити» runs `IEventArchiveFlow.ExportAsync`
+  first; a cancelled/failed save deletes nothing). `IEventCatalogService.DeleteEventAsync` moves the log out, releases
+  the DB, moves `events/<id>` aside to `.deleted-<guid>` (all-or-nothing → `EventFolderInUseException`) then deletes
+  it, and clears a local `LastSessionRow` naming it; only a folder directly under the events path. Host-only
+  (`Wire.HostOnlyMethods`: the host refuses it over RPC, the station proxy fails it, the picker hides the bin).
 
 **Session rule (important):** the active competition/day is held **in-memory** by
 `ISessionService` for the running instance. The app DB only stores the last selection for
@@ -270,9 +276,11 @@ group's course, or — per `GroupDaySettings.CourseAssignmentMode` (Р-41) — a
 import — there is no separate leg-course file import), `TeamSet` (a course set per team — its own, else its
 leg numbers' `LegCourseAssignment` codes, else the group's — distributed over the read legs by
 `Toolkit.TeamCourseAssignment`, least missed controls, Р-42), `PerLeg` («своя на кожен етап»: leg N of every team
-runs the variant coded «N» — `RelayLegCourses.LegCode` — typed on «Групи» in a table of one row per leg that follows
-the leg count; other variants are kept aside and written back; a blank leg = «дистанцію не призначено»; outputs show
-`RelayLegResult.ShownCourseCode`, which is null for such a leg). The former `ByLeg` mode is gone (migration
+runs a variant whose `GroupCourseVariant.Leg` = N — the «Етап» column the same «Групи» courses table shows only in this
+mode; several on one leg = the read-out's best match (`VariantMatcher.Best`), unread = «не визначено»; none = «дистанцію
+не призначено»; `Leg` is saved in every mode so switching modes loses nothing; a course re-imported under the same code
+keeps its leg; outputs show `RelayLegResult.ShownCourseCode`, null only for a code equal to the leg number — migration
+`GroupCourseVariantLeg` moved the former «code = leg number» rows into `Leg`). The former `ByLeg` mode is gone (migration
 `DropRelayByLeg` turns it into `ByBib` rows). `LegCourseAssignment.GroupId` (nullable) tells the row's group; the
 calculator ignores a row naming another group.
 
@@ -284,8 +292,14 @@ course with variations «Розсіювання» / «Естафета» + «в�
 (`IofCourse.VariationUse`, default relay for a multi-leg OCAD relay, a relay day or an existing relay group);
 `ImportGroupsAsync` then makes a relay group (`LegCount` from the file, all variations, the assignments via
 `IEventStore.ReplaceGroupLegCourseAssignmentsAsync`) or a scatter one (all variations when numbered, else the distinct
-orders). «Старт → Варіанти за номерами» (`NumberVariantsViewModel`, `GetNumberVariantsAsync`) lists number → variation
-for map handout (plus «за номером етапу» legs without one), exportable like «Кількість карт».
+orders). «Змагання → Естафета → Варіанти за номерами» (beside «Команди»; `NumberVariantsViewModel`,
+`GetNumberVariantsAsync` → `NumberVariantsData`) lists number → variation for map handout: `Rows` (every stored
+assignment, with its own group and the group of the team/runner holding the number — `GroupMismatch` = the calculator
+never applies it, both cells red; F8 «Перенести в групу команди» rewrites the row's group) and, in a second table,
+`Unassigned` (legs of numbered teams in `ByBib`, or `TeamSet` without a set of their own; numbered runners of a
+non-relay group that has rows). The variation cell is a combo of the group's variants in both tables, saved at once via
+`SetLegCoursesAsync` (`LegCourseEntry.GroupId` = the row's group; blank removes the row); rows stay put until reload.
+The upper table exports like «Кількість карт».
 
 ### The day a call works on
 

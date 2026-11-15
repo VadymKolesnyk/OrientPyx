@@ -114,7 +114,7 @@ internal sealed partial class DayResultsCalculator
                 legs.Add(new RelayLegResult(leg, null, null, null, null, FinishStatus.None,
                     null, null, null, Restarted: false, Pending: false)
                 {
-                    CourseCode = legCourse?.Course?.Code, CoursePerLeg = perLeg
+                    CourseCode = legCourse?.Course?.Code, Course = legCourse?.Course, CoursePerLeg = perLeg
                 });
                 previousFinish = null;
                 cumulative = null;
@@ -165,6 +165,7 @@ internal sealed partial class DayResultsCalculator
                 result.Status, result.ResultTime, result.AdjustedTime, cumulative, restarted, pending)
             {
                 CourseCode = legCourse?.Course?.Code,
+                Course = legCourse?.Course,
                 CoursePerLeg = perLeg,
                 CourseUnassigned = legCourse is { Unassigned: true } && readout is not null
             };
@@ -259,16 +260,33 @@ internal sealed partial class DayResultsCalculator
                 break;
             }
             case RelayCourseMode.PerLeg:
-                // «Своя на кожен етап»: leg N runs the group's course coded «N» in every team; a leg with no course
-                // typed is not assigned (never a course without controls that any read-out would pass).
+            {
+                // «Своя на кожен етап»: leg N runs one of the group's courses marked «етап N», the same in every team.
+                // Several such courses: the one the read-out matches best (like a scatter variant); not read yet — not
+                // determined. A leg with no course is not assigned (never a course without controls that any read-out
+                // would pass).
+                var byLegCourses = input.Snapshot.CourseVariants
+                    .Where(v => v.GroupId == team.GroupId && v.Leg is >= 1 && v.CourseOrder.Trim().Length > 0)
+                    .OrderBy(v => v.Order)
+                    .GroupBy(v => v.Leg!.Value)
+                    .ToDictionary(g => g.Key, g => g
+                        .Select(v => FinishEvaluator.ToCourseVariant(v, input.StartFinishCodes, input.DisabledCodes))
+                        .ToList());
                 for (var leg = 1; leg <= legCount; leg++)
                 {
-                    var code = RelayLegCourses.LegCode(leg);
-                    result[leg] = courses.TryGetValue(code, out var c) && c.CourseOrderText.Trim().Length > 0
-                        ? new LegCourse(c, false, c.Code)
-                        : LegCourse.Missing(code);
+                    if (!byLegCourses.TryGetValue(leg, out var candidates))
+                        result[leg] = LegCourse.Missing(RelayLegCourses.LegCode(leg));
+                    else if (candidates.Count == 1)
+                        result[leg] = new LegCourse(candidates[0], false, candidates[0].Code);
+                    else if (byLeg.TryGetValue(leg, out var link) && input.LatestByChip.TryGetValue(link.Chip.Trim(), out var readout))
+                    {
+                        var best = VariantMatcher.Best(candidates, CourseCodes.SplitCodes(readout.Punches)
+                            .Where(c => !input.StartFinishCodes.Contains(c)).ToList()).Variant;
+                        result[leg] = new LegCourse(best, false, best.Code);
+                    }
                 }
                 break;
+            }
             case RelayCourseMode.TeamSet:
             {
                 // The team's own set, else the courses assigned to its leg numbers (OCAD's team combination, in leg

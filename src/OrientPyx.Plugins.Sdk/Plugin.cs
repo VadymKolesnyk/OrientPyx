@@ -3,10 +3,11 @@ namespace OrientPyx.Plugins.Sdk;
 /// <summary>The plugin API version this SDK implements. A plugin whose <see cref="PluginInfo.MinApiVersion"/> is
 /// higher is not loaded. A new version only adds (a plugin written for an older one keeps working); an incompatible
 /// change would also bump the assembly's major version.</summary>
-/// <remarks>2 — imported participant fields (<see cref="FieldImport"/>) and plugin reports (<see cref="Report"/>).</remarks>
+/// <remarks>2 — imported participant fields (<see cref="FieldImport"/>) and plugin reports (<see cref="Report"/>).
+/// 3 — a report reads the discipline settings of a group (<see cref="ReportGroup.Settings"/>).</remarks>
 public static class ApiVersion
 {
-    public const int Current = 2;
+    public const int Current = 3;
 }
 
 /// <summary>

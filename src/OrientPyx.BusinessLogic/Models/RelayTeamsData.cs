@@ -91,5 +91,6 @@ public sealed record RelayTeamEdit(
 public sealed record RelayTeamNumberChange(Guid TeamId, int? Number);
 
 /// <summary>The course of one leg number («100.2» → B) for <see cref="RelayCourseMode.ByBib"/> (Р-41); a blank
-/// course clears it.</summary>
-public sealed record LegCourseEntry(int TeamNumber, int Leg, string CourseKey);
+/// course clears it. <paramref name="GroupId"/> is the group the course belongs to; null = the group of the team
+/// holding the number (none yet → the row names no group).</summary>
+public sealed record LegCourseEntry(int TeamNumber, int Leg, string CourseKey, Guid? GroupId = null);

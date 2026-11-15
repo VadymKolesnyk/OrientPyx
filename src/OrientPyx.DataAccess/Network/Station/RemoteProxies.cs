@@ -2,6 +2,7 @@ using System.Reflection;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.BusinessLogic.Services.Store;
+using OrientPyx.DataAccess.Network.Protocol;
 
 namespace OrientPyx.DataAccess.Network.Station;
 
@@ -39,7 +40,12 @@ public static class RemoteProxies
 
     public static IEventFolderScanner FolderScanner(RpcChannel channel) => RpcProxy<IEventFolderScanner>.Create(channel);
 
-    public static IEventCatalogService Catalog(RpcChannel channel) => RpcProxy<IEventCatalogService>.Create(channel);
+    /// <summary>The host's catalog; its host-only methods (deleting a competition) fail here without a request.</summary>
+    public static IEventCatalogService Catalog(RpcChannel channel) => RpcProxy<IEventCatalogService>.Create(
+        channel,
+        intercept: (method, _) => Wire.HostOnlyMethods.Contains($"{Wire.NameOf(typeof(IEventCatalogService))}.{method.Name}")
+            ? Task.FromException(new NotSupportedException($"'{method.Name}' runs on the host only."))
+            : null);
 
     public static IResultsAppData ResultsAppData(RpcChannel channel) => RpcProxy<IResultsAppData>.Create(channel);
 }

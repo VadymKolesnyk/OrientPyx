@@ -430,7 +430,7 @@ public sealed class HeadlessWorkflowTests
         var c = await CompetitionBuilder.CreateAsync(Core, TestIds.Next("ui_perleg"), discipline: DisciplineId.Relay);
         await c.AddControlsAsync(1, "31", "32", "33");
         await c.AddGroupAsync("R", "31", s => s.LegCount = 3);
-        // A named course from another mode stays when the leg courses are typed.
+        // A named course from another mode: the same row in every mode.
         await c.SetCourseVariantsAsync("R", 1, ("A", "33"));
         var store = Core.GetRequiredService<IEventStore>();
         await OpenCompetitionAsync(c.Summary.Identifier);
@@ -441,13 +441,40 @@ public sealed class HeadlessWorkflowTests
         await _app.OnUiAsync(() => page.SelectedGroup = page.Groups[0]);
         await _app.WaitUntilAsync(() => page.IsRelayEditorVisible, what: "relay settings shown");
 
-        // «своя на кожен етап»: the table shows a row per leg, nothing else.
+        // «за номером етапу»: the named courses, no «Етап» column.
+        await _app.OnUiAsync(() =>
+            page.SelectedRelayCourseMode = page.RelayCourseModeOptions.Single(o => o.Value == RelayCourseMode.ByBib));
+        await _app.WaitUntilAsync(() => page.IsRelayCoursesEditor && page.CourseVariants.Count == 1, what: "named courses");
+        Assert.False(page.IsLegColumnVisible);
+
+        // «своя на кожен етап»: the same rows plus the «Етап» column. A has a course but no leg (red), no leg has a course.
         await _app.OnUiAsync(() =>
             page.SelectedRelayCourseMode = page.RelayCourseModeOptions.Single(o => o.Value == RelayCourseMode.PerLeg));
-        await _app.WaitUntilAsync(() => page.IsRelayLegCoursesEditor && page.CourseVariants.Count == 3, what: "three leg rows");
-        Assert.Equal(["1", "2", "3"], page.CourseVariants.Select(v => v.Code));
-        Assert.All(page.CourseVariants, v => Assert.Equal(string.Empty, v.CourseOrder));
-        // A taller window so the leg table under the relay settings is in the screenshot.
+        await _app.WaitUntilAsync(() => page.IsLegColumnVisible, what: "the leg column");
+        Assert.Equal("A", Assert.Single(page.CourseVariants).Code);
+        Assert.True(page.CourseVariants[0].HasLegProblem);
+        Assert.Contains("1, 2, 3", page.LegsWithoutCourseText);
+
+        // A goes to leg 3; a new course takes the first leg without one; two courses share leg 2.
+        await _app.OnUiAsync(() =>
+        {
+            page.CourseVariants[0].LegText = "3";
+            page.AddScatterVariantCommand.Execute(null);
+            page.CourseVariants[1].Code = "B";
+            page.CourseVariants[1].CourseOrder = "31 32";
+            page.AddScatterVariantCommand.Execute(null);
+            page.CourseVariants[2].Code = "C";
+            page.CourseVariants[2].CourseOrder = "[2: 31 32] 33";
+            page.AddScatterVariantCommand.Execute(null);
+            page.CourseVariants[3].LegText = "2";
+            page.CourseVariants[3].Code = "D";
+            page.CourseVariants[3].CourseOrder = "32";
+        });
+        Assert.Equal(["3", "1", "2", "2"], page.CourseVariants.Select(v => v.LegText));
+        Assert.Equal("✓", page.CourseVariants[2].Check);
+        Assert.False(page.HasLegsWithoutCourse);
+        Assert.DoesNotContain(page.CourseVariants, v => v.HasLegProblem);
+        // A taller window so the courses table under the relay settings is in the screenshot.
         var (width, height) = await _app.OnUiAsync(() => (_app.Window.Width, _app.Window.Height));
         await _app.OnUiAsync(() => { _app.Window.Width = 1100; _app.Window.Height = 900; });
         await _app.SettleAsync();
@@ -455,35 +482,31 @@ public sealed class HeadlessWorkflowTests
         await _app.OnUiAsync(() => { _app.Window.Width = width; _app.Window.Height = height; });
         await _app.SettleAsync();
 
-        await _app.OnUiAsync(() =>
-        {
-            page.CourseVariants[0].CourseOrder = "31 32";
-            page.CourseVariants[1].CourseOrder = "[2: 31 32] 33";
-        });
-        Assert.Equal("✓", page.CourseVariants[1].Check);
-        await WaitForVariantsAsync(v => v.Count == 3);
-        var saved = await GroupVariantsAsync();
-        Assert.Equal("31 32", saved.Single(v => v.Code == "1").CourseOrder);
-        Assert.Equal("[2: 31 32] 33", saved.Single(v => v.Code == "2").CourseOrder);
-        Assert.Contains(saved, v => v.Code == "A");                 // kept
-        Assert.DoesNotContain(saved, v => v.Code == "3");           // a blank leg is not written
+        await WaitForVariantsAsync(v => v.Count == 4 && v.All(x => x.Leg is not null));
+        Assert.Equal([("A", 3), ("B", 1), ("C", 2), ("D", 2)],
+            (await GroupVariantsAsync()).OrderBy(v => v.Order).Select(v => (v.Code, v.Leg ?? 0)));
         Assert.Equal(RelayCourseMode.PerLeg, (await c.GetGroupSettingsAsync("R", 1)).CourseAssignmentMode);
 
-        // Fewer legs: the rows follow; the removed leg's course comes back with the leg.
-        await _app.OnUiAsync(() => page.RelayLegCountText = "1");
-        Assert.Single(page.CourseVariants);
-        await _app.OnUiAsync(() => page.RelayLegCountText = "4");
-        Assert.Equal(4, page.CourseVariants.Count);
-        Assert.Equal("[2: 31 32] 33", page.CourseVariants[1].CourseOrder);
-        await _app.OnUiAsync(() => page.CourseVariants[3].CourseOrder = "33");
-        await WaitForVariantsAsync(v => v.Any(x => x.Code == "4"));
-        Assert.Equal("[2: 31 32] 33", (await GroupVariantsAsync()).Single(v => v.Code == "2").CourseOrder);
+        // Fewer legs: the course on leg 3 turns red, and is fine again with the leg back.
+        await _app.OnUiAsync(() => page.RelayLegCountText = "2");
+        Assert.True(page.CourseVariants[0].HasLegProblem);
+        await _app.OnUiAsync(() => page.RelayLegCountText = "3");
+        Assert.False(page.CourseVariants[0].HasLegProblem);
 
-        // Back to «за номером етапу»: every course is a named one again, the leg ones included.
+        // Back to «за номером етапу»: the same rows, the column hidden — an edit there keeps the legs.
         await _app.OnUiAsync(() =>
             page.SelectedRelayCourseMode = page.RelayCourseModeOptions.Single(o => o.Value == RelayCourseMode.ByBib));
-        await _app.WaitUntilAsync(() => !page.IsRelayLegCoursesEditor && page.CourseVariants.Count == 4, what: "named courses");
-        Assert.Contains(page.CourseVariants, v => v.Code == "A");
+        await _app.WaitUntilAsync(() => !page.IsLegColumnVisible, what: "the leg column hidden");
+        Assert.Equal(["A", "B", "C", "D"], page.CourseVariants.Select(v => v.Code));
+        await _app.OnUiAsync(() => page.CourseVariants[3].Code = "E");
+        await WaitForVariantsAsync(v => v.Any(x => x.Code == "E"));
+        Assert.Equal([3, 1, 2, 2], (await GroupVariantsAsync()).OrderBy(v => v.Order).Select(v => v.Leg ?? 0));
+
+        // And «своя на кожен етап» again: the legs are where they were.
+        await _app.OnUiAsync(() =>
+            page.SelectedRelayCourseMode = page.RelayCourseModeOptions.Single(o => o.Value == RelayCourseMode.PerLeg));
+        await _app.WaitUntilAsync(() => page.IsLegColumnVisible, what: "the leg column again");
+        Assert.Equal(["3", "1", "2", "2"], page.CourseVariants.Select(v => v.LegText));
         AssertNoUiErrors();
 
         async Task<IReadOnlyList<GroupCourseVariant>> GroupVariantsAsync() =>

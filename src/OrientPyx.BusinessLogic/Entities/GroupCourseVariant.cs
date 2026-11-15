@@ -30,5 +30,10 @@ public class GroupCourseVariant
     /// <summary>Stable display/sort order of the variant within the group (A before B before …).</summary>
     public int Order { get; set; }
 
+    /// <summary>Relay «своя на кожен етап» (<c>RelayCourseMode.PerLeg</c>): the leg this course is run on (1-based);
+    /// several courses may share a leg — the runner gets the one their read-out matches. Null = no leg. Kept in every
+    /// other mode (only that mode reads it), so switching modes loses nothing.</summary>
+    public int? Leg { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

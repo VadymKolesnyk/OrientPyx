@@ -251,48 +251,60 @@ public sealed class RelayTests
     public async Task EveryLegItsOwnCourse()
     {
         var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("rperleg"), discipline: DisciplineId.Relay);
-        await c.AddControlsAsync(1, "31", "32", "33");
+        await c.AddControlsAsync(1, "31", "32", "33", "34", "35");
         await c.AddGroupAsync("R", "31 32 33", s => { s.LegCount = 3; s.MassStartTime = T(10, 0); });
-        // Leg 1 a plain order, leg 2 a mixed pattern (31 and 32 in any order, then 33), leg 3 none typed.
-        await c.SetCourseVariantsAsync("R", 1, ("1", "31 32"), ("2", "[2: 31 32] 33"), ("A", "33"));
+        // Leg 1: a plain order coded with the leg number (as typed before the «Етап» column). Leg 2: two courses — a
+        // mixed pattern (31 and 32 in any order, then 33) and a plain one; the runner gets the one they ran. Leg 3: none.
+        // A course with no leg and one on a leg the relay lacks are never run.
+        await c.SetLegCoursesAsync("R", 1,
+            ("1", 1, "31 32"), ("B", 2, "[2: 31 32] 33"), ("C", 2, "34 35"), ("X", null, "33"), ("Z", 4, "33"));
         await c.SetRelayCourseModeAsync("R", 1, RelayCourseMode.PerLeg);
 
-        async Task Team(int number, string leg1, string leg2, string leg3)
+        async Task Team(int number, string leg1, string? leg2, string leg3)
         {
             await c.AddRunnerAsync($"{number}-1", "", $"{number}1", "R");
             await c.AddRunnerAsync($"{number}-2", "", $"{number}2", "R");
             await c.AddRunnerAsync($"{number}-3", "", $"{number}3", "R");
             await c.AddRelayTeamAsync("R", number, $"{number}", 1, ($"{number}-1", 1), ($"{number}-2", 2), ($"{number}-3", 3));
             await c.AddReadoutAsync(1, $"{number}1", leg1, null, T(10, 20));
-            await c.AddReadoutAsync(1, $"{number}2", leg2, null, T(10, 40));
+            if (leg2 is not null)
+                await c.AddReadoutAsync(1, $"{number}2", leg2, null, T(10, 40));
             if (leg3.Length > 0)
                 await c.AddReadoutAsync(1, $"{number}3", leg3, null, T(11, 0));
         }
 
-        await Team(501, "31 32", "32 31 33", "");   // leg 2 swapped the any-order block → OK; leg 3 not read
-        await Team(502, "32 31", "31 32 33", "");   // leg 1 is a set order → MP
-        await Team(503, "31 32", "31 33 32", "33"); // leg 2 ran 33 before the block was done → MP; leg 3 has no course
+        await Team(501, "31 32", "32 31 33", "");   // leg 2 swapped B's any-order block → OK on B; leg 3 not read
+        await Team(502, "32 31", "34 35", "");      // leg 1 is a set order → MP; leg 2 ran C → OK on C
+        await Team(503, "31 32", "31 33 32", "33"); // leg 2 ran 33 before B's block was done → MP on B; leg 3 has no course
+        await Team(504, "31 32", null, "");         // leg 2 not read: two courses, none determined yet
 
         var r = await c.ResultsAsync();
         Assert.Equal(FinishStatus.Ok, r["501-1"].Status);
+        Assert.Equal("1", r["501-1"].Leg!.CourseCode);
+        Assert.True(r["501-1"].Leg!.CoursePerLeg);
+        Assert.Null(r["501-1"].Leg!.ShownCourseCode);           // «1» on leg 1: the leg number already names it
         Assert.Equal(FinishStatus.Ok, r["501-2"].Status);
-        Assert.Equal("2", r["501-2"].Leg!.CourseCode);
-        Assert.True(r["501-2"].Leg!.CoursePerLeg);
-        Assert.Null(r["501-2"].Leg!.ShownCourseCode);           // the leg number already names it
+        Assert.Equal("B", r["501-2"].Leg!.ShownCourseCode);
         Assert.Equal(FinishStatus.Mp, r["502-1"].Status);
         Assert.Equal(FinishStatus.Ok, r["502-2"].Status);
+        Assert.Equal("C", r["502-2"].Leg!.CourseCode);
         Assert.Equal(FinishStatus.Mp, r["503-2"].Status);
+        Assert.Equal("B", r["503-2"].Leg!.CourseCode);          // the closer of the two
         Assert.True(r["503-3"].Leg!.CourseUnassigned);
         Assert.Equal(FinishStatus.Mp, r["503-3"].Status);
         Assert.Equal(FinishDetailKind.CourseNotAssigned, r["503-3"].StatusDetailKind);
+        Assert.Null(r["504-2"].Leg!.CourseCode);
+        Assert.False(r["504-2"].Leg!.CourseUnassigned);
 
-        // The protocol does not mark «(дистанція 2)» beside the runner — the leg number already names the course.
+        // The protocol marks a named course beside the runner, never the one coded with the leg's own number.
         var data = await c.ProtocolDataAsync();
         var doc = Sp.GetRequiredService<IResultProtocolBuilder>().Build(data, new ResultProtocolSettings(),
             Labels.Make<ProtocolLabels>() with { RelayCourseMark = "дистанція {0}" });
         var cells = doc.Sections.SelectMany(x => x.Rows).SelectMany(x => x.Cells).ToList();
-        Assert.Contains(cells, cell => cell == "501-2");
-        Assert.DoesNotContain(cells, cell => cell.Contains("дистанція"));
+        Assert.Contains(cells, cell => cell == "501-1");
+        Assert.Contains(cells, cell => cell == "501-2 (дистанція B)");
+        Assert.Contains(cells, cell => cell == "502-2 (дистанція C)");
+        Assert.DoesNotContain(cells, cell => cell.Contains("дистанція 1"));
     }
 
     [Fact]

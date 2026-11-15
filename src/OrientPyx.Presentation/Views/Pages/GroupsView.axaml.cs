@@ -45,12 +45,12 @@ public partial class GroupsView : UserControl
         BuildBands();
     }
 
-    // The variants table switches between named courses and one row per leg («своя на кожен етап»).
+    // The variants table shows the «Етап» column only for «своя на кожен етап».
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(GroupsViewModel.IsRelayLegCoursesEditor))
+        if (e.PropertyName == nameof(GroupsViewModel.IsLegColumnVisible))
             BuildScatterBands();
-        if (e.PropertyName is nameof(GroupsViewModel.IsRelayCoursesEditor) or nameof(GroupsViewModel.IsRelayLegCoursesEditor))
+        if (e.PropertyName == nameof(GroupsViewModel.IsRelayCoursesEditor))
             EnsureRelayCoursesEditorHeight();
     }
 
@@ -88,13 +88,13 @@ public partial class GroupsView : UserControl
             .Text("Groups.Col.Name", nameof(GroupDayRowViewModel.Name),
                   editPath: nameof(GroupDayRowViewModel.Name), minWidth: 140)
             // Course order (set course) / list of allowed control points (score formats). Dimmed and
-            // disabled for disciplines that don't use it. A scatter («розсіювання») group shows «N варіантів
-            // дистанції» here (read-only) and edits its several orders in the bottom variants table instead.
+            // disabled where the single order is unused: a group with several courses (scatter variants, relay
+            // leg courses) reads «(різні)» here and edits them in the bottom table instead.
             .Text("Groups.Col.CourseOrder", nameof(GroupDayRowViewModel.CourseOrderDisplay),
                   editPath: nameof(GroupDayRowViewModel.CourseOrder), minWidth: 160,
                   placeholder: "S1 31 32 33 F",
                   enabledPath: nameof(GroupDayRowViewModel.CanEditCourseOrderInline),
-                  opacityPath: nameof(GroupDayRowViewModel.UsesCourseOrder))
+                  opacityPath: nameof(GroupDayRowViewModel.CanEditCourseOrderInline))
             // Red when the course names a code that is no control point of the day (S1/F without start/finish КП):
             // judging would give the whole group MP.
             .CellTint(nameof(GroupDayRowViewModel.HasUnknownCodes), UnknownCodeBrush, nameof(GroupDayRowViewModel.UnknownCodesTooltip))
@@ -183,33 +183,27 @@ public partial class GroupsView : UserControl
         BuildScatterBands();
     }
 
-    // Builds the bottom scatter («розсіювання») variants table's columns: an editable Код and Дистанція,
-    // plus the trailing delete column. Rebuilt alongside the main grid on a language change.
+    // Builds the bottom courses table's columns (scatter variants / relay courses): an editable Код and Дистанція —
+    // with «Етап» between them for «своя на кожен етап» — the check, and the trailing delete column. Rebuilt alongside
+    // the main grid on a language change and when the «Етап» column comes or goes.
     private void BuildScatterBands()
     {
         if (_vm is null)
             return;
 
-        if (_vm.IsRelayLegCoursesEditor)
-        {
-            // «Своя на кожен етап»: a row per leg — the leg is fixed, only its course is typed; rows follow the leg count.
-            ScatterSheet.LayoutKey = "groups.relayLegs";
-            ScatterSheet.Bands = new SheetColumnBuilder(_vm.Localization)
-                .Text("Groups.Relay.Legs.Col.Leg", nameof(CourseVariantRowViewModel.Code), width: 90)
-                .Text("Groups.Scatter.Col.Order", nameof(CourseVariantRowViewModel.CourseOrder),
-                      editPath: nameof(CourseVariantRowViewModel.CourseOrder), minWidth: 240,
-                      placeholder: "S1 31 32 33 F")
-                .Text("Groups.Scatter.Col.Check", nameof(CourseVariantRowViewModel.Check), minWidth: 120,
-                      placeholder: string.Empty)
-                .Bands;
-            return;
-        }
-
-        ScatterSheet.LayoutKey = "groups.scatter";
-        ScatterSheet.Bands = new SheetColumnBuilder(_vm.Localization)
+        var builder = new SheetColumnBuilder(_vm.Localization)
             .Text("Groups.Scatter.Col.Code", nameof(CourseVariantRowViewModel.Code),
                   editPath: nameof(CourseVariantRowViewModel.Code), width: 120,
-                  placeholder: "A")
+                  placeholder: "A");
+        if (_vm.IsLegColumnVisible)
+            builder
+                .Text("Groups.Relay.Legs.Col.Leg", nameof(CourseVariantRowViewModel.LegText),
+                      editPath: nameof(CourseVariantRowViewModel.LegText), width: 90,
+                      mask: SheetColumnBuilder.NumericMask.Integer)
+                // A course with no leg, or on a leg the relay does not have: it is never run.
+                .CellTint(nameof(CourseVariantRowViewModel.HasLegProblem), UnknownCodeBrush,
+                          nameof(CourseVariantRowViewModel.LegProblem));
+        ScatterSheet.Bands = builder
             .Text("Groups.Scatter.Col.Order", nameof(CourseVariantRowViewModel.CourseOrder),
                   editPath: nameof(CourseVariantRowViewModel.CourseOrder), minWidth: 240,
                   placeholder: "S1 31 32 33 F")
@@ -228,10 +222,10 @@ public partial class GroupsView : UserControl
     }
 
     // Scatter variants table: keyboard Delete removes the selected variant row (no confirm — the whole
-    // set autosaves, so a mistaken delete is trivially undone by re-adding). A leg row is never removed.
+    // set autosaves, so a mistaken delete is trivially undone by re-adding).
     private void OnScatterDeleteRequested(object? sender, SheetDeleteEventArgs e)
     {
-        if (_vm is null || e.Row is not CourseVariantRowViewModel row || row.Leg is not null)
+        if (_vm is null || e.Row is not CourseVariantRowViewModel row)
             return;
         _vm.RemoveScatterVariantCommand.Execute(row);
     }

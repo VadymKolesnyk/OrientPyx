@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -206,7 +207,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     // ── Scatter («розсіювання») variants editor (bottom panel)
     // Shown only when the selected group's effective discipline is Scatter: the group has several valid
     // orders (variants), edited here as a Код / Дистанція table. Each edit debounces a background save that
-    // replaces the group's variant set; the grid's «N варіантів дистанції» cell is kept live off the count.
+    // replaces the group's variant set; the grid row's count and longest course are kept live off it.
 
     private CancellationTokenSource? _scatterSaveCts;
     // Guards the save trigger while LoadCourseVariants seeds the rows.
@@ -224,20 +225,56 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     [ObservableProperty]
     private bool _isRelayCoursesEditor;
 
-    /// <summary>The variants table holds one row per leg («своя на кожен етап»): no codes to type, no rows to add or
-    /// delete — the rows follow the leg count. The view switches the table's columns on it.</summary>
+    /// <summary>The relay courses table shows the «Етап» column («своя на кожен етап»): the same rows as in every
+    /// other mode, each also naming the leg it is run on. The view switches the table's columns on it.</summary>
     [ObservableProperty]
-    private bool _isRelayLegCoursesEditor;
+    private bool _isLegColumnVisible;
 
-    /// <summary>The hint above the relay courses table: named courses, or one course per leg.</summary>
+    /// <summary>The hint above the relay courses table: named courses, or courses by leg.</summary>
     public string RelayCoursesHint =>
-        Localization.Get(IsRelayLegCoursesEditor ? "Groups.Relay.Legs.Hint" : "Groups.Relay.Courses.Hint");
+        Localization.Get(IsLegColumnVisible ? "Groups.Relay.Legs.Hint" : "Groups.Relay.Courses.Hint");
 
-    partial void OnIsRelayLegCoursesEditorChanged(bool value) => OnPropertyChanged(nameof(RelayCoursesHint));
+    /// <summary>«Своя на кожен етап»: the legs no course is marked for («Етапи без дистанції: 2, 3»); blank when every
+    /// leg has one or the column is hidden.</summary>
+    [ObservableProperty]
+    private string _legsWithoutCourseText = string.Empty;
 
-    // «Своя на кожен етап»: the group's other variants (codes that are not one of the shown legs — from another mode,
-    // or legs past the count) — not shown, written back with the leg rows so nothing is lost.
-    private List<CourseVariantRow> _hiddenCourseVariants = [];
+    public bool HasLegsWithoutCourse => LegsWithoutCourseText.Length > 0;
+
+    partial void OnLegsWithoutCourseTextChanged(string value) => OnPropertyChanged(nameof(HasLegsWithoutCourse));
+
+    partial void OnIsLegColumnVisibleChanged(bool value)
+    {
+        OnPropertyChanged(nameof(RelayCoursesHint));
+        RefreshLegChecks();
+    }
+
+    // «Своя на кожен етап»: marks a row whose leg is missing or past the leg count, and lists the legs left without a
+    // course. Clears both when the «Етап» column is hidden.
+    private void RefreshLegChecks()
+    {
+        int? legCount = IsLegColumnVisible ? RelayLegRowCount() : null;
+        foreach (var v in CourseVariants)
+            v.LegProblem = legCount is not { } max ? string.Empty
+                : v.Leg is { } leg ? leg > max ? string.Format(Localization.Get("Groups.Relay.Legs.NoSuchLeg"), max) : string.Empty
+                : v.CourseOrder.Trim().Length > 0 ? Localization.Get("Groups.Relay.Legs.NoLeg")
+                : string.Empty;
+
+        if (legCount is not { } count)
+        {
+            LegsWithoutCourseText = string.Empty;
+            return;
+        }
+        var covered = CourseVariants
+            .Where(v => v.CourseOrder.Trim().Length > 0 && v.Leg is not null)
+            .Select(v => v.Leg!.Value)
+            .ToHashSet();
+        var missing = Enumerable.Range(1, count).Where(l => !covered.Contains(l)).ToList();
+        LegsWithoutCourseText = missing.Count == 0
+            ? string.Empty
+            : string.Format(Localization.Get("Groups.Relay.Legs.Missing"),
+                string.Join(", ", missing.Select(l => l.ToString(CultureInfo.InvariantCulture))));
+    }
 
     /// <summary>Caption above the scatter variants editor, e.g. «Варіанти розсіювання — 2».</summary>
     [ObservableProperty]
@@ -254,44 +291,34 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     private async Task RefreshScatterEditorAsync()
     {
         var row = SelectedGroup;
-        // A relay group whose legs take named courses (Р-40) edits them in the same table — one row per leg when
-        // every leg has its own course.
+        // A relay group whose legs take named courses (Р-40) edits them in the same table, in every such mode — «своя
+        // на кожен етап» only shows the «Етап» column.
         var relayCourses = row is { IsRelay: true } && _relayNamedCourses;
-        var legCourses = relayCourses && _relayPerLegCourses;
         if (row is null || !(row.IsScatter || relayCourses))
         {
             ClearCourseVariants();
-            _hiddenCourseVariants = [];
             _scatterGroupId = null;
             IsScatterEditorVisible = false;
             IsRelayCoursesEditor = false;
-            IsRelayLegCoursesEditor = false;
+            IsLegColumnVisible = false;
             OnPropertyChanged(nameof(HasNoCourseVariants));
             return;
         }
 
-        // Another group's variants (or the other table shape) are replaced outright; the same group's are merged below.
-        if (_scatterGroupId != row.GroupId || IsRelayLegCoursesEditor != legCourses)
+        // Another group's variants are replaced outright; the same group's are merged below.
+        if (_scatterGroupId != row.GroupId)
             ClearCourseVariants();
 
         IsScatterEditorVisible = true;
         IsRelayCoursesEditor = relayCourses;
-        IsRelayLegCoursesEditor = legCourses;
+        IsLegColumnVisible = relayCourses && IsRelayPerLeg;
         _scatterGroupId = row.GroupId;
         ScatterHeader = string.Format(Localization.Get("Groups.Scatter.Header"), row.ScatterVariantCount);
 
         var variants = await _editor.GetCourseVariantsAsync(row.GroupId);
         // A newer refresh (another group, or the course mode switched meanwhile) owns the table now.
-        if (!ReferenceEquals(SelectedGroup, row) || IsRelayLegCoursesEditor != legCourses || IsRelayCoursesEditor != relayCourses)
+        if (!ReferenceEquals(SelectedGroup, row) || IsRelayCoursesEditor != relayCourses)
             return;
-
-        if (legCourses)
-        {
-            SyncLegCourseRows(variants);
-            OnPropertyChanged(nameof(HasNoCourseVariants));
-            return;
-        }
-        _hiddenCourseVariants = [];
 
         // Variants have no id of their own, so the rows are matched by position: a live refresh of the same group
         // rewrites only the cells that changed instead of rebuilding the table.
@@ -301,13 +328,8 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             RowSync.Sync(CourseVariants, variants.Select((v, i) => (Index: i, Variant: v)).ToList(),
                 itemKey: item => item.Index,
                 rowKey: vm => CourseVariants.IndexOf(vm),
-                create: item =>
-                {
-                    var vm = new CourseVariantRowViewModel(item.Variant.Code, item.Variant.CourseOrder, DescribeVariant);
-                    vm.Changed += OnScatterRowChanged;
-                    return vm;
-                },
-                update: (vm, item) => vm.Apply(item.Variant.Code, item.Variant.CourseOrder),
+                create: item => NewCourseVariantRow(item.Variant.Code, item.Variant.CourseOrder, item.Variant.Leg),
+                update: (vm, item) => vm.Apply(item.Variant.Code, item.Variant.CourseOrder, item.Variant.Leg),
                 removed: vm => vm.Changed -= OnScatterRowChanged);
         }
         finally
@@ -316,74 +338,12 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         }
 
         OnPropertyChanged(nameof(HasNoCourseVariants));
+        RefreshLegChecks();
     }
 
-    // «Своя на кожен етап»: a row per leg 1…N holding the variant coded with the leg number; every other variant is
-    // kept aside (_hiddenCourseVariants) and written back with the rows.
-    private void SyncLegCourseRows(IReadOnlyList<CourseVariantRow> variants)
+    private CourseVariantRowViewModel NewCourseVariantRow(string code, string courseOrder, int? leg)
     {
-        var legs = RelayLegRowCount();
-        var byLeg = new Dictionary<int, string>();
-        var hidden = new List<CourseVariantRow>();
-        foreach (var v in variants)
-            if (!(RelayLegCourses.LegOfCode(v.Code) is { } leg && leg <= legs && byLeg.TryAdd(leg, v.CourseOrder)))
-                hidden.Add(v);
-        _hiddenCourseVariants = hidden;
-
-        _suppressScatterSave = true;
-        try
-        {
-            RowSync.Sync(CourseVariants, Enumerable.Range(1, legs).ToList(),
-                itemKey: leg => leg,
-                rowKey: vm => vm.Leg ?? 0,
-                create: leg => NewLegCourseRow(leg, byLeg.GetValueOrDefault(leg, string.Empty)),
-                update: (vm, leg) => vm.Apply(vm.Code, byLeg.GetValueOrDefault(leg, string.Empty)),
-                removed: vm => vm.Changed -= OnScatterRowChanged);
-        }
-        finally
-        {
-            _suppressScatterSave = false;
-        }
-    }
-
-    // The leg rows follow the leg count typed in the relay strip. A removed leg's course is kept aside (so typing «12»
-    // over «3» — through «1» — loses nothing) and comes back with the leg. The resize itself saves nothing.
-    private void ResizeLegCourseRows()
-    {
-        if (!IsRelayLegCoursesEditor || ParseRelayLegCount() is not { } legs || CourseVariants.Count == legs)
-            return;
-
-        _suppressScatterSave = true;
-        try
-        {
-            while (CourseVariants.Count > legs)
-            {
-                var last = CourseVariants[^1];
-                last.Changed -= OnScatterRowChanged;
-                CourseVariants.RemoveAt(CourseVariants.Count - 1);
-                if (last.CourseOrder.Trim().Length > 0)
-                    _hiddenCourseVariants.Insert(0, new CourseVariantRow(last.Code, last.CourseOrder));
-            }
-            for (var leg = CourseVariants.Count + 1; leg <= legs; leg++)
-            {
-                var code = RelayLegCourses.LegCode(leg);
-                var kept = _hiddenCourseVariants.FindIndex(v => v.Code.Trim() == code);
-                var order = kept >= 0 ? _hiddenCourseVariants[kept].CourseOrder : string.Empty;
-                if (kept >= 0)
-                    _hiddenCourseVariants.RemoveAt(kept);
-                CourseVariants.Add(NewLegCourseRow(leg, order));
-            }
-        }
-        finally
-        {
-            _suppressScatterSave = false;
-        }
-        OnPropertyChanged(nameof(HasNoCourseVariants));
-    }
-
-    private CourseVariantRowViewModel NewLegCourseRow(int leg, string courseOrder)
-    {
-        var vm = new CourseVariantRowViewModel(RelayLegCourses.LegCode(leg), courseOrder, DescribeVariant, leg);
+        var vm = new CourseVariantRowViewModel(code, courseOrder, leg, DescribeVariant);
         vm.Changed += OnScatterRowChanged;
         return vm;
     }
@@ -399,10 +359,17 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     [RelayCommand]
     private void AddScatterVariant()
     {
-        var vm = new CourseVariantRowViewModel(string.Empty, string.Empty, DescribeVariant);
-        vm.Changed += OnScatterRowChanged;
-        CourseVariants.Add(vm);
+        // «Своя на кожен етап»: a new course goes to the first leg without one.
+        int? leg = null;
+        if (IsLegColumnVisible)
+        {
+            var used = CourseVariants.Where(v => v.Leg is not null).Select(v => v.Leg!.Value).ToHashSet();
+            var free = Enumerable.Range(1, RelayLegRowCount()).FirstOrDefault(l => !used.Contains(l));
+            leg = free > 0 ? free : null;
+        }
+        CourseVariants.Add(NewCourseVariantRow(string.Empty, string.Empty, leg));
         OnPropertyChanged(nameof(HasNoCourseVariants));
+        RefreshLegChecks();
         QueueScatterSave();
     }
 
@@ -414,27 +381,26 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         row.Changed -= OnScatterRowChanged;
         CourseVariants.Remove(row);
         OnPropertyChanged(nameof(HasNoCourseVariants));
+        RefreshLegChecks();
         QueueScatterSave();
     }
 
-    private void OnScatterRowChanged() => QueueScatterSave();
+    private void OnScatterRowChanged()
+    {
+        RefreshLegChecks();
+        QueueScatterSave();
+    }
 
     private void QueueScatterSave()
     {
         if (_suppressScatterSave || _scatterGroupId is null)
             return;
 
-        // Snapshot the editor rows now (UI thread): when the debounce ends the table may already show another group or
-        // the other table shape. A leg row with no course is not written (the leg stays without one).
-        var rows = IsRelayLegCoursesEditor
-            ? CourseVariants
-                .Where(v => v.CourseOrder.Trim().Length > 0)
-                .Select(v => new CourseVariantRow(v.Code, v.CourseOrder))
-                .Concat(_hiddenCourseVariants)
-                .ToList()
-            : CourseVariants
-                .Select(v => new CourseVariantRow(v.Code, v.CourseOrder))
-                .ToList();
+        // Snapshot the editor rows now (UI thread): when the debounce ends the table may already show another group.
+        // The leg goes with every row, the «Етап» column shown or not — another mode keeps it for the next switch.
+        var rows = CourseVariants
+            .Select(v => new CourseVariantRow(v.Code, v.CourseOrder, v.Leg))
+            .ToList();
 
         _scatterSaveCts?.Cancel();
         var cts = new CancellationTokenSource();
@@ -450,8 +416,8 @@ public sealed partial class GroupsViewModel : PageViewModelBase
 
             await Task.Run(() => _editor.SaveCourseVariantsAsync(groupId, rows, token), token);
 
-            // Keep the grid's «N варіантів дистанції» cell in sync with the saved (non-blank) count, and its
-            // control-count cell with the LONGEST variant (that's what a scatter group reports there).
+            // Keep the grid row's variant count in sync with the saved (non-blank) count, and its control-count
+            // cell with the LONGEST variant (that's what a group with several courses reports there).
             var kept = rows
                 .Where(r => !string.IsNullOrWhiteSpace(r.Code) || !string.IsNullOrWhiteSpace(r.CourseOrder))
                 .ToList();
@@ -792,9 +758,8 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     // Refresh the previews/editors whenever the selected group changes.
     partial void OnSelectedGroupChanged(GroupDayRowViewModel? value)
     {
-        // The relay's named-courses flags belong to the previous group until its settings reload.
+        // The relay's named-courses flag belongs to the previous group until its settings reload.
         _relayNamedCourses = false;
-        _relayPerLegCourses = false;
         RefreshPatternPreview();
         _ = RefreshScatterEditorAsync();
         _ = RefreshRelayEditorAsync();
@@ -1065,25 +1030,21 @@ public sealed partial class GroupsViewModel : PageViewModelBase
 }
 
 /// <summary>
-/// One editable row in the bottom scatter («розсіювання») variants table: a display <see cref="Code"/> (e.g.
-/// "A") and the variant's <see cref="CourseOrder"/> string. Raises <see cref="Changed"/> on any edit so the
-/// page can debounce-save the whole set.
+/// One editable row in the bottom courses table (scatter variants / relay leg courses): a display <see cref="Code"/>
+/// (e.g. "A"), the course's <see cref="CourseOrder"/> string and — read only in «своя на кожен етап» — the
+/// <see cref="Leg"/> it is run on. Raises <see cref="Changed"/> on any edit so the page can debounce-save the whole set.
 /// </summary>
 public sealed partial class CourseVariantRowViewModel : ObservableObject
 {
     private readonly Func<string, string> _describe;
 
-    public CourseVariantRowViewModel(string code, string courseOrder, Func<string, string> describe, int? leg = null)
+    public CourseVariantRowViewModel(string code, string courseOrder, int? leg, Func<string, string> describe)
     {
         _code = code;
         _courseOrder = courseOrder;
+        _legText = FormatLeg(leg);
         _describe = describe;
-        Leg = leg;
     }
-
-    /// <summary>«Своя на кожен етап»: the leg this row holds the course of (its <see cref="Code"/> is the leg number);
-    /// null for a named course / scatter variant.</summary>
-    public int? Leg { get; }
 
     /// <summary>The order / pattern check (Р-40): «✓», or the first structural error.</summary>
     public string Check => _describe(CourseOrder);
@@ -1091,7 +1052,7 @@ public sealed partial class CourseVariantRowViewModel : ObservableObject
     /// <summary>True when the course has a structural error (red check cell).</summary>
     public bool HasError => Check.StartsWith('✕');
 
-    /// <summary>Raised whenever the code or course order is edited.</summary>
+    /// <summary>Raised whenever the code, course order or leg is edited.</summary>
     public event Action? Changed;
 
     [ObservableProperty]
@@ -1100,14 +1061,39 @@ public sealed partial class CourseVariantRowViewModel : ObservableObject
     [ObservableProperty]
     private string _courseOrder;
 
+    /// <summary>The «Етап» cell as typed.</summary>
+    [ObservableProperty]
+    private string _legText;
+
+    /// <summary>The leg the course is run on («своя на кожен етап»); null when blank or not a positive number.</summary>
+    public int? Leg =>
+        int.TryParse(LegText.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var leg) && leg >= 1 ? leg : null;
+
+    /// <summary>Why the «Етап» cell is red (no leg typed for a course, or no such leg); blank when fine. Set by the page.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasLegProblem))]
+    private string _legProblem = string.Empty;
+
+    public bool HasLegProblem => LegProblem.Length > 0;
+
     /// <summary>Copies fresh values onto the row (only a changed cell raises); the page suppresses the save meanwhile.</summary>
-    public void Apply(string code, string courseOrder)
+    public void Apply(string code, string courseOrder, int? leg)
     {
         Code = code;
         CourseOrder = courseOrder;
+        if (Leg != leg)
+            LegText = FormatLeg(leg);
     }
 
+    private static string FormatLeg(int? leg) => leg?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+
     partial void OnCodeChanged(string value) => Changed?.Invoke();
+
+    partial void OnLegTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(Leg));
+        Changed?.Invoke();
+    }
     partial void OnCourseOrderChanged(string value)
     {
         OnPropertyChanged(nameof(Check));

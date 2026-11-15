@@ -33,6 +33,7 @@ pages:
     - src/OrientPyx.*CreateEvent*
     - src/OrientPyx.*EventCatalog*
     - src/OrientPyx.*EventIdentifier*
+    - src/OrientPyx.Presentation/*EventSelection*
   prepare/courses.md:
     - src/OrientPyx.*ControlPoint*
     - src/OrientPyx.*Groups*

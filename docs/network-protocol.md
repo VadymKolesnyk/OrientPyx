@@ -1,7 +1,7 @@
 # Мережевий протокол OrientPyx (хост ↔ станція)
 
-Версія протоколу: `NetworkProtocol.Version = 5` (`BusinessLogic/Models/Network/NetworkModels.cs`). Інкрементується при
-будь-якій зміні сигнатур мережевих інтерфейсів або формату нижче (5 — новий режим дистанцій естафети `RelayCourseMode.PerLeg`: старіша станція не прочитала б його); хост і станція з різними версіями відмовляють у `/pair`.
+Версія протоколу: `NetworkProtocol.Version = 6` (`BusinessLogic/Models/Network/NetworkModels.cs`). Інкрементується при
+будь-якій зміні сигнатур мережевих інтерфейсів або формату нижче (5 — новий режим дистанцій естафети `RelayCourseMode.PerLeg`: старіша станція не прочитала б його; 6 — `GroupCourseVariant.Leg`, етап дистанції в цьому режимі: старіша станція стерла б його при збереженні); хост і станція з різними версіями відмовляють у `/pair`.
 
 Типи DTO: `DataAccess/Network/Protocol/Wire.cs` (спільні для хоста й станції). Серіалізація — завжди
 `RpcJson.Options` (`BusinessLogic/Serialization/RpcJson.cs`): camelCase, `IncludeFields` (кортежі), enum як рядки,
@@ -49,7 +49,11 @@ PIN — 4 цифри, генерується при старті хоста, п�
 запиту знято (`.opyx` на `/files/import`). PIN перегенеровується при кожному старті хоста й через
 `RegeneratePin()`; токени станцій переживають перезапуск (`app.db`), `DisconnectStationAsync`/`DisconnectAllAsync`
 їх видаляють — наступний запит станції дістає `401`. «Онлайн» станція = запит за останні 60 с
-(`ConnectedStation.IsOnline`, `ActiveStationsOn`); каталог хоста відмовляє в `RenameIdentifierAsync`, поки такі є.
+(`ConnectedStation.IsOnline`, `ActiveStationsOn`); каталог хоста відмовляє в `RenameIdentifierAsync` і
+`DeleteEventAsync`, поки такі є.
+
+`Wire.HostOnlyMethods` (зараз `Catalog.DeleteEventAsync` — видалення змагань) по мережі не виконуються: хост відповідає
+`400` (`NotSupportedException`), проксі станції падає ще до запиту. Видаляє змагання лише оператор хоста.
 
 `iface` ∈ `EventStore | FolderScanner | Catalog | EventFiles | Archive | AppData` (`Wire.Interfaces`). Перевантажень
 у цих інтерфейсах немає — метод шукається за ім'ям (контрактний тест це закріплює).

@@ -562,10 +562,9 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             .GroupBy(l => l.GroupId!.Value)
             .ToDictionary(g => g.Key, g => g.Count());
 
-        // Scatter («розсіювання») variant count per group, so the grid's course-order cell can read
-        // «N варіантів дистанції» instead of a single order for a scatter group. Also fold each group's
-        // variants down to the control-count of its LONGEST variant — the grid's control-count cell
-        // reports that for a scatter group (the single-order field is unused for scatter).
+        // Named-course (scatter variant / relay leg course) count per group, and each group's courses folded down
+        // to the control-count of its LONGEST one — the grid's control-count cell reports that for a group with
+        // several courses (its single-order field is unused then).
         var scatterVariants = await _eventStore.GetCourseVariantsAsync(FolderPath, CurrentDayId, cancellationToken);
         var scatterByGroup = scatterVariants
             .GroupBy(v => v.GroupId)
@@ -598,7 +597,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         return rows
             .Where(v => v.GroupId == groupId)
             .OrderBy(v => v.Order)
-            .Select(v => new CourseVariantRow(v.Code, v.CourseOrder))
+            .Select(v => new CourseVariantRow(v.Code, v.CourseOrder, v.Leg))
             .ToList();
     }
 
@@ -618,7 +617,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 GroupId = groupId,
                 Code = (v.Code ?? string.Empty).Trim(),
                 CourseOrder = (v.CourseOrder ?? string.Empty).Trim(),
-                Order = order++
+                Order = order++,
+                Leg = v.Leg is >= 1 ? v.Leg : null
             })
             // Drop fully-blank rows so an empty editor line never persists.
             .Where(v => v.Code.Length > 0 || v.CourseOrder.Length > 0)
@@ -860,6 +860,13 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
         var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
         var settingsByGroupId = settings.ToDictionary(s => s.GroupId);
+        // The legs typed for the courses («своя на кожен етап») follow a re-imported course of the same code.
+        var legsBefore = (await _eventStore.GetCourseVariantsAsync(folder, dayId, cancellationToken))
+            .Where(v => v.Leg is not null)
+            .GroupBy(v => v.GroupId)
+            .ToDictionary(g => g.Key, g => g
+                .GroupBy(v => v.Code.Trim(), TextKey.Comparer)
+                .ToDictionary(c => c.Key, c => c.First().Leg!.Value, TextKey.Comparer));
         var nextOrder = settings.Count == 0 ? 1 : settings.Max(s => s.Order) + 1;
 
         var added = 0;
@@ -977,7 +984,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 // its named leg courses when the file brings none; a hand-kept mixed pattern keeps whatever it had.
                 if (isRelayCourse || isScatter || (!isRelay && !keepsPattern))
                 {
-                    await SaveCourseVariantsAsync(folder, dayId, group.Id, variants, cancellationToken);
+                    await SaveCourseVariantsAsync(folder, dayId, group.Id, variants, legsBefore.GetValueOrDefault(group.Id),
+                        cancellationToken);
                     await _eventStore.ReplaceGroupLegCourseAssignmentsAsync(folder, dayId, group.Id, assignments, cancellationToken);
                 }
                 if (scatterFallbackHere && wasScatter)
@@ -999,7 +1007,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 };
                 await _eventStore.AddGroupDaySettingsAsync(folder, row, cancellationToken);
                 settingsByGroupId[group.Id] = row;
-                await SaveCourseVariantsAsync(folder, dayId, group.Id, variants, cancellationToken);
+                await SaveCourseVariantsAsync(folder, dayId, group.Id, variants, legsBefore.GetValueOrDefault(group.Id),
+                    cancellationToken);
                 await _eventStore.ReplaceGroupLegCourseAssignmentsAsync(folder, dayId, group.Id, assignments, cancellationToken);
                 if (scatterFallbackHere)
                     scatterFallback.Add(name);
@@ -1012,9 +1021,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     // Persists a course's named variants (scatter orders / relay courses) for a group on a day, replacing any existing
     // set: one row per variant, coded and ordered as parsed. Fewer than two clear the group's variants (so re-importing
-    // a formerly-scatter group as a normal course leaves no stale orders behind).
+    // a formerly-scatter group as a normal course leaves no stale orders behind). A code that had a leg keeps it.
     private Task SaveCourseVariantsAsync(
-        string folder, Guid dayId, Guid groupId, IReadOnlyList<IofCourseVariant> variants, CancellationToken cancellationToken)
+        string folder, Guid dayId, Guid groupId, IReadOnlyList<IofCourseVariant> variants,
+        IReadOnlyDictionary<string, int>? legsByCode, CancellationToken cancellationToken)
     {
         var rows = new List<GroupCourseVariant>();
         if (variants.Count > 1)
@@ -1027,7 +1037,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     GroupId = groupId,
                     Code = v.Code,
                     CourseOrder = string.Join(' ', v.ControlCodes.Select(c => c.Trim()).Where(c => c.Length > 0)),
-                    Order = order++
+                    Order = order++,
+                    Leg = legsByCode is not null && legsByCode.TryGetValue(v.Code.Trim(), out var leg) ? leg : null
                 });
         }
 
@@ -3105,9 +3116,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         IReadOnlyList<CourseVariantData> scatterVariants, ParticipantDayResult? result = null)
     {
         // §11.4: a relay leg is judged against its own named course (Р-44), when it has one.
-        var legCourse = result?.Leg?.CourseCode is { } code
-            ? scatterVariants.FirstOrDefault(v => TextKey.Same(v.Code.Trim(), code.Trim()))
-            : null;
+        var legCourse = result?.Leg?.Course
+            ?? (result?.Leg?.CourseCode is { } code
+                ? scatterVariants.FirstOrDefault(v => TextKey.Same(v.Code.Trim(), code.Trim()))
+                : null);
         var courseOrder = legCourse?.CourseOrderText ?? gs?.CourseOrder;
         var expected = legCourse is not null
             ? legCourse.Controls.ToList()
@@ -4027,9 +4039,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             {
                 start = leg.Start;
                 // The leg's own named course (Р-44): the splits are judged against it, not the group's order.
-                legCourse = leg.CourseCode is { } code
-                    ? scatterVariants.FirstOrDefault(v => TextKey.Same(v.Code.Trim(), code.Trim()))
-                    : null;
+                legCourse = leg.Course
+                    ?? (leg.CourseCode is { } code
+                        ? scatterVariants.FirstOrDefault(v => TextKey.Same(v.Code.Trim(), code.Trim()))
+                        : null);
             }
         }
         if (legCourse is not null)

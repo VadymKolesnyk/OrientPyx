@@ -39,6 +39,21 @@ public interface IEventCatalogService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Deletes a competition from this machine for good: its whole folder under the events path (<c>event.db</c> with
+    /// every table in it, the day folders with their imported files, read-outs and monitor pages, the logs, the saved
+    /// table views) and the last-session pointer when it names this competition. A folder that is already gone is not
+    /// an error.
+    /// </summary>
+    /// <remarks>
+    /// The database files are released first, then the folder is moved aside as a whole before it is deleted: a move is
+    /// all-or-nothing, so a competition another OrientPyx window or program holds open stays intact and
+    /// <see cref="EventFolderInUseException"/> is thrown. Throws <see cref="StationsActiveException"/> while network
+    /// stations work on it, and <see cref="ArgumentException"/> for a folder that is not directly under the events
+    /// path. Host-only: a station never deletes the host's competitions (the host refuses the call over the network).
+    /// </remarks>
+    Task DeleteEventAsync(EventSummary competition, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Creates a competition: a folder named <paramref name="identifier"/> under the events
     /// path, its event database, the metadata row, and <paramref name="dayCount"/> days. Throws
     /// if the identifier is invalid or already exists.

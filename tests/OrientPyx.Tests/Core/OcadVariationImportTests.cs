@@ -183,12 +183,13 @@ public sealed class OcadVariationImportTests
         var leg = table.Rows.Single(x => x.Bib == "601.2");
         Assert.Equal(("МІКС12", "2B", "S1 32 31 F1", "601-2", false), (leg.GroupName, leg.Course, leg.CourseOrder, leg.Runner, leg.UnknownCourse));
 
-        // A numbered team with no variations: its legs are listed as missing.
+        // A numbered team with no variations: its legs are listed apart, as missing.
         await c.AddRelayTeamAsync("МІКС12", 603, "603");
         await c.SelectAsync();
         table = await editor.GetNumberVariantsAsync();
-        Assert.All(table.Rows.Where(x => x.Number == 603), x => Assert.True(x.Missing));
-        Assert.Equal(2, table.Rows.Count(x => x.Number == 603));
+        Assert.All(table.Unassigned.Where(x => x.Number == 603), x => Assert.True(x.Missing));
+        Assert.Equal(2, table.Unassigned.Count(x => x.Number == 603));
+        Assert.DoesNotContain(table.Rows, x => x.Number == 603);
 
         // Re-importing replaces the group's own rows (the file dropped team 602).
         var trimmed = Use(new IofXmlParser().Parse(RelayV2.Replace("<StartNo> 602 </StartNo>", "<StartNo> 0 </StartNo>")),
@@ -243,7 +244,72 @@ public sealed class OcadVariationImportTests
         var table = await editor.GetNumberVariantsAsync();
         var bib21 = table.Rows.Single(x => x.Number == 21);
         Assert.Equal(("21", "B", "Петренко", "Ж16"), (bib21.Bib, bib21.Course, bib21.Runner, bib21.GroupName));
+        Assert.Equal("Ж16", bib21.HolderGroupName);
         Assert.Equal("", table.Rows.Single(x => x.Number == 22).Runner);
+
+        // A numbered runner of the group the file gave no map: listed apart, and gets one picked on the page.
+        await c.AddRunnerAsync("Коваль", "23", "2301", "Ж16");
+        await c.SelectAsync();
+        table = await editor.GetNumberVariantsAsync();
+        var bib23 = Assert.Single(table.Unassigned);
+        Assert.Equal(("23", "Ж16", "Коваль", true), (bib23.Bib, bib23.GroupName, bib23.Runner, bib23.Missing));
+        Assert.Equal(["A", "B"], table.Groups.Single(g => g.Name == "Ж16").Variants.Select(v => v.Code).Order());
+
+        await editor.SetLegCoursesAsync([new LegCourseEntry(23, 1, "A", bib23.GroupId)]);
+        table = await editor.GetNumberVariantsAsync();
+        Assert.Empty(table.Unassigned);
+        var r23 = table.Rows.Single(x => x.Number == 23);
+        Assert.Equal(("A", "Ж16", false), (r23.Course, r23.GroupName, r23.UnknownCourse));
+    }
+
+    [Fact]
+    public async Task NumberVariants_ListsTheLegsWithoutAVariationAndFlagsAVariationOfAnotherGroup()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("ocadnv"));
+        await c.SelectAsync();
+        var editor = Sp.GetRequiredService<ICompetitionEditorService>();
+        var data = Use(new IofXmlParser().Parse(RelayV2), "МІКС12", CourseVariationUse.RelayByBib);
+        await editor.ImportControlPointsAsync(data, replaceAll: true);
+        await editor.ImportGroupsAsync(data, updateExisting: true);
+        await TrackAsync(c, "МІКС12");
+        // A second relay group with a variation of its own.
+        await c.AddGroupAsync("МІКС14", "31 32", s => s.DisciplineOverride = DisciplineId.Relay);
+        await c.SetRelaySettingsAsync("МІКС14", 1, 2, T(10, 0));
+        await c.SetRelayCourseModeAsync("МІКС14", 1, RelayCourseMode.ByBib);
+        await c.SetCourseVariantsAsync("МІКС14", 1, ("X", "31 32"));
+        await c.AddRelayTeamAsync("МІКС12", 603, "Сокіл");
+
+        await c.SelectAsync();
+        var table = await editor.GetNumberVariantsAsync();
+        Assert.Equal(["601.1", "601.2", "602.1", "602.2"], table.Rows.Select(x => x.Bib));
+        Assert.Equal(["603.1", "603.2"], table.Unassigned.Select(x => x.Bib));
+        Assert.All(table.Unassigned, x => Assert.Equal(("МІКС12", "Сокіл", false), (x.GroupName, x.TeamName, x.GroupMismatch)));
+
+        // A variation picked for leg 1 moves it to the numbers with a variation.
+        var mix12 = c.Groups["МІКС12"].Id;
+        await editor.SetLegCoursesAsync([new LegCourseEntry(603, 1, "1A", mix12)]);
+        table = await editor.GetNumberVariantsAsync();
+        var leg1 = table.Rows.Single(x => x.Bib == "603.1");
+        Assert.Equal(("1A", "МІКС12", "МІКС12", false, false),
+            (leg1.Course, leg1.GroupName, leg1.HolderGroupName, leg1.GroupMismatch, leg1.UnknownCourse));
+        Assert.Equal(["603.2"], table.Unassigned.Select(x => x.Bib));
+
+        // Leg 2 given a variation of another group: shown with both groups and flagged — the team never takes it.
+        await editor.SetLegCoursesAsync([new LegCourseEntry(603, 2, "X", c.Groups["МІКС14"].Id)]);
+        table = await editor.GetNumberVariantsAsync();
+        var leg2 = table.Rows.Single(x => x.Bib == "603.2");
+        Assert.Equal(("X", "МІКС14", "МІКС12", true, false, "Сокіл"),
+            (leg2.Course, leg2.GroupName, leg2.HolderGroupName, leg2.GroupMismatch, leg2.UnknownCourse, leg2.TeamName));
+        Assert.Empty(table.Unassigned);
+
+        // Moved to the team's group, the code is not one of its variations; a blank variation removes the row.
+        await editor.SetLegCoursesAsync([new LegCourseEntry(603, 2, "X", mix12)]);
+        table = await editor.GetNumberVariantsAsync();
+        leg2 = table.Rows.Single(x => x.Bib == "603.2");
+        Assert.Equal(("МІКС12", false, true), (leg2.GroupName, leg2.GroupMismatch, leg2.UnknownCourse));
+        await editor.SetLegCoursesAsync([new LegCourseEntry(603, 2, "", mix12)]);
+        table = await editor.GetNumberVariantsAsync();
+        Assert.Equal(["603.2"], table.Unassigned.Select(x => x.Bib));
     }
 
     [Fact]
@@ -306,6 +372,48 @@ public sealed class OcadVariationImportTests
             var rows = await db.LegCourseAssignments.OrderBy(a => a.Leg).ToListAsync();
             Assert.Equal([(101, 1, "A"), (101, 2, "B")], rows.Select(a => (a.TeamNumber, a.Leg, a.CourseKey)));
             Assert.All(rows, a => Assert.Equal((day, (Guid?)group), (a.EventDayId, a.GroupId)));
+        }
+        SqliteConnection.ClearAllPools();
+        try { Directory.Delete(folder, recursive: true); } catch (IOException) { }
+    }
+
+    [Fact]
+    public async Task Migration_GivesTheLegNumberCoursesOfAPerLegGroupTheirLeg()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "orientpyx-tests", "migrate-perleg-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        var options = new DbContextOptionsBuilder<EventDbContext>()
+            .UseSqlite($"Data Source={Path.Combine(folder, "event.db")};Pooling=False")
+            .Options;
+        var day = Guid.NewGuid();
+        var perLeg = Guid.NewGuid();
+        var byBib = Guid.NewGuid();
+        static string Text(Guid id) => id.ToString("D").ToUpperInvariant();
+        await using (var db = new EventDbContext(options))
+        {
+            await db.GetService<IMigrator>().MigrateAsync("20261110150441_DropRelayByLeg");
+            await db.Database.ExecuteSqlRawAsync(
+                """
+                INSERT INTO "GroupDaySettings" ("Id", "EventDayId", "GroupId", "Order", "CourseOrder", "CourseSetter",
+                    "CourseSetterCategory", "RankLevel", "RestartTimesJson", "RestartRanking", "CourseAssignmentMode",
+                    "TeamCourseSet", "CreatedAt", "LegCount")
+                VALUES ({0}, {2}, {3}, 1, '', '', '', 'None', '', 'AfterClean', 'PerLeg', '', '2026-11-10 00:00:00+00:00', 3),
+                       ({1}, {2}, {4}, 2, '', '', '', 'None', '', 'AfterClean', 'ByBib', '', '2026-11-10 00:00:00+00:00', 3);
+                """, Text(Guid.NewGuid()), Text(Guid.NewGuid()), Text(day), Text(perLeg), Text(byBib));
+            var order = 0;
+            foreach (var (group, code) in new[] { (perLeg, "1"), (perLeg, " 2 "), (perLeg, "A"), (perLeg, "02"), (perLeg, "2A"), (byBib, "1") })
+                await db.Database.ExecuteSqlRawAsync(
+                    """
+                    INSERT INTO "GroupCourseVariants" ("Id", "EventDayId", "GroupId", "Code", "CourseOrder", "Order", "CreatedAt")
+                    VALUES ({0}, {1}, {2}, {3}, '31', {4}, '2026-11-10 00:00:00+00:00');
+                    """, Text(Guid.NewGuid()), Text(day), Text(group), code, order++);
+        }
+
+        await using (var db = new EventDbContext(options))
+        {
+            await db.Database.MigrateAsync();
+            var rows = await db.GroupCourseVariants.OrderBy(v => v.Order).ToListAsync();
+            Assert.Equal(new int?[] { 1, 2, null, null, null, null }, rows.Select(v => v.Leg));
         }
         SqliteConnection.ClearAllPools();
         try { Directory.Delete(folder, recursive: true); } catch (IOException) { }

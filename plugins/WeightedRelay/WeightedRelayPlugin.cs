@@ -9,7 +9,7 @@ namespace WeightedRelay;
 /// </summary>
 public sealed class WeightedRelayPlugin : IOrientPyxPlugin
 {
-    public PluginInfo Info => new("weighted", "Зважена естафета", "1.2", MinApiVersion: 2,
+    public PluginInfo Info => new("weighted", "Зважена естафета", "1.3", MinApiVersion: 3,
         Author: "OrientPyx", Description: "Час етапу × коефіцієнт за віком і статтю; час команди = Σ T·K.");
 
     public void Register(IPluginBuilder p)
@@ -72,14 +72,7 @@ public sealed class WeightedRelayDiscipline : Discipline
         // «Час» — the clean leg time T beside the weighted one, whether or not K is known.
         ctx.Row.Set("time", ctx.Time);
 
-        double? k = null;
-        if (ctx.Participant.BirthYear is { } year && ctx.Participant.Field("gender") is { } gender)
-        {
-            var table = RangeTable.FromSetting(ctx.Setting<TableValue>("k"));            // toolkit
-            k = table.Lookup(Age.InYear(year, ctx.Date), gender);                       // outside the table — nearest row (Р-47)
-        }
-
-        if (k is not { } coefficient)
+        if (Coefficients.Of(ctx.Setting<TableValue>("k"), ctx.Participant, ctx.Date) is not { } coefficient)
         {
             // Р-48: no birth year / gender (or no K for it) — the team gets no place; its time counts this leg with K = 1.
             ctx.Row.Set(MissingKey, true);
@@ -103,7 +96,8 @@ public sealed class WeightedRelayDiscipline : Discipline
 /// <summary>
 /// «Перевірка K»: the runners of the day's weighted relay teams whose coefficient cannot be found — no birth year, or
 /// a gender other than «Ч»/«Ж» (Р-48: their team gets no place). One section per weighted group, a team row over its
-/// runners; with «Лише проблемні» (default) only the teams with a problem.
+/// runners with the K their leg time will be multiplied by (from the group's coefficient table, before anyone runs);
+/// with «Лише проблемні» (default) only the teams with a problem.
 /// </summary>
 public sealed class CheckReport : Report
 {
@@ -119,22 +113,25 @@ public sealed class CheckReport : Report
     public override ReportDocument Build(ReportContext ctx)
     {
         var onlyProblems = ctx.Setting<bool>("onlyProblems");
+        var date = ctx.Day?.Date ?? DateOnly.FromDateTime(DateTime.Today);
         var sections = new List<ReportSection>();
         foreach (var group in ctx.Day?.Groups ?? [])
         {
             if (!group.Discipline.StartsWith("weighted.", StringComparison.Ordinal))
                 continue;
 
+            var table = group.Setting<TableValue>("k");
             var rows = new List<ReportRow>();
             foreach (var team in group.Teams)
             {
                 var legs = team.Legs.Select((runner, i) => (Leg: i + 1, Runner: runner, Problem: Problem(ctx, runner))).ToList();
                 if (onlyProblems && legs.All(l => l.Problem is null))
                     continue;
-                rows.Add(ReportRow.Caption(team.Number > 0 ? team.Number : null, team.Name, null, null, null));
+                rows.Add(ReportRow.Caption(team.Number > 0 ? team.Number : null, team.Name, null, null, null, null));
                 foreach (var (leg, runner, problem) in legs)
                     rows.Add(ReportRow.Sub(leg, runner?.Participant.FullName ?? ctx.Text("report.noRunner"),
-                        runner?.Participant.BirthYear, runner?.Participant.Field("gender"), problem));
+                        runner?.Participant.BirthYear, runner?.Participant.Field("gender"),
+                        runner is null ? null : Coefficients.Of(table, runner.Participant, date), problem));
             }
             if (rows.Count > 0)
                 sections.Add(new ReportSection { Title = group.Name, Rows = rows });
@@ -150,6 +147,7 @@ public sealed class CheckReport : Report
                 new ReportColumn("report.col.name") { Wrap = true },
                 new ReportColumn("report.col.year"),
                 new ReportColumn("report.col.gender"),
+                new ReportColumn("column.k"),
                 new ReportColumn("report.col.problem") { Wrap = true },
             ],
             Sections = sections,
@@ -197,6 +195,13 @@ internal static class Coefficients
         ["60–64", "0.80", "0.68"],
         ["65–69", "0.76", "0.63"],
         ["70+", "0.71", "0.58"]);
+
+    /// <summary>The runner's K (Р-45…Р-47): age in the year of <paramref name="date"/> × gender; outside the table —
+    /// the nearest row. Null without a birth year or gender, or when the table has no value for them (Р-48).</summary>
+    public static double? Of(TableValue? table, ParticipantView participant, DateOnly date) =>
+        participant.BirthYear is { } year && participant.Field("gender") is { } gender
+            ? RangeTable.FromSetting(table).Lookup(Age.InYear(year, date), gender)
+            : null;
 }
 
 internal static class Strings

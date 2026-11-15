@@ -37,19 +37,19 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CourseOrderDisplay))]
     private string _courseOrder;
 
-    // How many scatter («розсіювання») variants this group has (0 = not a scatter course). Kept live by the
-    // page's bottom variants editor so the grid cell's «N варіантів дистанції» updates as variants are edited.
+    // How many named courses (scatter variants / relay leg courses) this group has on the day. Kept live by the
+    // page's bottom variants editor; the page's variants header shows it.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CourseOrderDisplay))]
-    [NotifyPropertyChangedFor(nameof(IsScatter))]
-    [NotifyPropertyChangedFor(nameof(CanEditCourseOrderInline))]
     private int _scatterVariantCount;
 
-    // Control-point count of the LONGEST scatter variant. For a scatter group the grid's control-count cell
-    // reports this (the single-order field is unused), so it's kept live by the page's variants editor too.
+    // Control-point count of the LONGEST named course. A group with several courses (see HasSeveralCourses) reports
+    // this in the control-count cell (its single-order field is unused), so the variants editor keeps it live too.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ControlCountText))]
     private int _scatterMaxControlCount;
+
+    // Relay: how the legs get their courses — anything but «одна дистанція групи» leaves the group's order unused.
+    private RelayCourseMode _relayCourseMode;
 
     [ObservableProperty]
     private string _distanceText;
@@ -147,6 +147,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         _courseOrder = row.CourseOrder;
         _scatterVariantCount = row.ScatterVariantCount;
         _scatterMaxControlCount = row.ScatterMaxControlCount;
+        _relayCourseMode = row.CourseMode;
         _distanceText = FormatDecimal(row.DistanceKm);
         _requiredCountText = FormatInt(row.RequiredControlCount);
         _penaltyText = FormatDecimal(row.PenaltyPerMinute);
@@ -253,6 +254,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
             CourseOrder = row.CourseOrder;
             ScatterVariantCount = row.ScatterVariantCount;
             ScatterMaxControlCount = row.ScatterMaxControlCount;
+            ShowRelayCourseMode(row.CourseMode);
             DistanceText = FormatDecimal(row.DistanceKm);
             RequiredCountText = FormatInt(row.RequiredControlCount);
             TimeLimitText = FormatTime(row.TimeLimitSeconds);
@@ -357,27 +359,53 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     public bool UsesCoursePattern => Strategy.UsesCoursePattern;
 
     /// <summary>
-    /// What the grid's course-order cell shows: for a scatter group, «N варіантів дистанції» (there is no
-    /// single order — variants are edited in the bottom panel); otherwise the plain course-order string.
+    /// The group runs several courses edited in the bottom table, not its single order: a scatter group (its
+    /// variants), or a relay whose legs take named courses (any mode but «одна дистанція групи»).
     /// </summary>
-    public string CourseOrderDisplay => IsScatter
-        ? string.Format(Localization.Get("Groups.Col.CourseOrder.Variants"), ScatterVariantCount)
+    public bool HasSeveralCourses => IsScatter || (IsRelay && _relayCourseMode != RelayCourseMode.Group);
+
+    /// <summary>
+    /// What the grid's course-order cell shows: «(різні)» for a group with several courses (they are edited in the
+    /// bottom panel); otherwise the plain course-order string.
+    /// </summary>
+    public string CourseOrderDisplay => HasSeveralCourses
+        ? Localization.Get("Groups.Col.CourseOrder.Several")
         : CourseOrder;
 
     /// <summary>
-    /// Whether the course-order cell is editable inline in the grid. A scatter group edits its several orders
-    /// in the bottom variants table instead, so its cell is read-only (and shows the variant count).
+    /// Whether the course-order cell is editable inline in the grid. A group with several courses edits them in the
+    /// bottom table instead, so its cell is read-only, dimmed and reads «(різні)».
     /// </summary>
-    public bool CanEditCourseOrderInline => UsesCourseOrder && !IsScatter;
+    public bool CanEditCourseOrderInline => UsesCourseOrder && !HasSeveralCourses;
 
     /// <summary>
     /// Read-only count of control points, auto-computed from the course/control list for every
-    /// discipline. A scatter («розсіювання») group has no single order — it reports the control count of
-    /// its longest variant instead (the single-order field is unused for scatter).
+    /// discipline. A group with several courses has no single order — it reports the control count of
+    /// its longest course instead.
     /// </summary>
     public string ControlCountText =>
-        (IsScatter ? ScatterMaxControlCount : Strategy.ControlCount(CourseOrder))
+        (HasSeveralCourses ? ScatterMaxControlCount : Strategy.ControlCount(CourseOrder))
             .ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>Shows the relay course mode picked in the settings under the grid (it is saved with them, not with
+    /// the row).</summary>
+    public void ShowRelayCourseMode(RelayCourseMode mode)
+    {
+        if (_relayCourseMode == mode)
+            return;
+        _relayCourseMode = mode;
+        RaiseCourseOrderState();
+    }
+
+    // Everything that follows whether the single order is in use.
+    private void RaiseCourseOrderState()
+    {
+        OnPropertyChanged(nameof(HasSeveralCourses));
+        OnPropertyChanged(nameof(CourseOrderDisplay));
+        OnPropertyChanged(nameof(CanEditCourseOrderInline));
+        OnPropertyChanged(nameof(ControlCountText));
+        RaiseUnknownCodes();
+    }
 
     /// <summary>
     /// Read-only count of participants in this group on this day, computed by the editor service from
@@ -435,9 +463,10 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     /// <summary>
     /// Codes in the course order that are not control points of the day — e.g. «S1»/«F» typed while no КП has that code
     /// with type «Старт»/«Фініш». Judging treats such a code as a control nobody can punch: the whole group gets MP.
-    /// Blank when the day has no control points yet (nothing to check against) or the group's format ignores the order.
+    /// Blank when the day has no control points yet (nothing to check against) or the group does not use its single
+    /// order (a format that ignores it, or several courses checked in the bottom table).
     /// </summary>
-    public string UnknownCodes => _dayCodes.Count == 0 || !UsesCourseOrder
+    public string UnknownCodes => _dayCodes.Count == 0 || !CanEditCourseOrderInline
         ? string.Empty
         : string.Join(", ", System.Text.RegularExpressions.Regex.Matches(CourseOrder ?? string.Empty, @"\b[\p{L}\p{N}]+\b(?!\s*:)")
             .Select(m => m.Value)
@@ -480,7 +509,6 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     {
         // The effective discipline changed, so re-evaluate every derived column state.
         OnPropertyChanged(nameof(EffectiveDiscipline));
-        OnPropertyChanged(nameof(ControlCountText));
         OnPropertyChanged(nameof(UsesCourseOrder));
         OnPropertyChanged(nameof(UsesRequiredCount));
         OnPropertyChanged(nameof(UsesPenalty));
@@ -490,8 +518,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         OnPropertyChanged(nameof(LegCountDisplay));
         OnPropertyChanged(nameof(LegCountInvalid));
         OnPropertyChanged(nameof(UsesCoursePattern));
-        OnPropertyChanged(nameof(CourseOrderDisplay));
-        OnPropertyChanged(nameof(CanEditCourseOrderInline));
+        RaiseCourseOrderState();
 
         // Switching to a discipline with a default penalty (rogaine) shows that default when the cell is
         // empty, mirroring the constructor — so a freshly-switched rogaine group reads "1" rather than blank.

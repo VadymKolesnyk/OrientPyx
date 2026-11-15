@@ -72,11 +72,11 @@ public sealed partial class CompetitionEditorService
             await _eventStore.GetDusshesAsync(folder, cancellationToken),
             await _eventStore.GetParticipantFieldValuesAsync(folder, cancellationToken));
 
+        var settingRows = await _eventStore.GetDisciplineSettingsAsync(folder, cancellationToken);
         var reportDays = new List<ReportDay>(covered.Count);
         foreach (var d in covered)
-            reportDays.Add(ReportDayOf(d, await GetResultProtocolDataAsync(d.Id, cancellationToken), views));
+            reportDays.Add(ReportDayOf(d, await GetResultProtocolDataAsync(d.Id, cancellationToken), views, settingRows));
 
-        var settingRows = await _eventStore.GetDisciplineSettingsAsync(folder, cancellationToken);
         var context = new ReportContext
         {
             CompetitionName = (info?.Name ?? string.Empty).Trim(),
@@ -114,10 +114,20 @@ public sealed partial class CompetitionEditorService
         PluginReportInfo report, IEnumerable<PluginSettingsRow> rows, Guid? dayId) =>
         DisciplineSettings.Resolve(new DisciplineId(report.Id), report.StoredSettings, rows, dayId);
 
-    // One day as a report sees it: its groups in the day order, each with its runners (placed first by place, then
-    // the rest by name) and, in a relay, its teams.
-    private static ReportDay ReportDayOf(EventDay day, ResultProtocolData data, ParticipantViews views)
+    // One day as a report sees it: its groups in the day order, each with its discipline's settings on the day, its
+    // runners (placed first by place, then the rest by name) and, in a relay, its teams.
+    private ReportDay ReportDayOf(
+        EventDay day, ResultProtocolData data, ParticipantViews views, IReadOnlyList<PluginSettingsRow> settingRows)
     {
+        var settingsByDiscipline = new Dictionary<DisciplineId, SettingValues>();
+        SettingValues SettingsOf(DisciplineId discipline)
+        {
+            if (!settingsByDiscipline.TryGetValue(discipline, out var values))
+                settingsByDiscipline[discipline] = values =
+                    DisciplineSettings.Resolve(_strategies.For(discipline), settingRows, day.Id);
+            return values;
+        }
+
         ReportResult ResultOf(ResultProtocolRow row)
         {
             var r = row.Result;
@@ -170,6 +180,7 @@ public sealed partial class CompetitionEditorService
             {
                 Name = group.Name,
                 Discipline = group.Discipline.Value,
+                Settings = SettingsOf(group.Discipline),
                 Results = results,
                 Teams = teams
             });

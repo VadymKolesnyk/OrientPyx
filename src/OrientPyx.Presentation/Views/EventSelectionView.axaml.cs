@@ -19,6 +19,17 @@ public partial class EventSelectionView : UserControl
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += (_, _) => Unsubscribe();
+        // Keyboard Delete on the selected row. Ctrl never skips the question here: a whole competition is at stake.
+        Sheet.DeleteRequested += (_, e) => Delete(e.Row);
+    }
+
+    private void Delete(object row)
+    {
+        if (_vm is { CanDelete: true } vm && row is EventSummaryRowViewModel competition
+            && vm.DeleteCommand.CanExecute(competition))
+        {
+            vm.DeleteCommand.Execute(competition);
+        }
     }
 
     // Double-clicking a row opens that competition.
@@ -36,26 +47,41 @@ public partial class EventSelectionView : UserControl
             return;
 
         _vm.Localization.PropertyChanged += OnLocalizationChanged;
+        _vm.PropertyChanged += OnVmPropertyChanged;
         BuildBands();
     }
 
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => BuildBands();
 
+    // Becoming a station (or leaving that role) shows or hides the delete column. The VM re-raises CanDelete on every
+    // language switch too, which OnLocalizationChanged already rebuilds for — only a real change counts here.
+    private bool? _builtWithDelete;
+
+    private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(EventSelectionViewModel.CanDelete) && _vm?.CanDelete != _builtWithDelete)
+            BuildBands();
+    }
+
     // Builds the table's columns. Headers are baked into the band model, so a language switch is
-    // handled by rebuilding. The trailing column holds a per-row hide/unhide button.
+    // handled by rebuilding. The trailing columns hold a per-row hide/unhide button and the delete bin
+    // (not on a station: the host's competitions are deleted on the host).
     private void BuildBands()
     {
         if (_vm is null)
             return;
 
-        Sheet.Bands = new SheetColumnBuilder(_vm.Localization)
+        var builder = new SheetColumnBuilder(_vm.Localization)
             .Text("EventSelection.Col.Identifier", nameof(EventSummaryRowViewModel.Identifier), minWidth: 140)
             .Text("EventSelection.Col.Name", nameof(EventSummaryRowViewModel.Name), minWidth: 160)
             .Text("EventSelection.Col.Venue", nameof(EventSummaryRowViewModel.Venue), minWidth: 200)
             .Text("EventSelection.Col.Dates", nameof(EventSummaryRowViewModel.DateRange), minWidth: 160)
             .Text("EventSelection.Col.Days", nameof(EventSummaryRowViewModel.DayCount), minWidth: 80)
-            .Custom("EventSelection.Col.Hidden", BuildHideCell, width: 120, minWidth: 120)
-            .Bands;
+            .Custom("EventSelection.Col.Hidden", BuildHideCell, width: 120, minWidth: 120);
+        _builtWithDelete = _vm.CanDelete;
+        if (_vm.CanDelete)
+            builder.DeleteAction(Delete, "EventSelection.Delete");
+        Sheet.Bands = builder.Bands;
     }
 
     // A per-row toggle: "Hide" for a visible competition, "Show" for a hidden one. Bound to the VM's
@@ -81,7 +107,10 @@ public partial class EventSelectionView : UserControl
     private void Unsubscribe()
     {
         if (_vm is not null)
+        {
             _vm.Localization.PropertyChanged -= OnLocalizationChanged;
+            _vm.PropertyChanged -= OnVmPropertyChanged;
+        }
         _vm = null;
     }
 

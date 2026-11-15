@@ -44,6 +44,7 @@ public sealed class RpcContractTests
         $"{nameof(IEventCatalogService)}.{nameof(IEventCatalogService.SetHiddenAsync)}",          // EventSummary argument
         $"{nameof(IEventCatalogService)}.{nameof(IEventCatalogService.IsIdentifierAvailableAsync)}",
         $"{nameof(IEventCatalogService)}.{nameof(IEventCatalogService.RenameIdentifierAsync)}",   // EventSummary argument
+        $"{nameof(IEventCatalogService)}.{nameof(IEventCatalogService.DeleteEventAsync)}",        // EventSummary argument; host-only
         $"{nameof(IEventCatalogService)}.{nameof(IEventCatalogService.CreateEventAsync)}",
         $"{nameof(IEventArchiveService)}.{nameof(IEventArchiveService.ExportAsync)}",
         $"{nameof(IEventArchiveService)}.{nameof(IEventArchiveService.PreviewImportAsync)}",

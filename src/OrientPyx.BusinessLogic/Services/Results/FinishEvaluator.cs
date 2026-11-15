@@ -116,12 +116,16 @@ internal static class FinishEvaluator
 
             result[byGroup.Key] = byGroup
                 .OrderBy(v => v.Order)
-                .Select(v => new CourseVariantData(
-                    v.Code, CourseCodes.CourseControls(v.CourseOrder, startFinishCodes, disabledCodes), v.CourseOrder))
+                .Select(v => ToCourseVariant(v, startFinishCodes, disabledCodes))
                 .ToList();
         }
         return result;
     }
+
+    /// <summary>One stored course reduced the way <see cref="BuildCourseVariants"/> reduces it.</summary>
+    public static CourseVariantData ToCourseVariant(
+        GroupCourseVariant row, IReadOnlySet<string> startFinishCodes, IReadOnlySet<string> disabledCodes) =>
+        new(row.Code, CourseCodes.CourseControls(row.CourseOrder, startFinishCodes, disabledCodes), row.CourseOrder);
 
     /// <summary>True when any group on the day uses course variants (so the variants are worth loading).</summary>
     public static bool AnyUsesCourseVariants(

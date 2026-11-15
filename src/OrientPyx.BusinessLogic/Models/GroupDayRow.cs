@@ -42,12 +42,12 @@ public sealed record GroupDayRow(
     int? MaxBirthYear = null,
     /// <summary>How many participants are in this group on this day (read-only, auto-counted).</summary>
     int ParticipantCount = 0,
-    /// <summary>How many scatter («розсіювання») variants this group has on this day. 0 for a non-scatter
-    /// group. Drives the grid's «N варіантів дистанції» course-order cell and the bottom variants editor.</summary>
+    /// <summary>How many named courses (scatter variants, relay leg courses) this group has on this day. Drives
+    /// the bottom variants editor's header.</summary>
     int ScatterVariantCount = 0,
-    /// <summary>Control-point count of the <b>longest</b> scatter variant (розсіювання) on this day — the
-    /// grid's control-count cell reports this for a scatter group instead of counting the unused
-    /// single-order field. 0 for a non-scatter group or one with no variants.</summary>
+    /// <summary>Control-point count of the <b>longest</b> named course on this day — the grid's control-count cell
+    /// reports this for a group with several courses (scatter, relay with leg courses) instead of counting the
+    /// unused single-order field. 0 for a group with no named courses.</summary>
     int ScatterMaxControlCount = 0,
     /// <summary>Relay legs of the group on this day (unset = 1). Read here for the grid's «Етапів» column; it is
     /// written with the relay settings (<c>SaveRelayGroupSettingsAsync</c>), not by <c>UpdateGroupDayRowAsync</c>.</summary>

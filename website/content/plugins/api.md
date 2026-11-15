@@ -13,7 +13,7 @@
 | `OrientPyx.Plugins.Sdk.Toolkit` | готові алгоритми, якими користується й сама програма |
 | `OrientPyx.Plugins.Sdk.Toolkit.Patterns` | розбір і перевірка шаблонів змішаного напрямку |
 
-Версія API — `ApiVersion.Current` = 2 (див. [`ApiVersion`](#apiversion)). Що з цього випливає для сумісності — у
+Версія API — `ApiVersion.Current` = 3 (див. [`ApiVersion`](#apiversion)). Що з цього випливає для сумісності — у
 [Поширення і версії](sharing.md#versions).
 
 ## Плагін {#plugin}
@@ -57,16 +57,17 @@
 
 ### `ApiVersion` {#apiversion}
 
-`public const int Current = 2` — версія API, яку надає програма. Нова версія лише **додає** можливості: плагін,
+`public const int Current = 3` — версія API, яку надає програма. Нова версія лише **додає** можливості: плагін,
 написаний для старішої, працює й далі. Несумісна зміна підняла б ще й мажорну версію збірки SDK.
 
 | Версія | Що додала |
 |---|---|
 | 1 | перша версія API (OrientPyx 0.7.0) |
 | 2 | імпорт додаткових полів (`FieldImport`, `AddParticipantField(…, FieldImport)`), звіти (`Report`, `AddReport<T>`), `ParticipantView.Dussh` і `Qualification` |
+| 3 | налаштування виду змагань групи у звіті (`ReportGroup.Settings`) |
 
-Плагін, який користується можливостями версії 2, ставить `MinApiVersion: 2` — тоді старіша програма чесно скаже
-«Needs plugin API 2» на сторінці «Плагіни», замість помилки під час запуску.
+Плагін, який користується можливостями версії 2, ставить `MinApiVersion: 2` (версії 3 — `MinApiVersion: 3`) — тоді
+старіша програма чесно скаже «Needs plugin API 2» на сторінці «Плагіни», замість помилки під час запуску.
 
 ### `ParticipantFieldDef`
 
@@ -742,6 +743,7 @@ public sealed class ClubRanking : Report
 |---|---|
 | `string Name` | назва групи |
 | `string Discipline` | вид змагань групи на цей день (свій або дня) |
+| `SettingValues Settings`, `T Setting<T>(string key)` | API 3. Налаштування виду змагань групи на цей день — ті самі значення, що бачать його правила (`ctx.Setting` в `AdjustContext`…): збережені для дня, для змагання, інакше типові. Порожньо для вбудованого виду змагань і для вимкненого плагіна |
 | `IReadOnlyList<ReportResult> Results` | усі учасники групи на дні з результатом: спершу з місцем за місцем, далі решта за ПІБ. В естафеті — усі учасники етапів, з місцем і очками команди |
 | `IReadOnlyList<ReportTeam> Teams` | команди естафети (спершу з місцем); порожньо в інших видах змагань |
 

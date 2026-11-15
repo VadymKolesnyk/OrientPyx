@@ -100,6 +100,13 @@ public sealed class ReportGroup
     /// <summary>The group's discipline id on the day (its own, else the day's).</summary>
     public string Discipline { get; init; } = string.Empty;
 
+    /// <summary>The settings of the group's discipline on the day (<see cref="Sdk.Discipline.Settings"/>: the day's
+    /// values, the competition's, else the defaults — what the discipline's own contexts see); empty for a built-in
+    /// or a switched-off plugin's discipline (API 3).</summary>
+    public SettingValues Settings { get; init; } = SettingValues.Empty;
+
+    public T Setting<T>(string key) => Settings.Get<T>(key);
+
     /// <summary>Every participant of the group on the day with their result — placed ones first by place, then the
     /// rest by name. In a relay group: every runner, with the team's place and points.</summary>
     public IReadOnlyList<ReportResult> Results { get; init; } = [];

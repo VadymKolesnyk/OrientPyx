@@ -123,9 +123,10 @@ public interface ICompetitionEditorService
 
     /// <summary>
     /// «Варіанти за номерами» for the current day: every number's variation (relay leg numbers «101.2», scatter bibs)
-    /// as imported from the course-setting program or typed on «Команди», with its group, control order and runner;
-    /// plus the leg numbers of «за номером етапу» relay teams that have none. In the groups' order, then by number and
-    /// leg. Empty when no competition/day is selected.
+    /// as imported from the course-setting program or typed on «Команди», with its group, the group of the team or
+    /// runner holding the number, control order and runner; separately the numbers that should have a variation and
+    /// have none (see <see cref="NumberVariantsData.Unassigned"/>), and each group's variations. In the groups' order,
+    /// then by number and leg. Empty when no competition/day is selected. Edited through <see cref="SetLegCoursesAsync"/>.
     /// </summary>
     Task<NumberVariantsData> GetNumberVariantsAsync(CancellationToken cancellationToken = default);
 

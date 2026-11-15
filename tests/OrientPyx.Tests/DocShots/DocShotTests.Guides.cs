@@ -106,7 +106,7 @@ public sealed partial class DocShotTests
         await _s.WaitUntilAsync(() => teams.Teams.Count > 0, "relay teams listed");
         await _s.OnUiAsync(() => teams.SelectedTeam = teams.Teams[0]);
         await _s.SettleLongAsync();
-        await _s.ShotAsync("relay-teams", "«Змагання → Команди (естафета)»: команди і їхні етапи.");
+        await _s.ShotAsync("relay-teams", "«Змагання → Естафета → Команди»: команди і їхні етапи.");
 
         await _s.PageAsync<MassStartDrawViewModel>(vm => vm.OpenMassStartDrawCommand);
         await _s.ShotAsync("relay-mass-start", "«Старт → Масовий старт» для естафети: старт 1-го етапу і перезапуски етапів.");

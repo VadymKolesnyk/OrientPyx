@@ -6,6 +6,7 @@ using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.ViewModels.Dialogs;
 
 namespace OrientPyx.Presentation.ViewModels;
 
@@ -13,6 +14,7 @@ namespace OrientPyx.Presentation.ViewModels;
 /// Competition picker shown until a selection is made. Lists competitions discovered by
 /// scanning the events folder and lets the user open one or create a new one. Competitions can be
 /// hidden from the list; a "show hidden" switch reveals them (and lets the user unhide them).
+/// A competition can also be deleted for good, after a confirmation that offers to save its archive first.
 /// </summary>
 public sealed partial class EventSelectionViewModel : ViewModelBase
 {
@@ -22,6 +24,11 @@ public sealed partial class EventSelectionViewModel : ViewModelBase
     private readonly ISessionService _session;
     private readonly IBusyService _busy;
     private readonly IWorkspaceMode _mode;
+    private readonly IDialogService _dialogs;
+    private readonly IEventArchiveFlow _archiveFlow;
+    private readonly IBackgroundActivityService _activities;
+    private readonly IToastService _toasts;
+    private readonly IActivityLog _log;
 
     // Every scanned competition, hidden or not. The visible Events collection is a filtered view.
     private readonly List<EventSummaryRowViewModel> _all = [];
@@ -40,7 +47,12 @@ public sealed partial class EventSelectionViewModel : ViewModelBase
         IBusyService busy,
         ILocalizationService localization,
         ITableLayoutStore layoutStore,
-        IWorkspaceMode mode)
+        IWorkspaceMode mode,
+        IDialogService dialogs,
+        IEventArchiveFlow archiveFlow,
+        IBackgroundActivityService activities,
+        IToastService toasts,
+        IActivityLog log)
     {
         _catalog = catalog;
         _eventStore = eventStore;
@@ -48,6 +60,11 @@ public sealed partial class EventSelectionViewModel : ViewModelBase
         _session = session;
         _busy = busy;
         _mode = mode;
+        _dialogs = dialogs;
+        _archiveFlow = archiveFlow;
+        _activities = activities;
+        _toasts = toasts;
+        _log = log;
         Localization = localization;
         LayoutStore = layoutStore;
         // The role switches on a transport thread; the «Станція · host» line follows it.
@@ -58,6 +75,9 @@ public sealed partial class EventSelectionViewModel : ViewModelBase
     /// <summary>True while the listed competitions are a host's (this instance is a station).</summary>
     public bool IsStation => _mode.IsStation;
 
+    /// <summary>False on a station: the listed competitions are the host's, and only the host deletes them.</summary>
+    public bool CanDelete => !_mode.IsStation;
+
     /// <summary>«Станція · Головний-ноут» under the title while connected to a host.</summary>
     public string StationLine => _mode.IsStation
         ? string.Format(Localization.Get("Network.Role.Station"), _mode.Station?.HostName ?? string.Empty)
@@ -67,6 +87,7 @@ public sealed partial class EventSelectionViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(IsStation));
         OnPropertyChanged(nameof(StationLine));
+        OnPropertyChanged(nameof(CanDelete));
     }
 
     /// <summary>Raised by «Підключитися до хоста…» — the root coordinator opens the «Спільна робота» overlay.</summary>
@@ -181,6 +202,70 @@ public sealed partial class EventSelectionViewModel : ViewModelBase
         row.RaiseHiddenChanged();
         ApplyFilter();
     }
+
+    /// <summary>
+    /// Deletes a competition for good (the per-row bin and the Delete key; the selected row when none is given). One
+    /// dialog both confirms and offers the archive: «Зберегти архів і видалити» saves the <c>.opyx</c> first — a
+    /// cancelled or failed save deletes nothing — and «Видалити без архіву» deletes straight away. Blocked while a
+    /// background process runs (it may keep writing into the competition's folder) and on a station.
+    /// </summary>
+    [RelayCommand]
+    private async Task DeleteAsync(EventSummaryRowViewModel? row)
+    {
+        row ??= SelectedEvent;
+        if (row is null || !CanDelete)
+            return;
+        var summary = row.Summary;
+        var name = string.IsNullOrWhiteSpace(summary.Name) ? summary.Identifier : summary.Name;
+
+        if (_activities.IsAnyActive)
+        {
+            await ShowDeleteMessageAsync("DeleteEvent.BusyActivities");
+            return;
+        }
+
+        var choice = await _dialogs.ChooseAsync(new ConfirmDialogViewModel(
+            Localization, "DeleteEvent.Title", "DeleteEvent.Message", confirmKey: "DeleteEvent.SaveAndDelete")
+        {
+            AlternateKey = "DeleteEvent.DeleteWithoutArchive",
+            MessageArgs = [name, summary.Identifier],
+        });
+        if (choice == ConfirmDialogResult.Cancel)
+            return;
+
+        // The archive first. A cancelled save dialog or a failed export (the flow shows its error) keeps the competition.
+        var archived = choice == ConfirmDialogResult.Confirm;
+        if (archived && !await _archiveFlow.ExportAsync(summary))
+            return;
+
+        _log.Action($"Delete competition '{summary.Identifier}' ({(archived ? "archive saved first" : "without an archive")})");
+        try
+        {
+            await _busy.RunAsync(() => _catalog.DeleteEventAsync(summary));
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"Не вдалося видалити змагання '{summary.Identifier}'", ex);
+            await ShowDeleteMessageAsync(ex switch
+            {
+                StationsActiveException => "DeleteEvent.StationsActive",
+                EventFolderInUseException => "DeleteEvent.InUse",
+                _ => "DeleteEvent.Error",
+            });
+            return;
+        }
+
+        _all.Remove(row);
+        ApplyFilter();
+        _toasts.Show(Localization.Get("DeleteEvent.Title"), string.Format(Localization.Get("DeleteEvent.Done"), name));
+    }
+
+    // A plain «message + OK» box under the delete dialog's title.
+    private Task ShowDeleteMessageAsync(string messageKey) =>
+        _dialogs.ConfirmAsync(new ConfirmDialogViewModel(Localization, "DeleteEvent.Title", messageKey, confirmKey: "Common.Ok")
+        {
+            IsMessage = true,
+        });
 
     [RelayCommand]
     private void Create() => CreateRequested?.Invoke(this, EventArgs.Empty);

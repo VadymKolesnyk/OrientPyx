@@ -40,9 +40,6 @@ public sealed partial class GroupsViewModel
     // True while the selected relay group names its leg courses — the variants table then edits them.
     private bool _relayNamedCourses;
 
-    // True while that table holds one row per leg («своя на кожен етап»).
-    private bool _relayPerLegCourses;
-
     public bool IsRelayByBib => SelectedRelayCourseMode?.Value == RelayCourseMode.ByBib;
 
     public bool IsRelayTeamSet => SelectedRelayCourseMode?.Value == RelayCourseMode.TeamSet;
@@ -102,24 +99,26 @@ public sealed partial class GroupsViewModel
         SyncRelayCourseEditor();
     }
 
-    // The variants table edits the relay's named courses whenever the mode uses them — a row per leg when every leg has
-    // its own course.
+    // The variants table edits the relay's named courses whenever the mode uses them — the same rows in every such mode,
+    // «своя на кожен етап» adds the «Етап» column.
     private void SyncRelayCourseEditor()
     {
         var named = SelectedRelayCourseMode is { Value: not RelayCourseMode.Group };
-        var perLeg = named && IsRelayPerLeg;
+        // The grid's course-order cell reads «(різні)» while the legs take named courses.
+        if (SelectedRelayCourseMode is { } mode && SelectedGroup is { } row && row.GroupId == _relaySettings?.GroupId)
+            row.ShowRelayCourseMode(mode.Value);
         OnPropertyChanged(nameof(IsRelayByBib));
         OnPropertyChanged(nameof(IsRelayTeamSet));
         OnPropertyChanged(nameof(IsRelayPerLeg));
-        if (named == _relayNamedCourses && perLeg == _relayPerLegCourses
-            && IsScatterEditorVisible == (named || SelectedGroup?.IsScatter == true))
+        if (named == _relayNamedCourses && IsScatterEditorVisible == (named || SelectedGroup?.IsScatter == true))
         {
-            // The same table: its leg rows follow a leg count re-read from the store (another station's edit).
-            ResizeLegCourseRows();
+            // The same table: only the «Етап» column follows the mode; its checks follow a leg count re-read from the
+            // store (another station's edit).
+            IsLegColumnVisible = IsRelayCoursesEditor && IsRelayPerLeg;
+            RefreshLegChecks();
             return;
         }
         _relayNamedCourses = named;
-        _relayPerLegCourses = perLeg;
         _ = RefreshScatterEditorAsync();
     }
 
@@ -142,8 +141,8 @@ public sealed partial class GroupsViewModel
             && SelectedGroup is { } row && row.GroupId == _relaySettings?.GroupId)
         {
             row.ShowLegCount(legs);
-            // «Своя на кожен етап»: a row per leg.
-            ResizeLegCourseRows();
+            // «Своя на кожен етап»: the legs left without a course, the courses on no such leg.
+            RefreshLegChecks();
         }
         QueueRelaySave();
     }

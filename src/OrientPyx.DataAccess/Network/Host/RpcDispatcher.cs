@@ -50,6 +50,9 @@ internal sealed class RpcDispatcher
         if (!typeof(Task).IsAssignableFrom(method.ReturnType))
             return RpcErrors.Outcome(400, RpcErrorKinds.BadRequest, $"'{ifaceName}.{methodName}' is not callable over the network.", typeof(ArgumentException).FullName);
 
+        if (Wire.HostOnlyMethods.Contains($"{ifaceName}.{methodName}"))
+            return RpcErrors.Outcome(400, RpcErrorKinds.BadRequest, $"'{ifaceName}.{methodName}' runs on the host only.", typeof(NotSupportedException).FullName);
+
         var resultType = method.ReturnType.IsGenericType ? method.ReturnType.GetGenericArguments()[0] : typeof(void);
 
         object?[] mapped;

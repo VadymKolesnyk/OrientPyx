@@ -15,14 +15,7 @@ public static class RelayLegCourses
     /// <summary>A course set written back the way <see cref="ParseSet"/> reads it.</summary>
     public static string FormatSet(IEnumerable<string> codes) => string.Join(' ', codes.Select(c => c.Trim()).Where(c => c.Length > 0));
 
-    /// <summary>«Своя на кожен етап» (<see cref="Enums.RelayCourseMode.PerLeg"/>): the code of the group's course
-    /// variant that holds leg <paramref name="leg"/>'s course — the leg number itself («2»).</summary>
+    /// <summary>A leg number as text («2») — how a «своя на кожен етап» leg without a course is reported, and the code
+    /// a course on that leg needs no mark for (courses typed before the «Етап» column were coded so).</summary>
     public static string LegCode(int leg) => leg.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-    /// <summary>The leg a <see cref="LegCode"/> names, or null for any other code.</summary>
-    public static int? LegOfCode(string? code) =>
-        int.TryParse(code?.Trim(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture,
-            out var leg) && leg >= 1 && LegCode(leg) == code!.Trim()
-            ? leg
-            : null;
 }

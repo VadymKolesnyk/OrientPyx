@@ -224,7 +224,7 @@ public sealed class PluginExtensionsTests
         Assert.Null(output.Error);
         var doc = Assert.IsType<ResultProtocolDocument>(output.Document);
         Assert.Equal("Перевірка K (стать і рік народження)", doc.Title);   // no title of its own — the report's name
-        Assert.Equal(["№", "Команда / учасник", "Рік", "Стать", "Проблема"], doc.ColumnHeaders);
+        Assert.Equal(["№", "Команда / учасник", "Рік", "Стать", "K", "Проблема"], doc.ColumnHeaders);
         Assert.Equal("06.06.2026", doc.DateText);
         Assert.Empty(doc.Officials);                                     // the report asks for none
         Assert.NotNull(doc.Footer);
@@ -234,12 +234,13 @@ public sealed class PluginExtensionsTests
         Assert.Equal("W", section.GroupName);
         Assert.Equal(6, section.Rows.Count);
         Assert.True(section.Rows[0].IsTeamHeader);
-        Assert.Equal(["601", "Odd team", "", "", ""], section.Rows[0].Cells);
+        Assert.Equal(["601", "Odd team", "", "", "", ""], section.Rows[0].Cells);
         Assert.True(section.Rows[1].IsSubRow);
-        Assert.Equal(["1", "Man", "1990", "Ч", ""], section.Rows[1].Cells);
-        Assert.Contains("«M»", section.Rows[2].Cells[4]);
-        Assert.Equal("немає року народження", section.Rows[4].Cells[4]);
-        Assert.Equal("не вказано стать", section.Rows[5].Cells[4]);
+        Assert.Equal(["1", "Man", "1990", "Ч", "0.98", ""], section.Rows[1].Cells);   // 36 years in 2026 → «35–39»
+        Assert.Equal("", section.Rows[2].Cells[4]);                                    // «M» — no K
+        Assert.Contains("«M»", section.Rows[2].Cells[5]);
+        Assert.Equal("немає року народження", section.Rows[4].Cells[5]);
+        Assert.Equal("не вказано стать", section.Rows[5].Cells[5]);
         Assert.NotEmpty(Sp.GetRequiredService<IResultProtocolWriter>().Write(doc));
 
         // The report's setting, saved for the competition: every team.
@@ -249,6 +250,17 @@ public sealed class PluginExtensionsTests
         Assert.Equal(false, settings!.Values["onlyProblems"]);
         var all = await Editor.BuildPluginReportAsync("weighted.check", c.Day(1).Id, Labels());
         Assert.Equal(9, all.Document!.Sections.Single().Rows.Count);
+        Assert.Equal(["2", "Fine2", "1990", "Ж", "0.87", ""], all.Document.Sections.Single().Rows[8].Cells);
+
+        // K comes from the competition's own coefficient table, not the default one.
+        await Editor.SaveDisciplineSettingsAsync(c.Day(1).Id, new DisciplineId("weighted.relay"),
+            new Dictionary<string, object?>
+            {
+                ["k"] = new TableValue([new Dictionary<string, string?> { ["range"] = "0–99", ["Ч"] = "0.5", ["Ж"] = "0.4" }])
+            });
+        var edited = await Editor.BuildPluginReportAsync("weighted.check", c.Day(1).Id, Labels());
+        Assert.Equal("0.50", edited.Document!.Sections.Single().Rows[1].Cells[4]);
+        Assert.Equal("0.40", edited.Document.Sections.Single().Rows[8].Cells[4]);
 
         // Everyone fixed: no sections, the «all good» line.
         await Editor.SavePluginReportSettingsAsync("weighted.check", c.Day(1).Id,

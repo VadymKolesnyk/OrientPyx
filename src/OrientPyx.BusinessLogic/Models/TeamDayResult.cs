@@ -76,16 +76,22 @@ public sealed record RelayLegResult(
     bool Pending)
 {
     /// <summary>The leg's named course (Р-44, «Етап 2 — дистанція B»); null when the group runs one course for all
-    /// legs, or — in a «набір на команду» — while the leg is not read yet («не визначено», Р-43).</summary>
+    /// legs, or — in a «набір на команду» / a «своя на кожен етап» leg with several courses — while the leg is not read
+    /// yet («не визначено», Р-43).</summary>
     public string? CourseCode { get; init; }
 
-    /// <summary>The group gives every leg its own course («своя на кожен етап», <see cref="Enums.RelayCourseMode.PerLeg"/>):
-    /// <see cref="CourseCode"/> is the leg number, so the outputs do not mark it beside the runner.</summary>
+    /// <summary>The leg's course itself, as judged — the splits judge against it whatever its code (a «своя на кожен
+    /// етап» code may be blank or repeat on another leg). Not serialized.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public CourseVariantData? Course { get; init; }
+
+    /// <summary>The group gives every leg its own course («своя на кожен етап», <see cref="Enums.RelayCourseMode.PerLeg"/>).</summary>
     public bool CoursePerLeg { get; init; }
 
     /// <summary>The course code to show beside the runner («дистанція B»): <see cref="CourseCode"/>, except for a
-    /// <see cref="CoursePerLeg"/> leg, whose course the leg number already names.</summary>
-    public string? ShownCourseCode => CoursePerLeg ? null : CourseCode;
+    /// <see cref="CoursePerLeg"/> course coded with the leg's own number («2» on leg 2), which the leg already names.</summary>
+    public string? ShownCourseCode =>
+        CoursePerLeg && CourseCode?.Trim() == RelayLegCourses.LegCode(Leg) ? null : CourseCode;
 
     /// <summary>The group names its leg courses but none could be assigned to this leg (Р-41).</summary>
     public bool CourseUnassigned { get; init; }

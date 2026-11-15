@@ -307,17 +307,19 @@ public sealed partial class CompetitionEditorService
             return 0;
         var dayId = CurrentDayId;
         await EnsureDayEditableAsync(dayId, cancellationToken);
-        // The group is the one of the team holding the number (none yet → the row names no group).
-        var groupOfNumber = (await _eventStore.GetRelayTeamsAsync(FolderPath, dayId, cancellationToken))
-            .Where(t => t.Number is not null)
-            .GroupBy(t => t.Number!.Value)
-            .ToDictionary(g => g.Key, g => g.First().GroupId);
+        // The group is the given one, else the one of the team holding the number (none yet → the row names no group).
+        var groupOfNumber = entries.All(e => e.GroupId is not null)
+            ? new Dictionary<int, Guid>()
+            : (await _eventStore.GetRelayTeamsAsync(FolderPath, dayId, cancellationToken))
+                .Where(t => t.Number is not null)
+                .GroupBy(t => t.Number!.Value)
+                .ToDictionary(g => g.Key, g => g.First().GroupId);
         var rows = entries
             .Where(e => e.TeamNumber > 0 && e.Leg >= 1)
             .Select(e => new LegCourseAssignment
             {
                 EventDayId = dayId,
-                GroupId = groupOfNumber.TryGetValue(e.TeamNumber, out var g) ? g : null,
+                GroupId = e.GroupId ?? (groupOfNumber.TryGetValue(e.TeamNumber, out var g) ? g : null),
                 TeamNumber = e.TeamNumber,
                 Leg = e.Leg,
                 CourseKey = (e.CourseKey ?? string.Empty).Trim()

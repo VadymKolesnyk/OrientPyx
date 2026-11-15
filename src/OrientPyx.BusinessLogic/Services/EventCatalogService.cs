@@ -1,24 +1,39 @@
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
+using OrientPyx.BusinessLogic.Models.Network;
 
 namespace OrientPyx.BusinessLogic.Services;
 
-/// <summary>Lists competitions by scanning the events folder and creates new ones.</summary>
+/// <summary>Lists competitions by scanning the events folder, creates, renames and deletes them.</summary>
 public sealed class EventCatalogService : IEventCatalogService
 {
+    // Prefix of the hidden sibling a deleted competition folder is moved to before it is removed (the scanner skips
+    // dot-folders, so a leftover never shows up in the list).
+    private const string DeletedFolderPrefix = ".deleted-";
+
     private readonly IAppSettingsService _settings;
     private readonly IEventFolderScanner _scanner;
     private readonly IEventStore _eventStore;
+    private readonly IAppStore _appStore;
+    private readonly IActivityLog _log;
     private readonly INetworkHost? _host;
 
     /// <param name="host">The network host, when this instance can serve stations: a competition stations are working
-    /// on must not be renamed under them.</param>
-    public EventCatalogService(IAppSettingsService settings, IEventFolderScanner scanner, IEventStore eventStore, INetworkHost? host = null)
+    /// on must not be renamed or deleted under them.</param>
+    public EventCatalogService(
+        IAppSettingsService settings,
+        IEventFolderScanner scanner,
+        IEventStore eventStore,
+        IAppStore appStore,
+        IActivityLog log,
+        INetworkHost? host = null)
     {
         _settings = settings;
         _scanner = scanner;
         _eventStore = eventStore;
+        _appStore = appStore;
+        _log = log;
         _host = host;
     }
 
@@ -185,6 +200,115 @@ public sealed class EventCatalogService : IEventCatalogService
             EndDate = info?.EndDate ?? competition.EndDate,
             IsHidden = info?.IsHidden ?? competition.IsHidden
         };
+    }
+
+    public async Task DeleteEventAsync(EventSummary competition, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(competition);
+
+        // Stations address the competition by its identifier; deleting it under them would strand their session.
+        var activeStations = _host?.ActiveStationsOn(competition.Identifier) ?? [];
+        if (activeStations.Count > 0)
+            throw new StationsActiveException(activeStations.ToList());
+
+        var paths = await _settings.GetPathsAsync(cancellationToken);
+        var folder = CompetitionFolder(paths.EventsPath, competition.FolderPath);
+        var parent = Path.GetDirectoryName(folder)!;
+
+        // A leftover of an earlier delete that could not finish (a file was still locked) goes now, if it can.
+        RemoveLeftovers(parent);
+
+        if (Directory.Exists(folder))
+        {
+            // The activity log keeps writing into the competition last opened; one more line there would re-create the
+            // deleted folder.
+            if (IsInside(_log.LogFilePath, folder))
+                _log.UseSharedFolder();
+
+            // Fold the write-ahead log back and drop the pooled connections: Windows refuses to move a folder holding an
+            // open file, and the export just before a delete leaves pooled connections on this very database.
+            await _eventStore.ReleaseAsync(folder, cancellationToken);
+
+            // Moved aside as a whole first: a recursive delete removes files one by one and would stop midway on a file
+            // another OrientPyx window holds open, leaving a half-wiped competition. The move is all-or-nothing.
+            var trash = Path.Combine(parent, $"{DeletedFolderPrefix}{Guid.NewGuid():N}");
+            try
+            {
+                Directory.Move(folder, trash);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                throw new EventFolderInUseException($"Competition folder '{folder}' is in use.", ex);
+            }
+
+            TryDeleteFolder(trash);
+            _log.Action($"Competition '{competition.Identifier}' deleted");
+        }
+
+        // Startup must not look for it any more (a station pointer names a host's competition, never this one).
+        var last = await _appStore.GetLastSessionAsync(cancellationToken);
+        if (last.Mode != WorkspaceRole.Station
+            && string.Equals(last.Identifier, competition.Identifier, StringComparison.OrdinalIgnoreCase))
+        {
+            await _appStore.SaveLastSessionAsync(new LastSession(null, null), cancellationToken);
+        }
+    }
+
+    // The folder to delete — only ever a competition folder directly under the events path: never the events folder
+    // itself, a hidden service folder, or a path from anywhere else.
+    private static string CompetitionFolder(string eventsPath, string folderPath)
+    {
+        if (string.IsNullOrWhiteSpace(folderPath))
+            throw new ArgumentException("The competition has no folder.", nameof(folderPath));
+
+        var root = Path.GetFullPath(eventsPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var folder = Path.GetFullPath(folderPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var name = Path.GetFileName(folder);
+        if (string.IsNullOrEmpty(name)
+            || name.StartsWith('.')
+            || !string.Equals(Path.GetDirectoryName(folder), root, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException($"'{folderPath}' is not a competition folder under '{eventsPath}'.", nameof(folderPath));
+        }
+        return folder;
+    }
+
+    private static bool IsInside(string path, string folder)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+        try
+        {
+            return Path.GetFullPath(path).StartsWith(folder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
+    private static void RemoveLeftovers(string eventsPath)
+    {
+        try
+        {
+            foreach (var leftover in Directory.EnumerateDirectories(eventsPath, DeletedFolderPrefix + "*"))
+                TryDeleteFolder(leftover);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    // The competition is already out of the list once moved aside; a file still locked inside only delays the cleanup.
+    private static void TryDeleteFolder(string folder)
+    {
+        try
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 
     public async Task<bool> IsIdentifierAvailableAsync(string identifier, CancellationToken cancellationToken = default)

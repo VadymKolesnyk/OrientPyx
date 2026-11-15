@@ -242,6 +242,19 @@ public sealed class CompetitionBuilder
             .ToList());
     }
 
+    /// <summary>A relay «своя на кожен етап»: the group's courses with the leg each is run on.</summary>
+    public async Task SetLegCoursesAsync(string groupName, int dayNumber, params (string Code, int? Leg, string Order)[] courses)
+    {
+        var day = Day(dayNumber);
+        var group = Groups[groupName];
+        await _store.ReplaceCourseVariantsForGroupAsync(Folder, day.Id, group.Id, courses
+            .Select((v, i) => new GroupCourseVariant
+            {
+                EventDayId = day.Id, GroupId = group.Id, Code = v.Code, CourseOrder = v.Order, Order = i, Leg = v.Leg
+            })
+            .ToList());
+    }
+
     public async Task SelectAsync(int dayNumber = 1)
     {
         var session = _sp.GetRequiredService<ISessionService>();

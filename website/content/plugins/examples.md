@@ -141,7 +141,7 @@ public abstract class MissedPenaltyDiscipline : Discipline
 ```csharp
 public sealed class WeightedRelayPlugin : IOrientPyxPlugin
 {
-    public PluginInfo Info => new("weighted", "Зважена естафета", "1.2", MinApiVersion: 2,
+    public PluginInfo Info => new("weighted", "Зважена естафета", "1.3", MinApiVersion: 3,
         Author: "OrientPyx", Description: "Час етапу × коефіцієнт за віком і статтю; час команди = Σ T·K.");
 
     public void Register(IPluginBuilder p)
@@ -173,7 +173,8 @@ internal static class Gender
 «Групи» — або раніше, коли імпорт учасників принесе стать: `FieldImport` каже, що в UOF вона лежить в `<Pol>`
 (`1`/`0`), в IOF — в атрибуті `sex` (`M`/`F`), а в CSV колонка може зватися «Gender». Переклад діє лише під час
 імпорту; під час введення вручну регістр не важливий («ч» стане «Ч»), а «M» лишиться «M» і почервоніє. Підпис
-«Стать» — звичайний текст, він не перекладається. `MinApiVersion: 2` — бо `FieldImport` і звіти з'явилися в API 2.
+«Стать» — звичайний текст, він не перекладається. `MinApiVersion: 3` — бо `FieldImport` і звіти з'явилися в API 2, а
+налаштування виду змагань у звіті (колонка «K» у «Перевірці K») — в API 3.
 
 ### Вид змагань
 
@@ -228,13 +229,20 @@ internal static class Coefficients
         ["11–12", "0.86", "0.82"],
         // … ще 10 рядків …
         ["70+", "0.71", "0.58"]);
+
+    // K учасника: вік у рік дня × стать; поза таблицею — найближчий рядок. null — немає року чи статі
+    // (або K для них).
+    public static double? Of(TableValue? table, ParticipantView participant, DateOnly date) =>
+        participant.BirthYear is { } year && participant.Field("gender") is { } gender
+            ? RangeTable.FromSetting(table).Lookup(Age.InYear(year, date), gender)
+            : null;
 }
 ```
 
 Ключі колонок «Ч» і «Ж» дорівнюють значенням поля «Стать» — тож значення поля можна прямо передати в
 `RangeTable.Lookup` як ключ колонки. Колонка `"range"` — діапазон віку; `RangeTable.FromSetting` читає її за
 замовчуванням. `TableValue.FromRows` будує значення за замовчуванням з позиційних рядків; кнопка «Скинути до
-типової» в редакторі таблиці повертає саме його.
+типової» в редакторі таблиці повертає саме його. `Of` шукає K учасника — ним користуються і вид змагань, і звіт.
 
 ### Коефіцієнт для етапу
 
@@ -243,14 +251,7 @@ internal static class Coefficients
     {
         ctx.Row.Set("time", ctx.Time);   // «Час» — і тоді, коли K не визначено
 
-        double? k = null;
-        if (ctx.Participant.BirthYear is { } year && ctx.Participant.Field("gender") is { } gender)
-        {
-            var table = RangeTable.FromSetting(ctx.Setting<TableValue>("k"));
-            k = table.Lookup(Age.InYear(year, ctx.Date), gender);   // поза таблицею — найближчий рядок
-        }
-
-        if (k is not { } coefficient)
+        if (Coefficients.Of(ctx.Setting<TableValue>("k"), ctx.Participant, ctx.Date) is not { } coefficient)
         {
             // Немає року народження чи статі (або K для них): команда без місця й очок,
             // етап рахується з K = 1.
@@ -298,22 +299,25 @@ public sealed class CheckReport : Report
     public override ReportDocument Build(ReportContext ctx)
     {
         var onlyProblems = ctx.Setting<bool>("onlyProblems");
+        var date = ctx.Day?.Date ?? DateOnly.FromDateTime(DateTime.Today);
         var sections = new List<ReportSection>();
         foreach (var group in ctx.Day?.Groups ?? [])
         {
             if (!group.Discipline.StartsWith("weighted.", StringComparison.Ordinal))
                 continue;
 
+            var table = group.Setting<TableValue>("k");   // таблиця K змагання (API 3)
             var rows = new List<ReportRow>();
             foreach (var team in group.Teams)
             {
                 var legs = team.Legs.Select((runner, i) => (Leg: i + 1, Runner: runner, Problem: Problem(ctx, runner))).ToList();
                 if (onlyProblems && legs.All(l => l.Problem is null))
                     continue;
-                rows.Add(ReportRow.Caption(team.Number > 0 ? team.Number : null, team.Name, null, null, null));
+                rows.Add(ReportRow.Caption(team.Number > 0 ? team.Number : null, team.Name, null, null, null, null));
                 foreach (var (leg, runner, problem) in legs)
                     rows.Add(ReportRow.Sub(leg, runner?.Participant.FullName ?? ctx.Text("report.noRunner"),
-                        runner?.Participant.BirthYear, runner?.Participant.Field("gender"), problem));
+                        runner?.Participant.BirthYear, runner?.Participant.Field("gender"),
+                        runner is null ? null : Coefficients.Of(table, runner.Participant, date), problem));
             }
             if (rows.Count > 0)
                 sections.Add(new ReportSection { Title = group.Name, Rows = rows });
@@ -329,6 +333,7 @@ public sealed class CheckReport : Report
                 new ReportColumn("report.col.name") { Wrap = true },
                 new ReportColumn("report.col.year"),
                 new ReportColumn("report.col.gender"),
+                new ReportColumn("column.k"),
                 new ReportColumn("report.col.problem") { Wrap = true },
             ],
             Sections = sections,
@@ -344,8 +349,11 @@ public sealed class CheckReport : Report
   «Перевірка K». Сторінку звіту, вибір дня, експорт у Word і шапку документа дає програма.
 - `ctx.Day.Groups` — групи вибраного дня з уже порахованими результатами; `group.Teams` — команди естафети з
   учасниками за етапами (`null` — етап нікому не призначено).
+- `group.Setting<TableValue>("k")` — таблиця коефіцієнтів, збережена для змагання (без неї — типова): та сама, з
+  якої рахує `AdjustTime`. Тож колонка «K» показує коефіцієнт кожного учасника ще до старту, коли результатів
+  немає, і порожня там, де K не визначиться.
 - `ReportRow.Caption` — жирний рядок команди, `ReportRow.Sub` — рядки учасників під нею з відступом. `null` у
-  клітинці — порожньо, число й рік друкуються як є.
+  клітинці — порожньо, рік друкується як є, дробове число — з двома знаками («0.98»).
 - Текст, який звіт кладе в клітинки, програма не перекладає — тому `ctx.Text("report.noRunner")`. Підписи колонок
   (`ReportColumn`) — ключі рядків плагіна, їх програма перекладає сама.
 - Налаштування звіту — ті самі `Setting.*`; «Лише команди з проблемами» з `SettingScope.Competition` одне на все
