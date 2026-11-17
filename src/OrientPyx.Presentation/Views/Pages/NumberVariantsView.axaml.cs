@@ -50,6 +50,8 @@ public partial class NumberVariantsView : UserControl
     {
         if (e.PropertyName == nameof(NumberVariantsViewModel.HasUnassigned))
             ApplyUnassignedRow();
+        else if (e.PropertyName == nameof(NumberVariantsViewModel.ShowsTeams))
+            BuildBands();
     }
 
     // The lower row takes its share of the height only while it has rows; otherwise it collapses to nothing.
@@ -83,12 +85,17 @@ public partial class NumberVariantsView : UserControl
         if (_vm is null)
             return;
 
+        // A day with no relay group holds only scatter runners' numbers: no «Команда» column, and the holder's group is
+        // the runner's («Група учасника»).
+        var teams = _vm.ShowsTeams;
+
         // Upper table: the numbers with a variation. «Група» and «Група команди» turn red together when they differ.
-        Sheet.Bands = new SheetColumnBuilder(_vm.Localization)
+        var upper = new SheetColumnBuilder(_vm.Localization)
             .Text("NumberVariants.Col.Group", nameof(NumberVariantRowViewModel.GroupName), minWidth: 110)
             .CellTint(nameof(NumberVariantRowViewModel.GroupMismatch), ProblemBrush,
                       tooltipPath: nameof(NumberVariantRowViewModel.MismatchTooltip))
-            .Text("NumberVariants.Col.HolderGroup", nameof(NumberVariantRowViewModel.HolderGroupName), minWidth: 140)
+            .Text(teams ? "NumberVariants.Col.HolderGroup" : "NumberVariants.Col.HolderGroup.Scatter",
+                  nameof(NumberVariantRowViewModel.HolderGroupName), minWidth: 140)
             .CellTint(nameof(NumberVariantRowViewModel.GroupMismatch), ProblemBrush,
                       tooltipPath: nameof(NumberVariantRowViewModel.MismatchTooltip))
             .Text("NumberVariants.Col.Number", nameof(NumberVariantRowViewModel.Bib), width: 90,
@@ -98,14 +105,16 @@ public partial class NumberVariantsView : UserControl
                    nameof(NumberVariantRowViewModel.SelectedVariant),
                    nameof(VariantOption.Label), minWidth: 110)
             .CellTint(nameof(NumberVariantRowViewModel.IsProblem), ProblemBrush,
-                      tooltipPath: nameof(NumberVariantRowViewModel.ProblemTooltip))
-            .Text("NumberVariants.Col.Team", nameof(NumberVariantRowViewModel.TeamName), minWidth: 140)
+                      tooltipPath: nameof(NumberVariantRowViewModel.ProblemTooltip));
+        if (teams)
+            upper.Text("NumberVariants.Col.Team", nameof(NumberVariantRowViewModel.TeamName), minWidth: 140);
+        Sheet.Bands = upper
             .Text("NumberVariants.Col.Runner", nameof(NumberVariantRowViewModel.Runner), minWidth: 180)
             .Text("NumberVariants.Col.CourseOrder", nameof(NumberVariantRowViewModel.CourseOrder), minWidth: 220)
             .Bands;
 
         // Lower table: the numbers still without a variation — the variation cell stays red until one is picked.
-        UnassignedSheet.Bands = new SheetColumnBuilder(_vm.Localization)
+        var lower = new SheetColumnBuilder(_vm.Localization)
             .Text("NumberVariants.Col.Group", nameof(NumberVariantRowViewModel.GroupName), minWidth: 110)
             .Text("NumberVariants.Col.Number", nameof(NumberVariantRowViewModel.Bib), width: 90,
                   sortPath: nameof(NumberVariantRowViewModel.BibSort))
@@ -114,8 +123,10 @@ public partial class NumberVariantsView : UserControl
                    nameof(NumberVariantRowViewModel.SelectedVariant),
                    nameof(VariantOption.Label), minWidth: 110)
             .CellTint(nameof(NumberVariantRowViewModel.IsProblem), ProblemBrush,
-                      tooltipPath: nameof(NumberVariantRowViewModel.ProblemTooltip))
-            .Text("NumberVariants.Col.Team", nameof(NumberVariantRowViewModel.TeamName), minWidth: 140)
+                      tooltipPath: nameof(NumberVariantRowViewModel.ProblemTooltip));
+        if (teams)
+            lower.Text("NumberVariants.Col.Team", nameof(NumberVariantRowViewModel.TeamName), minWidth: 140);
+        UnassignedSheet.Bands = lower
             .Text("NumberVariants.Col.Runner", nameof(NumberVariantRowViewModel.Runner), minWidth: 180)
             .Text("NumberVariants.Col.CourseOrder", nameof(NumberVariantRowViewModel.CourseOrder), minWidth: 220)
             .Bands;

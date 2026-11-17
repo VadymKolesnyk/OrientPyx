@@ -19,6 +19,10 @@ public sealed record NumberVariantsData(
     IReadOnlyList<NumberVariantGroup> Groups)
 {
     public static readonly NumberVariantsData Empty = new([], [], []);
+
+    /// <summary>Some group of the day runs a relay; without one the numbers are scatter runners' and the page drops the
+    /// team columns.</summary>
+    public bool HasRelayGroups { get; init; }
 }
 
 /// <summary>A group of the day and its variations, in their order.</summary>

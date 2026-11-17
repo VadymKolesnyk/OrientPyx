@@ -146,6 +146,9 @@ public sealed partial class CompetitionEditorService
             .Select(s => new NumberVariantGroup(
                 s.GroupId, GroupName(s.GroupId), variants.TryGetValue(s.GroupId, out var list) ? list : []))
             .ToList();
-        return new NumberVariantsData(Sorted(rows), Sorted(unassigned), groups);
+        return new NumberVariantsData(Sorted(rows), Sorted(unassigned), groups)
+        {
+            HasRelayGroups = settingsByGroup.Keys.Any(IsRelayGroup)
+        };
     }
 }

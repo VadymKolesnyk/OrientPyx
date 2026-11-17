@@ -73,6 +73,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // Serialises the relay cells' edits: a fill-down paste of «100.1, 100.2, …» must create a team once and see
     // each leg the previous row took, and a «leg taken» question shows one at a time.
     private readonly SemaphoreSlim _relayGate = new(1, 1);
+    // The relay runners a paste / bulk edit of the group column reached, answered together once it is done.
+    private readonly List<RelayBulkGroupPick> _relayBulkGroupPicks = [];
+    private bool _relayBulkGroupQueued;
 
     public ParticipantsViewModel(
         ILocalizationService localization,
@@ -1192,7 +1195,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             RequestDayRowDusshChange, RequestDayRowAddDussh,
             RequestRowRaisedFeeChange, RequestRowDiscountChange,
             RequestDayRowResultStatusChange, RequestDayRowBonusChange, RequestDayRowPaymentChange,
-            RequestRelayPlace, RequestRelayTeamEdit, RequestDayRowRelayGroupChange);
+            RequestRelayPlace, RequestRelayTeamEdit, RequestDayRowRelayGroupChange, RequestDayRowRelayBulkGroup);
 
     private ParticipantRosterRowViewModel CreateRosterRow(
         ParticipantRosterRow row,
@@ -1225,7 +1228,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         return new RosterDayCellViewModel(participantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange,
             RequestCellStartTimeChange, RequestCellOutOfCompetitionChange, RequestCellResultStatusChange, RequestCellBonusChange,
             RequestCellPaymentChange, RequestCellRaisedFeeChange, RequestRelayPlace, RequestRelayTeamEdit,
-            RequestCellRelayGroupChange);
+            RequestCellRelayGroupChange, RequestCellRelayBulkGroup);
     }
 
     // Driven by the day ComboBox. A real day switches the session (so other pages follow); the roster
@@ -2620,17 +2623,35 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                     .Select(g => new GroupOption(g.Id, g.Name, Localization, g.MinBirthYear, g.MaxBirthYear)).ToList()
                 : new List<GroupOption>();
 
+        // One roster day's group column: that day's own groups, not every group of the competition.
+        if (IsRosterMode && request?.RosterDayIndex is { } groupDay
+            && visibleRows.OfType<ParticipantRosterRowViewModel>().FirstOrDefault() is { } first
+            && groupDay >= 0 && groupDay < first.Days.Count)
+            groupOptions = first.Days[groupDay].GroupOptions.Where(o => o.Id is not null).ToList();
+
         var fields = BuildBulkEditFields(groupOptions.Count > 0);
-        // Remember each field's localized label so the activity log can name the field, not its key.
-        var fieldLabels = fields.ToDictionary(f => f.Key, f => f.Label);
         // Preselect the field the request points at (the focused column / the right-clicked header),
         // when that field is actually offered in the current mode; otherwise fall back to the first.
         var preselect = request?.PreselectKey is { } key
             ? fields.FirstOrDefault(f => f.Key == key)
             : null;
+        // The selected cells of one column: only that column's field, so nothing else can change.
+        if (request?.SelectionOnly == true)
+        {
+            if (preselect is null)
+                return;
+            preselect = new Dialogs.BulkEditFieldOption(
+                preselect.Key, preselect.Kind, request.FieldLabel ?? preselect.Label, preselect.Choices);
+            fields = [preselect];
+        }
+        // Remember each field's localized label so the activity log can name the field, not its key.
+        var fieldLabels = fields.ToDictionary(f => f.Key, f => f.Label);
         var dialog = new Dialogs.BulkEditViewModel(
             Localization, fields, groupOptions,
-            _regionOptions, _clubOptions, _dusshOptions, _rankOptions, visibleRows.Count, preselect);
+            _regionOptions, _clubOptions, _dusshOptions, _rankOptions, visibleRows.Count, preselect)
+        {
+            SelectionOnly = request?.SelectionOnly == true
+        };
 
         // The list "+ new" sentinels create the value inline, reusing the existing add flows.
         dialog.AddRequested += OnBulkEditAddRequested;
@@ -2646,7 +2667,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (result is null)
             return;
 
-        ApplyBulkEdit(visibleRows, result);
+        ApplyBulkEdit(visibleRows, result, request?.RosterDayIndex);
 
         // Group/region etc. don't shift fees, but group changes the discount/rental picture for the
         // total; refresh fees + the status bar so the change is reflected immediately (cheap, in-memory).
@@ -2854,7 +2875,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // Sets the chosen field to the chosen value on every visible row. Setting each property fires that
     // field's existing per-row change handler, which persists it — list fields are resolved to each
     // row's own option instance by id (groups in particular have a per-day list and must match by id).
-    private void ApplyBulkEdit(IReadOnlyList<object?> visibleRows, BulkEditResult result)
+    // With a roster day index (the selected cells of one day's column) a per-day field changes only that
+    // day's cell of each row.
+    private void ApplyBulkEdit(IReadOnlyList<object?> visibleRows, BulkEditResult result, int? rosterDayIndex = null)
     {
         foreach (var item in visibleRows)
         {
@@ -2863,10 +2886,49 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 case ParticipantDayRowViewModel d:
                     ApplyBulkEditToDayRow(d, result);
                     break;
+                case ParticipantRosterRowViewModel r when rosterDayIndex is { } i:
+                    if (i >= 0 && i < r.Days.Count)
+                        ApplyBulkEditToRosterDay(r.Days[i], result);
+                    break;
                 case ParticipantRosterRowViewModel r:
                     ApplyBulkEditToRosterRow(r, result);
                     break;
             }
+        }
+    }
+
+    // One roster day cell, the per-day fields only (what a day column of the roster edits). A closed day is
+    // left alone; member-only values skip a day the participant does not run, as the fan-out does. A group
+    // joins the day (like picking it in the cell); a relay runner's group goes through the page's question.
+    private void ApplyBulkEditToRosterDay(RosterDayCellViewModel cell, BulkEditResult r)
+    {
+        if (cell.IsDayLocked)
+            return;
+
+        if (r.Key == "Group")
+        {
+            if (cell.GroupOptions.FirstOrDefault(o => o.Id == r.Id) is { } option)
+            {
+                if (cell.Relay.HasTeam)
+                    cell.BulkGroup = option;
+                else
+                    cell.ComboGroup = option;
+            }
+            return;
+        }
+
+        if (!cell.IsMember)
+            return;
+        switch (r.Key)
+        {
+            case "Payment": cell.Payment = r.Text ?? string.Empty; break;
+            case "PaysRaisedFee": cell.PaysRaisedFee = r.Bool ?? false; break;
+            case "StartTime": cell.StartTimeText = r.Text ?? string.Empty; break;
+            case "OutOfCompetition": cell.OutOfCompetition = r.Bool ?? false; break;
+            case "ResultStatus":
+                cell.SelectedStatus = FinishStatusOptions.Select(cell.StatusOptions, ParseStatusChoice(r.Text));
+                break;
+            case "Bonus": cell.BonusText = r.Text ?? string.Empty; break;
         }
     }
 
@@ -3212,8 +3274,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
     // ── A relay runner's group (Р-22: on a relay day it is the team's). Another group picked in the group cell is asked:
     // take only this runner off the team and move them, or move the whole team (offered only into a group that runs a
-    // relay too); «не бере участі» (roster) takes them off the team and the day. Cancelled, the cell shows the team's
-    // group again; a paste or bulk edit never gets here (it leaves a relay runner alone).
+    // relay too) — then, when the team's leg numbers hold courses of its group, whether to move it anyway; «не бере
+    // участі» (roster) takes them off the team and the day. Cancelled, the cell shows the team's group again. A paste or
+    // bulk edit is asked once for all its relay runners (ApplyRelayBulkGroupsAsync).
     private void RequestCellRelayGroupChange(RosterDayCellViewModel cell, GroupOption target)
         => _pendingSaves.Track(ChangeRelayGroupAsync(cell.Relay, target, cell.ShowGroup, cell.SetGroupSilently,
             leaveDay: () => LeaveRelayDayAsync(cell)));
@@ -3243,6 +3306,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
         var changed = await RunRelayEditAsync(cells, async () =>
             await AskRelayGroupChangeAsync(name, team, target) is { } choice
+            && (choice != RelayTeamChoice.ChangeTeam || cells.Stored is not { } stored
+                || await ConfirmNumberCoursesAsync(cells.DayId, [stored.TeamId], target))
                 ? await Task.Run(() => _editor.ChangeRelayRunnerGroupAsync(
                     new RelayGroupEdit(cells.ParticipantId, cells.DayId, groupId, choice)))
                 : new RelayPlacementOutcome(RelayPlacementStatus.Unchanged));
@@ -3276,6 +3341,194 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             ConfirmDialogResult.Alternate => RelayTeamChoice.MoveRunner,
             _ => null
         };
+    }
+
+    // ── A paste / bulk edit of the group column over relay runners. The rows hand their picks here; once the paste / bulk
+    // edit has set every row (the next dispatcher turn) they are sorted by day, target group and team. Into a relay
+    // group, a team all of whose runners on the day were picked moves as a whole without a question; the other teams are
+    // asked once per target group, like the group cell asks for one runner: «Команди повністю» or «Лише цих учасників»
+    // (off their teams); into a group that runs no relay only the runners can go. «Залишити в командах» leaves them. A team
+    // moving whole whose leg numbers hold courses of its group is asked about once more (RelayNumberCoursesQuestion).
+    private sealed record RelayBulkGroupPick(RelayCellsViewModel Cells, GroupOption Target, Action<GroupOption> SetGroup);
+
+    private sealed record RelayBulkTeam(RelayPlacement Place, IReadOnlyList<RelayBulkGroupPick> Picks, int MemberCount)
+    {
+        public bool AllPicked => Picks.Count >= MemberCount;
+    }
+
+    private void RequestDayRowRelayBulkGroup(ParticipantDayRowViewModel row, GroupOption target)
+        => QueueRelayBulkGroup(new RelayBulkGroupPick(row.Relay, target, row.SetGroupSilently));
+
+    private void RequestCellRelayBulkGroup(RosterDayCellViewModel cell, GroupOption target)
+        => QueueRelayBulkGroup(new RelayBulkGroupPick(cell.Relay, target, cell.SetGroupSilently));
+
+    private void QueueRelayBulkGroup(RelayBulkGroupPick pick)
+    {
+        // A runner's last pick on a day wins.
+        _relayBulkGroupPicks.RemoveAll(p => p.Cells.ParticipantId == pick.Cells.ParticipantId && p.Cells.DayId == pick.Cells.DayId);
+        _relayBulkGroupPicks.Add(pick);
+        if (_relayBulkGroupQueued)
+            return;
+        _relayBulkGroupQueued = true;
+        // A paste / bulk edit sets its rows one after another in one go: answer once they are all in.
+        Dispatcher.UIThread.Post(() => _pendingSaves.Track(ApplyRelayBulkGroupsAsync()), DispatcherPriority.Background);
+    }
+
+    private async Task ApplyRelayBulkGroupsAsync()
+    {
+        var picks = _relayBulkGroupPicks.ToList();
+        _relayBulkGroupPicks.Clear();
+        _relayBulkGroupQueued = false;
+        if (picks.Count == 0)
+            return;
+
+        await _relayGate.WaitAsync();
+        var notices = new List<string>();
+        try
+        {
+            foreach (var day in picks.GroupBy(p => p.Cells.DayId))
+            {
+                // The stored places name each picked runner's team and all its runners on the day, shown or not.
+                var places = await Task.Run(() => _editor.GetRelayPlacementsAsync(day.Key));
+                foreach (var byTarget in day.GroupBy(p => p.Target.Id!.Value))
+                {
+                    var target = byTarget.First().Target;
+                    var teams = byTarget
+                        .Where(p => places.GetValueOrDefault(p.Cells.ParticipantId) is { TeamId: var id } && id != Guid.Empty)
+                        .GroupBy(p => places[p.Cells.ParticipantId].TeamId)
+                        .Select(t => new RelayBulkTeam(places[t.First().Cells.ParticipantId], t.ToList(),
+                            places.Values.Count(p => p.TeamId == t.Key)))
+                        .OrderBy(t => RelayTeamNumbers.SortKey(t.Place.TeamNumber))
+                        .ThenBy(t => t.Place.TeamName, StringComparer.CurrentCulture)
+                        .ToList();
+                    var asked = teams.Where(t => !target.IsRelay || !t.AllPicked).ToList();
+                    var choice = asked.Count == 0 ? (RelayTeamChoice?)null : await AskRelayBulkGroupAsync(asked, target);
+                    var whole = teams.Where(t => target.IsRelay && (t.AllPicked || choice == RelayTeamChoice.ChangeTeam)).ToList();
+                    // The whole teams whose leg numbers hold courses of their group are asked about once more; kept, they
+                    // stay where they are.
+                    var numberCourses = await NumberCoursesOfAsync(day.Key, whole.Select(t => t.Place.TeamId).ToList());
+                    HashSet<Guid> kept = numberCourses.Count > 0 && !await _dialogs.ConfirmAsync(RelayNumberCoursesQuestion.Build(
+                            Localization, numberCourses.SelectMany(c => c.Value), target.Label))
+                        ? numberCourses.Keys.ToHashSet()
+                        : [];
+
+                    var movedTeams = 0;
+                    var movedTeamRunners = 0;
+                    var movedRunners = 0;
+                    foreach (var team in teams)
+                    {
+                        var wholeTeam = whole.Contains(team);
+                        if (!wholeTeam && (!asked.Contains(team) || choice != RelayTeamChoice.MoveRunner))
+                            continue; // left in the team's group
+                        if (wholeTeam)
+                        {
+                            if (kept.Contains(team.Place.TeamId))
+                                continue;
+                            var outcome = await Task.Run(() => _editor.ChangeRelayRunnerGroupAsync(new RelayGroupEdit(
+                                team.Picks[0].Cells.ParticipantId, day.Key, target.Id!.Value, RelayTeamChoice.ChangeTeam)));
+                            if (!outcome.Changed)
+                                continue;
+                            movedTeams++;
+                            movedTeamRunners += outcome.MemberCount;
+                            foreach (var pick in team.Picks)
+                                pick.SetGroup(pick.Target);
+                            continue;
+                        }
+                        foreach (var pick in team.Picks)
+                        {
+                            var outcome = await Task.Run(() => _editor.ChangeRelayRunnerGroupAsync(new RelayGroupEdit(
+                                pick.Cells.ParticipantId, day.Key, target.Id!.Value, RelayTeamChoice.MoveRunner)));
+                            if (!outcome.Changed)
+                                continue;
+                            movedRunners++;
+                            pick.SetGroup(pick.Target);
+                        }
+                    }
+                    if (movedTeams > 0)
+                        notices.Add(string.Format(CultureInfo.CurrentCulture,
+                            Localization.Get("Participants.Relay.BulkGroup.TeamsMoved"), target.Label, movedTeams, movedTeamRunners));
+                    if (movedRunners > 0)
+                        notices.Add(string.Format(CultureInfo.CurrentCulture,
+                            Localization.Get("Participants.Relay.BulkGroup.RunnersMoved"), target.Label, movedRunners));
+                }
+                await ApplyRelayPlacementsAsync(day.Key);
+            }
+        }
+        catch (DayLockedException locked)
+        {
+            await ExplainDayLockAsync(locked.DayNumber);
+        }
+        catch (Exception ex)
+        {
+            _log.Error("Participants.Relay", ex);
+        }
+        finally
+        {
+            _relayGate.Release();
+        }
+
+        if (notices.Count == 0)
+            return;
+        foreach (var notice in notices)
+            _log.Action(notice);
+        _toasts.Show(Localization.Get("Participants.Relay.Title"), string.Join(" ", notices));
+        RequestReload();
+    }
+
+    // «Змінити групу учасників команд?» for the teams a paste / bulk edit moves only partly (or, into a group that runs no
+    // relay, at all): into a relay group the teams wholly (confirm) or only the picked runners, off their teams
+    // (alternate); into any other group only the runners (confirm). Null when they are left as they were.
+    private async Task<RelayTeamChoice?> AskRelayBulkGroupAsync(IReadOnlyList<RelayBulkTeam> teams, GroupOption target)
+    {
+        const int shown = 10;
+        var list = string.Join(", ", teams.Take(shown).Select(t => string.Format(CultureInfo.CurrentCulture,
+            Localization.Get("Participants.Relay.BulkGroup.TeamItem"),
+            RelayTeamNumbers.Label(t.Place.TeamNumber, t.Place.TeamName), t.Picks.Count, t.MemberCount)));
+        if (teams.Count > shown)
+            list += " " + string.Format(CultureInfo.CurrentCulture,
+                Localization.Get("Participants.Relay.BulkGroup.More"), teams.Count - shown);
+
+        var dialog = target.IsRelay
+            ? new ConfirmDialogViewModel(Localization, "Participants.Relay.BulkGroup.Title",
+                "Participants.Relay.BulkGroup.Message", confirmKey: "Participants.Relay.BulkGroup.WholeTeams",
+                cancelKey: "Participants.Relay.BulkGroup.Keep")
+            {
+                AlternateKey = "Participants.Relay.BulkGroup.OnlyRunners",
+                MessageArgs = [list, target.Label],
+                IsDestructive = false
+            }
+            : new ConfirmDialogViewModel(Localization, "Participants.Relay.BulkGroup.Title",
+                "Participants.Relay.BulkGroup.NotRelayMessage", confirmKey: "Participants.Relay.BulkGroup.ReleaseAndMove",
+                cancelKey: "Participants.Relay.BulkGroup.Keep")
+            {
+                MessageArgs = [list, target.Label],
+                IsDestructive = false
+            };
+        return await _dialogs.ChooseAsync(dialog) switch
+        {
+            ConfirmDialogResult.Confirm => target.IsRelay ? RelayTeamChoice.ChangeTeam : RelayTeamChoice.MoveRunner,
+            ConfirmDialogResult.Alternate => RelayTeamChoice.MoveRunner,
+            _ => null
+        };
+    }
+
+    // A whole team into another group while its leg numbers hold courses of its group («Варіанти за номерами»): there they
+    // stop applying — asked once for all the teams (true = move them). The teams that hold none are not asked about.
+    private async Task<bool> ConfirmNumberCoursesAsync(Guid dayId, IReadOnlyCollection<Guid> teamIds, GroupOption target)
+    {
+        var courses = await NumberCoursesOfAsync(dayId, teamIds);
+        return courses.Count == 0
+            || await _dialogs.ConfirmAsync(RelayNumberCoursesQuestion.Build(Localization, courses.SelectMany(c => c.Value), target.Label));
+    }
+
+    // The number courses (of their own group) of the given teams on the day; the teams without any are absent.
+    private async Task<IReadOnlyDictionary<Guid, IReadOnlyList<RelayNumberCourse>>> NumberCoursesOfAsync(
+        Guid dayId, IReadOnlyCollection<Guid> teamIds)
+    {
+        if (teamIds.Count == 0)
+            return new Dictionary<Guid, IReadOnlyList<RelayNumberCourse>>();
+        var all = await Task.Run(() => _editor.GetRelayNumberCoursesAsync(dayId));
+        return teamIds.Where(all.ContainsKey).Distinct().ToDictionary(id => id, id => all[id]);
     }
 
     // «не бере участі» for a relay runner, once confirmed: off the day — the link goes, and the leg with it.
@@ -4185,4 +4438,16 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 /// sets it from the focused column (toolbar button) or the right-clicked header column (column menu);
 /// null ⇒ the dialog opens on its first field. An unknown/unavailable key is ignored.
 /// </summary>
-public sealed record BulkEditRequest(IReadOnlyList<object?> Rows, string? PreselectKey = null);
+public sealed record BulkEditRequest(IReadOnlyList<object?> Rows, string? PreselectKey = null)
+{
+    /// <summary>The rows are the selected cells of one column: the dialog offers only the
+    /// <see cref="PreselectKey"/> field (nothing when that field is not available here).</summary>
+    public bool SelectionOnly { get; init; }
+
+    /// <summary>The roster day (index into the row's <c>Days</c>) whose cell a per-day field changes, instead of
+    /// fanning out over the participant's days — the selection lies in one day's column.</summary>
+    public int? RosterDayIndex { get; init; }
+
+    /// <summary>The field's label in the dialog and the log instead of its own (e.g. «Групи — День 2»).</summary>
+    public string? FieldLabel { get; init; }
+}

@@ -432,7 +432,7 @@ public sealed class RosterColumnBuilder
         {
             case RosterField.Groups:
                 col.ComboItemsPath = $"{prefix}{nameof(RosterDayCellViewModel.GroupOptions)}";
-                // Through BulkGroup: a paste can't ask, so it leaves a relay runner in the team's group (Р-22).
+                // Through BulkGroup: the page gathers a paste's relay runners and asks once (Р-22).
                 col.ComboSelectedPath = $"{prefix}{nameof(RosterDayCellViewModel.BulkGroup)}";
                 col.ComboLabelPath = nameof(GroupOption.Label);
                 break;

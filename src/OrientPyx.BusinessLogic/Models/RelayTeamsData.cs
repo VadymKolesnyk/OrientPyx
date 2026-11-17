@@ -29,7 +29,8 @@ public sealed record RelayTeamsData(
 /// <see cref="Number"/> is null until the team is given one; <see cref="Unplaced"/> lists the team's runners without a
 /// leg («без етапу» — more runners than legs in an import), each to be put on a leg or taken off the team.
 /// <see cref="AssignedCourseSet"/>: the courses assigned to the team's leg numbers (OCAD), in leg order — its «набір на
-/// команду» while <see cref="CourseSet"/> is blank.</summary>
+/// команду» while <see cref="CourseSet"/> is blank. <see cref="NumberCourses"/>: those of them that name the team's
+/// group — moving the team to another group is asked first, since they stop applying there.</summary>
 public sealed record RelayTeamRow(
     Guid Id,
     Guid GroupId,
@@ -46,6 +47,18 @@ public sealed record RelayTeamRow(
     public IReadOnlyList<RelayUnplacedRunner> Unplaced { get; init; } = [];
 
     public string AssignedCourseSet { get; init; } = string.Empty;
+
+    public IReadOnlyList<RelayNumberCourse> NumberCourses { get; init; } = [];
+}
+
+/// <summary>
+/// A course a team's leg number was given in the team's group («101.2» → B, «Варіанти за номерами», Р-41). Moved to
+/// another group, the team no longer runs it: the results take only the rows that name the team's group (or none).
+/// </summary>
+public sealed record RelayNumberCourse(int TeamNumber, int Leg, string Course)
+{
+    /// <summary>The leg number «101.2».</summary>
+    public string Bib => RelayTeamNumbers.Bib(TeamNumber, Leg);
 }
 
 /// <summary>A team's runner without a leg («без етапу»).</summary>

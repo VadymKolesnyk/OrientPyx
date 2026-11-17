@@ -10,7 +10,7 @@ using OrientPyx.Presentation.Services;
 namespace OrientPyx.Presentation.ViewModels.Pages;
 
 /// <summary>
-/// «Змагання → Естафета → Варіанти за номерами»: which variation (map) every number runs on the day — a relay leg number
+/// «Змагання → Естафета (Розсіювання) → Варіанти за номерами»: which variation (map) every number runs on the day — a relay leg number
 /// «101.2» or a scatter runner's bib — as imported from OCAD or typed on «Команди», for handing out the maps and checking
 /// them. Two tables over the session's day: the numbers with a variation (group, the group of the team holding the
 /// number — both red when they differ, so the variation never applies —, number, variation, team, runner, controls) and,
@@ -59,6 +59,7 @@ public sealed partial class NumberVariantsViewModel : PageViewModelBase
         ObserveData(bus, session, mode,
             DataArea.Days, DataArea.Groups, DataArea.GroupDaySettings, DataArea.Participants, DataArea.ParticipantDays,
             DataArea.Relay);
+        localization.PropertyChanged += (_, _) => RaiseModeTexts();
     }
 
     /// <summary>Writes the export to the file the user picked (handles a target locked by Excel). Used by the view.</summary>
@@ -69,7 +70,40 @@ public sealed partial class NumberVariantsViewModel : PageViewModelBase
 
     public override string NavKey => "Nav.NumberVariants";
     public override string TitleKey => "Page.NumberVariants.Title";
-    public override string TextKey => "Page.NumberVariants.Text";
+    public override string TextKey => ModeKey("Page.NumberVariants.Text");
+
+    /// <summary>
+    /// The day has a relay group, so the numbers may be teams' legs: the «Команда» column shows and the texts speak of
+    /// teams. False on a day with no relay group — the numbers are scatter runners', and the page talks only about them.
+    /// </summary>
+    [ObservableProperty]
+    private bool _showsTeams = true;
+
+    partial void OnShowsTeamsChanged(bool value)
+    {
+        RaiseModeTexts();
+        RefreshSummary();
+    }
+
+    // A text with a scatter-only twin («<key>.Scatter») picks it on a day with no relay group.
+    private string ModeKey(string key) => ShowsTeams ? key : key + ".Scatter";
+
+    /// <summary>The line under the tables: where the variations come from.</summary>
+    public string InfoText => Localization.Get(ModeKey("NumberVariants.Info"));
+
+    /// <summary>The lower table's hint.</summary>
+    public string UnassignedHint => Localization.Get(ModeKey("NumberVariants.Unassigned.Hint"));
+
+    /// <summary>The card shown when the day has no number to show.</summary>
+    public string EmptyText => Localization.Get(ModeKey("NumberVariants.Empty"));
+
+    private void RaiseModeTexts()
+    {
+        OnPropertyChanged(nameof(Text));
+        OnPropertyChanged(nameof(InfoText));
+        OnPropertyChanged(nameof(UnassignedHint));
+        OnPropertyChanged(nameof(EmptyText));
+    }
 
     // Lucide "list-ordered".
     public override string IconData =>
@@ -163,12 +197,13 @@ public sealed partial class NumberVariantsViewModel : PageViewModelBase
                 : [.. list, new VariantOption(row.Course, string.Empty, known: false)];
         }
 
+        ShowsTeams = data.HasRelayGroups;
         Rows.Clear();
         foreach (var row in data.Rows)
-            Rows.Add(new NumberVariantRowViewModel(row, Localization, OptionsFor(row), OnVariantPicked));
+            Rows.Add(new NumberVariantRowViewModel(row, Localization, OptionsFor(row), OnVariantPicked, ShowsTeams));
         Unassigned.Clear();
         foreach (var row in data.Unassigned)
-            Unassigned.Add(new NumberVariantRowViewModel(row, Localization, OptionsFor(row), OnVariantPicked));
+            Unassigned.Add(new NumberVariantRowViewModel(row, Localization, OptionsFor(row), OnVariantPicked, ShowsTeams));
         HasUnassigned = Unassigned.Count > 0;
         IsEmpty = Rows.Count == 0 && Unassigned.Count == 0;
         RefreshSummary();
@@ -234,7 +269,7 @@ public sealed partial class NumberVariantsViewModel : PageViewModelBase
         if (missing + removed > 0)
             parts.Add(string.Format(CultureInfo.CurrentCulture, Localization.Get("NumberVariants.Summary.Missing"), missing + removed));
         if (mismatch > 0)
-            parts.Add(string.Format(CultureInfo.CurrentCulture, Localization.Get("NumberVariants.Summary.Mismatch"), mismatch));
+            parts.Add(string.Format(CultureInfo.CurrentCulture, Localization.Get(ModeKey("NumberVariants.Summary.Mismatch")), mismatch));
         if (unknown > 0)
             parts.Add(string.Format(CultureInfo.CurrentCulture, Localization.Get("NumberVariants.Summary.Unknown"), unknown));
         Summary = string.Join(" · ", parts);
@@ -250,7 +285,7 @@ public sealed partial class NumberVariantsViewModel : PageViewModelBase
         var count = rows.OfType<NumberVariantRowViewModel>().Count(r => r.CanMoveToHolderGroup);
         return count == 0
             ? null
-            : string.Format(CultureInfo.CurrentCulture, Localization.Get("NumberVariants.MoveToHolderGroup"), count);
+            : string.Format(CultureInfo.CurrentCulture, Localization.Get(ModeKey("NumberVariants.MoveToHolderGroup")), count);
     }
 
     /// <summary>
@@ -267,7 +302,7 @@ public sealed partial class NumberVariantsViewModel : PageViewModelBase
             return;
         await _pendingSaves.WaitAsync();
         await _busy.RunAsync(() => _editor.SetLegCoursesAsync(entries));
-        _log.Action(string.Format(CultureInfo.CurrentCulture, Localization.Get("NumberVariants.MoveToHolderGroup.Log"), entries.Count));
+        _log.Action(string.Format(CultureInfo.CurrentCulture, Localization.Get(ModeKey("NumberVariants.MoveToHolderGroup.Log")), entries.Count));
         await LoadAsync();
     }
 
@@ -301,14 +336,17 @@ public sealed partial class NumberVariantRowViewModel : ObservableObject
 {
     private readonly ILocalizationService _localization;
     private readonly Action<NumberVariantRowViewModel> _picked;
+    // False on a day with no relay group: the tooltips speak of the runner, not the team.
+    private readonly bool _showsTeams;
 
     public NumberVariantRowViewModel(
         NumberVariantRow row, ILocalizationService localization, IReadOnlyList<VariantOption> options,
-        Action<NumberVariantRowViewModel> picked)
+        Action<NumberVariantRowViewModel> picked, bool showsTeams = true)
     {
         Model = row;
         _localization = localization;
         _picked = picked;
+        _showsTeams = showsTeams;
         VariantOptions = options;
         _current = options.FirstOrDefault(o => TextKey.Comparer.Equals(o.Code, row.Course)) ?? VariantOption.None;
         _selectedVariant = _current;
@@ -369,16 +407,18 @@ public sealed partial class NumberVariantRowViewModel : ObservableObject
     public bool IsProblem => IsMissing || IsUnknown;
 
     public string? ProblemTooltip =>
-        IsMissing ? _localization.Get("NumberVariants.Missing")
+        IsMissing ? _localization.Get(ModeKey("NumberVariants.Missing"))
         : IsUnknown ? _localization.Get("NumberVariants.Unknown")
         : null;
+
+    private string ModeKey(string key) => _showsTeams ? key : key + ".Scatter";
 
     /// <summary>The variation names another group than the team (runner) holding the number — it never applies.</summary>
     public bool GroupMismatch => Model.GroupMismatch;
 
     public string? MismatchTooltip =>
         GroupMismatch
-            ? string.Format(CultureInfo.CurrentCulture, _localization.Get("NumberVariants.GroupMismatch"),
+            ? string.Format(CultureInfo.CurrentCulture, _localization.Get(ModeKey("NumberVariants.GroupMismatch")),
                 Model.GroupName, Model.HolderGroupName)
             : null;
 

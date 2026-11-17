@@ -24,6 +24,7 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     private readonly Action<RosterDayCellViewModel> _requestPaymentChange;
     private readonly Action<RosterDayCellViewModel> _requestRaisedFeeChange;
     private readonly Action<RosterDayCellViewModel, GroupOption> _requestRelayGroupChange;
+    private readonly Action<RosterDayCellViewModel, GroupOption> _requestRelayBulkGroup;
     private ParticipantDayResult _result;
     // The judge's points correction («бонус») for this day; null = none. Edited via BonusText.
     private int? _bonus;
@@ -86,10 +87,12 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         Action<RosterDayCellViewModel> requestRaisedFeeChange,
         Action<RelayCellsViewModel, RelayPlacementRequest> requestRelayPlace,
         Action<RelayCellsViewModel, RelayTeamField, string> requestRelayTeamEdit,
-        Action<RosterDayCellViewModel, GroupOption> requestRelayGroupChange)
+        Action<RosterDayCellViewModel, GroupOption> requestRelayGroupChange,
+        Action<RosterDayCellViewModel, GroupOption> requestRelayBulkGroup)
     {
         _participantId = participantId;
         _requestRelayGroupChange = requestRelayGroupChange;
+        _requestRelayBulkGroup = requestRelayBulkGroup;
         DayId = cell.DayId;
         DayNumber = cell.DayNumber;
         LinkId = cell.LinkId;
@@ -409,7 +412,7 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
         // The course length the chip must hold comes from the group, so a group change can flip the flag.
         OnPropertyChanged(nameof(ChipTooSmall));
         OnPropertyChanged(nameof(ChipCapacityTooltip));
-        // A relay runner's group is the team's (Р-22): the cell is read-only, so a paste never moves them either.
+        // A relay runner's group is the team's (Р-22): it moves only through the page's question (ComboGroup / BulkGroup).
         if (_initialized && !IsDayLocked && !Relay.HasTeam)
             _requestGroupChange(this);
     }
@@ -457,16 +460,21 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     }
 
     /// <summary>
-    /// The group set by a paste or a bulk edit — never asked, so a relay runner keeps the team's group (Р-22); the
-    /// change is made one cell at a time through the combo, which asks.
+    /// The group set by a paste or a bulk edit. A relay runner's group is the team's (Р-22): their pick is handed to the
+    /// page, which gathers the whole paste / bulk edit and asks once about the teams it moves only partly; the
+    /// selection moves only once that is answered.
     /// </summary>
     public GroupOption? BulkGroup
     {
         get => SelectedGroup;
         set
         {
-            if (value is not null && !Relay.HasTeam)
+            if (value is null)
+                return;
+            if (!Relay.HasTeam)
                 SelectedGroup = value;
+            else if (_initialized && !IsDayLocked && value.Id is not null && value.Id != SelectedGroup?.Id)
+                _requestRelayBulkGroup(this, value);
         }
     }
 

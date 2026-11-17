@@ -889,11 +889,16 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         // Resolve the equivalent option (by group id) from each day's own list so its per-day combo can
         // find the selected item — assigning the shared instance directly leaves other days' combos blank.
         // Through ComboGroup, so «не бере участі» also takes the participant off a day they run with no group (where
-        // the selection itself would not move). A relay runner's day is left alone: their group is the team's (Р-22) and
-        // changing it is asked one cell at a time.
+        // the selection itself would not move). A relay runner's day goes through BulkGroup: their group is the team's
+        // (Р-22), and the page asks once for the whole bulk edit.
         foreach (var cell in Days)
-            if (!cell.Relay.HasTeam && cell.GroupOptions.FirstOrDefault(o => o.Id == groupId) is { } option)
-                cell.ComboGroup = option;
+            if (cell.GroupOptions.FirstOrDefault(o => o.Id == groupId) is { } option)
+            {
+                if (cell.Relay.HasTeam)
+                    cell.BulkGroup = option;
+                else
+                    cell.ComboGroup = option;
+            }
     }
 
     /// <summary>True when the participant runs at least one day (so a chip can be set).</summary>

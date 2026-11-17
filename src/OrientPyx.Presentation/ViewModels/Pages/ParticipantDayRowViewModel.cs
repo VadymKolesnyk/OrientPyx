@@ -31,6 +31,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private readonly Action<ParticipantDayRowViewModel> _requestSave;
     private readonly Action<ParticipantDayRowViewModel> _requestLeaveDay;
     private readonly Action<ParticipantDayRowViewModel, GroupOption> _requestRelayGroupChange;
+    private readonly Action<ParticipantDayRowViewModel, GroupOption> _requestRelayBulkGroup;
     private readonly Action<ParticipantDayRowViewModel> _requestChipChange;
     private readonly Action<ParticipantDayRowViewModel> _requestRegionChange;
     private readonly Action<ParticipantDayRowViewModel> _requestAddRegion;
@@ -167,9 +168,11 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         Action<ParticipantDayRowViewModel> requestDayPaymentChange,
         Action<RelayCellsViewModel, RelayPlacementRequest> requestRelayPlace,
         Action<RelayCellsViewModel, RelayTeamField, string> requestRelayTeamEdit,
-        Action<ParticipantDayRowViewModel, GroupOption> requestRelayGroupChange)
+        Action<ParticipantDayRowViewModel, GroupOption> requestRelayGroupChange,
+        Action<ParticipantDayRowViewModel, GroupOption> requestRelayBulkGroup)
     {
         _requestRelayGroupChange = requestRelayGroupChange;
+        _requestRelayBulkGroup = requestRelayBulkGroup;
         _linkId = row.LinkId;
         _dayId = row.DayId;
         _participantId = row.ParticipantId;
@@ -897,16 +900,21 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// The group set by a paste or a bulk edit — never asked, so a relay runner keeps the team's group (Р-22); the
-    /// change is made one row at a time through the combo, which asks.
+    /// The group set by a paste or a bulk edit. A relay runner's group is the team's (Р-22): their pick is handed to the
+    /// page, which gathers the whole paste / bulk edit and asks once about the teams it moves only partly; the
+    /// selection moves only once that is answered.
     /// </summary>
     public GroupOption? BulkGroup
     {
         get => SelectedGroup;
         set
         {
-            if (value is not null && !GroupFollowsTeam)
+            if (value is null)
+                return;
+            if (!GroupFollowsTeam)
                 SelectedGroup = value;
+            else if (_initialized && value.Id is not null && value.Id != SelectedGroup?.Id)
+                _requestRelayBulkGroup(this, value);
         }
     }
 

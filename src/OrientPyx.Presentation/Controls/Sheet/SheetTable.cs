@@ -192,6 +192,13 @@ public sealed class SheetTable : TemplatedControl
     public Func<SheetColumn, bool>? CanBulkEditColumn { get; set; }
 
     /// <summary>
+    /// Raised when the user picks "bulk edit the selected values" (the cell menu / Shift+F6): the selection
+    /// spans several rows of one column, and only those cells are to change. Offered for the columns
+    /// <see cref="CanBulkEditColumn"/> accepts.
+    /// </summary>
+    public event EventHandler<SheetBulkEditSelectionEventArgs>? BulkEditSelectionRequested;
+
+    /// <summary>
     /// The page's one row-level action (F8 and a cell-menu item): given the rows it would run over (the
     /// selected rows, see <see cref="SelectedRowItems"/>), returns the already-localized menu label, or null
     /// when the action does not apply to them (the item is hidden and F8 does nothing). Null ⇒ no action.
@@ -2731,9 +2738,15 @@ public sealed class SheetTable : TemplatedControl
         }
 
         // Column-specific extra: a "bulk edit this column" item when the page reports the column is
-        // bulk-editable. It opens the page's bulk-edit modal preselected to this column.
+        // bulk-editable. It opens the page's bulk-edit modal preselected to this column. A click inside a
+        // selection of several cells of this one column first offers to edit just those cells.
         if (CanBulkEditColumn?.Invoke(column) == true)
+        {
+            if (IsInsideRange(cell, row) && SingleColumnSelectionRows() is { } selectedRows)
+                MenuItemText(string.Format(Localization.Get("Sheet.BulkEditSelection"), selectedRows.Count),
+                    "Shift+F6", () => BulkEditSelectionRequested?.Invoke(this, new(column, selectedRows)));
             MenuItem("Sheet.Columns.BulkEdit", "F6", () => BulkEditColumnRequested?.Invoke(this, column));
+        }
 
         // The page's row action (e.g. «Мандатку пройдено» on the roster): over the selected rows when the
         // clicked row is one of them, else over the clicked row alone. The label comes from the page.
@@ -2756,6 +2769,25 @@ public sealed class SheetTable : TemplatedControl
             if (ReferenceEquals(item, clickedRow))
                 return selected;
         return [clickedRow];
+    }
+
+    // The rows of a selection that spans several rows of a single column, in view order; null for no
+    // selection, a single cell, or a range over more than one column. "Bulk edit the selected" acts on these.
+    private IReadOnlyList<object>? SingleColumnSelectionRows()
+    {
+        if (!HasRange || _focusedColumn != _activeCol)
+            return null;
+        var rows = SelectedRowItems;
+        return rows.Count > 1 ? rows : null;
+    }
+
+    // Shift+F6: bulk-edit the selected cells of the focused column (no-op unless the selection is several
+    // rows of that one column and the page can bulk-edit it).
+    private void BulkEditSelection(SheetColumn column)
+    {
+        if (FindFocusedCell() is { } focused && focused.ColumnIndex == _focusedColumn
+            && CanBulkEditColumn?.Invoke(column) == true && SingleColumnSelectionRows() is { } rows)
+            BulkEditSelectionRequested?.Invoke(this, new(column, rows));
     }
 
     // F8: run the page's row action over the selected rows (no-op when the page offers none for them).
@@ -2800,8 +2832,9 @@ public sealed class SheetTable : TemplatedControl
     }
 
     // The key chords that map to a cell context-menu action: F3 (filter), Shift+F3 (clear), F4 (rental),
-    // F6 (bulk-edit), F8 (row action), Ctrl+H (hide). Recognised before the edit branch in OnTunnelKeyDown
-    // so they fire even while a cell is being edited — they're keys a text editor never needs.
+    // F6 / Shift+F6 (bulk-edit the column / the selected cells), F8 (row action), Ctrl+H (hide). Recognised
+    // before the edit branch in OnTunnelKeyDown so they fire even while a cell is being edited — they're keys
+    // a text editor never needs.
     private static bool IsCellShortcut(KeyEventArgs e)
     {
         if (e.Key == Key.H && e.KeyModifiers.HasFlag(KeyModifiers.Control))
@@ -2869,6 +2902,9 @@ public sealed class SheetTable : TemplatedControl
                 var chip = column.RentalChipColumn ? value.Trim() : string.Empty;
                 if (chip.Length > 0 && ToggleRentalChipCommand?.CanExecute(chip) == true)
                     ToggleRental(chip);
+                return true;
+            case Key.F6 when shift:
+                BulkEditSelection(column);
                 return true;
             case Key.F6:
                 if (CanBulkEditColumn?.Invoke(column) == true)
@@ -4072,6 +4108,13 @@ internal sealed class SheetCell : ContentControl
         if (!this.IsAttachedToVisualTree() || !IsEffectivelyVisible)
             _owner?.OnCellFocusLost(this);
     }
+}
+
+/// <summary>"Bulk edit the selected values" payload: the one column the selection spans and its rows, in view order.</summary>
+public sealed class SheetBulkEditSelectionEventArgs(SheetColumn column, IReadOnlyList<object> rows) : EventArgs
+{
+    public SheetColumn Column { get; } = column;
+    public IReadOnlyList<object> Rows { get; } = rows;
 }
 
 /// <summary>Delete-key request payload.</summary>

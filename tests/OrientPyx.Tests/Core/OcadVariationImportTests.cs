@@ -164,6 +164,7 @@ public sealed class OcadVariationImportTests
         Assert.Equal(RelayCourseMode.ByBib, row.CourseMode);
         Assert.Equal(["1A", "1B", "2A", "2B"], (await editor.GetCourseVariantsAsync(row.GroupId)).Select(v => v.Code));
         Assert.Null((await editor.GetGroupDayRowsAsync()).Single(g => g.Name == "Ч21").DisciplineOverride);
+        Assert.Equal(new RelayMenuInfo(HasRelayGroups: true, HasNumberedVariants: true), await editor.GetRelayMenuInfoAsync());
 
         // Teams 601 (1A, 2B) and 602 (1B, 2A): 601 runs its own variations; 602's leg 2 runs 32 31 (2B's order) and so
         // mispunches against its 2A.
@@ -179,6 +180,7 @@ public sealed class OcadVariationImportTests
         // «Варіанти за номерами»: every leg number with its variation, team and runner.
         await c.SelectAsync();
         var table = await editor.GetNumberVariantsAsync();
+        Assert.True(table.HasRelayGroups);
         Assert.Equal(["601.1", "601.2", "602.1", "602.2"], table.Rows.Select(x => x.Bib));
         var leg = table.Rows.Single(x => x.Bib == "601.2");
         Assert.Equal(("МІКС12", "2B", "S1 32 31 F1", "601-2", false), (leg.GroupName, leg.Course, leg.CourseOrder, leg.Runner, leg.UnknownCourse));
@@ -231,17 +233,21 @@ public sealed class OcadVariationImportTests
         var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("ocadsc"));
         await c.SelectAsync();
         var editor = Sp.GetRequiredService<ICompetitionEditorService>();
+        Assert.Equal(RelayMenuInfo.None, await editor.GetRelayMenuInfoAsync());
         var data = new IofXmlParser().Parse(AssignmentsV3);
         await editor.ImportControlPointsAsync(data, replaceAll: true);
         await editor.ImportGroupsAsync(data, updateExisting: true);
 
         var zh16 = (await editor.GetGroupDayRowsAsync()).Single(g => g.Name == "Ж16");
         Assert.Equal(DisciplineId.Scatter, zh16.DisciplineOverride);
+        // No relay group, but numbers with variants: «Естафета» stays for «Варіанти за номерами», without «Команди».
+        Assert.Equal(new RelayMenuInfo(HasRelayGroups: false, HasNumberedVariants: true), await editor.GetRelayMenuInfoAsync());
         await TrackAsync(c, "Ж16");
         await c.AddRunnerAsync("Петренко", "21", "2101", "Ж16");
 
         await c.SelectAsync();
         var table = await editor.GetNumberVariantsAsync();
+        Assert.False(table.HasRelayGroups);
         var bib21 = table.Rows.Single(x => x.Number == 21);
         Assert.Equal(("21", "B", "Петренко", "Ж16"), (bib21.Bib, bib21.Course, bib21.Runner, bib21.GroupName));
         Assert.Equal("Ж16", bib21.HolderGroupName);

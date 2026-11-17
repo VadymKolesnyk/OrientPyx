@@ -32,6 +32,10 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
     private readonly IActivityLog _log;
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
     private readonly PendingSaves _pendingSaves = new();
+    // The teams moved to another group while their leg numbers hold courses of their group: waiting for the question
+    // (queued: not asked yet; waiting: queued or being asked).
+    private readonly List<RelayTeamRowViewModel> _groupMoveQueue = [];
+    private readonly HashSet<RelayTeamRowViewModel> _groupMoveWaiting = [];
     private IReadOnlyList<RelayRunner> _runners = [];
     private bool _syncingDay;
 
@@ -517,12 +521,23 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
         await LoadAsync();
     }
 
-    // A team edit: debounced per row; a taken number is refused (Р-20) and the row shows the stored one again.
+    // A team edit: debounced per row; a taken number is refused (Р-20) and the row shows the stored one again. Another
+    // group for a team whose leg numbers hold courses of its group waits for the question instead (AskGroupMovesAsync);
+    // the row's other edits made meanwhile are saved with the answer.
     private void QueueSave(RelayTeamRowViewModel row)
     {
-        if (IsDayLocked || row.IsApplying)
+        if (IsDayLocked || row.IsApplying || _groupMoveWaiting.Contains(row))
             return;
         CancelTimer(row.Id);
+        if (row.MovesWithNumberCourses)
+        {
+            _groupMoveWaiting.Add(row);
+            _groupMoveQueue.Add(row);
+            // A paste sets its rows one after another in one go: ask once they are all in.
+            if (_groupMoveQueue.Count == 1)
+                Dispatcher.UIThread.Post(() => _pendingSaves.Track(AskGroupMovesAsync()), DispatcherPriority.Background);
+            return;
+        }
         var cts = new CancellationTokenSource();
         _saveTimers[row.Id] = cts;
         _pendingSaves.Track(SaveAsync());
@@ -550,6 +565,50 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
             catch (DayLockedException)
             {
             }
+        }
+    }
+
+    // «Дистанції за номером не діятимуть», once per target group: «Перевести все одно» saves the move, «Скасувати» puts
+    // the stored group back. Either way the rows are saved (with their other edits), one after another.
+    private async Task AskGroupMovesAsync()
+    {
+        var rows = _groupMoveQueue.ToList();
+        _groupMoveQueue.Clear();
+        try
+        {
+            foreach (var byTarget in rows.Where(r => r.MovesWithNumberCourses).GroupBy(r => r.SelectedGroup!))
+            {
+                var move = await _dialogs.ConfirmAsync(RelayNumberCoursesQuestion.Build(
+                    Localization, byTarget.SelectMany(r => r.Model.NumberCourses), byTarget.Key.Label));
+                if (move)
+                    continue;
+                foreach (var row in byTarget)
+                    row.RevertGroup();
+            }
+
+            var moved = false;
+            foreach (var row in rows)
+            {
+                if (row.ToEdit() is not { } edit)
+                    continue;
+                var saved = await Task.Run(() => _editor.UpdateRelayTeamAsync(edit));
+                row.NumberError = !saved;
+                moved |= saved && edit.GroupId != row.Model.GroupId;
+            }
+            if (moved)
+                await LoadAsync();
+        }
+        catch (DayLockedException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _log.Error("RelayTeams", ex);
+        }
+        finally
+        {
+            foreach (var row in rows)
+                _groupMoveWaiting.Remove(row);
         }
     }
 
@@ -721,6 +780,26 @@ public sealed partial class RelayTeamRowViewModel : ObservableObject
     /// <summary>The typed number is taken by another team of the day (Р-20).</summary>
     [ObservableProperty]
     private bool _numberError;
+
+    /// <summary>Another group is picked while the team's leg numbers hold courses of its stored group
+    /// (<see cref="RelayTeamRow.NumberCourses"/>) — they stop applying there, so the page asks first.</summary>
+    public bool MovesWithNumberCourses =>
+        SelectedGroup is { } group && group.GroupId != Model.GroupId && Model.NumberCourses.Count > 0;
+
+    /// <summary>Shows the stored group again without saving — a group move the page's question cancelled.</summary>
+    public void RevertGroup()
+    {
+        var wasInitialized = _initialized;
+        _initialized = false;
+        try
+        {
+            SelectedGroup = GroupOptions.FirstOrDefault(g => g.GroupId == Model.GroupId) ?? GroupOptions.FirstOrDefault();
+        }
+        finally
+        {
+            _initialized = wasInitialized;
+        }
+    }
 
     /// <summary>«2/3»: assigned legs of the leg count; «4/4 · без етапу: 2» when runners have no leg.</summary>
     public string LegsText

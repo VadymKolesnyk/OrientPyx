@@ -58,6 +58,9 @@ public partial class ParticipantsView : UserControl
         RosterTable.CanBulkEditColumn = c => BulkEditKeyFor(c) is not null;
         DayTable.BulkEditColumnRequested += OnBulkEditColumnRequested;
         RosterTable.BulkEditColumnRequested += OnBulkEditColumnRequested;
+        // The cell menu's «Масово редагувати виділені» (Shift+F6): the same dialog over the selected cells only.
+        DayTable.BulkEditSelectionRequested += OnBulkEditSelectionRequested;
+        RosterTable.BulkEditSelectionRequested += OnBulkEditSelectionRequested;
 
         // «Мандатку пройдено»: the roster's row action (F8 / the cell menu) toggles the flag on the selected
         // rows. Only the roster — the flag is competition-level and the day grid doesn't show it.
@@ -657,6 +660,29 @@ public partial class ParticipantsView : UserControl
         var table = _vm.IsRosterMode ? RosterTable : DayTable;
         await _vm.BulkEditCommand.ExecuteAsync(new BulkEditRequest(table.VisibleItems, BulkEditKeyFor(column)));
     }
+
+    // «Масово редагувати виділені»: several cells of one column are selected — the dialog edits that
+    // column's field on the selected rows only. A roster day column (group / start / status … of one day)
+    // changes that day's cells only, never the participant's other days; its label names the day.
+    private async void OnBulkEditSelectionRequested(object? sender, SheetBulkEditSelectionEventArgs e)
+    {
+        if (_vm is null || BulkEditKeyFor(e.Column) is not { } key)
+            return;
+
+        var dayIndex = sender == RosterTable && IsRosterDayColumn(e.Column) ? e.Column.DayIndex : (int?)null;
+        await _vm.BulkEditCommand.ExecuteAsync(new BulkEditRequest(e.Rows, key)
+        {
+            SelectionOnly = true,
+            RosterDayIndex = dayIndex,
+            FieldLabel = dayIndex is null ? null : e.Column.PickerLabel,
+        });
+    }
+
+    // A roster leaf bound to one day's cell (Days[i]) rather than to the participant or to all days.
+    private static bool IsRosterDayColumn(SheetColumn column) => column.Kind is
+        SheetCellKind.Group or SheetCellKind.DayPayment or SheetCellKind.StartTime
+        or SheetCellKind.OutOfCompetition or SheetCellKind.Bonus or SheetCellKind.Status
+        or SheetCellKind.DayRaisedFee;
 
     // Maps a sheet column to the bulk-edit field key it edits, or null when the column can't be
     // bulk-edited (the unique number/chip columns, name, the computed result/fee columns, actions).

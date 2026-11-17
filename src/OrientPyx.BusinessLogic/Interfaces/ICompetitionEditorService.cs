@@ -979,6 +979,10 @@ public interface ICompetitionEditorService
     /// <summary>True when the current day's default discipline or some group's runs a relay.</summary>
     Task<bool> CurrentDayHasRelayAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Over every day of the open competition: whether some group runs a relay and whether some number has a
+    /// course variant — what the «Змагання → Естафета» menu shows.</summary>
+    Task<RelayMenuInfo> GetRelayMenuInfoAsync(CancellationToken cancellationToken = default);
+
     /// <summary>The «Команди» page: relay groups of the day, their teams with legs and computed results, and the
     /// competition's participants as candidate runners.</summary>
     Task<RelayTeamsData> GetRelayTeamsDataAsync(CancellationToken cancellationToken = default);
@@ -1042,6 +1046,14 @@ public interface ICompetitionEditorService
     /// swapped teammate, the replaced holder, a renamed team's runners — at once, before the full reload.
     /// </summary>
     Task<IReadOnlyDictionary<Guid, RelayPlacement>> GetRelayPlacementsAsync(Guid dayId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The courses each team of the day was given by number in its own group (<see cref="RelayNumberCourse"/>, in leg
+    /// order), keyed by team id; a team without any (or without a number) is absent. Moving such a team to another group
+    /// is asked first: those courses stop applying there.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, IReadOnlyList<RelayNumberCourse>>> GetRelayNumberCoursesAsync(
+        Guid dayId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Sets the courses of leg numbers on the current day (<see cref="RelayCourseMode.ByBib"/>, Р-41) — typed on the

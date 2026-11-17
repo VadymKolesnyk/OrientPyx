@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using OrientPyx.BusinessLogic.Disciplines;
+using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Tests.Support;
@@ -158,6 +159,35 @@ public sealed class RelayPlacementTests
         Assert.Equal(c.Groups["I"].Id, await GroupOfAsync("B"));
         Assert.Equal((101, 1), await PlaceOfAsync(c, "A"));
         Assert.Equal(c.Groups["R2"].Id, await GroupOfAsync("A"));
+    }
+
+    [Fact]
+    public async Task ATeamsNumberCoursesAreTheOnesOfItsOwnGroup()
+    {
+        var c = await BuildAsync();
+        await c.AddGroupAsync("R2", "31 32", s => s.LegCount = 3);
+        await c.AddRelayTeamAsync("R", 102, "Вітер", 1, ("C", 1));
+        var day = c.Day(1).Id;
+        LegCourseAssignment Row(int number, int leg, string course, string? group) => new()
+        {
+            EventDayId = day, TeamNumber = number, Leg = leg, CourseKey = course,
+            GroupId = group is null ? null : c.Groups[group].Id
+        };
+        // 101: two courses of R (out of order), one of R2 (never applies to it), one naming no group (applies anywhere);
+        // 102: only a row naming no group.
+        await Sp.GetRequiredService<IEventStore>().UpsertLegCourseAssignmentsAsync(c.Folder, day,
+            [Row(101, 2, "B", "R"), Row(101, 1, "A", "R"), Row(101, 3, "C", "R2"), Row(102, 1, "A", null)]);
+
+        var courses = await Editor.GetRelayNumberCoursesAsync(day);
+
+        var team101 = (await Editor.GetRelayTeamsDataAsync()).Teams.Single(t => t.Number == 101);
+        Assert.Equal(["101.1 A", "101.2 B"], courses[team101.Id].Select(r => $"{r.Bib} {r.Course}"));
+        Assert.Equal(courses[team101.Id], team101.NumberCourses);
+        Assert.Single(courses);
+
+        // Once the team runs R2, its R2 row is the one a further move would lose.
+        await Editor.ChangeRelayRunnerGroupAsync(new RelayGroupEdit(c.Runners["A"].Id, day, c.Groups["R2"].Id, RelayTeamChoice.ChangeTeam));
+        Assert.Equal(["101.3 C"], (await Editor.GetRelayNumberCoursesAsync(day))[team101.Id].Select(r => $"{r.Bib} {r.Course}"));
     }
 
     [Fact]

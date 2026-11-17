@@ -311,9 +311,13 @@
                           Command="{Binding OpenGroupsCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Competition.Chips]}"
                           Command="{Binding OpenChipsCommand}" />
-                <!-- Relay: the teams and the variations (maps) of the numbers -->
-                <MenuItem Header="{Binding Localization[Menu.Competition.Relay]}">
+                <!-- Relay: the teams and the variations (maps) of the numbers. Shown only while some group runs a
+                     relay, or some number has a variant (a scatter handed out by number) — then it is «Розсіювання»,
+                     without «Команди». -->
+                <MenuItem Header="{Binding RelayMenuHeader}"
+                          IsVisible="{Binding IsRelayMenuVisible}">
                     <MenuItem Header="{Binding Localization[Menu.Competition.RelayTeams]}"
+                              IsVisible="{Binding HasRelayGroups}"
                               Command="{Binding OpenRelayTeamsCommand}" />
                     <MenuItem Header="{Binding Localization[Menu.Competition.NumberVariants]}"
                               Command="{Binding OpenNumberVariantsCommand}" />

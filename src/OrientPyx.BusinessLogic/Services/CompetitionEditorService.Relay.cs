@@ -16,6 +16,27 @@ public sealed partial class CompetitionEditorService
         return IsRelay(CurrentDayDefaultDiscipline) || settings.Any(s => IsRelay(s.DisciplineOverride ?? CurrentDayDefaultDiscipline));
     }
 
+    public async Task<RelayMenuInfo> GetRelayMenuInfoAsync(CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return RelayMenuInfo.None;
+
+        var folder = FolderPath;
+        bool relay = false, numbered = false;
+        foreach (var day in await _eventStore.GetDaysAsync(folder, cancellationToken))
+        {
+            if (!relay)
+                relay = (await _eventStore.GetGroupDaySettingsAsync(folder, day.Id, cancellationToken))
+                    .Any(s => IsRelay(s.DisciplineOverride ?? day.DefaultDiscipline));
+            if (!numbered)
+                numbered = (await _eventStore.GetLegCourseAssignmentsAsync(folder, day.Id, cancellationToken))
+                    .Any(a => a.CourseKey.Trim().Length > 0);
+            if (relay && numbered)
+                break;
+        }
+        return new RelayMenuInfo(relay, numbered);
+    }
+
     // The numbers of the days that run at least one relay group (the day default or a group override).
     private async Task<List<int>> RelayDayNumbersAsync(CancellationToken cancellationToken)
     {
@@ -196,7 +217,8 @@ public sealed partial class CompetitionEditorService
                 team.OutOfCompetition, team.StatusOverride, legs, result, team.CourseSet)
             {
                 Unplaced = unplaced,
-                AssignedCourseSet = team.Number is { } n && assignedSets.TryGetValue(n, out var set) ? set : string.Empty
+                AssignedCourseSet = team.Number is { } n && assignedSets.TryGetValue(n, out var set) ? set : string.Empty,
+                NumberCourses = NumberCourses(team, snapshot.LegCourseAssignments)
             });
         }
 
@@ -418,6 +440,33 @@ public sealed partial class CompetitionEditorService
                 byParticipant[link.ParticipantId] = place;
         return byParticipant;
     }
+
+    public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<RelayNumberCourse>>> GetRelayNumberCoursesAsync(
+        Guid dayId, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return new Dictionary<Guid, IReadOnlyList<RelayNumberCourse>>();
+        var folder = FolderPath;
+        var assignments = await _eventStore.GetLegCourseAssignmentsAsync(folder, dayId, cancellationToken);
+        if (assignments.Count == 0)
+            return new Dictionary<Guid, IReadOnlyList<RelayNumberCourse>>();
+        var result = new Dictionary<Guid, IReadOnlyList<RelayNumberCourse>>();
+        foreach (var team in await _eventStore.GetRelayTeamsAsync(folder, dayId, cancellationToken))
+            if (NumberCourses(team, assignments) is { Count: > 0 } courses)
+                result[team.Id] = courses;
+        return result;
+    }
+
+    // The courses the team's leg numbers were given in its own group, in leg order. A row naming no group is left out: it
+    // applies in whichever group the team runs, so a move loses nothing there.
+    private static IReadOnlyList<RelayNumberCourse> NumberCourses(RelayTeam team, IEnumerable<LegCourseAssignment> assignments) =>
+        team.Number is not { } number
+            ? []
+            : assignments
+                .Where(a => a.TeamNumber == number && a.GroupId == team.GroupId && a.CourseKey.Trim().Length > 0)
+                .OrderBy(a => a.Leg)
+                .Select(a => new RelayNumberCourse(number, a.Leg, a.CourseKey.Trim()))
+                .ToList();
 
     // Everything a relay cell edit of one runner on one day reads, in one place.
     private sealed record RelayEdit(

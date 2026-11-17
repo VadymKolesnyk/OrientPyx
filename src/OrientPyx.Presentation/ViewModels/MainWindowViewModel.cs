@@ -85,6 +85,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly PluginSettingsViewModel _pluginSettings;
     private readonly PluginReportViewModel _pluginReport;
     private readonly IPluginCatalog _pluginCatalog;
+    private readonly ICompetitionEditorService _editor;
 
     public MainWindowViewModel(
         ISessionService session,
@@ -129,6 +130,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         INetworkClient client,
         IActivityLog log,
         IPluginCatalog pluginCatalog,
+        ICompetitionEditorService editor,
+        IDataChangeBus bus,
         ILocalizationService localization,
         IUiScaleService uiScale,
         IAppSettingsService appSettings,
@@ -177,6 +180,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _pluginSettings = pluginSettings;
         _pluginReport = pluginReport;
         _pluginCatalog = pluginCatalog;
+        _editor = editor;
         _network = network;
         _mode = mode;
         _host = host;
@@ -230,13 +234,27 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _dashboard.QuickActionRequested += async (_, action) => await OnDashboardQuickActionAsync(action);
         // A plugin row's «Налаштування» opens that plugin's page; switching a plugin on/off rebuilds its menu items.
         _plugins.OpenSettingsRequested += async (_, pluginId) => await OpenPluginSettingsAsync(pluginId);
-        _pluginCatalog.EnabledChanged += (_, _) => Dispatcher.UIThread.Post(RefreshPluginMenu);
+        // A plugin's discipline may be based on the relay, so switching it on/off can change the «Естафета» menu too.
+        _pluginCatalog.EnabledChanged += (_, _) => Dispatcher.UIThread.Post(() =>
+        {
+            RefreshPluginMenu();
+            _ = RefreshRelayMenuAsync();
+        });
         RefreshPluginMenu();
         _session.SessionChanged += OnSessionChanged;
+        // A day's or a group's type, a group or a number's variant changed (here, by another station, or by an
+        // import) — the «Естафета» menu may appear or go. Own writes count too: the «Групи» page made them.
+        bus.Changed += (_, change) =>
+        {
+            if (change.Area is DataArea.Days or DataArea.Groups or DataArea.GroupDaySettings or DataArea.Relay
+                or DataArea.Any)
+                Dispatcher.UIThread.Post(() => _ = RefreshRelayMenuAsync());
+        };
         Localization.PropertyChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(WindowTitle));
             OnPropertyChanged(nameof(RoleIndicatorText));
+            OnPropertyChanged(nameof(RelayMenuHeader));
             // The plugins' report names are translated.
             RefreshPluginMenu();
         };
@@ -534,6 +552,62 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     {
         await _massStartDraw.LoadAsync();
         _shell.SelectedPage = _massStartDraw;
+    }
+
+    // ── «Змагання → Естафета»: «Команди» only while some group runs a relay; «Варіанти за номерами» also serves a scatter
+    // whose variants OCAD handed out by number, so the submenu stays while any number has a variant — then, with no relay
+    // group at all, it is «Змагання → Розсіювання».
+
+    /// <summary>Some group of the open competition runs a relay on some day — the «Команди» item.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsRelayMenuVisible))]
+    [NotifyPropertyChangedFor(nameof(RelayMenuHeader))]
+    private bool _hasRelayGroups;
+
+    /// <summary>Some number of the open competition has a course variant (a relay, or a scatter by number).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsRelayMenuVisible))]
+    private bool _hasNumberedVariants;
+
+    /// <summary>The «Естафета» submenu (and its «Варіанти за номерами» item).</summary>
+    public bool IsRelayMenuVisible => HasRelayGroups || HasNumberedVariants;
+
+    /// <summary>«Естафета» while some group runs a relay, else «Розсіювання» (only the numbers' variants are left).</summary>
+    public string RelayMenuHeader =>
+        Localization.Get(HasRelayGroups ? "Menu.Competition.Relay" : "Menu.Competition.Scatter");
+
+    private bool _relayMenuRefreshing;
+    private bool _relayMenuRefreshAgain;
+
+    // On the UI thread. A refresh asked for while one runs is folded into one more pass after it (an import writes in bursts).
+    private async Task RefreshRelayMenuAsync()
+    {
+        if (_relayMenuRefreshing)
+        {
+            _relayMenuRefreshAgain = true;
+            return;
+        }
+        _relayMenuRefreshing = true;
+        try
+        {
+            do
+            {
+                _relayMenuRefreshAgain = false;
+                var info = _session.HasSelection ? await _editor.GetRelayMenuInfoAsync() : BusinessLogic.Models.RelayMenuInfo.None;
+                HasRelayGroups = info.HasRelayGroups;
+                HasNumberedVariants = info.HasNumberedVariants;
+            }
+            while (_relayMenuRefreshAgain);
+        }
+        catch (Exception ex)
+        {
+            // A station offline, a store failure: the menu keeps what it showed; the next change asks again.
+            _log.Error("«Естафета» menu refresh", ex);
+        }
+        finally
+        {
+            _relayMenuRefreshing = false;
+        }
     }
 
     // ── «Плагіни» menu: the management page, then one item per switched-on plugin — its settings page, or a submenu
@@ -940,6 +1014,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenPluginReportCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsEventSelected));
         OnPropertyChanged(nameof(WindowTitle));
+        _ = RefreshRelayMenuAsync();
 
         if (_session.HasSelection)
             ShowShell();

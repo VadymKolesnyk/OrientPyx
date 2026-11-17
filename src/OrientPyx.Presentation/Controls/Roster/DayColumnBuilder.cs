@@ -278,7 +278,7 @@ public sealed class DayColumnBuilder
         const string label = nameof(GroupOption.Label);
         (string Items, string Selected)? paths = col.Kind switch
         {
-            // Through BulkGroup: a paste can't ask, so it leaves a relay runner in the team's group (Р-22).
+            // Through BulkGroup: the page gathers a paste's relay runners and asks once (Р-22).
             SheetCellKind.RowGroup => (nameof(ParticipantDayRowViewModel.GroupOptions), nameof(ParticipantDayRowViewModel.BulkGroup)),
             SheetCellKind.RowRegion => (nameof(ParticipantDayRowViewModel.RegionOptions), nameof(ParticipantDayRowViewModel.SelectedRegion)),
             SheetCellKind.RowClub => (nameof(ParticipantDayRowViewModel.ClubOptions), nameof(ParticipantDayRowViewModel.SelectedClub)),

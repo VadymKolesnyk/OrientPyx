@@ -45,6 +45,7 @@
                     <TextBlock Text="{Binding FieldLabel}" Classes="label" />
                     <ComboBox ItemsSource="{Binding Fields}"
                               SelectedItem="{Binding SelectedField, Mode=TwoWay}"
+                              IsEnabled="{Binding CanPickField}"
                               HorizontalAlignment="Stretch">
                         <ComboBox.ItemTemplate>
                             <DataTemplate x:DataType="dialogs:BulkEditFieldOption">

@@ -117,7 +117,13 @@ public sealed partial class BulkEditViewModel : ObservableObject
 
     public ILocalizationService Localization { get; }
 
-    public string Title => Localization.Get("Participants.BulkEdit.Title");
+    public string Title => Localization.Get(SelectionOnly ? "Participants.BulkEdit.SelectionTitle" : "Participants.BulkEdit.Title");
+
+    /// <summary>The dialog edits the selected cells of one column: its one field is fixed (the picker is disabled).</summary>
+    public bool SelectionOnly { get; init; }
+
+    /// <summary>The field picker accepts a choice only when there is more than one field to pick.</summary>
+    public bool CanPickField => Fields.Count > 1;
 
     public string Hint =>
         string.Format(Localization.Get("Participants.BulkEdit.Hint"), AffectedCount);
