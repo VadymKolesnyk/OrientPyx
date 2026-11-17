@@ -20,10 +20,17 @@ internal static class Program
     internal static IActivityLog? ActivityLog { get; set; }
 
     /// <summary>
-    /// Set true by Velopack's first-run hook (the very first launch after an install/update). The UI
+    /// Set true by Velopack's first-run hook (the very first launch after an install). The UI
     /// reads this once it is up (see <c>App</c>) to show the one-time <see cref="WelcomeWindow"/>.
     /// </summary>
     internal static bool IsFirstRun { get; private set; }
+
+    /// <summary>
+    /// The version Velopack has just updated this app to — set by its restart hook on the launch that follows
+    /// «Завантажити й перезапустити». The UI then shows «OrientPyx оновлено» with a link to that version's changes
+    /// (see <c>App</c>). Null on every other launch, the first run after an install included.
+    /// </summary>
+    internal static string? UpdatedToVersion { get; private set; }
 
     /// <summary>
     /// The competition archive (<c>.opyx</c>) this launch was asked to open — set when the user double-clicks
@@ -38,9 +45,11 @@ internal static class Program
     {
         // Velopack install/update/uninstall hooks. MUST run first: on those code paths it does its work
         // and exits the process before the UI is ever built. On a normal launch it returns immediately.
-        // OnFirstRun fires on the first launch Velopack triggers right after an install/update — we just
-        // record it here (no UI exists yet) and surface the welcome window once the UI is up.
-        var velopack = VelopackApp.Build().OnFirstRun(_ => IsFirstRun = true);
+        // OnFirstRun fires on the first launch right after an install, OnRestarted on the relaunch after an update —
+        // we just record them here (no UI exists yet) and surface the welcome / «оновлено» window once the UI is up.
+        var velopack = VelopackApp.Build()
+            .OnFirstRun(_ => IsFirstRun = true)
+            .OnRestarted(version => UpdatedToVersion = version.ToString());
         // The (Windows-only) install/update/uninstall hooks also (un)register the .opyx file association.
         if (OperatingSystem.IsWindows())
         {

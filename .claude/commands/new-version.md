@@ -1,10 +1,11 @@
 ---
 description: Cut and publish a new OrientPyx release — bump version, commit changelog, tag, create the GitHub Release, and follow the GitHub Actions workflows that build, sign and upload the Velopack packages.
-argument-hint: "(no args — you will be asked which segment to bump)"
+argument-hint: "(no args — you will be asked which segment to bump; patch if no answer in 5 min)"
 ---
 
 Cut and publish a new OrientPyx release. Extra arguments (if any): **$ARGUMENTS**
-The version bump is **always chosen by the user** via `AskUserQuestion` in Step 1.
+The version bump is **chosen by the user** in Step 1; with no answer within **5 minutes**
+the recommended patch bump is taken.
 
 You are releasing this app to end users, so treat this as an outward-facing action:
 follow every step in order, verify as you go, and **stop and report** if any step fails
@@ -27,15 +28,27 @@ finished (Step 6) — that is where the packages are built, signed and uploaded.
 - Read the current version from `src/OrientPyx.Presentation/OrientPyx.Presentation.csproj`
   (`<Version>`) and the latest tag: `git tag --sort=-v:refname | head -1`.
 - **Always ask** the user which segment to bump — even if `$ARGUMENTS` contains a
-  version. Call `AskUserQuestion` with exactly three options, computed from the base
-  version (the latest of {csproj version, latest tag}), patch listed **first** and marked
-  as the default:
-  1. `Patch — <X.Y.Z+1> (Recommended)` — bump the 3rd segment (fixes/small changes).
-  2. `Minor — <X.Y+1.0>` — bump the 2nd segment, reset patch to 0 (new features).
-  3. `Major — <X+1.0.0>` — bump the 1st segment, reset minor and patch to 0.
-  Show the concrete resulting version in each label (e.g. `0.5.2 → 0.5.3`). If the user
-  picks "Other" and types an explicit version, use that (strip any leading `v`).
-  Do not continue until the user has answered.
+  version — but **never wait longer than 5 minutes**: no answer by then = the recommended
+  patch bump. `AskUserQuestion` has no timeout, so do **not** use it for this question:
+  1. Compute three options from the base version (the latest of {csproj version, latest tag}),
+     each with the concrete resulting version (e.g. `0.5.2 → 0.5.3`):
+     1. `Patch — <X.Y.Z+1>` (**recommended**) — bump the 3rd segment (fixes/small changes).
+     2. `Minor — <X.Y+1.0>` — bump the 2nd segment, reset patch to 0 (new features).
+     3. `Major — <X+1.0.0>` — bump the 1st segment, reset minor and patch to 0.
+  2. Start a 5-minute timer in the background — Bash `sleep 300` with
+     `run_in_background: true` — and note its task id.
+  3. Show the user the three options as a short numbered list, say that without an answer in
+     5 minutes the patch version is released, and that they can reply `1`/`2`/`3`,
+     `patch`/`minor`/`major` or an explicit version. Then **end the turn** — do nothing else
+     (no commits, no edits, no further steps) while waiting.
+  4. Whichever comes first decides:
+     - **The user answers** → stop the timer (`TaskStop` with its id) and use their choice;
+       an explicit version is used as typed (strip any leading `v`). An answer that names no
+       version (a question, «стоп», something unclear) → do not release: answer it / ask
+       again with `AskUserQuestion` — the user is here, no timer this time.
+     - **The timer's notification arrives** and the user has not answered → take the patch
+       version, say so plainly («Відповіді не було 5 хв — випускаю patch <version>») and go on.
+     - A timer notification arriving after the version was already chosen is ignored.
 - **Validate** the new version:
   - It is a valid `MAJOR.MINOR.PATCH` semver.
   - It is strictly greater than the latest existing tag (Velopack requires this for

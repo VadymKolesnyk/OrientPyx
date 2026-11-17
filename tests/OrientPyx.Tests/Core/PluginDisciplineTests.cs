@@ -136,15 +136,18 @@ public sealed class PluginDisciplineTests
         Assert.Equal(["Man", "20:00", "18:12", "", "18:12"], monitorRows.Single(row => row.Values[0] == "Man").Values);
         Assert.Equal(["Woman", "25:00", "22:15", "", "40:27"], monitorRows.Single(row => row.Values[0] == "Woman").Values);
 
-        // Online: the leg carries both times and the extra column values (plugin columns and the «Стать» field).
+        // Online: the leg carries both times and the extra column values (plugin columns and the «Стать» field) —
+        // but not «T·K» (ResultColumnDef.Online = false): the site's «Результат» already is T·K.
         var online = await editor.GetOnlineResultsSnapshotAsync(c.Day(1).Id);
         var onlineLeg = online.Teams.Single(t => t.Number == 501).Legs[0];
         Assert.Equal(T(0, 20), onlineLeg.LegTime);           // «Час»
-        Assert.Equal(T(0, 18, 12), onlineLeg.Result);        // «Результат»
+        Assert.Equal(T(0, 18, 12), onlineLeg.Result);        // «Результат» = T·K
         Assert.Equal("Ч", onlineLeg.Extra["field.gender"]);
-        Assert.Equal("18:12", onlineLeg.Extra["weighted.adj"]);
+        Assert.True(onlineLeg.Extra.ContainsKey("weighted.k"));
+        Assert.False(onlineLeg.Extra.ContainsKey("weighted.adj"));
         Assert.Contains(online.ExtraColumns, x => x.Key == "field.gender" && !x.IsPlugin);
         Assert.Contains(online.ExtraColumns, x => x.Key == "weighted.time" && x.IsPlugin);
+        Assert.DoesNotContain(online.ExtraColumns, x => x.Key == "weighted.adj");
         var fields = await editor.GetCustomFieldsAsync();
         Assert.Contains(fields, f => f.Key == "gender" && f.Source == "plugin:weighted");
     }

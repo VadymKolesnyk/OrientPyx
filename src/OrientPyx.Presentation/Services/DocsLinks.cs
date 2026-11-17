@@ -26,6 +26,13 @@ public static partial class DocsLinks
         return new Uri(url);
     }
 
+    /// <summary>
+    /// «Що нового» at the section of <paramref name="version"/> (the hook gives each release's heading the id
+    /// <c>v&lt;version&gt;</c>, e.g. <c>changelog/#v0.8.7</c>); the page's top for a blank version.
+    /// </summary>
+    public static Uri Changelog(string? version)
+        => new(string.IsNullOrWhiteSpace(version) ? $"{Site}changelog/" : $"{Site}changelog/#v{version.Trim()}");
+
     /// <summary><c>CompetitionInfo</c> → <c>competition-info</c>.</summary>
     public static string Kebab(string name) => WordStart().Replace(name, "-").ToLowerInvariant();
 

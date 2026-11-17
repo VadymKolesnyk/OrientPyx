@@ -22,6 +22,17 @@ public sealed class DocsLinksTests
     }
 
     [Fact]
+    public void ChangelogLinkPointsAtTheVersionsSection()
+    {
+        Assert.Equal("https://vadymkolesnyk.github.io/OrientPyx/changelog/#v0.8.7", DocsLinks.Changelog("0.8.7").AbsoluteUri);
+        Assert.Equal("https://vadymkolesnyk.github.io/OrientPyx/changelog/", DocsLinks.Changelog(null).AbsoluteUri);
+
+        // «Що нового» gives each release's heading the same id.
+        var hook = File.ReadAllText(Path.Combine(TestEnvironment.RepoRoot, "website", "hooks.py"));
+        Assert.Contains("f\" {{#v{version}}}\"", hook);
+    }
+
+    [Fact]
     public void TheHookUsesTheSameRule()
     {
         var hook = File.ReadAllText(Path.Combine(TestEnvironment.RepoRoot, "website", "hooks.py"));

@@ -147,6 +147,14 @@ public sealed partial class DocShotTests
         await _s.OnUiAsync(() => _s.Vm.CloseAboutCommand.Execute(null));
         await _s.SettleLongAsync();
 
+        // The launch after an update.
+        _ = _s.OnUiAsync(() => _s.Vm.ShowAppUpdatedAsync("0.9.0"));
+        await _s.WaitUntilAsync(() => _s.Vm.Dialogs.Current is AppUpdatedViewModel, "update dialog");
+        await _s.SettleLongAsync();
+        await _s.ShotAsync("app-updated", "Вікно «OrientPyx оновлено» після оновлення з посиланням на «Що нового».");
+        await _s.OnUiAsync(() => ((AppUpdatedViewModel)_s.Vm.Dialogs.Current!).CloseCommand.Execute(null));
+        await _s.WaitUntilAsync(() => _s.Vm.Dialogs.Current is null, "update dialog closed");
+
         await _s.OnUiAsync(() => _s.Vm.OpenNetworkCommand.Execute(null));
         await _s.SettleLongAsync();
         await _s.OnUiAsync(() => _s.Vm.Network.HostName = _s.Vm.Network.StationName = "FINISH-PC");   // not this machine's name

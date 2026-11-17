@@ -115,6 +115,9 @@ public interface IDialogService : INotifyPropertyChanged
     /// <summary>Read-only «що це / для чого / як користуватися», from the «?» button in a page header.</summary>
     Task ShowScreenHelpAsync(ScreenHelpViewModel dialog);
 
+    /// <summary>«OrientPyx оновлено» on the launch after an update, with a link to the version's «Що нового».</summary>
+    Task ShowAppUpdatedAsync(AppUpdatedViewModel dialog);
+
     /// <summary>Read-only: why a group chip is red — which groups it overlaps and what they share.</summary>
     Task ShowDrawClashHelpAsync(DrawClashHelpViewModel dialog);
 

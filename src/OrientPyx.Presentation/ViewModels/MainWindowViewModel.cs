@@ -728,6 +728,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         => _ = _dialogs.ShowScreenHelpAsync(
             new ViewModels.Dialogs.ScreenHelpViewModel(Localization, keyPrefix));
 
+    /// <summary>The launch after an update: «OrientPyx оновлено до версії …» with a link to its «Що нового».</summary>
+    public Task ShowAppUpdatedAsync(string version)
+        => _dialogs.ShowAppUpdatedAsync(new ViewModels.Dialogs.AppUpdatedViewModel(Localization, version));
+
     /// <summary>Called once after construction to restore the last session or show the picker.</summary>
     public async Task InitializeAsync()
     {

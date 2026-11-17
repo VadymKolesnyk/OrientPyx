@@ -5,7 +5,7 @@ using Avalonia.Media;
 namespace OrientPyx.Presentation;
 
 /// <summary>
-/// Shown once, right after a Velopack install/update, to reassure the user that the app installed
+/// Shown once, right after a Velopack install, to reassure the user that the app installed
 /// correctly: it names the install folder, the (separate) competition-data folder that survives
 /// updates, and the shortcuts Velopack created. Built entirely in code (no XAML/DI/localization)
 /// in the same self-contained style as <see cref="CrashWindow"/> so it has no startup dependencies.

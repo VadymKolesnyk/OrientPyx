@@ -118,6 +118,9 @@
         <DataTemplate DataType="dialogs:ScreenHelpViewModel">
             <dialogViews:ScreenHelpView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:AppUpdatedViewModel">
+            <dialogViews:AppUpdatedView />
+        </DataTemplate>
         <DataTemplate DataType="dialogs:DrawClashHelpViewModel">
             <dialogViews:DrawClashHelpView />
         </DataTemplate>

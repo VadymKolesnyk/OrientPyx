@@ -9,7 +9,7 @@ namespace WeightedRelay;
 /// </summary>
 public sealed class WeightedRelayPlugin : IOrientPyxPlugin
 {
-    public PluginInfo Info => new("weighted", "Зважена естафета", "1.3", MinApiVersion: 3,
+    public PluginInfo Info => new("weighted", "Зважена естафета", "1.4", MinApiVersion: 4,
         Author: "OrientPyx", Description: "Час етапу × коефіцієнт за віком і статтю; час команди = Σ T·K.");
 
     public void Register(IPluginBuilder p)
@@ -62,7 +62,8 @@ public sealed class WeightedRelayDiscipline : Discipline
         Column.Time("time", "column.time", r => r.Get<TimeSpan?>("time")),             // the leg's own time T
         Column.Number("k", "column.k", r => r.Get<double?>("k"), format: "0.00",
             problem: r => r.Get<bool>(MissingKey)),                                     // Р-48: red when unknown
-        Column.Time("adj", "column.adj", r => r.Get<TimeSpan?>("adj")),
+        // Online «Результат» of a leg already is T·K — a column of its own there would only repeat it.
+        Column.Time("adj", "column.adj", r => r.Get<TimeSpan?>("adj")) with { Online = false },
     ];
 
     private const string MissingKey = "k.missing";

@@ -16,6 +16,11 @@ public sealed record ResultColumnDef(string Key, string Label, ColumnKind Kind, 
     /// coefficient).</summary>
     public Func<ResultRow, bool>? Problem { get; init; }
 
+    /// <summary>False — the column is left out of the online results (neither offered in their columns nor sent),
+    /// e.g. when it repeats what the site's «Результат» already shows. The day grid, protocols and monitor still
+    /// show it. Default true. API 4.</summary>
+    public bool Online { get; init; } = true;
+
     /// <summary>Whether <paramref name="row"/>'s cell is flagged by <see cref="Problem"/> (false on any error).</summary>
     public bool IsProblem(ResultRow row)
     {

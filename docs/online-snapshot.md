@@ -2,8 +2,9 @@
 
 > Що саме OrientPyx пише в Supabase-проєкт, який читає окремий React-фронтенд глядачів. Джерело правди в коді:
 > `OnlineResultsSnapshot` (BusinessLogic, будує `ICompetitionEditorService.GetOnlineResultsSnapshotAsync`) і
-> `SupabaseResultPublisher` (DataAccess, PostgREST). Оновлено: 2026-11-12 (учасники без номера — під від'ємним `bib`).
-> Раніше: 2026-11-11 (додаткові колонки онлайн, «Наростаючий», естафета за `display_config`).
+> `SupabaseResultPublisher` (DataAccess, PostgREST). Оновлено: 2026-11-17 («T·K» зваженої естафети онлайн не
+> публікується — `ResultColumnDef.Online`). Раніше: 2026-11-12 (учасники без номера — під від'ємним `bib`),
+> 2026-11-11 (додаткові колонки онлайн, «Наростаючий», естафета за `display_config`).
 
 ## Як публікується
 
@@ -95,8 +96,11 @@ Guid, від −1 до −2³¹+1; збіг у межах дня зсуваєт�
   "course": "B", "start_time": "10:20:00",
   "leg_time": "00:25:00", "result_time": "00:23:45", "cumulative": "00:45:00",
   "status": "finished|dsq|dns|running|pending", "reason": "MP", "restarted": false,
-  "extra": { "weighted.time": "25:00", "weighted.k": "0.95", "weighted.adj": "23:45", "field.gender": "Ч" } }
+  "extra": { "weighted.time": "25:00", "weighted.k": "0.95", "field.gender": "Ч" } }
 ```
+
+(«T·K» зваженої естафети — `weighted.adj` — онлайн не публікується, `ResultColumnDef.Online = false`: він дорівнює
+`result_time` етапу. Колонка плагіна з `Online = false` не потрапляє ні в `display_config.columns`, ні в `extra`.)
 
 - `leg_time` — «Час», чистий час етапу (фініш − старт етапу); `result_time` — «Результат», зарахований час етапу
   (скоригований видом змагань, напр. T·K зваженої естафети; інакше = `leg_time`); `cumulative` — наростаючий

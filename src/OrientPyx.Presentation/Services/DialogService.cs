@@ -506,6 +506,22 @@ public sealed partial class DialogService : ObservableObject, IDialogService
         }
     }
 
+    public async Task ShowAppUpdatedAsync(AppUpdatedViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        Current = dialog;
+        try
+        {
+            await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = null;
+        }
+    }
+
     public async Task ShowDrawClashHelpAsync(DrawClashHelpViewModel dialog)
     {
         ArgumentNullException.ThrowIfNull(dialog);

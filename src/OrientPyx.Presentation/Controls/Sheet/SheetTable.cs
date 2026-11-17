@@ -1130,10 +1130,16 @@ public sealed class SheetTable : TemplatedControl
     // input list unchanged (same references) when nothing is hidden, so the common case allocates nothing.
     private static IReadOnlyList<SheetBand> ComputeVisibleBands(IReadOnlyList<SheetBand> bands)
     {
+        // A band with no columns at all (e.g. a roster day block while the day list is momentarily empty) is dropped
+        // too: the header would span it over zero grid columns, which Avalonia rejects.
         var anyHidden = false;
         foreach (var b in bands)
+        {
+            if (b.Columns.Count == 0)
+                anyHidden = true;
             foreach (var c in b.Columns)
                 if (c.IsHidden) { anyHidden = true; break; }
+        }
 
         if (!anyHidden)
             return bands;

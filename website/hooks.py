@@ -232,7 +232,8 @@ def _changelog() -> str | None:
         if date:
             y, m, d = date.split("-")
             date = f"{d}.{m}.{y}"
-        out += [f"## {version}" + (f" — {date}" if date else ""), ""]
+        # The id «v0.8.7» is what the app links to after an update (DocsLinks.Changelog) — keep the two in step.
+        out += [f"## {version}" + (f" — {date}" if date else "") + (f" {{#v{version}}}" if version else ""), ""]
         body = (release.get("body") or "").replace("\r\n", "\n")
         body = "\n".join(line for line in body.split("\n")
                          if not re.match(r"\s*(Co-Authored-By:|🤖 Generated with)", line))

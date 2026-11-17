@@ -110,7 +110,7 @@ public partial class App : Application
                 };
             }
 
-            // On the very first launch after a Velopack install/update, greet the user and confirm
+            // On the very first launch after a Velopack install, greet the user and confirm
             // where the app and their (update-safe) competition data live. Shown once, non-blocking.
             if (Program.IsFirstRun)
             {
@@ -121,6 +121,26 @@ public partial class App : Application
                         AppDatabasePaths.DefaultEventsPath);
                     welcome.Show(mainWindow);
                 };
+            }
+
+            // Relaunched by an update («Завантажити й перезапустити»): once the startup screen settled, say it
+            // worked and link to what changed in this version.
+            if (Program.UpdatedToVersion is { } updatedTo)
+                _ = ShowUpdatedWhenReadyAsync(updatedTo);
+
+            async Task ShowUpdatedWhenReadyAsync(string version)
+            {
+                try
+                {
+                    await windowOpened.Task;
+                    await initialized;
+                    log.Info($"Started after the update to {version}.");
+                    await mainViewModel.ShowAppUpdatedAsync(version);
+                }
+                catch (Exception ex)
+                {
+                    log.Error("Show the update notice", ex);
+                }
             }
         }
 

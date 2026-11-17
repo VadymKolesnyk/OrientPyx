@@ -45,7 +45,8 @@ Three layers plus a shared localization library and the plugin SDK.
   no knowledge of EF / files / UI — only the contract and pure algorithms.** Everything in it is public API with
   compatibility obligations: add only what is stable. Its `AssemblyVersion` is set explicitly (`1.0.0.0`) — the
   binary-compat version, bumped only on a breaking change; never tie it to the app's `Version`. `ApiVersion.Current`
-  counts additive feature levels (2 = imported fields + reports, 3 = `ReportGroup.Settings`); a plugin using them sets
+  counts additive feature levels (2 = imported fields + reports, 3 = `ReportGroup.Settings`, 4 = `ResultColumnDef.Online`
+— a plugin column kept out of the online results, e.g. weighted relay's «T·K» = the leg's «Результат»); a plugin using them sets
   `MinApiVersion` to that level. New `IPluginBuilder` members get a default implementation. The three app projects import its namespaces globally
   (`<Using>` in their `.csproj`).
 
@@ -566,7 +567,9 @@ release's screenshots.
 - **Generated pages** (`website/hooks.py`): «Довідник екранів» — one page per `Help.<Screen>` (sections per
   `Help.<Screen>.<Block>`) straight from `uk-UA.json`; «Що нового» from the GitHub releases. The «?» dialog's
   «Детальніше в документації» and «Довідка → Документація» open them through `Presentation/Services/DocsLinks.cs` —
-  its kebab rule must stay the hook's (`DocsLinksTests`).
+  its kebab rule must stay the hook's (`DocsLinksTests`). The hook gives each release heading the id `v<version>`:
+  the launch after an update (Velopack `OnRestarted` → `Program.UpdatedToVersion`) shows «OrientPyx оновлено»
+  (`AppUpdatedViewModel`) linking `DocsLinks.Changelog(version)` = `changelog/#v<version>`.
 - **Keeping it current**: `/new-version` Step 2b — `python website/tools/affected.py` lists the pages whose code changed
   since the last tag (`website/docs-map.yml`), UI names renamed while still quoted in the docs, new strings and changed
   help; update the pages, add shots, `scripts/docs.ps1 -Shots -Build`. A new page → `mkdocs.yml` nav + `docs-map.yml`.

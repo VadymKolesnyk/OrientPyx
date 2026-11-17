@@ -141,7 +141,7 @@ public abstract class MissedPenaltyDiscipline : Discipline
 ```csharp
 public sealed class WeightedRelayPlugin : IOrientPyxPlugin
 {
-    public PluginInfo Info => new("weighted", "Зважена естафета", "1.3", MinApiVersion: 3,
+    public PluginInfo Info => new("weighted", "Зважена естафета", "1.4", MinApiVersion: 4,
         Author: "OrientPyx", Description: "Час етапу × коефіцієнт за віком і статтю; час команди = Σ T·K.");
 
     public void Register(IPluginBuilder p)
@@ -173,8 +173,9 @@ internal static class Gender
 «Групи» — або раніше, коли імпорт учасників принесе стать: `FieldImport` каже, що в UOF вона лежить в `<Pol>`
 (`1`/`0`), в IOF — в атрибуті `sex` (`M`/`F`), а в CSV колонка може зватися «Gender». Переклад діє лише під час
 імпорту; під час введення вручну регістр не важливий («ч» стане «Ч»), а «M» лишиться «M» і почервоніє. Підпис
-«Стать» — звичайний текст, він не перекладається. `MinApiVersion: 3` — бо `FieldImport` і звіти з'явилися в API 2, а
-налаштування виду змагань у звіті (колонка «K» у «Перевірці K») — в API 3.
+«Стать» — звичайний текст, він не перекладається. `MinApiVersion: 4` — бо `FieldImport` і звіти з'явилися в API 2,
+налаштування виду змагань у звіті (колонка «K» у «Перевірці K») — в API 3, а колонка поза онлайн-результатами
+(`Online = false` в «T·K») — в API 4.
 
 ### Вид змагань
 
@@ -197,7 +198,7 @@ public sealed class WeightedRelayDiscipline : Discipline
         Column.Time("time", "column.time", r => r.Get<TimeSpan?>("time")),   // чистий час етапу T
         Column.Number("k", "column.k", r => r.Get<double?>("k"), format: "0.00",
             problem: r => r.Get<bool>(MissingKey)),          // червона, коли K не визначено
-        Column.Time("adj", "column.adj", r => r.Get<TimeSpan?>("adj")),
+        Column.Time("adj", "column.adj", r => r.Get<TimeSpan?>("adj")) with { Online = false },
     ];
 
     private const string MissingKey = "k.missing";
@@ -210,6 +211,8 @@ public sealed class WeightedRelayDiscipline : Discipline
 - Таблиця K має область `SettingScope.Competition`: одна на всі дні й групи з цим видом змагань.
 - Колонки «Час», «K» і «T·K» — у такому порядку вони стоять у таблиці дня й у протоколі. «Час» — чистий час етапу:
   у колонці «Результат» уже T·K.
+- `with { Online = false }` — «T·K» не публікується онлайн: на сайті «Результат» етапу і є T·K, окрема колонка
+  лише повторювала б його. Онлайн лишаються «Час», «K» і «Результат».
 - Колонка «K» з форматом `"0.00"` і `problem` — клітинка червона, коли коефіцієнт визначити не вдалося.
 
 ### Таблиця коефіцієнтів

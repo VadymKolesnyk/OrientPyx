@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviors="using:OrientPyx.Presentation.Behaviors"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
+             mc:Ignorable="d" d:DesignWidth="520" d:DesignHeight="320"
+             x:Class="OrientPyx.Presentation.Views.Dialogs.AppUpdatedView"
+             x:DataType="dialogs:AppUpdatedViewModel">
+
+    <!-- Centered card; the backdrop is supplied by the host overlay. -->
+    <Border Background="{DynamicResource SurfaceCard}"
+            CornerRadius="12"
+            MinWidth="440" MaxWidth="560"
+            BoxShadow="0 10 40 0 #40000000"
+            HorizontalAlignment="Center" VerticalAlignment="Center"
+            ClipToBounds="True"
+            KeyboardNavigation.TabNavigation="Cycle">
+        <DockPanel LastChildFill="True">
+
+            <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
+                    Padding="22,16">
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <Border Width="30" Height="30" CornerRadius="15"
+                            Background="{DynamicResource AccentSurface}"
+                            VerticalAlignment="Center">
+                        <controls:Icon Kind="Check" Size="17"
+                                       Foreground="{DynamicResource AccentBrush}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="{Binding Localization[AppUpdated.Title]}" Classes="h2" VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
+
+            <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
+                    Padding="22,14">
+                <DockPanel LastChildFill="False">
+                    <!-- This version's section of «Що нового» on the documentation site, in the default browser. -->
+                    <Button DockPanel.Dock="Left" Classes="ghost"
+                            ToolTip.Tip="{Binding ChangelogUri}"
+                            Click="OnChangelogClick">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <controls:Icon Kind="ExternalLink" Size="15" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Localization[AppUpdated.Changelog]}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button DockPanel.Dock="Right" behaviors:AutoFocus.OnOpen="True"
+                            Content="{Binding Localization[AppUpdated.Continue]}"
+                            Classes="accent"
+                            IsDefault="True" IsCancel="True"
+                            Command="{Binding CloseCommand}" />
+                </DockPanel>
+            </Border>
+
+            <StackPanel Margin="22,18" Spacing="10">
+                <TextBlock Text="{Binding Message}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding Localization[AppUpdated.DataKept]}" TextWrapping="Wrap" Classes="muted" />
+                <TextBlock Text="{Binding Localization[AppUpdated.ChangesHint]}" TextWrapping="Wrap" Classes="muted" />
+            </StackPanel>
+
+        </DockPanel>
+    </Border>
+
+</UserControl>

@@ -5397,6 +5397,9 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         // The frontend keys results by (event, bib, day) with bib an integer. A runner with no (positive integer)
         // start number goes under a stand-in negative key from the participant id, which the site doesn't show —
         // so a competition run without numbers publishes too.
+        // A plugin column may stay out of the online results (ResultColumnDef.Online — weighted relay's «T·K», which
+        // the site's «Результат» already shows): neither offered in the online columns nor sent.
+        var extraColumns = data.ExtraColumns.Where(c => c.Plugin?.Online != false).ToList();
         var rows = new List<OnlineResultRow>();
         var unnumbered = 0;
         // bib -> every holder's name. Two participants with one number (e.g. after merging people) would put two
@@ -5453,7 +5456,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     HasReadout: res.HasReadout,
                     OutOfCompetition: res.OutOfCompetition)
                 {
-                    Extra = OnlineExtras(data.ExtraColumns, res, r.Fields),
+                    Extra = OnlineExtras(extraColumns, res, r.Fields),
                 });
             }
         }
@@ -5466,8 +5469,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
         return new OnlineResultsSnapshot(onlineDays, day.Number, groups, rows, unnumbered, duplicates)
         {
-            Teams = OnlineTeams(data, OnlineGroupName),
-            ExtraColumns = data.ExtraColumns
+            Teams = OnlineTeams(data, extraColumns, OnlineGroupName),
+            ExtraColumns = extraColumns
                 .Select(c => new OnlineExtraColumn(c.Key, c.LabelKey, IsPlugin: c.Plugin is not null))
                 .ToList(),
         };
@@ -5483,7 +5486,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     // §11.1: one row per relay team of the day, each with its legs (number «100.N», runner, course, times, status),
     // in standing order (RelayTeamOrder; the spectator site sorts the same way on its own).
-    private static List<OnlineTeamRow> OnlineTeams(ResultProtocolData data, Func<string, string> groupName)
+    private static List<OnlineTeamRow> OnlineTeams(
+        ResultProtocolData data, IReadOnlyList<ExtraResultColumn> extraColumns, Func<string, string> groupName)
     {
         var teams = new List<OnlineTeamRow>();
         foreach (var g in data.Groups)
@@ -5501,7 +5505,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     var leg = runner?.Result.Leg ?? result?.Legs.FirstOrDefault(x => x.Leg == l.Leg);
                     var extra = runner is null
                         ? new Dictionary<string, string>()
-                        : OnlineExtras(data.ExtraColumns, runner.Result, runner.Fields);
+                        : OnlineExtras(extraColumns, runner.Result, runner.Fields);
                     return new OnlineLegRow(
                         Leg: l.Leg,
                         Bib: RelayBib.Format(number, l.Leg),
