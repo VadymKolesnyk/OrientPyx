@@ -739,6 +739,17 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public Task ShowAppUpdatedAsync(string version)
         => _dialogs.ShowAppUpdatedAsync(new ViewModels.Dialogs.AppUpdatedViewModel(Localization, version));
 
+    /// <summary>
+    /// Right before an update replaces the app (<see cref="IUpdateService.BeforeRestart"/>): what closing the window
+    /// does — the shown page's pending writes reach the database and the network host stops / the station leaves.
+    /// </summary>
+    public Task PrepareForUpdateRestartAsync() => Dispatcher.UIThread.InvokeAsync(async () =>
+    {
+        if (_shell.SelectedPage is { } page)
+            await page.FlushPendingWritesAsync();
+        await ShutdownNetworkAsync();
+    });
+
     /// <summary>Called once after construction to restore the last session or show the picker.</summary>
     public async Task InitializeAsync()
     {

@@ -142,6 +142,28 @@ public partial class App : Application
                     log.Error("Show the update notice", ex);
                 }
             }
+
+            // Every launch of an installed build asks the release feed once, quietly: a newer version = a clickable
+            // toast, anything else (up to date, offline, a failed check) = nothing on screen. An update — from that
+            // toast's dialog or from Settings — first does what closing the window does (pending writes, network).
+            var updates = services.GetRequiredService<IUpdateService>();
+            updates.BeforeRestart = mainViewModel.PrepareForUpdateRestartAsync;
+            _ = CheckForUpdateWhenReadyAsync();
+
+            async Task CheckForUpdateWhenReadyAsync()
+            {
+                try
+                {
+                    await windowOpened.Task;
+                    await initialized;
+                }
+                catch (Exception)
+                {
+                    // A failed restore is reported by InitializeAsync itself; the check still runs.
+                }
+
+                await services.GetRequiredService<StartupUpdateCheck>().RunAsync();
+            }
         }
 
         base.OnFrameworkInitializationCompleted();

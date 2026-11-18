@@ -15,19 +15,25 @@ public interface IToastService
     /// <summary>The toasts on screen, oldest first. Touched on the UI thread only.</summary>
     ObservableCollection<ToastItem> Items { get; }
 
-    /// <summary>Shows a toast with already-localized text. Safe to call from any thread.</summary>
-    void Show(string title, string message);
+    /// <summary>
+    /// Shows a toast with already-localized text. Safe to call from any thread. With <paramref name="onClick"/> the
+    /// toast is clickable (a click anywhere but its ✕ closes it and runs that on the UI thread) and stays up for
+    /// <see cref="ToastService.ActionLifetime"/>.
+    /// </summary>
+    void Show(string title, string message, Action? onClick = null);
 }
 
 /// <summary>One toast on screen: a heading, a line of detail and the ✕ that closes it early.</summary>
 public sealed partial class ToastItem : ObservableObject
 {
     private readonly Action<ToastItem> _dismiss;
+    private readonly Action? _onClick;
 
-    internal ToastItem(string title, string message, Action<ToastItem> dismiss)
+    internal ToastItem(string title, string message, Action? onClick, Action<ToastItem> dismiss)
     {
         Title = title;
         Message = message;
+        _onClick = onClick;
         _dismiss = dismiss;
     }
 
@@ -35,8 +41,21 @@ public sealed partial class ToastItem : ObservableObject
 
     public string Message { get; }
 
+    /// <summary>True when a click on the toast does something (the hand cursor).</summary>
+    public bool CanOpen => _onClick is not null;
+
     [RelayCommand]
     private void Dismiss() => _dismiss(this);
+
+    /// <summary>The click on the toast's body: closes it and runs its action.</summary>
+    [RelayCommand]
+    private void Open()
+    {
+        if (_onClick is null)
+            return;
+        _dismiss(this);
+        _onClick();
+    }
 }
 
 /// <inheritdoc />
@@ -45,26 +64,29 @@ public sealed class ToastService : IToastService
     /// <summary>How long a toast stays up when nobody closes it.</summary>
     public static readonly TimeSpan Lifetime = TimeSpan.FromSeconds(15);
 
+    /// <summary>How long a clickable toast stays up: it offers something to do, not just news, so it waits longer.</summary>
+    public static readonly TimeSpan ActionLifetime = TimeSpan.FromSeconds(60);
+
     // A burst of reads must not wall off the corner: past this many, the oldest toast makes room.
     private const int MaxVisible = 5;
 
     public ObservableCollection<ToastItem> Items { get; } = [];
 
-    public void Show(string title, string message)
+    public void Show(string title, string message, Action? onClick = null)
     {
         if (Dispatcher.UIThread.CheckAccess())
-            Add(title, message);
+            Add(title, message, onClick);
         else
-            Dispatcher.UIThread.Post(() => Add(title, message));
+            Dispatcher.UIThread.Post(() => Add(title, message, onClick));
     }
 
-    private void Add(string title, string message)
+    private void Add(string title, string message, Action? onClick)
     {
-        var toast = new ToastItem(title, message, Remove);
+        var toast = new ToastItem(title, message, onClick, Remove);
         Items.Add(toast);
         while (Items.Count > MaxVisible)
             Items.RemoveAt(0);
-        DispatcherTimer.RunOnce(() => Remove(toast), Lifetime);
+        DispatcherTimer.RunOnce(() => Remove(toast), onClick is null ? Lifetime : ActionLifetime);
     }
 
     // Closing an already-gone toast (its timer firing after the ✕, or after it was pushed out) is a no-op.

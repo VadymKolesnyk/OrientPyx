@@ -112,6 +112,18 @@ public sealed class UiPreferencesService : IUiPreferencesService
         set => Set(_data.FlashWhenInactive, value, v => _data.FlashWhenInactive = v);
     }
 
+    public string? SkippedUpdateVersion
+    {
+        get => _data.SkippedUpdateVersion;
+        set
+        {
+            if (_data.SkippedUpdateVersion == value)
+                return;
+            _data.SkippedUpdateVersion = value;
+            Write();
+        }
+    }
+
     private void Set(bool current, bool value, Action<bool> assign)
     {
         if (current == value)
@@ -163,5 +175,6 @@ public sealed class UiPreferencesService : IUiPreferencesService
         public bool CollectChipSystemNotification { get; set; } = true;
         public bool UnknownChipSystemNotification { get; set; } = true;
         public bool FlashWhenInactive { get; set; } = true;
+        public string? SkippedUpdateVersion { get; set; }
     }
 }

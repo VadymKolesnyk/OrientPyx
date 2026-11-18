@@ -121,6 +121,12 @@ public interface IDialogService : INotifyPropertyChanged
     /// <summary>«OrientPyx оновлено» on the launch after an update, with a link to the version's «Що нового».</summary>
     Task ShowAppUpdatedAsync(AppUpdatedViewModel dialog);
 
+    /// <summary>
+    /// «Доступна нова версія», opened from the start-up toast: skip / download &amp; restart / close. Shown over whatever
+    /// dialog was open (the toast floats above modals), which comes back afterwards.
+    /// </summary>
+    Task<UpdateAvailableChoice> ShowUpdateAvailableAsync(UpdateAvailableViewModel dialog);
+
     /// <summary>Read-only: why a group chip is red — which groups it overlaps and what they share.</summary>
     Task ShowDrawClashHelpAsync(DrawClashHelpViewModel dialog);
 

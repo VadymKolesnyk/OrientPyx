@@ -538,6 +538,24 @@ public sealed partial class DialogService : ObservableObject, IDialogService
         }
     }
 
+    public async Task<UpdateAvailableChoice> ShowUpdateAvailableAsync(UpdateAvailableViewModel dialog)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+
+        // The toast that opens it floats above modals, so another dialog may be on screen: it comes back afterwards.
+        var previous = Current;
+        Current = dialog;
+        try
+        {
+            return await dialog.Completion;
+        }
+        finally
+        {
+            if (ReferenceEquals(Current, dialog))
+                Current = previous;
+        }
+    }
+
     public async Task ShowDrawClashHelpAsync(DrawClashHelpViewModel dialog)
     {
         ArgumentNullException.ThrowIfNull(dialog);

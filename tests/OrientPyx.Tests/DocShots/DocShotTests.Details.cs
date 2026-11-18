@@ -13,6 +13,16 @@ public sealed partial class DocShotTests
 {
     private string L(string key) => _s.Vm.Localization[key];
 
+    // The «Доступна нова версія» shot only shows the dialog; nothing is checked or downloaded.
+    private sealed class NoUpdates : OrientPyx.Presentation.Services.IUpdateService
+    {
+        public bool IsInstalled => true;
+        public Func<Task>? BeforeRestart { get; set; }
+        public Task<string?> CheckForUpdateAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
+        public Task<bool> DownloadAndRestartAsync(IProgress<int>? progress = null, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+    }
+
     [DocShotFact]
     public async Task CupDetails()
     {
@@ -161,6 +171,17 @@ public sealed partial class DocShotTests
         await _s.ShotAsync("app-updated", "Вікно «OrientPyx оновлено» після оновлення з посиланням на «Що нового».");
         await _s.OnUiAsync(() => ((AppUpdatedViewModel)_s.Vm.Dialogs.Current!).CloseCommand.Execute(null));
         await _s.WaitUntilAsync(() => _s.Vm.Dialogs.Current is null, "update dialog closed");
+
+        // A newer version found at start-up: the toast's dialog (offering the next patch of the running version).
+        var running = typeof(UpdateAvailableViewModel).Assembly.GetName().Version!;
+        var offered = new UpdateAvailableViewModel(_s.Vm.Localization, new NoUpdates(),
+            $"{running.Major}.{running.Minor}.{running.Build + 1}");
+        _ = _s.OnUiAsync(() => _s.Vm.Dialogs.ShowUpdateAvailableAsync(offered));
+        await _s.WaitUntilAsync(() => _s.Vm.Dialogs.Current is UpdateAvailableViewModel, "update available dialog");
+        await _s.SettleLongAsync();
+        await _s.ShotAsync("update-available", "Вікно «Доступна нова версія», що відкривається з повідомлення під час запуску.");
+        await _s.OnUiAsync(() => offered.CloseCommand.Execute(null));
+        await _s.WaitUntilAsync(() => _s.Vm.Dialogs.Current is null, "update available dialog closed");
 
         await _s.OnUiAsync(() => _s.Vm.OpenNetworkCommand.Execute(null));
         await _s.SettleLongAsync();

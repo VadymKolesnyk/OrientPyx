@@ -1,8 +1,10 @@
-﻿using Avalonia.Controls;
+﻿using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using OrientPyx.Presentation.Services;
 using OrientPyx.Presentation.ViewModels;
 
@@ -35,6 +37,9 @@ public partial class MainWindow : Window, IArchiveFilePicker
         if (_topMenu is not null)
             _topMenu.Opened += OnTopMenuOpened;
 
+        // A click on a toast's body runs its action (if it has one); its ✕ only closes it.
+        this.FindControl<ItemsControl>("ToastStack")?.AddHandler(InputElement.TappedEvent, OnToastTapped);
+
         // The competition export/import flow needs this window's StorageProvider for its file dialogs, so
         // the window plays the picker. Hand it to the flow once the DataContext (the root VM) is set.
         DataContextChanged += (_, _) =>
@@ -57,6 +62,23 @@ public partial class MainWindow : Window, IArchiveFilePicker
             await vm.ShutdownNetworkAsync();
             Close();
         };
+    }
+
+    private static void OnToastTapped(object? sender, TappedEventArgs e)
+    {
+        // The ✕ (a Button) handles its own click; a tap on it must not also open the toast.
+        if (e.Source is not Visual source || source.FindAncestorOfType<Button>(includeSelf: true) is not null)
+            return;
+        var toast = source.GetSelfAndVisualAncestors()
+            .OfType<Control>()
+            .Select(c => c.DataContext)
+            .OfType<ToastItem>()
+            .FirstOrDefault();
+        if (toast is { CanOpen: true })
+        {
+            toast.OpenCommand.Execute(null);
+            e.Handled = true;
+        }
     }
 
     // The «Плагіни» menu mixes fixed items (declared in XAML) with one item per switched-on plugin, which a bound

@@ -59,4 +59,11 @@ public interface IUiPreferencesService
     /// minimized or inactive.
     /// </summary>
     bool FlashWhenInactive { get; set; }
+
+    /// <summary>
+    /// The version «Пропустити цю версію» was pressed for in the «Доступна нова версія» dialog: the start-up check
+    /// stays silent about it (a newer one is offered again). Null = nothing skipped. The check on the Settings page
+    /// ignores it — asking there is explicit.
+    /// </summary>
+    string? SkippedUpdateVersion { get; set; }
 }

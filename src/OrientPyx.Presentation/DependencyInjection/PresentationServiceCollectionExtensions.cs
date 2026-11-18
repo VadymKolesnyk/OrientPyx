@@ -42,6 +42,7 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<IDayLockService, DayLockService>();
         services.AddSingleton<IUiPreferencesService, UiPreferencesService>();
         services.AddSingleton<IUpdateService, UpdateService>();
+        services.AddSingleton<StartupUpdateCheck>();
         // Undo / redo (Ctrl+Z / Ctrl+Y): the per-page-and-day histories and the «Правка» menu.
         services.AddSingleton<Services.Undo.IUndoHistory, Services.Undo.UndoHistory>();
         services.AddSingleton<EditMenuViewModel>();

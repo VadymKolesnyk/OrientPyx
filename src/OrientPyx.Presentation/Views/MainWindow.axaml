@@ -121,6 +121,9 @@
         <DataTemplate DataType="dialogs:AppUpdatedViewModel">
             <dialogViews:AppUpdatedView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:UpdateAvailableViewModel">
+            <dialogViews:UpdateAvailableView />
+        </DataTemplate>
         <DataTemplate DataType="dialogs:FinishAlertsViewModel">
             <dialogViews:FinishAlertsView />
         </DataTemplate>
@@ -642,9 +645,23 @@
                  Declared after the dialog overlay so they show above a modal too. Pinned to the corner, the stack
                  covers only itself — every click elsewhere still reaches the page or dialog underneath — and the
                  ✕ takes no focus, so typing in a cell or a dialog field is never interrupted. -->
-            <ItemsControl ItemsSource="{Binding Toasts.Items}"
+            <ItemsControl x:Name="ToastStack" ItemsSource="{Binding Toasts.Items}"
                           HorizontalAlignment="Right" VerticalAlignment="Bottom"
                           Width="360" Margin="0,0,20,20">
+                <!-- A toast with an action (e.g. «Доступна нова версія») is clickable: the hand cursor and a deeper amber
+                     under the pointer; the click itself is handled in code-behind (OnToastTapped). The background is a
+                     style setter, not a local value, so the hover can override it. -->
+                <ItemsControl.Styles>
+                    <Style Selector="Border.toast">
+                        <Setter Property="Background" Value="#FEF3C7" />
+                    </Style>
+                    <Style Selector="Border.toast.clickable">
+                        <Setter Property="Cursor" Value="Hand" />
+                    </Style>
+                    <Style Selector="Border.toast.clickable:pointerover">
+                        <Setter Property="Background" Value="#FDE68A" />
+                    </Style>
+                </ItemsControl.Styles>
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <StackPanel Spacing="8" />
@@ -654,7 +671,7 @@
                     <!-- An amber card, not a white one: it must stand out against the white tables and dialogs it
                          floats over. Dark amber text keeps the contrast on the tinted background. -->
                     <DataTemplate x:DataType="services:ToastItem">
-                        <Border Background="#FEF3C7"
+                        <Border Classes="toast" Classes.clickable="{Binding CanOpen}"
                                 BorderBrush="#F59E0B" BorderThickness="5,1,1,1"
                                 CornerRadius="10" Padding="14,12"
                                 BoxShadow="0 10 28 0 #40000000">
