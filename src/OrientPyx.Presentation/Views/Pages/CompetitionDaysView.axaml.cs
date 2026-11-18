@@ -76,13 +76,14 @@ public partial class CompetitionDaysView : UserControl
                    width: 180, minWidth: 160,
                    sortPath: $"{nameof(DayRowViewModel.SelectedDiscipline)}.Value",
                    lockedDayPath: nameof(DayRowViewModel.LockedDayNumber))
-            // Actions: Save / Change-number / Delete. A custom cell so the Save/ChangeNumber buttons
-            // can bind to the VM's commands with the row as parameter.
             // Closed-for-editing lock. The days grid is the only place every day is visible at once, so
             // this is where the whole competition's state can be seen and set; the same lock also sits
             // next to the day selector on each per-day page.
             .Custom("DayLock.Col.Locked", BuildLockCell, width: 110)
-            .Custom("CompetitionDays.Col.Actions", BuildActionsCell, minWidth: 220)
+            // Actions: Save / Change-number / Delete. A custom cell so the Save/ChangeNumber buttons
+            // can bind to the VM's commands with the row as parameter. Wide enough by default for all
+            // three buttons (a custom cell isn't content-sized, so without a width it gets the 130 default).
+            .Custom("CompetitionDays.Col.Actions", BuildActionsCell, width: 290)
             .Bands;
     }
 

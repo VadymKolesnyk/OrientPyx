@@ -86,6 +86,11 @@ public sealed class NetworkStation : INetworkClient, IDisposable
 
     public event EventHandler? WriteFailed;
 
+    public event EventHandler? HostRestarted;
+
+    // The change-stream epoch last seen from the host (with its id): another one from the same host = it restarted.
+    private (string HostId, string Epoch)? _lastEpoch;
+
     /// <summary>The live channel while connected (the tests call it directly); null otherwise.</summary>
     public RpcChannel? Channel => _channel;
 
@@ -238,6 +243,8 @@ public sealed class NetworkStation : INetworkClient, IDisposable
 
                 _listener = new RemoteChangeListener(channel, _bus, _log, pair.HostName) { CurrentEvent = _currentEvent };
                 _listener.Unauthorized += OnUnauthorized;
+                var hostId = pair.HostId;
+                _listener.EpochSeen += epoch => OnEpochSeen(hostId, epoch);
                 _listener.Start();
                 channel.Health.Start();
 
@@ -447,6 +454,19 @@ public sealed class NetworkStation : INetworkClient, IDisposable
     }
 
     private void OnWriteAbandoned(string call, Exception ex) => WriteFailed?.Invoke(this, EventArgs.Empty);
+
+    private void OnEpochSeen(string hostId, string? epoch)
+    {
+        if (epoch is null)
+            return;
+        var previous = _lastEpoch;
+        _lastEpoch = (hostId, epoch);
+        if (previous is { } seen && seen.HostId == hostId && seen.Epoch != epoch)
+        {
+            _log.Info("Network: the host restarted (new change-stream epoch) — undo histories cleared");
+            HostRestarted?.Invoke(this, EventArgs.Empty);
+        }
+    }
 
     private void OnUnauthorized()
     {

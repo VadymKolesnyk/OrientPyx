@@ -1,0 +1,145 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviors="using:OrientPyx.Presentation.Behaviors"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
+             mc:Ignorable="d" d:DesignWidth="560" d:DesignHeight="380"
+             x:Class="OrientPyx.Presentation.Views.Dialogs.FinishAlertsView"
+             x:DataType="dialogs:FinishAlertsViewModel">
+
+    <!-- Centered card; the backdrop is supplied by the host overlay. Every switch saves at once — only «Закрити». -->
+    <Border Background="{DynamicResource SurfaceCard}"
+            CornerRadius="12"
+            MinWidth="560" MaxWidth="740"
+            BoxShadow="0 10 40 0 #40000000"
+            HorizontalAlignment="Center" VerticalAlignment="Center"
+            ClipToBounds="True"
+            KeyboardNavigation.TabNavigation="Cycle">
+        <DockPanel LastChildFill="True">
+
+            <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,0,0,1"
+                    Padding="22,16">
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <controls:Icon Kind="Bell" Size="18" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Localization[FinishAlerts.Title]}" Classes="h2" VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
+
+            <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceCard}"
+                    BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="0,1,0,0"
+                    Padding="22,14">
+                <Button HorizontalAlignment="Right" behaviors:AutoFocus.OnOpen="True"
+                        Content="{Binding Localization[Common.Close]}"
+                        Classes="accent"
+                        IsDefault="True" IsCancel="True"
+                        Command="{Binding CloseCommand}" />
+            </Border>
+
+            <StackPanel Margin="22,18" Spacing="14">
+                <TextBlock Text="{Binding Localization[FinishAlerts.Intro]}" TextWrapping="Wrap" Classes="muted" />
+
+                <!-- One row per event: what happened (+ what to do) | the toast in the window | the Windows
+                     notification (Windows only) | the sound. The eye shows an example, «▶» plays the sound. -->
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto" RowDefinitions="Auto,Auto,Auto"
+                      ColumnSpacing="18" RowSpacing="12">
+
+                    <TextBlock Grid.Row="0" Grid.Column="1" Classes="label" HorizontalAlignment="Center"
+                               Text="{Binding Localization[FinishAlerts.Column.InApp]}" />
+                    <TextBlock Grid.Row="0" Grid.Column="2" Classes="label" HorizontalAlignment="Center"
+                               IsVisible="{Binding CanShowNotifications}"
+                               Text="{Binding Localization[FinishAlerts.Column.System]}" />
+                    <TextBlock Grid.Row="0" Grid.Column="3" Classes="label" HorizontalAlignment="Center"
+                               Text="{Binding Localization[FinishAlerts.Column.Sound]}" />
+
+                    <StackPanel Grid.Row="1" Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Localization[FinishAlerts.CollectChip]}" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding Localization[FinishAlerts.CollectChip.Hint]}"
+                                   Classes="muted" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="4"
+                                HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <CheckBox IsChecked="{Binding CollectChipToast, Mode=TwoWay}" VerticalAlignment="Center"
+                                  ToolTip.Tip="{Binding Localization[FinishAlerts.CollectChip.InAppTooltip]}" />
+                        <Button Classes="ghost" Padding="8,4" VerticalAlignment="Center"
+                                Command="{Binding ShowCollectChipToastCommand}"
+                                ToolTip.Tip="{Binding Localization[FinishAlerts.ShowExample]}">
+                            <controls:Icon Kind="Eye" Size="14" />
+                        </Button>
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal" Spacing="4"
+                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                IsVisible="{Binding CanShowNotifications}">
+                        <CheckBox IsChecked="{Binding CollectChipSystemNotification, Mode=TwoWay}" VerticalAlignment="Center"
+                                  ToolTip.Tip="{Binding Localization[FinishAlerts.SystemTooltip]}" />
+                        <Button Classes="ghost" Padding="8,4" VerticalAlignment="Center"
+                                Command="{Binding ShowCollectChipNotificationCommand}"
+                                ToolTip.Tip="{Binding Localization[FinishAlerts.ShowSystemExample]}">
+                            <controls:Icon Kind="Eye" Size="14" />
+                        </Button>
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="3" Orientation="Horizontal" Spacing="4"
+                                VerticalAlignment="Center" IsEnabled="{Binding CanPlaySound}">
+                        <CheckBox IsChecked="{Binding CollectChipSound, Mode=TwoWay}" VerticalAlignment="Center" />
+                        <Button Classes="ghost" Padding="8,4" VerticalAlignment="Center"
+                                Command="{Binding PreviewCollectChipCommand}"
+                                ToolTip.Tip="{Binding Localization[FinishAlerts.Preview]}">
+                            <controls:Icon Kind="Play" Size="14" />
+                        </Button>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="2" Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Localization[FinishAlerts.UnknownChip]}" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding Localization[FinishAlerts.UnknownChip.Hint]}"
+                                   Classes="muted" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <!-- The «Невідомий чіп» dialog always opens: it is the in-window alert itself. -->
+                    <TextBlock Grid.Row="2" Grid.Column="1" Text="—" Classes="muted"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Background="Transparent"
+                               ToolTip.Tip="{Binding Localization[FinishAlerts.UnknownChip.InAppTooltip]}" />
+                    <StackPanel Grid.Row="2" Grid.Column="2" Orientation="Horizontal" Spacing="4"
+                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                IsVisible="{Binding CanShowNotifications}">
+                        <CheckBox IsChecked="{Binding UnknownChipSystemNotification, Mode=TwoWay}" VerticalAlignment="Center"
+                                  ToolTip.Tip="{Binding Localization[FinishAlerts.SystemTooltip]}" />
+                        <Button Classes="ghost" Padding="8,4" VerticalAlignment="Center"
+                                Command="{Binding ShowUnknownChipNotificationCommand}"
+                                ToolTip.Tip="{Binding Localization[FinishAlerts.ShowSystemExample]}">
+                            <controls:Icon Kind="Eye" Size="14" />
+                        </Button>
+                    </StackPanel>
+                    <StackPanel Grid.Row="2" Grid.Column="3" Orientation="Horizontal" Spacing="4"
+                                VerticalAlignment="Center" IsEnabled="{Binding CanPlaySound}">
+                        <CheckBox IsChecked="{Binding UnknownChipSound, Mode=TwoWay}" VerticalAlignment="Center" />
+                        <Button Classes="ghost" Padding="8,4" VerticalAlignment="Center"
+                                Command="{Binding PreviewUnknownChipCommand}"
+                                ToolTip.Tip="{Binding Localization[FinishAlerts.Preview]}">
+                            <controls:Icon Kind="Play" Size="14" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <Border Height="1" Background="{DynamicResource BorderSubtle}" />
+
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" IsEnabled="{Binding CanRequestAttention}">
+                    <CheckBox Grid.Column="0" IsChecked="{Binding FlashWhenInactive, Mode=TwoWay}" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Localization[FinishAlerts.Flash]}" TextWrapping="Wrap" />
+                    </CheckBox>
+                    <!-- The flash shows only on a window that is not in front: the example minimizes it first. -->
+                    <Button Grid.Column="1" Classes="ghost" Padding="8,4" VerticalAlignment="Center"
+                            Command="{Binding ShowFlashCommand}"
+                            ToolTip.Tip="{Binding Localization[FinishAlerts.ShowFlashExample]}">
+                        <controls:Icon Kind="Eye" Size="14" />
+                    </Button>
+                </Grid>
+
+                <TextBlock Text="{Binding Localization[FinishAlerts.VolumeNote]}" TextWrapping="Wrap" Classes="muted" />
+            </StackPanel>
+
+        </DockPanel>
+    </Border>
+
+</UserControl>

@@ -24,7 +24,8 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     private DisciplineId _dayDefaultDiscipline;
     private int _participantCount;
     private readonly IDisciplineStrategyProvider _strategies;
-    private readonly Action<GroupDayRowViewModel> _requestSave;
+    // The page's save callback, told which column changed (its header key) for the undo step's label.
+    private readonly Action<GroupDayRowViewModel, string> _requestSave;
     private readonly Action<GroupDayRowViewModel>? _requestLegCountSave;
 
     private bool _initialized;
@@ -128,7 +129,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         IReadOnlyList<PointsRuleOption> pointsRuleOptions,
         string courseSetterPlaceholder,
         string courseSetterCategoryPlaceholder,
-        Action<GroupDayRowViewModel> requestSave,
+        Action<GroupDayRowViewModel, string> requestSave,
         Action<GroupDayRowViewModel>? requestLegCountSave = null)
     {
         _settingsId = row.SettingsId;
@@ -440,13 +441,13 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         MinBirthYear: ParseInt(MinBirthYearText),
         MaxBirthYear: ParseInt(MaxBirthYearText));
 
-    partial void OnNameChanged(string value) => QueueSave();
+    partial void OnNameChanged(string value) => QueueSave("Groups.Col.Name");
 
     partial void OnCourseOrderChanged(string value)
     {
         OnPropertyChanged(nameof(ControlCountText));
         RaiseUnknownCodes();
-        QueueSave();
+        QueueSave("Groups.Col.CourseOrder");
     }
 
     // ── Codes the course names that the day has no control point for (Р: S1/F1 typed without start/finish КП)
@@ -486,24 +487,24 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         OnPropertyChanged(nameof(UnknownCodesTooltip));
     }
 
-    partial void OnDistanceTextChanged(string value) => QueueSave();
-    partial void OnRequiredCountTextChanged(string value) => QueueSave();
-    partial void OnPenaltyTextChanged(string value) => QueueSave();
-    partial void OnTimeLimitTextChanged(string value) => QueueSave();
+    partial void OnDistanceTextChanged(string value) => QueueSave("Groups.Col.Distance");
+    partial void OnRequiredCountTextChanged(string value) => QueueSave("Groups.Col.RequiredCount");
+    partial void OnPenaltyTextChanged(string value) => QueueSave("Groups.Col.Penalty");
+    partial void OnTimeLimitTextChanged(string value) => QueueSave("Groups.Col.TimeLimit");
     partial void OnCourseSetterChanged(string value)
     {
         // The category hint only applies while the group inherits the course-setter name (see the
         // effective placeholder), so re-evaluate it whenever the name changes.
         OnPropertyChanged(nameof(EffectiveCourseSetterCategoryPlaceholder));
-        QueueSave();
+        QueueSave("Groups.Col.CourseSetter");
     }
 
-    partial void OnCourseSetterCategoryChanged(string value) => QueueSave();
-    partial void OnSelectedPointsRuleChanged(PointsRuleOption value) => QueueSave();
-    partial void OnSelectedRankLevelChanged(RankLevelOption value) => QueueSave();
-    partial void OnMasterCountTextChanged(string value) => QueueSave();
-    partial void OnMinBirthYearTextChanged(string value) => QueueSave();
-    partial void OnMaxBirthYearTextChanged(string value) => QueueSave();
+    partial void OnCourseSetterCategoryChanged(string value) => QueueSave("Groups.Col.CourseSetterCategory");
+    partial void OnSelectedPointsRuleChanged(PointsRuleOption value) => QueueSave("Groups.Col.PointsRule");
+    partial void OnSelectedRankLevelChanged(RankLevelOption value) => QueueSave("Groups.Col.RankLevel");
+    partial void OnMasterCountTextChanged(string value) => QueueSave("Groups.Col.MasterCount");
+    partial void OnMinBirthYearTextChanged(string value) => QueueSave("Groups.Col.MinBirthYear");
+    partial void OnMaxBirthYearTextChanged(string value) => QueueSave("Groups.Col.MaxBirthYear");
 
     partial void OnSelectedDisciplineChanged(DisciplineOverrideOption value)
     {
@@ -525,13 +526,13 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         if (PenaltyText.Length == 0 && Strategy.DefaultPenaltyPerMinute is { } rate)
             PenaltyText = FormatDecimal(rate);
 
-        QueueSave();
+        QueueSave("Groups.Col.Discipline");
     }
 
-    private void QueueSave()
+    private void QueueSave(string columnKey)
     {
         if (_initialized)
-            _requestSave(this);
+            _requestSave(this, columnKey);
     }
 
     // Time limit (контрольний час) is stored as a count of seconds but edited as hh:mm:ss.

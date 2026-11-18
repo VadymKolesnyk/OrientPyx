@@ -28,7 +28,8 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private int _order;
     private DisciplineId _dayDefaultDiscipline;
     private readonly IDisciplineStrategyProvider _strategies;
-    private readonly Action<ParticipantDayRowViewModel> _requestSave;
+    // The debounced row save; the string is the edited column's header key (the undo step's fallback label).
+    private readonly Action<ParticipantDayRowViewModel, string> _requestSave;
     private readonly Action<ParticipantDayRowViewModel> _requestLeaveDay;
     private readonly Action<ParticipantDayRowViewModel, GroupOption> _requestRelayGroupChange;
     private readonly Action<ParticipantDayRowViewModel, GroupOption> _requestRelayBulkGroup;
@@ -152,7 +153,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         EntryFeeContext fees,
         ILocalizationService localization,
         IDisciplineStrategyProvider strategies,
-        Action<ParticipantDayRowViewModel> requestSave,
+        Action<ParticipantDayRowViewModel, string> requestSave,
         Action<ParticipantDayRowViewModel> requestLeaveDay,
         Action<ParticipantDayRowViewModel> requestChipChange,
         Action<ParticipantDayRowViewModel> requestRegionChange,
@@ -494,6 +495,9 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     /// <summary>Parent participant id; needed for the cascade-delete check on removal.</summary>
     public Guid ParticipantId => _participantId;
 
+    /// <summary>The day this row belongs to (its undo steps go to that day's history).</summary>
+    public Guid DayId => _dayId;
+
     /// <summary>The participant's additional fields (Р-13), bound by the <c>field.&lt;key&gt;</c> columns as
     /// <c>Fields[key].Text</c> etc. Set by the page right after the row is built.</summary>
     public ParticipantFieldsViewModel Fields { get; set; } = ParticipantFieldsViewModel.Empty;
@@ -799,19 +803,19 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     partial void OnStartTimeChanged(TimeSpan? value)
     {
         OnPropertyChanged(nameof(StartTimeText));
-        QueueSave();
+        QueueSave("Participants.Col.StartTime");
     }
-    partial void OnOutOfCompetitionChanged(bool value) => QueueSave();
+    partial void OnOutOfCompetitionChanged(bool value) => QueueSave("Participants.Col.OutOfCompetition");
 
-    partial void OnFullNameChanged(string value) => QueueSave();
-    partial void OnNumberChanged(string value) => QueueSave();
-    partial void OnRankChanged(string value) => QueueSave();
-    partial void OnCoachChanged(string value) => QueueSave();
+    partial void OnFullNameChanged(string value) => QueueSave("Participants.Col.FullName");
+    partial void OnNumberChanged(string value) => QueueSave("Participants.Col.Number");
+    partial void OnRankChanged(string value) => QueueSave("Participants.Col.Rank");
+    partial void OnCoachChanged(string value) => QueueSave("Participants.Col.Coach");
     partial void OnBirthDateChanged(DateTimeOffset? value)
     {
         OnPropertyChanged(nameof(BirthDateViolatesAge));
         OnPropertyChanged(nameof(AgeViolationTooltip));
-        QueueSave();
+        QueueSave("Participants.Col.BirthDate");
     }
     partial void OnSelectedGroupChanged(GroupOption value)
     {
@@ -834,7 +838,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
             _requestLeaveDay(this);
         else
         {
-            QueueSave();
+            QueueSave("Participants.Col.Group");
             RecomputeTotal();
         }
     }
@@ -983,7 +987,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
             RecomputeTotal();
         }
     }
-    partial void OnTeamChanged(string value) => QueueSave();
+    partial void OnTeamChanged(string value) => QueueSave("Participants.Col.Team");
 
     // Region is competition-level and NOT part of the debounced row save: picking "+ new" has a modal
     // side effect, so the page owns it. Picking a real region / "(none)" persists via its own callback.
@@ -1104,12 +1108,12 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     }
 
     // The competition-level text/bool fields persist through the debounced row save like the identity.
-    partial void OnRepresentativeChanged(string value) => QueueSave();
-    partial void OnFsouCodeChanged(string value) => QueueSave();
-    partial void OnNoteChanged(string value) => QueueSave();
+    partial void OnRepresentativeChanged(string value) => QueueSave("Participants.Col.Representative");
+    partial void OnFsouCodeChanged(string value) => QueueSave("Participants.Col.FsouCode");
+    partial void OnNoteChanged(string value) => QueueSave("Participants.Col.Note");
     partial void OnIsFsouMemberChanged(bool value)
     {
-        QueueSave();
+        QueueSave("Participants.Col.IsFsouMember");
         // The FSOU-member discount auto-applies, so mirror the flag onto its (read-only) checkbox and
         // recompute. The flag's own callback is suppressed (it is never persisted per-row).
         foreach (var flag in DiscountFlags)
@@ -1124,7 +1128,7 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         OnPropertyChanged(nameof(EffectivePayment));
         OnPropertyChanged(nameof(PaymentStatus));
         OnPropertyChanged(nameof(PaymentStatusKey));
-        QueueSave();
+        QueueSave("Participants.Col.Payment");
     }
 
     partial void OnDayPaymentChanged(string value)
@@ -1137,10 +1141,11 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
             _requestDayPaymentChange(this);
     }
 
-    private void QueueSave()
+    // columnKey: the edited column's header key — the undo step's label when no cell edit or paste names it.
+    private void QueueSave(string columnKey)
     {
         if (_initialized)
-            _requestSave(this);
+            _requestSave(this, columnKey);
     }
 
     /// <summary>The status override the user picked (null = "auto", clears it). Read by the page callback.</summary>

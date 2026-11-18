@@ -143,6 +143,9 @@ public static class EventStoreMethods
         [nameof(IEventStore.ReplaceGroupLegCourseAssignmentsAsync)] = [DataArea.Relay],
         [nameof(IEventStore.AssignRelayLegAsync)] = [DataArea.Relay, DataArea.ParticipantDays],
         [nameof(IEventStore.ReleaseRelayRunnerAsync)] = [DataArea.Relay, DataArea.ParticipantDays],
+
+        // Undo: a revert may touch any table, so every page on every machine reloads (it is a rare action).
+        [nameof(IEventStore.RevertUndoStepAsync)] = [DataArea.Any],
     };
 
     private static readonly IReadOnlySet<string> ReadNames = new HashSet<string>(StringComparer.Ordinal)

@@ -132,6 +132,9 @@ public partial class MainWindow : Window, IArchiveFilePicker
 
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
+        if (TryUndoKey(e))
+            return;
+
         var isAlt = e.Key is Key.LeftAlt or Key.RightAlt;
         var shiftHeld = (e.KeyModifiers & KeyModifiers.Shift) != 0;
         var altHeld = (e.KeyModifiers & KeyModifiers.Alt) != 0;
@@ -177,6 +180,36 @@ public partial class MainWindow : Window, IArchiveFilePicker
         var restore = _focusBeforeAlt;
         _topMenu.Close();
         Dispatcher.UIThread.Post(() => restore?.Focus());
+    }
+
+    // Ctrl+Z (undo), Ctrl+Y / Ctrl+Shift+Z (redo) — Cmd too on macOS — for the shown page. Inside a text box the box's
+    // own undo works as before (its typing is part of the step anyway); a live combo or date editor is no obstacle —
+    // the undo ends its edit first. Physical Z / Y as well, so a Cyrillic layout behaves the same.
+    private bool TryUndoKey(KeyEventArgs e)
+    {
+        var command = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
+        if (!command || (e.KeyModifiers & KeyModifiers.Alt) != 0)
+            return false;
+        var shift = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+        var isZ = e.Key == Key.Z || e.PhysicalKey == PhysicalKey.Z;
+        var isY = e.Key == Key.Y || e.PhysicalKey == PhysicalKey.Y;
+        if (!isZ && !(isY && !shift))
+            return false;
+        if (FocusManager?.GetFocusedElement() is TextBox)
+            return false;
+        if (DataContext is not MainWindowViewModel vm || !vm.IsEventSelected)
+            return false;
+        if (!vm.EditMenu.HandleKey(redo: isY || shift))
+            return false;
+        e.Handled = true;
+        return true;
+    }
+
+    // The «Правка» menu re-reads its labels as it opens (a page's day switch changes which history is shown).
+    private void OnEditMenuOpened(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm)
+            vm.EditMenu.Refresh();
     }
 
     // «Довідка → Документація»: the documentation site in the default browser.

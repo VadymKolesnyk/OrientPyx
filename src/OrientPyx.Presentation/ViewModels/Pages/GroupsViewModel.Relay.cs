@@ -3,12 +3,15 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
+using OrientPyx.Presentation.Services.Undo;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
 
 // The relay group's settings strip (Р-35, Р-41) under the groups table: legs, how a restarted team is ranked and the
 // leg courses. The mass start of leg 1 and the restarts are not here — «Старт → Масовий старт» sets them — so a save
-// re-reads the group's settings and changes only the strip's own fields. Edits debounce-save.
+// re-reads the group's settings and changes only the strip's own fields. Edits debounce-save. The strip is a form, so
+// its own edits take no undo step (§10 of the undo plan); the grid's «Етапів» cell is a table cell and does — for the
+// selected group it goes through the strip, handing its step to the strip's next write.
 public sealed partial class GroupsViewModel
 {
     private static readonly TimeSpan RelaySaveDebounce = TimeSpan.FromMilliseconds(600);
@@ -16,6 +19,12 @@ public sealed partial class GroupsViewModel
     private CancellationTokenSource? _relaySaveCts;
     private bool _suppressRelaySave;
     private RelayGroupSettings? _relaySettings;
+
+    // The undo step of a grid «Етапів» edit of the selected group, set just before it changes the strip's box…
+    private UndoEntry? _relayHandoffStep;
+
+    // …and the step of the strip write still waiting for its pause (a later strip edit within it writes for it too).
+    private UndoEntry? _relayQueuedStep;
 
     /// <summary>True when the selected group runs a relay, so the relay settings show above its course.</summary>
     [ObservableProperty]
@@ -155,9 +164,12 @@ public sealed partial class GroupsViewModel
     {
         if (row.IsApplying || IsDayLocked || !row.IsRelay || row.LegCount is not { } legs)
             return;
+        var step = CaptureUndo(UndoLabel("Groups.Col.LegCount", row.Name));
         if (ReferenceEquals(row, SelectedGroup) && _relaySettings?.GroupId == row.GroupId)
         {
+            _relayHandoffStep = step;
             RelayLegCountText = legs.ToString(CultureInfo.InvariantCulture);
+            _relayHandoffStep = null;
             return;
         }
 
@@ -174,7 +186,7 @@ public sealed partial class GroupsViewModel
                 await Task.Delay(RelaySaveDebounce, cts.Token);
                 var settings = await Task.Run(() => _editor.GetRelayGroupSettingsAsync(row.GroupId, cts.Token), cts.Token);
                 if (settings is not null && settings.LegCount != legs)
-                    await Task.Run(() => _editor.SaveRelayGroupSettingsAsync(settings with { LegCount = legs }, cts.Token), cts.Token);
+                    await RunUndoAsync(step, () => _editor.SaveRelayGroupSettingsAsync(settings with { LegCount = legs }, cts.Token));
                 // The group got selected meanwhile: its settings strip reads the saved count.
                 if (ReferenceEquals(row, SelectedGroup))
                     await RefreshRelayEditorAsync();
@@ -199,10 +211,15 @@ public sealed partial class GroupsViewModel
 
     private void QueueRelaySave()
     {
+        // A strip edit has no undo step of its own; it carries a grid «Етапів» edit's step (handed over now, or still
+        // waiting in the pending write this one replaces).
+        var step = _relayHandoffStep ?? _relayQueuedStep;
+        _relayHandoffStep = null;
         if (_suppressRelaySave || _relaySettings is not { } current)
             return;
         if (!int.TryParse(RelayLegCountText, NumberStyles.None, CultureInfo.InvariantCulture, out var legs) || legs < 1)
             return;
+        _relayQueuedStep = step;
         var ranking = SelectedRelayRestartRanking?.Value ?? RelayRestartRanking.AfterClean;
         var courseMode = SelectedRelayCourseMode?.Value ?? RelayCourseMode.Group;
         var teamCourseSet = RelayTeamCourseSetText ?? string.Empty;
@@ -214,13 +231,16 @@ public sealed partial class GroupsViewModel
 
         _relaySaveCts?.Cancel();
         var cts = _relaySaveCts = new CancellationTokenSource();
-        _ = SaveAsync();
+        // Tracked, so an undo, a reload and a day switch let it land first.
+        _pendingSaves.Track(SaveAsync());
 
         async Task SaveAsync()
         {
             try
             {
                 await Task.Delay(RelaySaveDebounce, cts.Token);
+                if (ReferenceEquals(_relayQueuedStep, step))
+                    _relayQueuedStep = null;
                 // Fresh: the mass start and restarts may have been set on «Масовий старт» since this group was shown.
                 var fresh = await Task.Run(() => _editor.GetRelayGroupSettingsAsync(groupId, cts.Token), cts.Token);
                 if (fresh is null)
@@ -229,7 +249,7 @@ public sealed partial class GroupsViewModel
                 {
                     LegCount = legs, RestartRanking = ranking, CourseMode = courseMode, TeamCourseSet = teamCourseSet
                 };
-                await Task.Run(() => _editor.SaveRelayGroupSettingsAsync(updated, cts.Token), cts.Token);
+                await RunUndoAsync(step, () => _editor.SaveRelayGroupSettingsAsync(updated, cts.Token));
             }
             catch (OperationCanceledException)
             {

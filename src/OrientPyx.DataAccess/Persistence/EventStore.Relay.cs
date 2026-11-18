@@ -96,7 +96,9 @@ public sealed partial class EventStore
         await using var db = EventDbContextFactory.Create(eventFolderPath);
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
         await ReleaseLegsAsync(db, p => p.RelayTeamId == teamId, cancellationToken);
-        await db.RelayTeams.Where(t => t.Id == teamId).ExecuteDeleteAsync(cancellationToken);
+        // Tracked delete (not ExecuteDelete), so the undo journal sees the team.
+        db.RelayTeams.RemoveRange(await db.RelayTeams.Where(t => t.Id == teamId).ToListAsync(cancellationToken));
+        await db.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
     }
 
@@ -192,7 +194,8 @@ public sealed partial class EventStore
         if (ids.Count > 0)
         {
             await ReleaseLegsAsync(db, p => p.RelayTeamId != null && ids.Contains(p.RelayTeamId.Value), cancellationToken);
-            await db.RelayTeams.Where(t => ids.Contains(t.Id)).ExecuteDeleteAsync(cancellationToken);
+            db.RelayTeams.RemoveRange(await db.RelayTeams.Where(t => ids.Contains(t.Id)).ToListAsync(cancellationToken));
+            await db.SaveChangesAsync(cancellationToken);
         }
         await tx.CommitAsync(cancellationToken);
     }

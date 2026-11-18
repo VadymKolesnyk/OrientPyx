@@ -23,6 +23,11 @@ pages:
     - src/OrientPyx.Presentation/*Settings*
     - src/OrientPyx.Presentation/*BackgroundActivit*
     - src/OrientPyx.Presentation/*Toast*
+  start/undo.md:
+    - src/OrientPyx.*Undo*
+    - src/OrientPyx.Presentation/*EditMenu*
+    - src/OrientPyx.DataAccess/Persistence/Undo/*
+    - src/OrientPyx.BusinessLogic/Services/Undo/*
   faq.md:
     - src/OrientPyx.Presentation/Services/UiStallWatchdog*
     - src/OrientPyx.*ActivityLog*
@@ -70,6 +75,10 @@ pages:
     - src/OrientPyx.*SplitPrint*
     - src/OrientPyx.*FinishSplits*
     - src/OrientPyx.*UnknownChip*
+    - src/OrientPyx.*FinishAlert*
+    - src/OrientPyx.*DesktopAlerts*
+    - src/OrientPyx.*AlertSound*
+    - src/OrientPyx.*WindowsToasts*
   race-day/withdrawals.md:
     - src/OrientPyx.*QuickWithdrawal*
     - src/OrientPyx.*StatusOverride*

@@ -100,6 +100,9 @@ public interface IDialogService : INotifyPropertyChanged
     /// <summary>Reassign chip, edit times/punches, set status.</summary>
     Task<FinishReadoutEdit?> ShowFinishReadoutEditAsync(FinishReadoutEditViewModel dialog);
 
+    /// <summary>«Налаштування сповіщень» of the finish read-out: every switch saves at once; completes on «Закрити».</summary>
+    Task ShowFinishAlertsAsync(FinishAlertsViewModel dialog);
+
     /// <summary>«Проблемні КП»: tick the day's broken controls. Returns the ids to disable.</summary>
     Task<IReadOnlyList<Guid>?> ShowProblematicControlsAsync(ProblematicControlsViewModel dialog);
 

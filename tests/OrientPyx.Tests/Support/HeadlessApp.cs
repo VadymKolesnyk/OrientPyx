@@ -4,6 +4,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Headless;
 using Avalonia.Threading;
 using OrientPyx.Presentation;
+using OrientPyx.Presentation.Services;
 using OrientPyx.Presentation.ViewModels;
 using OrientPyx.Presentation.Views;
 using Xunit;
@@ -32,6 +33,7 @@ public sealed class HeadlessApp : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _ = TestEnvironment.Instance; // data root + databases + competitions, before the app opens anything
+        DesktopAlerts.Muted = true; // a finish read-out in a test must not beep or flash the taskbar
 
         _uiThread = new Thread(RunUi) { Name = "OrientPyx headless UI", IsBackground = true };
         _uiThread.Start();

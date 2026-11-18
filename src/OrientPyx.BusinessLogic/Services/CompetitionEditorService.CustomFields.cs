@@ -1,6 +1,7 @@
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
+using OrientPyx.BusinessLogic.Services.Undo;
 
 namespace OrientPyx.BusinessLogic.Services;
 
@@ -122,6 +123,8 @@ public sealed partial class CompetitionEditorService
 
     public async Task EnsurePluginFieldsAsync(CancellationToken cancellationToken = default)
     {
+        // Creating a plugin's fields is a system write: undoing the edit that caused it leaves the fields in place.
+        using var noUndo = UndoScope.Suppress();
         if (_session.CurrentEvent is null || _plugins is null)
             return;
 

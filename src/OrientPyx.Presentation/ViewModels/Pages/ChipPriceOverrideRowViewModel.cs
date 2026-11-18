@@ -15,7 +15,7 @@ public sealed partial class ChipPriceOverrideRowViewModel : ObservableObject
 {
     private readonly Guid _id;
     private DateTimeOffset _createdAt;
-    private readonly Action<ChipPriceOverrideRowViewModel> _requestSave;
+    private readonly Action<ChipPriceOverrideRowViewModel, string> _requestSave;
     private bool _initialized;
 
     /// <summary>The chip note this rule matches.</summary>
@@ -29,7 +29,7 @@ public sealed partial class ChipPriceOverrideRowViewModel : ObservableObject
     public ChipPriceOverrideRowViewModel(
         ChipPriceOverride priceOverride,
         ILocalizationService localization,
-        Action<ChipPriceOverrideRowViewModel> requestSave)
+        Action<ChipPriceOverrideRowViewModel, string> requestSave)
     {
         _id = priceOverride.Id;
         _createdAt = priceOverride.CreatedAt;
@@ -75,13 +75,14 @@ public sealed partial class ChipPriceOverrideRowViewModel : ObservableObject
         CreatedAt = _createdAt
     };
 
-    partial void OnNoteChanged(string value) => QueueSave();
-    partial void OnPriceTextChanged(string value) => QueueSave();
+    partial void OnNoteChanged(string value) => QueueSave("EntryFees.Col.Note");
+    partial void OnPriceTextChanged(string value) => QueueSave("EntryFees.Col.PricePerDay");
 
-    private void QueueSave()
+    // Each change names its column's header key: the page labels the undo step with it.
+    private void QueueSave(string columnKey)
     {
         if (_initialized)
-            _requestSave(this);
+            _requestSave(this, columnKey);
     }
 
     private static string FormatDecimal(decimal value)

@@ -6,14 +6,15 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 
 /// <summary>
 /// One editable row in the rental-chips grid. Wraps a single <see cref="RentalChip"/>. Edits do not
-/// save directly — each change invokes the page-supplied <c>requestSave</c> callback, which
-/// debounces and persists in the background (mirrors <see cref="ControlPointRowViewModel"/>).
+/// save directly — each change invokes the page-supplied <c>requestSave</c> callback (with the changed
+/// column's header key, for the undo label), which debounces and persists in the background (mirrors
+/// <see cref="ControlPointRowViewModel"/>).
 /// </summary>
 public sealed partial class RentalChipRowViewModel : ObservableObject
 {
     private readonly Guid _id;
     private DateTimeOffset _createdAt;
-    private readonly Action<RentalChipRowViewModel> _requestSave;
+    private readonly Action<RentalChipRowViewModel, string> _requestSave;
 
     private bool _initialized;
 
@@ -57,7 +58,7 @@ public sealed partial class RentalChipRowViewModel : ObservableObject
     public RentalChipRowViewModel(
         RentalChip chip,
         ILocalizationService localization,
-        Action<RentalChipRowViewModel> requestSave)
+        Action<RentalChipRowViewModel, string> requestSave)
     {
         _id = chip.Id;
         _createdAt = chip.CreatedAt;
@@ -113,13 +114,13 @@ public sealed partial class RentalChipRowViewModel : ObservableObject
         // The model and capacity columns are read off the number.
         OnPropertyChanged(nameof(CardModel));
         OnPropertyChanged(nameof(CapacityText));
-        QueueSave();
+        QueueSave("Chips.Col.Number");
     }
-    partial void OnNoteChanged(string value) => QueueSave();
+    partial void OnNoteChanged(string value) => QueueSave("Chips.Col.Note");
 
-    private void QueueSave()
+    private void QueueSave(string columnKey)
     {
         if (_initialized)
-            _requestSave(this);
+            _requestSave(this, columnKey);
     }
 }

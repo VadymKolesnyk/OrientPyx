@@ -12,6 +12,7 @@ using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.Services.Undo;
 using OrientPyx.Presentation.ViewModels.Dialogs;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
@@ -56,10 +57,12 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         ITableLayoutStore layoutStore,
         IDayLockService dayLock,
         IDataChangeBus bus,
-        IWorkspaceMode mode)
+        IWorkspaceMode mode,
+        IUndoHistory undo)
         : base(localization)
     {
         UseDayLock(dayLock);
+        UseUndo(undo);
         LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
@@ -370,7 +373,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         CourseVariants.Add(NewCourseVariantRow(string.Empty, string.Empty, leg));
         OnPropertyChanged(nameof(HasNoCourseVariants));
         RefreshLegChecks();
-        QueueScatterSave();
+        QueueScatterSave(Localization.Get("Groups.Scatter.Add").TrimStart('+', ' '));
     }
 
     [RelayCommand]
@@ -382,7 +385,8 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         CourseVariants.Remove(row);
         OnPropertyChanged(nameof(HasNoCourseVariants));
         RefreshLegChecks();
-        QueueScatterSave();
+        QueueScatterSave(string.Format(Localization.Get("Undo.Label.DeleteRow"),
+            string.IsNullOrWhiteSpace(row.Code) ? "—" : row.Code.Trim()));
     }
 
     private void OnScatterRowChanged()
@@ -391,10 +395,17 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         QueueScatterSave();
     }
 
-    private void QueueScatterSave()
+    // label: the undo step's label outside a cell edit (a cell's own session or a paste names it otherwise).
+    private void QueueScatterSave(string? label = null)
     {
         if (_suppressScatterSave || _scatterGroupId is null)
             return;
+
+        // The courses table is a table (one undo step per edit), whichever editor it serves — scatter variants or a
+        // relay's named courses.
+        var groupName = Groups.FirstOrDefault(g => g.GroupId == _scatterGroupId)?.Name;
+        var step = CaptureUndo(label ?? string.Format(Localization.Get("Undo.Label.Edit"),
+            string.IsNullOrWhiteSpace(groupName) ? "—" : groupName.Trim()));
 
         // Snapshot the editor rows now (UI thread): when the debounce ends the table may already show another group.
         // The leg goes with every row, the «Етап» column shown or not — another mode keeps it for the next switch.
@@ -405,16 +416,17 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         _scatterSaveCts?.Cancel();
         var cts = new CancellationTokenSource();
         _scatterSaveCts = cts;
-        _pendingSaves.Track(SaveScatterDebouncedAsync(_scatterGroupId.Value, rows, cts.Token));
+        _pendingSaves.Track(SaveScatterDebouncedAsync(_scatterGroupId.Value, rows, step, cts.Token));
     }
 
-    private async Task SaveScatterDebouncedAsync(Guid groupId, IReadOnlyList<CourseVariantRow> rows, CancellationToken token)
+    private async Task SaveScatterDebouncedAsync(
+        Guid groupId, IReadOnlyList<CourseVariantRow> rows, UndoEntry? step, CancellationToken token)
     {
         try
         {
             await Task.Delay(SaveDebounce, token);
 
-            await Task.Run(() => _editor.SaveCourseVariantsAsync(groupId, rows, token), token);
+            await RunUndoAsync(step, () => _editor.SaveCourseVariantsAsync(groupId, rows, token));
 
             // Keep the grid row's variant count in sync with the saved (non-blank) count, and its control-count
             // cell with the LONGEST variant (that's what a group with several courses reports there).
@@ -514,8 +526,10 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             if (Groups.Contains(selected))
             {
                 RefreshPatternPreview();
-                _ = RefreshScatterEditorAsync();
-                _ = RefreshRelayEditorAsync();
+                // Awaited: after an undo the courses table must show what was put back before the next edit, or that
+                // edit would save the whole set as it was (the history awaits this reload).
+                await RefreshScatterEditorAsync();
+                await RefreshRelayEditorAsync();
             }
             else
             {
@@ -523,6 +537,20 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             }
         }
     }
+
+    // ── Undo (Ctrl+Z / Ctrl+Y): one history per day — the day the page shows is the session's. The table's cells, the
+    // course box under it and the courses table are undoable; the settings strips (competition defaults above, the
+    // relay settings under the table) are forms and are not (§10 of the undo plan), nor are the imports.
+
+    /// <inheritdoc />
+    public override Guid? UndoDayId => _session.CurrentDay?.Id;
+
+    /// <inheritdoc />
+    public override Task FlushPendingWritesAsync() => _pendingSaves.WaitAsync();
+
+    /// <summary>The undo label of the course box under the table («Порядок / список КП — Ж21»); the view opens an edit
+    /// session with it while the box has focus.</summary>
+    public string CourseOrderUndoLabel() => UndoLabel("Groups.Col.CourseOrder", SelectedGroup?.Name);
 
     /// <summary>Reloads the groups for the current day. Called when the page is shown.</summary>
     public async Task LoadAsync()
@@ -799,6 +827,9 @@ public sealed partial class GroupsViewModel : PageViewModelBase
 
     private async Task SwitchDayAsync(EventDay day)
     {
+        // The edits still waiting for their debounce land first, on the day they were made on (with their undo step)
+        // — the reload after the switch would cancel them (§9.2 of the undo plan).
+        await _pendingSaves.WaitAsync();
         await _busy.RunAsync(() => _session.SetCurrentDayAsync(day));
     }
 
@@ -810,7 +841,8 @@ public sealed partial class GroupsViewModel : PageViewModelBase
 
         // Add a blank, named-later row (the user types the name in-grid; the debounced save then
         // persists the rename). Mirrors the control-points "add blank row" flow.
-        var row = await _busy.RunAsync(() => _editor.AddGroupToDayAsync(string.Empty));
+        var row = await RunUndoAsync(CaptureUndoAction(Localization.Get("Groups.Add")),
+            () => _busy.RunAsync(() => _editor.AddGroupToDayAsync(string.Empty)));
         Groups.Add(CreateRow(row));
         RaiseColumnVisibility();
     }
@@ -821,7 +853,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         if (_session.CurrentDay is null || !await EnsureDayEditableAsync())
             return;
 
-        await _busy.RunAsync(() => _editor.PullAllGroupsIntoDayAsync());
+        await RunUndoAsync(CaptureUndoAction(Localization.Get("Groups.PullAll")), () => _busy.RunAsync(() => _editor.PullAllGroupsIntoDayAsync()));
         // Reload so the merged set renders in the correct order.
         await LoadAsync();
     }
@@ -834,7 +866,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
 
         // Recompute every group's birth-year window from its name (overwriting any hand-edited bounds),
         // then reload so the grid's Min/Max birth-year cells show the new values.
-        await _busy.RunAsync(() => _editor.RecalculateGroupAgeWindowsAsync());
+        await RunUndoAsync(CaptureUndoAction(Localization.Get("Groups.RecalcAge")), () => _busy.RunAsync(() => _editor.RecalculateGroupAgeWindowsAsync()));
         await LoadAsync();
     }
 
@@ -891,8 +923,12 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         Groups.Remove(row);
         RaiseColumnVisibility();
 
+        // One undo step (after the answer, so a cancelled delete leaves none): undoing it puts the group back on the day
+        // with its course, settings, teams and leg courses; the reload after the undo shows the row again.
+        var step = CaptureUndoAction(string.Format(Localization.Get("Undo.Label.DeleteRow"),
+            string.IsNullOrWhiteSpace(row.Name) ? "—" : row.Name.Trim()));
         var (id, groupId) = (row.Id, row.GroupId);
-        _ = Task.Run(() => _editor.RemoveGroupFromDayAsync(id, groupId));
+        _ = RunUndoAsync(step, () => _editor.RemoveGroupFromDayAsync(id, groupId));
 
         // The confirmation modal stole keyboard focus to the overlay; pull it back to the grid
         // (now on the new selected row) so focus doesn't end up on the top menu.
@@ -966,21 +1002,24 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         }
     }
 
-    // Invoked by a row on every edit (UI thread). Resets that row's debounce timer.
-    private void RequestRowSave(GroupDayRowViewModel row)
+    // Invoked by a row on every edit (UI thread). Resets that row's debounce timer. The undo step is taken here, at the
+    // change (an open edit session or paste joins it); the debounced write — the last one wins — runs under the latest
+    // step, so two edits of a row within the pause are one step (У-16).
+    private void RequestRowSave(GroupDayRowViewModel row, string columnKey)
     {
         if (row.IsApplying)
             return;
 
+        var step = CaptureUndo(UndoLabel(columnKey, row.Name));
         if (_saveTimers.TryGetValue(row.Id, out var existing))
             existing.Cancel();
 
         var cts = new CancellationTokenSource();
         _saveTimers[row.Id] = cts;
-        _pendingSaves.Track(SaveRowDebouncedAsync(row, cts.Token)); // fire-and-forget; the UI is never blocked
+        _pendingSaves.Track(SaveRowDebouncedAsync(row, step, cts.Token)); // fire-and-forget; the UI is never blocked
     }
 
-    private async Task SaveRowDebouncedAsync(GroupDayRowViewModel row, CancellationToken token)
+    private async Task SaveRowDebouncedAsync(GroupDayRowViewModel row, UndoEntry? step, CancellationToken token)
     {
         try
         {
@@ -1005,7 +1044,8 @@ public sealed partial class GroupsViewModel : PageViewModelBase
                 }
             }
 
-            var merged = await Task.Run(() => _editor.UpdateGroupDayRowAsync(dto, token), token);
+            // A merge is part of the same step (its question answered): undoing it splits the groups again.
+            var merged = await RunUndoAsync(step, () => _editor.UpdateGroupDayRowAsync(dto, token));
 
             // Renamed onto an existing group ⇒ this row was folded into it; reload to show the merged group.
             if (merged)

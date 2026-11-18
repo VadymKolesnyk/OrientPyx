@@ -7,6 +7,7 @@ using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.BusinessLogic.Models.Network;
 using OrientPyx.BusinessLogic.Serialization;
+using OrientPyx.BusinessLogic.Services.Undo;
 using OrientPyx.DataAccess.Network.Protocol;
 
 namespace OrientPyx.DataAccess.Network.Station;
@@ -167,6 +168,9 @@ public sealed class RpcChannel : IDisposable
     {
         var body = JsonSerializer.SerializeToUtf8Bytes(args, RpcJson.Options);
         var key = kind == RpcCallKind.Read ? null : idempotencyKey ?? Guid.NewGuid().ToString("N");
+        // The undo step is read here, on the caller's flow and before the write queue, and travels with every retry
+        // (with the same idempotency key). Reads never carry one.
+        var undoStep = kind == RpcCallKind.Read ? null : UndoScope.Current;
         var label = $"{iface}.{method}";
 
         HttpRequestMessage Build()
@@ -177,6 +181,8 @@ public sealed class RpcChannel : IDisposable
             };
             if (key is not null)
                 request.Headers.TryAddWithoutValidation(Wire.IdempotencyKeyHeader, key);
+            if (undoStep is { } step)
+                request.Headers.TryAddWithoutValidation(Wire.UndoStepHeader, step.ToString("D"));
             return request;
         }
 

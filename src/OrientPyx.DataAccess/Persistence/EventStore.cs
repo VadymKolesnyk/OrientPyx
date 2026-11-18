@@ -47,7 +47,15 @@ public sealed partial class EventStore : IEventStore
         // opens a fresh connection. This is process-wide (every event DB), which is harmless — the
         // pool exists only to save re-open cost.
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+
+        // The folder is about to be renamed, deleted or replaced: its undo history means nothing afterwards.
+        Undo.UndoJournal.Shared.Forget(eventFolderPath);
     }
+
+    public Task<UndoRevertResult> RevertUndoStepAsync(string eventFolderPath, Guid stepId, CancellationToken cancellationToken = default)
+        => Undo.UndoReverter.RevertAsync(
+            eventFolderPath, stepId, BusinessLogic.Services.Undo.UndoScope.Owner, Undo.UndoJournal.Shared, Undo.UndoRecorder.Log,
+            cancellationToken);
 
     public async Task<CompetitionInfo?> GetCompetitionInfoAsync(string eventFolderPath, CancellationToken cancellationToken = default)
     {
@@ -394,14 +402,14 @@ public sealed partial class EventStore : IEventStore
         db.Groups.Remove(source);
         await db.SaveChangesAsync(cancellationToken);
 
-        await db.ParticipantDays
-            .Where(pd => pd.GroupId == sourceGroupId)
-            .ExecuteUpdateAsync(s => s.SetProperty(pd => pd.GroupId, (Guid?)targetGroupId), cancellationToken);
+        // Tracked updates (not ExecuteUpdate), so the undo journal sees every moved row.
+        foreach (var link in await db.ParticipantDays.Where(pd => pd.GroupId == sourceGroupId).ToListAsync(cancellationToken))
+            link.GroupId = targetGroupId;
 
         // Relay teams of the merged group move with their runners.
-        await db.RelayTeams
-            .Where(t => t.GroupId == sourceGroupId)
-            .ExecuteUpdateAsync(s => s.SetProperty(t => t.GroupId, targetGroupId), cancellationToken);
+        foreach (var team in await db.RelayTeams.Where(t => t.GroupId == sourceGroupId).ToListAsync(cancellationToken))
+            team.GroupId = targetGroupId;
+        await db.SaveChangesAsync(cancellationToken);
 
         await tx.CommitAsync(cancellationToken);
     }
@@ -626,9 +634,13 @@ public sealed partial class EventStore : IEventStore
     public async Task ClearParticipantsRegionAsync(string eventFolderPath, Guid regionId, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
-        await db.Participants
-            .Where(p => p.RegionId == regionId)
-            .ExecuteUpdateAsync(s => s.SetProperty(p => p.RegionId, (Guid?)null), cancellationToken);
+        // Tracked (not ExecuteUpdate), so the undo journal sees every cleared participant.
+        var participants = await db.Participants.Where(p => p.RegionId == regionId).ToListAsync(cancellationToken);
+        if (participants.Count == 0)
+            return;
+        foreach (var participant in participants)
+            participant.RegionId = null;
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<Club>> GetClubsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
@@ -674,9 +686,13 @@ public sealed partial class EventStore : IEventStore
     public async Task ClearParticipantsClubAsync(string eventFolderPath, Guid clubId, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
-        await db.Participants
-            .Where(p => p.ClubId == clubId)
-            .ExecuteUpdateAsync(s => s.SetProperty(p => p.ClubId, (Guid?)null), cancellationToken);
+        // Tracked (not ExecuteUpdate), so the undo journal sees every cleared participant.
+        var participants = await db.Participants.Where(p => p.ClubId == clubId).ToListAsync(cancellationToken);
+        if (participants.Count == 0)
+            return;
+        foreach (var participant in participants)
+            participant.ClubId = null;
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<Dussh>> GetDusshesAsync(string eventFolderPath, CancellationToken cancellationToken = default)
@@ -722,9 +738,13 @@ public sealed partial class EventStore : IEventStore
     public async Task ClearParticipantsDusshAsync(string eventFolderPath, Guid dusshId, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
-        await db.Participants
-            .Where(p => p.DusshId == dusshId)
-            .ExecuteUpdateAsync(s => s.SetProperty(p => p.DusshId, (Guid?)null), cancellationToken);
+        // Tracked (not ExecuteUpdate), so the undo journal sees every cleared participant.
+        var participants = await db.Participants.Where(p => p.DusshId == dusshId).ToListAsync(cancellationToken);
+        if (participants.Count == 0)
+            return;
+        foreach (var participant in participants)
+            participant.DusshId = null;
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<Participant>> GetParticipantsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
@@ -782,16 +802,18 @@ public sealed partial class EventStore : IEventStore
         // existing participant) but the dashboard counts raw links, so they inflate «Учасників на дні»
         // and show up as phantom «На дистанції». Delete them here so the roster delete is a full cascade,
         // matching the day-grid path (RemoveParticipantFromDayAsync) that removes the link before the person.
-        await db.ParticipantDays
+        // Tracked deletes (not ExecuteDelete): the undo journal sees every removed row, and one SaveChanges makes the
+        // whole cascade atomic. A participant has a handful of rows, so this costs nothing.
+        db.ParticipantDays.RemoveRange(await db.ParticipantDays
             .Where(p => p.ParticipantId == participantId)
-            .ExecuteDeleteAsync(cancellationToken);
-        await db.ParticipantDiscounts
+            .ToListAsync(cancellationToken));
+        db.ParticipantDiscounts.RemoveRange(await db.ParticipantDiscounts
             .Where(p => p.ParticipantId == participantId)
-            .ExecuteDeleteAsync(cancellationToken);
+            .ToListAsync(cancellationToken));
         // Additional-field values are keyed by participant by convention only too (Р-16).
-        await db.ParticipantFieldValues
+        db.ParticipantFieldValues.RemoveRange(await db.ParticipantFieldValues
             .Where(v => v.ParticipantId == participantId)
-            .ExecuteDeleteAsync(cancellationToken);
+            .ToListAsync(cancellationToken));
 
         db.Participants.Remove(existing);
         await db.SaveChangesAsync(cancellationToken);
@@ -800,8 +822,9 @@ public sealed partial class EventStore : IEventStore
     public async Task<int> DeleteAllParticipantsAsync(string eventFolderPath, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
-        // Drop the per-day links and discount links first, then the participants themselves.
+        // Drop the per-day links (and the relay teams they form) and discount links first, then the participants.
         await db.ParticipantDays.ExecuteDeleteAsync(cancellationToken);
+        await db.RelayTeams.ExecuteDeleteAsync(cancellationToken);
         await db.ParticipantDiscounts.ExecuteDeleteAsync(cancellationToken);
         await db.ParticipantFieldValues.ExecuteDeleteAsync(cancellationToken);
         return await db.Participants.ExecuteDeleteAsync(cancellationToken);
@@ -1500,8 +1523,11 @@ public sealed partial class EventStore : IEventStore
         if (existing.IsFsouMemberDiscount)
             return;
 
-        // Drop the participant↔discount links for this discount, then the discount itself.
-        await db.ParticipantDiscounts.Where(p => p.DiscountId == discountId).ExecuteDeleteAsync(cancellationToken);
+        // Drop the participant↔discount links for this discount, then the discount itself (tracked, so the undo
+        // journal sees every link).
+        db.ParticipantDiscounts.RemoveRange(await db.ParticipantDiscounts
+            .Where(p => p.DiscountId == discountId)
+            .ToListAsync(cancellationToken));
         db.EntryFeeDiscounts.Remove(existing);
         await db.SaveChangesAsync(cancellationToken);
     }
@@ -1770,10 +1796,14 @@ public sealed partial class EventStore : IEventStore
     public async Task DeleteCustomFieldDefAsync(string eventFolderPath, string key, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
-        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
-        await db.ParticipantFieldValues.Where(v => v.Key == key).ExecuteDeleteAsync(cancellationToken);
-        await db.CustomFields.Where(f => f.Key == key).ExecuteDeleteAsync(cancellationToken);
-        await tx.CommitAsync(cancellationToken);
+        // Tracked deletes (not ExecuteDelete), so the undo journal sees the field and every value; one SaveChanges.
+        db.ParticipantFieldValues.RemoveRange(await db.ParticipantFieldValues
+            .Where(v => v.Key == key)
+            .ToListAsync(cancellationToken));
+        db.CustomFields.RemoveRange(await db.CustomFields
+            .Where(f => f.Key == key)
+            .ToListAsync(cancellationToken));
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<ParticipantFieldValue>> GetParticipantFieldValuesAsync(string eventFolderPath, CancellationToken cancellationToken = default)
@@ -1914,6 +1944,8 @@ public sealed partial class EventStore : IEventStore
         // 2. Optional wipe. All-days mode clears the whole participant database so the file becomes the
         //    full roster. Current-day-only mode clears just the target day's links (the participants and
         //    their other days stay), so the file becomes that day's roster without touching other days.
+        //    The relay teams go with the links (a team is the day's runners grouped — the file brings its own);
+        //    the leg-course assignments by number are course data and stay.
         if (clearFirst)
         {
             if (currentDayOnly)
@@ -1923,11 +1955,15 @@ public sealed partial class EventStore : IEventStore
                     .Select(d => (Guid?)d.Id)
                     .FirstOrDefaultAsync(cancellationToken);
                 if (targetDay is { } id)
+                {
                     await db.ParticipantDays.Where(l => l.EventDayId == id).ExecuteDeleteAsync(cancellationToken);
+                    await db.RelayTeams.Where(t => t.EventDayId == id).ExecuteDeleteAsync(cancellationToken);
+                }
             }
             else
             {
                 await db.ParticipantDays.ExecuteDeleteAsync(cancellationToken);
+                await db.RelayTeams.ExecuteDeleteAsync(cancellationToken);
                 await db.ParticipantDiscounts.ExecuteDeleteAsync(cancellationToken);
                 await db.ParticipantFieldValues.ExecuteDeleteAsync(cancellationToken);
                 await db.Participants.ExecuteDeleteAsync(cancellationToken);

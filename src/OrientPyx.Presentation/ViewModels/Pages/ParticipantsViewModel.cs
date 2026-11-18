@@ -11,6 +11,7 @@ using OrientPyx.BusinessLogic.Models;
 using OrientPyx.BusinessLogic.Services;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.Services.Undo;
 using OrientPyx.Presentation.ViewModels.Dialogs;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
@@ -66,6 +67,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     /// <summary>The per-machine key the chip-scan file path is stored under on a station (<see cref="IEventFiles.GetMachineValueAsync"/>).</summary>
     private const string ChipScanPathKey = "chipScan.readoutPath";
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
+    // The undo step each pending (debounced) row save writes under, by the same key as _saveTimers. A program-made
+    // change re-saving the row (a refused number put back) keeps the step of the edit still waiting (§9.2). Holds no
+    // row view model — the entry is an id and a label.
+    private readonly Dictionary<Guid, UndoEntry> _saveSteps = new();
     private readonly PendingSaves _pendingSaves = new();
     // Serialises chip-reassignment prompts so a collapsed-block edit that fans a chip out to several
     // days never stacks overlapping confirm dialogs (the overlay shows one dialog at a time).
@@ -99,10 +104,13 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         IDataChangeBus bus,
         IWorkspaceMode mode,
         IEventFiles eventFiles,
-        IToastService toasts)
+        IToastService toasts,
+        IUndoHistory undo)
         : base(localization)
     {
         _toasts = toasts;
+        // Ctrl+Z / Ctrl+Y: one history per day table and one for «Мандатка» (UndoDayId).
+        UseUndo(undo);
         UseDayLock(dayLock);
         _appSettings = appSettings;
         LayoutStore = layoutStore;
@@ -146,6 +154,56 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     public override string NavKey => "Nav.Participants";
     public override string TitleKey => "Page.Participants.Title";
     public override string TextKey => "Page.Participants.Text";
+
+    // ── Undo / redo
+    // Each day table has its own history and «Мандатка» one more (У-2). A change made on a row goes to the history of
+    // the row's own day (a day row) or of the roster (a roster row / cell) — normally the page's current one; right on
+    // a day switch the rows on screen are still the previous day's, and so is their step (§9.2).
+
+    /// <inheritdoc />
+    public override Guid? UndoDayId => IsDayMode ? SelectedDay?.Day?.Id : null;
+
+    // The history of a day table (dayId) or of the roster (null).
+    private static UndoHistoryKey HistoryKey(string page, Guid? dayId) => new(page, dayId);
+
+    private UndoEntry? CaptureDayRow(ParticipantDayRowViewModel row, string label)
+        => CaptureUndo(HistoryKey(UndoKey, row.DayId), label);
+
+    private UndoEntry? CaptureRoster(string label) => CaptureUndo(HistoryKey(UndoKey, null), label);
+
+    // «column — row» for a change of a roster cell (the cells know their participant, not the row's name).
+    private string RunnerLabel(string columnKey, Guid participantId) => UndoLabel(columnKey, RunnerName(participantId));
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// The debounced row saves (600 ms + the write), the field / chip / relay / status writes tracked with them, and a
+    /// relay group pick a paste just queued for the next dispatcher turn.
+    /// </remarks>
+    public override async Task FlushPendingWritesAsync()
+    {
+        if (_relayBulkGroupQueued)
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+        await _pendingSaves.WaitAsync();
+    }
+
+    /// <inheritdoc />
+    /// <remarks>Selects the row the undone step touched (by its day link or participant id), when it is shown.</remarks>
+    public override void OnUndoApplied(UndoRevertResult result)
+    {
+        if (result.RowIds is not { Count: > 0 } ids)
+            return;
+        var touched = ids.ToHashSet();
+        if (IsDayMode)
+        {
+            if (Participants.FirstOrDefault(r => touched.Contains(r.Id) || touched.Contains(r.ParticipantId)) is { } row)
+                SelectedParticipant = row;
+        }
+        else if (Roster.FirstOrDefault(r => touched.Contains(r.ParticipantId)
+                     || r.Days.Any(d => d.LinkId is { } link && touched.Contains(link))) is { } rosterRow)
+        {
+            SelectedRosterRow = rosterRow;
+        }
+    }
 
     /// <summary>The per-competition table-view store, bound by both participant tables so their column
     /// order/width/visibility persist to <c>events/&lt;id&gt;/views.json</c>.</summary>
@@ -320,23 +378,27 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             .Build(ShowTeamColumn, ShowScoreColumn, Discounts, RaisedFeeEnabled, PaymentPerDay, _dayBands,
                 _dayResultColumns, CustomFields, _dayUsesRelay);
 
-    // Builds a row's additional-field cells from the loaded values.
-    private ParticipantFieldsViewModel FieldsFor(Guid participantId, IReadOnlyDictionary<string, string> values)
-        => new(participantId, CustomFields, values, RequestFieldSave);
+    // Builds a row's additional-field cells from the loaded values. dayId: the day table the row is on (its undo
+    // history), null for a roster row.
+    private ParticipantFieldsViewModel FieldsFor(Guid participantId, IReadOnlyDictionary<string, string> values, Guid? dayId)
+        => new(participantId, CustomFields, values, (id, cell) => RequestFieldSave(id, cell, dayId));
 
     // An additional-field edit: persist it (normalised, Р-18/Р-19) and show what was stored. Text cells commit on
     // leaving the cell, so there is no keystroke storm to debounce.
-    private void RequestFieldSave(Guid participantId, ParticipantFieldCellViewModel cell)
+    private void RequestFieldSave(Guid participantId, ParticipantFieldCellViewModel cell, Guid? dayId)
     {
         var key = cell.Key;
         var value = cell.Value;
+        var label = CustomFields.FirstOrDefault(f => f.Key == key)?.Label ?? key;
+        var step = CaptureUndo(HistoryKey(UndoKey, dayId),
+            string.Format(Localization.Get("Undo.Label.Cell"), label, RunnerName(participantId)));
         _pendingSaves.Track(SaveFieldAsync());
 
         async Task SaveFieldAsync()
         {
             try
             {
-                var stored = await Task.Run(() => _editor.SetParticipantFieldAsync(participantId, key, value));
+                var stored = await RunUndoAsync(step, () => _editor.SetParticipantFieldAsync(participantId, key, value));
                 if (cell.Value == value)
                     cell.ApplySaved(stored);
             }
@@ -353,7 +415,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     {
         if (_session.CurrentEvent is null)
             return;
-        var dialog = new CustomFieldsViewModel(Localization, _editor, _busy);
+        // Its add / rename / delete-field writes are steps in the «Мандатка» history (the fields are competition-level).
+        var dialog = new CustomFieldsViewModel(Localization, _editor, _busy, UndoHistory);
         await dialog.LoadAsync();
         await _dialogs.ShowCustomFieldsAsync(dialog);
         if (dialog.Changed)
@@ -1079,7 +1142,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (vm.Fields.BuiltFor(CustomFields))
             vm.Fields.Apply(row.Fields);
         else
-            vm.Fields = FieldsFor(row.ParticipantId, row.Fields);
+            vm.Fields = FieldsFor(row.ParticipantId, row.Fields, row.DayId);
     }
 
     // Applies a fresh roster row onto its existing row object (a live refresh), cells by day id.
@@ -1093,7 +1156,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (vm.Fields.BuiltFor(CustomFields))
             vm.Fields.Apply(row.Fields);
         else
-            vm.Fields = FieldsFor(row.ParticipantId, row.Fields);
+            vm.Fields = FieldsFor(row.ParticipantId, row.Fields, dayId: null);
         vm.ApplyDayLocks(_lockedDayIds);
     }
 
@@ -1183,7 +1246,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private ParticipantDayRowViewModel NewDayRow(ParticipantDayRow row, IReadOnlyList<GroupOption> groupOptions)
     {
         var vm = NewDayRowCore(row, groupOptions);
-        vm.Fields = FieldsFor(row.ParticipantId, row.Fields);
+        vm.Fields = FieldsFor(row.ParticipantId, row.Fields, row.DayId);
         return vm;
     }
 
@@ -1195,7 +1258,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             RequestDayRowDusshChange, RequestDayRowAddDussh,
             RequestRowRaisedFeeChange, RequestRowDiscountChange,
             RequestDayRowResultStatusChange, RequestDayRowBonusChange, RequestDayRowPaymentChange,
-            RequestRelayPlace, RequestRelayTeamEdit, RequestDayRowRelayGroupChange, RequestDayRowRelayBulkGroup);
+            RequestDayRowRelayPlace, RequestDayRowRelayTeamEdit, RequestDayRowRelayGroupChange, RequestDayRowRelayBulkGroup);
 
     private ParticipantRosterRowViewModel CreateRosterRow(
         ParticipantRosterRow row,
@@ -1211,7 +1274,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             RequestRosterRowDusshChange, RequestRosterRowAddDussh,
             RequestRosterRaisedFeeChange, RequestRosterDiscountChange);
 
-        rosterRow.Fields = FieldsFor(row.ParticipantId, row.Fields);
+        rosterRow.Fields = FieldsFor(row.ParticipantId, row.Fields, dayId: null);
 
         // Mark the closed days before the row goes live, so a locked cell never accepts a first edit.
         rosterRow.ApplyDayLocks(_lockedDayIds);
@@ -1227,7 +1290,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             : [new GroupOption(null, string.Empty, Localization)];
         return new RosterDayCellViewModel(participantId, cell, options, Localization, RequestCellGroupChange, RequestCellChipChange,
             RequestCellStartTimeChange, RequestCellOutOfCompetitionChange, RequestCellResultStatusChange, RequestCellBonusChange,
-            RequestCellPaymentChange, RequestCellRaisedFeeChange, RequestRelayPlace, RequestRelayTeamEdit,
+            RequestCellPaymentChange, RequestCellRaisedFeeChange, RequestCellRelayPlace, RequestCellRelayTeamEdit,
             RequestCellRelayGroupChange, RequestCellRelayBulkGroup);
     }
 
@@ -1258,6 +1321,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
     private async Task SwitchDayAsync(EventDay day)
     {
+        // The edits of the day being left land first (§9.2): a row save is debounced 0.6 s and writes to the
+        // session's day, so switching first would drop it (LoadAsync cancels the timers) or — had it survived — write
+        // it into the new day. Waiting here writes it on its own day, under the step already in that day's history.
+        await FlushPendingWritesAsync();
         // Switching the session day re-raises SessionChanged → LoadAsync, which reloads the rows.
         await _busy.RunAsync(() => _session.SetCurrentDayAsync(day));
     }
@@ -1271,8 +1338,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (IsRosterMode)
         {
             // Roster add: create a participant that starts out not participating on any day, then
-            // append the aggregate row. Reuse the cached per-day group options for its cells.
-            var roster = await _busy.RunAsync(() => _editor.AddRosterParticipantAsync());
+            // append the aggregate row. Reuse the cached per-day group options for its cells. Undoing it deletes the
+            // row again (the reload after the undo drops it).
+            var addStep = CaptureUndoAction(HistoryKey(UndoKey, null), Localization.Get("Undo.Label.AddRow"));
+            var roster = await RunUndoAsync(addStep, () => _busy.RunAsync(() => _editor.AddRosterParticipantAsync()));
             if (roster is null)
                 return;
             var groupsByDay = await _busy.RunAsync(() => LoadGroupsByDayAsync());
@@ -1283,11 +1352,13 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             return;
         }
 
-        if (_session.CurrentDay is null)
+        if (_session.CurrentDay is not { } currentDay)
             return;
 
-        var groupOptions = await _busy.RunAsync(() => BuildGroupOptionsAsync(_session.CurrentDay!.Id));
-        var row = await _busy.RunAsync(() => _editor.AddParticipantToDayAsync());
+        var dayId = currentDay.Id;
+        var groupOptions = await _busy.RunAsync(() => BuildGroupOptionsAsync(dayId));
+        var step = CaptureUndoAction(HistoryKey(UndoKey, dayId), Localization.Get("Undo.Label.AddRow"));
+        var row = await RunUndoAsync(step, () => _busy.RunAsync(() => _editor.AddParticipantToDayAsync()));
         if (row is null)
         {
             // The day has no groups yet; a participant cannot be added without a group to put them in.
@@ -1305,10 +1376,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     {
         if (row.IsApplying)
             return;
-        _ = LeaveDayAsync(row);
+        _ = LeaveDayAsync(row, CaptureDayRow(row, UndoLabel("Participants.Col.Group", row.FullName)));
     }
 
-    private async Task LeaveDayAsync(ParticipantDayRowViewModel row)
+    private async Task LeaveDayAsync(ParticipantDayRowViewModel row, UndoEntry? step)
     {
         // Their last day: leaving it deletes the person from the competition — say so first; a «no» puts the row back.
         if (!await ConfirmLastDayAsync(row.ParticipantId))
@@ -1316,18 +1387,14 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             await LoadAsync();
             return;
         }
-        if (_saveTimers.TryGetValue(row.Id, out var cts))
-        {
-            cts.Cancel();
-            _saveTimers.Remove(row.Id);
-        }
+        CancelRowSave(row.Id);
 
         if (ReferenceEquals(SelectedParticipant, row))
             SelectedParticipant = GridSelection.NeighbourAfterRemoval(Participants, row);
         Participants.Remove(row);
 
         var (linkId, participantId) = (row.Id, row.ParticipantId);
-        _ = Task.Run(() => _editor.RemoveParticipantFromDayAsync(linkId, participantId));
+        _pendingSaves.Track(RunUndoAsync(step, () => _editor.RemoveParticipantFromDayAsync(linkId, participantId)));
     }
 
     // Removing someone from their only day deletes them from the competition (RemoveParticipantFromDayAsync): ask.
@@ -1372,11 +1439,12 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 return;
         }
 
-        if (_saveTimers.TryGetValue(row.Id, out var cts))
-        {
-            cts.Cancel();
-            _saveTimers.Remove(row.Id);
-        }
+        CancelRowSave(row.Id);
+
+        // One step, captured once the delete is confirmed; undoing it puts the row back (the reload after the undo
+        // brings it, RowSync) with everything that went with it.
+        var step = CaptureUndoAction(HistoryKey(UndoKey, row.DayId),
+            string.Format(Localization.Get("Undo.Label.DeleteRow"), row.FullName));
 
         // Remove from the grid immediately; run the SQLite delete in the background.
         if (ReferenceEquals(SelectedParticipant, row))
@@ -1384,7 +1452,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         Participants.Remove(row);
 
         var (linkId, participantId) = (row.Id, row.ParticipantId);
-        _ = Task.Run(() => _editor.RemoveParticipantFromDayAsync(linkId, participantId));
+        _pendingSaves.Track(RunUndoAsync(step, () => _editor.RemoveParticipantFromDayAsync(linkId, participantId)));
 
         if (confirmed)
             RequestGridFocus();
@@ -1423,11 +1491,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 return;
         }
 
-        if (_saveTimers.TryGetValue(row.ParticipantId, out var cts))
-        {
-            cts.Cancel();
-            _saveTimers.Remove(row.ParticipantId);
-        }
+        CancelRowSave(row.ParticipantId);
+
+        var step = CaptureUndoAction(HistoryKey(UndoKey, null),
+            string.Format(Localization.Get("Undo.Label.DeleteRow"), row.FullName));
 
         // Remove from the grid immediately; run the SQLite delete in the background.
         if (ReferenceEquals(SelectedRosterRow, row))
@@ -1435,7 +1502,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         Roster.Remove(row);
 
         var participantId = row.ParticipantId;
-        _ = Task.Run(() => _editor.DeleteParticipantAsync(participantId));
+        _pendingSaves.Track(RunUndoAsync(step, () => _editor.DeleteParticipantAsync(participantId)));
     }
 
     // ── Day-row chip change (conflict-resolved, not part of the debounced save)
@@ -1447,16 +1514,16 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     {
         if (row.IsApplying)
             return;
-        _ = ResolveDayRowChipAsync(row);
+        // The step is taken now (the edit's own); the «Забрати» / «Обміняти» answer comes later and writes under it.
+        var step = CaptureDayRow(row, UndoLabel("Participants.Col.Chip", row.FullName));
+        _pendingSaves.Track(ResolveDayRowChipAsync(row, step));
     }
 
-    private async Task ResolveDayRowChipAsync(ParticipantDayRowViewModel row)
+    private async Task ResolveDayRowChipAsync(ParticipantDayRowViewModel row, UndoEntry? step)
     {
-        if (_session.CurrentDay is not { } day)
-            return;
-
         var newChip = (row.Chip ?? string.Empty).Trim();
-        var (participantId, dayId) = (row.ParticipantId, day.Id);
+        // The row's own day (normally the session's): the chip belongs to the day it was typed on.
+        var (participantId, dayId) = (row.ParticipantId, row.DayId);
 
         await _chipGate.WaitAsync();
         try
@@ -1473,16 +1540,20 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             row.MarkChipCommitted(newChip);
             if (choice == ChipConflictChoice.Swap)
             {
-                await Task.Run(() => _editor.SwapParticipantDayChipsAsync(participantId, dayId, newChip, previousChip));
+                await RunUndoAsync(step, () => _editor.SwapParticipantDayChipsAsync(participantId, dayId, newChip, previousChip));
                 // The other holder took this participant's old chip; mirror that in the grid.
                 SetChipOnConflictingDayRow(participantId, newChip, previousChip);
             }
             else
             {
-                await Task.Run(() => _editor.ReassignParticipantDayChipAsync(participantId, dayId, newChip));
+                await RunUndoAsync(step, () => _editor.ReassignParticipantDayChipAsync(participantId, dayId, newChip));
                 // The other holder (if any) had their chip cleared in the DB; refresh that row in the grid.
                 SetChipOnConflictingDayRow(participantId, newChip, string.Empty);
             }
+        }
+        catch
+        {
+            // never crash the UI over a chip edit (a closed day, a lost connection); the next reload shows the store
         }
         finally
         {
@@ -1497,6 +1568,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     {
         if (chip.Length == 0)
             return;
+        // Program-made: the store already holds it (written by the step above).
+        using var programmatic = UndoGesture.Programmatic();
         foreach (var other in Participants)
         {
             if (other.ParticipantId == keepParticipantId)
@@ -1558,29 +1631,73 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     }
 
     // ── Day-row autosave (debounced per row)
-    private void RequestRowSave(ParticipantDayRowViewModel row)
+    // The undo step is captured here, at the change (the write is 0.6 s later): the cell's edit session, a paste /
+    // bulk-edit gesture, or a step of its own named after the column. Two changes of a row within the debounce are one
+    // write — the earlier step is left empty and skipped (У-16).
+    private void RequestRowSave(ParticipantDayRowViewModel row, string columnKey)
     {
         if (row.IsApplying)
             return;
-        if (_saveTimers.TryGetValue(row.Id, out var existing))
-            existing.Cancel();
-
-        var cts = new CancellationTokenSource();
-        _saveTimers[row.Id] = cts;
-        _pendingSaves.Track(SaveRowDebouncedAsync(row, cts.Token));
+        var step = CaptureDayRow(row, UndoLabel(columnKey, row.FullName));
+        var cts = RestartRowSave(row.Id, ref step);
+        _pendingSaves.Track(SaveRowDebouncedAsync(row, step, cts));
     }
 
-    private async Task SaveRowDebouncedAsync(ParticipantDayRowViewModel row, CancellationToken token)
+    // Cancels the row's pending save and registers a new one. A program-made change (no step of its own) keeps the
+    // step of the edit whose save it replaces, so that edit is still undoable.
+    private CancellationTokenSource RestartRowSave(Guid key, ref UndoEntry? step)
     {
+        if (_saveTimers.TryGetValue(key, out var existing))
+            existing.Cancel();
+        if (step is null && _saveSteps.TryGetValue(key, out var pending) && !pending.Closed)
+            step = pending;
+
+        var cts = new CancellationTokenSource();
+        _saveTimers[key] = cts;
+        if (step is null)
+            _saveSteps.Remove(key);
+        else
+            _saveSteps[key] = step;
+        return cts;
+    }
+
+    // Drops a row's pending save (the row is being deleted, or a batch writes it instead).
+    private void CancelRowSave(Guid key)
+    {
+        if (_saveTimers.Remove(key, out var cts))
+            cts.Cancel();
+        _saveSteps.Remove(key);
+    }
+
+    // A finished save forgets its timer and step — unless a newer save of the row has taken them over.
+    private void EndRowSave(Guid key, CancellationTokenSource cts)
+    {
+        if (_saveTimers.TryGetValue(key, out var current) && ReferenceEquals(current, cts))
+        {
+            _saveTimers.Remove(key);
+            _saveSteps.Remove(key);
+        }
+    }
+
+    private async Task SaveRowDebouncedAsync(ParticipantDayRowViewModel row, UndoEntry? step, CancellationTokenSource cts)
+    {
+        var token = cts.Token;
         try
         {
             await Task.Delay(SaveDebounce, token);
             await RefuseTakenNumberAsync(row.ParticipantId, row.Number, kept => row.Number = kept);
+            token.ThrowIfCancellationRequested();
             var dto = row.ToRow();
-            await Task.Run(() => _editor.UpdateParticipantDayRowAsync(dto, token), token);
+            // Once started, the write runs to its end: cancelled half-way it could leave the participant saved but not
+            // the day link — a step partly in the store that the history would take for an empty one.
+            await RunUndoAsync(step, () => _editor.UpdateParticipantDayRowAsync(dto, CancellationToken.None));
         }
         catch (OperationCanceledException) { }
         catch { /* never crash the UI over an autosave */ }
+        finally
+        {
+            EndRowSave(row.Id, cts);
+        }
     }
 
     // A start number another participant already holds is not saved (numbers are unique per competition): say whose
@@ -1592,28 +1709,33 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _toasts.Show(
             Localization.Get("Participants.NumberTaken.Title"),
             string.Format(Localization.Get("Participants.NumberTaken.Message"), (number ?? string.Empty).Trim(), conflict.HolderName));
-        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => putBack(conflict.KeptNumber));
+        // Program-made: the stored number is already the kept one, so this re-save joins no step of its own (the
+        // pending edit keeps its step, see RestartRowSave).
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            using (UndoGesture.Programmatic())
+                putBack(conflict.KeptNumber);
+        });
     }
 
-    // ── Roster identity autosave (debounced per row)
-    private void RequestRosterRowSave(ParticipantRosterRowViewModel row)
+    // ── Roster identity autosave (debounced per row; the step as for a day row)
+    private void RequestRosterRowSave(ParticipantRosterRowViewModel row, string columnKey)
     {
         if (row.IsApplying)
             return;
-        if (_saveTimers.TryGetValue(row.ParticipantId, out var existing))
-            existing.Cancel();
-
-        var cts = new CancellationTokenSource();
-        _saveTimers[row.ParticipantId] = cts;
-        _pendingSaves.Track(SaveRosterRowDebouncedAsync(row, cts.Token));
+        var step = CaptureRoster(UndoLabel(columnKey, row.FullName));
+        var cts = RestartRowSave(row.ParticipantId, ref step);
+        _pendingSaves.Track(SaveRosterRowDebouncedAsync(row, step, cts));
     }
 
-    private async Task SaveRosterRowDebouncedAsync(ParticipantRosterRowViewModel row, CancellationToken token)
+    private async Task SaveRosterRowDebouncedAsync(ParticipantRosterRowViewModel row, UndoEntry? step, CancellationTokenSource cts)
     {
+        var token = cts.Token;
         try
         {
             await Task.Delay(SaveDebounce, token);
             await RefuseTakenNumberAsync(row.ParticipantId, row.Number, kept => row.Number = kept);
+            token.ThrowIfCancellationRequested();
             var dto = new ParticipantRosterRow(
                 row.ParticipantId,
                 (row.FullName ?? string.Empty).Trim(),
@@ -1640,10 +1762,15 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 [],
                 0m,
                 []);
-            await Task.Run(() => _editor.UpdateParticipantIdentityAsync(dto, token), token);
+            // Runs to its end once started (see SaveRowDebouncedAsync).
+            await RunUndoAsync(step, () => _editor.UpdateParticipantIdentityAsync(dto, CancellationToken.None));
         }
         catch (OperationCanceledException) { }
         catch { }
+        finally
+        {
+            EndRowSave(row.ParticipantId, cts);
+        }
     }
 
     // ── Bulk assign start numbers
@@ -1688,6 +1815,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         var touchedRows = new List<NumberRow>();
         var n = result.StartNumber;
 
+        // The whole assignment is one undo step: the rows' own captures (setting Number) join it, and the batch
+        // below writes under it.
+        var label = Localization.Get("Undo.Label.AssignNumbers");
+        using var gesture = UndoGesture.Begin(label);
+        var step = CaptureUndoAction(label);
         foreach (var row in visible)
         {
             if (!result.ReassignExisting)
@@ -1728,23 +1860,18 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         // Persist the whole assignment in ONE transaction. Setting each row's Number above also queued the
         // row's own debounced autosave; those overlapping per-row writes are exactly the race that dropped
         // numbers, so cancel every touched row's pending timer and write the batch ourselves instead.
+        gesture.Dispose();
         if (touched.Count > 0)
         {
             foreach (var row in touchedRows)
-            {
-                if (_saveTimers.TryGetValue(row.TimerKey, out var cts))
-                {
-                    cts.Cancel();
-                    _saveTimers.Remove(row.TimerKey);
-                }
-            }
+                CancelRowSave(row.TimerKey);
 
             var batch = touched.Values
                 .Select(r => (r.ParticipantId, Number: r.GetNumber()))
                 .ToList();
             try
             {
-                await Task.Run(() => _editor.SetParticipantNumbersBatchAsync(batch));
+                await RunUndoAsync(step, () => _editor.SetParticipantNumbersBatchAsync(batch));
             }
             catch
             {
@@ -1947,10 +2074,19 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (assignments is null || assignments.Count == 0)
             return;
 
+        // Each withdrawal is a step of its own in the history of the day the dialog was opened for (У-19): the day
+        // table's (or, on a one-day competition's «Мандатка», the roster's — the history the operator is looking at).
+        // A row that left the status as it was writes nothing.
+        var key = IsDayMode ? HistoryKey(UndoKey, dayId) : CurrentUndoKey;
+        var members = data.Members.ToDictionary(m => m.ParticipantId);
+        var steps = assignments
+            .Where(a => !members.TryGetValue(a.ParticipantId, out var m) || m.CurrentStatus != a.Status)
+            .Select(a => (Assignment: a, Step: CaptureUndoAction(key, WithdrawalLabel(a, members))))
+            .ToList();
         await _busy.RunAsync(async () =>
         {
-            foreach (var a in assignments)
-                await _editor.SetParticipantDayResultStatusAsync(a.ParticipantId, dayId, a.Status);
+            foreach (var (a, step) in steps)
+                await RunUndoAsync(step, () => _editor.SetParticipantDayResultStatusAsync(a.ParticipantId, dayId, a.Status));
         });
         _log.Action(string.Format(
             CultureInfo.CurrentCulture,
@@ -1958,6 +2094,14 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             assignments.Count));
 
         await LoadAsync();
+    }
+
+    // «Зняття: DNS — Іваненко Іван» (the "auto" choice reads as such).
+    private string WithdrawalLabel(QuickWithdrawalAssignment a, IReadOnlyDictionary<Guid, QuickWithdrawalMember> members)
+    {
+        var status = a.Status is { } s ? FinishStatusOptions.ShortCode(s) : Localization.Get("FinishRead.Edit.StatusAuto");
+        var name = members.TryGetValue(a.ParticipantId, out var m) ? m.FullName : RunnerName(a.ParticipantId);
+        return string.Format(Localization.Get("Undo.Label.Withdrawal"), status, name);
     }
 
     // ── Copy participants from one day to another
@@ -2079,6 +2223,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             return;
         }
 
+        // One undo step for the whole action: the range added to the rental base (range mode) and every chip handed
+        // out. Taken at its first write (a declined confirmation leaves no step behind).
+        UndoEntry? step = null;
+        UndoEntry? Step() => step ??= CaptureUndoAction(Localization.Get("Undo.Label.AssignChips"));
+
         // "Starting from a number" mode: first add the contiguous range to the rental base (skipping any
         // number that already exists), then reload the pool so the newly added chips are in it — the rest
         // of the flow (build the free queue, confirm, assign) is identical to the "from the base" mode.
@@ -2088,8 +2237,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             if (start.Length == 0 || result.Count <= 0)
                 return;
 
-            await _busy.RunAsync(() =>
-                _editor.AddRentalChipRangeAsync(start, result.Count, result.RangeNote ?? string.Empty));
+            await RunUndoAsync(Step(), () => _busy.RunAsync(() =>
+                _editor.AddRentalChipRangeAsync(start, result.Count, result.RangeNote ?? string.Empty)));
             pool = await _busy.RunAsync(() => _editor.GetRentalChipsAsync());
 
             // The range's chips are now in the rental database, so refresh the shared registry the chip
@@ -2158,7 +2307,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
         if (writes.Count > 0)
         {
-            await _busy.RunAsync(() => _editor.SetParticipantDayChipsBatchAsync(writes));
+            await RunUndoAsync(Step(), () => _busy.RunAsync(() => _editor.SetParticipantDayChipsBatchAsync(writes)));
 
             // The assigned cells were set "silently" (no per-cell fee recompute), so refresh each row's
             // «Стартовий внесок» from the current fee snapshot — a chip drawn from a note-tagged pool may
@@ -2411,16 +2560,22 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
         // Update the cells in memory and collect the (participant, day, chip) writes — the row objects came
         // back inside the candidates, so each assignment lands on the very row it was built from.
-        var writes = new List<(Guid ParticipantId, Guid DayId, string Chip)>();
+        // Every chip handed out is an undo step of its own in the history the dialog was opened from (the day table's
+        // or «Мандатка»'s, У-19): «Чіп 777 — Іваненко Іван», with the chip added to the rental base and the participant's
+        // chip type changed in the dialog. A chip type changed for someone who got no chip is a step of its own too.
+        var key = CurrentUndoKey;
+        var work = new List<(UndoEntry? Step, List<(string Number, string Note)> NewChips,
+            List<(Guid ParticipantId, Guid DayId, string Chip)> Writes, List<ChipScanFieldUpdate> Fields)>();
         var assignments = new List<(string Name, string Chip)>();
         foreach (var a in result.Assignments)
         {
+            var writes = new List<(Guid ParticipantId, Guid DayId, string Chip)>();
             switch (a.Candidate.Row)
             {
-                case ParticipantDayRowViewModel row when _session.CurrentDay is { } day:
+                case ParticipantDayRowViewModel row:
                     row.SetChipSilently(a.Chip);
                     row.MarkChipCommitted(a.Chip);
-                    writes.Add((row.ParticipantId, day.Id, a.Chip));
+                    writes.Add((row.ParticipantId, row.DayId, a.Chip));
                     break;
                 case ParticipantRosterRowViewModel row:
                     foreach (var cell in ChiplessOpenDays(row).ToList())
@@ -2432,20 +2587,33 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                     break;
             }
             assignments.Add((a.Candidate.FullName, a.Chip));
+            var label = string.Format(Localization.Get("Undo.Label.ChipScan"), a.Chip, a.Candidate.FullName);
+            work.Add((CaptureUndoAction(key, label), a.AddToBase ? [(a.Chip, a.Note)] : [], writes,
+                result.FieldUpdates.Where(u => u.Candidate.ParticipantId == a.Candidate.ParticipantId).ToList()));
+        }
+        var scanned = result.Assignments.Select(a => a.Candidate.ParticipantId).ToHashSet();
+        foreach (var u in result.FieldUpdates.Where(u => !scanned.Contains(u.Candidate.ParticipantId)))
+        {
+            var fieldLabel = CustomFields.FirstOrDefault(f => f.Key == u.Key)?.Label ?? u.Key;
+            var label = string.Format(Localization.Get("Undo.Label.Cell"), fieldLabel, u.Candidate.FullName);
+            work.Add((CaptureUndoAction(key, label), [], [], [u]));
         }
 
         var newChips = result.NewRentalChips;
-        var fieldUpdates = result.FieldUpdates;
         var storedFieldValues = new List<(ChipScanFieldUpdate Update, string Stored)>();
         await _busy.RunAsync(async () =>
         {
-            if (newChips.Count > 0)
-                await _editor.AddRentalChipsAsync(newChips);
-            if (writes.Count > 0)
-                await _editor.SetParticipantDayChipsBatchAsync(writes);
-            // Chip types changed in the dialog go to the chip-type field of those participants.
-            foreach (var u in fieldUpdates)
-                storedFieldValues.Add((u, await _editor.SetParticipantFieldAsync(u.Candidate.ParticipantId, u.Key, u.Value)));
+            foreach (var (step, chips, writes, fields) in work)
+                await RunUndoAsync(step, async () =>
+                {
+                    if (chips.Count > 0)
+                        await _editor.AddRentalChipsAsync(chips);
+                    if (writes.Count > 0)
+                        await _editor.SetParticipantDayChipsBatchAsync(writes);
+                    // Chip types changed in the dialog go to the chip-type field of those participants.
+                    foreach (var u in fields)
+                        storedFieldValues.Add((u, await _editor.SetParticipantFieldAsync(u.Candidate.ParticipantId, u.Key, u.Value)));
+                });
         });
 
         foreach (var (u, stored) in storedFieldValues)
@@ -2569,8 +2737,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (!confirmed)
             return;
 
-        foreach (var action in apply)
-            action();
+        // One undo step: every row's own capture (its debounced save / cell write) joins the gesture.
+        using (UndoGesture.Begin(string.Format(Localization.Get("Undo.Label.RowAction"),
+                   Localization.Get("Participants.MarkAgeViolators"), names.Count)))
+            foreach (var action in apply)
+                action();
 
         LogAgeViolatorsMarked(names);
     }
@@ -2655,6 +2826,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
         // The list "+ new" sentinels create the value inline, reusing the existing add flows.
         dialog.AddRequested += OnBulkEditAddRequested;
+        _bulkEditStep = null;
+        _bulkEditRowCount = visibleRows.Count;
         BulkEditResult? result;
         try
         {
@@ -2664,10 +2837,17 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         {
             dialog.AddRequested -= OnBulkEditAddRequested;
         }
+        // A value made with «+ новий» in the dialog already wrote under this step: the applied values join it.
+        var addStep = _bulkEditStep;
+        _bulkEditStep = null;
         if (result is null)
             return;
 
-        ApplyBulkEdit(visibleRows, result, request?.RosterDayIndex);
+        // One undo step per applied dialog: every row's own capture joins the gesture.
+        var undoLabel = string.Format(Localization.Get("Undo.Label.BulkEdit"),
+            fieldLabels.TryGetValue(result.Key, out var fieldLabel) ? fieldLabel : result.Key, visibleRows.Count);
+        using (UndoGesture.Continue(addStep, undoLabel))
+            ApplyBulkEdit(visibleRows, result, request?.RosterDayIndex);
 
         // Group/region etc. don't shift fees, but group changes the discount/rental picture for the
         // total; refresh fees + the status bar so the change is reflected immediately (cheap, in-memory).
@@ -2785,6 +2965,16 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             flag.IsSelected = r.Bool ?? false;
     }
 
+    // The undo step of the bulk edit whose dialog is open, taken by its first «+ новий» (the new region / club / ДЮСШ
+    // is part of the action); null until then. The applied values join it (BulkEditAsync).
+    private UndoEntry? _bulkEditStep;
+    private int _bulkEditRowCount;
+
+    // The step a «+ новий» in the bulk-edit dialog writes under: «Зміна «Регіон» (рядків: N)».
+    private UndoEntry? BulkEditAddStep(string columnKey)
+        => _bulkEditStep ??= CaptureUndoAction(string.Format(Localization.Get("Undo.Label.BulkEdit"),
+            Localization.Get(columnKey), _bulkEditRowCount));
+
     // A list field's "+ new" sentinel was picked in the dialog: run the existing create flow for that
     // kind, then push the rebuilt shared options onto the dialog (selecting the new value) or revert.
     private void OnBulkEditAddRequested(object? sender, Dialogs.BulkEditFieldKind kind)
@@ -2808,7 +2998,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             var name = await _dialogs.ShowAddRegionAsync(new Dialogs.AddRegionViewModel(Localization));
             var region = string.IsNullOrWhiteSpace(name)
                 ? null
-                : await _busy.RunAsync(() => _editor.AddRegionAsync(name));
+                : await RunUndoAsync(BulkEditAddStep("Participants.Col.Region"), () => _busy.RunAsync(() => _editor.AddRegionAsync(name)));
             if (region is null)
             {
                 dialog.RevertList(Dialogs.BulkEditFieldKind.Region);
@@ -2832,7 +3022,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             var name = await _dialogs.ShowAddClubAsync(new Dialogs.AddClubViewModel(Localization));
             var club = string.IsNullOrWhiteSpace(name)
                 ? null
-                : await _busy.RunAsync(() => _editor.AddClubAsync(name));
+                : await RunUndoAsync(BulkEditAddStep("Participants.Col.Club"), () => _busy.RunAsync(() => _editor.AddClubAsync(name)));
             if (club is null)
             {
                 dialog.RevertList(Dialogs.BulkEditFieldKind.Club);
@@ -2856,7 +3046,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             var name = await _dialogs.ShowAddDusshAsync(new Dialogs.AddDusshViewModel(Localization));
             var dussh = string.IsNullOrWhiteSpace(name)
                 ? null
-                : await _busy.RunAsync(() => _editor.AddDusshAsync(name));
+                : await RunUndoAsync(BulkEditAddStep("Participants.Col.Dussh"), () => _busy.RunAsync(() => _editor.AddDusshAsync(name)));
             if (dussh is null)
             {
                 dialog.RevertList(Dialogs.BulkEditFieldKind.Dussh);
@@ -3056,7 +3246,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     {
         if (cell.IsApplying)
             return;
-        _ = ApplyCellGroupChangeAsync(cell);
+        var step = CaptureRoster(RunnerLabel("Participants.Col.Group", cell.ParticipantId));
+        _pendingSaves.Track(ApplyCellGroupChangeAsync(cell, step));
     }
 
     // ── Roster per-day chip change
@@ -3069,7 +3260,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             return;
         if (!cell.IsMember)
             return;
-        _ = ResolveCellChipAsync(cell);
+        var step = CaptureRoster(RunnerLabel("Participants.Col.Chip", cell.ParticipantId));
+        _pendingSaves.Track(ResolveCellChipAsync(cell, step));
     }
 
     // Start time / out-of-competition have no uniqueness rule, so they persist directly in the
@@ -3081,7 +3273,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (!cell.IsMember)
             return;
         var (participantId, dayId, startTime) = (cell.ParticipantId, cell.DayId, cell.StartTime);
-        _ = Task.Run(() => _editor.SetParticipantDayStartTimeAsync(participantId, dayId, startTime));
+        var step = CaptureRoster(RunnerLabel("Participants.Col.StartTime", participantId));
+        _pendingSaves.Track(WriteAsync(step, () => _editor.SetParticipantDayStartTimeAsync(participantId, dayId, startTime)));
     }
 
     private void RequestCellOutOfCompetitionChange(RosterDayCellViewModel cell)
@@ -3091,7 +3284,22 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (!cell.IsMember)
             return;
         var (participantId, dayId, value) = (cell.ParticipantId, cell.DayId, cell.OutOfCompetition);
-        _ = Task.Run(() => _editor.SetParticipantDayOutOfCompetitionAsync(participantId, dayId, value));
+        var step = CaptureRoster(RunnerLabel("Participants.Col.OutOfCompetition", participantId));
+        _pendingSaves.Track(WriteAsync(step, () => _editor.SetParticipantDayOutOfCompetitionAsync(participantId, dayId, value)));
+    }
+
+    // One background write of a step; a failure (a closed day, a lost connection) never crashes the UI — the next
+    // reload shows what the store holds.
+    private async Task WriteAsync(UndoEntry? step, Func<Task> write)
+    {
+        try
+        {
+            await RunUndoAsync(step, write);
+        }
+        catch
+        {
+            // see above
+        }
     }
 
     // ── Result status override (day grid + roster)
@@ -3102,9 +3310,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     {
         if (row.IsApplying)
             return;
-        if (_session.CurrentDay is not { } day)
-            return;
-        _ = ApplyResultStatusAsync(row.ParticipantId, day.Id, row.ResultStatusOverride);
+        var step = CaptureDayRow(row, UndoLabel("Participants.Col.ResultStatus", row.FullName));
+        _pendingSaves.Track(ApplyResultStatusAsync(row.ParticipantId, row.DayId, row.ResultStatusOverride, step));
     }
 
     private void RequestCellResultStatusChange(RosterDayCellViewModel cell)
@@ -3113,14 +3320,15 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             return;
         if (!cell.IsMember)
             return;
-        _ = ApplyResultStatusAsync(cell.ParticipantId, cell.DayId, cell.ResultStatusOverride);
+        var step = CaptureRoster(RunnerLabel("Participants.Col.ResultStatus", cell.ParticipantId));
+        _pendingSaves.Track(ApplyResultStatusAsync(cell.ParticipantId, cell.DayId, cell.ResultStatusOverride, step));
     }
 
-    private async Task ApplyResultStatusAsync(Guid participantId, Guid dayId, FinishStatus? status)
+    private async Task ApplyResultStatusAsync(Guid participantId, Guid dayId, FinishStatus? status, UndoEntry? step)
     {
         try
         {
-            await Task.Run(() => _editor.SetParticipantDayResultStatusAsync(participantId, dayId, status));
+            await RunUndoAsync(step, () => _editor.SetParticipantDayResultStatusAsync(participantId, dayId, status));
             var results = await _editor.GetDayResultsByParticipantAsync(dayId);
             RefreshResults(dayId, results);
         }
@@ -3130,12 +3338,33 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // ── Relay cells (day grid + roster): «Команда» / «Номер команди» / «Етап» typed on a runner's row («Номер етапу» is
     // read-only). The cell already shows the edit; the page saves it (asking first when it could change the team itself
     // or another runner holds the leg), says what else moved, and reloads — or puts the cell back and says why.
-    private void RequestRelayPlace(RelayCellsViewModel cells, RelayPlacementRequest request)
-        => _pendingSaves.Track(RunRelayEditAsync(cells, () => PlaceRelayAsync(request)));
+    // The step is taken at the edit (on the day table's history for a day row, the roster's for a roster cell); the
+    // «Замінити» / «для всієї команди» answer comes later and its repeated call writes under the same step.
+    private void RequestDayRowRelayPlace(RelayCellsViewModel cells, RelayPlacementRequest request)
+        => RequestRelayPlace(cells, request, HistoryKey(UndoKey, cells.DayId));
 
-    private void RequestRelayTeamEdit(RelayCellsViewModel cells, RelayTeamField field, string value)
-        => _pendingSaves.Track(RunRelayEditAsync(cells, () => EditRelayTeamAsync(
-            new RelayTeamCellEdit(cells.ParticipantId, cells.DayId, field, value))));
+    private void RequestCellRelayPlace(RelayCellsViewModel cells, RelayPlacementRequest request)
+        => RequestRelayPlace(cells, request, HistoryKey(UndoKey, null));
+
+    private void RequestDayRowRelayTeamEdit(RelayCellsViewModel cells, RelayTeamField field, string value)
+        => RequestRelayTeamEdit(cells, field, value, HistoryKey(UndoKey, cells.DayId));
+
+    private void RequestCellRelayTeamEdit(RelayCellsViewModel cells, RelayTeamField field, string value)
+        => RequestRelayTeamEdit(cells, field, value, HistoryKey(UndoKey, null));
+
+    private void RequestRelayPlace(RelayCellsViewModel cells, RelayPlacementRequest request, UndoHistoryKey key)
+    {
+        var step = CaptureUndo(key, RunnerLabel("Participants.Col.RelayLeg", cells.ParticipantId));
+        _pendingSaves.Track(RunRelayEditAsync(cells, () => PlaceRelayAsync(request, step)));
+    }
+
+    private void RequestRelayTeamEdit(RelayCellsViewModel cells, RelayTeamField field, string value, UndoHistoryKey key)
+    {
+        var column = field == RelayTeamField.Number ? "Participants.Col.RelayTeam" : "Participants.Col.RelayTeamName";
+        var step = CaptureUndo(key, RunnerLabel(column, cells.ParticipantId));
+        _pendingSaves.Track(RunRelayEditAsync(cells, () => EditRelayTeamAsync(
+            new RelayTeamCellEdit(cells.ParticipantId, cells.DayId, field, value), step)));
+    }
 
     // One relay edit at a time (a fill-down paste must create a team once and see each leg the previous row took; a
     // question shows one at a time), then the common ending. True when the edit changed something.
@@ -3203,9 +3432,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     }
 
     // A leg / team placement; a leg another runner holds is taken after «Замінити».
-    private async Task<RelayPlacementOutcome> PlaceRelayAsync(RelayPlacementRequest request)
+    private async Task<RelayPlacementOutcome> PlaceRelayAsync(RelayPlacementRequest request, UndoEntry? step)
     {
-        var outcome = await Task.Run(() => _editor.PlaceRelayRunnerAsync(request));
+        var outcome = await RunUndoAsync(step, () => _editor.PlaceRelayRunnerAsync(request));
         if (outcome.Status != RelayPlacementStatus.LegTaken)
             return outcome;
         var replace = await _dialogs.ConfirmAsync(new ConfirmDialogViewModel(
@@ -3216,15 +3445,15 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             IsDestructive = false
         });
         return replace
-            ? await Task.Run(() => _editor.PlaceRelayRunnerAsync(request with { ReplaceOccupant = true }))
+            ? await RunUndoAsync(step, () => _editor.PlaceRelayRunnerAsync(request with { ReplaceOccupant = true }))
             : new RelayPlacementOutcome(RelayPlacementStatus.Unchanged);
     }
 
     // «Команда» / «Номер команди»: when the edit could change the team itself, ask — change the team for all its runners,
     // or move only this one — then repeat it with the answer.
-    private async Task<RelayPlacementOutcome> EditRelayTeamAsync(RelayTeamCellEdit change)
+    private async Task<RelayPlacementOutcome> EditRelayTeamAsync(RelayTeamCellEdit change, UndoEntry? step)
     {
-        var outcome = await Task.Run(() => _editor.EditRunnerRelayTeamAsync(change));
+        var outcome = await RunUndoAsync(step, () => _editor.EditRunnerRelayTeamAsync(change));
         var choice = outcome.Status switch
         {
             RelayPlacementStatus.ConfirmTeamChange => await AskTeamChangeAsync(change.Field, outcome),
@@ -3241,7 +3470,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (choice == RelayTeamChoice.Ask)
             return outcome;
         return choice is { } answer
-            ? await Task.Run(() => _editor.EditRunnerRelayTeamAsync(change with { Choice = answer }))
+            ? await RunUndoAsync(step, () => _editor.EditRunnerRelayTeamAsync(change with { Choice = answer }))
             : new RelayPlacementOutcome(RelayPlacementStatus.Unchanged);
     }
 
@@ -3278,14 +3507,20 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // участі» (roster) takes them off the team and the day. Cancelled, the cell shows the team's group again. A paste or
     // bulk edit is asked once for all its relay runners (ApplyRelayBulkGroupsAsync).
     private void RequestCellRelayGroupChange(RosterDayCellViewModel cell, GroupOption target)
-        => _pendingSaves.Track(ChangeRelayGroupAsync(cell.Relay, target, cell.ShowGroup, cell.SetGroupSilently,
-            leaveDay: () => LeaveRelayDayAsync(cell)));
+    {
+        var step = CaptureRoster(RunnerLabel("Participants.Col.Group", cell.ParticipantId));
+        _pendingSaves.Track(ChangeRelayGroupAsync(cell.Relay, target, cell.ShowGroup, cell.SetGroupSilently,
+            leaveDay: () => LeaveRelayDayAsync(cell, step), step));
+    }
 
     private void RequestDayRowRelayGroupChange(ParticipantDayRowViewModel row, GroupOption target)
-        => _pendingSaves.Track(ChangeRelayGroupAsync(row.Relay, target, row.ShowGroup, row.SetGroupSilently, leaveDay: null));
+    {
+        var step = CaptureDayRow(row, UndoLabel("Participants.Col.Group", row.FullName));
+        _pendingSaves.Track(ChangeRelayGroupAsync(row.Relay, target, row.ShowGroup, row.SetGroupSilently, leaveDay: null, step));
+    }
 
     private async Task ChangeRelayGroupAsync(RelayCellsViewModel cells, GroupOption target, Action showGroup,
-        Action<GroupOption> setGroup, Func<Task>? leaveDay)
+        Action<GroupOption> setGroup, Func<Task>? leaveDay, UndoEntry? step)
     {
         var name = RunnerName(cells.ParticipantId);
         var team = cells.Stored is { } place ? RelayTeamNumbers.Label(place.TeamNumber, place.TeamName) : string.Empty;
@@ -3308,7 +3543,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             await AskRelayGroupChangeAsync(name, team, target) is { } choice
             && (choice != RelayTeamChoice.ChangeTeam || cells.Stored is not { } stored
                 || await ConfirmNumberCoursesAsync(cells.DayId, [stored.TeamId], target))
-                ? await Task.Run(() => _editor.ChangeRelayRunnerGroupAsync(
+                ? await RunUndoAsync(step, () => _editor.ChangeRelayRunnerGroupAsync(
                     new RelayGroupEdit(cells.ParticipantId, cells.DayId, groupId, choice)))
                 : new RelayPlacementOutcome(RelayPlacementStatus.Unchanged));
         if (changed)
@@ -3349,7 +3584,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // asked once per target group, like the group cell asks for one runner: «Команди повністю» or «Лише цих учасників»
     // (off their teams); into a group that runs no relay only the runners can go. «Залишити в командах» leaves them. A team
     // moving whole whose leg numbers hold courses of its group is asked about once more (RelayNumberCoursesQuestion).
-    private sealed record RelayBulkGroupPick(RelayCellsViewModel Cells, GroupOption Target, Action<GroupOption> SetGroup);
+    // Step: the undo step the pick was captured under (the paste / bulk edit gesture); its writes run under it.
+    private sealed record RelayBulkGroupPick(RelayCellsViewModel Cells, GroupOption Target, Action<GroupOption> SetGroup,
+        UndoEntry? Step);
 
     private sealed record RelayBulkTeam(RelayPlacement Place, IReadOnlyList<RelayBulkGroupPick> Picks, int MemberCount)
     {
@@ -3357,10 +3594,12 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     }
 
     private void RequestDayRowRelayBulkGroup(ParticipantDayRowViewModel row, GroupOption target)
-        => QueueRelayBulkGroup(new RelayBulkGroupPick(row.Relay, target, row.SetGroupSilently));
+        => QueueRelayBulkGroup(new RelayBulkGroupPick(row.Relay, target, row.SetGroupSilently,
+            CaptureDayRow(row, UndoLabel("Participants.Col.Group", row.FullName))));
 
     private void RequestCellRelayBulkGroup(RosterDayCellViewModel cell, GroupOption target)
-        => QueueRelayBulkGroup(new RelayBulkGroupPick(cell.Relay, target, cell.SetGroupSilently));
+        => QueueRelayBulkGroup(new RelayBulkGroupPick(cell.Relay, target, cell.SetGroupSilently,
+            CaptureRoster(RunnerLabel("Participants.Col.Group", cell.ParticipantId))));
 
     private void QueueRelayBulkGroup(RelayBulkGroupPick pick)
     {
@@ -3424,7 +3663,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                         {
                             if (kept.Contains(team.Place.TeamId))
                                 continue;
-                            var outcome = await Task.Run(() => _editor.ChangeRelayRunnerGroupAsync(new RelayGroupEdit(
+                            var outcome = await RunUndoAsync(team.Picks[0].Step, () => _editor.ChangeRelayRunnerGroupAsync(new RelayGroupEdit(
                                 team.Picks[0].Cells.ParticipantId, day.Key, target.Id!.Value, RelayTeamChoice.ChangeTeam)));
                             if (!outcome.Changed)
                                 continue;
@@ -3436,7 +3675,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                         }
                         foreach (var pick in team.Picks)
                         {
-                            var outcome = await Task.Run(() => _editor.ChangeRelayRunnerGroupAsync(new RelayGroupEdit(
+                            var outcome = await RunUndoAsync(pick.Step, () => _editor.ChangeRelayRunnerGroupAsync(new RelayGroupEdit(
                                 pick.Cells.ParticipantId, day.Key, target.Id!.Value, RelayTeamChoice.MoveRunner)));
                             if (!outcome.Changed)
                                 continue;
@@ -3532,11 +3771,11 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     }
 
     // «не бере участі» for a relay runner, once confirmed: off the day — the link goes, and the leg with it.
-    private async Task LeaveRelayDayAsync(RosterDayCellViewModel cell)
+    private async Task LeaveRelayDayAsync(RosterDayCellViewModel cell, UndoEntry? step)
     {
         try
         {
-            if (!await LeaveCellDayAsync(cell))
+            if (!await LeaveCellDayAsync(cell, step))
             {
                 cell.ShowGroup();
                 return;
@@ -3601,9 +3840,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     {
         if (row.IsApplying)
             return;
-        if (_session.CurrentDay is not { } day)
-            return;
-        _ = ApplyBonusAsync(row.ParticipantId, day.Id, row.Bonus);
+        var step = CaptureDayRow(row, UndoLabel("Participants.Col.Bonus", row.FullName));
+        _pendingSaves.Track(ApplyBonusAsync(row.ParticipantId, row.DayId, row.Bonus, step));
     }
 
     private void RequestCellBonusChange(RosterDayCellViewModel cell)
@@ -3612,7 +3850,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             return;
         if (!cell.IsMember)
             return;
-        _ = ApplyBonusAsync(cell.ParticipantId, cell.DayId, cell.Bonus);
+        var step = CaptureRoster(RunnerLabel("Participants.Col.Bonus", cell.ParticipantId));
+        _pendingSaves.Track(ApplyBonusAsync(cell.ParticipantId, cell.DayId, cell.Bonus, step));
     }
 
     // The day grid's «Оплата» cell in per-day mode: persisted through its own writer, like the bonus, so
@@ -3621,9 +3860,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     {
         if (row.IsApplying)
             return;
-        if (_session.CurrentDay is not { } day)
-            return;
-        _ = ApplyDayPaymentAsync(row.ParticipantId, day.Id, row.DayPayment);
+        var step = CaptureDayRow(row, UndoLabel("Participants.Col.Payment", row.FullName));
+        _pendingSaves.Track(ApplyDayPaymentAsync(row.ParticipantId, row.DayId, row.DayPayment, step));
     }
 
     private void RequestCellPaymentChange(RosterDayCellViewModel cell)
@@ -3632,17 +3870,12 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             return;
         if (!cell.IsMember)
             return;
-        _ = ApplyDayPaymentAsync(cell.ParticipantId, cell.DayId, cell.Payment);
+        var step = CaptureRoster(RunnerLabel("Participants.Col.Payment", cell.ParticipantId));
+        _pendingSaves.Track(ApplyDayPaymentAsync(cell.ParticipantId, cell.DayId, cell.Payment, step));
     }
 
-    private async Task ApplyDayPaymentAsync(Guid participantId, Guid dayId, string payment)
-    {
-        try
-        {
-            await Task.Run(() => _editor.SetParticipantDayPaymentAsync(participantId, dayId, payment));
-        }
-        catch { /* never crash the UI over a payment edit */ }
-    }
+    private Task ApplyDayPaymentAsync(Guid participantId, Guid dayId, string payment, UndoEntry? step)
+        => WriteAsync(step, () => _editor.SetParticipantDayPaymentAsync(participantId, dayId, payment));
 
     // Per-day payment mode only: the raised-fee flag belongs to the day, so it is saved on the link.
     private void RequestCellRaisedFeeChange(RosterDayCellViewModel cell)
@@ -3651,23 +3884,18 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             return;
         if (!cell.IsMember)
             return;
-        _ = ApplyDayRaisedFeeAsync(cell.ParticipantId, cell.DayId, cell.PaysRaisedFee);
+        var step = CaptureRoster(RunnerLabel("Participants.Col.RaisedFee", cell.ParticipantId));
+        _pendingSaves.Track(ApplyDayRaisedFeeAsync(cell.ParticipantId, cell.DayId, cell.PaysRaisedFee, step));
     }
 
-    private async Task ApplyDayRaisedFeeAsync(Guid participantId, Guid dayId, bool paysRaisedFee)
+    private Task ApplyDayRaisedFeeAsync(Guid participantId, Guid dayId, bool paysRaisedFee, UndoEntry? step)
+        => WriteAsync(step, () => _editor.SetParticipantDayRaisedFeeAsync(participantId, dayId, paysRaisedFee));
+
+    private async Task ApplyBonusAsync(Guid participantId, Guid dayId, int? bonus, UndoEntry? step)
     {
         try
         {
-            await Task.Run(() => _editor.SetParticipantDayRaisedFeeAsync(participantId, dayId, paysRaisedFee));
-        }
-        catch { /* never crash the UI over a raised-fee toggle */ }
-    }
-
-    private async Task ApplyBonusAsync(Guid participantId, Guid dayId, int? bonus)
-    {
-        try
-        {
-            await Task.Run(() => _editor.SetParticipantDayBonusAsync(participantId, dayId, bonus));
+            await RunUndoAsync(step, () => _editor.SetParticipantDayBonusAsync(participantId, dayId, bonus));
             var results = await _editor.GetDayResultsByParticipantAsync(dayId);
             RefreshResults(dayId, results);
         }
@@ -3678,6 +3906,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     // edit. Day grid: every row is the current day. Roster: the matching day's cell on each row.
     private void RefreshResults(Guid dayId, IReadOnlyDictionary<Guid, ParticipantDayResult> results)
     {
+        // Values the service computed — never a change of the operator's.
+        using var programmatic = UndoGesture.Programmatic();
         if (IsDayMode)
         {
             if (_session.CurrentDay?.Id != dayId)
@@ -3694,7 +3924,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         }
     }
 
-    private async Task ResolveCellChipAsync(RosterDayCellViewModel cell)
+    private async Task ResolveCellChipAsync(RosterDayCellViewModel cell, UndoEntry? step)
     {
         var newChip = (cell.Chip ?? string.Empty).Trim();
         var (participantId, dayId) = (cell.ParticipantId, cell.DayId);
@@ -3713,15 +3943,19 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             cell.MarkChipCommitted(newChip);
             if (choice == ChipConflictChoice.Swap)
             {
-                await Task.Run(() => _editor.SwapParticipantDayChipsAsync(participantId, dayId, newChip, previousChip));
+                await RunUndoAsync(step, () => _editor.SwapParticipantDayChipsAsync(participantId, dayId, newChip, previousChip));
                 SetChipOnConflictingRosterCell(participantId, dayId, newChip, previousChip);
             }
             else
             {
-                await Task.Run(() => _editor.ReassignParticipantDayChipAsync(participantId, dayId, newChip));
+                await RunUndoAsync(step, () => _editor.ReassignParticipantDayChipAsync(participantId, dayId, newChip));
                 // Mirror the DB: drop the chip from any other roster cell on the SAME day that showed it.
                 SetChipOnConflictingRosterCell(participantId, dayId, newChip, string.Empty);
             }
+        }
+        catch
+        {
+            // never crash the UI over a chip edit; the next reload shows the store
         }
         finally
         {
@@ -3735,6 +3969,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     {
         if (chip.Length == 0)
             return;
+        // Program-made: the store already holds it (written by the step above).
+        using var programmatic = UndoGesture.Programmatic();
         foreach (var row in Roster)
         {
             if (row.ParticipantId == keepParticipantId)
@@ -3751,7 +3987,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         }
     }
 
-    private async Task ApplyCellGroupChangeAsync(RosterDayCellViewModel cell)
+    private async Task ApplyCellGroupChangeAsync(RosterDayCellViewModel cell, UndoEntry? step)
     {
         var participantId = cell.ParticipantId;
         var dayId = cell.DayId;
@@ -3759,17 +3995,17 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         try
         {
             if (groupId is null)
-                await LeaveCellDayAsync(cell);
+                await LeaveCellDayAsync(cell, step);
             else
             {
-                var linkId = await Task.Run(() => _editor.SetParticipantDayGroupAsync(participantId, dayId, groupId));
+                var linkId = await RunUndoAsync(step, () => _editor.SetParticipantDayGroupAsync(participantId, dayId, groupId));
                 cell.ApplyMembership(isMember: true, linkId: linkId);
                 // Joining a day may have copied a chip from another member day (see
                 // ParticipantRosterRowViewModel.CopyChipOnJoin); ApplyMembership ran with saves
-                // suppressed, so persist the (possibly copied) chip now.
+                // suppressed, so persist the (possibly copied) chip now — part of the same step.
                 var chip = (cell.Chip ?? string.Empty).Trim();
                 if (chip.Length > 0)
-                    await Task.Run(() => _editor.SetParticipantDayChipAsync(participantId, dayId, chip));
+                    await RunUndoAsync(step, () => _editor.SetParticipantDayChipAsync(participantId, dayId, chip));
             }
         }
         catch { }
@@ -3777,7 +4013,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
     // "не бере участі": takes the participant off the cell's day; nothing to do if not a member. Their last day deletes
     // the person — ask first; a «no» reloads the page (the cell shows their group again) and returns false.
-    private async Task<bool> LeaveCellDayAsync(RosterDayCellViewModel cell)
+    private async Task<bool> LeaveCellDayAsync(RosterDayCellViewModel cell, UndoEntry? step)
     {
         if (cell.LinkId is { } linkId)
         {
@@ -3786,7 +4022,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 await LoadAsync();
                 return false;
             }
-            await Task.Run(() => _editor.RemoveParticipantFromDayAsync(linkId, cell.ParticipantId));
+            var participantId = cell.ParticipantId;
+            await RunUndoAsync(step, () => _editor.RemoveParticipantFromDayAsync(linkId, participantId));
         }
         cell.ApplyMembership(isMember: false, linkId: null);
         return true;
@@ -3833,34 +4070,42 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private void RequestDayRowRegionChange(ParticipantDayRowViewModel row)
     {
         if (!row.IsApplying)
-            _ = Task.Run(() => _editor.SetParticipantRegionAsync(row.ParticipantId, row.SelectedRegion.Id));
+            SaveRegion(row.ParticipantId, row.SelectedRegion.Id, CaptureDayRow(row, UndoLabel("Participants.Col.Region", row.FullName)));
     }
 
     private void RequestRosterRowRegionChange(ParticipantRosterRowViewModel row)
     {
         if (!row.IsApplying)
-            _ = Task.Run(() => _editor.SetParticipantRegionAsync(row.ParticipantId, row.SelectedRegion.Id));
+            SaveRegion(row.ParticipantId, row.SelectedRegion.Id, CaptureRoster(UndoLabel("Participants.Col.Region", row.FullName)));
     }
+
+    private void SaveRegion(Guid participantId, Guid? regionId, UndoEntry? step)
+        => _pendingSaves.Track(WriteAsync(step, () => _editor.SetParticipantRegionAsync(participantId, regionId)));
 
     // "+ new" was picked: prompt for a name, create the region, refresh every row's options, and
     // select the new region on the originating row. On cancel, revert the row to its previous region.
+    // One undo step: the new region and the row pointing at it (undoing it removes both).
     private void RequestDayRowAddRegion(ParticipantDayRowViewModel row)
     {
-        if (!row.IsApplying)
-            _ = AddRegionForRowAsync(
-                select: id => SelectRegionOnDayRow(row, id),
-                revert: () => row.SetRegionSilently(row.CommittedRegion));
+        if (row.IsApplying)
+            return;
+        var step = CaptureDayRow(row, UndoLabel("Participants.Col.Region", row.FullName));
+        _pendingSaves.Track(AddRegionForRowAsync(
+            select: id => SelectRegionOnDayRow(row, id, step),
+            revert: () => row.SetRegionSilently(row.CommittedRegion), step));
     }
 
     private void RequestRosterRowAddRegion(ParticipantRosterRowViewModel row)
     {
-        if (!row.IsApplying)
-            _ = AddRegionForRowAsync(
-                select: id => SelectRegionOnRosterRow(row, id),
-                revert: () => row.SetRegionSilently(row.CommittedRegion));
+        if (row.IsApplying)
+            return;
+        var step = CaptureRoster(UndoLabel("Participants.Col.Region", row.FullName));
+        _pendingSaves.Track(AddRegionForRowAsync(
+            select: id => SelectRegionOnRosterRow(row, id, step),
+            revert: () => row.SetRegionSilently(row.CommittedRegion), step));
     }
 
-    private async Task AddRegionForRowAsync(Action<Guid> select, Action revert)
+    private async Task AddRegionForRowAsync(Action<Guid> select, Action revert, UndoEntry? step)
     {
         if (_session.CurrentEvent is null)
         {
@@ -3878,7 +4123,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 return;
             }
 
-            var region = await _busy.RunAsync(() => _editor.AddRegionAsync(name));
+            var region = await RunUndoAsync(step, () => _busy.RunAsync(() => _editor.AddRegionAsync(name)));
             if (region is null)
             {
                 revert();
@@ -3908,23 +4153,23 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             row.ResetRegionOptions(_regionOptions);
     }
 
-    private void SelectRegionOnDayRow(ParticipantDayRowViewModel row, Guid regionId)
+    private void SelectRegionOnDayRow(ParticipantDayRowViewModel row, Guid regionId, UndoEntry? step)
     {
         var option = _regionOptions.FirstOrDefault(o => !o.IsAdd && o.Id == regionId);
         if (option is not null)
         {
             row.SetRegionSilently(option);
-            RequestDayRowRegionChange(row);
+            SaveRegion(row.ParticipantId, regionId, step);
         }
     }
 
-    private void SelectRegionOnRosterRow(ParticipantRosterRowViewModel row, Guid regionId)
+    private void SelectRegionOnRosterRow(ParticipantRosterRowViewModel row, Guid regionId, UndoEntry? step)
     {
         var option = _regionOptions.FirstOrDefault(o => !o.IsAdd && o.Id == regionId);
         if (option is not null)
         {
             row.SetRegionSilently(option);
-            RequestRosterRowRegionChange(row);
+            SaveRegion(row.ParticipantId, regionId, step);
         }
     }
 
@@ -3951,32 +4196,39 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private void RequestDayRowClubChange(ParticipantDayRowViewModel row)
     {
         if (!row.IsApplying)
-            _ = Task.Run(() => _editor.SetParticipantClubAsync(row.ParticipantId, row.SelectedClub.Id));
+            SaveClub(row.ParticipantId, row.SelectedClub.Id, CaptureDayRow(row, UndoLabel("Participants.Col.Club", row.FullName)));
     }
 
     private void RequestRosterRowClubChange(ParticipantRosterRowViewModel row)
     {
         if (!row.IsApplying)
-            _ = Task.Run(() => _editor.SetParticipantClubAsync(row.ParticipantId, row.SelectedClub.Id));
+            SaveClub(row.ParticipantId, row.SelectedClub.Id, CaptureRoster(UndoLabel("Participants.Col.Club", row.FullName)));
     }
+
+    private void SaveClub(Guid participantId, Guid? clubId, UndoEntry? step)
+        => _pendingSaves.Track(WriteAsync(step, () => _editor.SetParticipantClubAsync(participantId, clubId)));
 
     private void RequestDayRowAddClub(ParticipantDayRowViewModel row)
     {
-        if (!row.IsApplying)
-            _ = AddClubForRowAsync(
-                select: id => SelectClubOnDayRow(row, id),
-                revert: () => row.SetClubSilently(row.CommittedClub));
+        if (row.IsApplying)
+            return;
+        var step = CaptureDayRow(row, UndoLabel("Participants.Col.Club", row.FullName));
+        _pendingSaves.Track(AddClubForRowAsync(
+            select: id => SelectClubOnDayRow(row, id, step),
+            revert: () => row.SetClubSilently(row.CommittedClub), step));
     }
 
     private void RequestRosterRowAddClub(ParticipantRosterRowViewModel row)
     {
-        if (!row.IsApplying)
-            _ = AddClubForRowAsync(
-                select: id => SelectClubOnRosterRow(row, id),
-                revert: () => row.SetClubSilently(row.CommittedClub));
+        if (row.IsApplying)
+            return;
+        var step = CaptureRoster(UndoLabel("Participants.Col.Club", row.FullName));
+        _pendingSaves.Track(AddClubForRowAsync(
+            select: id => SelectClubOnRosterRow(row, id, step),
+            revert: () => row.SetClubSilently(row.CommittedClub), step));
     }
 
-    private async Task AddClubForRowAsync(Action<Guid> select, Action revert)
+    private async Task AddClubForRowAsync(Action<Guid> select, Action revert, UndoEntry? step)
     {
         if (_session.CurrentEvent is null)
         {
@@ -3994,7 +4246,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 return;
             }
 
-            var club = await _busy.RunAsync(() => _editor.AddClubAsync(name));
+            var club = await RunUndoAsync(step, () => _busy.RunAsync(() => _editor.AddClubAsync(name)));
             if (club is null)
             {
                 revert();
@@ -4019,23 +4271,23 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             row.ResetClubOptions(_clubOptions);
     }
 
-    private void SelectClubOnDayRow(ParticipantDayRowViewModel row, Guid clubId)
+    private void SelectClubOnDayRow(ParticipantDayRowViewModel row, Guid clubId, UndoEntry? step)
     {
         var option = _clubOptions.FirstOrDefault(o => !o.IsAdd && o.Id == clubId);
         if (option is not null)
         {
             row.SetClubSilently(option);
-            RequestDayRowClubChange(row);
+            SaveClub(row.ParticipantId, clubId, step);
         }
     }
 
-    private void SelectClubOnRosterRow(ParticipantRosterRowViewModel row, Guid clubId)
+    private void SelectClubOnRosterRow(ParticipantRosterRowViewModel row, Guid clubId, UndoEntry? step)
     {
         var option = _clubOptions.FirstOrDefault(o => !o.IsAdd && o.Id == clubId);
         if (option is not null)
         {
             row.SetClubSilently(option);
-            RequestRosterRowClubChange(row);
+            SaveClub(row.ParticipantId, clubId, step);
         }
     }
 
@@ -4062,32 +4314,39 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private void RequestDayRowDusshChange(ParticipantDayRowViewModel row)
     {
         if (!row.IsApplying)
-            _ = Task.Run(() => _editor.SetParticipantDusshAsync(row.ParticipantId, row.SelectedDussh.Id));
+            SaveDussh(row.ParticipantId, row.SelectedDussh.Id, CaptureDayRow(row, UndoLabel("Participants.Col.Dussh", row.FullName)));
     }
 
     private void RequestRosterRowDusshChange(ParticipantRosterRowViewModel row)
     {
         if (!row.IsApplying)
-            _ = Task.Run(() => _editor.SetParticipantDusshAsync(row.ParticipantId, row.SelectedDussh.Id));
+            SaveDussh(row.ParticipantId, row.SelectedDussh.Id, CaptureRoster(UndoLabel("Participants.Col.Dussh", row.FullName)));
     }
+
+    private void SaveDussh(Guid participantId, Guid? dusshId, UndoEntry? step)
+        => _pendingSaves.Track(WriteAsync(step, () => _editor.SetParticipantDusshAsync(participantId, dusshId)));
 
     private void RequestDayRowAddDussh(ParticipantDayRowViewModel row)
     {
-        if (!row.IsApplying)
-            _ = AddDusshForRowAsync(
-                select: id => SelectDusshOnDayRow(row, id),
-                revert: () => row.SetDusshSilently(row.CommittedDussh));
+        if (row.IsApplying)
+            return;
+        var step = CaptureDayRow(row, UndoLabel("Participants.Col.Dussh", row.FullName));
+        _pendingSaves.Track(AddDusshForRowAsync(
+            select: id => SelectDusshOnDayRow(row, id, step),
+            revert: () => row.SetDusshSilently(row.CommittedDussh), step));
     }
 
     private void RequestRosterRowAddDussh(ParticipantRosterRowViewModel row)
     {
-        if (!row.IsApplying)
-            _ = AddDusshForRowAsync(
-                select: id => SelectDusshOnRosterRow(row, id),
-                revert: () => row.SetDusshSilently(row.CommittedDussh));
+        if (row.IsApplying)
+            return;
+        var step = CaptureRoster(UndoLabel("Participants.Col.Dussh", row.FullName));
+        _pendingSaves.Track(AddDusshForRowAsync(
+            select: id => SelectDusshOnRosterRow(row, id, step),
+            revert: () => row.SetDusshSilently(row.CommittedDussh), step));
     }
 
-    private async Task AddDusshForRowAsync(Action<Guid> select, Action revert)
+    private async Task AddDusshForRowAsync(Action<Guid> select, Action revert, UndoEntry? step)
     {
         if (_session.CurrentEvent is null)
         {
@@ -4105,7 +4364,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 return;
             }
 
-            var dussh = await _busy.RunAsync(() => _editor.AddDusshAsync(name));
+            var dussh = await RunUndoAsync(step, () => _busy.RunAsync(() => _editor.AddDusshAsync(name)));
             if (dussh is null)
             {
                 revert();
@@ -4130,23 +4389,23 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             row.ResetDusshOptions(_dusshOptions);
     }
 
-    private void SelectDusshOnDayRow(ParticipantDayRowViewModel row, Guid dusshId)
+    private void SelectDusshOnDayRow(ParticipantDayRowViewModel row, Guid dusshId, UndoEntry? step)
     {
         var option = _dusshOptions.FirstOrDefault(o => !o.IsAdd && o.Id == dusshId);
         if (option is not null)
         {
             row.SetDusshSilently(option);
-            RequestDayRowDusshChange(row);
+            SaveDussh(row.ParticipantId, dusshId, step);
         }
     }
 
-    private void SelectDusshOnRosterRow(ParticipantRosterRowViewModel row, Guid dusshId)
+    private void SelectDusshOnRosterRow(ParticipantRosterRowViewModel row, Guid dusshId, UndoEntry? step)
     {
         var option = _dusshOptions.FirstOrDefault(o => !o.IsAdd && o.Id == dusshId);
         if (option is not null)
         {
             row.SetDusshSilently(option);
-            RequestRosterRowDusshChange(row);
+            SaveDussh(row.ParticipantId, dusshId, step);
         }
     }
 
@@ -4221,14 +4480,15 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     {
         if (row.IsApplying)
             return;
+        var step = CaptureDayRow(row, UndoLabel("Participants.Col.RaisedFee", row.FullName));
         if (PaymentPerDay)
         {
-            if (_session.CurrentDay is { } day)
-                _ = ApplyDayRaisedFeeAsync(row.ParticipantId, day.Id, row.PaysRaisedFee);
+            _pendingSaves.Track(ApplyDayRaisedFeeAsync(row.ParticipantId, row.DayId, row.PaysRaisedFee, step));
             return;
         }
 
-        _ = Task.Run(() => _editor.SetParticipantPaysRaisedFeeAsync(row.ParticipantId, row.PaysRaisedFee));
+        var (participantId, value) = (row.ParticipantId, row.PaysRaisedFee);
+        _pendingSaves.Track(WriteAsync(step, () => _editor.SetParticipantPaysRaisedFeeAsync(participantId, value)));
     }
 
     // ── «Мандатку пройдено» (roster only; F8 / the cell menu)
@@ -4263,10 +4523,15 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             return;
         var on = items.Any(r => !r.CheckedIn);
         var changed = items.Where(r => r.CheckedIn != on).ToList();
+        // One undo step for the rows it marks: «Мандатку пройдено — Іваненко Іван» / «… (рядків: 3)».
+        var action = Localization.Get(on ? "Participants.CheckedIn.Mark" : "Participants.CheckedIn.Unmark");
+        var step = CaptureUndoAction(HistoryKey(UndoKey, null), changed.Count == 1
+            ? string.Format(Localization.Get("Undo.Label.Cell"), action, changed[0].FullName)
+            : string.Format(Localization.Get("Undo.Label.RowAction"), action, changed.Count));
         foreach (var row in changed)
             row.CheckedIn = on;
         var ids = changed.Select(r => r.ParticipantId).ToList();
-        _ = Task.Run(() => _editor.SetParticipantsCheckedInAsync(ids, on));
+        _pendingSaves.Track(WriteAsync(step, () => _editor.SetParticipantsCheckedInAsync(ids, on)));
         _log.Action(string.Format(
             Localization.Get(on ? "Participants.CheckedIn.Log.Marked" : "Participants.CheckedIn.Log.Unmarked"),
             changed.Count));
@@ -4285,20 +4550,36 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         if (PaymentPerDay)
             return;
 
-        _ = Task.Run(() => _editor.SetParticipantPaysRaisedFeeAsync(row.ParticipantId, row.PaysRaisedFee));
+        var (participantId, value) = (row.ParticipantId, row.PaysRaisedFee);
+        var step = CaptureRoster(UndoLabel("Participants.Col.RaisedFee", row.FullName));
+        _pendingSaves.Track(WriteAsync(step, () => _editor.SetParticipantPaysRaisedFeeAsync(participantId, value)));
     }
 
     // A row's discount checkbox toggled: persist the link add/remove in the background.
     private void RequestRowDiscountChange(ParticipantDayRowViewModel row, Guid discountId, bool on)
     {
-        if (!row.IsApplying)
-            _ = Task.Run(() => _editor.SetParticipantDiscountAsync(row.ParticipantId, discountId, on));
+        if (row.IsApplying)
+            return;
+        var step = CaptureDayRow(row, DiscountLabel(discountId, row.FullName));
+        var participantId = row.ParticipantId;
+        _pendingSaves.Track(WriteAsync(step, () => _editor.SetParticipantDiscountAsync(participantId, discountId, on)));
     }
 
     private void RequestRosterDiscountChange(ParticipantRosterRowViewModel row, Guid discountId, bool on)
     {
-        if (!row.IsApplying)
-            _ = Task.Run(() => _editor.SetParticipantDiscountAsync(row.ParticipantId, discountId, on));
+        if (row.IsApplying)
+            return;
+        var step = CaptureRoster(DiscountLabel(discountId, row.FullName));
+        var participantId = row.ParticipantId;
+        _pendingSaves.Track(WriteAsync(step, () => _editor.SetParticipantDiscountAsync(participantId, discountId, on)));
+    }
+
+    // «<discount name> — <row>»: a discount column is captioned with the discount's name.
+    private string DiscountLabel(Guid discountId, string? row)
+    {
+        var name = Discounts.FirstOrDefault(d => d.Id == discountId)?.Name;
+        return string.Format(Localization.Get("Undo.Label.Cell"),
+            string.IsNullOrWhiteSpace(name) ? Localization.Get("EntryFees.Discount.Unnamed") : name, (row ?? string.Empty).Trim());
     }
 
     // ── Rental-chip highlight + toggle
@@ -4352,15 +4633,18 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         else
             RentalChips.Add(number);
 
-        _ = ToggleRentalChipAndRecomputeAsync(number);
+        // A write to the rental base, made from this page: a step of its own here («Прокатний чіп — 777»).
+        var step = CaptureUndoAction(string.Format(Localization.Get("Undo.Label.Cell"),
+            Localization.Get("Undo.Entity.RentalChip"), number));
+        _pendingSaves.Track(ToggleRentalChipAndRecomputeAsync(number, step));
     }
 
     // Persists the rental toggle, then rebuilds the shared fee snapshot from the updated rental set and
     // pushes it onto every live row so the «Стартовий внесок» column recomputes (a chip in the rental
     // pool is charged rental; one removed from it is the participant's own, so no rental fee).
-    private async Task ToggleRentalChipAndRecomputeAsync(string number)
+    private async Task ToggleRentalChipAndRecomputeAsync(string number, UndoEntry? step)
     {
-        await Task.Run(() => _editor.ToggleRentalChipAsync(number));
+        await WriteAsync(step, () => _editor.ToggleRentalChipAsync(number));
         await RefreshFeeDataAsync(hasEvent: true, silent: true);
         RefreshFeesIfVisible();
         // A rental toggle changes the in-rental / free counts shown in the status bar.
@@ -4429,6 +4713,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         foreach (var cts in _saveTimers.Values)
             cts.Cancel();
         _saveTimers.Clear();
+        _saveSteps.Clear();
     }
 }
 

@@ -10,6 +10,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using OrientPyx.Presentation.Services.Undo;
 
 namespace OrientPyx.Presentation.Controls;
 
@@ -42,6 +43,10 @@ internal abstract class LazyEditCell : Decorator
     // EditSourcePath (or an unreadable path) opts a cell out of revert — Escape just retires it.
     private bool _hasOriginal;
     private object? _originalValue;
+
+    // The undo session of the live edit (CaptureOriginal → Retire): every change made through this editor is one
+    // undo step, even when a pause in typing split it into two writes (see UndoGesture).
+    private UndoGesture.Session? _undoSession;
 
     /// <param name="selectedLabelPath">
     /// Binding path to the text shown on the resting label (e.g. <c>SelectedRegion.Label</c> or a plain
@@ -286,6 +291,7 @@ internal abstract class LazyEditCell : Decorator
             Child = editor;
             CaptureOriginal();
             SetHostEditing(true);
+            _undoSession = UndoGesture.OpenSession(UndoSessionLabel(), CommitForUndo, editor is TextBox);
         }
         else if (!open)
         {
@@ -421,10 +427,30 @@ internal abstract class LazyEditCell : Decorator
         }, DispatcherPriority.Background);
     }
 
+    // «Column — row» for the step this edit makes, from the hosting cell's column and the table's row name.
+    private string? UndoSessionLabel()
+    {
+        var column = this.FindAncestorOfType<SheetCell>()?.Column;
+        return column is null || _hostTable is null ? null : _hostTable.UndoCellLabel(column, DataContext);
+    }
+
+    // Undo/redo ends a live edit first, like Enter: focus goes back to the cell host (a LostFocus binding commits) and
+    // the editor retires once idle. The value stays — it is part of what the undo reverts.
+    private void CommitForUndo()
+    {
+        if (_editor is null)
+            return;
+        if (this.FindAncestorOfType<SheetCell>() is { } host)
+            host.Focus();
+        RetireIfIdle();
+    }
+
     private void Retire()
     {
         if (_editor is null)
             return;
+        UndoGesture.CloseSession(_undoSession);
+        _undoSession = null;
         _editor.LostFocus -= OnEditorLostFocus;
         DetachEditor(_editor);
         _editor.DataContext = null;

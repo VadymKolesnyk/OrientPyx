@@ -58,7 +58,7 @@
                     <StackPanel Grid.Column="1" Spacing="4" MaxWidth="320" HorizontalAlignment="Left">
                         <TextBlock Text="{Binding Localization[Network.Host.Name]}" Classes="label" />
                         <TextBox x:Name="HostNameBox" Text="{Binding HostName, Mode=TwoWay}"
-                                 Watermark="{Binding Localization[Network.Host.NamePlaceholder]}" />
+                                 PlaceholderText="{Binding Localization[Network.Host.NamePlaceholder]}" />
                     </StackPanel>
                 </Grid>
 
@@ -203,7 +203,7 @@
                 <StackPanel Spacing="4" MaxWidth="320" HorizontalAlignment="Left">
                     <TextBlock Text="{Binding Localization[Network.Station.Name]}" Classes="label" />
                     <TextBox x:Name="StationNameBox" Text="{Binding StationName, Mode=TwoWay}"
-                             Watermark="{Binding Localization[Network.Station.NamePlaceholder]}" />
+                             PlaceholderText="{Binding Localization[Network.Station.NamePlaceholder]}" />
                 </StackPanel>
 
                 <!-- The pairing form is hidden once connected -->
@@ -231,7 +231,7 @@
                         <StackPanel Grid.Column="0" Spacing="4">
                             <TextBlock Text="{Binding Localization[Network.Station.Address]}" Classes="label" />
                             <TextBox Text="{Binding AddressText, Mode=TwoWay}"
-                                     Watermark="{Binding Localization[Network.Station.AddressPlaceholder]}" />
+                                     PlaceholderText="{Binding Localization[Network.Station.AddressPlaceholder]}" />
                             <TextBlock Text="{Binding Localization[Network.Station.AddressHint]}" Classes="muted"
                                        TextWrapping="Wrap" />
                         </StackPanel>
@@ -239,7 +239,7 @@
                             <TextBlock Text="{Binding Localization[Network.Station.Pin]}" Classes="label" />
                             <TextBox x:Name="PinBox" Text="{Binding Pin, Mode=TwoWay}" MaxLength="6"
                                      FontSize="24" FontWeight="Bold"
-                                     HorizontalContentAlignment="Center" Watermark="••••••" />
+                                     HorizontalContentAlignment="Center" PlaceholderText="••••••" />
                         </StackPanel>
                     </Grid>
 

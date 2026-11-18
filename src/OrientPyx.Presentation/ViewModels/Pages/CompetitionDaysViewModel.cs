@@ -6,6 +6,7 @@ using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.Services.Undo;
 using OrientPyx.Presentation.ViewModels.Dialogs;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
@@ -26,6 +27,9 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
     // page shows every day at once — each row's lock is its own.
     private readonly IDayLockService _dayLock;
     private readonly IDisciplineStrategyProvider _strategies;
+    // The days table has no undo of its own (deleting / renumbering days is not undoable); it only drops the undo
+    // histories of a day it deletes.
+    private readonly IUndoHistory _undo;
 
     public CompetitionDaysViewModel(
         ILocalizationService localization,
@@ -38,9 +42,11 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         IActivityLog log,
         IDisciplineStrategyProvider strategies,
         IDataChangeBus bus,
-        IWorkspaceMode mode)
+        IWorkspaceMode mode,
+        IUndoHistory undo)
         : base(localization)
     {
+        _undo = undo;
         _strategies = strategies;
         _dayLock = dayLock;
         LayoutStore = layoutStore;
@@ -286,6 +292,8 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
 
         var id = row.Id;
         _ = Task.Run(() => _editor.DeleteDayAsync(id));
+        // The day's steps (on every page) point at rows that are gone with it.
+        _undo.ForgetDay(id);
 
         // The confirmation modal stole keyboard focus to the overlay; pull it back to the grid
         // (now on the new selected row) so focus doesn't end up on the top menu.

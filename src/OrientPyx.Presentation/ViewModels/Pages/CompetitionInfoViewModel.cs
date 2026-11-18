@@ -6,6 +6,7 @@ using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.Services.Undo;
 using OrientPyx.Presentation.ViewModels.Dialogs;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
@@ -72,6 +73,8 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
     [ObservableProperty]
     private bool _saved;
 
+    private readonly IUndoHistory? _fieldsUndo;
+
     public CompetitionInfoViewModel(
         ILocalizationService localization,
         ICompetitionEditorService editor,
@@ -82,9 +85,13 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
         IActivityLog log,
         IBackgroundActivityService activities,
         IDataChangeBus bus,
-        IWorkspaceMode mode)
+        IWorkspaceMode mode,
+        IUndoHistory? fieldsUndo = null)
         : base(localization)
     {
+        // The «Інформація» form itself is not undoable (§10 of the undo plan); the «Додаткові поля» dialog opened
+        // from here records its steps in the participants roster history, as when opened from «Учасники».
+        _fieldsUndo = fieldsUndo;
         _editor = editor;
         _session = session;
         _busy = busy;
@@ -193,7 +200,7 @@ public sealed partial class CompetitionInfoViewModel : PageViewModelBase
     {
         if (_session.CurrentEvent is null)
             return;
-        var dialog = new CustomFieldsViewModel(Localization, _editor, _busy);
+        var dialog = new CustomFieldsViewModel(Localization, _editor, _busy, _fieldsUndo);
         await dialog.LoadAsync();
         await _dialogs.ShowCustomFieldsAsync(dialog);
     }

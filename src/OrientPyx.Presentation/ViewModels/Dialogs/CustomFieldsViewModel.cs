@@ -5,6 +5,7 @@ using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.Services.Undo;
 
 namespace OrientPyx.Presentation.ViewModels.Dialogs;
 
@@ -16,17 +17,30 @@ namespace OrientPyx.Presentation.ViewModels.Dialogs;
 /// </summary>
 public sealed partial class CustomFieldsViewModel : ObservableObject
 {
+    /// <summary>
+    /// The undo history the dialog's writes go to: the participants roster's («Мандатка»), whose columns these fields
+    /// are. Ctrl+Z does nothing while the dialog is open; after it closes each add / edit / delete is a step there.
+    /// </summary>
+    private static readonly UndoHistoryKey RosterHistory = new(nameof(Pages.ParticipantsViewModel), null);
+
     private readonly ICompetitionEditorService _editor;
     private readonly IBusyService _busy;
+    private readonly IUndoHistory? _undo;
     private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
     // Edits are written one after another (a later keystroke never lands before an earlier one).
     private Task _saveChain = Task.CompletedTask;
 
-    public CustomFieldsViewModel(ILocalizationService localization, ICompetitionEditorService editor, IBusyService busy)
+    /// <param name="undo">The undo history (null ⇒ the dialog's writes join no step).</param>
+    public CustomFieldsViewModel(
+        ILocalizationService localization,
+        ICompetitionEditorService editor,
+        IBusyService busy,
+        IUndoHistory? undo = null)
     {
         Localization = localization;
         _editor = editor;
         _busy = busy;
+        _undo = undo;
         KindOptions = Enum.GetValues<CustomFieldKind>().Select(k => new FieldKindOption(k, localization)).ToList();
         Localization.PropertyChanged += (_, _) =>
         {
@@ -88,7 +102,8 @@ public sealed partial class CustomFieldsViewModel : ObservableObject
     {
         Warning = string.Empty;
         var label = UniqueLabel(Localization.Get("CustomFields.NewField"));
-        var field = await _busy.RunAsync(() => _editor.AddCustomFieldAsync(label, CustomFieldKind.Text, []));
+        var step = CaptureUndoAction(string.Format(Localization.Get("Undo.Label.AddField"), label));
+        var field = await _busy.RunAsync(() => RunUndoAsync(step, () => _editor.AddCustomFieldAsync(label, CustomFieldKind.Text, [])));
         if (field is null)
             return;
         Changed = true;
@@ -117,7 +132,9 @@ public sealed partial class CustomFieldsViewModel : ObservableObject
         if (PendingDelete is not { } row)
             return;
         PendingDelete = null;
-        var deleted = await _busy.RunAsync(() => _editor.DeleteCustomFieldAsync(row.Key));
+        // One step: the field and every participant's value of it (the store deletes both in one save).
+        var step = CaptureUndoAction(string.Format(Localization.Get("Undo.Label.DeleteField"), row.Label));
+        var deleted = await _busy.RunAsync(() => RunUndoAsync(step, () => _editor.DeleteCustomFieldAsync(row.Key)));
         if (!deleted)
         {
             Warning = Localization.Get("CustomFields.PluginLocked");
@@ -148,14 +165,41 @@ public sealed partial class CustomFieldsViewModel : ObservableObject
     private CustomFieldRowViewModel NewRow(CustomField field, bool locked) =>
         new(field, locked, KindOptions, Localization, OnRowEdited);
 
+    // Captured at the change (one step per cell edit session — the table's own label — else per change); the write
+    // waits for the ones before it, whatever their outcome.
     private void OnRowEdited(CustomFieldRowViewModel row)
     {
         Changed = true;
         var field = row.ToField();
-        _saveChain = _saveChain
-            .ContinueWith(_ => _editor.UpdateCustomFieldAsync(field), TaskScheduler.Default)
-            .Unwrap();
+        var step = CaptureUndo(string.Format(Localization.Get("Undo.Label.Cell"),
+            Localization.Get("Undo.Entity.CustomFieldDef"), field.Label));
+        var previous = _saveChain;
+        _saveChain = RunUndoAsync(step, async () =>
+        {
+            try
+            {
+                await previous;
+            }
+            catch
+            {
+                // an earlier failed save was already ignored; this one still goes
+            }
+            await _editor.UpdateCustomFieldAsync(field);
+        });
     }
+
+    private UndoEntry? CaptureUndo(string label) => _undo?.Capture(RosterHistory, label);
+
+    // A button's step of its own — never joined to a cell edit still open in the dialog's table.
+    private UndoEntry? CaptureUndoAction(string label)
+    {
+        using (UndoGesture.Begin(label))
+            return CaptureUndo(label);
+    }
+
+    private Task RunUndoAsync(UndoEntry? step, Func<Task> write) => _undo is { } undo ? undo.RunAsync(step, write) : write();
+
+    private Task<T> RunUndoAsync<T>(UndoEntry? step, Func<Task<T>> write) => _undo is { } undo ? undo.RunAsync(step, write) : write();
 
     private string UniqueLabel(string baseLabel)
     {

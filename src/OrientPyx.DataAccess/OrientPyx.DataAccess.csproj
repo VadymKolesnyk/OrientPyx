@@ -37,4 +37,9 @@
     <Using Include="OrientPyx.Plugins.Sdk.Toolkit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The undo journal's limits and eviction are tested on a journal of the test's own (UndoJournal is internal). -->
+    <InternalsVisibleTo Include="OrientPyx.Tests" />
+  </ItemGroup>
+
 </Project>

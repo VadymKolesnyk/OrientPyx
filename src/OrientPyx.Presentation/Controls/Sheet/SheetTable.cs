@@ -21,6 +21,7 @@ using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.Services.Undo;
 using OrientPyx.Presentation.ViewModels.Pages;
 
 namespace OrientPyx.Presentation.Controls;
@@ -207,6 +208,57 @@ public sealed class SheetTable : TemplatedControl
 
     /// <summary>Raised when the user runs the row action (F8 / the cell menu); arg = the rows it applies to.</summary>
     public event EventHandler<IReadOnlyList<object>>? RowActionRequested;
+
+    /// <summary>
+    /// The row's name in an undo step's label («Чіп — Іваненко Іван»). Null ⇒ the row's <c>FullName</c>, <c>Name</c>,
+    /// <c>TeamName</c>, <c>Label</c>, <c>Code</c> or <c>Number</c>, whichever it has first.
+    /// </summary>
+    public Func<object, string?>? UndoRowLabel { get; set; }
+
+    /// <summary>
+    /// The «Скасувати / Повторити» items at the top of the cell menu, for the page the table is on — set once by the
+    /// shell (null ⇒ no items). Static so no view has to wire it, and the table holds nothing of the page.
+    /// </summary>
+    public static ISheetUndoMenu? UndoMenu { get; set; }
+
+    /// <summary>«Column — row» for the undo step a change in this cell makes.</summary>
+    internal string UndoCellLabel(SheetColumn column, object? row)
+    {
+        var title = ColumnTitle(column);
+        var name = row is null ? null : UndoRowLabel?.Invoke(row) ?? DefaultUndoRowLabel(row);
+        if (string.IsNullOrWhiteSpace(name) || Localization is null)
+            return title;
+        return string.Format(Localization.Get("Undo.Label.Cell"), title, name.Trim());
+    }
+
+    private static string ColumnTitle(SheetColumn column)
+        => string.IsNullOrEmpty(column.PickerLabel) ? column.Header : column.PickerLabel;
+
+    private static readonly string[] UndoRowNameProperties = ["FullName", "Name", "TeamName", "Label", "Code", "Number"];
+
+    private static string? DefaultUndoRowLabel(object row)
+    {
+        foreach (var name in UndoRowNameProperties)
+        {
+            if (row.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance) is { } property
+                && property.GetValue(row) is { } value
+                && Convert.ToString(value, System.Globalization.CultureInfo.CurrentCulture) is { Length: > 0 } text
+                && !string.IsNullOrWhiteSpace(text))
+                return text;
+        }
+        return null;
+    }
+
+    // One undo step for a paste / fill-down over several rows of the focused column.
+    private IDisposable PasteGesture(int rows)
+    {
+        var column = FindFocusedCell()?.Column;
+        if (column is null || Localization is null)
+            return UndoGesture.Begin();
+        return UndoGesture.Begin(rows > 1
+            ? string.Format(Localization.Get("Undo.Label.Paste"), ColumnTitle(column), rows)
+            : UndoCellLabel(column, _body?.SelectedItem));
+    }
 
     /// <summary>
     /// The rows the current selection covers, in view order: every row of the multi-cell range (whatever
@@ -2677,6 +2729,8 @@ public sealed class SheetTable : TemplatedControl
         e.Handled = true; // don't let the right-press begin editing / move selection
         var column = cell.Column;
         var value = CellText(column, row);
+        var undoHeader = UndoMenu?.UndoMenuHeader(this);
+        var redoHeader = UndoMenu?.RedoMenuHeader(this);
 
         var menu = new StackPanel { Spacing = 2, Margin = new Thickness(4) };
         var flyout = new Flyout
@@ -2722,6 +2776,20 @@ public sealed class SheetTable : TemplatedControl
             menu.Children.Add(b);
             return b;
         }
+
+        // Undo / redo of the page's last step, at the very top (the same step Ctrl+Z / Ctrl+Y would take). The
+        // menu ends any live edit first, so the undo acts on what was typed (У-1).
+        if (undoHeader is not null)
+            MenuItemText(undoHeader, "Ctrl+Z", () => UndoMenu?.UndoFromMenu(this));
+        if (redoHeader is not null)
+            MenuItemText(redoHeader, "Ctrl+Y", () => UndoMenu?.RedoFromMenu(this));
+        if (undoHeader is not null || redoHeader is not null)
+            menu.Children.Add(new Border
+            {
+                Height = 1,
+                Margin = new Thickness(6, 3),
+                Background = (IBrush?)this.FindResource("BorderSubtle") ?? Brushes.LightGray,
+            });
 
         // Copy — the selected range when the click landed inside it, else this cell; with or without
         // the column header line. Shown first: it is the most common thing to do with a selection.
@@ -3177,9 +3245,23 @@ public sealed class SheetTable : TemplatedControl
             return;
         }
 
-        if (!ctrlOrAlt && !string.IsNullOrEmpty(e.KeySymbol))
+        // Backspace clears the cell and opens it for typing, like a spreadsheet. Its KeySymbol is the
+        // U+0008 control char, so it must not reach the type-to-edit branch below — that would seed the
+        // editor with the BS glyph instead of emptying it. Escape still reverts (the edit snapshots first).
+        if (e.Key == Key.Back && !ctrlOrAlt)
         {
-            var symbol = e.KeySymbol;
+            if (BeginEditFocusedCell())
+            {
+                e.Handled = true;
+                Dispatcher.UIThread.Post(() => SeedEditor(string.Empty), DispatcherPriority.Background);
+            }
+            return;
+        }
+
+        // Type-to-edit: a printable keystroke starts the edit seeded with that character. A key whose
+        // symbol is a control character (Backspace above, Escape, Enter, Tab…) never seeds the editor.
+        if (!ctrlOrAlt && e.KeySymbol is { Length: > 0 } symbol && !HasControlChar(symbol))
+        {
             if (BeginEditFocusedCell())
             {
                 e.Handled = true;
@@ -3478,6 +3560,16 @@ public sealed class SheetTable : TemplatedControl
         var minCol = Math.Min(_focusedColumn, _activeCol);
         var maxCol = Math.Max(_focusedColumn, _activeCol);
         return index >= minRow && index <= maxRow && cell.ColumnIndex >= minCol && cell.ColumnIndex <= maxCol;
+    }
+
+    private static bool HasControlChar(string text)
+    {
+        foreach (var c in text)
+        {
+            if (char.IsControl(c))
+                return true;
+        }
+        return false;
     }
 
     private void SeedEditor(string text)
@@ -3844,6 +3936,8 @@ public sealed class SheetTable : TemplatedControl
         if (startIndex < 0)
             return false;
 
+        // The whole paste is one undo step.
+        using var gesture = PasteGesture(Math.Min(lines.Length, items.Count - startIndex));
         for (var i = 0; i < lines.Length && startIndex + i < items.Count; i++)
             SetStringPath(items[startIndex + i], path, lines[i]);
         return true;
@@ -3864,6 +3958,7 @@ public sealed class SheetTable : TemplatedControl
         if (startIndex < 0)
             return;
 
+        using var gesture = PasteGesture(Math.Min(lines.Length, items.Count - startIndex));
         for (var i = 0; i < lines.Length && startIndex + i < items.Count; i++)
             if (TryParseFlag(lines[i], out var value))
                 SetFlagPath(items[startIndex + i], path, value);
@@ -3926,6 +4021,7 @@ public sealed class SheetTable : TemplatedControl
         if (startIndex < 0)
             return;
 
+        using var gesture = PasteGesture(Math.Min(lines.Length, items.Count - startIndex));
         for (var i = 0; i < lines.Length && startIndex + i < items.Count; i++)
         {
             var row = items[startIndex + i];

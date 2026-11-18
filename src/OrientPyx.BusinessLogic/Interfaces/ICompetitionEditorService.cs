@@ -739,7 +739,7 @@ public interface ICompetitionEditorService
     /// <c>&lt;Orgs&gt;</c> value when present.
     ///
     /// When <paramref name="clearFirst"/> is true the participant database (participants + all day
-    /// links) is wiped before importing, so the file becomes the full roster. When false, an athlete
+    /// links + relay teams) is wiped before importing, so the file becomes the full roster. When false, an athlete
     /// matching an existing one by non-blank FOU code is updated in place (idempotent re-import);
     /// others are added.
     ///
@@ -747,8 +747,8 @@ public interface ICompetitionEditorService
     /// (<see cref="ParticipantImportScope.AllDays"/>) uses the file's day info. In
     /// <see cref="ParticipantImportMode.CurrentDayOnly"/> the file's day info is ignored and every
     /// athlete is entered on the active session day, matched to existing participants by the scope's
-    /// link field, and <paramref name="clearFirst"/> then clears only that day's links (not the whole
-    /// roster).
+    /// link field, and <paramref name="clearFirst"/> then clears only that day's links and relay teams
+    /// (not the whole roster).
     /// </summary>
     Task<ParticipantImportResult> ImportParticipantsAsync(
         UofParticipantData data,

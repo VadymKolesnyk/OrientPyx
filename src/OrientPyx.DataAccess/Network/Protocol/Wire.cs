@@ -32,6 +32,12 @@ public static class Wire
     /// </summary>
     public const string StreamEpochHeader = "X-OrientPyx-Stream";
 
+    /// <summary>
+    /// A write call: the undo step (Ctrl+Z) it belongs to — a GUID. The host journals the write under that step, owned
+    /// by the calling station's token, so only that station can revert it. Absent ⇒ a write outside any step.
+    /// </summary>
+    public const string UndoStepHeader = "X-OrientPyx-Undo-Step";
+
     public const string PairPath = "/pair";
 
     /// <summary>A station leaving for good (its «Відключитися»): the host drops its token and its row.</summary>

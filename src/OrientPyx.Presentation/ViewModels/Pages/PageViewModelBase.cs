@@ -3,8 +3,11 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Services;
+using OrientPyx.BusinessLogic.Services.Network;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.Services.Undo;
+using OrientPyx.BusinessLogic.Models;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
 
@@ -208,6 +211,106 @@ public abstract class PageViewModelBase : ViewModelBase
         OnPropertyChanged(nameof(Text));
     }
 
+    // ── Undo / redo (Ctrl+Z / Ctrl+Y, see IUndoHistory)
+    // A page that edits competition data calls UseUndo in its constructor, captures a step when a value changes
+    // (CaptureUndo — synchronously, at the change) and runs each write of it through RunUndoAsync. The history is per
+    // page and per day picked on it (UndoDayId); the shell's keys and the «Правка» menu act on the shown page.
+
+    /// <summary>The undo history, when this page supports undo (null otherwise: Ctrl+Z does nothing here).</summary>
+    protected IUndoHistory? UndoHistory { get; private set; }
+
+    /// <summary>Opts the page into undo. Call from the constructor.</summary>
+    protected void UseUndo(IUndoHistory history) => UndoHistory = history;
+
+    /// <summary>True when Ctrl+Z / Ctrl+Y act on this page.</summary>
+    public bool SupportsUndo => UndoHistory is not null;
+
+    /// <summary>The page part of the history key (default: the type name — one history per page type).</summary>
+    public virtual string UndoKey => GetType().Name;
+
+    /// <summary>The day the page edits right now (its picker's day); null for a page without days or a cross-day view.</summary>
+    public virtual Guid? UndoDayId => null;
+
+    /// <summary>The history the page's current edits go to.</summary>
+    public UndoHistoryKey CurrentUndoKey => new(UndoKey, UndoDayId);
+
+    /// <summary>
+    /// The step of the change being made now (see <see cref="IUndoHistory.Capture(PageViewModelBase, string)"/>); null
+    /// when the page has no undo or the change is program-made — its write then runs outside every step.
+    /// </summary>
+    protected UndoEntry? CaptureUndo(string label) => UndoHistory?.Capture(this, label);
+
+    /// <summary>
+    /// The same for an explicit history of this page — a change on a row whose own day is not the page's day right now
+    /// (the rows on screen are still the previous day's while a day switch lands), or a dialog writing into one day.
+    /// </summary>
+    protected UndoEntry? CaptureUndo(UndoHistoryKey key, string label) => UndoHistory?.Capture(key, label);
+
+    /// <summary>
+    /// A step of its own for a page action (a toolbar command or hotkey, a dialog's result): unlike
+    /// <see cref="CaptureUndo(string)"/> it never joins the edit session of a cell that happens to be live — the
+    /// focused cell keeps its editor (and its session) under a dialog and while a hotkey runs. An open gesture still
+    /// wins (nested gestures join the outer one).
+    /// </summary>
+    protected UndoEntry? CaptureUndoAction(string label) => CaptureUndoAction(CurrentUndoKey, label);
+
+    /// <inheritdoc cref="CaptureUndoAction(string)"/>
+    protected UndoEntry? CaptureUndoAction(UndoHistoryKey key, string label)
+    {
+        if (UndoHistory is not { } history)
+            return null;
+        using (UndoGesture.Begin(label))
+            return history.Capture(key, label);
+    }
+
+    /// <summary>Runs one write of a captured step (null ⇒ outside every step).</summary>
+    protected Task RunUndoAsync(UndoEntry? step, Func<Task> write)
+        => UndoHistory is { } history ? history.RunAsync(step, write) : write();
+
+    /// <inheritdoc cref="RunUndoAsync(UndoEntry?, Func{Task})"/>
+    protected Task<T> RunUndoAsync<T>(UndoEntry? step, Func<Task<T>> write)
+        => UndoHistory is { } history ? history.RunAsync(step, write) : write();
+
+    /// <summary>Captures a step and runs its (single) write — for a change written at once.</summary>
+    protected Task UndoableAsync(string label, Func<Task> write) => RunUndoAsync(CaptureUndo(label), write);
+
+    /// <inheritdoc cref="UndoableAsync(string, Func{Task})"/>
+    protected Task<T> UndoableAsync<T>(string label, Func<Task<T>> write) => RunUndoAsync(CaptureUndo(label), write);
+
+    /// <summary>A step label «column — row» from a column header key and the row's name.</summary>
+    protected string UndoLabel(string columnKey, string? row)
+        => string.IsNullOrWhiteSpace(row)
+            ? Localization.Get(columnKey)
+            : string.Format(Localization.Get("Undo.Label.Cell"), Localization.Get(columnKey), row.Trim());
+
+    /// <summary>
+    /// Lets the page's pending (debounced) writes land before an undo / redo or a day switch. The default has none.
+    /// </summary>
+    public virtual Task FlushPendingWritesAsync() => Task.CompletedTask;
+
+    /// <summary>Reloads the page right after an undo / redo, awaited under the busy overlay (§9.5 of the undo plan).</summary>
+    public Task ReloadForUndoAsync()
+    {
+        // The revert's own change (DataArea.Any, published before the revert returns) also asked for a live reload a
+        // second later. This reload reads after the revert, so it already covers it — and the late one could apply
+        // rows it read just before an edit the operator makes right after Ctrl+Z, showing that edit reverted (§9.5).
+        // Only a live reload already in flight (it may have read before the revert) is followed by one more.
+        lock (_pendingGate)
+        {
+            _pendingCompetitions.Clear();
+            _pendingForAll = _reloading;
+            _reloadPending = _reloading;
+        }
+        if (!_reloading)
+            _reloadTimer?.Stop();
+        return ReloadAsync();
+    }
+
+    /// <summary>Called after an undo / redo was applied (and the page reloaded): a page may select the rows it touched.</summary>
+    public virtual void OnUndoApplied(UndoRevertResult result)
+    {
+    }
+
     // ── Live data (the change bus)
     // A page that shows competition data calls ObserveData(areas) in its constructor and overrides ReloadAsync with
     // its load path. While the page is shown (IsActive, set by the shell), a change in one of its areas — a write by
@@ -293,6 +396,8 @@ public abstract class PageViewModelBase : ViewModelBase
     /// <summary>Asks for a reload as if the bus had raised a change (e.g. after reconnecting to the host).</summary>
     public void RequestReload()
     {
+        lock (_pendingGate)
+            _pendingForAll = true;
         _reloadPending = true;
         if (Dispatcher.UIThread.CheckAccess())
             ScheduleReload();
@@ -310,15 +415,34 @@ public abstract class PageViewModelBase : ViewModelBase
         if (change.Area != DataArea.Any && _mode is not null
             && string.Equals(change.Origin, _mode.SelfOrigin, StringComparison.Ordinal))
             return;
-        // Another competition's change is irrelevant (app-data and "any" concern every competition).
-        if (change.Area is not (DataArea.Any or DataArea.AppData)
+        // Another competition's change is irrelevant. App-data concerns every competition, and so does «any» when it
+        // names none (a full refresh after reconnecting); «any» for one competition (an undo) concerns that one only.
+        var competition = change.Area == DataArea.AppData || change.EventFolderPath == DataChangeBus.AnyEvent
+            ? null
+            : change.EventFolderPath;
+        if (competition is not null
             && _observedSession?.CurrentEvent is { } ev
-            && !SameCompetition(change.EventFolderPath, ev.FolderPath))
+            && !SameCompetition(competition, ev.FolderPath))
             return;
 
-        _reloadPending = true;
+        lock (_pendingGate)
+        {
+            if (competition is null)
+                _pendingForAll = true;
+            else if (!_pendingForAll)
+                _pendingCompetitions.Add(competition);
+            _reloadPending = true;
+        }
         Dispatcher.UIThread.Post(ScheduleReload);
     }
+
+    // The competitions a pending reload is for (or all of them). A page hidden while another competition was open keeps
+    // its reload pending until it is shown; by then another competition may be open — which the page loaded anew on the
+    // session change — so a reload for none of the open one is dropped instead of re-reading the page mid-way through
+    // what the operator is doing (an undo publishes «any» for its competition, so every hidden page gets one).
+    private readonly object _pendingGate = new();
+    private readonly HashSet<string> _pendingCompetitions = new(StringComparer.OrdinalIgnoreCase);
+    private bool _pendingForAll;
 
     // The event path is the host's folder on a host and the bare identifier on a station; the session's FolderPath
     // follows the same convention, but the two can differ in form (a trailing separator, relative vs absolute), so
@@ -364,7 +488,19 @@ public abstract class PageViewModelBase : ViewModelBase
             // A reload is in flight; the pending flag stays set and the timer re-arms when it finishes.
             return;
         }
-        _reloadPending = false;
+        bool stale;
+        lock (_pendingGate)
+        {
+            stale = !_pendingForAll
+                    && _pendingCompetitions.Count > 0
+                    && _observedSession?.CurrentEvent is { } current
+                    && !_pendingCompetitions.Any(c => SameCompetition(c, current.FolderPath));
+            _pendingForAll = false;
+            _pendingCompetitions.Clear();
+            _reloadPending = false;
+        }
+        if (stale)
+            return;
         _reloading = true;
         try
         {

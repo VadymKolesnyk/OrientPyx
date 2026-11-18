@@ -7,6 +7,7 @@ using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.Services.Undo;
 using OrientPyx.Presentation.ViewModels.Dialogs;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
@@ -52,9 +53,11 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         IAppSettingsService appSettings,
         IDataChangeBus bus,
         IWorkspaceMode mode,
-        IEventFiles eventFiles)
+        IEventFiles eventFiles,
+        IUndoHistory undo)
         : base(localization)
     {
+        UseUndo(undo);
         LayoutStore = layoutStore;
         _appSettings = appSettings;
         _editor = editor;
@@ -162,6 +165,16 @@ public sealed partial class ChipsViewModel : PageViewModelBase
             SelectedChip = null;
     }
 
+    /// <inheritdoc />
+    public override Task FlushPendingWritesAsync() => _pendingSaves.WaitAsync();
+
+    /// <inheritdoc />
+    public override void OnUndoApplied(BusinessLogic.Models.UndoRevertResult result)
+    {
+        if (result.RowIds is { Count: > 0 } ids && Chips.FirstOrDefault(r => ids.Contains(r.Id)) is { } row)
+            SelectedChip = row;
+    }
+
     /// <summary>Reloads the chips for the current competition. Called when the page is shown.</summary>
     public async Task LoadAsync()
     {
@@ -261,7 +274,8 @@ public sealed partial class ChipsViewModel : PageViewModelBase
             return;
 
         // Persist immediately so the new row carries its real id for later debounced updates.
-        var chip = await _busy.RunAsync(() => _editor.AddRentalChipAsync());
+        var step = CaptureUndoAction(Localization.Get("Undo.Label.AddRow"));
+        var chip = await _busy.RunAsync(() => RunUndoAsync(step, () => _editor.AddRentalChipAsync()));
         Chips.Add(CreateRow(chip));
     }
 
@@ -276,9 +290,12 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         if (result is null)
             return;
 
-        await _busy.RunAsync(() =>
-            _editor.AddRentalChipRangeAsync(result.StartNumber, result.Count, result.Note));
-        await LoadAsync();
+        // One undo step for the whole range. The rows are merged in afterwards (ReloadAsync), so an edit still being
+        // saved is written, not dropped.
+        var step = CaptureUndoAction(Localization.Get("Chips.BulkAdd"));
+        await _busy.RunAsync(() => RunUndoAsync(step, () =>
+            _editor.AddRentalChipRangeAsync(result.StartNumber, result.Count, result.Note)));
+        await ReloadAsync();
     }
 
     // Wipes the whole rental-chip database for the current competition after a confirmation. Cancels
@@ -327,6 +344,8 @@ public sealed partial class ChipsViewModel : PageViewModelBase
                 return;
         }
 
+        var step = CaptureUndoAction(string.Format(Localization.Get("Undo.Label.DeleteRow"), RowName(row)));
+
         if (_saveTimers.TryGetValue(row.Id, out var cts))
         {
             cts.Cancel();
@@ -346,7 +365,7 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         RefreshDuplicates();
 
         var id = row.Id;
-        _ = Task.Run(() => _editor.DeleteRentalChipAsync(id));
+        _ = RunUndoAsync(step, () => _editor.DeleteRentalChipAsync(id));
 
         // The confirmation modal stole keyboard focus to the overlay; pull it back to the grid
         // (now on the new selected row) so focus doesn't end up on the top menu.
@@ -504,26 +523,28 @@ public sealed partial class ChipsViewModel : PageViewModelBase
 
     // --- Debounced save
 
-    private void RequestRowSave(RentalChipRowViewModel row)
+    // The undo step is captured here, at the change (the write is debounced); a refresh applying stored values has none.
+    private void RequestRowSave(RentalChipRowViewModel row, string columnKey)
     {
         if (row.IsApplying)
             return;
+        var step = CaptureUndo(UndoLabel(columnKey, RowName(row)));
 
         if (_saveTimers.TryGetValue(row.Id, out var existing))
             existing.Cancel();
 
         var cts = new CancellationTokenSource();
         _saveTimers[row.Id] = cts;
-        _pendingSaves.Track(SaveRowDebouncedAsync(row, cts.Token));
+        _pendingSaves.Track(SaveRowDebouncedAsync(row, step, cts.Token));
     }
 
-    private async Task SaveRowDebouncedAsync(RentalChipRowViewModel row, CancellationToken token)
+    private async Task SaveRowDebouncedAsync(RentalChipRowViewModel row, UndoEntry? step, CancellationToken token)
     {
         try
         {
             await Task.Delay(SaveDebounce, token);
             var entity = row.ToEntity();
-            await Task.Run(() => _editor.UpdateRentalChipAsync(entity, token), token);
+            await RunUndoAsync(step, () => _editor.UpdateRentalChipAsync(entity, token));
         }
         catch (OperationCanceledException)
         {
@@ -532,6 +553,10 @@ public sealed partial class ChipsViewModel : PageViewModelBase
         {
         }
     }
+
+    // The row's name in an undo label: its number, else «Прокатний чіп» for a blank one.
+    private string RowName(RentalChipRowViewModel row)
+        => string.IsNullOrWhiteSpace(row.Number) ? Localization.Get("Undo.Entity.RentalChip") : row.Number.Trim();
 
     private void CancelAllTimers()
     {

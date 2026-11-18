@@ -29,6 +29,8 @@ public partial class NumberVariantsView : UserControl
         // F8 / context menu over mismatched rows: give the numbers to the team's group.
         Sheet.RowActionLabel = rows => _vm?.MoveToHolderGroupLabel(rows);
         Sheet.RowActionRequested += (_, rows) => { if (_vm is not null) _ = _vm.MoveToHolderGroupAsync(rows); };
+        // Undo steps name a row by its number («Варіант — 101.2»).
+        Sheet.UndoRowLabel = UnassignedSheet.UndoRowLabel = row => (row as NumberVariantRowViewModel)?.Bib;
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)

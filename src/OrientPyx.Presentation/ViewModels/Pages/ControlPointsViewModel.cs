@@ -8,6 +8,7 @@ using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.Services.Undo;
 using OrientPyx.Presentation.ViewModels.Dialogs;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
@@ -41,10 +42,12 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
         ITableLayoutStore layoutStore,
         IDayLockService dayLock,
         IDataChangeBus bus,
-        IWorkspaceMode mode)
+        IWorkspaceMode mode,
+        IUndoHistory undo)
         : base(localization)
     {
         UseDayLock(dayLock);
+        UseUndo(undo);
         LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
@@ -104,6 +107,20 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
     /// <summary>Raised when <see cref="ShowPointsColumn"/> or the coordinate mode may have changed; the
     /// view re-applies column visibility (columns live outside the visual tree).</summary>
     public event EventHandler? ColumnsChanged;
+
+    /// <inheritdoc />
+    /// <remarks>The rows are the session day's (the picker switches the session day only after the pending writes).</remarks>
+    public override Guid? UndoDayId => _session.CurrentDay?.Id;
+
+    /// <inheritdoc />
+    public override Task FlushPendingWritesAsync() => _pendingSaves.WaitAsync();
+
+    /// <inheritdoc />
+    public override void OnUndoApplied(UndoRevertResult result)
+    {
+        if (result.RowIds is { Count: > 0 } ids && Points.FirstOrDefault(r => ids.Contains(r.Id)) is { } row)
+            SelectedPoint = row;
+    }
 
     // True while LoadAsync syncs SelectedDay to the session, so the setter does NOT call
     // SetCurrentDayAsync (which would re-raise SessionChanged → LoadAsync in a loop).
@@ -231,9 +248,12 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
 
     // Persisting the new day writes the last-session row (a synchronous SQLite write), so it goes
     // through the busy overlay/offload like every other DB access; otherwise the UI thread would
-    // block on the write before SessionChanged → LoadAsync even runs.
+    // block on the write before SessionChanged → LoadAsync even runs. The row edits still being
+    // debounced land first, on the day they were made and in its undo history (LoadAsync would
+    // otherwise cancel them).
     private async Task SwitchDayAsync(EventDay day)
     {
+        await _pendingSaves.WaitAsync(); // UI thread: PendingSaves is not thread-safe (RunAsync runs on the pool)
         await _busy.RunAsync(() => _session.SetCurrentDayAsync(day));
     }
 
@@ -244,7 +264,8 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
             return;
 
         // Persist immediately so the new row carries its real id for later debounced updates.
-        var entity = await _busy.RunAsync(() => _editor.AddControlPointAsync());
+        var step = CaptureUndoAction(Localization.Get("Undo.Label.AddRow"));
+        var entity = await _busy.RunAsync(() => RunUndoAsync(step, () => _editor.AddControlPointAsync()));
         Points.Add(new ControlPointRowViewModel(entity, Localization, RequestRowSave));
     }
 
@@ -286,6 +307,8 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
                 return;
         }
 
+        var step = CaptureUndoAction(string.Format(Localization.Get("Undo.Label.DeleteRow"), RowName(row)));
+
         if (_saveTimers.TryGetValue(row.Id, out var cts))
         {
             cts.Cancel();
@@ -300,7 +323,7 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
         Points.Remove(row);
 
         var id = row.Id;
-        _ = Task.Run(() => _editor.DeleteControlPointAsync(id));
+        _ = RunUndoAsync(step, () => _editor.DeleteControlPointAsync(id));
 
         // The confirmation modal stole keyboard focus to the overlay; pull it back to the grid
         // (now on the new selected row) so focus doesn't end up on the top menu.
@@ -308,29 +331,31 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
             RequestGridFocus();
     }
 
-    // Invoked by a row on every edit (UI thread). Resets that row's debounce timer.
-    private void RequestRowSave(ControlPointRowViewModel row)
+    // Invoked by a row on every edit (UI thread). Resets that row's debounce timer. The undo step is
+    // captured here, at the change (the write is debounced); a refresh applying stored values has none.
+    private void RequestRowSave(ControlPointRowViewModel row, string columnKey)
     {
         if (row.IsApplying)
             return;
+        var step = CaptureUndo(UndoLabel(columnKey, RowName(row)));
 
         if (_saveTimers.TryGetValue(row.Id, out var existing))
             existing.Cancel();
 
         var cts = new CancellationTokenSource();
         _saveTimers[row.Id] = cts;
-        _pendingSaves.Track(SaveRowDebouncedAsync(row, cts.Token)); // fire-and-forget; the UI is never blocked
+        _pendingSaves.Track(SaveRowDebouncedAsync(row, step, cts.Token)); // fire-and-forget; the UI is never blocked
     }
 
-    private async Task SaveRowDebouncedAsync(ControlPointRowViewModel row, CancellationToken token)
+    private async Task SaveRowDebouncedAsync(ControlPointRowViewModel row, UndoEntry? step, CancellationToken token)
     {
         try
         {
             await Task.Delay(SaveDebounce, token);
-            // ToEntity() reads VM state, so snapshot it here (UI thread) before offloading the
+            // ToEntity() reads VM state, so snapshot it here (UI thread); the editor proxy offloads the
             // synchronous SQLite write to the pool. Autosave bypasses the busy overlay on purpose.
             var entity = row.ToEntity();
-            await Task.Run(() => _editor.UpdateControlPointAsync(entity, token), token);
+            await RunUndoAsync(step, () => _editor.UpdateControlPointAsync(entity, token));
         }
         catch (OperationCanceledException)
         {
@@ -339,6 +364,10 @@ public sealed partial class ControlPointsViewModel : PageViewModelBase
         {
         }
     }
+
+    // The row's name in an undo label: its code, else «КП» for a blank one.
+    private string RowName(ControlPointRowViewModel row)
+        => string.IsNullOrWhiteSpace(row.Code) ? Localization.Get("Undo.Entity.ControlPoint") : row.Code.Trim();
 
     private void CancelAllTimers()
     {

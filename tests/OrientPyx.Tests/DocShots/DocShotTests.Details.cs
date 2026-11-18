@@ -89,6 +89,13 @@ public sealed partial class DocShotTests
         await _s.ShotAsync("finish-unknown-chip", "«Невідомий чіп — присвоєння учасника»: кому належить зчитаний чіп.");
         await _s.DismissDialogAsync();
 
+        // «Сповіщення…» on the auto-read panel: the rental-chip / unknown-chip alerts of this computer.
+        _ = _s.OnUiAsync(() => finish.OpenAlertSettingsCommand.ExecuteAsync(null));
+        await _s.WaitUntilAsync(() => _s.Vm.Dialogs.Current is FinishAlertsViewModel, "alert settings open");
+        await _s.SettleLongAsync();
+        await _s.ShotAsync("finish-alerts", "«Налаштування сповіщень»: прокатний і невідомий чіп — сповіщення, звук, блимання на панелі задач.");
+        await _s.DismissDialogAsync();
+
         // The result protocol's live preview, alone.
         await ProtocolPreviewShotAsync("protocols-preview", "Попередній перегляд протоколу результатів (день 1).");
 

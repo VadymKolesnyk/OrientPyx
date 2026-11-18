@@ -35,7 +35,6 @@ public sealed partial class NetworkViewModel : PageViewModelBase
     private readonly NetworkActivity _activity;
 
     private NetworkSettings? _settings;
-    private bool _isOpen;
     private bool _activityRegistered;
     private bool _syncingHostSwitch;
     private DispatcherTimer? _hostRefreshTimer;
@@ -88,7 +87,6 @@ public sealed partial class NetworkViewModel : PageViewModelBase
     /// <summary>Called when the overlay is shown: loads the names, starts host discovery, refreshes both cards.</summary>
     public async Task OnOpenedAsync()
     {
-        _isOpen = true;
         await LoadSettingsAsync();
         try
         {
@@ -108,7 +106,6 @@ public sealed partial class NetworkViewModel : PageViewModelBase
     /// <summary>Called when the overlay is closed: stops discovery (the names were saved on focus loss).</summary>
     public void OnClosed()
     {
-        _isOpen = false;
         _lastSeenTimer?.Stop();
         try
         {

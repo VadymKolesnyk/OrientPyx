@@ -12,6 +12,7 @@ using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
 using OrientPyx.Presentation.ViewModels.Dialogs;
 using OrientPyx.Presentation.ViewModels.Shared;
+using OrientPyx.BusinessLogic.Services.Undo;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
 
@@ -556,6 +557,8 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
     // Building the snapshot is SQLite work (off the UI thread already); only log/UI writes hop back.
     private async Task PublishLoopAsync(CancellationToken ct)
     {
+        // A background process never joins the undo step of the action that started it.
+        using var noUndo = UndoScope.Suppress();
         var interval = TimeSpan.FromSeconds(Math.Max(OnlineApiSettings.MinIntervalSeconds, _api.IntervalSeconds));
 
         while (!ct.IsCancellationRequested)

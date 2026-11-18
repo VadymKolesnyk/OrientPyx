@@ -42,6 +42,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     private readonly IEventFiles _eventFiles;
     private readonly IUiPreferencesService _preferences;
     private readonly IToastService _toasts;
+    private readonly IDesktopAlerts _alerts;
 
     /// <summary>The day's head count from the last load — shown under the table and in the top-bar activity.</summary>
     private FinishReadoutCounts _counts = FinishReadoutCounts.Empty;
@@ -84,7 +85,8 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         IDataChangeBus bus,
         IWorkspaceMode mode,
         IEventFiles eventFiles,
-        IToastService toasts)
+        IToastService toasts,
+        IDesktopAlerts alerts)
         : base(localization)
     {
         UseDayLock(dayLock);
@@ -103,7 +105,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         _eventFiles = eventFiles;
         _preferences = preferences;
         _toasts = toasts;
-        _collectChipToastEnabled = preferences.CollectChipToast;
+        _alerts = alerts;
         // The head count's labels follow the language like everything else.
         localization.PropertyChanged += (_, _) =>
         {
@@ -196,14 +198,13 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     private bool _autoPrintEnabled;
 
     /// <summary>
-    /// When on (the default), a read-out of a rental chip due back — the holder's last day with it — pops a toast
-    /// whatever page is open, so the finish judge takes the chip. Unlike the rest of the panel it is remembered
-    /// across runs (<see cref="IUiPreferencesService.CollectChipToast"/>): it is the operator's standing choice.
+    /// «Налаштування сповіщень» (the bell on the auto-read panel): the toast and sound for a rental chip due back, the
+    /// sound for an unknown chip, the taskbar flash. Unlike the rest of the panel they are remembered across runs, on
+    /// this computer (<see cref="IUiPreferencesService"/>): the operator's standing choice for its speakers and screen.
     /// </summary>
-    [ObservableProperty]
-    private bool _collectChipToastEnabled;
-
-    partial void OnCollectChipToastEnabledChanged(bool value) => _preferences.CollectChipToast = value;
+    [RelayCommand]
+    private Task OpenAlertSettingsAsync()
+        => _dialogs.ShowFinishAlertsAsync(new FinishAlertsViewModel(Localization, _preferences, _alerts, _toasts));
 
     /// <summary>
     /// The head count shown in the table's status bar: runners read out, still on course and (when any) unknown
@@ -841,9 +842,13 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
                     _log.Action(string.Format(Localization.Get("FinishRead.Unknown.LeftLog"), row.ChipNumber));
                     await AutoPrintNewReadsAsync([id]);
                 }
-                else if (await PromptUnknownReadAsync(id))
+                else
                 {
-                    cancelledAllUnknowns = true;
+                    // The beeps go off the moment the chip is read, before its dialog opens: the auto-read waits for
+                    // that dialog, so a judge away from the screen (or with the window minimized) must hear it now.
+                    AlertUnknownChip(row);
+                    if (await PromptUnknownReadAsync(id))
+                        cancelledAllUnknowns = true;
                 }
             }
             else
@@ -942,7 +947,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
                 ? string.Format(Localization.Get("FinishRead.Unknown.CreatedLog"), created.FullName, edit.ChipNumber)
                 : string.Format(Localization.Get("FinishRead.Unknown.AssignedLog"), edit.ChipNumber));
             // With a holder now, the chip may turn out to be a rental one due back.
-            if (CollectChipToastEnabled)
+            if (CollectChipAlertsOn)
                 NotifyCollectChip((await _editor.GetFinishReadoutRowsAsync(forDayId: AutoReadDayId)).FirstOrDefault(r => r.Id == readoutId));
             await AutoPrintNewReadsAsync([readoutId]);
         }
@@ -1094,26 +1099,44 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         return string.Join(separator, parts);
     }
 
-    // --- «Заберіть прокатний чіп» toast
+    // --- Finish alerts: «Заберіть прокатний чіп», unknown chip
 
-    // Pops the toast for a fresh read of a rental chip due back (the holder's last day with it), over whatever page
-    // is open; it blocks nothing and closes by itself. Silent when the operator switched the reminder off. Called
-    // from the poller's thread — the toast service marshals onto the UI thread.
+    private bool CollectChipAlertsOn => _preferences.CollectChipToast || _preferences.CollectChipSound
+                                        || _preferences.CollectChipSystemNotification;
+
+    // An unknown chip: three beeps, and while the window is not in front a Windows notification (its click brings the
+    // window with the dialog forward) and the taskbar flash — each per the alert settings.
+    private void AlertUnknownChip(FinishReadoutRow row)
+    {
+        if (_preferences.UnknownChipSound)
+            _alerts.Play(FinishAlert.UnknownChip);
+        if (_preferences.UnknownChipSystemNotification)
+        {
+            var (title, message) = FinishAlertTexts.UnknownChip(Localization, row.ChipNumber);
+            _alerts.ShowNotification(FinishAlert.UnknownChip, title, message);
+        }
+        if (_preferences.FlashWhenInactive)
+            _alerts.RequestAttention();
+    }
+
+    // A fresh read of a rental chip due back (the holder's last day with it): the toast over whatever page is open
+    // (it blocks nothing and closes by itself), the «дзінь-дон», and while the window is not in front a Windows
+    // notification and the taskbar flash — each as the alert settings say. Called from the poller's thread — the toast and alert services marshal what needs the UI thread.
     private void NotifyCollectChip(FinishReadoutRow? row)
     {
-        if (row is null || !CollectChipToastEnabled || !row.IsKnown || !row.CollectRentalChip)
+        if (row is null || !CollectChipAlertsOn || !row.IsKnown || !row.CollectRentalChip)
             return;
 
-        var parts = new List<string>(3);
-        if (!string.IsNullOrWhiteSpace(row.ParticipantNumber))
-            parts.Add("№" + row.ParticipantNumber);
-        if (!string.IsNullOrWhiteSpace(row.FullName))
-            parts.Add(row.FullName);
-        if (!string.IsNullOrWhiteSpace(row.GroupName))
-            parts.Add($"({row.GroupName})");
+        var (title, message) = FinishAlertTexts.CollectChip(
+            Localization, row.ChipNumber, row.ParticipantNumber, row.FullName, row.GroupName);
 
-        _toasts.Show(
-            Localization.Get("FinishRead.CollectToast.Title"),
-            string.Format(Localization.Get("FinishRead.CollectToast.Message"), row.ChipNumber, string.Join(" ", parts)));
+        if (_preferences.CollectChipSound)
+            _alerts.Play(FinishAlert.CollectChip);
+        if (_preferences.CollectChipSystemNotification)
+            _alerts.ShowNotification(FinishAlert.CollectChip, title, message);
+        if (_preferences.FlashWhenInactive)
+            _alerts.RequestAttention();
+        if (_preferences.CollectChipToast)
+            _toasts.Show(title, message);
     }
 }

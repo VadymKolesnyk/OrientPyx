@@ -6,6 +6,7 @@ using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.BusinessLogic.Services;
 using OrientPyx.Localization;
+using OrientPyx.Presentation.Services.Undo;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
 
@@ -19,7 +20,8 @@ namespace OrientPyx.Presentation.ViewModels.Pages;
 public sealed partial class ParticipantRosterRowViewModel : ObservableObject
 {
     private readonly Guid _participantId;
-    private readonly Action<ParticipantRosterRowViewModel> _requestSave;
+    // The debounced identity save; the string is the edited column's header key (the undo step's fallback label).
+    private readonly Action<ParticipantRosterRowViewModel, string> _requestSave;
     private readonly Action<ParticipantRosterRowViewModel> _requestRegionChange;
     private readonly Action<ParticipantRosterRowViewModel> _requestAddRegion;
     private readonly Action<ParticipantRosterRowViewModel> _requestClubChange;
@@ -107,7 +109,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         IReadOnlyList<EntryFeeDiscount> discounts,
         EntryFeeContext fees,
         ILocalizationService localization,
-        Action<ParticipantRosterRowViewModel> requestSave,
+        Action<ParticipantRosterRowViewModel, string> requestSave,
         Action<ParticipantRosterRowViewModel> requestRegionChange,
         Action<ParticipantRosterRowViewModel> requestAddRegion,
         Action<ParticipantRosterRowViewModel> requestClubChange,
@@ -516,15 +518,15 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     /// <summary>Per-day cells, in day order. Bound by the runtime per-day columns in the view.</summary>
     public ObservableCollection<RosterDayCellViewModel> Days { get; }
 
-    partial void OnFullNameChanged(string value) => QueueSave();
-    partial void OnNumberChanged(string value) => QueueSave();
-    partial void OnRankChanged(string value) => QueueSave();
-    partial void OnCoachChanged(string value) => QueueSave();
+    partial void OnFullNameChanged(string value) => QueueSave("Participants.Col.FullName");
+    partial void OnNumberChanged(string value) => QueueSave("Participants.Col.Number");
+    partial void OnRankChanged(string value) => QueueSave("Participants.Col.Rank");
+    partial void OnCoachChanged(string value) => QueueSave("Participants.Col.Coach");
     partial void OnBirthDateChanged(DateTimeOffset? value)
     {
         OnPropertyChanged(nameof(BirthDateViolatesAge));
         OnPropertyChanged(nameof(AgeViolationTooltip));
-        QueueSave();
+        QueueSave("Participants.Col.BirthDate");
     }
 
     /// <summary>
@@ -663,13 +665,13 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     }
 
     // The competition-level text/bool fields persist through the debounced identity save.
-    partial void OnRepresentativeChanged(string value) => QueueSave();
-    partial void OnFsouCodeChanged(string value) => QueueSave();
-    partial void OnNoteChanged(string value) => QueueSave();
-    partial void OnTeamChanged(string value) => QueueSave();
+    partial void OnRepresentativeChanged(string value) => QueueSave("Participants.Col.Representative");
+    partial void OnFsouCodeChanged(string value) => QueueSave("Participants.Col.FsouCode");
+    partial void OnNoteChanged(string value) => QueueSave("Participants.Col.Note");
+    partial void OnTeamChanged(string value) => QueueSave("Participants.Col.Team");
     partial void OnIsFsouMemberChanged(bool value)
     {
-        QueueSave();
+        QueueSave("Participants.Col.IsFsouMember");
         // The FSOU-member discount auto-applies, so mirror the flag onto its (read-only) checkbox and
         // recompute the total. Its own change callback is suppressed (it is never persisted per-row).
         foreach (var flag in DiscountFlags)
@@ -685,13 +687,14 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         // Re-tint the payment cell (and re-evaluate the status filter) as the user types.
         OnPropertyChanged(nameof(PaymentStatus));
         OnPropertyChanged(nameof(PaymentStatusKey));
-        QueueSave();
+        QueueSave("Participants.Col.Payment");
     }
 
-    private void QueueSave()
+    // columnKey: the edited column's header key — the undo step's label when no cell edit or paste names it.
+    private void QueueSave(string columnKey)
     {
         if (_initialized)
-            _requestSave(this);
+            _requestSave(this, columnKey);
     }
 
     // ── Collapsed-block aggregates
@@ -891,14 +894,17 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         // Through ComboGroup, so «не бере участі» also takes the participant off a day they run with no group (where
         // the selection itself would not move). A relay runner's day goes through BulkGroup: their group is the team's
         // (Р-22), and the page asks once for the whole bulk edit.
-        foreach (var cell in Days)
-            if (cell.GroupOptions.FirstOrDefault(o => o.Id == groupId) is { } option)
-            {
-                if (cell.Relay.HasTeam)
-                    cell.BulkGroup = option;
-                else
-                    cell.ComboGroup = option;
-            }
+        // One undo step for every day it writes (a merged cell's edit session or a paste already is one; a bulk edit
+        // gesture is joined).
+        using (UndoGesture.Group())
+            foreach (var cell in Days)
+                if (cell.GroupOptions.FirstOrDefault(o => o.Id == groupId) is { } option)
+                {
+                    if (cell.Relay.HasTeam)
+                        cell.BulkGroup = option;
+                    else
+                        cell.ComboGroup = option;
+                }
     }
 
     /// <summary>True when the participant runs at least one day (so a chip can be set).</summary>
@@ -935,8 +941,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         if (MemberDaysHaveLockedDay)
             return;
 
-        foreach (var cell in Days.Where(d => d.IsMember))
-            cell.Chip = value;
+        using (UndoGesture.Group())
+            foreach (var cell in Days.Where(d => d.IsMember))
+                cell.Chip = value;
     }
 
     // ── Payment (member-only, like Chips) — the roster per-day «Оплата» block
@@ -991,8 +998,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         if (MemberDaysHaveLockedDay)
             return;
 
-        foreach (var cell in Days.Where(d => d.IsMember))
-            cell.Payment = value;
+        using (UndoGesture.Group())
+            foreach (var cell in Days.Where(d => d.IsMember))
+                cell.Payment = value;
     }
 
     // ── Start time (member-only, like Chips)
@@ -1027,8 +1035,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         if (MemberDaysHaveLockedDay)
             return;
 
-        foreach (var cell in Days.Where(d => d.IsMember))
-            cell.StartTimeText = value;
+        using (UndoGesture.Group())
+            foreach (var cell in Days.Where(d => d.IsMember))
+                cell.StartTimeText = value;
     }
 
     // ── Out of competition (member-only, like Chips)
@@ -1092,8 +1101,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         if (MemberDaysHaveLockedDay)
             return;
 
-        foreach (var cell in Days.Where(d => d.IsMember))
-            cell.PaysRaisedFee = value;
+        using (UndoGesture.Group())
+            foreach (var cell in Days.Where(d => d.IsMember))
+                cell.PaysRaisedFee = value;
     }
 
     /// <summary>True when the collapsed cell should show the editable CheckBox (a member day, all equal).</summary>
@@ -1108,8 +1118,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         if (MemberDaysHaveLockedDay)
             return;
 
-        foreach (var cell in Days.Where(d => d.IsMember))
-            cell.OutOfCompetition = value;
+        using (UndoGesture.Group())
+            foreach (var cell in Days.Where(d => d.IsMember))
+                cell.OutOfCompetition = value;
     }
 
     /// <summary>Sets the result-status override (null = auto) on every member day; each cell's status
@@ -1119,8 +1130,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         if (MemberDaysHaveLockedDay)
             return;
 
-        foreach (var cell in Days.Where(d => d.IsMember))
-            cell.SelectedStatus = FinishStatusOptions.Select(cell.StatusOptions, status);
+        using (UndoGesture.Group())
+            foreach (var cell in Days.Where(d => d.IsMember))
+                cell.SelectedStatus = FinishStatusOptions.Select(cell.StatusOptions, status);
     }
 
     /// <summary>Sets the «бонус» text (a signed integer; blank clears) on every member day; each cell
@@ -1130,8 +1142,9 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         if (MemberDaysHaveLockedDay)
             return;
 
-        foreach (var cell in Days.Where(d => d.IsMember))
-            cell.BonusText = value;
+        using (UndoGesture.Group())
+            foreach (var cell in Days.Where(d => d.IsMember))
+                cell.BonusText = value;
     }
 
     // ── Collapsed (merged) result blocks — read-only

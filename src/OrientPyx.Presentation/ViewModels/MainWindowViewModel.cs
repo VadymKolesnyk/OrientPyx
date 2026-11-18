@@ -140,9 +140,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         IBackgroundActivityService activities,
         IToastService toasts,
         Services.IEventArchiveFlow archiveFlow,
-        Services.ResultsDebugSnapshot resultsSnapshot)
+        Services.ResultsDebugSnapshot resultsSnapshot,
+        EditMenuViewModel editMenu)
     {
         _resultsSnapshot = resultsSnapshot;
+        EditMenu = editMenu;
+        // Undo acts on the working shell only — not behind the selection screen or an overlay.
+        editMenu.IsShellShown = () => IsEventSelected;
         _session = session;
         _navigation = navigation;
         _selection = selection;
@@ -302,6 +306,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Exposed for the bottom-right toast stack (non-blocking notices over every page).</summary>
     public IToastService Toasts { get; }
+
+    /// <summary>The «Правка» menu (undo / redo of the shown page) and the undo keys.</summary>
+    public EditMenuViewModel EditMenu { get; }
 
     public SettingsViewModel Settings { get; }
 

@@ -6,6 +6,7 @@ using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.Services.Undo;
 using OrientPyx.Presentation.ViewModels.Dialogs;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
@@ -34,9 +35,11 @@ public sealed partial class ClubsViewModel : PageViewModelBase
         IDialogService dialogs,
         ITableLayoutStore layoutStore,
         IDataChangeBus bus,
-        IWorkspaceMode mode)
+        IWorkspaceMode mode,
+        IUndoHistory undo)
         : base(localization)
     {
+        UseUndo(undo);
         LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
@@ -79,6 +82,16 @@ public sealed partial class ClubsViewModel : PageViewModelBase
             SelectedClub = null;
     }
 
+    /// <inheritdoc />
+    public override Task FlushPendingWritesAsync() => _pendingSaves.WaitAsync();
+
+    /// <inheritdoc />
+    public override void OnUndoApplied(BusinessLogic.Models.UndoRevertResult result)
+    {
+        if (result.RowIds is { Count: > 0 } ids && Clubs.FirstOrDefault(r => ids.Contains(r.Id)) is { } row)
+            SelectedClub = row;
+    }
+
     // Reads the rows and either rebuilds the collection (first open / session switch) or merges them in place.
     private async Task LoadCoreAsync(bool merge)
     {
@@ -114,7 +127,8 @@ public sealed partial class ClubsViewModel : PageViewModelBase
         if (_session.CurrentEvent is null)
             return;
 
-        var club = await _busy.RunAsync(() => _editor.AddClubRowAsync());
+        var step = CaptureUndoAction(Localization.Get("Undo.Label.AddRow"));
+        var club = await _busy.RunAsync(() => RunUndoAsync(step, () => _editor.AddClubRowAsync()));
         Clubs.Add(CreateRow(club));
     }
 
@@ -142,6 +156,9 @@ public sealed partial class ClubsViewModel : PageViewModelBase
                 return;
         }
 
+        // One step: the editor clears the reference from every participant and deletes the row in the same call.
+        var step = CaptureUndoAction(string.Format(Localization.Get("Undo.Label.DeleteRow"), RowName(row)));
+
         if (_saveTimers.TryGetValue(row.Id, out var cts))
         {
             cts.Cancel();
@@ -153,7 +170,7 @@ public sealed partial class ClubsViewModel : PageViewModelBase
         Clubs.Remove(row);
 
         var id = row.Id;
-        _ = Task.Run(() => _editor.DeleteClubAsync(id));
+        _ = RunUndoAsync(step, () => _editor.DeleteClubAsync(id));
 
         if (confirmed)
             RequestGridFocus();
@@ -161,30 +178,36 @@ public sealed partial class ClubsViewModel : PageViewModelBase
 
     // --- Debounced save
 
+    // The undo step is captured here, at the change (the write is debounced); a refresh applying stored values has none.
     private void RequestRowSave(ClubRowViewModel row)
     {
         if (row.IsApplying)
             return;
+        var step = CaptureUndo(UndoLabel("Clubs.Col.Name", RowName(row)));
 
         if (_saveTimers.TryGetValue(row.Id, out var existing))
             existing.Cancel();
 
         var cts = new CancellationTokenSource();
         _saveTimers[row.Id] = cts;
-        _pendingSaves.Track(SaveRowDebouncedAsync(row, cts.Token));
+        _pendingSaves.Track(SaveRowDebouncedAsync(row, step, cts.Token));
     }
 
-    private async Task SaveRowDebouncedAsync(ClubRowViewModel row, CancellationToken token)
+    private async Task SaveRowDebouncedAsync(ClubRowViewModel row, UndoEntry? step, CancellationToken token)
     {
         try
         {
             await Task.Delay(SaveDebounce, token);
             var entity = row.ToEntity();
-            await Task.Run(() => _editor.UpdateClubAsync(entity, token), token);
+            await RunUndoAsync(step, () => _editor.UpdateClubAsync(entity, token));
         }
         catch (OperationCanceledException) { }
         catch { }
     }
+
+    // The row's name in an undo label: its name, else the entity's for a blank one.
+    private string RowName(ClubRowViewModel row)
+        => string.IsNullOrWhiteSpace(row.Name) ? Localization.Get("Undo.Entity.Club") : row.Name.Trim();
 
     private void CancelAllTimers()
     {

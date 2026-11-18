@@ -21,6 +21,8 @@ public partial class EntryFeesView : UserControl
     {
         InitializeComponent();
         SheetEditing.Bind(this, GroupFeesSheet, ChipPricesSheet, DiscountsSheet);
+        // A chip-price rule is named by its note in undo labels (the row has no Name / Code property).
+        ChipPricesSheet.UndoRowLabel = row => (row as ChipPriceOverrideRowViewModel)?.Note;
         DataContextChanged += OnDataContextChanged;
         DetachedFromVisualTree += (_, _) => Unsubscribe();
 

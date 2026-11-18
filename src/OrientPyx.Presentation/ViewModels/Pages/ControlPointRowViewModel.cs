@@ -17,7 +17,7 @@ public sealed partial class ControlPointRowViewModel : ObservableObject
     private Guid _eventDayId;
     private int _order;
     private DateTimeOffset _createdAt;
-    private readonly Action<ControlPointRowViewModel> _requestSave;
+    private readonly Action<ControlPointRowViewModel, string> _requestSave;
 
     // Paper-map position (mm) + scale captured at import; used to render the read-only "by map"
     // ground-metre columns. Not edited here, so kept as plain fields and round-tripped via ToEntity.
@@ -53,7 +53,7 @@ public sealed partial class ControlPointRowViewModel : ObservableObject
     public ControlPointRowViewModel(
         ControlPoint point,
         ILocalizationService localization,
-        Action<ControlPointRowViewModel> requestSave)
+        Action<ControlPointRowViewModel, string> requestSave)
     {
         _id = point.Id;
         _eventDayId = point.EventDayId;
@@ -159,17 +159,18 @@ public sealed partial class ControlPointRowViewModel : ObservableObject
         CreatedAt = _createdAt
     };
 
-    partial void OnCodeChanged(string value) => QueueSave();
-    partial void OnLatitudeTextChanged(string value) => QueueSave();
-    partial void OnLongitudeTextChanged(string value) => QueueSave();
-    partial void OnPointsTextChanged(string value) => QueueSave();
-    partial void OnSelectedTypeChanged(ControlPointTypeOption value) => QueueSave();
-    partial void OnIsDisabledChanged(bool value) => QueueSave();
+    // Each change names its column's header key: the page labels the undo step with it.
+    partial void OnCodeChanged(string value) => QueueSave("ControlPoints.Col.Code");
+    partial void OnLatitudeTextChanged(string value) => QueueSave("ControlPoints.Col.Lat");
+    partial void OnLongitudeTextChanged(string value) => QueueSave("ControlPoints.Col.Lon");
+    partial void OnPointsTextChanged(string value) => QueueSave("ControlPoints.Col.Points");
+    partial void OnSelectedTypeChanged(ControlPointTypeOption value) => QueueSave("ControlPoints.Col.Type");
+    partial void OnIsDisabledChanged(bool value) => QueueSave("ControlPoints.Col.Disabled");
 
-    private void QueueSave()
+    private void QueueSave(string columnKey)
     {
         if (_initialized)
-            _requestSave(this);
+            _requestSave(this, columnKey);
     }
 
     private static string FormatCoord(double? value)

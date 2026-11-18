@@ -172,6 +172,60 @@ public sealed class UofRelayImportTests
             new(t.Id, t.GroupId, number, t.Name, t.ClubId, t.RegionId, t.OutOfCompetition, t.StatusOverride, t.CourseSet);
     }
 
+    private static readonly string PlainFile = "<UOFData>\n" + Runner("Новий Бігун", "900", "Ч12", "1,2,3") + "</UOFData>";
+
+    [Fact]
+    public async Task ClearFirst_DeletesTheRelayTeams()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("uofrelayclear"), dayCount: 3);
+        await c.SelectAsync();
+        var editor = Sp.GetRequiredService<ICompetitionEditorService>();
+        await editor.ImportParticipantsAsync(new UofXmlParser().Parse(File), clearFirst: false, ParticipantImportScope.AllDays);
+        await c.SelectAsync(3);
+        Assert.Equal(4, (await editor.GetRelayTeamsDataAsync()).Teams.Count);
+
+        // A file without the relay over a cleared database: no team of the former roster is left behind.
+        await editor.ImportParticipantsAsync(new UofXmlParser().Parse(PlainFile), clearFirst: true, ParticipantImportScope.AllDays);
+        Assert.Empty((await editor.GetRelayTeamsDataAsync()).Teams);
+
+        // The same file again: its teams are made anew (a number given by hand is gone with the old ones).
+        await editor.ImportParticipantsAsync(new UofXmlParser().Parse(File), clearFirst: false, ParticipantImportScope.AllDays);
+        var team = (await editor.GetRelayTeamsDataAsync()).Teams.Single(t => t.Name == "Легенда");
+        Assert.True(await editor.UpdateRelayTeamAsync(new RelayTeamEdit(
+            team.Id, team.GroupId, 101, team.Name, team.ClubId, team.RegionId, team.OutOfCompetition, team.StatusOverride, team.CourseSet)));
+        var again = await editor.ImportParticipantsAsync(new UofXmlParser().Parse(File), clearFirst: true, ParticipantImportScope.AllDays);
+        Assert.Equal(4, again.RelayTeamsCreated);
+        var teams = (await editor.GetRelayTeamsDataAsync()).Teams;
+        Assert.Equal(4, teams.Count);
+        Assert.All(teams, t => Assert.Null(t.Number));
+        Assert.Equal(4, teams.Single(t => t.Name == "Легенда").Legs.Count(l => l.LinkId is not null));
+    }
+
+    [Fact]
+    public async Task ClearFirst_OnTheCurrentDay_DeletesOnlyThatDaysTeams()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("uofrelayclear2"), dayCount: 3);
+        await c.SelectAsync();
+        var editor = Sp.GetRequiredService<ICompetitionEditorService>();
+        var data = new UofXmlParser().Parse(RelayEventFile);
+        foreach (var day in new[] { 2, 3 })
+        {
+            await c.SelectAsync(day);
+            await editor.ImportParticipantsAsync(data, clearFirst: false, ParticipantImportScope.CurrentDay(day, ParticipantLinkField.FsouCode));
+            Assert.Equal(4, (await editor.GetRelayTeamsDataAsync()).Teams.Count);
+        }
+
+        await c.SelectAsync(2);
+        await editor.ImportParticipantsAsync(new UofXmlParser().Parse(PlainFile), clearFirst: true,
+            ParticipantImportScope.CurrentDay(2, ParticipantLinkField.FsouCode));
+        Assert.Empty((await editor.GetRelayTeamsDataAsync()).Teams);
+
+        await c.SelectAsync(3);
+        var day3 = (await editor.GetRelayTeamsDataAsync()).Teams;
+        Assert.Equal(4, day3.Count);
+        Assert.All(day3, t => Assert.Contains(t.Legs, l => l.LinkId is not null));
+    }
+
     // A relay event of its own (the ФСОУ export of «2-х етапні естафети»): no ProgEvent, no GrupRel — the relay group is
     // <Group>, the team <Prim>, the leg <RelayLeg>; PsRel is 0 everywhere. A runner with no <Prim> runs individually.
     private static string EventRunner(string name, string code, string group, string team, int leg) => $"""

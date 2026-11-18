@@ -121,6 +121,9 @@
         <DataTemplate DataType="dialogs:AppUpdatedViewModel">
             <dialogViews:AppUpdatedView />
         </DataTemplate>
+        <DataTemplate DataType="dialogs:FinishAlertsViewModel">
+            <dialogViews:FinishAlertsView />
+        </DataTemplate>
         <DataTemplate DataType="dialogs:DrawClashHelpViewModel">
             <dialogViews:DrawClashHelpView />
         </DataTemplate>
@@ -303,6 +306,19 @@
                 <Separator />
                 <MenuItem Header="{Binding Localization[Menu.File.Exit]}"
                           Command="{Binding ExitCommand}" />
+            </MenuItem>
+
+            <!-- Undo / redo of the shown page (the same step as Ctrl+Z / Ctrl+Y). InputGesture is only the hint text:
+                 the window handles the keys itself (a HotKey would fire twice). -->
+            <MenuItem x:Name="EditMenu" Header="{Binding Localization[Menu.Edit]}"
+                      IsVisible="{Binding IsEventSelected}"
+                      SubmenuOpened="OnEditMenuOpened">
+                <MenuItem Header="{Binding EditMenu.UndoHeader}"
+                          Command="{Binding EditMenu.UndoCommand}"
+                          InputGesture="Ctrl+Z" />
+                <MenuItem Header="{Binding EditMenu.RedoHeader}"
+                          Command="{Binding EditMenu.RedoCommand}"
+                          InputGesture="Ctrl+Y" />
             </MenuItem>
 
             <!-- Competition setup + reference data, shown only while a competition is open.

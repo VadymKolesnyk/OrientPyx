@@ -4,6 +4,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.DataAccess.Persistence;
+using OrientPyx.Presentation.Services;
 using Velopack;
 
 namespace OrientPyx.Presentation;
@@ -56,7 +57,11 @@ internal static class Program
             velopack = velopack
                 .OnAfterInstallFastCallback(_ => FileAssociation.Register(Environment.ProcessPath))
                 .OnAfterUpdateFastCallback(_ => FileAssociation.Register(Environment.ProcessPath))
-                .OnBeforeUninstallFastCallback(_ => FileAssociation.Unregister());
+                .OnBeforeUninstallFastCallback(_ =>
+                {
+                    FileAssociation.Unregister();
+                    WindowsToasts.Unregister(); // the finish alerts' Windows notification app id (HKCU)
+                });
         }
         velopack.Run();
 

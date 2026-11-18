@@ -16,7 +16,7 @@ public sealed partial class EntryFeeDiscountRowViewModel : ObservableObject
     private readonly Guid _id;
     private DateTimeOffset _createdAt;
     private readonly bool _isFsouMemberDiscount;
-    private readonly Action<EntryFeeDiscountRowViewModel> _requestSave;
+    private readonly Action<EntryFeeDiscountRowViewModel, string> _requestSave;
     private bool _initialized;
 
     /// <summary>Discount display name.</summary>
@@ -34,7 +34,7 @@ public sealed partial class EntryFeeDiscountRowViewModel : ObservableObject
     public EntryFeeDiscountRowViewModel(
         EntryFeeDiscount discount,
         ILocalizationService localization,
-        Action<EntryFeeDiscountRowViewModel> requestSave)
+        Action<EntryFeeDiscountRowViewModel, string> requestSave)
     {
         _id = discount.Id;
         _createdAt = discount.CreatedAt;
@@ -95,14 +95,15 @@ public sealed partial class EntryFeeDiscountRowViewModel : ObservableObject
         CreatedAt = _createdAt
     };
 
-    partial void OnNameChanged(string value) => QueueSave();
-    partial void OnPercentTextChanged(string value) => QueueSave();
-    partial void OnAppliesToChipRentalChanged(bool value) => QueueSave();
+    partial void OnNameChanged(string value) => QueueSave("EntryFees.Col.DiscountName");
+    partial void OnPercentTextChanged(string value) => QueueSave("EntryFees.Col.Percent");
+    partial void OnAppliesToChipRentalChanged(bool value) => QueueSave("EntryFees.Col.AppliesToChips");
 
-    private void QueueSave()
+    // Each change names its column's header key: the page labels the undo step with it.
+    private void QueueSave(string columnKey)
     {
         if (_initialized)
-            _requestSave(this);
+            _requestSave(this, columnKey);
     }
 
     private static string FormatDecimal(decimal value)

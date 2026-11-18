@@ -34,6 +34,16 @@ public interface INetworkClient
     event EventHandler? WriteFailed;
 
     /// <summary>
+    /// Raised when the host this station works with turns out to have restarted (its change stream has a new epoch): the
+    /// host's undo journal is gone with the old process, so every undo history of this station is cleared.
+    /// </summary>
+    event EventHandler? HostRestarted
+    {
+        add { }
+        remove { }
+    }
+
+    /// <summary>
     /// Pairs with the host at <paramref name="endpoint"/> (<c>ip:port</c>). With a PIN a new token is requested; without
     /// one the saved token for that host is reused. On success the role switches to station.
     /// </summary>

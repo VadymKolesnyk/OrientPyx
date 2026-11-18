@@ -37,10 +37,14 @@ public static class PresentationServiceCollectionExtensions
         services.AddSingleton<IFileReadoutPoller, FileReadoutPoller>();
         services.AddSingleton<IBackgroundActivityService, BackgroundActivityService>();
         services.AddSingleton<IToastService, ToastService>();
+        services.AddSingleton<IDesktopAlerts, DesktopAlerts>();
         services.AddSingleton<ITableLayoutStore, TableLayoutStore>();
         services.AddSingleton<IDayLockService, DayLockService>();
         services.AddSingleton<IUiPreferencesService, UiPreferencesService>();
         services.AddSingleton<IUpdateService, UpdateService>();
+        // Undo / redo (Ctrl+Z / Ctrl+Y): the per-page-and-day histories and the «Правка» menu.
+        services.AddSingleton<Services.Undo.IUndoHistory, Services.Undo.UndoHistory>();
+        services.AddSingleton<EditMenuViewModel>();
 
         // Root + gating view models
         services.AddSingleton<MainWindowViewModel>();

@@ -30,12 +30,14 @@ public static class SyntheticCompetition
         new("Мельник Софія", "203", "8002003", "Ж21", 5, null, null),                    // no read-out yet
     ];
 
-    public static async Task<string> CreateAsync(IServiceProvider services)
+    /// <summary>Builds the competition under <paramref name="identifier"/> (the shared one by default; a test that edits
+    /// it builds its own copy under another identifier).</summary>
+    public static async Task<string> CreateAsync(IServiceProvider services, string identifier = Identifier)
     {
         var catalog = services.GetRequiredService<IEventCatalogService>();
         var store = services.GetRequiredService<IEventStore>();
 
-        var summary = await catalog.CreateEventAsync("Автотест OrientPyx", Identifier, "Полігон", 2, Day1, Day1.AddDays(1));
+        var summary = await catalog.CreateEventAsync("Автотест OrientPyx", identifier, "Полігон", 2, Day1, Day1.AddDays(1));
         var folder = summary.FolderPath;
         var days = (await store.GetDaysAsync(folder)).OrderBy(d => d.Number).ToList();
 
@@ -125,6 +127,6 @@ public static class SyntheticCompetition
         }
         await store.AddFinishReadoutsAsync(folder, readouts);
 
-        return Identifier;
+        return identifier;
     }
 }

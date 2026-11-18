@@ -117,5 +117,9 @@ public static class IconData
         ["LockOpen"] = "M5 11h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1z M7 11V7a5 5 0 0 1 9.9-1",
         // grip-vertical (drag handle)
         ["GripVertical"] = "M9 5a1 1 0 1 0 0 2 1 1 0 0 0 0-2z M9 11a1 1 0 1 0 0 2 1 1 0 0 0 0-2z M9 17a1 1 0 1 0 0 2 1 1 0 0 0 0-2z M15 5a1 1 0 1 0 0 2 1 1 0 0 0 0-2z M15 11a1 1 0 1 0 0 2 1 1 0 0 0 0-2z M15 17a1 1 0 1 0 0 2 1 1 0 0 0 0-2z",
+        // bell (finish alerts settings)
+        ["Bell"] = "M10.268 21a2 2 0 0 0 3.464 0 M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326",
+        // play (listen to an alert sound)
+        ["Play"] = "M6 3l14 9-14 9z",
     };
 }

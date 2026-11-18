@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using OrientPyx.Presentation.Controls;
+using OrientPyx.Presentation.Services.Undo;
 using OrientPyx.Presentation.ViewModels.Pages;
 
 namespace OrientPyx.Presentation.Views.Pages;
@@ -18,10 +19,45 @@ public partial class RelayTeamsView : UserControl
         InitializeComponent();
         SheetEditing.Bind(this, Sheet);
         DataContextChanged += OnDataContextChanged;
-        DetachedFromVisualTree += (_, _) => Unsubscribe();
+        DetachedFromVisualTree += (_, _) =>
+        {
+            EndLegCourseSession();
+            Unsubscribe();
+        };
         // Ctrl+Click on a row's delete button skips the confirmation (same approach as the other grids).
         AddHandler(PointerPressedEvent, OnTunnelPointerPressed, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnPageKeyDown, RoutingStrategies.Tunnel);
+        // Undo steps name a team by its number and name («Назва — 101 Азимут»).
+        Sheet.UndoRowLabel = row => row is RelayTeamRowViewModel team
+            ? RelayTeamsViewModel.TeamUndoName(team.NumberText, team.Name)
+            : null;
+        // A leg's course box (legs panel) is one undo edit session while it has focus, like a table cell: the whole
+        // typed course is one step.
+        AddHandler(GotFocusEvent, OnLegCourseGotFocus, RoutingStrategies.Bubble);
+        AddHandler(LostFocusEvent, OnLegCourseLostFocus, RoutingStrategies.Bubble);
+    }
+
+    private UndoGesture.Session? _legCourseSession;
+
+    private void OnLegCourseGotFocus(object? sender, FocusChangedEventArgs e)
+    {
+        if (_vm is null || e.Source is not TextBox { DataContext: RelayLegRowViewModel leg })
+            return;
+        EndLegCourseSession();
+        // Nothing to end on undo: the box writes as it is typed in (its own Ctrl+Z works while it has focus).
+        _legCourseSession = UndoGesture.OpenSession(_vm.LegCourseUndoLabel(leg), static () => { }, isText: true);
+    }
+
+    private void OnLegCourseLostFocus(object? sender, FocusChangedEventArgs e)
+    {
+        if (e.Source is TextBox { DataContext: RelayLegRowViewModel })
+            EndLegCourseSession();
+    }
+
+    private void EndLegCourseSession()
+    {
+        UndoGesture.CloseSession(_legCourseSession);
+        _legCourseSession = null;
     }
 
     // Ctrl+B = «Присвоєння номерів», the same key as on «Учасники».
@@ -100,11 +136,14 @@ public partial class RelayTeamsView : UserControl
         if (_vm is null)
             return;
 
+        // The number lands once, when its edit ends: a typed «105» is never «1» or «10» on the way (each of which
+        // another team may hold), and the change is one undo step «Номер команди 101 → 105».
         var builder = new SheetColumnBuilder(_vm.Localization)
             .Text("RelayTeams.Col.Number", nameof(RelayTeamRowViewModel.NumberText),
                   editPath: nameof(RelayTeamRowViewModel.NumberText), minWidth: 80,
                   mask: SheetColumnBuilder.NumericMask.Integer,
-                  sortPath: nameof(RelayTeamRowViewModel.NumberSort))
+                  sortPath: nameof(RelayTeamRowViewModel.NumberSort),
+                  commitOnLostFocus: true)
             .CellTint(nameof(RelayTeamRowViewModel.NumberError), Avalonia.Media.Brushes.MistyRose)
             .Text("RelayTeams.Col.Name", nameof(RelayTeamRowViewModel.Name),
                   editPath: nameof(RelayTeamRowViewModel.Name), minWidth: 200)

@@ -6,6 +6,7 @@ using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.Services.Undo;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
 
@@ -41,10 +42,12 @@ public sealed partial class NumberVariantsViewModel : PageViewModelBase
         IDayLockService dayLock,
         IDataChangeBus bus,
         IWorkspaceMode mode,
-        IActivityLog log)
+        IActivityLog log,
+        IUndoHistory undo)
         : base(localization)
     {
         UseDayLock(dayLock);
+        UseUndo(undo);
         _editor = editor;
         _session = session;
         _busy = busy;
@@ -152,6 +155,15 @@ public sealed partial class NumberVariantsViewModel : PageViewModelBase
         await LoadAsync();
     }
 
+    // ── Undo (Ctrl+Z / Ctrl+Y): one history per day — the day the page shows is the session's. Every pick is a step
+    // (a paste down the column is one); so is F8 over the selected rows.
+
+    /// <inheritdoc />
+    public override Guid? UndoDayId => _session.CurrentDay?.Id;
+
+    /// <inheritdoc />
+    public override Task FlushPendingWritesAsync() => _pendingSaves.WaitAsync();
+
     public async Task LoadAsync()
     {
         var hasDay = _session.CurrentDay is not null;
@@ -213,7 +225,14 @@ public sealed partial class NumberVariantsViewModel : PageViewModelBase
     {
         if (_syncingDay || value?.Day is null || _session.CurrentDay?.Number == value.Number)
             return;
-        _ = _busy.RunAsync(() => _session.SetCurrentDayAsync(value.Day));
+        _ = SwitchDayAsync(value.Day);
+    }
+
+    // The picks still being saved land first, on the day they were made on (with their undo step).
+    private async Task SwitchDayAsync(BusinessLogic.Entities.EventDay day)
+    {
+        await _pendingSaves.WaitAsync();
+        await _busy.RunAsync(() => _session.SetCurrentDayAsync(day));
     }
 
     // A variation picked in either table: saved at once (a blank one removes the number's row). The row stays where it
@@ -223,15 +242,17 @@ public sealed partial class NumberVariantsViewModel : PageViewModelBase
         RefreshSummary();
         if (IsDayLocked)
             return;
-        _pendingSaves.Track(SaveAsync(row.Entry));
+        // Taken at the pick (the cell's edit session or a paste joins it).
+        var step = CaptureUndo(UndoLabel("NumberVariants.Col.Course", row.Bib));
+        _pendingSaves.Track(SaveAsync(row.Entry, step));
     }
 
-    private async Task SaveAsync(LegCourseEntry entry)
+    private async Task SaveAsync(LegCourseEntry entry, UndoEntry? step)
     {
         await _saveGate.WaitAsync();
         try
         {
-            await _editor.SetLegCoursesAsync([entry]);
+            await RunUndoAsync(step, () => _editor.SetLegCoursesAsync([entry]));
         }
         catch (DayLockedException)
         {
@@ -300,8 +321,11 @@ public sealed partial class NumberVariantsViewModel : PageViewModelBase
             .ToList();
         if (entries.Count == 0 || !await EnsureDayEditableAsync())
             return;
+        // One undo step for the whole selection, named as the action is in the menu.
+        var step = CaptureUndoAction(string.Format(CultureInfo.CurrentCulture,
+            Localization.Get(ModeKey("NumberVariants.MoveToHolderGroup")), entries.Count));
         await _pendingSaves.WaitAsync();
-        await _busy.RunAsync(() => _editor.SetLegCoursesAsync(entries));
+        await RunUndoAsync(step, () => _busy.RunAsync(() => _editor.SetLegCoursesAsync(entries)));
         _log.Action(string.Format(CultureInfo.CurrentCulture, Localization.Get(ModeKey("NumberVariants.MoveToHolderGroup.Log")), entries.Count));
         await LoadAsync();
     }

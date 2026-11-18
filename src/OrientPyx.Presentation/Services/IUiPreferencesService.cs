@@ -28,7 +28,35 @@ public interface IUiPreferencesService
 
     /// <summary>
     /// When on (the default), a finish read-out of a rental chip due back pops a toast — whatever page is open —
-    /// so the finish judge takes the chip. Switched on the «Зчитка на фініші» auto-read panel.
+    /// so the finish judge takes the chip. This and the alerts below are edited in «Налаштування сповіщень» on the
+    /// «Зчитка на фініші» auto-read panel; they belong to this computer (its speakers, its screen).
     /// </summary>
     bool CollectChipToast { get; set; }
+
+    /// <summary>When on (the default), that read-out also plays the «дзінь-дон» (<see cref="FinishAlert.CollectChip"/>).</summary>
+    bool CollectChipSound { get; set; }
+
+    /// <summary>
+    /// When on (the default), an unknown chip read out plays the three beeps (<see cref="FinishAlert.UnknownChip"/>) the
+    /// moment it is read, before its «Невідомий чіп» dialog opens — the auto-read waits for that dialog.
+    /// </summary>
+    bool UnknownChipSound { get; set; }
+
+    /// <summary>
+    /// When on (the default), a rental chip due back also shows a Windows notification while the window is minimized or
+    /// inactive (<see cref="IDesktopAlerts.ShowNotification"/>; Windows only).
+    /// </summary>
+    bool CollectChipSystemNotification { get; set; }
+
+    /// <summary>
+    /// When on (the default), an unknown chip also shows a Windows notification while the window is minimized or
+    /// inactive — its click brings the window (with the «Невідомий чіп» dialog) to the front. Windows only.
+    /// </summary>
+    bool UnknownChipSystemNotification { get; set; }
+
+    /// <summary>
+    /// When on (the default), those alerts also flash the taskbar button (bounce the Dock icon) while the window is
+    /// minimized or inactive.
+    /// </summary>
+    bool FlashWhenInactive { get; set; }
 }

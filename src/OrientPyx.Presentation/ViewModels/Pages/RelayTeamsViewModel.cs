@@ -10,6 +10,7 @@ using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Controls;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.Services.Undo;
 using OrientPyx.Presentation.ViewModels.Dialogs;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
@@ -33,8 +34,8 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
     private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
     private readonly PendingSaves _pendingSaves = new();
     // The teams moved to another group while their leg numbers hold courses of their group: waiting for the question
-    // (queued: not asked yet; waiting: queued or being asked).
-    private readonly List<RelayTeamRowViewModel> _groupMoveQueue = [];
+    // (queued: not asked yet, with the undo step of the change; waiting: queued or being asked).
+    private readonly List<(RelayTeamRowViewModel Row, UndoEntry? Step)> _groupMoveQueue = [];
     private readonly HashSet<RelayTeamRowViewModel> _groupMoveWaiting = [];
     private IReadOnlyList<RelayRunner> _runners = [];
     private bool _syncingDay;
@@ -49,10 +50,12 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
         IDayLockService dayLock,
         IDataChangeBus bus,
         IWorkspaceMode mode,
-        IActivityLog log)
+        IActivityLog log,
+        IUndoHistory undo)
         : base(localization)
     {
         UseDayLock(dayLock);
+        UseUndo(undo);
         LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
@@ -136,6 +139,39 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
     {
         await _pendingSaves.WaitAsync();
         await LoadCoreAsync(merge: true);
+    }
+
+    // ── Undo (Ctrl+Z / Ctrl+Y): one history per day — the day the page shows is the session's.
+
+    /// <inheritdoc />
+    public override Guid? UndoDayId => _session.CurrentDay?.Id;
+
+    /// <inheritdoc />
+    public override Task FlushPendingWritesAsync() => _pendingSaves.WaitAsync();
+
+    /// <summary>«Етап 2 · 101.2» → the undo label of the leg's course box (the view opens an edit session with it).</summary>
+    public string LegCourseUndoLabel(RelayLegRowViewModel leg) => StepLabel(LegCourseTitle, leg.Header);
+
+    /// <summary>How an undo step names a team: «101 Азимут», «101», «Азимут».</summary>
+    public static string TeamUndoName(string? numberText, string? name)
+    {
+        var number = (numberText ?? string.Empty).Trim();
+        var text = (name ?? string.Empty).Trim();
+        return number.Length == 0 ? text : text.Length == 0 ? number : $"{number} {text}";
+    }
+
+    // «Дистанція» (the box's caption without its colon).
+    private string LegCourseTitle => Localization.Get("RelayTeams.Leg.Course").TrimEnd(':', ' ');
+
+    // «<what> — <row>» from already-translated parts.
+    private string StepLabel(string what, string? row)
+        => string.IsNullOrWhiteSpace(row) ? what : string.Format(Localization.Get("Undo.Label.Cell"), what, row.Trim());
+
+    // «Номер команди 101 → 105» (a blank number reads «—»).
+    private string TeamNumberLabel(string? before, string? after)
+    {
+        static string Shown(string? n) => string.IsNullOrWhiteSpace(n) ? "—" : n.Trim();
+        return string.Format(Localization.Get("Undo.Label.TeamNumber"), Shown(before), Shown(after));
     }
 
     public async Task LoadAsync()
@@ -234,7 +270,15 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
     {
         if (_syncingDay || value?.Day is null || _session.CurrentDay?.Number == value.Number)
             return;
-        _ = _busy.RunAsync(() => _session.SetCurrentDayAsync(value.Day));
+        _ = SwitchDayAsync(value.Day);
+    }
+
+    // The edits still waiting for their debounce land first, on the day they were made on (with their undo step) —
+    // the reload after the switch would cancel them (§9.2 of the undo plan).
+    private async Task SwitchDayAsync(EventDay day)
+    {
+        await _pendingSaves.WaitAsync();
+        await _busy.RunAsync(() => _session.SetCurrentDayAsync(day));
     }
 
     partial void OnSelectedTeamChanged(RelayTeamRowViewModel? value) => RebuildLegs(merge: false);
@@ -301,16 +345,19 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
     {
         if (runner is null || _session.CurrentDay is not { } day || !await EnsureDayEditableAsync())
             return;
-        await _busy.RunAsync(() => _editor.PlaceRelayRunnerAsync(
-            new RelayPlacementRequest(runner.ParticipantId, day.Id, TeamNumber: null, Leg: null)));
+        var step = CaptureUndoAction(StepLabel(Localization.Get("RelayTeams.Unplaced.Release"), runner.FullName));
+        await RunUndoAsync(step, () => _busy.RunAsync(() => _editor.PlaceRelayRunnerAsync(
+            new RelayPlacementRequest(runner.ParticipantId, day.Id, TeamNumber: null, Leg: null))));
         await LoadAsync();
     }
 
-    // «За номером етапу» (Р-41): a typed leg course is saved after a short pause.
+    // «За номером етапу» (Р-41): a typed leg course is saved after a short pause. The box is an edit session of its own
+    // (the view opens it on focus), so the whole typed course is one undo step.
     private void QueueLegCourseSave(RelayLegRowViewModel leg)
     {
         if (IsDayLocked || leg.IsApplying || leg.TeamNumber is not { } teamNumber)
             return;
+        var step = CaptureUndo(LegCourseUndoLabel(leg));
         var key = leg.SaveKey;
         CancelTimer(key);
         var cts = new CancellationTokenSource();
@@ -323,7 +370,7 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
             {
                 await Task.Delay(SaveDebounce, cts.Token);
                 var entry = new LegCourseEntry(teamNumber, leg.Leg, leg.BibCourseText ?? string.Empty);
-                await Task.Run(() => _editor.SetLegCoursesAsync([entry], cts.Token), cts.Token);
+                await RunUndoAsync(step, () => _editor.SetLegCoursesAsync([entry], cts.Token));
             }
             catch (OperationCanceledException)
             {
@@ -360,10 +407,11 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
         var group = GroupOptions.FirstOrDefault(g => g.GroupId == SelectedTeam?.Model.GroupId) ?? GroupOptions.FirstOrDefault();
         if (group is null || !await EnsureDayEditableAsync())
             return;
+        var step = CaptureUndoAction(Localization.Get("RelayTeams.Add"));
         await _pendingSaves.WaitAsync();
         var before = Teams.Select(t => t.Id).ToHashSet();
         var next = (Teams.Select(t => t.Model.Number).Max() ?? 0) + 1;
-        await _busy.RunAsync(() => _editor.CreateRelayTeamsAsync(group.GroupId, 1, next));
+        await RunUndoAsync(step, () => _busy.RunAsync(() => _editor.CreateRelayTeamsAsync(group.GroupId, 1, next)));
         await LoadCoreAsync(merge: true);
         if (Teams.FirstOrDefault(t => !before.Contains(t.Id)) is { } created)
             SelectedTeam = created;
@@ -440,7 +488,9 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
         }
 
         var labels = Teams.ToDictionary(t => t.Id, LogLabel);
-        var saved = await _busy.RunAsync(() => _editor.SetRelayTeamNumbersAsync(changes));
+        // The whole numbering (numbers passed between teams included) is one undo step.
+        var step = CaptureUndoAction(Localization.Get("Undo.Label.AssignNumbers"));
+        var saved = await RunUndoAsync(step, () => _busy.RunAsync(() => _editor.SetRelayTeamNumbersAsync(changes)));
         await LoadCoreAsync(merge: true);
         if (!saved)
         {
@@ -495,8 +545,12 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
             RequestGridFocus();
             return;
         }
+        // Captured after the answer: a cancelled delete leaves no step.
+        var step = CaptureUndoAction(string.Format(Localization.Get("Undo.Label.DeleteRow"),
+            TeamUndoName(row.NumberText, row.Name) is { Length: > 0 } name ? name : "—"));
         CancelTimer(row.Id);
-        await _busy.RunAsync(() => _editor.DeleteRelayTeamAsync(row.Id));
+        var id = row.Id;
+        await RunUndoAsync(step, () => _busy.RunAsync(() => _editor.DeleteRelayTeamAsync(id)));
         await LoadAsync();
         RequestGridFocus();
     }
@@ -507,7 +561,10 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
     {
         if (leg is null || SelectedRunner is not { } runner || !await EnsureDayEditableAsync())
             return;
-        await _busy.RunAsync(() => _editor.AssignRelayLegAsync(leg.TeamId, leg.Leg, runner.ParticipantId));
+        // One step with everything the placement wrote (the leg's previous runner, the runner's previous leg, the day).
+        var step = CaptureUndoAction(StepLabel(leg.Header, runner.FullName));
+        var (teamId, legNumber) = (leg.TeamId, leg.Leg);
+        await RunUndoAsync(step, () => _busy.RunAsync(() => _editor.AssignRelayLegAsync(teamId, legNumber, runner.ParticipantId)));
         RunnerQuery = string.Empty;
         await LoadAsync();
     }
@@ -517,22 +574,39 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
     {
         if (leg?.ParticipantId is null || !await EnsureDayEditableAsync())
             return;
-        await _busy.RunAsync(() => _editor.AssignRelayLegAsync(leg.TeamId, leg.Leg, null));
+        var step = CaptureUndoAction(StepLabel(Localization.Get("RelayTeams.Leg.Clear"), leg.Header));
+        var (teamId, legNumber) = (leg.TeamId, leg.Leg);
+        await RunUndoAsync(step, () => _busy.RunAsync(() => _editor.AssignRelayLegAsync(teamId, legNumber, null)));
         await LoadAsync();
     }
 
     // A team edit: debounced per row; a taken number is refused (Р-20) and the row shows the stored one again. Another
     // group for a team whose leg numbers hold courses of its group waits for the question instead (AskGroupMovesAsync);
-    // the row's other edits made meanwhile are saved with the answer.
-    private void QueueSave(RelayTeamRowViewModel row)
+    // the row's other edits made meanwhile are saved with the answer. The undo step is taken at the change (an open
+    // edit session or paste joins it); the debounced write — the last one wins — runs under the latest step, so two
+    // edits of a row within the pause are one step (У-16).
+    private void QueueSave(RelayTeamRowViewModel row, string columnKey)
     {
         if (IsDayLocked || row.IsApplying || _groupMoveWaiting.Contains(row))
             return;
+        UndoEntry? step;
+        if (columnKey == RelayTeamRowViewModel.NumberColumn)
+        {
+            // «Номер команди 101 → 105»: the number belongs to the team, so every runner's leg number follows it. The
+            // label names the values, so it wins over the cell's own «№ — …» (a paste's gesture still wins over it).
+            var label = TeamNumberLabel(row.PreviousNumberText, row.NumberText);
+            using (UndoGesture.Begin(label))
+                step = CaptureUndo(label);
+        }
+        else
+        {
+            step = CaptureUndo(StepLabel(Localization.Get(columnKey), TeamUndoName(row.NumberText, row.Name)));
+        }
         CancelTimer(row.Id);
         if (row.MovesWithNumberCourses)
         {
             _groupMoveWaiting.Add(row);
-            _groupMoveQueue.Add(row);
+            _groupMoveQueue.Add((row, step));
             // A paste sets its rows one after another in one go: ask once they are all in.
             if (_groupMoveQueue.Count == 1)
                 Dispatcher.UIThread.Post(() => _pendingSaves.Track(AskGroupMovesAsync()), DispatcherPriority.Background);
@@ -549,7 +623,7 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
                 await Task.Delay(SaveDebounce, cts.Token);
                 if (row.ToEdit() is not { } edit)
                     return;
-                var saved = await Task.Run(() => _editor.UpdateRelayTeamAsync(edit, cts.Token), cts.Token);
+                var saved = await RunUndoAsync(step, () => _editor.UpdateRelayTeamAsync(edit, cts.Token));
                 if (!saved)
                     row.NumberError = true;
                 else
@@ -569,11 +643,13 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
     }
 
     // «Дистанції за номером не діятимуть», once per target group: «Перевести все одно» saves the move, «Скасувати» puts
-    // the stored group back. Either way the rows are saved (with their other edits), one after another.
+    // the stored group back. Either way the rows are saved (with their other edits), one after another — each under
+    // the undo step taken when its group was picked (a paste's rows share one).
     private async Task AskGroupMovesAsync()
     {
-        var rows = _groupMoveQueue.ToList();
+        var queued = _groupMoveQueue.ToList();
         _groupMoveQueue.Clear();
+        var rows = queued.Select(q => q.Row).ToList();
         try
         {
             foreach (var byTarget in rows.Where(r => r.MovesWithNumberCourses).GroupBy(r => r.SelectedGroup!))
@@ -587,11 +663,11 @@ public sealed partial class RelayTeamsViewModel : PageViewModelBase
             }
 
             var moved = false;
-            foreach (var row in rows)
+            foreach (var (row, step) in queued)
             {
                 if (row.ToEdit() is not { } edit)
                     continue;
-                var saved = await Task.Run(() => _editor.UpdateRelayTeamAsync(edit));
+                var saved = await RunUndoAsync(step, () => _editor.UpdateRelayTeamAsync(edit));
                 row.NumberError = !saved;
                 moved |= saved && edit.GroupId != row.Model.GroupId;
             }
@@ -648,13 +724,17 @@ public sealed class RelayGroupOption(
 /// <summary>One editable team row of the «Команди» table.</summary>
 public sealed partial class RelayTeamRowViewModel : ObservableObject
 {
-    private readonly Action<RelayTeamRowViewModel> _requestSave;
+    /// <summary>The «№» column's header key — what <see cref="QueueSave"/> names a number change by.</summary>
+    public const string NumberColumn = "RelayTeams.Col.Number";
+
+    // The page's save callback, told which column changed (its header key) for the undo step's label.
+    private readonly Action<RelayTeamRowViewModel, string> _requestSave;
     private bool _initialized;
 
     public RelayTeamRowViewModel(
         RelayTeamRow model, ILocalizationService localization,
         IReadOnlyList<RelayGroupOption> groups, IReadOnlyList<ClubOption> clubs, IReadOnlyList<RegionOption> regions,
-        Action<RelayTeamRowViewModel> requestSave)
+        Action<RelayTeamRowViewModel, string> requestSave)
     {
         Model = model;
         Localization = localization;
@@ -845,23 +925,31 @@ public sealed partial class RelayTeamRowViewModel : ObservableObject
             SelectedClub.Id, SelectedRegion.Id, OutOfCompetition, SelectedStatus.Status, CourseSetText ?? string.Empty);
     }
 
-    partial void OnNumberTextChanged(string value) => QueueSave();
-    partial void OnNameChanged(string value) => QueueSave();
+    /// <summary>The number shown before its latest change («101» of «101 → 105»), for the undo step's label.</summary>
+    public string? PreviousNumberText { get; private set; }
+
+    partial void OnNumberTextChanged(string? oldValue, string newValue)
+    {
+        PreviousNumberText = oldValue;
+        QueueSave(NumberColumn);
+    }
+
+    partial void OnNameChanged(string value) => QueueSave("RelayTeams.Col.Name");
     partial void OnSelectedGroupChanged(RelayGroupOption? value)
     {
         OnPropertyChanged(nameof(CourseSetPlaceholder));
-        QueueSave();
+        QueueSave("RelayTeams.Col.Group");
     }
-    partial void OnSelectedClubChanged(ClubOption value) => QueueSave();
-    partial void OnSelectedRegionChanged(RegionOption value) => QueueSave();
-    partial void OnOutOfCompetitionChanged(bool value) => QueueSave();
-    partial void OnSelectedStatusChanged(FinishStatusOption value) => QueueSave();
-    partial void OnCourseSetTextChanged(string value) => QueueSave();
+    partial void OnSelectedClubChanged(ClubOption value) => QueueSave("RelayTeams.Col.Club");
+    partial void OnSelectedRegionChanged(RegionOption value) => QueueSave("RelayTeams.Col.Region");
+    partial void OnOutOfCompetitionChanged(bool value) => QueueSave("RelayTeams.Col.OutOfCompetition");
+    partial void OnSelectedStatusChanged(FinishStatusOption value) => QueueSave("RelayTeams.Col.StatusOverride");
+    partial void OnCourseSetTextChanged(string value) => QueueSave("RelayTeams.Col.CourseSet");
 
-    private void QueueSave()
+    private void QueueSave(string columnKey)
     {
         if (_initialized)
-            _requestSave(this);
+            _requestSave(this, columnKey);
     }
 }
 

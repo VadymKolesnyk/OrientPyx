@@ -22,7 +22,7 @@ public sealed class GroupCourseOrderCellTests
             Guid.NewGuid(), Guid.NewGuid(), 0, "Ч21", "31 32 33", null, null, discipline, null, null, null,
             ScatterVariantCount: 2, ScatterMaxControlCount: 5, CourseMode: mode);
         return new GroupDayRowViewModel(row, loc, sp.GetRequiredService<IDisciplineStrategyProvider>(),
-            [PointsRuleOption.Default(loc, null)], string.Empty, string.Empty, _ => { });
+            [PointsRuleOption.Default(loc, null)], string.Empty, string.Empty, (_, _) => { });
     }
 
     private static string Several =>

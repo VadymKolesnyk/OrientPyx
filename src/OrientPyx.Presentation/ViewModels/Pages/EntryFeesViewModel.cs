@@ -7,6 +7,7 @@ using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.Services.Undo;
 using OrientPyx.Presentation.ViewModels.Dialogs;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
@@ -52,9 +53,13 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
         IDialogService dialogs,
         ITableLayoutStore layoutStore,
         IDataChangeBus bus,
-        IWorkspaceMode mode)
+        IWorkspaceMode mode,
+        IUndoHistory undo)
         : base(localization)
     {
+        // Undo covers the three tables (group fees, chip prices, discounts); the settings fields above them and the
+        // payment-mode switch are a form, like «Інформація», and write outside every step.
+        UseUndo(undo);
         LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
@@ -123,6 +128,20 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
             SelectedChipPrice = null;
         if (SelectedDiscount is { } discount && !Discounts.Contains(discount))
             SelectedDiscount = null;
+    }
+
+    /// <inheritdoc />
+    public override Task FlushPendingWritesAsync() => _pendingSaves.WaitAsync();
+
+    /// <inheritdoc />
+    public override void OnUndoApplied(BusinessLogic.Models.UndoRevertResult result)
+    {
+        if (result.RowIds is not { Count: > 0 } ids)
+            return;
+        if (ChipPriceOverrides.FirstOrDefault(r => ids.Contains(r.Id)) is { } price)
+            SelectedChipPrice = price;
+        if (Discounts.FirstOrDefault(r => ids.Contains(r.Id)) is { } discount)
+            SelectedDiscount = discount;
     }
 
     /// <summary>Reloads everything for the current competition. Called when the page is shown.</summary>
@@ -209,7 +228,8 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
         if (_session.CurrentEvent is null)
             return;
 
-        var priceOverride = await _busy.RunAsync(() => _editor.AddChipPriceOverrideRowAsync());
+        var step = CaptureUndoAction(Localization.Get("Undo.Label.AddRow"));
+        var priceOverride = await _busy.RunAsync(() => RunUndoAsync(step, () => _editor.AddChipPriceOverrideRowAsync()));
         ChipPriceOverrides.Add(new ChipPriceOverrideRowViewModel(priceOverride, Localization, RequestChipPriceSave));
     }
 
@@ -219,7 +239,8 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
         if (_session.CurrentEvent is null)
             return;
 
-        var discount = await _busy.RunAsync(() => _editor.AddEntryFeeDiscountRowAsync());
+        var step = CaptureUndoAction(Localization.Get("Undo.Label.AddRow"));
+        var discount = await _busy.RunAsync(() => RunUndoAsync(step, () => _editor.AddEntryFeeDiscountRowAsync()));
         Discounts.Add(new EntryFeeDiscountRowViewModel(discount, Localization, RequestDiscountSave));
     }
 
@@ -247,6 +268,8 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
                 return;
         }
 
+        var step = CaptureUndoAction(string.Format(Localization.Get("Undo.Label.DeleteRow"), ChipPriceName(row)));
+
         if (_chipPriceTimers.TryGetValue(row.Id, out var cts))
         {
             cts.Cancel();
@@ -258,7 +281,7 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
         ChipPriceOverrides.Remove(row);
 
         var id = row.Id;
-        _ = Task.Run(() => _editor.DeleteChipPriceOverrideAsync(id));
+        _ = RunUndoAsync(step, () => _editor.DeleteChipPriceOverrideAsync(id));
 
         if (confirmed)
             RequestGridFocus();
@@ -293,6 +316,9 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
                 return;
         }
 
+        // One step: the store drops the participants' links to the discount together with it.
+        var step = CaptureUndoAction(string.Format(Localization.Get("Undo.Label.DeleteRow"), DiscountName(row)));
+
         if (_discountTimers.TryGetValue(row.Id, out var cts))
         {
             cts.Cancel();
@@ -304,7 +330,7 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
         Discounts.Remove(row);
 
         var id = row.Id;
-        _ = Task.Run(() => _editor.DeleteEntryFeeDiscountAsync(id));
+        _ = RunUndoAsync(step, () => _editor.DeleteEntryFeeDiscountAsync(id));
 
         if (confirmed)
             RequestGridFocus();
@@ -395,27 +421,48 @@ public sealed partial class EntryFeesViewModel : PageViewModelBase
 
     // --- Per-row debounced saves
 
-    // Each callback ignores a row a live refresh is applying (IsApplying): those values came from the store.
+    // Each callback ignores a row a live refresh is applying (IsApplying): those values came from the store. The undo
+    // step is captured here, at the change, and handed to the debounced write. The row's values are read when the
+    // write fires (UI thread); the editor proxy offloads the SQLite work.
     private void RequestGroupFeeSave(GroupFeeRowViewModel row)
     {
-        if (!row.IsApplying)
-            Debounce(_groupFeeTimers, row.Id, token => SaveGroupFeeAsync(row, token));
+        if (row.IsApplying)
+            return;
+        var step = CaptureUndo(UndoLabel("EntryFees.Col.Fee", row.Name));
+        Debounce(_groupFeeTimers, row.Id,
+            token => RunUndoAsync(step, () => _editor.UpdateGroupEntryFeeAsync(row.Id, row.Fee, token)));
     }
 
-    private void RequestChipPriceSave(ChipPriceOverrideRowViewModel row)
+    private void RequestChipPriceSave(ChipPriceOverrideRowViewModel row, string columnKey)
     {
-        if (!row.IsApplying)
-            Debounce(_chipPriceTimers, row.Id, token => Task.Run(() => _editor.UpdateChipPriceOverrideAsync(row.ToEntity(), token), token));
+        if (row.IsApplying)
+            return;
+        var step = CaptureUndo(UndoLabel(columnKey, ChipPriceName(row)));
+        Debounce(_chipPriceTimers, row.Id, token =>
+        {
+            var entity = row.ToEntity();
+            return RunUndoAsync(step, () => _editor.UpdateChipPriceOverrideAsync(entity, token));
+        });
     }
 
-    private void RequestDiscountSave(EntryFeeDiscountRowViewModel row)
+    private void RequestDiscountSave(EntryFeeDiscountRowViewModel row, string columnKey)
     {
-        if (!row.IsApplying)
-            Debounce(_discountTimers, row.Id, token => Task.Run(() => _editor.UpdateEntryFeeDiscountAsync(row.ToEntity(), token), token));
+        if (row.IsApplying)
+            return;
+        var step = CaptureUndo(UndoLabel(columnKey, DiscountName(row)));
+        Debounce(_discountTimers, row.Id, token =>
+        {
+            var entity = row.ToEntity();
+            return RunUndoAsync(step, () => _editor.UpdateEntryFeeDiscountAsync(entity, token));
+        });
     }
 
-    private Task SaveGroupFeeAsync(GroupFeeRowViewModel row, CancellationToken token)
-        => Task.Run(() => _editor.UpdateGroupEntryFeeAsync(row.Id, row.Fee, token), token);
+    // Row names in undo labels (a blank cell falls back to the entity's name).
+    private string ChipPriceName(ChipPriceOverrideRowViewModel row)
+        => string.IsNullOrWhiteSpace(row.Note) ? Localization.Get("EntryFees.Col.Note") : row.Note.Trim();
+
+    private string DiscountName(EntryFeeDiscountRowViewModel row)
+        => string.IsNullOrWhiteSpace(row.Name) ? Localization.Get("Undo.Entity.EntryFeeDiscount") : row.Name.Trim();
 
     // Shared debounce: reset the row's timer and, after the delay, run the save (swallowing
     // cancellation/background errors), mirroring the other grid pages.

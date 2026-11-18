@@ -7,6 +7,7 @@ using OrientPyx.BusinessLogic.Models;
 using OrientPyx.BusinessLogic.Serialization;
 using OrientPyx.BusinessLogic.Services.Network;
 using OrientPyx.BusinessLogic.Services.Store;
+using OrientPyx.BusinessLogic.Services.Undo;
 using OrientPyx.DataAccess.Network.Protocol;
 
 namespace OrientPyx.DataAccess.Network.Host;
@@ -38,7 +39,7 @@ internal sealed class RpcDispatcher
 
     public async Task<RpcOutcome> InvokeAsync(
         string ifaceName, string methodName, JsonElement[] args, StationContext station, Action<string?> touched,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, Guid? undoStep = null)
     {
         if (!Wire.Interfaces.TryGetValue(ifaceName, out var iface))
             return RpcErrors.Outcome(404, RpcErrorKinds.NotFound, $"Unknown interface '{ifaceName}'.", typeof(KeyNotFoundException).FullName);
@@ -78,13 +79,18 @@ internal sealed class RpcDispatcher
                 progress =>
                 {
                     DataChangeOrigin.Current = stationName;
-                    return RunAsync(target, method, Fill(mapped, method, progress, CancellationToken.None), identifier, resultType);
+                    // A job (the import) is never undoable.
+                    using (UndoScope.Suppress())
+                        return RunAsync(target, method, Fill(mapped, method, progress, CancellationToken.None), identifier, resultType);
                 },
                 resultType,
                 ex => RpcErrors.Map(ex).Error);
             return new RpcOutcome(200, JsonSerializer.SerializeToUtf8Bytes(new JobStarted(jobId), RpcJson.Options));
         }
 
+        // The station's undo step, owned by its token (names are neither unique nor stable): the journal on this host
+        // records the write under it, and only this station can revert it. No header ⇒ no step.
+        using var undoScope = undoStep is { } step ? UndoScope.Enter(step, station.Token) : UndoScope.Suppress();
         try
         {
             DataChangeOrigin.Current = station.Name;

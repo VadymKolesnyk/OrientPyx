@@ -12,6 +12,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.VisualTree;
 using OrientPyx.Presentation.Behaviors;
 using OrientPyx.Presentation.Controls;
 using OrientPyx.Presentation.Services;
@@ -23,13 +24,70 @@ public partial class FinishReadView : UserControl
 {
     private FinishReadViewModel? _vm;
 
+    private TopLevel? _topLevel;
+
     public FinishReadView()
     {
         InitializeComponent();
         SheetEditing.Bind(this, Sheet);
         DataContextChanged += OnDataContextChanged;
-        DetachedFromVisualTree += (_, _) => Unsubscribe();
+
+        // Ctrl+P / F2 on the selected row. Tunnel, so the page sees F2 before the table (which would take it as
+        // «edit the cell» — nothing to edit in this read-only log).
+        AddHandler(KeyDownEvent, OnPageKeyDown, RoutingStrategies.Tunnel);
+        // Focus does not stay on the page: the busy overlay and every closed modal (the edit window, the
+        // unknown-chip prompt) drop it, after which a key routes from the window and never reaches the page —
+        // so listen on the window too while this page is shown (as «Учасники» does).
+        AttachedToVisualTree += (_, _) =>
+        {
+            _topLevel = TopLevel.GetTopLevel(this);
+            _topLevel?.AddHandler(KeyDownEvent, OnTopLevelKeyDown, RoutingStrategies.Tunnel);
+        };
+        DetachedFromVisualTree += (_, _) =>
+        {
+            _topLevel?.RemoveHandler(KeyDownEvent, OnTopLevelKeyDown);
+            _topLevel = null;
+            Unsubscribe();
+        };
     }
+
+    // The window-level fallback: runs the page shortcuts when focus is outside the page (or nowhere). Focus
+    // inside the page is left to the page's own handler.
+    private void OnTopLevelKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled)
+            return;
+        if (e.Source is Visual source && (ReferenceEquals(source, this) || source.GetVisualAncestors().Contains(this)))
+            return;
+        OnPageKeyDown(sender, e);
+    }
+
+    // Page shortcuts over the selected row (the row of the selected cell):
+    //   • Ctrl+P → print its split slip (the printer button in «Дії»);
+    //   • F2     → open its edit window (the pencil in «Дії»).
+    // Not while typing in a text field, or while a modal, the busy overlay or the settings / network overlays
+    // are up (F2 in the edit window must not open a second one).
+    private void OnPageKeyDown(object? sender, KeyEventArgs e)
+    {
+        var print = e.Key == Key.P && e.KeyModifiers == KeyModifiers.Control;
+        var edit = e.Key == Key.F2 && e.KeyModifiers == KeyModifiers.None;
+        if (!print && !edit)
+            return;
+        if (e.Source is TextBox || IsShellBusy())
+            return;
+        if (DataContext is not FinishReadViewModel vm || Sheet.SelectedItem is not FinishReadRowViewModel row)
+            return;
+
+        e.Handled = true;
+        var command = print ? vm.PrintRowCommand : vm.EditRowCommand;
+        // A running print / an open edit window keeps its command busy: a held key must not queue more.
+        if (command.CanExecute(row))
+            command.Execute(row);
+    }
+
+    private bool IsShellBusy()
+        => TopLevel.GetTopLevel(this)?.DataContext is ViewModels.MainWindowViewModel main
+           && (main.Dialogs.IsOpen || main.Busy.IsBusy || main.IsSettingsOpen || main.IsNetworkOpen);
 
     // File picking needs the window's StorageProvider, so it lives in the view. The picker only fills
     // the watched path; the VM polls it on its own.

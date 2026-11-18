@@ -191,9 +191,8 @@ public interface IEventStore
     Task AddParticipantAsync(string eventFolderPath, Participant participant, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Removes every participant and every participant-day link from the competition in one
-    /// transaction (used by the participant import's "clear first" option). Returns how many
-    /// participants were deleted.
+    /// Removes every participant, every participant-day link and every relay team from the
+    /// competition. Returns how many participants were deleted.
     /// </summary>
     Task<int> DeleteAllParticipantsAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 
@@ -342,7 +341,8 @@ public interface IEventStore
     /// <summary>
     /// Imports a whole parsed UOF roster in a single database transaction. Resolves/creates the
     /// referenced regions, clubs, sports schools and groups, matches existing participants by FOU
-    /// code (unless <paramref name="clearFirst"/> wipes the roster first), attaches groups to the
+    /// code (unless <paramref name="clearFirst"/> wipes the roster and its relay teams first — in
+    /// current-day-only mode the target day's links and teams), attaches groups to the
     /// days their members run, and writes one participant-day link per referenced day. The days must
     /// already exist — the caller creates any missing ones (with their folders) beforehand. Reports
     /// coarse progress through <paramref name="progress"/> as it works. One <see cref="SaveChangesAsync"/>
@@ -535,4 +535,13 @@ public interface IEventStore
     Task UpdateRelayCourseSettingsAsync(
         string eventFolderPath, Guid settingsId, RelayCourseMode mode, string teamCourseSet,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Undo (Ctrl+Z): puts back what the journalled step <paramref name="stepId"/> changed — all of it or nothing, in
+    /// one transaction, only when every row it changed is still as the step left it and the state after the revert
+    /// breaks no uniqueness, reference or closed-day rule. Called under the undo scope of a new step, so the revert is
+    /// journalled too (redo = revert of the revert). The journal lives in the process that owns <c>event.db</c>; a
+    /// step of another owner (<c>UndoScope.Owner</c>) is <see cref="UndoRevertStatus.NotFound"/>.
+    /// </summary>
+    Task<UndoRevertResult> RevertUndoStepAsync(string eventFolderPath, Guid stepId, CancellationToken cancellationToken = default);
 }

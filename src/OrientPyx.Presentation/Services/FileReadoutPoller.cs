@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text;
+using OrientPyx.BusinessLogic.Services.Undo;
 
 namespace OrientPyx.Presentation.Services;
 
@@ -73,6 +74,8 @@ public sealed class FileReadoutPoller : IFileReadoutPoller
         Func<Task<string?>>? newFileContent,
         CancellationToken token)
     {
+        // A background process never joins the undo step of the action that started it.
+        using var noUndo = UndoScope.Suppress();
         try
         {
             string? seed = null;

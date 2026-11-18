@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using OrientPyx.Presentation.Controls;
+using OrientPyx.Presentation.Services.Undo;
 using OrientPyx.Presentation.ViewModels.Pages;
 
 namespace OrientPyx.Presentation.Views.Pages;
@@ -22,7 +23,11 @@ public partial class GroupsView : UserControl
         InitializeComponent();
         SheetEditing.Bind(this, Sheet, ScatterSheet);
         DataContextChanged += OnDataContextChanged;
-        DetachedFromVisualTree += (_, _) => Unsubscribe();
+        DetachedFromVisualTree += (_, _) =>
+        {
+            EndCourseOrderSession();
+            Unsubscribe();
+        };
 
         // Capture the Ctrl modifier before the delete button consumes the press (it marks
         // PointerPressed handled), so Ctrl+Click on Delete can skip the confirmation prompt.
@@ -344,5 +349,24 @@ public partial class GroupsView : UserControl
     {
         if (_vm is { IsDayLocked: true })
             _ = _vm.ExplainDayLockAsync();
+        if (_vm is null || sender is not TextBox box)
+            return;
+        // While the box has focus it is one undo edit session, like a table cell: the whole typed course is one step
+        // («Порядок / список КП — Ж21»). Nothing to end on undo — the box writes as it is typed in, and its own Ctrl+Z
+        // works while it has focus.
+        EndCourseOrderSession();
+        _courseOrderSession = UndoGesture.OpenSession(_vm.CourseOrderUndoLabel(), static () => { }, isText: true);
+        box.LostFocus -= OnCourseOrderLostFocus;
+        box.LostFocus += OnCourseOrderLostFocus;
+    }
+
+    private UndoGesture.Session? _courseOrderSession;
+
+    private void OnCourseOrderLostFocus(object? sender, FocusChangedEventArgs e) => EndCourseOrderSession();
+
+    private void EndCourseOrderSession()
+    {
+        UndoGesture.CloseSession(_courseOrderSession);
+        _courseOrderSession = null;
     }
 }

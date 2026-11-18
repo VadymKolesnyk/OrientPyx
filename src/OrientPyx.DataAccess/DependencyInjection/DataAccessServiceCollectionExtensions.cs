@@ -56,14 +56,23 @@ public static class DataAccessServiceCollectionExtensions
         services.AddSingleton<IRemoteServices>(sp => sp.GetRequiredService<RemoteServices>());
 
         // EventStore opens per-competition databases on demand; it holds no shared state.
+        // The local store sits under the undo guard (reads never join an undo step; writes register theirs in the
+        // journal), so the guard works only where event.db lives — locally and on a host, stations' calls included:
+        //   IEventStore = NotifyingEventStore( Routing( UndoStoreGuard(EventStore) | RemoteEventStore ) )
         services.AddSingleton<EventStore>();
-        services.AddSingleton<IEventStore>(sp => NotifyingEventStore.Create(
-            RoutingProxy<IEventStore>.Create(
-                sp.GetRequiredService<IWorkspaceMode>(),
-                () => sp.GetRequiredService<EventStore>(),
-                () => sp.GetRequiredService<IRemoteServices>().EventStore),
-            sp.GetRequiredService<IDataChangeBus>(),
-            sp.GetRequiredService<IWorkspaceMode>()));
+        services.AddSingleton<IEventStore>(sp =>
+        {
+            var log = sp.GetRequiredService<IActivityLog>();
+            Persistence.Undo.UndoRecorder.Log = log.Info;
+            var guarded = new Lazy<IEventStore>(() => Persistence.Undo.UndoStoreGuard.Create(sp.GetRequiredService<EventStore>()));
+            return NotifyingEventStore.Create(
+                RoutingProxy<IEventStore>.Create(
+                    sp.GetRequiredService<IWorkspaceMode>(),
+                    () => guarded.Value,
+                    () => sp.GetRequiredService<IRemoteServices>().EventStore),
+                sp.GetRequiredService<IDataChangeBus>(),
+                sp.GetRequiredService<IWorkspaceMode>());
+        });
 
         services.AddSingleton<EventFolderScanner>();
         services.AddSingleton<IEventFolderScanner>(sp => RoutingProxy<IEventFolderScanner>.Create(

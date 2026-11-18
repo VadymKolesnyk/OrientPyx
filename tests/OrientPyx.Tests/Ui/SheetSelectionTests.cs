@@ -272,6 +272,59 @@ public sealed class SheetSelectionTests
         AssertNoUiErrors();
     }
 
+    [Fact]
+    public async Task BackspaceOnASelectedCellClearsItWithoutAControlGlyph()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Core, TestIds.Next("ui_bks"));
+        await c.AddGroupAsync("Ч21", "31");
+        await c.AddRunnerAsync("Бігун Перший", "1", "", "Ч21", configure: p => p.Coach = "Тренер Перший");
+        await OpenCompetitionAsync(c.Summary.Identifier);
+
+        await _app.OnUiAsync(() => _app.Vm.OpenParticipantsCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        var participants = Assert.IsType<ParticipantsViewModel>(Shell().SelectedPage);
+        if (participants.IsRosterMode)
+        {
+            await _app.OnUiAsync(() => participants.SelectedDay = participants.DayOptions.First(d => !d.IsRoster));
+            await _app.SettleAsync();
+        }
+        await _app.WaitUntilAsync(() => participants.IsDayMode && participants.Participants.Count == 1, what: "one day row");
+        var table = await _app.OnUiAsync(() =>
+            _app.Window.GetVisualDescendants().OfType<SheetTable>().Single(t => t.Name == "DayTable"));
+        await _app.WaitUntilAsync(() => table.VisibleItems.Count == 1, what: "day table shows the row");
+        await _app.SettleAsync();
+
+        // Select the «Тренер» cell (Escape leaves any edit a click opened, keeping the cell host focused), then
+        // Backspace: the cell must open empty — not hold the U+0008 the key's symbol carries.
+        var window = _app.Window;
+        var coach = await _app.OnUiAsync(() => CellCenter(table, rowIndex: 0, "id:Participants.Col.Coach"));
+        await _app.OnUiAsync(() => window.MouseDown(coach, MouseButton.Left));
+        await _app.OnUiAsync(() => window.MouseUp(coach, MouseButton.Left));
+        await _app.SettleAsync();
+        await _app.OnUiAsync(() => window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, "\u001b"));
+        await _app.SettleAsync();
+        await _app.OnUiAsync(() => window.KeyPress(Key.Back, RawInputModifiers.None, PhysicalKey.Backspace, "\b"));
+        await _app.SettleAsync();
+        await _app.SettleAsync();
+
+        var row = participants.Participants[0];
+        var (focusedType, editorText) = await _app.OnUiAsync(() =>
+        {
+            var focused = TopLevel.GetTopLevel(table)?.FocusManager?.GetFocusedElement();
+            return (focused?.GetType().Name, (focused as TextBox)?.Text);
+        });
+        _output.WriteLine($"focused: {focusedType ?? "null"}, editor: [{editorText}], coach: [{row.Coach}]");
+        Assert.Equal(nameof(TextBox), focusedType);
+        Assert.Equal(string.Empty, editorText ?? string.Empty);
+        Assert.Equal(string.Empty, row.Coach);
+
+        // Escape reverts the cleared value, like any other cell edit.
+        await _app.OnUiAsync(() => window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, "\u001b"));
+        await _app.SettleAsync();
+        Assert.Equal("Тренер Перший", row.Coach);
+        AssertNoUiErrors();
+    }
+
     // The window-space centre of the cell at (row index in the displayed view, column key) — the cell must be realized.
     private static Point CellCenter(SheetTable table, int rowIndex, string columnKey)
     {

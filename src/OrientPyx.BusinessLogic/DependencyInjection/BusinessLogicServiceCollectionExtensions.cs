@@ -5,6 +5,7 @@ using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Services;
 using OrientPyx.BusinessLogic.Services.Network;
 using OrientPyx.BusinessLogic.Services.Store;
+using OrientPyx.BusinessLogic.Services.Undo;
 
 namespace OrientPyx.BusinessLogic.DependencyInjection;
 
@@ -33,6 +34,11 @@ public static class BusinessLogicServiceCollectionExtensions
         services.AddSingleton<CompetitionEditorService>();
         services.AddSingleton<ICompetitionEditorService>(sp => UiOffloadProxy<ICompetitionEditorService>.Create(sp.GetRequiredService<CompetitionEditorService>()));
         services.AddSingleton<IEventSharedDataService, EventSharedDataService>();
+
+        // Undo / redo (Ctrl+Z / Ctrl+Y): reverts a journalled step of the session's competition. Called from the UI, so
+        // it goes through the same UI-thread offload as the editor.
+        services.AddSingleton<EditHistoryService>();
+        services.AddSingleton<IEditHistoryService>(sp => UiOffloadProxy<IEditHistoryService>.Create(sp.GetRequiredService<EditHistoryService>()));
 
         // Competition-type strategies (Open/Closed): one class per discipline, resolved by enum.
         // Add a new discipline by adding a strategy class + a registration line here — nothing else.

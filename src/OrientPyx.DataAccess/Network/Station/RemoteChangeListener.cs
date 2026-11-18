@@ -8,6 +8,7 @@ using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Serialization;
 using OrientPyx.BusinessLogic.Services.Network;
 using OrientPyx.DataAccess.Network.Protocol;
+using OrientPyx.BusinessLogic.Services.Undo;
 
 namespace OrientPyx.DataAccess.Network.Station;
 
@@ -72,6 +73,9 @@ public sealed class RemoteChangeListener : IDisposable
     /// <summary>Raised when the host answered 401 — the token is no longer valid.</summary>
     public event Action? Unauthorized;
 
+    /// <summary>Raised with the stream epoch of every (re)opened <c>/changes</c> stream (null from an older host).</summary>
+    public event Action<string?>? EpochSeen;
+
     /// <summary>The id of the last event received (sent as <c>Last-Event-ID</c> on reconnect).</summary>
     public long LastEventId => Interlocked.Read(ref _lastEventId);
 
@@ -79,6 +83,8 @@ public sealed class RemoteChangeListener : IDisposable
 
     public void Start()
     {
+        // The listener lives as long as the connection: it never joins the undo step of whatever started it.
+        using var noUndo = UndoScope.Suppress();
         if (_cts is not null)
             return;
         _cts = new CancellationTokenSource();
@@ -152,6 +158,7 @@ public sealed class RemoteChangeListener : IDisposable
                         _log.Info($"Network: change stream reopened after {away:0.0} s (from event #{LastEventId})");
                     }
                     _epoch = epoch;
+                    EpochSeen?.Invoke(epoch);
                     first = false;
                     attempt = 0;
                     lostAt = null;

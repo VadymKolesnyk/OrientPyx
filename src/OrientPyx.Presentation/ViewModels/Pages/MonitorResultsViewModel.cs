@@ -10,6 +10,7 @@ using OrientPyx.BusinessLogic.Models;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
 using OrientPyx.Presentation.ViewModels.Shared;
+using OrientPyx.BusinessLogic.Services.Undo;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
 
@@ -521,6 +522,8 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
     // every second and writes any file whose interval has elapsed and whose content changed (and on the first pass).
     private async Task GenerateLoopAsync(CancellationToken ct)
     {
+        // A background process never joins the undo step of the action that started it.
+        using var noUndo = UndoScope.Suppress();
         var nextDue = new Dictionary<string, DateTime>();
         var written = new Dictionary<string, byte[]>();
         while (!ct.IsCancellationRequested)

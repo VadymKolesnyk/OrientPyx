@@ -6,6 +6,7 @@ using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.Services.Undo;
 using OrientPyx.Presentation.ViewModels.Dialogs;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
@@ -35,9 +36,11 @@ public sealed partial class RegionsViewModel : PageViewModelBase
         IDialogService dialogs,
         ITableLayoutStore layoutStore,
         IDataChangeBus bus,
-        IWorkspaceMode mode)
+        IWorkspaceMode mode,
+        IUndoHistory undo)
         : base(localization)
     {
+        UseUndo(undo);
         LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
@@ -81,6 +84,16 @@ public sealed partial class RegionsViewModel : PageViewModelBase
             SelectedRegion = null;
     }
 
+    /// <inheritdoc />
+    public override Task FlushPendingWritesAsync() => _pendingSaves.WaitAsync();
+
+    /// <inheritdoc />
+    public override void OnUndoApplied(BusinessLogic.Models.UndoRevertResult result)
+    {
+        if (result.RowIds is { Count: > 0 } ids && Regions.FirstOrDefault(r => ids.Contains(r.Id)) is { } row)
+            SelectedRegion = row;
+    }
+
     // Reads the rows and either rebuilds the collection (first open / session switch) or merges them in place.
     private async Task LoadCoreAsync(bool merge)
     {
@@ -118,7 +131,8 @@ public sealed partial class RegionsViewModel : PageViewModelBase
             return;
 
         // Persist immediately so the new row carries its real id for later debounced updates.
-        var region = await _busy.RunAsync(() => _editor.AddRegionRowAsync());
+        var step = CaptureUndoAction(Localization.Get("Undo.Label.AddRow"));
+        var region = await _busy.RunAsync(() => RunUndoAsync(step, () => _editor.AddRegionRowAsync()));
         Regions.Add(CreateRow(region));
     }
 
@@ -148,6 +162,9 @@ public sealed partial class RegionsViewModel : PageViewModelBase
                 return;
         }
 
+        // One step: the editor clears the reference from every participant and deletes the row in the same call.
+        var step = CaptureUndoAction(string.Format(Localization.Get("Undo.Label.DeleteRow"), RowName(row)));
+
         if (_saveTimers.TryGetValue(row.Id, out var cts))
         {
             cts.Cancel();
@@ -161,7 +178,7 @@ public sealed partial class RegionsViewModel : PageViewModelBase
         Regions.Remove(row);
 
         var id = row.Id;
-        _ = Task.Run(() => _editor.DeleteRegionAsync(id));
+        _ = RunUndoAsync(step, () => _editor.DeleteRegionAsync(id));
 
         if (confirmed)
             RequestGridFocus();
@@ -169,26 +186,28 @@ public sealed partial class RegionsViewModel : PageViewModelBase
 
     // --- Debounced save
 
+    // The undo step is captured here, at the change (the write is debounced); a refresh applying stored values has none.
     private void RequestRowSave(RegionRowViewModel row)
     {
         if (row.IsApplying)
             return;
+        var step = CaptureUndo(UndoLabel("Regions.Col.Name", RowName(row)));
 
         if (_saveTimers.TryGetValue(row.Id, out var existing))
             existing.Cancel();
 
         var cts = new CancellationTokenSource();
         _saveTimers[row.Id] = cts;
-        _pendingSaves.Track(SaveRowDebouncedAsync(row, cts.Token));
+        _pendingSaves.Track(SaveRowDebouncedAsync(row, step, cts.Token));
     }
 
-    private async Task SaveRowDebouncedAsync(RegionRowViewModel row, CancellationToken token)
+    private async Task SaveRowDebouncedAsync(RegionRowViewModel row, UndoEntry? step, CancellationToken token)
     {
         try
         {
             await Task.Delay(SaveDebounce, token);
             var entity = row.ToEntity();
-            await Task.Run(() => _editor.UpdateRegionAsync(entity, token), token);
+            await RunUndoAsync(step, () => _editor.UpdateRegionAsync(entity, token));
         }
         catch (OperationCanceledException)
         {
@@ -197,6 +216,10 @@ public sealed partial class RegionsViewModel : PageViewModelBase
         {
         }
     }
+
+    // The row's name in an undo label: its name, else the entity's for a blank one.
+    private string RowName(RegionRowViewModel row)
+        => string.IsNullOrWhiteSpace(row.Name) ? Localization.Get("Undo.Entity.Region") : row.Name.Trim();
 
     private void CancelAllTimers()
     {

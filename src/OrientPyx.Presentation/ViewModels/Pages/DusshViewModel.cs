@@ -6,6 +6,7 @@ using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
+using OrientPyx.Presentation.Services.Undo;
 using OrientPyx.Presentation.ViewModels.Dialogs;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
@@ -35,9 +36,11 @@ public sealed partial class DusshViewModel : PageViewModelBase
         IDialogService dialogs,
         ITableLayoutStore layoutStore,
         IDataChangeBus bus,
-        IWorkspaceMode mode)
+        IWorkspaceMode mode,
+        IUndoHistory undo)
         : base(localization)
     {
+        UseUndo(undo);
         LayoutStore = layoutStore;
         _editor = editor;
         _session = session;
@@ -81,6 +84,16 @@ public sealed partial class DusshViewModel : PageViewModelBase
             SelectedDussh = null;
     }
 
+    /// <inheritdoc />
+    public override Task FlushPendingWritesAsync() => _pendingSaves.WaitAsync();
+
+    /// <inheritdoc />
+    public override void OnUndoApplied(BusinessLogic.Models.UndoRevertResult result)
+    {
+        if (result.RowIds is { Count: > 0 } ids && Dusshes.FirstOrDefault(r => ids.Contains(r.Id)) is { } row)
+            SelectedDussh = row;
+    }
+
     // Reads the rows and either rebuilds the collection (first open / session switch) or merges them in place.
     private async Task LoadCoreAsync(bool merge)
     {
@@ -118,7 +131,8 @@ public sealed partial class DusshViewModel : PageViewModelBase
             return;
 
         // Persist immediately so the new row carries its real id for later debounced updates.
-        var dussh = await _busy.RunAsync(() => _editor.AddDusshRowAsync());
+        var step = CaptureUndoAction(Localization.Get("Undo.Label.AddRow"));
+        var dussh = await _busy.RunAsync(() => RunUndoAsync(step, () => _editor.AddDusshRowAsync()));
         Dusshes.Add(CreateRow(dussh));
     }
 
@@ -148,6 +162,9 @@ public sealed partial class DusshViewModel : PageViewModelBase
                 return;
         }
 
+        // One step: the editor clears the reference from every participant and deletes the row in the same call.
+        var step = CaptureUndoAction(string.Format(Localization.Get("Undo.Label.DeleteRow"), RowName(row)));
+
         if (_saveTimers.TryGetValue(row.Id, out var cts))
         {
             cts.Cancel();
@@ -161,7 +178,7 @@ public sealed partial class DusshViewModel : PageViewModelBase
         Dusshes.Remove(row);
 
         var id = row.Id;
-        _ = Task.Run(() => _editor.DeleteDusshAsync(id));
+        _ = RunUndoAsync(step, () => _editor.DeleteDusshAsync(id));
 
         if (confirmed)
             RequestGridFocus();
@@ -169,26 +186,28 @@ public sealed partial class DusshViewModel : PageViewModelBase
 
     // --- Debounced save
 
+    // The undo step is captured here, at the change (the write is debounced); a refresh applying stored values has none.
     private void RequestRowSave(DusshRowViewModel row)
     {
         if (row.IsApplying)
             return;
+        var step = CaptureUndo(UndoLabel("Dussh.Col.Name", RowName(row)));
 
         if (_saveTimers.TryGetValue(row.Id, out var existing))
             existing.Cancel();
 
         var cts = new CancellationTokenSource();
         _saveTimers[row.Id] = cts;
-        _pendingSaves.Track(SaveRowDebouncedAsync(row, cts.Token));
+        _pendingSaves.Track(SaveRowDebouncedAsync(row, step, cts.Token));
     }
 
-    private async Task SaveRowDebouncedAsync(DusshRowViewModel row, CancellationToken token)
+    private async Task SaveRowDebouncedAsync(DusshRowViewModel row, UndoEntry? step, CancellationToken token)
     {
         try
         {
             await Task.Delay(SaveDebounce, token);
             var entity = row.ToEntity();
-            await Task.Run(() => _editor.UpdateDusshAsync(entity, token), token);
+            await RunUndoAsync(step, () => _editor.UpdateDusshAsync(entity, token));
         }
         catch (OperationCanceledException)
         {
@@ -197,6 +216,10 @@ public sealed partial class DusshViewModel : PageViewModelBase
         {
         }
     }
+
+    // The row's name in an undo label: its name, else the entity's for a blank one.
+    private string RowName(DusshRowViewModel row)
+        => string.IsNullOrWhiteSpace(row.Name) ? Localization.Get("Undo.Entity.Dussh") : row.Name.Trim();
 
     private void CancelAllTimers()
     {
