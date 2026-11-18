@@ -96,6 +96,16 @@ notes) regenerate by themselves; the hand-written pages do not.
   End the commit message with:
 
   Keep bullets user-facing where possible (features/fixes), not mechanical file lists.
+- **Write the final release notes now**, before the tag is pushed — a markdown file in the scratchpad (passed to
+  `gh release create --notes-file` in Step 5). They depend only on what changed, never on the build, so there is
+  nothing to wait for: the Docs workflow started by the tag push builds «Що нового» from them, and notes finished
+  later would need a second Docs run. Format: `## Що нового`, then a short markdown list of the notable user-facing
+  changes — the commit body expanded a little, a **bold lead** per item (match past releases:
+  `gh release view v<previous> --json body -q .body`). Plain GitHub markdown — no MkDocs syntax such as `++Ctrl+Z++`.
+  Call out anything users must act on (e.g. a `NetworkProtocol.Version` bump = host and stations update together).
+  End with the line
+  `[Code signing policy](https://github.com/VadymKolesnyk/OrientPyx#code-signing-policy)` (SignPath requires it
+  on the download page).
 
 ## Step 4 — Tag
 
@@ -115,20 +125,19 @@ git push origin v<version>
   report — do not force-push over someone else's work. A rejected *tag* push only happens
   if the tag already exists remotely, which at this point it should not.
 
-Then **create the GitHub Release right away**, with the changelog from the commit body as
-its notes, ending with the code-signing policy link (SignPath requires it on the download
-page). Both release workflows started by the tag push merge into this release; without it each
+Then **create the GitHub Release right away** — the very next command after the tag push — with the final notes
+written in Step 3. Both release workflows started by the tag push merge into this release; without it each
 `vpk upload` would create a draft of its own and the second one to publish fails with
 `tag_name already_exists` — that is how 0.7.12 ended up with orphan drafts:
 
 ```bash
-gh release create v<version> --verify-tag --title "OrientPyx <version>" --notes "<markdown changelog>
-
-[Code signing policy](https://github.com/VadymKolesnyk/OrientPyx#code-signing-policy)"
+gh release create v<version> --verify-tag --title "OrientPyx <version>" --notes-file <scratchpad>/release-notes.md
 ```
 
 `release-windows.yml` also creates it if missing (bare notes), but creating it here gives it the
-changelog from the start.
+final notes from the start. The tag push also started the **Docs** workflow, which reads the release notes only at
+its `mkdocs build` step — after rendering the screenshots, minutes later — so a release created right after the push
+is in time and that one run publishes «Що нового» with the final notes.
 
 ## Step 6 — Watch the release workflows
 
@@ -178,25 +187,18 @@ gh run watch <windows-run-id>
 - If a workflow keeps failing, **stop** and report the error. The branch/tag are already pushed,
   but do not hand-fake the release assets — re-run the workflow once the cause is fixed.
 
-## Step 7 — Improve the release notes
+## Step 7 — Check the release notes and the Docs run
 
-Step 5 created the release with the commit-body changelog. Re-read it now that the assets are
-in and replace it with the final, human-readable changelog so users understand what changed:
+The notes are already final (Step 3 → Step 5) — do **not** rewrite them for style. Check
+`gh release view v<version> --json body -q .body` is what you wrote and still true after Step 6.
 
-```bash
-gh release edit v<version> --notes "<markdown changelog>"
-```
-
-Write the notes as a short markdown list of the notable user-facing changes in this
-release (the same content as the commit body, expanded a little). Ukrainian is fine for
-user-facing wording if that matches how the app speaks to its users, but a bilingual or
-English summary is also acceptable — match what past releases used. Keep the closing
-`[Code signing policy](https://github.com/VadymKolesnyk/OrientPyx#code-signing-policy)` line.
-
-The tag push also started the **Docs** workflow (`.github/workflows/docs.yml`: screenshots from the tagged app,
-`mkdocs build --strict`, GitHub Pages). Its «Що нового» page reads the release notes while it builds, which may have
-been before this step — once the notes are final, republish: `gh workflow run docs.yml --ref main`. If the Docs run
-failed, `gh run view <id> --log-failed`; it never blocks the packages.
+- Edit them (`gh release edit v<version> --notes-file …`) only for a real reason — a fact that changed (a package
+  that did not land, a known problem found while watching the runs). Only after such an edit, and only once the
+  Docs run of the tag push has finished, republish the site so «Що нового» follows:
+  `gh workflow run docs.yml --ref main`.
+- Wait for the **Docs** run of the tag push (`.github/workflows/docs.yml`: screenshots from the tagged app,
+  `mkdocs build --strict`, GitHub Pages) to finish. If it failed, `gh run view <id> --log-failed`; it never blocks
+  the packages.
 
 ## Step 8 — Report
 
