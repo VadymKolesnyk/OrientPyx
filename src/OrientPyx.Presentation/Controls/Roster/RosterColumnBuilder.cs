@@ -558,22 +558,22 @@ public sealed class RosterColumnBuilder
         column.CellBackgroundBrush = DayColumnBuilder.ChipCapacityBrush;
     }
 
-    // Amber-tints a group cell of a participant who runs the day with no group on it («без групи»), with a tooltip
-    // saying what to do. A per-day cell reads its own day under Days[i].; the merged all-days cell the row's
-    // aggregate (any such day, named in the tooltip).
+    // Tints a group cell amber for a participant who runs the day with no group on it («без групи»), red for a relay
+    // leg number «за номером етапу» without a course the results can use, with a tooltip saying what to do. A per-day
+    // cell reads its own day under Days[i].; the merged all-days cell the row's aggregate (the days named in the tooltip).
     private static void ConfigureNoGroupTint(SheetColumn column, int? dayIndex)
     {
         if (dayIndex is { } i)
         {
-            column.CellBackgroundPath = $"Days[{i}].{nameof(RosterDayCellViewModel.HasNoGroup)}";
-            column.CellBackgroundTooltipPath = $"Days[{i}].{nameof(RosterDayCellViewModel.NoGroupTooltip)}";
+            column.CellBackgroundBrushPath = $"Days[{i}].{nameof(RosterDayCellViewModel.GroupTint)}";
+            column.CellBackgroundTooltipPath = $"Days[{i}].{nameof(RosterDayCellViewModel.GroupTooltip)}";
         }
         else
         {
-            column.CellBackgroundPath = nameof(ParticipantRosterRowViewModel.HasDayWithoutGroup);
-            column.CellBackgroundTooltipPath = nameof(ParticipantRosterRowViewModel.NoGroupTooltip);
+            column.CellBackgroundBrushPath = nameof(ParticipantRosterRowViewModel.CollapsedGroupTint);
+            column.CellBackgroundTooltipPath = nameof(ParticipantRosterRowViewModel.CollapsedGroupTooltip);
         }
-        column.CellBackgroundBrush = DayColumnBuilder.NoGroupBrush;
+        column.CellBackgroundBrushConverter = Behaviors.GroupCellHighlight.Instance;
     }
 
     private static string? LeafPastePath(RosterField field, int i) => field switch

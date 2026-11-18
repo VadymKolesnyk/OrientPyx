@@ -62,9 +62,11 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     private bool _paysRaisedFee;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SelectionCaption))]
     private string _fullName;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SelectionCaption))]
     private string _number;
 
     [ObservableProperty]
@@ -80,6 +82,8 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(HasNoGroup))]
     [NotifyPropertyChangedFor(nameof(GroupLabel))]
     [NotifyPropertyChangedFor(nameof(NoGroupTooltip))]
+    [NotifyPropertyChangedFor(nameof(GroupTint))]
+    [NotifyPropertyChangedFor(nameof(GroupTooltip))]
     [NotifyPropertyChangedFor(nameof(ComboGroup))]
     private GroupOption _selectedGroup;
 
@@ -263,6 +267,13 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
         {
             if (e.PropertyName == nameof(RelayCellsViewModel.HasTeam))
                 OnPropertyChanged(nameof(GroupFollowsTeam));
+            else if (e.PropertyName is nameof(RelayCellsViewModel.HasCourseIssue) or nameof(RelayCellsViewModel.CourseIssueTooltip))
+            {
+                OnPropertyChanged(nameof(GroupTint));
+                OnPropertyChanged(nameof(GroupTooltip));
+            }
+            else if (e.PropertyName == nameof(RelayCellsViewModel.BibText))
+                OnPropertyChanged(nameof(SelectionCaption));
         };
 
         _initialized = true;
@@ -347,6 +358,9 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
     public void MarkChipCommitted(string value) => _committedChip = value;
 
     public ILocalizationService Localization { get; }
+
+    /// <summary>The row in the table's status bar while it is selected: bib and / or leg number «100.2», then the name.</summary>
+    public string SelectionCaption => ParticipantSelectionCaption.Format(Number, Relay.BibText, FullName, Localization);
 
     /// <summary>Per-discount checkboxes, one per discount column in build order (FSOU-member first).</summary>
     public ObservableCollection<DiscountFlagViewModel> DiscountFlags { get; }
@@ -876,6 +890,15 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
 
     /// <summary>The amber group cell's tooltip; null otherwise, which hides it.</summary>
     public string? NoGroupTooltip => HasNoGroup ? Localization.Get("Participants.Group.Missing.Tooltip") : null;
+
+    /// <summary>The group cell's tint: amber «без групи», else red when the relay leg number has no course the results
+    /// can use (<see cref="RelayCellsViewModel.HasCourseIssue"/>).</summary>
+    public GroupCellTint GroupTint => HasNoGroup ? GroupCellTint.NoGroup
+        : Relay.HasCourseIssue ? GroupCellTint.RelayCourse
+        : GroupCellTint.None;
+
+    /// <summary>Why the group cell is tinted (<see cref="GroupTint"/>); null otherwise, which hides it.</summary>
+    public string? GroupTooltip => HasNoGroup ? NoGroupTooltip : Relay.CourseIssueTooltip;
 
     /// <summary>
     /// What the group combo selects: <see cref="SelectedGroup"/>, except nothing while <see cref="HasNoGroup"/> — the

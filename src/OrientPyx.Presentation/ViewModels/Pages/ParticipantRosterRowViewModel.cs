@@ -54,9 +54,11 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     public string CheckedInKey => CheckedIn ? CheckedInStatus.Yes : CheckedInStatus.No;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SelectionCaption))]
     private string _fullName;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SelectionCaption))]
     private string _number;
 
     [ObservableProperty]
@@ -194,6 +196,10 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     private DusshOption _committedDussh;
 
     public ILocalizationService Localization { get; }
+
+    /// <summary>The row in the table's status bar while it is selected: bib and / or the relay leg number(s), then the
+    /// name (several relay days with different numbers read «Д2: 100.2 · Д3: 205.1», as the merged cell).</summary>
+    public string SelectionCaption => ParticipantSelectionCaption.Format(Number, CollapsedRelayBib, FullName, Localization);
 
     public Guid ParticipantId => _participantId;
 
@@ -735,6 +741,21 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             string.Join(", ", Days.Where(d => d.HasNoGroup).Select(d => d.DayNumber)))
         : null;
 
+    /// <summary>The collapsed Groups cell's tint: amber when a day has no group (<see cref="HasDayWithoutGroup"/>), else
+    /// red when a day's relay leg number has no usable course (<see cref="RosterDayCellViewModel.HasRelayCourseIssue"/>).</summary>
+    public GroupCellTint CollapsedGroupTint => HasDayWithoutGroup ? GroupCellTint.NoGroup
+        : Days.Any(d => d.HasRelayCourseIssue) ? GroupCellTint.RelayCourse
+        : GroupCellTint.None;
+
+    /// <summary>Why the collapsed Groups cell is tinted: the days with no group, else each day's relay course problem
+    /// («День 2: …»); null otherwise.</summary>
+    public string? CollapsedGroupTooltip => HasDayWithoutGroup
+        ? NoGroupTooltip
+        : Days.Any(d => d.HasRelayCourseIssue)
+            ? string.Join(Environment.NewLine, Days.Where(d => d.HasRelayCourseIssue).Select(d =>
+                string.Format(Localization.Get("Participants.Relay.Course.DayTooltip"), d.DayNumber, d.Relay.CourseIssueTooltip)))
+            : null;
+
     // The collapsed Groups cell has three states, decided by the distinct ACTUAL (non-null) groups
     // across all days — a day with no group / where the participant doesn't run is the null sentinel
     // and is ignored when counting "real" groups:
@@ -1184,6 +1205,7 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
     private void RaiseRelayAggregates()
     {
         OnPropertyChanged(nameof(CollapsedRelayBib));
+        OnPropertyChanged(nameof(SelectionCaption));
         OnPropertyChanged(nameof(CollapsedRelayTeam));
         OnPropertyChanged(nameof(CollapsedRelayTeamNumber));
         OnPropertyChanged(nameof(CollapsedRelayLeg));
@@ -1233,6 +1255,11 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
             case nameof(RosterDayCellViewModel.CanEditGroup):
                 RaiseRelayAggregates();
                 OnPropertyChanged(nameof(GroupMergedEditable));
+                break;
+            // A day's relay leg number without a usable course tints the collapsed Groups cell red.
+            case nameof(RosterDayCellViewModel.HasRelayCourseIssue):
+                OnPropertyChanged(nameof(CollapsedGroupTint));
+                OnPropertyChanged(nameof(CollapsedGroupTooltip));
                 break;
             case nameof(RosterDayCellViewModel.Chip):
                 RaiseChipAggregates();
@@ -1336,6 +1363,8 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         OnPropertyChanged(nameof(CollapsedGroupLabel));
         OnPropertyChanged(nameof(HasDayWithoutGroup));
         OnPropertyChanged(nameof(NoGroupTooltip));
+        OnPropertyChanged(nameof(CollapsedGroupTint));
+        OnPropertyChanged(nameof(CollapsedGroupTooltip));
         OnPropertyChanged(nameof(GroupShowsInput));
         OnPropertyChanged(nameof(GroupShowsSingle));
         OnPropertyChanged(nameof(GroupShowsDifferent));

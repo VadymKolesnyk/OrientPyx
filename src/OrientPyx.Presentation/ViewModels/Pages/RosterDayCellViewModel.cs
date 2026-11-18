@@ -34,6 +34,9 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(HasNoGroup))]
     [NotifyPropertyChangedFor(nameof(GroupLabel))]
     [NotifyPropertyChangedFor(nameof(NoGroupTooltip))]
+    [NotifyPropertyChangedFor(nameof(HasRelayCourseIssue))]
+    [NotifyPropertyChangedFor(nameof(GroupTint))]
+    [NotifyPropertyChangedFor(nameof(GroupTooltip))]
     [NotifyPropertyChangedFor(nameof(ComboGroup))]
     private bool _isMember;
 
@@ -41,6 +44,8 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(HasNoGroup))]
     [NotifyPropertyChangedFor(nameof(GroupLabel))]
     [NotifyPropertyChangedFor(nameof(NoGroupTooltip))]
+    [NotifyPropertyChangedFor(nameof(GroupTint))]
+    [NotifyPropertyChangedFor(nameof(GroupTooltip))]
     [NotifyPropertyChangedFor(nameof(ComboGroup))]
     private GroupOption _selectedGroup;
 
@@ -132,6 +137,12 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(CanEditGroup));
                 OnPropertyChanged(nameof(CanEditRelayLeg));
+            }
+            else if (e.PropertyName is nameof(RelayCellsViewModel.HasCourseIssue) or nameof(RelayCellsViewModel.CourseIssueTooltip))
+            {
+                OnPropertyChanged(nameof(HasRelayCourseIssue));
+                OnPropertyChanged(nameof(GroupTint));
+                OnPropertyChanged(nameof(GroupTooltip));
             }
             else if (e.PropertyName is nameof(RelayCellsViewModel.BibText) or nameof(RelayCellsViewModel.TeamName)
                      or nameof(RelayCellsViewModel.TeamText) or nameof(RelayCellsViewModel.LegText))
@@ -432,6 +443,20 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
 
     /// <summary>The amber group cell's tooltip; null otherwise, which hides it.</summary>
     public string? NoGroupTooltip => HasNoGroup ? Localization.Get("Participants.Group.Missing.Tooltip") : null;
+
+    /// <summary>The relay leg number of this day «за номером етапу» has no course the results can use (a member day
+    /// only) — the group cell is red.</summary>
+    public bool HasRelayCourseIssue => IsMember && Relay.HasCourseIssue;
+
+    /// <summary>The group cell's tint: amber «без групи», else red for <see cref="HasRelayCourseIssue"/>.</summary>
+    public GroupCellTint GroupTint => HasNoGroup ? GroupCellTint.NoGroup
+        : HasRelayCourseIssue ? GroupCellTint.RelayCourse
+        : GroupCellTint.None;
+
+    /// <summary>Why the group cell is tinted (<see cref="GroupTint"/>); null otherwise, which hides it.</summary>
+    public string? GroupTooltip => HasNoGroup ? NoGroupTooltip
+        : HasRelayCourseIssue ? Relay.CourseIssueTooltip
+        : null;
 
     /// <summary>
     /// What the group combo selects: <see cref="SelectedGroup"/>, except nothing while <see cref="HasNoGroup"/> — the

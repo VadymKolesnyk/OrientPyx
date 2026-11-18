@@ -104,21 +104,28 @@
                                     <Decorator Name="PART_StatusSlot" />
                                 </ScrollViewer>
                             </Border>
-                            <!-- Fixed info line: counts (large) on the left, system info on the right. -->
-                            <Grid ColumnDefinitions="Auto,*,Auto" Margin="10,5">
+                            <!-- Fixed info line: counts (large) and the selected row on the left, system info on the right. -->
+                            <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="10,5">
                                 <TextBlock Name="PART_StatusCounts" Grid.Column="0"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,16,0"
+                                           FontSize="15" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimary}" />
+                                <!-- The selected row («15 / 100.2 — Іваненко Іван»), for a table with a SelectionCaptionPath. -->
+                                <TextBlock Name="PART_StatusRow" Grid.Column="1"
+                                           IsVisible="False"
                                            VerticalAlignment="Center"
                                            FontSize="15" FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextPrimary}" />
                                 <!-- Sum of the selected fee/payment cells (blank without a multi-cell selection). -->
-                                <TextBlock Name="PART_StatusSelection" Grid.Column="1"
+                                <TextBlock Name="PART_StatusSelection" Grid.Column="2"
                                            IsVisible="False"
                                            VerticalAlignment="Center"
                                            Margin="16,0"
                                            FontWeight="SemiBold"
                                            TextTrimming="CharacterEllipsis"
                                            Foreground="{DynamicResource TextPrimary}" />
-                                <TextBlock Name="PART_StatusInfo" Grid.Column="2"
+                                <TextBlock Name="PART_StatusInfo" Grid.Column="3"
                                            VerticalAlignment="Center"
                                            TextAlignment="Right"
                                            Foreground="{DynamicResource TextSecondary}" />

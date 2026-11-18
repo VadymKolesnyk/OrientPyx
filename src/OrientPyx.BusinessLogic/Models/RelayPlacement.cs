@@ -19,6 +19,36 @@ public sealed record RelayPlacement(Guid TeamId, int? TeamNumber, string TeamNam
 
     /// <summary>Some leg has nobody: the team runs «поза конкурсом» until every leg is filled (Р-26).</summary>
     public bool IsIncomplete => FilledLegs < LegCount;
+
+    /// <summary>
+    /// The team's group takes its courses «за номером етапу» (<see cref="Enums.RelayCourseMode.ByBib"/>, Р-41) and the
+    /// runner's leg number has no course the results can use; null when it has one, the runner has no leg, or the group
+    /// takes its courses otherwise.
+    /// </summary>
+    public RelayLegCourseIssue? CourseIssue { get; init; }
+}
+
+/// <summary>
+/// Why a relay leg «за номером етапу» runs no course: <see cref="GroupName"/> is the team's group, <see cref="Bib"/> the
+/// leg number «101.2», <see cref="Detail"/> the group the course was given in (<see cref="RelayLegCourseIssueKind.OtherGroup"/>)
+/// or the code no course of the group has (<see cref="RelayLegCourseIssueKind.UnknownCourse"/>).
+/// </summary>
+public sealed record RelayLegCourseIssue(RelayLegCourseIssueKind Kind, string GroupName, string Bib, string Detail = "");
+
+/// <summary>What <see cref="RelayLegCourseIssue"/> found wrong with a leg number's course.</summary>
+public enum RelayLegCourseIssueKind
+{
+    /// <summary>The team has no number, so its legs have no leg number to look the course up by.</summary>
+    NoTeamNumber,
+
+    /// <summary>No course is given to the leg number.</summary>
+    NotAssigned,
+
+    /// <summary>The leg number's course is given in another group — the results never apply it.</summary>
+    OtherGroup,
+
+    /// <summary>The leg number's course code names no course of the group.</summary>
+    UnknownCourse
 }
 
 /// <summary>

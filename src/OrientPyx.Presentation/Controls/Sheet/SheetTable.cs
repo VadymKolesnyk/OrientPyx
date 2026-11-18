@@ -210,6 +210,12 @@ public sealed class SheetTable : TemplatedControl
     public event EventHandler<IReadOnlyList<object>>? RowActionRequested;
 
     /// <summary>
+    /// A text property of the row (e.g. «15 / 100.2 — Іваненко Іван») shown on the left of the status bar while that
+    /// row is selected, bound to it so an edit shows at once. Null ⇒ nothing is shown.
+    /// </summary>
+    public string? SelectionCaptionPath { get; set; }
+
+    /// <summary>
     /// The row's name in an undo step's label («Чіп — Іваненко Іван»). Null ⇒ the row's <c>FullName</c>, <c>Name</c>,
     /// <c>TeamName</c>, <c>Label</c>, <c>Code</c> or <c>Number</c>, whichever it has first.
     /// </summary>
@@ -465,6 +471,8 @@ public sealed class SheetTable : TemplatedControl
     private TextBlock? _statusCounts;
     private TextBlock? _statusInfo;
     private TextBlock? _statusSelection;
+    private TextBlock? _statusRow;
+    private IDisposable? _statusRowBinding;
     private TextBox? _search;
     private Button? _searchClear;
 
@@ -603,9 +611,11 @@ public sealed class SheetTable : TemplatedControl
             HookItemsSource();
             ApplySortedView();
         }
-        else if (change.Property == SelectedItemProperty && _body is not null)
+        else if (change.Property == SelectedItemProperty)
         {
-            _body.SelectedItem = SelectedItem;
+            if (_body is not null)
+                _body.SelectedItem = SelectedItem;
+            UpdateSelectionCaption();
         }
         else if (change.Property == StatusInfoProperty)
         {
@@ -662,6 +672,8 @@ public sealed class SheetTable : TemplatedControl
         _statusCounts = e.NameScope.Find<TextBlock>("PART_StatusCounts");
         _statusInfo = e.NameScope.Find<TextBlock>("PART_StatusInfo");
         _statusSelection = e.NameScope.Find<TextBlock>("PART_StatusSelection");
+        _statusRow = e.NameScope.Find<TextBlock>("PART_StatusRow");
+        UpdateSelectionCaption();
         if (e.NameScope.Find<Decorator>("PART_StatusSlot") is { } statusSlot)
         {
             _statusPanel = new SheetStatusPanel();
@@ -1678,7 +1690,7 @@ public sealed class SheetTable : TemplatedControl
         // The bar is opt-in: it appears only for tables that declare a summary/count column (the
         // participants tables) or whose page supplies system-info text. Other tables (control points,
         // groups, …) get no status bar, keeping their appearance unchanged.
-        if (summaryColumns.Count == 0 && !hasInfo && !hasCountColumn)
+        if (summaryColumns.Count == 0 && !hasInfo && !hasCountColumn && SelectionCaptionPath is null)
         {
             _statusBar.IsVisible = false;
             return;
@@ -1724,6 +1736,27 @@ public sealed class SheetTable : TemplatedControl
             UnhookRows();
         }
         UpdateSelectionSum();
+    }
+
+    // ── Selected row
+    // The status bar's left text: the selected row's SelectionCaptionPath property, bound to that row (a weak binding —
+    // the table holds nothing of the row past it), so renumbering or renaming the row shows at once.
+    private void UpdateSelectionCaption()
+    {
+        if (_statusRow is null)
+            return;
+        _statusRowBinding?.Dispose();
+        _statusRowBinding = null;
+        if (SelectionCaptionPath is { Length: > 0 } path && SelectedItem is { } row)
+        {
+            _statusRowBinding = _statusRow.Bind(TextBlock.TextProperty, new Avalonia.Data.Binding(path) { Source = row });
+            _statusRow.IsVisible = true;
+        }
+        else
+        {
+            _statusRow.Text = string.Empty;
+            _statusRow.IsVisible = false;
+        }
     }
 
     // ── Selection sum

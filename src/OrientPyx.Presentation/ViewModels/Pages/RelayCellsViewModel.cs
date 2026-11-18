@@ -97,7 +97,8 @@ public sealed class RelayCellsViewModel : ObservableObject
                 }
                 number = parsed;
             }
-            Show(_shown is { } shown ? shown with { TeamNumber = number }
+            // The leg number moves, so its course is known again only once the page reloads the place.
+            Show(_shown is { } shown ? shown with { TeamNumber = number, CourseIssue = null }
                 : number is null ? null
                 : new RelayPlacement(Guid.Empty, number, string.Empty, null, 0));
             _requestTeamEdit(this, RelayTeamField.Number, text);
@@ -119,7 +120,7 @@ public sealed class RelayCellsViewModel : ObservableObject
                 OnPropertyChanged();   // no team, or not a leg — the cell shows the stored value again
                 return;
             }
-            Show(shown with { Leg = leg });
+            Show(shown with { Leg = leg, CourseIssue = null });
             // By the team's id: it may have no number yet.
             _requestPlace(this, new RelayPlacementRequest(ParticipantId, DayId, shown.TeamNumber, leg, TeamId: shown.TeamId));
         }
@@ -136,6 +137,24 @@ public sealed class RelayCellsViewModel : ObservableObject
     public string? IncompleteTooltip => IsIncomplete
         ? string.Format(_localization.Get("Participants.Relay.Incomplete"), _shown!.FilledLegs, _shown.LegCount)
         : null;
+
+    /// <summary>The team's group takes its courses «за номером етапу» and this runner's leg number has none the results
+    /// can use (none given, given in another group, or an unknown code) — the group cell is tinted red.</summary>
+    public bool HasCourseIssue => _shown is { TeamId: var id, CourseIssue: not null } && id != Guid.Empty;
+
+    /// <summary>Why the group cell is red (<see cref="HasCourseIssue"/>) and what to do; null otherwise.</summary>
+    public string? CourseIssueTooltip => HasCourseIssue ? CourseIssueText(_shown!.CourseIssue!) : null;
+
+    private string CourseIssueText(RelayLegCourseIssue issue) => issue.Kind switch
+    {
+        RelayLegCourseIssueKind.NoTeamNumber =>
+            string.Format(_localization.Get("Participants.Relay.Course.NoTeamNumber"), issue.GroupName),
+        RelayLegCourseIssueKind.OtherGroup =>
+            string.Format(_localization.Get("Participants.Relay.Course.OtherGroup"), issue.GroupName, issue.Bib, issue.Detail),
+        RelayLegCourseIssueKind.UnknownCourse =>
+            string.Format(_localization.Get("Participants.Relay.Course.UnknownCourse"), issue.GroupName, issue.Bib, issue.Detail),
+        _ => string.Format(_localization.Get("Participants.Relay.Course.NotAssigned"), issue.GroupName, issue.Bib),
+    };
 
     /// <summary>Sorts «100.2» before «100.10» and before team 101; a team without a number after the numbered ones,
     /// a runner on no team last.</summary>
@@ -188,6 +207,8 @@ public sealed class RelayCellsViewModel : ObservableObject
         OnPropertyChanged(nameof(HasTeam));
         OnPropertyChanged(nameof(IsIncomplete));
         OnPropertyChanged(nameof(IncompleteTooltip));
+        OnPropertyChanged(nameof(HasCourseIssue));
+        OnPropertyChanged(nameof(CourseIssueTooltip));
         OnPropertyChanged(nameof(BibSort));
         OnPropertyChanged(nameof(TeamSort));
         OnPropertyChanged(nameof(LegSort));

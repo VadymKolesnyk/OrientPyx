@@ -27,7 +27,8 @@ public sealed class DayColumnBuilder
 
     /// <summary>
     /// The amber tint of a group cell of a participant who runs the day with no group on it («без групи») — the
-    /// same amber as «Кількість карт»'s «(без групи)» row. Shared with the roster's group columns.
+    /// same amber as «Кількість карт»'s «(без групи)» row. Shared with the roster's group columns (through
+    /// <see cref="Behaviors.GroupCellHighlight"/>).
     /// </summary>
     public static readonly Avalonia.Media.ISolidColorBrush NoGroupBrush =
         new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(0x55, 0xF5, 0x9E, 0x0B));
@@ -102,12 +103,13 @@ public sealed class DayColumnBuilder
         bands.Add(Identity(SheetCellKind.IdentityText, "Participants.Col.Note", nameof(ParticipantDayRowViewModel.Note), fixedWidth: 180));
 
         // This day's group (combo bound directly on the row) and chip (free text, unique per day).
-        // Sorted and filtered by the shown text, so «без групи» (amber) is a value of its own in the filter.
+        // Sorted and filtered by the shown text, so «без групи» (amber) is a value of its own in the filter. Red: a relay
+        // leg number «за номером етапу» without a course the results can use.
         var groupBand = Identity(SheetCellKind.RowGroup, "Participants.Col.Group", path: string.Empty,
             sortPath: nameof(ParticipantDayRowViewModel.GroupLabel));
-        groupBand.Columns[0].CellBackgroundPath = nameof(ParticipantDayRowViewModel.HasNoGroup);
-        groupBand.Columns[0].CellBackgroundBrush = NoGroupBrush;
-        groupBand.Columns[0].CellBackgroundTooltipPath = nameof(ParticipantDayRowViewModel.NoGroupTooltip);
+        groupBand.Columns[0].CellBackgroundBrushPath = nameof(ParticipantDayRowViewModel.GroupTint);
+        groupBand.Columns[0].CellBackgroundBrushConverter = Behaviors.GroupCellHighlight.Instance;
+        groupBand.Columns[0].CellBackgroundTooltipPath = nameof(ParticipantDayRowViewModel.GroupTooltip);
         bands.Add(groupBand);
         // Relay day: «Команда» (the team's name, like a rogaine team), «Номер команди» (the team's own number — a change
         // is asked) and «Етап» (a teammate's leg swaps the two) — edited here as well as on «Команди».
