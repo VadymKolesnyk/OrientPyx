@@ -1,3 +1,4 @@
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Models;
@@ -67,6 +68,7 @@ public sealed class FinishReadRowViewModel : ObservableObject
         [nameof(FullName)] = FullName,
         [nameof(GroupName)] = GroupName,
         [nameof(ScoreText)] = ScoreText,
+        [nameof(ScoreSort)] = ScoreSort,
         [nameof(PlaceText)] = PlaceText,
         [nameof(PlaceMedal)] = PlaceMedal,
         [nameof(GapText)] = GapText,
@@ -147,8 +149,26 @@ public sealed class FinishReadRowViewModel : ObservableObject
         return text;
     }
 
-    /// <summary>Collected «Бали» for a point-scoring day; blank when the discipline doesn't score points.</summary>
-    public string ScoreText => _row.Score is { } s ? s.ToString() : string.Empty;
+    /// <summary>
+    /// «Бали» for a point-scoring row: the total, and with a «Бонус» the sum spelled out — «12 (10 + 2)», «7 (10 − 3)».
+    /// Blank when the discipline doesn't score points.
+    /// </summary>
+    public string ScoreText
+    {
+        get
+        {
+            if (_row.Score is not { } score)
+                return string.Empty;
+            var ci = CultureInfo.InvariantCulture;
+            if (_row.Bonus is not { } bonus || bonus == 0)
+                return score.ToString(ci);
+            var sign = bonus > 0 ? "+" : "−";
+            return $"{(score + bonus).ToString(ci)} ({score.ToString(ci)} {sign} {Math.Abs(bonus).ToString(ci)})";
+        }
+    }
+
+    /// <summary>The total «Бали» (with the bonus) for sorting the column; null when the row scores nothing.</summary>
+    public int? ScoreSort => _row.Score is { } score ? score + (_row.Bonus ?? 0) : null;
 
     /// <summary>The participant's 1-based place within their group on the day; blank when no place could be
     /// assigned (unknown chip, non-OK status, out-of-competition runner).</summary>

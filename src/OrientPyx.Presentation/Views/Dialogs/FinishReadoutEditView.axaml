@@ -208,19 +208,28 @@
                         </StackPanel>
                     </Grid>
 
-                    <!-- Status override -->
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="{Binding StatusLabel}" Classes="label" />
-                        <ComboBox ItemsSource="{Binding Statuses}"
-                                  SelectedItem="{Binding SelectedStatus, Mode=TwoWay}"
-                                  HorizontalAlignment="Stretch">
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate x:DataType="pages:FinishStatusOption">
-                                    <TextBlock Text="{Binding Label}" />
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
-                    </StackPanel>
+                    <!-- Status override + the holder's «Бонус» (only in a group whose discipline scores points). -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="6">
+                            <TextBlock Text="{Binding StatusLabel}" Classes="label" />
+                            <ComboBox ItemsSource="{Binding Statuses}"
+                                      SelectedItem="{Binding SelectedStatus, Mode=TwoWay}"
+                                      HorizontalAlignment="Stretch">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="pages:FinishStatusOption">
+                                        <TextBlock Text="{Binding Label}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="6" Width="110" Margin="12,0,0,0"
+                                    IsVisible="{Binding ShowBonus}">
+                            <TextBlock Text="{Binding BonusLabel}" Classes="label" />
+                            <TextBox Text="{Binding BonusText, Mode=TwoWay}"
+                                     behaviors:NumericInput.Integer="True" PlaceholderText="—"
+                                     ToolTip.Tip="{Binding BonusTooltip}" />
+                        </StackPanel>
+                    </Grid>
 
                     <!-- Punches: code + time per row, add/remove -->
                     <StackPanel Spacing="6">

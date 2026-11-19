@@ -295,9 +295,11 @@ public partial class FinishReadView : UserControl
             .Text("FinishRead.Col.FinishTime", nameof(FinishReadRowViewModel.FinishTimeText), minWidth: 110)
             .Text("FinishRead.Col.ResultTime", nameof(FinishReadRowViewModel.ElapsedText), minWidth: 110);
 
-        // «Бали»: only on point-scoring days (rogaine, or a group overriding to one).
+        // «Бали»: only on point-scoring days (rogaine, or a group overriding to one). With a «Бонус» the cell spells the
+        // sum out («12 (10 + 2)»); it sorts by the total.
         if (_vm.ShowScoreColumn)
-            builder.Text("FinishRead.Col.Score", nameof(FinishReadRowViewModel.ScoreText), minWidth: 70);
+            builder.Text("FinishRead.Col.Score", nameof(FinishReadRowViewModel.ScoreText), minWidth: 70,
+                         sortPath: nameof(FinishReadRowViewModel.ScoreSort));
 
         Sheet.Bands = builder
             .Text("FinishRead.Col.Number", nameof(FinishReadRowViewModel.ParticipantNumber), minWidth: 80)

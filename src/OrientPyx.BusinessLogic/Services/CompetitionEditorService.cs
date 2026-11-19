@@ -3820,6 +3820,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     CollectRentalChip: collect, IsManualStatus: r.ManualStatus is not null,
                     StatusDetailKind: detailKind)
                 {
+                    // The runner's own «Бонус» on a scoring row: the log shows «X (Y + Z)», as the calculator adds it.
+                    Bonus = score is not null ? link.Bonus : null,
                     RelayTeamNumber = result?.Team?.Number,
                     RelayTeamName = result?.Team?.Name ?? string.Empty,
                     RelayLeg = result?.Leg?.Leg,
@@ -4529,7 +4531,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                          && RelayTeamNumbers.Bib(tn, leg) is { Length: > 0 } bib
                 ? bib
                 : p.Number;
-            options.Add(new FinishReadoutParticipantOption(p.Id, number, p.FullName, group, link.GroupId, link.StartTime));
+            options.Add(new FinishReadoutParticipantOption(p.Id, number, p.FullName, group, link.GroupId, link.StartTime, link.Bonus));
         }
         options = options
             .OrderBy(o => o.FullName, StringComparer.CurrentCultureIgnoreCase)
@@ -4560,6 +4562,12 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             Groups = dayGroups
                 .Select(g => new FinishReadoutLookupOption(g.GroupId, g.Name))
                 .ToList(),
+            // The groups with a «Бонус»: those whose discipline scores points (as the calculator decides it).
+            BonusGroupIds = dayGroups
+                .Where(g => _strategies.For(g.DisciplineOverride ?? g.DayDefaultDiscipline).UsesControlPointPoints)
+                .Select(g => g.GroupId)
+                .ToList(),
+            BonusWithoutGroup = _strategies.For(CurrentDayDefaultDiscipline).UsesControlPointPoints,
             Regions = regions
                 .OrderBy(r => r.Name, StringComparer.CurrentCultureIgnoreCase)
                 .Select(r => new FinishReadoutLookupOption(r.Id, r.Name))
@@ -4640,6 +4648,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         // in the wrong group): move them on this day only. A new participant already got the form's group.
         if (edit.NewParticipant is null && edit.GroupId is { } groupId && holder.GroupId != groupId)
             await _eventStore.SetParticipantDayGroupAsync(folder, holder.ParticipantId, dayId, groupId, cancellationToken);
+
+        // The judge's points correction («Бонус») typed in the modal lands on the final holder too.
+        if (edit.SetsBonus && holder.Bonus != edit.Bonus)
+            await _eventStore.SetParticipantDayBonusAsync(folder, holder.Id, edit.Bonus, cancellationToken);
 
         await SetParticipantDayResultStatusAsync(holder.ParticipantId, dayId, edit.ManualStatus, cancellationToken);
     }

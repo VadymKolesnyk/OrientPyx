@@ -716,6 +716,9 @@ public sealed partial class ParticipantDayRowViewModel : ObservableObject
 
     public int PlaceSort => _result.Place ?? int.MaxValue;
 
+    /// <summary>True when a read-out on the day matched this runner's chip (the page recomputes a day only when it has one).</summary>
+    public bool HasReadout => _result.HasReadout;
+
     // ── Relay (Р-21…Р-23): the runner's team, leg, leg number «100.2» and team name, as stored — editable here.
     /// <summary>The relay cells of this runner on the day (blank outside a relay).</summary>
     public RelayCellsViewModel Relay { get; }

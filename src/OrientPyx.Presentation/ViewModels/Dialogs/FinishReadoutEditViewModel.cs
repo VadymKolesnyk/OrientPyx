@@ -28,8 +28,9 @@ namespace OrientPyx.Presentation.ViewModels.Dialogs;
 /// in local time anchored on the read's local date, so the value round-trips without a timezone shift.
 /// Punch rows carry a running number and stay where they are while edited (a moving row would steal the
 /// focus); they are saved in chronological order. The chip's holder (current or newly picked) can also be
-/// moved to another group of the day. Callers <c>await</c> <see cref="Completion"/> for the confirmed edit,
-/// or null on cancel/close.
+/// moved to another group of the day, and — in a group whose discipline scores points — given a «Бонус» (the same
+/// signed points correction as the participant tables' column). Callers <c>await</c> <see cref="Completion"/> for
+/// the confirmed edit, or null on cancel/close.
 /// </summary>
 public sealed partial class FinishReadoutEditViewModel : ObservableObject
 {
@@ -59,6 +60,14 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     private readonly Dictionary<Guid, TimeSpan?> _participantStarts;
     // The shown holder's group when they were picked — a save sends a group only when it differs.
     private Guid? _holderGroupOriginal;
+    // Each day member's own «Бонус», so picking a holder shows (and lets the operator change) theirs.
+    private readonly Dictionary<Guid, int?> _participantBonuses;
+    // The groups with a «Бонус» (point-scoring discipline), and whether a holder with no group has one (the day's own
+    // discipline scores points).
+    private readonly HashSet<Guid> _bonusGroupIds;
+    private readonly bool _bonusWithoutGroup;
+    // The shown holder's bonus when they were picked — a save sends a bonus only when it differs.
+    private int? _bonusOriginal;
 
     public FinishReadoutEditViewModel(
         ILocalizationService localization,
@@ -108,6 +117,12 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
         _participantStarts = data.Participants
             .GroupBy(p => p.ParticipantId)
             .ToDictionary(g => g.Key, g => g.First().StartTime);
+        _participantBonuses = data.Participants
+            .GroupBy(p => p.ParticipantId)
+            .ToDictionary(g => g.Key, g => g.First().Bonus);
+        _bonusGroupIds = data.BonusGroupIds.ToHashSet();
+        _bonusWithoutGroup = data.BonusWithoutGroup;
+        SyncBonus();
 
         // Lookups for the new-participant form. Region / club / ДЮСШ / rank each get a leading "(none)"
         // sentinel; the group list has none — a group is mandatory, so it opens on the first one.
@@ -144,6 +159,8 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
             OnPropertyChanged(nameof(FinishLabel));
             OnPropertyChanged(nameof(PunchesLabel));
             OnPropertyChanged(nameof(StatusLabel));
+            OnPropertyChanged(nameof(BonusLabel));
+            OnPropertyChanged(nameof(BonusTooltip));
             OnPropertyChanged(nameof(TimeHint));
             OnPropertyChanged(nameof(CancelAllLabel));
             OnPropertyChanged(nameof(NewFullNameLabel));
@@ -184,6 +201,8 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     public string FinishLabel => Localization.Get("FinishRead.Col.FinishTime");
     public string PunchesLabel => Localization.Get("FinishRead.Edit.Punches");
     public string StatusLabel => Localization.Get("FinishRead.Col.Status");
+    public string BonusLabel => Localization.Get("FinishRead.Edit.Bonus");
+    public string BonusTooltip => Localization.Get("FinishRead.Edit.BonusTooltip");
     public string TimeHint => Localization.Get("FinishRead.Edit.TimeHint");
 
     /// <summary>The chip number, shown read-only — the chip is reassigned via the holder dropdown, not retyped.</summary>
@@ -274,9 +293,11 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
         {
             _chosen = value;
             SyncHolderGroup();
+            SyncBonus();
         }
         OnPropertyChanged(nameof(IsCreatingNew));
         OnPropertyChanged(nameof(ShowHolderGroup));
+        OnPropertyChanged(nameof(ShowBonus));
         OnPropertyChanged(nameof(ShowProtocolStart));
         OnPropertyChanged(nameof(ProtocolStartText));
         ConfirmCommand.NotifyCanExecuteChanged();
@@ -308,6 +329,8 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     {
         if (value is not null)
             _chosenHolderGroup = value;
+        // Moving the holder into a group with (or without) points shows (or hides) the bonus.
+        OnPropertyChanged(nameof(ShowBonus));
     }
 
     // Shows the effective holder's current group in the group picker (blank when they have none).
@@ -359,6 +382,7 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     {
         if (value is not null)
             _chosenGroup = value;
+        OnPropertyChanged(nameof(ShowBonus));
         ConfirmCommand.NotifyCanExecuteChanged();
     }
 
@@ -438,6 +462,36 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
     [ObservableProperty]
     private FinishStatusOption _selectedStatus;
 
+    /// <summary>
+    /// True when the chip's final holder is in a group with a «Бонус» — one whose discipline scores points (the group
+    /// picked above, the new participant's group, or the day's own discipline for a holder with no group).
+    /// </summary>
+    public bool ShowBonus
+    {
+        get
+        {
+            if (IsCreatingNew)
+                return ChosenGroup is { } g && _bonusGroupIds.Contains(g.Id);
+            if (EffectiveHolderId is null)
+                return false;
+            return ChosenHolderGroup is { } hg ? _bonusGroupIds.Contains(hg.Id) : _bonusWithoutGroup;
+        }
+    }
+
+    /// <summary>
+    /// The holder's «Бонус» as editable signed-integer text (as in the participant tables): blank = none. Opens on the
+    /// picked holder's own bonus; a save writes it only when it changed.
+    /// </summary>
+    [ObservableProperty]
+    private string _bonusText = string.Empty;
+
+    // Shows the effective holder's own bonus in the field (blank for a new participant or an unassigned chip).
+    private void SyncBonus()
+    {
+        _bonusOriginal = EffectiveHolderId is { } id && _participantBonuses.TryGetValue(id, out var bonus) ? bonus : null;
+        BonusText = BonusFormat.Format(_bonusOriginal);
+    }
+
     /// <summary>Completes with the confirmed edit on OK, or null on cancel/close.</summary>
     public Task<FinishReadoutEdit?> Completion => _completion.Task;
 
@@ -508,6 +562,11 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
             ? picked.Id
             : (Guid?)null;
 
+        // A bonus is sent only while the field is shown and the operator changed it (an unparseable text — a paste —
+        // leaves the stored bonus alone).
+        int? bonus = null;
+        var setsBonus = ShowBonus && BonusFormat.TryParse(BonusText, out bonus) && bonus != _bonusOriginal;
+
         _completion.TrySetResult(new FinishReadoutEdit
         {
             Id = _id,
@@ -518,7 +577,9 @@ public sealed partial class FinishReadoutEditViewModel : ObservableObject
             ManualStatus = SelectedStatus.Status,
             ReassignToParticipantId = Chosen.ParticipantId,
             GroupId = group,
-            NewParticipant = BuildNewParticipant()
+            NewParticipant = BuildNewParticipant(),
+            SetsBonus = setsBonus,
+            Bonus = setsBonus ? bonus : null
         });
     }
 

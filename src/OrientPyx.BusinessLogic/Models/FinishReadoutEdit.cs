@@ -13,13 +13,16 @@ namespace OrientPyx.BusinessLogic.Models;
 /// <param name="GroupId">The participant's group id on the day, or null when no group is set.</param>
 /// <param name="StartTime">The participant's start by the start protocol (the drawn time of day), or null when
 /// none is assigned — shown in the modal next to the read-out's own start.</param>
+/// <param name="Bonus">The participant's own «Бонус» (points correction) on the day, or null when none is entered —
+/// the modal's bonus field opens on it.</param>
 public sealed record FinishReadoutParticipantOption(
     Guid ParticipantId,
     string Number,
     string FullName,
     string GroupName,
     Guid? GroupId = null,
-    TimeSpan? StartTime = null);
+    TimeSpan? StartTime = null,
+    int? Bonus = null);
 
 /// <summary>
 /// One pickable entry of a competition-level lookup (group / region / club / ДЮСШ) offered by the
@@ -65,6 +68,15 @@ public sealed class FinishReadoutEditData
 
     /// <summary>The day's groups, offered by the "create a new participant" form (a group is mandatory there).</summary>
     public IReadOnlyList<FinishReadoutLookupOption> Groups { get; init; } = [];
+
+    /// <summary>
+    /// The day's groups whose discipline scores points by control (rogaine, за вибором за часом) — the groups with a
+    /// «Бонус»: the modal offers the bonus field only for a holder in one of them.
+    /// </summary>
+    public IReadOnlyList<Guid> BonusGroupIds { get; init; } = [];
+
+    /// <summary>True when the day's own discipline scores points — the bonus applies to a holder with no group.</summary>
+    public bool BonusWithoutGroup { get; init; }
 
     /// <summary>The competition's regions, offered by the "create a new participant" form (optional field).</summary>
     public IReadOnlyList<FinishReadoutLookupOption> Regions { get; init; } = [];
@@ -151,4 +163,13 @@ public sealed class FinishReadoutEdit
     /// Mutually exclusive with <see cref="ReassignToParticipantId"/>.
     /// </summary>
     public NewParticipantData? NewParticipant { get; init; }
+
+    /// <summary>
+    /// True when the operator changed the chip's final holder's «Бонус» — <see cref="Bonus"/> is then written
+    /// (null clears it). False leaves the holder's bonus as it is.
+    /// </summary>
+    public bool SetsBonus { get; init; }
+
+    /// <summary>The holder's new «Бонус» (signed points correction; null = none), used when <see cref="SetsBonus"/>.</summary>
+    public int? Bonus { get; init; }
 }

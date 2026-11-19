@@ -404,8 +404,10 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             }
             catch
             {
-                // never crash the UI over an autosave
+                return; // never crash the UI over an autosave
             }
+            // A plugin rule may read the field (the weighted relay's «Стать»): the results of the person's days follow.
+            await RefreshDaysResultsAsync(dayId is { } d ? [d] : MemberDaysOf(participantId));
         }
     }
 
@@ -1393,8 +1395,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             SelectedParticipant = GridSelection.NeighbourAfterRemoval(Participants, row);
         Participants.Remove(row);
 
-        var (linkId, participantId) = (row.Id, row.ParticipantId);
-        _pendingSaves.Track(RunUndoAsync(step, () => _editor.RemoveParticipantFromDayAsync(linkId, participantId)));
+        // The runner leaves the ranking: the others' places move up.
+        var (linkId, participantId, dayId) = (row.Id, row.ParticipantId, row.DayId);
+        _pendingSaves.Track(WriteThenRefreshAsync(step, dayId, () => _editor.RemoveParticipantFromDayAsync(linkId, participantId)));
     }
 
     // Removing someone from their only day deletes them from the competition (RemoveParticipantFromDayAsync): ask.
@@ -1451,8 +1454,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             SelectedParticipant = GridSelection.NeighbourAfterRemoval(Participants, row);
         Participants.Remove(row);
 
-        var (linkId, participantId) = (row.Id, row.ParticipantId);
-        _pendingSaves.Track(RunUndoAsync(step, () => _editor.RemoveParticipantFromDayAsync(linkId, participantId)));
+        // As for leaving the day: the others' places move up.
+        var (linkId, participantId, dayId) = (row.Id, row.ParticipantId, row.DayId);
+        _pendingSaves.Track(WriteThenRefreshAsync(step, dayId, () => _editor.RemoveParticipantFromDayAsync(linkId, participantId)));
 
         if (confirmed)
             RequestGridFocus();
@@ -1501,8 +1505,23 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             SelectedRosterRow = GridSelection.NeighbourAfterRemoval(Roster, row);
         Roster.Remove(row);
 
+        // The person leaves the ranking of every day they ran: those days' places move up.
         var participantId = row.ParticipantId;
-        _pendingSaves.Track(RunUndoAsync(step, () => _editor.DeleteParticipantAsync(participantId)));
+        var memberDays = row.Days.Where(c => c.IsMember).Select(c => c.DayId).ToList();
+        _pendingSaves.Track(DeleteThenRefreshAsync());
+
+        async Task DeleteThenRefreshAsync()
+        {
+            try
+            {
+                await RunUndoAsync(step, () => _editor.DeleteParticipantAsync(participantId));
+            }
+            catch
+            {
+                return;
+            }
+            await RefreshDaysResultsAsync(memberDays);
+        }
     }
 
     // ── Day-row chip change (conflict-resolved, not part of the debounced save)
@@ -1525,6 +1544,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         // The row's own day (normally the session's): the chip belongs to the day it was typed on.
         var (participantId, dayId) = (row.ParticipantId, row.DayId);
 
+        var written = false;
         await _chipGate.WaitAsync();
         try
         {
@@ -1550,6 +1570,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 // The other holder (if any) had their chip cleared in the DB; refresh that row in the grid.
                 SetChipOnConflictingDayRow(participantId, newChip, string.Empty);
             }
+            written = true;
         }
         catch
         {
@@ -1559,6 +1580,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         {
             _chipGate.Release();
         }
+        // The chip decides which read-out is the runner's (and the other holder's): their results and the day's places.
+        if (written)
+            await RefreshDayResultsAsync(dayId, evenWithoutReadouts: true);
     }
 
     // After a reassignment, replace the chip on whatever OTHER day-grid row was showing it, so the UI
@@ -1692,12 +1716,15 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             // the day link — a step partly in the store that the history would take for an empty one.
             await RunUndoAsync(step, () => _editor.UpdateParticipantDayRowAsync(dto, CancellationToken.None));
         }
-        catch (OperationCanceledException) { }
-        catch { /* never crash the UI over an autosave */ }
+        catch (OperationCanceledException) { return; }
+        catch { return; /* never crash the UI over an autosave */ }
         finally
         {
             EndRowSave(row.Id, cts);
         }
+        // The row's group, start time, «П/К», team, qualification or birth date move results (a plugin rule may read
+        // any of the person's values): the day's places follow at once.
+        await RefreshDayResultsAsync(row.DayId);
     }
 
     // A start number another participant already holds is not saved (numbers are unique per competition): say whose
@@ -1765,12 +1792,14 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             // Runs to its end once started (see SaveRowDebouncedAsync).
             await RunUndoAsync(step, () => _editor.UpdateParticipantIdentityAsync(dto, CancellationToken.None));
         }
-        catch (OperationCanceledException) { }
-        catch { }
+        catch (OperationCanceledException) { return; }
+        catch { return; }
         finally
         {
             EndRowSave(row.ParticipantId, cts);
         }
+        // A team, qualification or birth date moves results on every day the person runs (see SaveRowDebouncedAsync).
+        await RefreshDaysResultsAsync(row.Days.Where(c => c.IsMember).Select(c => c.DayId));
     }
 
     // ── Bulk assign start numbers
@@ -3274,7 +3303,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             return;
         var (participantId, dayId, startTime) = (cell.ParticipantId, cell.DayId, cell.StartTime);
         var step = CaptureRoster(RunnerLabel("Participants.Col.StartTime", participantId));
-        _pendingSaves.Track(WriteAsync(step, () => _editor.SetParticipantDayStartTimeAsync(participantId, dayId, startTime)));
+        // A start from the protocol is the runner's start when the chip has none: the result time and places move.
+        _pendingSaves.Track(WriteThenRefreshAsync(step, dayId, () => _editor.SetParticipantDayStartTimeAsync(participantId, dayId, startTime)));
     }
 
     private void RequestCellOutOfCompetitionChange(RosterDayCellViewModel cell)
@@ -3285,7 +3315,8 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
             return;
         var (participantId, dayId, value) = (cell.ParticipantId, cell.DayId, cell.OutOfCompetition);
         var step = CaptureRoster(RunnerLabel("Participants.Col.OutOfCompetition", participantId));
-        _pendingSaves.Track(WriteAsync(step, () => _editor.SetParticipantDayOutOfCompetitionAsync(participantId, dayId, value)));
+        // «П/К» takes the runner out of the ranking: the others' places move.
+        _pendingSaves.Track(WriteThenRefreshAsync(step, dayId, () => _editor.SetParticipantDayOutOfCompetitionAsync(participantId, dayId, value)));
     }
 
     // One background write of a step; a failure (a closed day, a lost connection) never crashes the UI — the next
@@ -3324,16 +3355,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _pendingSaves.Track(ApplyResultStatusAsync(cell.ParticipantId, cell.DayId, cell.ResultStatusOverride, step));
     }
 
-    private async Task ApplyResultStatusAsync(Guid participantId, Guid dayId, FinishStatus? status, UndoEntry? step)
-    {
-        try
-        {
-            await RunUndoAsync(step, () => _editor.SetParticipantDayResultStatusAsync(participantId, dayId, status));
-            var results = await _editor.GetDayResultsByParticipantAsync(dayId);
-            RefreshResults(dayId, results);
-        }
-        catch { /* never crash the UI over a status edit */ }
-    }
+    private Task ApplyResultStatusAsync(Guid participantId, Guid dayId, FinishStatus? status, UndoEntry? step)
+        => WriteThenRefreshAsync(step, dayId, () => _editor.SetParticipantDayResultStatusAsync(participantId, dayId, status),
+            evenWithoutReadouts: true);
 
     // ── Relay cells (day grid + roster): «Команда» / «Номер команди» / «Етап» typed on a runner's row («Номер етапу» is
     // read-only). The cell already shows the edit; the page saves it (asking first when it could change the team itself
@@ -3891,15 +3915,96 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     private Task ApplyDayRaisedFeeAsync(Guid participantId, Guid dayId, bool paysRaisedFee, UndoEntry? step)
         => WriteAsync(step, () => _editor.SetParticipantDayRaisedFeeAsync(participantId, dayId, paysRaisedFee));
 
-    private async Task ApplyBonusAsync(Guid participantId, Guid dayId, int? bonus, UndoEntry? step)
+    private Task ApplyBonusAsync(Guid participantId, Guid dayId, int? bonus, UndoEntry? step)
+        => WriteThenRefreshAsync(step, dayId, () => _editor.SetParticipantDayBonusAsync(participantId, dayId, bonus),
+            evenWithoutReadouts: true);
+
+    // ── Live results
+    // A write that can move a result — a status or a bonus, «П/К», a group, a chip, a start time, a team, a field a
+    // plugin rule reads, a runner gone from the day — asks for the day's results again, and every row of the day takes
+    // them (the others' places, «Бали» and «Очки» move too). Quick edits (typing down a column, a paste, a bulk edit)
+    // ask many times over: the reads of a day run one at a time, an ask while one runs makes it read once more, and
+    // only a read that started after the last ask is applied — an older read finishing late never lands over a newer
+    // one (it did: two recomputes in flight could finish out of order and leave the places of a later edit unshown).
+    private sealed class ResultsRead
+    {
+        public bool Again;
+        public Task Task = Task.CompletedTask;
+    }
+
+    // Day → its read in flight. Touched on the UI thread only.
+    private readonly Dictionary<Guid, ResultsRead> _resultsReads = new();
+
+    // evenWithoutReadouts: the edit shows on a runner with no read-out too (a status, a bonus) or may bring one (a
+    // chip). Otherwise a day nobody has read out on yet is left alone — nothing on it is placed or scored.
+    private Task RefreshDayResultsAsync(Guid dayId, bool evenWithoutReadouts = false)
+    {
+        if (!evenWithoutReadouts && !DayHasReadouts(dayId))
+            return Task.CompletedTask;
+        if (_resultsReads.TryGetValue(dayId, out var running))
+        {
+            running.Again = true;
+            return running.Task;
+        }
+        var read = new ResultsRead();
+        _resultsReads[dayId] = read;
+        read.Task = ReadDayResultsAsync(dayId, read);
+        return read.Task;
+    }
+
+    private async Task ReadDayResultsAsync(Guid dayId, ResultsRead read)
     {
         try
         {
-            await RunUndoAsync(step, () => _editor.SetParticipantDayBonusAsync(participantId, dayId, bonus));
-            var results = await _editor.GetDayResultsByParticipantAsync(dayId);
-            RefreshResults(dayId, results);
+            do
+            {
+                read.Again = false;
+                var results = await _editor.GetDayResultsByParticipantAsync(dayId);
+                if (!read.Again)
+                    RefreshResults(dayId, results);
+            }
+            while (read.Again);
         }
-        catch { /* never crash the UI over a bonus edit */ }
+        catch
+        {
+            // never crash the UI over a recompute; the next reload shows the store
+        }
+        finally
+        {
+            _resultsReads.Remove(dayId);
+        }
+    }
+
+    // The member days of the shown rows with a read-out on them.
+    private bool DayHasReadouts(Guid dayId) => IsDayMode
+        ? Participants.Any(r => r.DayId == dayId && r.HasReadout)
+        : Roster.Any(r => r.Days.Any(c => c.DayId == dayId && c.IsMember && c.HasReadout));
+
+    // The days a roster participant runs (each one's results may move with an edit of the person).
+    private IReadOnlyList<Guid> MemberDaysOf(Guid participantId)
+        => Roster.FirstOrDefault(r => r.ParticipantId == participantId) is { } row
+            ? row.Days.Where(c => c.IsMember).Select(c => c.DayId).ToList()
+            : [];
+
+    private async Task RefreshDaysResultsAsync(IEnumerable<Guid> dayIds)
+    {
+        foreach (var dayId in dayIds.Distinct().ToList())
+            await RefreshDayResultsAsync(dayId);
+    }
+
+    // One background write of a step, then the day's results (see RefreshDayResultsAsync). A failed write refreshes
+    // nothing — the next reload shows what the store holds.
+    private async Task WriteThenRefreshAsync(UndoEntry? step, Guid dayId, Func<Task> write, bool evenWithoutReadouts = false)
+    {
+        try
+        {
+            await RunUndoAsync(step, write);
+        }
+        catch
+        {
+            return;
+        }
+        await RefreshDayResultsAsync(dayId, evenWithoutReadouts);
     }
 
     // Re-applies recomputed day results onto the visible rows/cells so places re-number after a status
@@ -3929,6 +4034,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         var newChip = (cell.Chip ?? string.Empty).Trim();
         var (participantId, dayId) = (cell.ParticipantId, cell.DayId);
 
+        var written = false;
         await _chipGate.WaitAsync();
         try
         {
@@ -3952,6 +4058,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                 // Mirror the DB: drop the chip from any other roster cell on the SAME day that showed it.
                 SetChipOnConflictingRosterCell(participantId, dayId, newChip, string.Empty);
             }
+            written = true;
         }
         catch
         {
@@ -3961,6 +4068,9 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         {
             _chipGate.Release();
         }
+        // As on the day grid: the chip decides the runner's read-out, so the day's results follow.
+        if (written)
+            await RefreshDayResultsAsync(dayId, evenWithoutReadouts: true);
     }
 
     // After a roster reassignment, replace the chip on the other participant's cell on the same day:
@@ -4008,7 +4118,12 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
                     await RunUndoAsync(step, () => _editor.SetParticipantDayChipAsync(participantId, dayId, chip));
             }
         }
-        catch { }
+        catch
+        {
+            return;
+        }
+        // A runner who joined, left or changed group moves the places of both groups.
+        await RefreshDayResultsAsync(dayId, evenWithoutReadouts: true);
     }
 
     // "не бере участі": takes the participant off the cell's day; nothing to do if not a member. Their last day deletes

@@ -16,7 +16,8 @@ namespace OrientPyx.BusinessLogic.Models;
 /// start, else the participant's assigned start paired with the finish's date.</param>
 /// <param name="Elapsed">Finish − <paramref name="ResolvedStartTime"/>; null when no
 /// participant/finish/start is known.</param>
-/// <param name="Score">Collected «Бали» for point-scoring formats; null when the discipline scores none.</param>
+/// <param name="Score">Collected «Бали» of this read-out (after the over-time penalty, before the «Бонус») for
+/// point-scoring formats; null when the discipline scores none. See <see cref="Bonus"/>.</param>
 /// <param name="Place">1-based rank within the group on the day (rogaine by score then time, others by
 /// time). Only assignable for an OK result; null for an unknown chip, a non-OK status or an
 /// out-of-competition runner.</param>
@@ -48,6 +49,12 @@ public sealed record FinishReadoutRow(
     bool IsManualStatus = false,
     FinishDetailKind StatusDetailKind = FinishDetailKind.MissingControl)
 {
+    /// <summary>
+    /// The holder's own «Бонус» (judge's points correction) on a point-scoring row, or null when none is entered (or
+    /// the row scores nothing). The row's total is <see cref="Score"/> + this.
+    /// </summary>
+    public int? Bonus { get; init; }
+
     /// <summary>Relay: the runner's team number; null outside a relay (then the relay fields below are unused).</summary>
     public int? RelayTeamNumber { get; init; }
 

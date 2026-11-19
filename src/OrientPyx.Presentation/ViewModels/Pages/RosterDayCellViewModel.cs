@@ -264,6 +264,9 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     /// <summary>The parsed bonus the user entered (null = none). Read by the page's bonus callback.</summary>
     public int? Bonus => _bonus;
 
+    /// <summary>True when a read-out on this day matched the runner's chip (the page recomputes a day only when it has one).</summary>
+    public bool HasReadout => _result.HasReadout;
+
     // CanEditStatus / CanEditMemberFields fold in membership (and the day lock), so re-raise both
     // whenever membership flips.
     partial void OnIsMemberChanged(bool value)
