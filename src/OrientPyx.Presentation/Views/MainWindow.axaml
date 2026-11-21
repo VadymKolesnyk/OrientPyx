@@ -291,6 +291,19 @@
         <!-- Always-visible top menu, with the page navigation as top-level items -->
         <Menu x:Name="TopMenu">
             <MenuItem Header="{Binding Localization[Menu.File]}">
+                <!-- «Файл → Правка»: undo / redo of the shown page (the same step as Ctrl+Z / Ctrl+Y). InputGesture is
+                     only the hint text: the window handles the keys itself (a HotKey would fire twice). -->
+                <MenuItem x:Name="EditMenu" Header="{Binding Localization[Menu.Edit]}"
+                          IsVisible="{Binding IsEventSelected}"
+                          SubmenuOpened="OnEditMenuOpened">
+                    <MenuItem Header="{Binding EditMenu.UndoHeader}"
+                              Command="{Binding EditMenu.UndoCommand}"
+                              InputGesture="Ctrl+Z" />
+                    <MenuItem Header="{Binding EditMenu.RedoHeader}"
+                              Command="{Binding EditMenu.RedoCommand}"
+                              InputGesture="Ctrl+Y" />
+                </MenuItem>
+                <Separator IsVisible="{Binding IsEventSelected}" />
                 <MenuItem Header="{Binding Localization[Menu.File.Settings]}"
                           Command="{Binding OpenSettingsCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.File.Network]}"
@@ -309,19 +322,6 @@
                 <Separator />
                 <MenuItem Header="{Binding Localization[Menu.File.Exit]}"
                           Command="{Binding ExitCommand}" />
-            </MenuItem>
-
-            <!-- Undo / redo of the shown page (the same step as Ctrl+Z / Ctrl+Y). InputGesture is only the hint text:
-                 the window handles the keys itself (a HotKey would fire twice). -->
-            <MenuItem x:Name="EditMenu" Header="{Binding Localization[Menu.Edit]}"
-                      IsVisible="{Binding IsEventSelected}"
-                      SubmenuOpened="OnEditMenuOpened">
-                <MenuItem Header="{Binding EditMenu.UndoHeader}"
-                          Command="{Binding EditMenu.UndoCommand}"
-                          InputGesture="Ctrl+Z" />
-                <MenuItem Header="{Binding EditMenu.RedoHeader}"
-                          Command="{Binding EditMenu.RedoCommand}"
-                          InputGesture="Ctrl+Y" />
             </MenuItem>
 
             <!-- Competition setup + reference data, shown only while a competition is open.

@@ -82,6 +82,13 @@ public sealed class SheetFilter
         };
     }
 
+    /// <summary>
+    /// "By status" over several tokens of one cell (the chip column's merged all-days cell): passes when any of
+    /// them is kept. No token at all (a day the participant does not run) passes only while nothing is filtered.
+    /// </summary>
+    public bool MatchesAnyStatus(IEnumerable<string> tokens)
+        => AllowedStatuses is null || tokens.Any(AllowedStatuses.Contains);
+
     private bool MatchesValues(string value)
         => AllowedValues is null || AllowedValues.Contains(value);
 

@@ -28,6 +28,9 @@ public sealed partial class OnlineColumnsEditorViewModel : ObservableObject
     private IReadOnlyList<OnlineExtraColumn> _extras = [];
     private IReadOnlyList<OnlineColumnConfig> _unavailable = [];
 
+    // Built-in columns the shown day cannot fill (see SetInapplicable): their rows are hidden, their flags kept.
+    private HashSet<string> _inapplicable = new(StringComparer.OrdinalIgnoreCase);
+
     public OnlineColumnsEditorViewModel(ILocalizationService localization)
     {
         _localization = localization;
@@ -88,6 +91,16 @@ public sealed partial class OnlineColumnsEditorViewModel : ObservableObject
         Load(current);
     }
 
+    /// <summary>Hides the rows of the built-in columns the shown day cannot fill (<see cref="ResultColumnInfo.Inapplicable"/>:
+    /// «Наростаючий» without a relay group, «Бали» without a scored format). They keep their place and their two
+    /// check-boxes, so <see cref="BuildConfig"/> saves them unchanged and a day that has them shows them again.</summary>
+    public void SetInapplicable(IReadOnlyCollection<string> keys)
+    {
+        _inapplicable = keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in Columns)
+            item.IsApplicable = !_inapplicable.Contains(item.Key);
+    }
+
     /// <summary>The current config: every column in order with its lg/sm flags (then the extras the day lacks, as
     /// they were), plus the DSQ split toggles.</summary>
     public OnlineDisplayConfig BuildConfig() =>
@@ -96,7 +109,12 @@ public sealed partial class OnlineColumnsEditorViewModel : ObservableObject
 
     private OnlineColumnItem MakeItem(ResultColumnInfo def, bool lg, bool sm)
     {
-        var item = new OnlineColumnItem(def, _localization.Get(def.LabelKey)) { Lg = lg, Sm = sm };
+        var item = new OnlineColumnItem(def, _localization.Get(def.LabelKey))
+        {
+            Lg = lg,
+            Sm = sm,
+            IsApplicable = !_inapplicable.Contains(def.Key),
+        };
         item.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(OnlineColumnItem.Lg) or nameof(OnlineColumnItem.Sm))
@@ -189,6 +207,10 @@ public sealed partial class OnlineColumnItem : ObservableObject
 
     [ObservableProperty]
     private bool _sm;
+
+    /// <summary>False for a column the shown day cannot fill: its row is hidden, its flags kept.</summary>
+    [ObservableProperty]
+    private bool _isApplicable = true;
 
     [ObservableProperty]
     private string _label;

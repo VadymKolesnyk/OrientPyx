@@ -87,75 +87,154 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
     public virtual FinishStatusResult EvaluateFinish(FinishContext context) => FinishStatusResult.Of(FinishStatus.None);
 
     /// <summary>
-    /// Default splits layout is the scored one (score / choice / rogaine): the controls the chip
-    /// punched, in passage order, each with its point value, the time and a running total — followed by
-    /// the allowed controls that were not visited (greyed, no time). Order is just the passage; there is
-    /// no "right/wrong order" for a free-choice format. Set course overrides this with the ordered layout.
+    /// Every discipline states its own splits shape: the ordered layout (set course, mixed, scatter, rogaine)
+    /// or the scored one (the score formats, see <see cref="BuildScoredSplits"/>).
     /// </summary>
-    public virtual SplitsView BuildSplits(SplitsContext context) => BuildScoredSplits(context);
+    public abstract SplitsView BuildSplits(SplitsContext context);
 
     /// <summary>
-    /// Shared scored-layout builder used by every free-choice discipline. A control is counted once even
-    /// if punched twice (the first punch scores); only controls in the allowed set count toward points.
-    /// No over-time penalty by default; rogaine passes a non-null rate (see <see cref="BuildScoredSplits(SplitsContext, decimal?)"/>).
+    /// Shared scored-layout builder of the score formats («за вибором»). <see cref="SplitsView.Entries"/> (the
+    /// splits panel) lists the controls the chip punched, in passage order, each with its point value, the
+    /// time and a running total, followed by the allowed controls that were not visited (greyed, no time).
+    /// <see cref="SplitsView.Passage"/> (the split slip and the HTML splits) is the free-order passage — every
+    /// punch in the order taken, with its leg, distance and pace (see <see cref="BuildFreeOrderPassage"/>). A
+    /// control is counted once even if punched twice (the first punch scores); only controls in the allowed
+    /// set count toward points. <paramref name="defaultPenaltyRate"/> is the points-per-late-minute used when
+    /// the group sets none (null = no penalty unless the group set one); the penalty is subtracted (see
+    /// <see cref="PenaltyFor"/>) into <see cref="SplitsView.TotalPoints"/> (the net), while
+    /// <see cref="SplitsView.GrossPoints"/>/<see cref="SplitsView.Penalty"/> keep the "X − Y = Z" parts.
     /// </summary>
-    protected SplitsView BuildScoredSplits(SplitsContext context) => BuildScoredSplits(context, defaultPenaltyRate: null);
-
-    /// <summary>
-    /// Shared scored-layout builder, with an optional over-time penalty. <paramref name="defaultPenaltyRate"/>
-    /// is the points-per-late-minute used when the group sets none (rogaine defaults to 1; the score formats
-    /// pass null = no penalty unless the group set one). The gross points are tallied as before; the penalty
-    /// is then subtracted (see <see cref="PenaltyFor"/>) into <see cref="SplitsView.TotalPoints"/> (the net),
-    /// while <see cref="SplitsView.GrossPoints"/>/<see cref="SplitsView.Penalty"/> keep the "X − Y = Z" parts.
-    /// </summary>
-    protected SplitsView BuildScoredSplits(SplitsContext context, decimal? defaultPenaltyRate)
+    protected SplitsView BuildScoredSplits(
+        SplitsContext context, ICourseDistanceCalculator distance, decimal? defaultPenaltyRate)
     {
-        var allowed = new HashSet<string>(
-            context.ExpectedControls.Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);
+        var run = BuildFreeOrderPassage(context, distance, defaultPenaltyRate);
 
+        // Visited controls in passage order: the scoring punches (foreign punches and repeats score nothing).
         var entries = new List<ScoreEntry>();
-        var counted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var total = 0;
-
-        // Visited controls in passage order. Skip foreign punches (not in the allowed set) and repeats.
-        foreach (var punch in context.Punches)
-        {
-            var code = punch.ControlCode.Trim();
-            if (code.Length == 0 || !allowed.Contains(code) || !counted.Add(code))
-                continue;
-
-            var points = context.PointsByCode.TryGetValue(code, out var p) ? p : 0;
-            total += points;
-            var elapsed = context.StartTime is { } s && punch.Time is { } t ? t - s : (TimeSpan?)null;
-            entries.Add(new ScoreEntry(code, Visited: true, points, punch.Time, elapsed, total));
-        }
+        foreach (var p in run.Passage)
+            if (p.Kind == PassageKind.Control && p.OnCourse)
+                entries.Add(new ScoreEntry(p.Code, Visited: true, p.Points ?? 0, p.Time, p.Elapsed, p.RunningTotal ?? 0));
 
         // Allowed controls that were never punched, in course order, greyed (no time, total unchanged).
         foreach (var expected in context.ExpectedControls)
         {
             var code = expected.Trim();
-            if (code.Length == 0 || counted.Contains(code))
+            if (code.Length == 0 || run.Scored.Contains(code))
                 continue;
 
             var points = context.PointsByCode.TryGetValue(code, out var p) ? p : 0;
-            entries.Add(new ScoreEntry(code, Visited: false, points, PunchTime: null, Elapsed: null, total));
+            entries.Add(new ScoreEntry(code, Visited: false, points, PunchTime: null, Elapsed: null, run.Gross));
         }
 
-        var penalty = PenaltyFor(context, total, defaultPenaltyRate);
         return new SplitsView
         {
             Layout = SplitsLayout.Scored,
             Entries = entries,
-            GrossPoints = total,
-            Penalty = penalty,
-            TotalPoints = total - penalty,
+            Passage = run.Passage,
+            GrossPoints = run.Gross,
+            Penalty = run.Penalty,
+            TotalPoints = run.Gross - run.Penalty,
             // Only a format that actually values its controls reports a points total; «за вибором по
             // кількості КП» scores none, so its summary stays a plain "taken / of".
             HasPoints = UsesControlPointPoints,
-            VisitedCount = counted.Count,
-            ExpectedCount = allowed.Count
+            VisitedCount = run.Scored.Count,
+            ExpectedCount = run.AllowedCount
         };
     }
+
+    /// <summary>
+    /// The free-order passage shared by the rogaine and the score formats: every punch the chip recorded, in
+    /// punch order (the order the competitor took the controls), bracketed by start/finish markers, each with
+    /// its leg split, straight-line distance and pace measured from the previous punch. A punch on an allowed
+    /// control taken for the first time scores its points (on course, running total); a foreign or repeated
+    /// punch is listed but scores nothing. The over-time penalty (<see cref="PenaltyFor"/>, with
+    /// <paramref name="defaultPenaltyRate"/> when the group sets no rate) shows on the finish marker as negative
+    /// points beside the net running total. In a rogaine team a scoring punch on a control the whole team took
+    /// is flagged <see cref="PassagePunch.CountsForTeam"/>.
+    /// </summary>
+    protected static FreeOrderPassage BuildFreeOrderPassage(
+        SplitsContext context, ICourseDistanceCalculator distance, decimal? defaultPenaltyRate)
+    {
+        var allowed = new HashSet<string>(
+            context.ExpectedControls.Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);
+
+        var scored = new HashSet<string>(StringComparer.OrdinalIgnoreCase); // allowed controls already counted
+        var total = 0;
+        DateTimeOffset? prev = context.StartTime;
+        var prevPoint = context.StartCoord;
+        var prevMap = context.StartMap;
+
+        var passage = new List<PassagePunch>(context.Punches.Count + 2);
+        var index = 0;
+
+        // Start marker first (its time is the reference point — no leg/elapsed).
+        passage.Add(new PassagePunch(0, string.Empty, OnCourse: false,
+            context.StartTime, Leg: null, Elapsed: TimeSpan.Zero, PassageKind.Start));
+
+        foreach (var punch in context.Punches)
+        {
+            var code = punch.ControlCode.Trim();
+            if (code.Length == 0)
+                continue;
+
+            var leg = prev is { } pr && punch.Time is { } t ? t - pr : (TimeSpan?)null;
+            var elapsed = context.StartTime is { } s && punch.Time is { } t2 ? t2 - s : (TimeSpan?)null;
+
+            var toPoint = ResolveCoord(context, code);
+            var toMap = ResolveMap(context, code);
+            var legKm = LegDistanceKm(distance, context, prevPoint, toPoint, prevMap, toMap);
+            var pace = PaceSecondsPerKm(leg, legKm);
+
+            // Scores only when it's an allowed control taken for the first time (a repeat counts once,
+            // a foreign punch never). "On course" mirrors that: a scoring punch is the on-course glyph.
+            var scores = allowed.Contains(code) && scored.Add(code);
+            int? points = null;
+            int? running = null;
+            if (scores)
+            {
+                points = context.PointsByCode.TryGetValue(code, out var p) ? p : 0;
+                total += points.Value;
+                running = total;
+            }
+
+            // Team annotation (no effect on the personal total): a scoring punch on a control the whole
+            // team also took counts toward the team result. Only meaningful in a team context.
+            var countsForTeam = scores && context.TeamCommonControls?.Contains(code) == true;
+
+            passage.Add(new PassagePunch(++index, code, OnCourse: scores, punch.Time, leg, elapsed,
+                PassageKind.Control, legKm, pace, points, running, countsForTeam));
+
+            if (punch.Time is not null)
+                prev = punch.Time;
+            if (toPoint.HasCoordinates)
+                prevPoint = toPoint;
+            if (toMap.HasCoordinates)
+                prevMap = toMap;
+        }
+
+        var penalty = PenaltyFor(context, total, defaultPenaltyRate);
+        var net = total - penalty;
+
+        // Finish marker last: leg from the last punch (or start), elapsed = finish − start, and the over-time
+        // penalty as a negative "Points" with the net running total, so the passage reads "… −Y" beside it.
+        var finishLeg = prev is { } fp && context.FinishTime is { } ft ? ft - fp : (TimeSpan?)null;
+        var finishElapsed = context.StartTime is { } fs && context.FinishTime is { } ft2 ? ft2 - fs : (TimeSpan?)null;
+        var finishKm = LegDistanceKm(distance, context, prevPoint, context.FinishCoord, prevMap, context.FinishMap);
+        var finishPace = PaceSecondsPerKm(finishLeg, finishKm);
+        passage.Add(new PassagePunch(0, string.Empty, OnCourse: false,
+            context.FinishTime, finishLeg, finishElapsed, PassageKind.Finish, finishKm, finishPace,
+            Points: penalty > 0 ? -penalty : (int?)null,
+            RunningTotal: penalty > 0 ? net : (int?)null));
+
+        return new FreeOrderPassage(passage, scored, allowed.Count, total, penalty);
+    }
+
+    /// <summary>
+    /// A built free-order passage: the rows, the allowed controls that scored, how many controls the course
+    /// allows, the gross points and the over-time penalty (net = gross − penalty).
+    /// </summary>
+    protected sealed record FreeOrderPassage(
+        IReadOnlyList<PassagePunch> Passage, IReadOnlySet<string> Scored, int AllowedCount, int Gross, int Penalty);
 
     /// <summary>
     /// Over-time points penalty for a scored result: minutes finished past the group's time limit

@@ -243,6 +243,7 @@
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="shared:ResultColumnItem">
                                                 <CheckBox VerticalAlignment="Center" Margin="0,0,18,6"
+                                                          IsVisible="{Binding IsApplicable}"
                                                           IsChecked="{Binding IsChecked, Mode=TwoWay}"
                                                           Content="{Binding Label}" />
                                             </DataTemplate>

@@ -189,7 +189,10 @@ public sealed class RosterColumnBuilder
                     ToolTipPath = ResultTooltipPath(block.Field),
                 };
                 if (isChips)
+                {
                     ConfigureChipCapacityTint(col, 0);
+                    DayColumnBuilder.ConfigureRentalChipColumn(col, ChipsOfDay(0));
+                }
                 if (block.Field == RosterField.Groups)
                     ConfigureNoGroupTint(col, 0);
                 // Single-day group/status cell binds under Days[0]. too — wire combo-paste the same way.
@@ -231,7 +234,12 @@ public sealed class RosterColumnBuilder
                 });
                 // The merged chip cell flags a card too small for ANY member day's course.
                 if (isChips)
+                {
                     ConfigureChipCapacityTint(cols[0], dayIndex: null);
+                    // «За станом» judges every member day's chip: a participant with a rental chip on one day and
+                    // their own on another shows under both «Орендний» and «Не орендний».
+                    DayColumnBuilder.ConfigureRentalChipColumn(cols[0], nameof(ParticipantRosterRowViewModel.MemberChips));
+                }
                 if (block.Field == RosterField.Groups)
                     ConfigureNoGroupTint(cols[0], dayIndex: null);
                 if (block.Field == RosterField.Payment)
@@ -267,7 +275,10 @@ public sealed class RosterColumnBuilder
                         ToolTipPath = ResultTooltipPath(block.Field),
                     };
                     if (isChips)
+                    {
                         ConfigureChipCapacityTint(leaf, i);
+                        DayColumnBuilder.ConfigureRentalChipColumn(leaf, ChipsOfDay(i));
+                    }
                     if (block.Field == RosterField.Groups)
                         ConfigureNoGroupTint(leaf, i);
                     // Per-day combo leaves (group / status) resolve a paste to an option on that day by
@@ -557,6 +568,10 @@ public sealed class RosterColumnBuilder
         column.CellBackgroundTooltipPath = prefix + nameof(RosterDayCellViewModel.ChipCapacityTooltip);
         column.CellBackgroundBrush = DayColumnBuilder.ChipCapacityBrush;
     }
+
+    // The chips a per-day chip leaf's «За станом» judges: the day's chip, none on a day the participant does not run
+    // (so «Без чіпа» lists only the day's runners still without one).
+    private static string ChipsOfDay(int dayIndex) => $"Days[{dayIndex}].{nameof(RosterDayCellViewModel.MemberChips)}";
 
     // Tints a group cell amber for a participant who runs the day with no group on it («без групи»), red for a relay
     // leg number «за номером етапу» without a course the results can use, with a tooltip saying what to do. A per-day

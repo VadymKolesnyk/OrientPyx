@@ -357,7 +357,7 @@ public override FinishStatusResult EvaluateFinish(FinishContext ctx)
 | Член | Опис |
 |---|---|
 | `SplitsLayout Layout` (обов'язковий) | вигляд панелі |
-| `IReadOnlyList<PassagePunch> Passage` | `Ordered`: усі відмітки чіпа по порядку |
+| `IReadOnlyList<PassagePunch> Passage` | усі відмітки чіпа по порядку, між рядками старту й фінішу; `Ordered` заповнює завжди, `Scored` — за бажанням (вбудовані формати з балами заповнюють: перегін, довжина, швидкість, бали), і тоді спліт-роздруківка друкує його замість `Entries` |
 | `IReadOnlyList<ExpectedControl> Expected` | `Ordered`: задана дистанція, кожен КП — взято чи ні |
 | `IReadOnlySet<string> DisabledControls` | проблемні КП дистанції |
 | `string PrescribedPattern` | шаблон змішаного напрямку з явними стартом і фінішем |

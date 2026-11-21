@@ -45,6 +45,10 @@ public sealed record OnlineResultsSnapshot(
     /// display order: key + label (a localization key until the caller translates it, see
     /// <c>docs/online-snapshot.md</c>).</summary>
     public IReadOnlyList<OnlineExtraColumn> ExtraColumns { get; init; } = [];
+
+    /// <summary>The keys of the built-in columns the published day cannot fill (<see cref="ResultColumnInfo.Inapplicable"/>:
+    /// «Наростаючий» without a relay group, «Бали» without a scored one) — the column editor hides them.</summary>
+    public IReadOnlyList<string> InapplicableColumns { get; init; } = [];
 }
 
 /// <summary>One extra result column of the day: its stable key (<c>"&lt;pluginId&gt;.&lt;key&gt;"</c> or
@@ -132,9 +136,9 @@ public sealed record OnlineResultRow(
     TimeSpan? StartTime,
     /// <summary>The chip's finish time of day, or null.</summary>
     TimeSpan? FinishTime,
-    /// <summary>Score points for a point-scoring (rogaine) discipline, or null.</summary>
+    /// <summary>«Бали» of a point-scoring format (sum of the controls' values with the penalty and the bonus), or null.</summary>
     int? Score,
-    /// <summary>Ranking points («Бали»/«Очки») for the result, or null.</summary>
+    /// <summary>Ranking points («Очки») the group's points rule awards, or null.</summary>
     decimal? Points,
     /// <summary>The effective finish status, mapped by the publisher to a spectator status code.</summary>
     FinishStatus Status,

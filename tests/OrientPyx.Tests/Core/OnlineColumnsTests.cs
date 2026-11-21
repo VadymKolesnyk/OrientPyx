@@ -11,6 +11,7 @@ namespace OrientPyx.Tests.Core;
 /// Extra columns online (§10.2): the online layout offers the day's plugin columns and additional fields beside the
 /// built-in ones, the publisher labels them in <c>display_config</c> and sends their values in <c>results.extra</c>,
 /// and a project without that column keeps publishing everything else. «Наростаючий» joins an older layout visible.
+/// «Бали» (score) and «Очки» (points) are two columns, published apart; an older monitor layout gains «Бали».
 /// </summary>
 public sealed class OnlineColumnsTests
 {
@@ -81,15 +82,88 @@ public sealed class OnlineColumnsTests
         Assert.Equal("Бігунка", sent[1][0].GetProperty("full_name").GetString());
     }
 
+    [Fact]
+    public async Task Publisher_SendsScoreAndPointsApart()
+    {
+        // A rogaine runner without a points rule: «Бали» 42, no «Очки» — the score no longer stands in for points.
+        var handler = new RecordingHandler();
+        using var publisher = new SupabaseResultPublisher(new HttpClient(handler));
+        await publisher.PublishAsync(Publish(), Api, Snapshot(new Dictionary<string, string>(), score: 42, points: null));
+
+        var row = handler.Bodies("results").Single()[0];
+        Assert.Equal(42, row.GetProperty("score").GetInt32());
+        Assert.Equal(JsonValueKind.Null, row.GetProperty("points").ValueKind);
+
+        await publisher.PublishAsync(Publish(), Api, Snapshot(new Dictionary<string, string>(), score: 42, points: 87.5m));
+        var next = handler.Bodies("results")[1][0];
+        Assert.Equal(87.5m, next.GetProperty("points").GetDecimal());
+        Assert.Equal(42, next.GetProperty("score").GetInt32());
+
+        // The site learns the column: «Бали» in display_config, right before «Очки».
+        var keys = handler.Bodies("events").Single()[0].GetProperty("display_config").GetProperty("columns")
+            .EnumerateArray().Select(c => c.GetProperty("key").GetString()).ToList();
+        Assert.Equal(keys.IndexOf("points") - 1, keys.IndexOf("score"));
+    }
+
+    [Fact]
+    public async Task Publisher_WithoutTheScoreOrExtraColumn_KeepsPublishingTheRest()
+    {
+        var handler = new RecordingHandler { RejectExtra = true, RejectScore = true };
+        using var publisher = new SupabaseResultPublisher(new HttpClient(handler));
+        await publisher.PublishAsync(Publish(), Api,
+            Snapshot(new Dictionary<string, string> { ["field.gender"] = "Ж" }, score: 42, points: 90m));
+
+        Assert.True(publisher.ExtraUnsupported);
+        Assert.True(publisher.ScoreUnsupported);
+        var sent = handler.Bodies("results");
+        Assert.Equal(3, sent.Count);                                     // rejected for extra, for score, then sent
+        Assert.False(sent[2][0].TryGetProperty("score", out _));
+        Assert.False(sent[2][0].TryGetProperty("extra", out _));
+        Assert.Equal(90m, sent[2][0].GetProperty("points").GetDecimal());
+
+        // Remembered: the next tick goes out once, without both.
+        await publisher.PublishAsync(Publish(), Api, Snapshot(new Dictionary<string, string>(), score: 43, points: 91m));
+        Assert.Equal(4, handler.Bodies("results").Count);
+    }
+
+    [Fact]
+    public void Resolve_AnOlderLayoutGetsScoreBeforePoints()
+    {
+        var older = new OnlineDisplayConfig(
+            OnlineDisplayConfig.Default.Columns.Where(c => c.Key != "score").ToList(), SeparateDsqLg: true, SeparateDsqSm: false);
+        var resolved = older.Resolve();
+        var keys = resolved.Select(c => c.Def.Key).ToList();
+        Assert.Equal(keys.IndexOf("status") + 1, keys.IndexOf("score"));
+        var score = resolved.Single(c => c.Def.Key == "score");
+        Assert.Equal(ResultColumn.Score, score.Def.Column);
+        Assert.True(score.Lg && score.Sm);
+    }
+
+    [Fact]
+    public void MonitorSelection_SavedBeforeScore_GetsScoreAfterPoints()
+    {
+        // An older monitor layout (no version): its «Очки» used to show the score without a points rule.
+        var old = JsonSerializer.Deserialize<ResultColumnSelection>("""{"keys":["full_name","points","status"]}""")!;
+        Assert.Equal(0, old.Version);
+        Assert.Equal(["full_name", "points", "score", "status"], old.Resolve().Select(d => d.Key));
+
+        // A layout saved now keeps exactly what was ticked — «Бали» switched off stays off.
+        var saved = new ResultColumnSelection(["full_name", "points"]) { Version = ResultColumnSelection.CurrentVersion };
+        var reread = JsonSerializer.Deserialize<ResultColumnSelection>(JsonSerializer.Serialize(saved))!;
+        Assert.Equal(["full_name", "points"], reread.Resolve().Select(d => d.Key));
+        Assert.Contains("score", ResultColumnSelection.Default.Resolve().Select(d => d.Key));
+    }
+
     private static readonly OnlineApiSettings Api = new("https://example.invalid", "key", "", 15);
 
     private static OnlinePublishSettings Publish() => OnlinePublishSettings.Default("cup", "Cup", "");
 
-    private static OnlineResultsSnapshot Snapshot(IReadOnlyDictionary<string, string> extra) =>
+    private static OnlineResultsSnapshot Snapshot(
+        IReadOnlyDictionary<string, string> extra, int? score = null, decimal? points = null) =>
         new([new OnlineDay(1, "")], 1, [new OnlineGroup("Ж21", null, null, 0)],
             [
                 new OnlineResultRow(7, "Ж21", "Бігунка", "", "", "", "", "", 1, TimeSpan.FromMinutes(30), null, null,
-                    null, null, FinishStatus.Ok, HasReadout: true, OutOfCompetition: false) { Extra = extra },
+                    score, points, FinishStatus.Ok, HasReadout: true, OutOfCompetition: false) { Extra = extra },
             ])
         {
             ExtraColumns = [Gender],
@@ -102,6 +176,8 @@ public sealed class OnlineColumnsTests
         private readonly List<(string Table, string Body)> _requests = [];
 
         public bool RejectExtra { get; init; }
+
+        public bool RejectScore { get; init; }
 
         public List<JsonElement[]> Bodies(string table) => _requests
             .Where(r => r.Table == table)
@@ -120,6 +196,13 @@ public sealed class OnlineColumnsTests
                 {
                     Content = new StringContent(
                         """{"code":"PGRST204","message":"Could not find the 'extra' column of 'results' in the schema cache"}""",
+                        Encoding.UTF8, "application/json"),
+                };
+            if (RejectScore && table == "results" && body.Contains("\"score\"", StringComparison.Ordinal))
+                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent(
+                        """{"code":"PGRST204","message":"Could not find the 'score' column of 'results' in the schema cache"}""",
                         Encoding.UTF8, "application/json"),
                 };
             return new HttpResponseMessage(HttpStatusCode.Created);

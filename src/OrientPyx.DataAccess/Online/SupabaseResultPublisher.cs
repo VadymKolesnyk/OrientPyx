@@ -69,11 +69,14 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
         _unnumbered.Clear();
         TeamsUnsupported = false;
         ExtraUnsupported = false;
+        ScoreUnsupported = false;
     }
 
     public bool TeamsUnsupported { get; private set; }
 
     public bool ExtraUnsupported { get; private set; }
+
+    public bool ScoreUnsupported { get; private set; }
 
     public async Task PublishAsync(
         OnlinePublishSettings publish,
@@ -129,23 +132,10 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
                 _metaSent.Add(dayKey);
             }
 
-            // 3) Result rows — every tick. A project set up before the results.extra column answers 4xx naming
-            // it: remember that and send the rows without it (the extra columns just stay off the site).
+            // 3) Result rows — every tick. A project set up before the results.extra / results.score column answers
+            // 4xx naming it: remember that and send the rows without it (that column just stays off the site).
             if (snapshot.Rows.Count > 0)
-            {
-                try
-                {
-                    await PushAsync(api, "results", "event,bib,day",
-                        BuildResultRows(publish, snapshot, withExtra: !ExtraUnsupported), cancellationToken);
-                }
-                catch (PublishException ex) when (!ExtraUnsupported && ex.Kind == PublishFailureKind.BadRequest
-                                                  && ex.Message.Contains("extra", StringComparison.OrdinalIgnoreCase))
-                {
-                    ExtraUnsupported = true;
-                    await PushAsync(api, "results", "event,bib,day",
-                        BuildResultRows(publish, snapshot, withExtra: false), cancellationToken);
-                }
-            }
+                await PushResultRowsAsync(publish, api, snapshot, cancellationToken);
 
             // …and the stand-in rows of runners who have a number by now (or left the day) go.
             await PruneUnnumberedAsync(api, slug, snapshot, dayKey, cancellationToken);
@@ -178,6 +168,35 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
             _unnumbered.Remove(dayKey);
             throw;
         }
+    }
+
+    // Upserts the day's result rows, dropping an optional column the project lacks (results.extra, results.score —
+    // added after the first schema) once the server names it in a 4xx; at most one retry per such column.
+    private async Task PushResultRowsAsync(
+        OnlinePublishSettings publish, OnlineApiSettings api, OnlineResultsSnapshot snapshot, CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            try
+            {
+                await PushAsync(api, "results", "event,bib,day",
+                    BuildResultRows(publish, snapshot, withExtra: !ExtraUnsupported, withScore: !ScoreUnsupported),
+                    cancellationToken);
+                return;
+            }
+            catch (PublishException ex) when (ex.Kind == PublishFailureKind.BadRequest)
+            {
+                if (!ExtraUnsupported && Names(ex, "extra"))
+                    ExtraUnsupported = true;
+                else if (!ScoreUnsupported && Names(ex, "score"))
+                    ScoreUnsupported = true;
+                else
+                    throw;
+            }
+        }
+
+        static bool Names(PublishException ex, string column) =>
+            ex.Message.Contains(column, StringComparison.OrdinalIgnoreCase);
     }
 
     // ── Row builders
@@ -253,17 +272,12 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
         }).ToList();
 
     private static List<Dictionary<string, object?>> BuildResultRows(
-        OnlinePublishSettings p, OnlineResultsSnapshot snapshot, bool withExtra)
+        OnlinePublishSettings p, OnlineResultsSnapshot snapshot, bool withExtra, bool withScore)
     {
         var rows = new List<Dictionary<string, object?>>(snapshot.Rows.Count);
         foreach (var r in snapshot.Rows)
         {
             var status = MapStatus(r);
-            // The frontend's single "points" column is the ranking points («Очки») the group's points rule
-            // awards (PointsRuleEvaluator — time/score ratio vs the leader, or a placement table). Prefer it;
-            // only fall back to the raw rogaine score («Бали») when the group has no points rule, so a
-            // rogaine day with no rule still publishes a number rather than a blank.
-            decimal? points = r.Points ?? r.Score;
 
             var row = new Dictionary<string, object?>
             {
@@ -283,11 +297,15 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
                 ["finish_time"] = FormatTime(r.FinishTime),
                 ["result_time"] = FormatTime(r.ResultTime),
                 ["result_seconds"] = r.ResultTime is { } rt ? (int)rt.TotalSeconds : (int?)null,
-                ["points"] = points,
+                // «Очки» — the ranking points the group's points rule awards (blank without a rule); «Бали» — a
+                // scored format's sum of control values. Two things, two columns: never one standing in for the other.
+                ["points"] = r.Points,
                 ["status"] = status,
                 ["updated_at"] = DateTime.UtcNow.ToString("o"),
             };
             // Every row carries the key (PostgREST wants the same keys in one batch); null clears a stale value.
+            if (withScore)
+                row["score"] = r.Score;
             if (withExtra)
                 row["extra"] = r.Extra.Count > 0 ? r.Extra : null;
             rows.Add(row);

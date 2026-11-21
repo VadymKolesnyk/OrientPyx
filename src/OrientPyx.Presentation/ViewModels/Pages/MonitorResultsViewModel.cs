@@ -310,8 +310,10 @@ public sealed partial class MonitorResultsViewModel : PageViewModelBase
                 ct.ThrowIfCancellationRequested();
                 _previewSource = source;
                 _previewSourceDay = day.Id;
-                // The day's extra columns (plugin / fields, §10.2) join the column picker.
+                // The day's extra columns (plugin / fields, §10.2) join the column picker; the ones the day cannot
+                // fill («Наростаючий» without a relay, «Бали» without a scored format) leave it.
                 Columns.SetExtraColumns(source?.Data.ExtraColumns.Select(ResultColumnInfo.ForExtra).ToList() ?? []);
+                Columns.SetInapplicable(source is null ? [] : ResultColumnInfo.Inapplicable(source.Data.Groups));
             }
 
             if (_previewSource is null || !ReferenceEquals(file, SelectedFile))

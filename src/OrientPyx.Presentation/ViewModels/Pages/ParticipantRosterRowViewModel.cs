@@ -946,6 +946,12 @@ public sealed partial class ParticipantRosterRowViewModel : ObservableObject
         set => SetChipForMemberDays(value ?? string.Empty);
     }
 
+    /// <summary>
+    /// Every member day's chip (blank ones included) — what the merged «Чіп» column's «За станом» filter judges
+    /// (<see cref="RentalChipStatus"/>), since <see cref="CollapsedChipValue"/> is blank when the days differ.
+    /// </summary>
+    public IEnumerable<string> MemberChips => Days.Where(d => d.IsMember).Select(d => d.Chip ?? string.Empty);
+
     /// <summary>True when the member days do not all share one chip (by trimmed value).</summary>
     public bool ChipValuesDiffer =>
         Days.Where(d => d.IsMember).Select(d => (d.Chip ?? string.Empty).Trim()).Distinct().Count() > 1;

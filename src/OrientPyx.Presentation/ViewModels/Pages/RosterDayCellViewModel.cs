@@ -525,6 +525,12 @@ public sealed partial class RosterDayCellViewModel : ObservableObject
     /// </summary>
     public bool ChipTooSmall => IsMember && SiCard.TooSmall(Chip, SelectedGroup?.ControlCount ?? 0) is not null;
 
+    /// <summary>
+    /// The chip the day column's «За станом» filter judges (<see cref="RentalChipStatus"/>): this day's chip, none on a
+    /// day the participant does not run — so «Без чіпа» lists only the day's runners still without one.
+    /// </summary>
+    public IEnumerable<string> MemberChips => IsMember ? [Chip ?? string.Empty] : [];
+
     /// <summary>Why the chip is too small (model, capacity, group, control count); null when it fits, which hides the tooltip.</summary>
     public string? ChipCapacityTooltip
     {

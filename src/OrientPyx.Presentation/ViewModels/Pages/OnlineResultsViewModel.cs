@@ -652,13 +652,19 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
             _extraUnsupportedLogged = true;
             AppendLog(Localization.Get("OnlineResults.Log.ExtraUnsupported"));
         }
+        if (_publisher.ScoreUnsupported && !_scoreUnsupportedLogged)
+        {
+            _scoreUnsupportedLogged = true;
+            AppendLog(Localization.Get("OnlineResults.Log.ScoreUnsupported"));
+        }
 
         UpdateActivityStatus();
     }
 
-    // The «no relay_teams table» / «no results.extra column» warnings are logged once per app run.
+    // The «no relay_teams table» / «no results.extra / results.score column» warnings are logged once per app run.
     private bool _teamsUnsupportedLogged;
     private bool _extraUnsupportedLogged;
+    private bool _scoreUnsupportedLogged;
 
     // Extra column labels (plugin columns, additional fields) arrive as localization keys; the site gets the text.
     private OnlineResultsSnapshot Localize(OnlineResultsSnapshot snapshot) =>
@@ -967,8 +973,10 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
                 ct.ThrowIfCancellationRequested();
                 _previewSource = source;
                 _previewSourceDay = day.Id;
-                // The day's extra columns (plugin columns, additional fields) join the column editor.
+                // The day's extra columns (plugin columns, additional fields) join the column editor; the built-in
+                // ones the day cannot fill («Наростаючий» without a relay, «Бали» without a scored format) leave it.
                 Columns.SetExtraColumns(source.ExtraColumns);
+                Columns.SetInapplicable(source.InapplicableColumns);
             }
 
             ApplyPreview(_previewSource);
@@ -995,9 +1003,12 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
         Preview.Columns.Clear();
         Preview.Sections.Clear();
 
-        // The columns the preview draws = everything visible on at least one screen, in the editor's order. The
-        // preview shows personal results only, where «Наростаючий» (a relay leg's running time) is always blank.
-        var visible = Columns.Columns.Where(c => (c.Lg || c.Sm) && c.Column != ResultColumn.Cumulative).ToList();
+        // The columns the preview draws = everything visible on at least one screen, in the editor's order, but
+        // the ones the day cannot fill. The preview shows personal results only, where «Наростаючий» (a relay leg's
+        // running time) is always blank.
+        var visible = Columns.Columns
+            .Where(c => (c.Lg || c.Sm) && c.IsApplicable && c.Column != ResultColumn.Cumulative)
+            .ToList();
 
         if (snapshot is null || !snapshot.HasData || visible.Count == 0)
         {
@@ -1088,8 +1099,8 @@ public sealed partial class OnlineResultsViewModel : PageViewModelBase
                     ? "+" + FormatSpan(rt - l)
                     : string.Empty,
                 ResultColumn.Status => PreviewStatusText(r),
-                ResultColumn.Points => r.Points?.ToString("0.##", CultureInfo.InvariantCulture)
-                    ?? r.Score?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                ResultColumn.Score => r.Score?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                ResultColumn.Points => r.Points?.ToString("0.##", CultureInfo.InvariantCulture) ?? string.Empty,
                 ResultColumn.Extra => r.Extra.TryGetValue(col.Key, out var extra) ? extra : string.Empty,
                 _ => string.Empty,
             });

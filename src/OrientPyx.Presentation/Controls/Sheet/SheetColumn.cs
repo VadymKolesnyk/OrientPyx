@@ -251,8 +251,18 @@ public sealed partial class SheetColumn : ObservableObject
     /// </summary>
     public string StatusPath { get; set; } = string.Empty;
 
+    /// <summary>
+    /// True for a chip column whose "by status" mode filters by the table's rental-chip database
+    /// (<see cref="SheetTable.RentalChips"/>): «Орендний» / «Не орендний» / «Без чіпа»
+    /// (<c>RentalChipStatus</c>). The table judges the cell's chip, or — when <see cref="StatusPath"/> is set —
+    /// every chip that path lists (an <c>IEnumerable&lt;string&gt;</c>; the roster's merged all-days cell lists the
+    /// member days' chips, a day leaf none on a day the participant does not run); a row passes when any of them
+    /// is a kept state. The by-values and by-condition modes keep working on the chip numbers.
+    /// </summary>
+    public bool RentalStatusFilter { get; set; }
+
     /// <summary>True when the "by status" token is the cell value itself (so a raw by-values list would show tokens).</summary>
-    public bool StatusIsCellValue => StatusFilter && string.IsNullOrEmpty(StatusPath);
+    public bool StatusIsCellValue => StatusFilter && string.IsNullOrEmpty(StatusPath) && !RentalStatusFilter;
 
     /// <summary>
     /// Where a <see cref="SheetCellKind.PaymentText"/> cell reads the <c>PaymentStatus</c> that tints it.

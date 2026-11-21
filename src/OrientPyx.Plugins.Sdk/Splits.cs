@@ -111,16 +111,20 @@ public enum SplitsLayout
 /// decides which shape is populated. <see cref="Ordered"/> (set course) renders two parallel lists —
 /// <see cref="Passage"/> (every punch from the chip, in chip order) beside <see cref="Expected"/>
 /// (the prescribed course in order) — so the actual route and the correct route are read side by side.
-/// <see cref="Scored"/> renders <see cref="Entries"/> plus <see cref="TotalPoints"/>. Collections that
-/// don't apply to the active layout are empty.
+/// <see cref="Scored"/> renders <see cref="Entries"/> plus <see cref="TotalPoints"/>; the built-in score
+/// formats also fill <see cref="Passage"/> with the punches in the order taken, which the split slip and the
+/// HTML splits print. Other collections that don't apply to the active layout are empty.
 /// </summary>
 public sealed record SplitsView
 {
     public required SplitsLayout Layout { get; init; }
 
     /// <summary>
-    /// Ordered layout — the actual passage: <b>every</b> punch read from the chip, in chip order,
-    /// including out-of-order, foreign and repeated punches (nothing is dropped). Empty otherwise.
+    /// The actual passage: <b>every</b> punch read from the chip, in chip order, including out-of-order,
+    /// foreign and repeated punches (nothing is dropped), between start/finish markers. Always filled by the
+    /// ordered layout; a scored view may fill it too (the built-in score formats do — each punch with its leg,
+    /// distance and pace, the scoring ones with their points), and then the split slip prints it instead of
+    /// <see cref="Entries"/>. Empty otherwise.
     /// </summary>
     public IReadOnlyList<PassagePunch> Passage { get; init; } = [];
 

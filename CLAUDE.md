@@ -578,7 +578,7 @@ host's `RpcDispatcher` enters it with the station's **token** as owner.
   captures with `CaptureUndo(label)` and runs each write through `RunUndoAsync(step, …)` (`PageViewModelBase`);
   debounced pages override `FlushPendingWritesAsync` and flush before switching the day. Undo waits for those writes,
   reverts under the busy overlay and awaits the page's `ReloadAsync` (whole-row DTO saves would otherwise write a stale
-  row back). Keys in `MainWindow.TryUndoKey` (not in a `TextBox`), the «Правка» menu and the cell-menu items
+  row back). Keys in `MainWindow.TryUndoKey` (not in a `TextBox`), the «Файл → Правка» submenu and the cell-menu items
   (`SheetTable.UndoMenu`) all go through `EditMenuViewModel`. Not undoable (§10 of the plan): imports, draws, mass
   start, copy between days, delete-all / delete day, the finish page, forms outside tables, app.db pages, system writes.
   Entries hold only a Guid and a label — never a row VM. Tests: `Core/Undo/*`, `Ui/Undo*`.

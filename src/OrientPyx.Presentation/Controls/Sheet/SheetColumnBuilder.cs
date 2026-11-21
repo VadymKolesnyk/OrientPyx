@@ -57,7 +57,8 @@ public sealed class SheetColumnBuilder
     // ── Display / editable text
     /// <summary>
     /// A text column: a read-only <see cref="TextBlock"/> in normal state, a <see cref="TextBox"/>
-    /// once the cell enters edit. Pass <paramref name="editPath"/> = null for a read-only column.
+    /// once the cell enters edit. Pass <paramref name="editPath"/> = null for a read-only column; such a column may
+    /// show a hover tooltip bound to <paramref name="toolTipPath"/> (a null value shows none).
     /// </summary>
     public SheetColumnBuilder Text(
         string headerKey,
@@ -73,7 +74,8 @@ public sealed class SheetColumnBuilder
         string? placeholderPath = null,
         RentalChipRegistry? rentalChips = null,
         string? lockedDayPath = null,
-        bool commitOnLostFocus = false)
+        bool commitOnLostFocus = false,
+        string? toolTipPath = null)
     {
         var column = NewColumn(headerKey, width, minWidth, sortPath ?? displayPath);
         // An editable text column supports fill-down paste straight to its bound property.
@@ -84,7 +86,7 @@ public sealed class SheetColumnBuilder
             // value as text and turns into a flat in-cell TextBox on click/keystroke, the same "display
             // as text, edit on click" behaviour every sheet cell now shares.
             if (editPath is null)
-                return ReadOnlyText(displayPath, opacityPath);
+                return ReadOnlyText(displayPath, opacityPath, toolTipPath);
 
             return WithRowLock(new LazyTextCell(displayPath, editPath, new SheetTextOptions
             {
@@ -340,7 +342,7 @@ public sealed class SheetColumnBuilder
         return this;
     }
 
-    private static Control ReadOnlyText(string displayPath, string? opacityPath)
+    private static Control ReadOnlyText(string displayPath, string? opacityPath, string? toolTipPath = null)
     {
         var block = new TextBlock
         {
@@ -351,6 +353,13 @@ public sealed class SheetColumnBuilder
         };
         if (opacityPath is not null)
             block[!Visual.OpacityProperty] = new Binding(opacityPath) { Converter = DimConverter };
+        if (toolTipPath is not null)
+        {
+            // Stretched with a transparent fill, so the tooltip fires anywhere in the cell, not only over the glyphs.
+            block.HorizontalAlignment = HorizontalAlignment.Stretch;
+            block.Background = Brushes.Transparent;
+            block[!ToolTip.TipProperty] = new Binding(toolTipPath);
+        }
         return block;
     }
 

@@ -2,8 +2,9 @@
 
 > Що саме OrientPyx пише в Supabase-проєкт, який читає окремий React-фронтенд глядачів. Джерело правди в коді:
 > `OnlineResultsSnapshot` (BusinessLogic, будує `ICompetitionEditorService.GetOnlineResultsSnapshotAsync`) і
-> `SupabaseResultPublisher` (DataAccess, PostgREST). Оновлено: 2026-11-17 («T·K» зваженої естафети онлайн не
-> публікується — `ResultColumnDef.Online`). Раніше: 2026-11-12 (учасники без номера — під від'ємним `bib`),
+> `SupabaseResultPublisher` (DataAccess, PostgREST). Оновлено: 2026-11-21 («Бали» — окрема колонка `score`,
+> `points` — лише очки за правилом). Раніше: 2026-11-17 («T·K» зваженої естафети онлайн не
+> публікується — `ResultColumnDef.Online`), 2026-11-12 (учасники без номера — під від'ємним `bib`),
 > 2026-11-11 (додаткові колонки онлайн, «Наростаючий», естафета за `display_config`).
 
 ## Як публікується
@@ -23,7 +24,7 @@
 | `events` | `id` | `id` (slug), `title`, `subtitle`, `days_count`, `standings`, `points`, `display_config` (jsonb: `version`=1, `points`, `standings`, `separateDsqLg`, `separateDsqSm`, `columns[{key, order, lg, sm, label?}]`), `updated_at` |
 | `event_days` | `event,day` | `event`, `day`, `label` (`dd.MM.yyyy` або `null`), `ord` |
 | `groups` | `event,name,day` | `event`, `name`, `day`, `distance_km`, `controls`, `ord` |
-| `results` | `event,bib,day` | `event`, `bib` (ціле; від'ємне — учасник без номера, нижче), `day`, `grp`, `rk` (місце або `null`), `full_name`, `team` (команда рогейну; в особистих порожньо), `club`, `region`, `birth`, `qual`, `reason` (`MP`/`OVT`/`DNF`/`DSQ` лише при `status=dsq`), `start_time`, `finish_time`, `result_time` (зарахований час — зі штрафом / коефіцієнтом, якщо вид змагань його змінює), `result_seconds`, `points` (очки за правилом, інакше бали рогейну), `status`, `extra` (jsonb, нове — нижче), `updated_at` |
+| `results` | `event,bib,day` | `event`, `bib` (ціле; від'ємне — учасник без номера, нижче), `day`, `grp`, `rk` (місце або `null`), `full_name`, `team` (команда рогейну; в особистих порожньо), `club`, `region`, `birth`, `qual`, `reason` (`MP`/`OVT`/`DNF`/`DSQ` лише при `status=dsq`), `start_time`, `finish_time`, `result_time` (зарахований час — зі штрафом / коефіцієнтом, якщо вид змагань його змінює), `result_seconds`, `points` (очки за правилом очок; без правила — `null`), `score` (бали формату з балами — рогейн, «за вибором за часом»: сума вартостей КП зі штрафом і бонусом; інакше `null`; нове — нижче), `status`, `extra` (jsonb, нове — нижче), `updated_at` |
 
 `status`: `finished` (OK з місцем), `finished_pending` (OK без місця або зчитано без статусу), `running`
 (не зчитано), `dsq` (MP/OVT/DNF/DSQ), `dns`.
@@ -44,12 +45,20 @@ Guid, від −1 до −2³¹+1; збіг у межах дня зсуваєт�
 ## Колонки (`display_config.columns`)
 
 Ключі вбудованих колонок — `rk`, `full_name`, `bib`, `birth`, `qual`, `team`, `club`, `region`, `start_time`,
-`result_time`, `gap`, `cumulative`, `status`, `points` (`ResultColumnInfo.All`). Порядок і `lg`/`sm` — з
+`result_time`, `gap`, `cumulative`, `status`, `score`, `points` (`ResultColumnInfo.All`). Порядок і `lg`/`sm` — з
 «Колонок результатів» онлайн-сторінки (`OnlineDisplayConfig`); колонка, якої немає в збереженому налаштуванні
 (з'явилася пізніше), бере видимість з `OnlineDisplayConfig.Default` і стає після тієї, за якою йде там.
 
 - **`cumulative`** («Наростаючий») — наростаючий час команди після етапу; лише в естафеті. Конфіг старішого
   OrientPyx його не має — сайт тоді ставить його видимим після `gap`.
+- **`score`** («Бали») і **`points`** («Очки») — різні колонки: бали — сума вартостей КП (`ParticipantDayResult.Score`),
+  очки — нараховані правилом очок (`Points`); одна ніколи не підміняє іншу (до 2026-11-21 `points` без правила
+  ніс бали). Сайт ховає кожну в групі, де в ній немає жодного значення. Редактор колонок не показує `score` у дні
+  без групи з балами, а `cumulative` — без естафети (`ResultColumnInfo.Inapplicable`; збережений вибір лишається).
+  Колонку `results.score` на наявній базі додають так: `alter table public.results add column if not exists score
+  integer;`. Без неї PostgREST відповідає 4xx з назвою колонки — публікатор запам'ятовує це
+  (`IResultPublisher.ScoreUnsupported`), пише одне попередження в журнал і далі шле рядки без `score`; сайт тягне
+  `score` лише коли конфіг показує цю колонку, а при помилці бази — без неї.
 - **Додаткові колонки** (§10.2): колонки плагінів (`"<pluginId>.<key>"`) і додаткові поля учасника
   (`"field.<key>"`) — у `columns` з полем **`label`** (уже перекладений підпис; у вбудованих його немає). Нова
   колонка плагіна стає видимою на великому екрані, нове поле — прихованим. Конфіг підписує всі додаткові колонки,

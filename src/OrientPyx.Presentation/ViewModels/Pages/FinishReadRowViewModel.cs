@@ -68,6 +68,7 @@ public sealed class FinishReadRowViewModel : ObservableObject
         [nameof(FullName)] = FullName,
         [nameof(GroupName)] = GroupName,
         [nameof(ScoreText)] = ScoreText,
+        [nameof(ScoreTooltip)] = ScoreTooltip,
         [nameof(ScoreSort)] = ScoreSort,
         [nameof(PlaceText)] = PlaceText,
         [nameof(PlaceMedal)] = PlaceMedal,
@@ -150,8 +151,9 @@ public sealed class FinishReadRowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// «Бали» for a point-scoring row: the total, and with a «Бонус» the sum spelled out — «12 (10 + 2)», «7 (10 − 3)».
-    /// Blank when the discipline doesn't score points.
+    /// «Бали» for a point-scoring row: the total, and with an over-time penalty or a «Бонус» the sum spelled out from
+    /// the collected points — «7 (10 − 3)» (penalty), «12 (10 + 2)» (bonus), «9 (10 − 3 + 2)» (both); a zero part is
+    /// left out. Blank when the discipline doesn't score points.
     /// </summary>
     public string ScoreText
     {
@@ -160,10 +162,42 @@ public sealed class FinishReadRowViewModel : ObservableObject
             if (_row.Score is not { } score)
                 return string.Empty;
             var ci = CultureInfo.InvariantCulture;
-            if (_row.Bonus is not { } bonus || bonus == 0)
-                return score.ToString(ci);
-            var sign = bonus > 0 ? "+" : "−";
-            return $"{(score + bonus).ToString(ci)} ({score.ToString(ci)} {sign} {Math.Abs(bonus).ToString(ci)})";
+            var penalty = _row.Penalty ?? 0;
+            var bonus = _row.Bonus ?? 0;
+            var total = (score + bonus).ToString(ci);
+            if (penalty == 0 && bonus == 0)
+                return total;
+            var parts = (score + penalty).ToString(ci);
+            if (penalty != 0)
+                parts += " − " + penalty.ToString(ci);
+            if (bonus != 0)
+                parts += (bonus > 0 ? " + " : " − ") + Math.Abs(bonus).ToString(ci);
+            return $"{total} ({parts})";
+        }
+    }
+
+    /// <summary>
+    /// Hover text of the «Бали» cell: the collected points, the over-time penalty and the «Бонус» one per line (a zero
+    /// one left out), then the total. Null — no tooltip — when there is neither a penalty nor a bonus to explain.
+    /// </summary>
+    public string? ScoreTooltip
+    {
+        get
+        {
+            if (_row.Score is not { } score)
+                return null;
+            var penalty = _row.Penalty ?? 0;
+            var bonus = _row.Bonus ?? 0;
+            if (penalty == 0 && bonus == 0)
+                return null;
+            var lines = new List<string> { string.Format(_localization.Get("FinishRead.Score.Tooltip.Base"), score + penalty) };
+            if (penalty != 0)
+                lines.Add(string.Format(_localization.Get("Participants.Score.Tooltip.Penalty"), penalty));
+            if (bonus != 0)
+                lines.Add(string.Format(_localization.Get("Participants.Score.Tooltip.Bonus"),
+                    bonus.ToString("+0;-0", CultureInfo.InvariantCulture)));
+            lines.Add(string.Format(_localization.Get("Participants.Score.Tooltip.Total"), score + bonus));
+            return string.Join('\n', lines);
         }
     }
 

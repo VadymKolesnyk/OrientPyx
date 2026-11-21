@@ -1068,6 +1068,18 @@ public sealed class SheetTable : TemplatedControl
             ? FormatValue(ReadPath(row, column.StatusPath))
             : CellText(column, row);
 
+    // The rental states of a chip column's cell for the "by status" mode (SheetColumn.RentalStatusFilter): the
+    // cell's own chip, or every chip its StatusPath lists (the roster's merged all-days cell; none on a day the
+    // participant does not run). Judged against RentalChips — the set that bold-reds a non-rental chip.
+    private IEnumerable<string> RentalStatuses(SheetColumn column, object row)
+    {
+        if (column.StatusPath.Length == 0)
+            return [RentalChipStatus.Of(RentalChips, CellText(column, row))];
+        return ReadPath(row, column.StatusPath) is IEnumerable<string> chips
+            ? chips.Select(chip => RentalChipStatus.Of(RentalChips, chip)).ToList()
+            : [];
+    }
+
     // The text COPY reads for a cell of an off-screen (unrealized) row — uses CopyPath, which defaults
     // to FilterPath but is overridden where the filter value differs from the display (payment amount
     // vs. its status token, collapsed merged values). A realized cell is read directly instead (its
@@ -1103,7 +1115,10 @@ public sealed class SheetTable : TemplatedControl
             var col = FindColumnByKey(filter.ColumnKey);
             if (col is null)
                 continue;
-            if (!filter.Matches(FilterText(col, row, filter.Mode)))
+            var passes = filter.Mode == SheetFilterMode.Status && col.RentalStatusFilter
+                ? filter.MatchesAnyStatus(RentalStatuses(col, row))
+                : filter.Matches(FilterText(col, row, filter.Mode));
+            if (!passes)
                 return false;
         }
         return PassesGlobalSearch(row);

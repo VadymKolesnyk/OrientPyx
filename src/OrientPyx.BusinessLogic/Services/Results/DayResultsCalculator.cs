@@ -314,10 +314,11 @@ internal sealed partial class DayResultsCalculator
 
     /// <summary>
     /// The personal «Бали» for a read-out on a point-scoring day (the scored splits tally over the group's
-    /// allowed controls) plus the set of allowed controls the chip actually punched (first punch each), used by
-    /// the team tally (a control scores for the team only when every member's set has it).
+    /// allowed controls, after the over-time penalty), the points collected before that penalty (<c>Gross</c>), and
+    /// the set of allowed controls the chip actually punched (first punch each), used by the team tally (a control
+    /// scores for the team only when every member's set has it).
     /// </summary>
-    internal static (int Net, HashSet<string> Punched) ScoreDetail(
+    internal static (int Net, int Gross, HashSet<string> Punched) ScoreDetail(
         IDisciplineStrategy strategy,
         FinishReadout readout,
         GroupDaySettings? gs,
@@ -342,7 +343,7 @@ internal sealed partial class DayResultsCalculator
             TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
             PenaltyPerMinute = gs?.PenaltyPerMinute
         };
-        var net = strategy.BuildSplits(context).TotalPoints;
+        var view = strategy.BuildSplits(context);
 
         // The allowed controls this chip visited (intersection of punched and allowed), for the team tally.
         var allowed = new HashSet<string>(expected.Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);
@@ -353,7 +354,7 @@ internal sealed partial class DayResultsCalculator
             if (code.Length > 0 && allowed.Contains(code))
                 punched.Add(code);
         }
-        return (net, punched);
+        return (view.TotalPoints, view.GrossPoints, punched);
     }
 
     /// <summary>

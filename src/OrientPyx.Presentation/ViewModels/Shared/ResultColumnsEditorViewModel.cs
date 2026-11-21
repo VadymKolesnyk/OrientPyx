@@ -65,17 +65,37 @@ public sealed partial class ResultColumnsEditorViewModel : ObservableObject
         Load(current);
     }
 
+    /// <summary>
+    /// Hides the rows of the columns that cannot have a value on the shown day (<see cref="ResultColumnInfo.Inapplicable"/>:
+    /// «Наростаючий» without a relay, «Бали» without a scored format). They keep their place and check-box, so the
+    /// selection saves them unchanged and another day shows them again.
+    /// </summary>
+    public void SetInapplicable(IReadOnlyCollection<string> keys)
+    {
+        _inapplicable = keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in Columns)
+            item.IsApplicable = !_inapplicable.Contains(item.Key);
+    }
+
     /// <summary>The current selection: the checked columns, in their current order (plus any kept unresolved key).</summary>
     public ResultColumnSelection BuildSelection() =>
-        new(Columns.Where(c => c.IsChecked).Select(c => c.Key).Concat(_unresolvedKeys).ToList());
+        new(Columns.Where(c => c.IsChecked).Select(c => c.Key).Concat(_unresolvedKeys).ToList())
+        {
+            Version = ResultColumnSelection.CurrentVersion,
+        };
 
     private IReadOnlyList<ResultColumnInfo> _extras = [];
+    private HashSet<string> _inapplicable = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<string> _unresolvedKeys = [];
     private ResultColumnSelection? _loaded;
 
     private ResultColumnItem MakeItem(ResultColumnInfo def, bool isChecked)
     {
-        var item = new ResultColumnItem(def, _localization.Get(def.LabelKey)) { IsChecked = isChecked };
+        var item = new ResultColumnItem(def, _localization.Get(def.LabelKey))
+        {
+            IsChecked = isChecked,
+            IsApplicable = !_inapplicable.Contains(def.Key),
+        };
         item.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ResultColumnItem.IsChecked))
@@ -156,6 +176,10 @@ public sealed partial class ResultColumnItem : ObservableObject
 
     [ObservableProperty]
     private bool _isChecked;
+
+    /// <summary>False for a column that cannot have a value on the shown day: its row is hidden, its choice kept.</summary>
+    [ObservableProperty]
+    private bool _isApplicable = true;
 
     [ObservableProperty]
     private string _label;

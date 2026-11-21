@@ -1,4 +1,5 @@
 using OrientPyx.BusinessLogic.Enums;
+using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 
 namespace OrientPyx.BusinessLogic.Disciplines;
@@ -11,7 +12,16 @@ namespace OrientPyx.BusinessLogic.Disciplines;
 /// </summary>
 public sealed class ScoreByCountStrategy : DisciplineStrategyBase
 {
+    private readonly ICourseDistanceCalculator _distance;
+
+    public ScoreByCountStrategy(ICourseDistanceCalculator distance) => _distance = distance;
+
     public override DisciplineId Id => DisciplineId.ScoreByCount;
+
+    /// <summary>The scored layout without points: the allowed controls taken or not for the panel, and the
+    /// passage in the order taken (leg, distance, pace) for the split slip.</summary>
+    public override SplitsView BuildSplits(SplitsContext context) =>
+        BuildScoredSplits(context, _distance, DefaultPenaltyPerMinute);
 
     public override bool UsesColumn(GroupColumn column) => column switch
     {

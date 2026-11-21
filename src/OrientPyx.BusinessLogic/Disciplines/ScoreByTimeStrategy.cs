@@ -1,4 +1,5 @@
 using OrientPyx.BusinessLogic.Enums;
+using OrientPyx.BusinessLogic.Interfaces;
 
 namespace OrientPyx.BusinessLogic.Disciplines;
 
@@ -8,7 +9,16 @@ namespace OrientPyx.BusinessLogic.Disciplines;
 /// </summary>
 public sealed class ScoreByTimeStrategy : DisciplineStrategyBase
 {
+    private readonly ICourseDistanceCalculator _distance;
+
+    public ScoreByTimeStrategy(ICourseDistanceCalculator distance) => _distance = distance;
+
     public override DisciplineId Id => DisciplineId.ScoreByTime;
+
+    /// <summary>The scored layout: the allowed controls with points for the panel, and the passage in the order
+    /// taken (leg, distance, pace) for the split slip. Late minutes cost points only when the group sets a rate.</summary>
+    public override SplitsView BuildSplits(SplitsContext context) =>
+        BuildScoredSplits(context, _distance, DefaultPenaltyPerMinute);
 
     public override bool UsesControlPointPoints => true;
 

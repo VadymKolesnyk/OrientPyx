@@ -126,8 +126,49 @@ public sealed class FinishReadDeskTests
         Assert.Equal("7 (10 − 3)", cell.ScoreText);
         Assert.Equal(7, cell.ScoreSort);
         Assert.Equal("12 (10 + 2)", new FinishReadRowViewModel(row with { Bonus = 2 }, localization).ScoreText);
-        // No bonus (or a zero one) — just the total.
+        // No bonus (or a zero one) — just the total, and no tooltip.
         Assert.Equal("10", new FinishReadRowViewModel(row with { Bonus = null }, localization).ScoreText);
         Assert.Equal("10", new FinishReadRowViewModel(row with { Bonus = 0 }, localization).ScoreText);
+        Assert.Null(new FinishReadRowViewModel(row with { Bonus = 0 }, localization).ScoreTooltip);
+    }
+
+    [Fact]
+    public async Task Log_SpellsOutTheOverTimePenaltyAndTheBonus_WithATooltip()
+    {
+        // 10 points collected, 3 minutes over the hour at 1 point a minute = 7; a «Бонус» of +2 makes it 9.
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("rpenalty"), discipline: DisciplineId.ScoreByTime);
+        var cps = await c.AddControlsAsync(1, "31", "32");
+        var store = Sp.GetRequiredService<IEventStore>();
+        foreach (var cp in cps) { cp.Points = 5; await store.UpdateControlPointAsync(c.Folder, cp); }
+        await c.AddGroupAsync("Ч21", "31 32", s => { s.TimeLimitSeconds = 60 * 60; s.PenaltyPerMinute = 1; });
+        await c.AddRunnerAsync("Late", "1", "7001", "Ч21", CompetitionBuilder.At(10, 0), configureDay: d => d.Bonus = 2);
+        var readout = await c.AddReadoutAsync(1, "7001", "31 32", CompetitionBuilder.At(10, 0), CompetitionBuilder.At(11, 3));
+        await c.SelectAsync();
+        var editor = Sp.GetRequiredService<ICompetitionEditorService>();
+        var localization = Sp.GetRequiredService<ILocalizationService>();
+
+        var row = (await editor.GetFinishReadoutRowsAsync()).Single(r => r.Id == readout.Id);
+        Assert.Equal(7, row.Score);
+        Assert.Equal(3, row.Penalty);
+        Assert.Equal(2, row.Bonus);
+        Assert.Equal(9, (await c.ResultsAsync())["Late"].Score);
+
+        var cell = new FinishReadRowViewModel(row, localization);
+        Assert.Equal("9 (10 − 3 + 2)", cell.ScoreText);
+        Assert.Equal(9, cell.ScoreSort);
+        Assert.Equal(string.Join('\n',
+                string.Format(localization.Get("FinishRead.Score.Tooltip.Base"), 10),
+                string.Format(localization.Get("Participants.Score.Tooltip.Penalty"), 3),
+                string.Format(localization.Get("Participants.Score.Tooltip.Bonus"), "+2"),
+                string.Format(localization.Get("Participants.Score.Tooltip.Total"), 9)),
+            cell.ScoreTooltip);
+
+        // A zero part is left out of both: penalty only, a negative bonus only.
+        var penaltyOnly = new FinishReadRowViewModel(row with { Bonus = null }, localization);
+        Assert.Equal("7 (10 − 3)", penaltyOnly.ScoreText);
+        Assert.DoesNotContain(string.Format(localization.Get("Participants.Score.Tooltip.Bonus"), ""), penaltyOnly.ScoreTooltip);
+        var bonusOnly = new FinishReadRowViewModel(row with { Score = 10, Penalty = 0, Bonus = -4 }, localization);
+        Assert.Equal("6 (10 − 4)", bonusOnly.ScoreText);
+        Assert.DoesNotContain(string.Format(localization.Get("Participants.Score.Tooltip.Penalty"), ""), bonusOnly.ScoreTooltip);
     }
 }

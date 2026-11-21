@@ -73,6 +73,10 @@ public sealed record ResultProtocolGroup(
     /// <summary>The group's discipline on the day (its own, else the day's).</summary>
     public DisciplineId Discipline { get; init; } = DisciplineId.SetCourse;
 
+    /// <summary>True when the group's format scores control points (<c>UsesControlPointPoints</c>: за вибором за часом,
+    /// рогейн) — its runners have «Бали» (<see cref="ParticipantDayResult.Score"/>).</summary>
+    public bool UsesScore { get; init; }
+
     /// <summary>True when the group has this extra column: an additional field always, a plugin column only in a
     /// group of that plugin's discipline (a set-course group shows no «K» / «T·K» of a weighted relay on the day).</summary>
     public bool Shows(ExtraResultColumn column) =>

@@ -2337,6 +2337,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             {
                 PluginColumnKeys = ExtraResultColumn.PluginKeys(strategy),
                 Discipline = discipline,
+                UsesScore = strategy.UsesControlPointPoints,
             });
         }
 
@@ -3047,7 +3048,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             // A relay group whose legs run named courses (Р-44) has no single column set either.
             var legCourses = strategy.Competitors == CompetitorModel.TeamWithLegs
                 && rows.Any(r => r.Result.Leg?.CourseCode is not null);
-            var layout = isScored || isScatter || legCourses ? SplitsLayout.Scored : SplitsLayout.Ordered;
+            // A free-order format without points («за вибором по кількості КП») has no prescribed column set either:
+            // its own splits are the scored layout, each runner's passage in the order taken.
+            var freeOrder = rows.Any(r => r.Splits.Layout == SplitsLayout.Scored);
+            var layout = isScored || isScatter || legCourses || freeOrder ? SplitsLayout.Scored : SplitsLayout.Ordered;
 
             // Disabled («проблемні») controls are dropped from the export's column header / count too, so the
             // table matches what was actually required and scored.
@@ -3290,9 +3294,11 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     private static Guid CanonicalGroupId(IReadOnlyDictionary<Guid, Group> canonical, Guid groupId) =>
         canonical.TryGetValue(groupId, out var g) ? g.Id : groupId;
 
-    // Total «Бали» (points) for a read-out on a point-scoring day: the scored splits tally over the
-    // group's allowed controls (see DayResultsCalculator.ScoreDetail).
-    private int ScoreFor(
+    // «Бали» (points) for a read-out on a point-scoring day: the scored splits tally over the group's allowed
+    // controls after the over-time penalty (see DayResultsCalculator.ScoreDetail), and the points that penalty
+    // actually took off (collected − net, so a net clamped at 0 still adds up; never negative — a plugin view
+    // without GrossPoints reads as no penalty).
+    private (int Score, int Penalty) ScoreFor(
         FinishReadout readout,
         GroupDaySettings? gs,
         HashSet<string> startFinishCodes,
@@ -3300,8 +3306,11 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         IReadOnlyDictionary<string, int> pointsByCode,
         DisciplineId discipline,
         DateTimeOffset? resolvedStart)
-        => DayResultsCalculator.ScoreDetail(
-            _strategies.For(discipline), readout, gs, startFinishCodes, disabledCodes, pointsByCode, resolvedStart).Net;
+    {
+        var detail = DayResultsCalculator.ScoreDetail(
+            _strategies.For(discipline), readout, gs, startFinishCodes, disabledCodes, pointsByCode, resolvedStart);
+        return (detail.Net, Math.Max(0, detail.Gross - detail.Net));
+    }
 
     /// <summary>Cross-day key of an individual draw unit (see <see cref="DrawParticipant.HistoryKey"/>).</summary>
     private static string DrawHistoryKeyOf(Guid participantId) => participantId.ToString("N");
@@ -3784,9 +3793,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 // «Бали»: tally the scored splits when this row's discipline scores points (rogaine); null otherwise.
                 GroupDaySettings? gs = link.GroupId is { } sgid && settingsByGroup.TryGetValue(sgid, out var sset) ? sset : null;
                 var discipline = gs?.DisciplineOverride ?? dayDefault;
-                int? score = _strategies.For(discipline).UsesControlPointPoints
+                var scored = _strategies.For(discipline).UsesControlPointPoints
                     ? ScoreFor(r, gs, startFinishCodes, disabledCodes, pointsByCode, discipline, resolvedStart)
-                    : null;
+                    : ((int Score, int Penalty)?)null;
+                int? score = scored?.Score;
                 var result = placeByLink.TryGetValue(link.Id, out var pr) ? pr : null;
                 var place = result?.Place;
                 // A relay leg is judged in its sequence (start = previous leg's finish / restart, Р-28…Р-30), so the
@@ -3820,7 +3830,9 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     CollectRentalChip: collect, IsManualStatus: r.ManualStatus is not null,
                     StatusDetailKind: detailKind)
                 {
-                    // The runner's own «Бонус» on a scoring row: the log shows «X (Y + Z)», as the calculator adds it.
+                    // The over-time penalty and the runner's own «Бонус» on a scoring row: the log shows
+                    // «X (Y − P + B)», as the calculator adds them.
+                    Penalty = scored?.Penalty,
                     Bonus = score is not null ? link.Bonus : null,
                     RelayTeamNumber = result?.Team?.Number,
                     RelayTeamName = result?.Team?.Name ?? string.Empty,
@@ -4126,28 +4138,30 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             _ => string.Empty
         };
 
-        var rows = view.Layout == SplitsLayout.Ordered
+        // The slip prints the passage — the punches in the order taken, with leg, distance and pace — whenever
+        // the view has one: every ordered view, and the score formats' scored view too (never the list of every
+        // control the course allows). Only a scored view without a passage (a plugin's own) falls back to its
+        // visited controls.
+        var hasPassage = view.Passage.Count > 0;
+        var rows = hasPassage
             ? BuildPassageRows(view.Passage, view.HasPoints)
             : BuildScoredRows(view.Entries, view.HasPoints);
 
-        // Start/finish wall-clock and course length come from the ordered passage (start marker → finish
-        // marker). The average pace is the result time over the total straight-line distance.
+        // Start/finish wall-clock and course length come from the passage (start marker → finish marker). The
+        // average pace is the result time over the total straight-line distance.
         var startClock = string.Empty;
         var finishClock = string.Empty;
         decimal totalKm = 0m;
-        if (view.Layout == SplitsLayout.Ordered)
+        foreach (var p in view.Passage)
         {
-            foreach (var p in view.Passage)
-            {
-                // Rendered in local time — punch stamps round-trip through UTC ticks, so formatting
-                // them raw would print the wall clock shifted by the local UTC offset.
-                if (p.Kind == PassageKind.Start && p.Time is { } st)
-                    startClock = st.ToLocalTime().ToString("HH\\:mm\\:ss", CultureInfo.InvariantCulture);
-                else if (p.Kind == PassageKind.Finish && p.Time is { } ft)
-                    finishClock = ft.ToLocalTime().ToString("HH\\:mm\\:ss\\.f", CultureInfo.InvariantCulture);
-                if (p.LegKm is { } km && km > 0m)
-                    totalKm += km;
-            }
+            // Rendered in local time — punch stamps round-trip through UTC ticks, so formatting
+            // them raw would print the wall clock shifted by the local UTC offset.
+            if (p.Kind == PassageKind.Start && p.Time is { } st)
+                startClock = st.ToLocalTime().ToString("HH\\:mm\\:ss", CultureInfo.InvariantCulture);
+            else if (p.Kind == PassageKind.Finish && p.Time is { } ft)
+                finishClock = ft.ToLocalTime().ToString("HH\\:mm\\:ss\\.f", CultureInfo.InvariantCulture);
+            if (p.LegKm is { } km && km > 0m)
+                totalKm += km;
         }
 
         var resultElapsed = row.Elapsed is { } e && e >= TimeSpan.Zero ? e : (TimeSpan?)null;
@@ -4205,9 +4219,9 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             Place = place,
             ReadOutCount = readOutCount,
             Rows = rows,
-            // Rogaine (Ordered + points) keeps the full geometry columns plus a бал column; the geometry-less
-            // choice/score formats (Scored layout) use the compact layout instead.
-            HasGeometry = view.Layout == SplitsLayout.Ordered && view.HasPoints,
+            // A scoring passage (rogaine, «за вибором за часом») keeps the geometry columns plus a бал column; only
+            // a passage-less scored view uses the compact layout.
+            HasGeometry = hasPassage && view.HasPoints,
             CorrectOrder = correctOrder
         };
     }
@@ -4270,10 +4284,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         return list;
     }
 
-    // Maps the ordered passage (set-course / rogaine layout) to printable rows. The start marker is dropped
+    // Maps the passage (set course, rogaine, the score formats) to printable rows. The start marker is dropped
     // (the table opens at control 1); the finish marker becomes an "F" row with a blank №. Each row carries
     // the leg distance in km, the cumulative (elapsed) and leg times and the leg pace — as the panel shows
-    // them. When <paramref name="hasPoints"/> (rogaine) each scoring control prints its "+N" and the finish
+    // them. When <paramref name="hasPoints"/> (rogaine, score by time) each scoring control prints its "+N" and the finish
     // its "−Y" over-time penalty in the бал column, so the slip reads the points in passage order.
     private static IReadOnlyList<SplitPrintRow> BuildPassageRows(IReadOnlyList<PassagePunch> passage, bool hasPoints)
     {
@@ -4306,30 +4320,31 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         return list;
     }
 
-    // Maps the scored layout (score/choice/rogaine) to printable rows. The passage order is preserved. A
-    // points value is carried (non-null) only when the discipline actually values its controls, since a
-    // non-null PointsText is what turns the renderer's бал column on: «за вибором по кількості КП» scores
-    // nothing, so its slip keeps the plain №ПП КП ЧАС layout.
+    // Maps a scored view that has no passage (a plugin's own) to printable rows: the visited controls in passage
+    // order — the slip never lists the controls the runner did not take. A points value is carried (non-null)
+    // only when the discipline actually values its controls, since a non-null PointsText is what turns the
+    // renderer's бал column on.
     private static IReadOnlyList<SplitPrintRow> BuildScoredRows(IReadOnlyList<ScoreEntry> entries, bool hasPoints)
     {
         var list = new List<SplitPrintRow>(entries.Count);
         var index = 0;
         foreach (var entry in entries)
         {
+            if (!entry.Visited)
+                continue;
             index++;
             list.Add(new SplitPrintRow(
-                Index: entry.Visited ? index.ToString(CultureInfo.InvariantCulture) : string.Empty,
+                Index: index.ToString(CultureInfo.InvariantCulture),
                 Code: entry.Code,
                 DistanceText: string.Empty,
                 LegText: string.Empty,
                 ElapsedText: FormatDuration(entry.Elapsed),
                 PaceText: string.Empty,
-                // Points earned at this control print in the БАЛ column ("+3"); only a visited control earns
-                // them, so an unvisited allowed control shows blank (it didn't add to the total).
+                // Points earned at this control print in the БАЛ column ("+3").
                 PointsText: hasPoints
-                    ? (entry.Visited && entry.Points != 0 ? $"+{entry.Points}" : string.Empty)
+                    ? (entry.Points != 0 ? $"+{entry.Points}" : string.Empty)
                     : null,
-                OnCourse: entry.Visited));
+                OnCourse: true));
         }
         return list;
     }
@@ -5485,6 +5500,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             ExtraColumns = extraColumns
                 .Select(c => new OnlineExtraColumn(c.Key, c.LabelKey, IsPlugin: c.Plugin is not null))
                 .ToList(),
+            InapplicableColumns = ResultColumnInfo.Inapplicable(data.Groups),
         };
     }
 
@@ -5703,11 +5719,11 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 .ToList();
 
         // The chosen columns; an extra column (plugin / field, §10.2) shows when the day has it, «Наростаючий» only
-        // on a screen with a relay group (it is blank on every other row).
-        var hasRelay = chosen.Any(g => g.RelayTeams is not null);
+        // on a screen with a relay group and «Бали» only on one with a scored group (blank on every other row).
+        var inapplicable = ResultColumnInfo.Inapplicable(chosen).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var extras = data.ExtraColumns.ToDictionary(e => e.Key, StringComparer.Ordinal);
         var columns = columnSelection.Resolve(data.ExtraColumns.Select(ResultColumnInfo.ForExtra))
-            .Where(d => d.Column != ResultColumn.Cumulative || hasRelay)
+            .Where(d => !inapplicable.Contains(d.Key))
             .Select(d => d.Column == ResultColumn.Extra
                 ? new MonitorColumn(d.Column, labels.Translate?.Invoke(d.LabelKey) ?? d.LabelKey)
                     { Key = d.Key, Extra = extras[d.Key] }
@@ -5717,10 +5733,11 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var monitorGroups = new List<MonitorGroup>(chosen.Count);
         foreach (var g in chosen.OrderBy(g => g.Name, StringComparer.CurrentCulture))
         {
-            // Another discipline's plugin columns («K», «T·K» of a weighted relay) stay out of this group's table.
+            // Another discipline's plugin columns («K», «T·K» of a weighted relay) stay out of this group's table, and
+            // so do «Бали» in a group whose format has none (a set course beside a rogaine on one screen).
             var hidden = columns
                 .Select((c, i) => (c, i))
-                .Where(x => x.c.Extra is { } e && !g.Shows(e))
+                .Where(x => x.c.Extra is { } e ? !g.Shows(e) : x.c.Column == ResultColumn.Score && !g.UsesScore)
                 .Select(x => x.i)
                 .ToList();
 
@@ -5796,8 +5813,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     ? "+" + FormatSpan(rt - l)
                     : string.Empty,
                 ResultColumn.Status => StatusText(res, labels),
-                ResultColumn.Points => res.Points?.ToString("0.##", CultureInfo.InvariantCulture)
-                    ?? res.Score?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                ResultColumn.Score => res.Score?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                ResultColumn.Points => res.Points?.ToString("0.##", CultureInfo.InvariantCulture) ?? string.Empty,
                 ResultColumn.Extra => col.Extra?.Format(res, r.Fields) ?? string.Empty,
                 _ => string.Empty,
             });

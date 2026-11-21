@@ -143,7 +143,8 @@
                                         <ItemsControl ItemsSource="{Binding Columns.Columns}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate x:DataType="shared:OnlineColumnItem">
-                                                    <Grid ColumnDefinitions="*,70,70" Margin="0,1">
+                                                    <Grid ColumnDefinitions="*,70,70" Margin="0,1"
+                                                          IsVisible="{Binding IsApplicable}">
                                                         <TextBlock Grid.Column="0" Text="{Binding Label}"
                                                                    VerticalAlignment="Center" />
                                                         <CheckBox Grid.Column="1" IsChecked="{Binding Lg, Mode=TwoWay}"

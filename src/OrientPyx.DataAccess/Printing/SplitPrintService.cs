@@ -330,37 +330,37 @@ internal sealed class ReceiptRenderer
         return y;
     }
 
+    // Width of the бал column in the passage table with points: "+10", or the finish penalty "-12".
+    private const int PointsWidth = 4;
+
+    // The passage table with points (rogaine, score by time) is one column wider than a set course's, so on the
+    // 56 mm roll it leaves out the pace (ШВИДК — just the leg time over the distance; the header line keeps the
+    // average) and the row still fits at a readable size. Every other table prints the pace.
+    private bool ShowPace => !_doc.HasGeometry || _widthMm > 56;
+
     // The monospace column header, centred on the same width as the rows so the table sits in the middle.
-    // Scored disciplines (rogaine) get their own compact header — №ПП КП БАЛ ЧАС — with the points column
-    // pulled in right after the code (no off-course flag, no leg/distance/pace columns). The set-course
-    // header keeps the full layout; its leg-time header ("ЧАС") is nudged one position left vs its
-    // right-aligned data slot (per request) so it doesn't crowd the distance header.
+    // A passage-less scored view gets its own compact header — №ПП КП БАЛ ЧАС — with the points column pulled
+    // in right after the code (no off-course flag, no leg/distance/pace columns). The passage table keeps the
+    // full layout; its leg-time header ("ЧАС П.") is nudged one position left vs its right-aligned data slot
+    // (per request) so it doesn't crowd the distance header.
     private float DrawColumnHeader(System.Drawing.Graphics g, float left, float y, System.Drawing.Font mono)
     {
-        // Compact scored layout (geometry-less choice/score formats): №ПП КП БАЛ ЧАС.
+        // Compact scored layout (a scored view without a passage): №ПП КП БАЛ ЧАС.
         if (_doc.HasPoints && !_doc.HasGeometry)
-        {
-            var sSeq = Pad(_labels.ColSeq, 3);
-            var sCode = PadRight(_labels.ColCode, 4);
-            var sPts = PadRight(_labels.ColPoints, 5);
-            var sElapsed = Pad(_labels.ColElapsed, 7);
-            return DrawMono(g, $"{sSeq} {sCode} {sPts} {sElapsed}", mono, left, y);
-        }
+            return DrawMono(g, CompactHeader(), mono, left, y);
 
-        // Right-align each header into its column width, but for the leg slot shift one char left: pad it to
-        // width-1 (so it sits one space earlier) then add the missing space back, keeping the row width.
-        var seq = Pad(_labels.ColSeq, 3);
-        var code = PadRight(_labels.ColCode, 4);
-        // Rogaine (HasGeometry + points) keeps the full layout but adds a бал column right after the code.
-        var pts = _doc.HasGeometry ? PadRight(_labels.ColPoints, 5) + " " : string.Empty;
-        var elapsed = Pad(_labels.ColElapsed, 7);
-        var leg = Pad(_labels.ColLeg, 5) + " ";          // shifted left one position within the 6-wide slot
-        var dist = Pad(_labels.ColDistance, 6);
-        var pace = Pad(_labels.ColPace, 6);
-        var header = $"{seq} {code} {pts}{elapsed} {leg} {dist} {pace}";
-        // The header line has no off-course flag, so it gets the same one-space lead as on-course rows.
-        return DrawMono(g, " " + header, mono, left, y);
+        // The leg slot shifts one char left: pad it to width-1 (so it sits one space earlier) then add the
+        // missing space back, keeping the row width. The header line has no off-course flag, so it gets the
+        // same one-space lead as on-course rows.
+        return DrawMono(g, " " + PassageHeader(), mono, left, y);
     }
+
+    private string CompactHeader() =>
+        $"{Pad(_labels.ColSeq, 3)} {PadRight(_labels.ColCode, 4)} {PadRight(_labels.ColPoints, 5)} {Pad(_labels.ColElapsed, 7)}";
+
+    private string PassageHeader() =>
+        Compose(_labels.ColSeq, _labels.ColCode, _labels.ColPoints, _labels.ColElapsed,
+            Pad(_labels.ColLeg, 5) + " ", _labels.ColDistance, _labels.ColPace);
 
     // Largest Consolas size (≤ 12 pt, ≥ 6 pt) at which the widest fixed-width table line still fits the roll
     // width. Consolas is monospace, so the table's width is driven by its longest row; we measure that one
@@ -383,27 +383,24 @@ internal sealed class ReceiptRenderer
 
     // The longest fixed-width line the table will draw, so FitFontSize can size to it. Headers and rows all
     // share the same column layout (same total character count), so any full row works — we build one from
-    // the column header (it always uses every column) plus the leading off-course flag column. Scored
-    // (rogaine) docs use the compact №ПП КП БАЛ ЧАС layout with no flag/leg/distance/pace columns.
+    // the column header (it always uses every column) plus the leading off-course flag column, and the
+    // trailing team mark when a row carries one. A passage-less scored view uses the compact №ПП КП БАЛ ЧАС
+    // layout with no flag/leg/distance/pace columns.
     private string WidestTableLine()
     {
         if (_doc.HasPoints && !_doc.HasGeometry)
-            return $"{Pad(_labels.ColSeq, 3)} {PadRight(_labels.ColCode, 4)} {PadRight(_labels.ColPoints, 5)} {Pad(_labels.ColElapsed, 7)}";
+            return CompactHeader();
 
-        var seq = Pad(_labels.ColSeq, 3);
-        var code = PadRight(_labels.ColCode, 4);
-        // Rogaine adds a бал column to the full layout (see DrawColumnHeader/DrawRow).
-        var pts = _doc.HasGeometry ? PadRight(_labels.ColPoints, 5) + " " : string.Empty;
-        var elapsed = Pad(_labels.ColElapsed, 7);
-        var leg = Pad(_labels.ColLeg, 6);
-        var dist = Pad(_labels.ColDistance, 6);
-        var pace = Pad(_labels.ColPace, 6);
-        return $"*{seq} {code} {pts}{elapsed} {leg} {dist} {pace}";
+        var teamMark = _doc.Rows.Any(r => r.CountsForTeam) ? TeamMark : string.Empty;
+        return "*" + PassageHeader() + teamMark;
     }
+
+    // Rogaine: a trailing "*" flags a control that counts for the team (every team member punched it).
+    private const string TeamMark = " *";
 
     private void DrawRow(System.Drawing.Graphics g, SplitPrintRow row, float left, float y, System.Drawing.Font mono)
     {
-        // Compact scored layout (geometry-less choice/score formats): №ПП КП БАЛ ЧАС — the points the runner
+        // Compact scored layout (a scored view without a passage): №ПП КП БАЛ ЧАС — the points the runner
         // earned ("+3") in the БАЛ slot instead of an off-course "*" flag, the number/code shifted left.
         if (_doc.HasPoints && !_doc.HasGeometry)
         {
@@ -413,19 +410,21 @@ internal sealed class ReceiptRenderer
         }
 
         var line = Compose(row.Index, row.Code, row.PointsText, row.ElapsedText, row.LegText, row.DistanceText, row.PaceText);
-        // Off-course punches are marked with a leading "*" on the left so they stand out on a mono receipt.
+        // Off-course punches (on a score course: a foreign or repeated one, which scores nothing) are marked
+        // with a leading "*" on the left so they stand out on a mono receipt.
         var prefix = row.OnCourse ? " " : "*";
-        // Rogaine: a trailing "*" flags a control that counts for the team (every team member punched it).
-        var teamMark = row.CountsForTeam ? " *" : string.Empty;
+        var teamMark = row.CountsForTeam ? TeamMark : string.Empty;
         DrawMono(g, prefix + line + teamMark, mono, left, y);
     }
 
-    // Builds a fixed-width set-course row string: seq(3) code(4) [бал(5) ]elapsed(7) leg(6) dist(6) pace(6).
-    // The бал column is present only for rogaine (HasGeometry + points); set course passes a null pointsText.
+    // Builds a fixed-width passage row string: seq(3) code(4) [бал(4) ]elapsed(7) leg(6) dist(6)[ pace(6)].
+    // The бал column is present only for a scoring passage (HasGeometry); set course passes a null pointsText.
+    // The pace is left out where ShowPace says so.
     private string Compose(string seq, string code, string? pointsText, string elapsed, string leg, string dist, string pace)
     {
-        var pts = _doc.HasGeometry ? PadRight(pointsText ?? string.Empty, 5) + " " : string.Empty;
-        return $"{Pad(seq, 3)} {PadRight(code, 4)} {pts}{Pad(elapsed, 7)} {Pad(leg, 6)} {Pad(dist, 6)} {Pad(pace, 6)}";
+        var pts = _doc.HasGeometry ? PadRight(pointsText ?? string.Empty, PointsWidth) + " " : string.Empty;
+        var paceSlot = ShowPace ? " " + Pad(pace, 6) : string.Empty;
+        return $"{Pad(seq, 3)} {PadRight(code, 4)} {pts}{Pad(elapsed, 7)} {Pad(leg, 6)} {Pad(dist, 6)}{paceSlot}";
     }
 
     // Draws a monospace line left-aligned at x (header and rows share the same left edge, so the columns

@@ -108,16 +108,18 @@ public sealed class SplitPrintDocument
 
     // ── Body
 
-    /// <summary>The course passage in order (every punch in chip order), already formatted.</summary>
+    /// <summary>The passage in order (every punch in chip order, never the controls the runner did not take),
+    /// already formatted.</summary>
     public IReadOnlyList<SplitPrintRow> Rows { get; init; } = [];
 
     /// <summary>True when any row carries points — the renderer then shows the бал column (scored disciplines).</summary>
     public bool HasPoints => Rows.Any(r => r.PointsText is not null);
 
     /// <summary>
-    /// True for a point-scoring discipline that still has leg geometry (rogaine, an Ordered passage). The
-    /// renderer keeps the full set-course columns — leg/cumulative time, distance, pace — and inserts a бал
-    /// column, rather than the compact №ПП КП БАЛ ЧАС layout the geometry-less choice/score formats use.
+    /// True for a point-scoring passage — the punches in the order taken, with leg geometry (rogaine, «за
+    /// вибором за часом»). The renderer keeps the set-course columns — cumulative/leg time, distance, and the
+    /// pace where the roll is wide enough — and inserts a бал column, rather than the compact №ПП КП БАЛ ЧАС
+    /// layout of a scored view that has no passage.
     /// </summary>
     public bool HasGeometry { get; init; }
 

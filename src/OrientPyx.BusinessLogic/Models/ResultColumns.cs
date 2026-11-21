@@ -33,10 +33,13 @@ public enum ResultColumn
     Gap,
     /// <summary>Status / reason for an unplaced run, e.g. DNS/MP («Статус»).</summary>
     Status,
-    /// <summary>Ranking points / rogaine score («Очки»/«Бали»).</summary>
+    /// <summary>Ranking points awarded by the group's points rule («Очки»); blank without a rule.</summary>
     Points,
     /// <summary>A relay leg's running team time («Наростаючий», Р-32); blank on any other row.</summary>
     Cumulative,
+    /// <summary>The score of a point-scoring format — the sum of the controls' values with the penalty and the
+    /// bonus («Бали»: за вибором за часом, рогейн); blank in any other format. Not the ranking points.</summary>
+    Score,
     /// <summary>An extra column — a plugin's column or an additional field (§10.2); identified by its key. Not in
     /// <see cref="ResultColumnInfo.All"/>: offered per day (monitor) / per publish (online, with its label).</summary>
     Extra,
@@ -65,6 +68,7 @@ public sealed record ResultColumnInfo(ResultColumn Column, string Key, string La
         new(ResultColumn.ResultTime, "result_time", "ResultColumn.ResultTime"),
         new(ResultColumn.Gap,        "gap",         "ResultColumn.Gap"),
         new(ResultColumn.Status,     "status",      "ResultColumn.Status"),
+        new(ResultColumn.Score,      "score",       "ResultColumn.Score"),
         new(ResultColumn.Points,     "points",      "ResultColumn.Points"),
         new(ResultColumn.Cumulative, "cumulative",  "ResultColumn.Cumulative"),
     ];
@@ -73,6 +77,19 @@ public sealed record ResultColumnInfo(ResultColumn Column, string Key, string La
     /// in an old saved config).</summary>
     public static ResultColumnInfo? ByKey(string key) =>
         All.FirstOrDefault(d => string.Equals(d.Key, key, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The keys of the catalogue columns that cannot have a value on a day with these groups: «Наростаючий»
+    /// without a relay group, «Бали» without a point-scoring group. The column editors hide them (their saved choice is
+    /// kept) and the monitor leaves them off the screen.</summary>
+    public static IReadOnlyList<string> Inapplicable(IReadOnlyList<ResultProtocolGroup> groups)
+    {
+        var keys = new List<string>(2);
+        if (!groups.Any(g => g.RelayTeams is not null))
+            keys.Add("cumulative");
+        if (!groups.Any(g => g.UsesScore))
+            keys.Add("score");
+        return keys;
+    }
 
     /// <summary>The column entry of an extra column (its key is the extra key, its label the extra's label key).</summary>
     public static ResultColumnInfo ForExtra(ExtraResultColumn extra) => new(ResultColumn.Extra, extra.Key, extra.LabelKey);

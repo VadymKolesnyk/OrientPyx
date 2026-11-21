@@ -120,7 +120,8 @@ public sealed class DayColumnBuilder
             bands.Add(RelayBand(RosterField.RelayLeg, "Participants.Col.RelayLeg"));
         }
         var chipBand = Identity(SheetCellKind.ChipText, "Participants.Col.Chip", nameof(ParticipantDayRowViewModel.Chip));
-        chipBand.Columns[0].RentalChipColumn = true; // right-click offers the rental toggle
+        // Right-click offers the rental toggle; the filter's «За станом» — орендний / не орендний / без чіпа.
+        ConfigureRentalChipColumn(chipBand.Columns[0]);
         // Amber-tint a chip whose SportIdent model holds fewer punches than the group's course has controls;
         // the tooltip names the model, its capacity and the course length.
         chipBand.Columns[0].CellBackgroundPath = nameof(ParticipantDayRowViewModel.ChipTooSmall);
@@ -229,6 +230,22 @@ public sealed class DayColumnBuilder
         col.CopyPath = paymentPath;
         // Both row VMs expose the numeric computed total fee used for the still-owed tooltip line.
         col.SummaryOwedPath = nameof(ParticipantRosterRowViewModel.TotalEntryFee);
+    }
+
+    /// <summary>
+    /// Marks a chip column: the right-click rental toggle and the filter's «За станом» mode — «Орендний» /
+    /// «Не орендний» / «Без чіпа» by the table's rental-chip database (<see cref="RentalChipStatus"/>), the by-values
+    /// and by-condition modes staying on the chip numbers. <paramref name="chipsPath"/> lists the chips to judge
+    /// when the cell's own value is not enough (the roster: the member days' chips, none on a day not run).
+    /// Shared by the day grid and the roster.
+    /// </summary>
+    internal static void ConfigureRentalChipColumn(SheetColumn col, string? chipsPath = null)
+    {
+        col.RentalChipColumn = true;
+        col.StatusFilter = true;
+        col.RentalStatusFilter = true;
+        col.StatusOptions = RentalChipStatus.FilterOptions;
+        col.StatusPath = chipsPath ?? string.Empty;
     }
 
     // A relay column of the day grid, bound to the row's Relay.<path> (see RelayColumns). Keyed off the header key, as

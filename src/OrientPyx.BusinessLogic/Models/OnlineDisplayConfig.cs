@@ -31,9 +31,9 @@ public sealed record OnlineDisplayConfig(
     [property: JsonPropertyName("separateDsqSm")] bool SeparateDsqSm)
 {
     /// <summary>The default layout — a 1:1 mirror of <c>DEFAULT_DISPLAY_CONFIG</c> in <c>web/src/types.ts</c>:
-    /// place/name/region/result (and a relay's running time) on both screens, most others large-only, team (a
-    /// rogaine's)/birth/qual off, and the DSQ split on for the large screen only. Keep in lock-step with the
-    /// frontend default.</summary>
+    /// place/name/region/result (and a relay's running time, a scored format's «Бали») on both screens, most others
+    /// large-only, team (a rogaine's)/birth/qual off, and the DSQ split on for the large screen only. Keep in
+    /// lock-step with the frontend default.</summary>
     public static OnlineDisplayConfig Default { get; } = new(
         [
             new("rk",          Lg: true,  Sm: true),
@@ -49,6 +49,7 @@ public sealed record OnlineDisplayConfig(
             new("gap",         Lg: true,  Sm: false),
             new("cumulative",  Lg: true,  Sm: true),
             new("status",      Lg: true,  Sm: false),
+            new("score",       Lg: true,  Sm: true),
             new("points",      Lg: true,  Sm: false),
         ],
         SeparateDsqLg: true,
