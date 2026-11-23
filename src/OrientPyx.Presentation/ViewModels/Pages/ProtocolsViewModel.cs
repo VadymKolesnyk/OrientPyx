@@ -655,13 +655,15 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         await _winnersPrint.PrintAsync(document);
     }
 
-    // The winners-printout header: the resolved competition name + protocol title, and a "День N — date" line.
+    // The winners-printout header: the resolved competition name + protocol title, and a "День N — date" line
+    // («День N» only when the competition has several days — in a one-day one it tells nothing).
     private WinnersPrintHeader BuildWinnersHeader(EventDay day)
     {
         var settings = BuildDocumentSettings();
         var name = settings.CompetitionName.Length > 0 ? settings.CompetitionName : CompetitionNamePlaceholder;
         var title = settings.Title.Length > 0 ? settings.Title : Localization.Get("Protocols.DefaultTitle");
-        var dateParts = new[] { $"{Localization.Get("Header.Day")} {day.Number}", settings.DateText }
+        var dayPart = DayOptions.Count > 1 ? $"{Localization.Get("Header.Day")} {day.Number}" : null;
+        var dateParts = new[] { dayPart, settings.DateText }
             .Where(s => !string.IsNullOrWhiteSpace(s));
         return new WinnersPrintHeader(name, title, string.Join(" — ", dateParts));
     }
@@ -717,9 +719,10 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         _ => null
     };
 
-    // "Протокол результатів - <competition> - День N - <day date>.docx" (see ExportFileName).
+    // "Протокол результатів - <competition> - [День N - ]<day date>.docx" (see ExportFileName).
     private string SuggestedFileName(EventDay day) => ExportFileName.Build(
-        Localization, "Protocols.NamePart", _session.CurrentEvent?.Name, "docx", day);
+        Localization, "Protocols.NamePart", _session.CurrentEvent?.Name, "docx", day,
+        multiDay: DayOptions.Count > 1);
 
     // Clear the "saved" flash on a header-text edit. The preview's header is the SAME two-way-bound text
     // boxes, so the document mock-up updates with no rebuild — typing must not re-run the (expensive) builder

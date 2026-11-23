@@ -580,10 +580,11 @@ public sealed partial class StatementViewModel : ObservableObject, IProtocolPrev
     // "Відомість - [<filters> - ]<competition> - [День N - ]<date>.docx" (see ExportFileName): the applied
     // filters (the heading over the table) name what the list is of, so several statements of one competition
     // get distinct names. A statement spanning the whole competition carries no day segment and is dated by the
-    // competition's start.
+    // competition's start. A one-day competition's statement has no «День 1» either.
     private string SuggestedFileName(string extension) => Services.ExportFileName.Build(
         Localization, "Statement.NamePart", _session.CurrentEvent?.Name, extension,
         _headerDefaults.Day,
+        multiDay: _headerDefaults.MultiDay,
         date: _headerDefaults.CompetitionDate,
         defaultNameKey: "Statement.DefaultName",
         qualifier: Services.ExportFileName.Qualifier(_filterSummaryText));
@@ -641,6 +642,9 @@ public sealed record StatementHeaderDefaults(
     /// <summary>The single day the statement is scoped to, or null when it spans the whole competition.
     /// Used to name the exported file; the header text itself comes from the fields above.</summary>
     public OrientPyx.BusinessLogic.Entities.EventDay? Day { get; init; }
+
+    /// <summary>The competition has more than one day — only then does the file name say «День N».</summary>
+    public bool MultiDay { get; init; }
 
     /// <summary>The competition's start date — the file-name date when there is no scoped day.</summary>
     public DateTimeOffset? CompetitionDate { get; init; }

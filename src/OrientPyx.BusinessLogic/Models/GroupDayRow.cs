@@ -53,4 +53,7 @@ public sealed record GroupDayRow(
     /// written with the relay settings (<c>SaveRelayGroupSettingsAsync</c>), not by <c>UpdateGroupDayRowAsync</c>.</summary>
     int LegCount = 1,
     /// <summary>Relay: how the legs get their courses (read-only here, like <see cref="LegCount"/>).</summary>
-    RelayCourseMode CourseMode = RelayCourseMode.Group);
+    RelayCourseMode CourseMode = RelayCourseMode.Group,
+    /// <summary>«Макс. запізнення» in seconds (rogaine, score-by-time): how long after the time limit a finish still
+    /// counts, later = OVT; null = the discipline's default (30 min).</summary>
+    int? MaxLateSeconds = null);

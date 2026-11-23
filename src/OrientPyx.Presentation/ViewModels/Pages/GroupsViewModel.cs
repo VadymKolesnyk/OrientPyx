@@ -502,6 +502,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     // (Course order, control count and time limit are used by every discipline, so they have no toggle.)
     public bool ShowRequiredCountColumn => Groups.Any(r => r.UsesRequiredCount);
     public bool ShowPenaltyColumn => Groups.Any(r => r.UsesPenalty);
+    public bool ShowMaxLateColumn => Groups.Any(r => r.UsesMaxLate);
     public bool ShowLegCountColumn => Groups.Any(r => r.IsRelay);
 
     /// <summary>Raised when the set of visible type-specific columns may have changed; the view
@@ -647,6 +648,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
 
         var showRequired = ShowRequiredCountColumn;
         var showPenalty = ShowPenaltyColumn;
+        var showMaxLate = ShowMaxLateColumn;
         var showLegs = ShowLegCountColumn;
         var courseSetter = (DefaultCourseSetter ?? string.Empty).Trim();
         var courseSetterCategory = (DefaultCourseSetterCategory ?? string.Empty).Trim();
@@ -661,7 +663,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
 
         // A column rebuild repaints the whole grid, so a merge raises it only when the visible set moved.
         if (!merge || showRequired != ShowRequiredCountColumn || showPenalty != ShowPenaltyColumn
-            || showLegs != ShowLegCountColumn)
+            || showMaxLate != ShowMaxLateColumn || showLegs != ShowLegCountColumn)
             RaiseColumnVisibility();
     }
 
@@ -797,6 +799,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     {
         OnPropertyChanged(nameof(ShowRequiredCountColumn));
         OnPropertyChanged(nameof(ShowPenaltyColumn));
+        OnPropertyChanged(nameof(ShowMaxLateColumn));
         OnPropertyChanged(nameof(ShowLegCountColumn));
         ColumnsChanged?.Invoke(this, EventArgs.Empty);
     }

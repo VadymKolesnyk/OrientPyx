@@ -1,7 +1,8 @@
 # Which binaries of the OrientPyx Windows package are the project's own and get code-signed. SignPath Foundation
-# signs only those (docs/code-signing.md); third-party libraries (Avalonia, SkiaSharp, SQLite, ClosedXML…) ship
-# exactly as their maintainers built them. Dot-sourced by vpk-sign-hook.ps1 and Test-ReleaseSignatures.ps1, so
-# what gets signed and what is checked afterwards can never drift apart. Keep it in step with
+# signs only those (docs/code-signing.md); third-party libraries (Avalonia, SkiaSharp, SQLite, ClosedXML…) are
+# not signed by us — note that the publish precompiles their IL ones (ReadyToRun, see OrientPyx.Presentation.csproj),
+# so a maintainer's own signature on such a file does not survive into the package. Dot-sourced by vpk-sign-hook.ps1
+# and Test-ReleaseSignatures.ps1, so what gets signed and what is checked afterwards can never drift apart. Keep it in step with
 # artifact-configuration.xml (the same files, as SignPath sees them).
 
 function Test-OrientPyxOwnBinary {

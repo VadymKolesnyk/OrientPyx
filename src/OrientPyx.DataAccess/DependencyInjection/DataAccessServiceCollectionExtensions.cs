@@ -64,6 +64,7 @@ public static class DataAccessServiceCollectionExtensions
         {
             var log = sp.GetRequiredService<IActivityLog>();
             Persistence.Undo.UndoRecorder.Log = log.Info;
+            DatabaseMigrator.Log = log.Info;
             var guarded = new Lazy<IEventStore>(() => Persistence.Undo.UndoStoreGuard.Create(sp.GetRequiredService<EventStore>()));
             return NotifyingEventStore.Create(
                 RoutingProxy<IEventStore>.Create(
@@ -143,8 +144,9 @@ public static class DataAccessServiceCollectionExtensions
     {
         var factory = services.GetRequiredService<IDbContextFactory<AppDbContext>>();
         using var appDb = factory.CreateDbContext();
-        // Applies all pending migrations, creating the database on first run.
-        appDb.Database.Migrate();
+        // Applies all pending migrations, creating the database on first run (an up-to-date one is only read).
+        DatabaseMigrator.Log = services.GetRequiredService<IActivityLog>().Info;
+        DatabaseMigrator.Migrate(appDb);
 
         // Seed the default sports ranks once (first run, or first run after the ranks table is added).
         var store = services.GetRequiredService<IAppStore>();

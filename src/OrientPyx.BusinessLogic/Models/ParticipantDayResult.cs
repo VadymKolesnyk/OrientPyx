@@ -70,11 +70,13 @@ public sealed record ParticipantDayResult(
     /// </summary>
     public IReadOnlyList<ScoreLine> ScoreBreakdown { get; init; } = [];
 
-    /// <summary>Gross points before the over-time penalty (the "X" in "X − Y = Z"); null when no penalty
-    /// applied (then <see cref="Score"/> alone is the total). Rogaine only.</summary>
+    /// <summary>Gross points before the over-time penalty and the bonus (the "X" in "X − Y = Z"); null when no
+    /// penalty applied (then <see cref="Score"/> alone is the total). Any point-scoring format; for a teamed rogaine
+    /// runner the team's.</summary>
     public int? ScoreGross { get; init; }
 
-    /// <summary>Over-time penalty deducted from <see cref="ScoreGross"/> (the "Y"); null/0 when none. Rogaine only.</summary>
+    /// <summary>Points the over-time penalty actually took off <see cref="ScoreGross"/> (the "Y"); null when none.
+    /// Any point-scoring format; for a teamed rogaine runner the team's.</summary>
     public int? ScorePenalty { get; init; }
 
     /// <summary>

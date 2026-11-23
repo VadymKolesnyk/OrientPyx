@@ -411,7 +411,7 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         ProtocolColumn.FullName => teamName,
         ProtocolColumn.Result => ResultCell(lead.Result),
         ProtocolColumn.Place => lead.Result.Place is { } p ? p.ToString(CultureInfo.InvariantCulture) : string.Empty,
-        ProtocolColumn.Score => lead.Result.Score is { } s ? s.ToString(CultureInfo.InvariantCulture) : string.Empty,
+        ProtocolColumn.Score => ScoreFormula.Format(lead.Result),
         ProtocolColumn.Points => lead.Result.Points is { } pts ? PointsTable.Format(pts) : string.Empty,
         ProtocolColumn.Gap => GapCell(lead.Result, leader),
         _ => string.Empty
@@ -444,7 +444,8 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         ProtocolColumn.Rank => row.Rank,
         ProtocolColumn.Result => ResultCell(row.Result),
         ProtocolColumn.Place => PlaceCell(row.Result),
-        ProtocolColumn.Score => row.Result.Score is { } s ? s.ToString(CultureInfo.InvariantCulture) : string.Empty,
+        // «9 (10 − 3 + 2)» when an over-time penalty or a «Бонус» changed the total, a plain number otherwise.
+        ProtocolColumn.Score => ScoreFormula.Format(row.Result),
         ProtocolColumn.Points => row.Result.Points is { } pts ? PointsTable.Format(pts) : string.Empty,
         ProtocolColumn.AwardedRank => row.Result.AwardedRank ?? string.Empty,
         ProtocolColumn.Gap => GapCell(row.Result, leader),

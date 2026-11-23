@@ -283,9 +283,10 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
         SplitDetailLeader: Localization.Get("Splits.Detail.Leader"),
         SplitDetailClose: Localization.Get("Splits.Detail.Close"));
 
-    // "Спліти - <competition> - День N - <day date>.html" (see ExportFileName).
+    // "Спліти - <competition> - [День N - ]<day date>.html" (see ExportFileName).
     private string SuggestedFileName(EventDay day) => ExportFileName.Build(
         Localization, "Splits.NamePart", _session.CurrentEvent?.Name, "html", day,
+        multiDay: DayOptions.Count > 1,
         defaultNameKey: "Splits.DefaultName");
 }
 

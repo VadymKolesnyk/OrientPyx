@@ -70,6 +70,8 @@ public sealed class PluginDisciplineStrategy : IDisciplineStrategy
 
     public decimal? DefaultPenaltyPerMinute => _basedOn.DefaultPenaltyPerMinute;
 
+    public TimeSpan? DefaultMaxLate => _basedOn.DefaultMaxLate;
+
     public bool UsesColumn(GroupColumn column) => _basedOn.UsesColumn(column);
 
     public bool UsesParticipantColumn(ParticipantColumn column) => _basedOn.UsesParticipantColumn(column);

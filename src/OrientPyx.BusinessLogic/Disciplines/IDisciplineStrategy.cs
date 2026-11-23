@@ -86,6 +86,13 @@ public interface IDisciplineStrategy
     decimal? DefaultPenaltyPerMinute { get; }
 
     /// <summary>
+    /// How long after the time limit a finish still counts when the group leaves «Макс. запізнення» blank (a later
+    /// finish is OVT), or null when the discipline has no such window. Rogaine and score-by-time return 30 min.
+    /// Used both to fill the default in the groups grid and in <see cref="EvaluateFinish"/>.
+    /// </summary>
+    TimeSpan? DefaultMaxLate { get; }
+
+    /// <summary>
     /// Number of control points implied by the course-order text, excluding start/finish markers.
     /// Used for the read-only "control count" column on set-course days.
     /// </summary>

@@ -155,26 +155,10 @@ public sealed class FinishReadRowViewModel : ObservableObject
     /// the collected points — «7 (10 − 3)» (penalty), «12 (10 + 2)» (bonus), «9 (10 − 3 + 2)» (both); a zero part is
     /// left out. Blank when the discipline doesn't score points.
     /// </summary>
-    public string ScoreText
-    {
-        get
-        {
-            if (_row.Score is not { } score)
-                return string.Empty;
-            var ci = CultureInfo.InvariantCulture;
-            var penalty = _row.Penalty ?? 0;
-            var bonus = _row.Bonus ?? 0;
-            var total = (score + bonus).ToString(ci);
-            if (penalty == 0 && bonus == 0)
-                return total;
-            var parts = (score + penalty).ToString(ci);
-            if (penalty != 0)
-                parts += " − " + penalty.ToString(ci);
-            if (bonus != 0)
-                parts += (bonus > 0 ? " + " : " − ") + Math.Abs(bonus).ToString(ci);
-            return $"{total} ({parts})";
-        }
-    }
+    public string ScoreText =>
+        _row.Score is { } score
+            ? ScoreFormula.Format(score + (_row.Bonus ?? 0), _row.Penalty ?? 0, _row.Bonus ?? 0)
+            : string.Empty;
 
     /// <summary>
     /// Hover text of the «Бали» cell: the collected points, the over-time penalty and the «Бонус» one per line (a zero

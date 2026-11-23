@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.DataAccess.Persistence;
@@ -5,17 +6,19 @@ using OrientPyx.DataAccess.Persistence;
 namespace OrientPyx.DataAccess.FileSystem;
 
 /// <summary>
-/// Lists subfolders of the events path that contain an event database and reads each
-/// competition's metadata to build a selection summary.
+/// Builds the competition list from the events folder. Every competition's database is opened once — brought up to
+/// the current schema (an up-to-date one is only read, see <see cref="DatabaseMigrator"/>) and its summary read on the
+/// same connection — and a few folders are read at a time: the list is read on every start (restoring the last
+/// competition looks it up here) and every time the picker is shown, so its cost grows with every competition kept.
 /// </summary>
 public sealed class EventFolderScanner : IEventFolderScanner
 {
-    private readonly IEventStore _eventStore;
+    private const int Parallelism = 4;
+
     private readonly IActivityLog _log;
 
-    public EventFolderScanner(IEventStore eventStore, IActivityLog log)
+    public EventFolderScanner(IActivityLog log)
     {
-        _eventStore = eventStore;
         _log = log;
     }
 
@@ -24,57 +27,49 @@ public sealed class EventFolderScanner : IEventFolderScanner
         if (string.IsNullOrWhiteSpace(eventsPath) || !Directory.Exists(eventsPath))
             return [];
 
-        var summaries = new List<EventSummary>();
-
-        foreach (var folder in Directory.EnumerateDirectories(eventsPath))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            // Dot-folders are the archive import's own staging/backup copies, never competitions.
-            if (Path.GetFileName(folder).StartsWith('.'))
-                continue;
-
-            var dbPath = AppDatabasePaths.GetEventDatabaseFilePath(folder);
-            if (!File.Exists(dbPath))
-                continue;
-
-            // One unreadable database (corrupt file, data written by a newer version this build cannot
-            // map, a locked file) must not hide every other competition or crash the startup restore:
-            // log it and skip the folder.
-            try
-            {
-                var summary = await ReadSummaryAsync(folder, cancellationToken);
-                if (summary is not null)
-                    summaries.Add(summary);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _log.Error($"Competition folder skipped: {folder}", ex);
-            }
-        }
-
-        return summaries
-            .OrderByDescending(s => s.CreatedAt)
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var folders = Directory.EnumerateDirectories(eventsPath)
+            .Where(folder => !Path.GetFileName(folder).StartsWith('.'))
+            .Where(folder => File.Exists(AppDatabasePaths.GetEventDatabaseFilePath(folder)))
             .ToList();
+
+        var summaries = new EventSummary?[folders.Count];
+        await Parallel.ForEachAsync(
+            Enumerable.Range(0, folders.Count),
+            new ParallelOptions { MaxDegreeOfParallelism = Parallelism, CancellationToken = cancellationToken },
+            async (i, ct) =>
+            {
+                try
+                {
+                    summaries[i] = await ReadSummaryAsync(folders[i], ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _log.Error($"Competition folder skipped: {folders[i]}", ex);
+                }
+            });
+
+        var list = summaries.OfType<EventSummary>().OrderByDescending(s => s.CreatedAt).ToList();
+        _log.Info($"Competition list: {list.Count} competitions read in {clock.ElapsedMilliseconds} ms.");
+        return list;
     }
 
-    private async Task<EventSummary?> ReadSummaryAsync(string folder, CancellationToken cancellationToken)
+    private static async Task<EventSummary?> ReadSummaryAsync(string folder, CancellationToken cancellationToken)
     {
-        // Bring the event database up to the current schema before reading it. The picker reads
-        // every event DB at startup; without this, a DB created before a later migration is queried
-        // with the new model and fails (e.g. "no such column"). Opening an event later also migrates
-        // it, but the scan happens first, so it must migrate too.
-        await _eventStore.EnsureCreatedAsync(folder, cancellationToken);
+        // A read, like the store's own reads (UndoStoreGuard): it never joins an undo step.
+        using var noUndo = BusinessLogic.Services.Undo.UndoScope.Suppress();
+        await using var db = EventDbContextFactory.Create(folder);
+        await DatabaseMigrator.MigrateAsync(db, cancellationToken);
 
-        var info = await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken);
+        var info = await db.Competition.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
         if (info is null)
             return null;
 
-        var days = await _eventStore.GetDaysAsync(folder, cancellationToken);
+        var dayCount = await db.Days.CountAsync(cancellationToken);
 
         return new EventSummary
         {
@@ -83,7 +78,7 @@ public sealed class EventFolderScanner : IEventFolderScanner
             Venue = info.Venue,
             FolderPath = folder,
             CreatedAt = info.CreatedAt,
-            DayCount = days.Count,
+            DayCount = dayCount,
             StartDate = info.StartDate,
             EndDate = info.EndDate,
             IsHidden = info.IsHidden

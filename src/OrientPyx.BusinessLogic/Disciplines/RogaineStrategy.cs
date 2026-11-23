@@ -26,10 +26,14 @@ public sealed class RogaineStrategy : DisciplineStrategyBase
     /// <summary>Rogaine deducts 1 бал per started minute over the time limit unless the group sets another rate.</summary>
     public override decimal? DefaultPenaltyPerMinute => 1m;
 
+    /// <summary>A finish up to 30 min after the time limit still counts (losing points); later is OVT.</summary>
+    public override TimeSpan? DefaultMaxLate => TimeSpan.FromMinutes(30);
+
     public override bool UsesColumn(GroupColumn column) => column switch
     {
         GroupColumn.CourseOrder => true,           // the list of allowed control points
         GroupColumn.PenaltyPerMinute => true,      // points lost per (started) minute over the time limit
+        GroupColumn.MaxLate => true,               // how late a finish still counts; later is OVT
         _ => base.UsesColumn(column)
     };
 
@@ -43,11 +47,14 @@ public sealed class RogaineStrategy : DisciplineStrategyBase
     /// Rogaine is a free-choice score format: there is no prescribed order to break, so the only finish
     /// rule is whether the competitor finished. A finish punch ⇒ <see cref="FinishStatus.Ok"/> (which lets
     /// the result be placed, ranked by net «Бали»); no finish punch ⇒ <see cref="FinishStatus.Dnf"/>.
-    /// Running over the time limit does <b>not</b> change the status — it only deducts points (see
-    /// <see cref="BuildSplits"/>) — so an over-time competitor still finishes OK with a reduced score.
+    /// Running over the time limit by up to «Макс. запізнення» (30 min unless the group sets another) does
+    /// <b>not</b> change the status — it only deducts points (see <see cref="BuildSplits"/>); a later finish is
+    /// <see cref="FinishStatus.Ovt"/>, which (like any non-OK member) leaves the team unplaced.
     /// </summary>
     public override FinishStatusResult EvaluateFinish(FinishContext context) =>
-        FinishStatusResult.Of(context.FinishTime is null ? FinishStatus.Dnf : FinishStatus.Ok);
+        FinishStatusResult.Of(context.FinishTime is null ? FinishStatus.Dnf
+            : IsPastMaxLate(context) ? FinishStatus.Ovt
+            : FinishStatus.Ok);
 
     /// <summary>
     /// Rogaine splits as two parallel lists, mirroring the set-course layout but scored. The <b>passage</b>

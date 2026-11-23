@@ -253,6 +253,8 @@ public sealed partial class DashboardViewModel : PageViewModelBase
     public async Task LoadAsync()
     {
         Info = await _editor.GetDashboardAsync();
+        if (_session.CurrentEvent is not null)
+            Services.StartupTimeline.MarkOnce("dashboard of the competition loaded");
 
         // Sync the day picker to the session (guarded so the SelectedDay setter doesn't switch the day).
         var days = _session.CurrentEvent is null

@@ -762,6 +762,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             DistanceKm = row.DistanceKm,
             DisciplineOverride = row.DisciplineOverride,
             TimeLimitSeconds = row.TimeLimitSeconds,
+            MaxLateSeconds = row.MaxLateSeconds,
             RequiredControlCount = row.RequiredControlCount,
             PenaltyPerMinute = row.PenaltyPerMinute,
             CourseSetter = (row.CourseSetter ?? string.Empty).Trim(),
@@ -6158,6 +6159,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         ParticipantCount: participantCount,
         ScatterVariantCount: scatterVariantCount,
         ScatterMaxControlCount: scatterMaxControlCount,
+        MaxLateSeconds: s.MaxLateSeconds,
         LegCount: Math.Max(1, s.LegCount ?? 1),
         CourseMode: s.CourseAssignmentMode);
 }

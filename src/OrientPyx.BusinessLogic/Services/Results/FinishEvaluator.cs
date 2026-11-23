@@ -63,6 +63,8 @@ internal static class FinishEvaluator
             FinishTime = readout.FinishTime,
             // A relay's time limit applies to the team (Р-31), never to one leg.
             TimeLimit = relayLeg is null && gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
+            // «Макс. запізнення» as set; blank ⇒ the strategy's default (30 min for rogaine / score-by-time).
+            MaxLate = relayLeg is null && gs?.MaxLateSeconds is { } late ? TimeSpan.FromSeconds(late) : null,
             // «Мін. КП» counts only controls that can be taken: each disabled («проблемний») control of the group's
             // list lowers it by one, so nobody needs a control that was taken out.
             RequiredControlCount = gs?.RequiredControlCount is { } required

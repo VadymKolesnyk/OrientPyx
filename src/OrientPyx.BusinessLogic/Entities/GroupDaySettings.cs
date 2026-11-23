@@ -36,6 +36,14 @@ public class GroupDaySettings
     public int? TimeLimitSeconds { get; set; }
 
     /// <summary>
+    /// «Макс. запізнення» in seconds: how long after the time limit a finish still counts (losing points per late
+    /// minute); a later finish is OVT. Null = the discipline's default
+    /// (<see cref="IDisciplineStrategy.DefaultMaxLate"/>, 30 min for rogaine and score-by-time). Only the formats
+    /// that use <see cref="GroupColumn.MaxLate"/> read it.
+    /// </summary>
+    public int? MaxLateSeconds { get; set; }
+
+    /// <summary>
     /// Overrides the competition-wide course-setter (<see cref="CompetitionInfo.CourseSetter"/>) for this
     /// group on this day; blank means the group inherits the competition default. Printed in the group's
     /// protocol caption.

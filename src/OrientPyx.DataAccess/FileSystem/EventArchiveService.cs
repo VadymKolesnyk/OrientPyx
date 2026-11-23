@@ -294,7 +294,7 @@ public sealed class EventArchiveService : IEventArchiveService
     {
         if (!Directory.Exists(destinationFolder))
         {
-            Directory.Move(stagingFolder, destinationFolder);
+            MoveFolder(stagingFolder, destinationFolder);
             return;
         }
 
@@ -311,7 +311,7 @@ public sealed class EventArchiveService : IEventArchiveService
 
         try
         {
-            Directory.Move(stagingFolder, destinationFolder);
+            MoveFolder(stagingFolder, destinationFolder);
         }
         catch
         {
@@ -326,6 +326,27 @@ public sealed class EventArchiveService : IEventArchiveService
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // The new competition is in place; a leftover hidden backup folder is harmless.
+        }
+    }
+
+    // Renames the freshly extracted staging folder. Right after its files were written, Windows Defender (or the
+    // search indexer) may still hold some of them open, and renaming their folder fails with «access denied» for a
+    // moment — seen in a third of the imports of an 11 MB archive. A few short retries ride that out.
+    private static void MoveFolder(string source, string destination)
+    {
+        var delay = TimeSpan.FromMilliseconds(100);
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                Directory.Move(source, destination);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && attempt < 8)
+            {
+                Thread.Sleep(delay);
+                delay = TimeSpan.FromMilliseconds(Math.Min(delay.TotalMilliseconds * 2, 1000));
+            }
         }
     }
 

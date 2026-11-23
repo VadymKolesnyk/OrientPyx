@@ -647,7 +647,7 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
         _ => null
     };
 
-    // "Стартовий протокол - <competition> - День N - <day date>.docx" (see ExportFileName).
+    // "Стартовий протокол - <competition> - [День N - ]<day date>.docx" (see ExportFileName).
     private string SuggestedFileName(EventDay day) => ExportFileName.Build(
         Localization,
         Kind == StartProtocolKind.Judges
@@ -655,7 +655,8 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
             : "StartProtocols.NamePart.Regular",
         _session.CurrentEvent?.Name,
         "docx",
-        day);
+        day,
+        multiDay: DayOptions.Count > 1);
 
     // The preview's header is the SAME two-way-bound text boxes, so a header-text edit updates the mock-up with
     // no rebuild — typing must not re-run the (expensive) builder or re-render the table, or every keystroke

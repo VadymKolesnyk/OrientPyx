@@ -21,5 +21,9 @@ public enum GroupColumn
     PenaltyPerMinute,
 
     /// <summary>Time limit (контрольний час). Used by every discipline.</summary>
-    TimeLimit
+    TimeLimit,
+
+    /// <summary>«Макс. запізнення»: how long after the time limit a finish still counts; later is OVT (rogaine,
+    /// score-by-time).</summary>
+    MaxLate
 }

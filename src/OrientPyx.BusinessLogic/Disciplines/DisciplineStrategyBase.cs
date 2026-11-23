@@ -44,6 +44,20 @@ public abstract class DisciplineStrategyBase : IDisciplineStrategy
     /// <summary>No automatic over-time penalty by default; rogaine overrides this with 1 бал/min.</summary>
     public virtual decimal? DefaultPenaltyPerMinute => null;
 
+    /// <summary>No late-finish window by default; rogaine and score-by-time override it with 30 min.</summary>
+    public virtual TimeSpan? DefaultMaxLate => null;
+
+    /// <summary>
+    /// True when the run finished more than «Макс. запізнення» (<see cref="FinishContext.MaxLate"/>, else
+    /// <see cref="DefaultMaxLate"/>) after the time limit — the score formats' OVT. False when there is no (positive)
+    /// time limit, no window, or the start/finish is unknown.
+    /// </summary>
+    protected bool IsPastMaxLate(FinishContext context) =>
+        context.TimeLimit is { } limit && limit > TimeSpan.Zero
+        && (context.MaxLate ?? DefaultMaxLate) is { } window
+        && context.StartTime is { } start && context.FinishTime is { } finish
+        && finish - start > limit + window;
+
     /// <summary>
     /// Every discipline shows the (auto-computed) control count and a time limit; concrete strategies
     /// extend this for their own columns.

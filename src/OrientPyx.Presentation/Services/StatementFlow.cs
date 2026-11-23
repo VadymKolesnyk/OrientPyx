@@ -63,14 +63,15 @@ public sealed class StatementFlow : IStatementFlow
 
         var filterSummary = BuildFilterSummary(table);
 
-        var (data, info) = await _busy.RunAsync(async () =>
+        var (data, info, dayCount) = await _busy.RunAsync(async () =>
         {
             var d = await _editor.GetStatementDataAsync(dayId, participantIds);
             var i = await _editor.GetInfoAsync();
-            return (d, i);
+            var n = (await _editor.GetDaysAsync()).Count;
+            return (d, i, n);
         });
 
-        var headerDefaults = ResolveHeaderDefaults(info, dayId);
+        var headerDefaults = ResolveHeaderDefaults(info, dayId, multiDay: dayCount > 1);
 
         var vm = new StatementViewModel(
             _localization, _editor, _appSettings, _builder, _writer, _printService, _dialogs, _busy, _session,
@@ -202,7 +203,7 @@ public sealed class StatementFlow : IStatementFlow
 
     // The competition-metadata watermarks/fallbacks for the statement header. The date uses the scoped day when
     // one is set (day mode), else the competition start date.
-    private StatementHeaderDefaults ResolveHeaderDefaults(CompetitionInfo? info, Guid? dayId)
+    private StatementHeaderDefaults ResolveHeaderDefaults(CompetitionInfo? info, Guid? dayId, bool multiDay)
     {
         var name = !string.IsNullOrWhiteSpace(info?.Name) ? info!.Name.Trim() : _session.CurrentEvent?.Name?.Trim() ?? string.Empty;
         var organisation = info?.Organisation?.Trim() ?? string.Empty;
@@ -216,6 +217,7 @@ public sealed class StatementFlow : IStatementFlow
         return new StatementHeaderDefaults(name, organisation, venue, dateText)
         {
             Day = day,
+            MultiDay = multiDay,
             CompetitionDate = info?.StartDate ?? _session.CurrentEvent?.StartDate
         };
     }

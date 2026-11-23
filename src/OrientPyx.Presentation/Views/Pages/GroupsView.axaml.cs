@@ -135,11 +135,20 @@ public partial class GroupsView : UserControl
                          enabledPath: nameof(GroupDayRowViewModel.UsesPenalty),
                          opacityPath: nameof(GroupDayRowViewModel.UsesPenalty));
 
+        // Time limit (контрольний час) — applies to every discipline.
+        builder.Text("Groups.Col.TimeLimit", nameof(GroupDayRowViewModel.TimeLimitText),
+                     editPath: nameof(GroupDayRowViewModel.TimeLimitText), minWidth: 100,
+                     placeholder: "гг:хх:сс", mask: SheetColumnBuilder.NumericMask.Time);
+
+        // «Макс. запізнення» (rogaine, score-by-time): how long after the time limit a finish still counts; later = OVT.
+        if (_vm.ShowMaxLateColumn)
+            builder.Text("Groups.Col.MaxLate", nameof(GroupDayRowViewModel.MaxLateText),
+                         editPath: nameof(GroupDayRowViewModel.MaxLateText), minWidth: 110,
+                         placeholder: "гг:хх:сс", mask: SheetColumnBuilder.NumericMask.Time,
+                         enabledPath: nameof(GroupDayRowViewModel.UsesMaxLate),
+                         opacityPath: nameof(GroupDayRowViewModel.UsesMaxLate));
+
         builder
-            // Time limit (контрольний час) — applies to every discipline.
-            .Text("Groups.Col.TimeLimit", nameof(GroupDayRowViewModel.TimeLimitText),
-                  editPath: nameof(GroupDayRowViewModel.TimeLimitText), minWidth: 100,
-                  placeholder: "гг:хх:сс", mask: SheetColumnBuilder.NumericMask.Time)
             .Text("Groups.Col.Distance", nameof(GroupDayRowViewModel.DistanceText),
                   editPath: nameof(GroupDayRowViewModel.DistanceText), minWidth: 110,
                   mask: SheetColumnBuilder.NumericMask.Decimal)

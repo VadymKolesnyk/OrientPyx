@@ -851,7 +851,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
     public IExportFileSaver FileSaver { get; }
 
     public Task<ParticipantExportResult?> ExportAsync(CsvParticipantData view) =>
-        _exportFlow.RunAsync(view, EffectiveDay);
+        _exportFlow.RunAsync(view, EffectiveDay, multiDay: RosterDays.Count > 1);
 
     /// <summary>Opens the participant-statement («відомість») modal for the given table's current view (the
     /// page hands in the active table). Scopes per-day fields to the day in view (day mode / a single-day

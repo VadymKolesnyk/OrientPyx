@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.DataAccess.DependencyInjection;
 using OrientPyx.DataAccess.Persistence;
+using OrientPyx.Localization;
 using OrientPyx.Presentation.DependencyInjection;
 using OrientPyx.Presentation.Services;
 using OrientPyx.Presentation.ViewModels;
@@ -18,10 +19,21 @@ public partial class App : Application
 {
     public override void Initialize()
     {
+        StartupTimeline.Mark("Avalonia platform up");
         AvaloniaXamlLoader.Load(this);
+        StartupTimeline.Mark("app styles loaded");
     }
 
     private UiStallWatchdog? _stallWatchdog;
+    private readonly TaskCompletionSource<MainWindow> _mainWindowReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>The main window, once start-up has built and shown it — the loading window stands in until then.</summary>
+    public Task<MainWindow> MainWindowReady => _mainWindowReady.Task;
+
+    private readonly TaskCompletionSource _startupSettled = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Completes when the startup screen has settled: the last competition restored, or the list shown.</summary>
+    public Task StartupSettled => _startupSettled.Task;
 
     public override void OnFrameworkInitializationCompleted()
     {
@@ -44,10 +56,10 @@ public partial class App : Application
         var activityLog = services.GetRequiredService<IActivityLog>();
         Program.ActivityLog = activityLog;
         activityLog.Info("Application services built; initializing database.");
+        StartupTimeline.Attach(activityLog);
+        StartupTimeline.Mark("services built");
         foreach (var note in Program.StartupNotes)
             activityLog.Info(note);
-
-        services.InitializeOrientPyxDatabase();
 
         // Log every UI-thread stall over a second (what Windows shows as «Не відповідає» when it lasts) with the
         // background activities running at that moment — the evidence for the next freeze report.
@@ -56,49 +68,24 @@ public partial class App : Application
             services.GetRequiredService<IBackgroundActivityService>(),
             services.GetRequiredService<IWorkspaceMode>());
 
-        // Load the plugins (needs the migrated app DB for the disabled list) and register their strings —
-        // DataAccess loads them but does not know the localization service.
-        PluginStartup.RegisterStrings(services);
-
         // Expose the scale service app-wide so any View can bind scaled font sizes
         // ({Binding TitleFontSize, Source={StaticResource UiScale}}).
         Resources["UiScale"] = services.GetRequiredService<IUiScaleService>();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var mainViewModel = services.GetRequiredService<MainWindowViewModel>();
-            var mainWindow = new MainWindow { DataContext = mainViewModel };
-            desktop.MainWindow = mainWindow;
+            // The slow start-up work (databases, plugins) starts first, off the UI thread; the loading window goes up
+            // meanwhile and closes when the main window is on screen (StartAsync). Its status lines are posted, so they
+            // run once this method has returned — the window exists by then.
+            StartupWindow? splash = null;
+            var prepared = Task.Run(() => PrepareData(services, key => Dispatcher.UIThread.Post(() => splash?.SetStatus(key))));
+            splash = new StartupWindow(services.GetRequiredService<ILocalizationService>());
+            splash.Opened += (_, _) => StartupTimeline.Mark("loading window shown");
+            desktop.MainWindow = splash;
 
-            // Restore the last session (or show the picker) once the UI is up.
-            var initialized = mainViewModel.InitializeAsync();
-
-            // Launched by double-clicking a competition archive: once the window is up and the startup
-            // screen settled, run the regular import flow on that file (its dialogs need a shown owner).
-            var windowOpened = new TaskCompletionSource();
-            mainWindow.Opened += (_, _) => windowOpened.TrySetResult();
-            var log = services.GetRequiredService<IActivityLog>();
-
-            async Task ImportArchiveWhenReadyAsync(string archivePath)
-            {
-                try
-                {
-                    await windowOpened.Task;
-                    await initialized;
-                    await mainViewModel.ImportCompetitionFileAsync(archivePath);
-                }
-                catch (Exception ex)
-                {
-                    log.Error("Open archive on launch", ex);
-                }
-            }
-
-            // Windows: Explorer passes the file as a command-line argument.
-            if (Program.StartupArchivePath is { } startupArchive)
-                _ = ImportArchiveWhenReadyAsync(startupArchive);
-
-            // macOS: Finder delivers the file as an activation (both at launch and into a running app) — the
-            // bundle's Info.plist declares the .opyx document type; nothing arrives in args.
+            // macOS: Finder delivers a competition archive as an activation (both at launch and into a running app) —
+            // the bundle's Info.plist declares the .opyx document type; nothing arrives in args. Subscribed now, so
+            // one delivered while the app is still starting waits for the main window instead of being lost.
             if (this.TryGetFeature<IActivatableLifetime>() is { } activatable)
             {
                 activatable.Activated += (_, e) =>
@@ -106,66 +93,171 @@ public partial class App : Application
                     if (e is not FileActivatedEventArgs files)
                         return;
                     foreach (var path in files.Files.Select(f => f.TryGetLocalPath()).Where(FileAssociation.IsArchivePath))
-                        _ = ImportArchiveWhenReadyAsync(path!);
+                        _ = ImportArchiveWhenReadyAsync(path!, restoreIfNotImported: false);
                 };
             }
 
-            // On the very first launch after a Velopack install, greet the user and confirm
-            // where the app and their (update-safe) competition data live. Shown once, non-blocking.
-            if (Program.IsFirstRun)
-            {
-                mainWindow.Opened += (_, _) =>
-                {
-                    var welcome = new WelcomeWindow(
-                        AppContext.BaseDirectory,
-                        AppDatabasePaths.DefaultEventsPath);
-                    welcome.Show(mainWindow);
-                };
-            }
-
-            // Relaunched by an update («Завантажити й перезапустити»): once the startup screen settled, say it
-            // worked and link to what changed in this version.
-            if (Program.UpdatedToVersion is { } updatedTo)
-                _ = ShowUpdatedWhenReadyAsync(updatedTo);
-
-            async Task ShowUpdatedWhenReadyAsync(string version)
-            {
-                try
-                {
-                    await windowOpened.Task;
-                    await initialized;
-                    log.Info($"Started after the update to {version}.");
-                    await mainViewModel.ShowAppUpdatedAsync(version);
-                }
-                catch (Exception ex)
-                {
-                    log.Error("Show the update notice", ex);
-                }
-            }
-
-            // Every launch of an installed build asks the release feed once, quietly: a newer version = a clickable
-            // toast, anything else (up to date, offline, a failed check) = nothing on screen. An update — from that
-            // toast's dialog or from Settings — first does what closing the window does (pending writes, network).
-            var updates = services.GetRequiredService<IUpdateService>();
-            updates.BeforeRestart = mainViewModel.PrepareForUpdateRestartAsync;
-            _ = CheckForUpdateWhenReadyAsync();
-
-            async Task CheckForUpdateWhenReadyAsync()
-            {
-                try
-                {
-                    await windowOpened.Task;
-                    await initialized;
-                }
-                catch (Exception)
-                {
-                    // A failed restore is reported by InitializeAsync itself; the check still runs.
-                }
-
-                await services.GetRequiredService<StartupUpdateCheck>().RunAsync();
-            }
+            _ = StartAsync(desktop, services, splash, prepared);
+        }
+        else
+        {
+            PrepareData(services);
+            PluginStartup.RegisterStrings(services);
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    // The start-up work that needs no UI: the app database (migrations, seeds) and the plugin assemblies (their
+    // switched-on list lives in that database).
+    private static void PrepareData(IServiceProvider services, Action<string>? report = null)
+    {
+        StartupTimeline.Mark("start-up work started");
+        report?.Invoke("Startup.Database");
+        services.InitializeOrientPyxDatabase();
+        StartupTimeline.Mark("app database ready");
+
+        report?.Invoke("Startup.Plugins");
+        PluginStartup.Load(services);
+        StartupTimeline.Mark("plugins loaded");
+    }
+
+    private async Task StartAsync(
+        IClassicDesktopStyleApplicationLifetime desktop, IServiceProvider services, StartupWindow splash, Task prepared)
+    {
+        MainWindow mainWindow;
+        MainWindowViewModel mainViewModel;
+        try
+        {
+            // The loading window keeps painting while the databases are opened.
+            await prepared;
+
+            // Registering the plugins' strings raises the localization service's change notification — UI thread.
+            PluginStartup.RegisterStrings(services);
+
+            // Let the loading window paint its last status before the UI thread builds the main window.
+            splash.SetStatus("Startup.Window");
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+
+            mainViewModel = services.GetRequiredService<MainWindowViewModel>();
+            StartupTimeline.Mark("view models built");
+            mainWindow = new MainWindow { DataContext = mainViewModel };
+            StartupTimeline.Mark("main window built");
+        }
+        catch (Exception ex)
+        {
+            _mainWindowReady.TrySetException(ex);
+            _ = _mainWindowReady.Task.Exception; // observed here: the crash dialog below reports it, once
+            Program.HandleCrash("Startup", ex);
+            splash.Close();
+            return;
+        }
+
+        var windowOpened = new TaskCompletionSource();
+        mainWindow.Opened += (_, _) =>
+        {
+            StartupTimeline.Mark("main window shown");
+            windowOpened.TrySetResult();
+        };
+
+        // On the very first launch after a Velopack install, greet the user and confirm
+        // where the app and their (update-safe) competition data live. Shown once, non-blocking.
+        if (Program.IsFirstRun)
+        {
+            mainWindow.Opened += (_, _) =>
+            {
+                var welcome = new WelcomeWindow(
+                    AppContext.BaseDirectory,
+                    AppDatabasePaths.DefaultEventsPath);
+                welcome.Show(mainWindow);
+            };
+        }
+
+        desktop.MainWindow = mainWindow;
+        mainWindow.Show();
+        splash.Close();
+
+        // Launched by double-clicking a competition archive (Windows: Explorer passes it as an argument): the archive
+        // is what the user wants open, so the last competition is not restored first — that read every competition
+        // and opened the previous one only to leave it. If the archive is not imported (cancelled, unreadable), the
+        // start goes on as usual.
+        var startupArchive = Program.StartupArchivePath;
+        var initialized = mainViewModel.InitializeAsync(restoreLastSession: startupArchive is null);
+        _started = new Started(mainViewModel, windowOpened.Task, initialized, services.GetRequiredService<IActivityLog>());
+        _mainWindowReady.TrySetResult(mainWindow);
+
+        if (startupArchive is not null)
+            _ = ImportArchiveWhenReadyAsync(startupArchive, restoreIfNotImported: true);
+
+        // Relaunched by an update («Завантажити й перезапустити»): once the startup screen settled, say it
+        // worked and link to what changed in this version.
+        if (Program.UpdatedToVersion is { } updatedTo)
+            _ = ShowUpdatedWhenReadyAsync(updatedTo);
+
+        // Every launch of an installed build asks the release feed once, quietly: a newer version = a clickable
+        // toast, anything else (up to date, offline, a failed check) = nothing on screen. An update — from that
+        // toast's dialog or from Settings — first does what closing the window does (pending writes, network).
+        var updates = services.GetRequiredService<IUpdateService>();
+        updates.BeforeRestart = mainViewModel.PrepareForUpdateRestartAsync;
+
+        try
+        {
+            await windowOpened.Task;
+            await initialized;
+        }
+        catch (Exception)
+        {
+            // A failed restore is reported by InitializeAsync itself; the check still runs.
+        }
+        _startupSettled.TrySetResult();
+
+        await services.GetRequiredService<StartupUpdateCheck>().RunAsync();
+    }
+
+    // What the post-start flows wait for: the main window shown and the startup screen settled.
+    private sealed record Started(MainWindowViewModel ViewModel, Task WindowOpened, Task Initialized, IActivityLog Log);
+
+    private Started? _started;
+
+    private async Task<Started> WhenStartedAsync()
+    {
+        await _mainWindowReady.Task;
+        var started = _started!;
+        await started.WindowOpened;
+        await started.Initialized;
+        return started;
+    }
+
+    // Runs the regular import flow on an archive once the window is up and the startup screen settled (its dialogs
+    // need a shown owner). restoreIfNotImported: the start skipped restoring the last competition for this archive.
+    private async Task ImportArchiveWhenReadyAsync(string archivePath, bool restoreIfNotImported)
+    {
+        Started? started = null;
+        try
+        {
+            started = await WhenStartedAsync();
+            var imported = await started.ViewModel.ImportCompetitionFileAsync(archivePath);
+            if (!imported && restoreIfNotImported)
+                await started.ViewModel.RestoreLastSessionAsync();
+        }
+        catch (Exception ex)
+        {
+            (started?.Log ?? Program.ActivityLog)?.Error("Open archive on launch", ex);
+        }
+    }
+
+    private async Task ShowUpdatedWhenReadyAsync(string version)
+    {
+        Started? started = null;
+        try
+        {
+            started = await WhenStartedAsync();
+            started.Log.Info($"Started after the update to {version}.");
+            await started.ViewModel.ShowAppUpdatedAsync(version);
+        }
+        catch (Exception ex)
+        {
+            (started?.Log ?? Program.ActivityLog)?.Error("Show the update notice", ex);
+        }
     }
 }

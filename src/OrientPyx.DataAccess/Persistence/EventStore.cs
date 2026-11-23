@@ -19,8 +19,9 @@ public sealed partial class EventStore : IEventStore
         Directory.CreateDirectory(eventFolderPath);
         await using var db = EventDbContextFactory.Create(eventFolderPath);
         // Applies all pending migrations, creating the database on first open. New migrations
-        // flow to every competition automatically the next time its database is opened.
-        await db.Database.MigrateAsync(cancellationToken);
+        // flow to every competition automatically the next time its database is opened; an up-to-date
+        // database is only read (see DatabaseMigrator).
+        await DatabaseMigrator.MigrateAsync(db, cancellationToken);
     }
 
     public async Task CheckpointAsync(string eventFolderPath, CancellationToken cancellationToken = default)
@@ -484,6 +485,7 @@ public sealed partial class EventStore : IEventStore
         existing.DistanceKm = settings.DistanceKm;
         existing.DisciplineOverride = settings.DisciplineOverride;
         existing.TimeLimitSeconds = settings.TimeLimitSeconds;
+        existing.MaxLateSeconds = settings.MaxLateSeconds;
         existing.RequiredControlCount = settings.RequiredControlCount;
         existing.PenaltyPerMinute = settings.PenaltyPerMinute;
         existing.CourseSetter = settings.CourseSetter;

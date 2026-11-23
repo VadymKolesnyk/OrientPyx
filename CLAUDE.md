@@ -5,26 +5,6 @@ It is a working product, not a starter: participant management, groups/courses/c
 read-out, per-discipline result computation, and Word/HTML/thermal-printer protocol export are
 all implemented. New work continues on this base — respect the layering and conventions below.
 
-Result computation (`ComputeDayResultsAsync`), thermal-printer split/winner printouts, HTML
-splits/monitor export, start draw, online publishing, and the Word `.docx` protocols are all
-built and documented in the subsystem notes at the bottom of this file.
-
-## Solution structure
-
-```
-OrientPyx.sln
-src/
-  OrientPyx.Presentation/    Avalonia UI (Views, ViewModels, navigation, app startup, DI composition)
-  OrientPyx.BusinessLogic/   Entities, models, enums, discipline strategies, service interfaces + implementations
-  OrientPyx.DataAccess/      EF Core + SQLite: app & event DbContexts, stores, events-folder scanner
-  OrientPyx.Localization/    ILocalizationService + JSON resource dictionaries (uk-UA default, en-US)
-  OrientPyx.Plugins.Sdk/     Plugin contract + shared pure algorithms (toolkit); no dependencies
-plugins/
-  OrientPyx.Plugins.sln      Separate solution for plugins (built into artifacts/plugins/<Name>/)
-  Directory.Build.props      Shared plugin settings: net10.0, SDK referenced with Private=false
-  MissedControlPenalty/      «Штраф замість зняття» test plugin
-```
-
 ## Architecture rules
 
 Three layers plus a shared localization library and the plugin SDK.
@@ -39,14 +19,13 @@ Three layers plus a shared localization library and the plugin SDK.
   nowhere else. References BusinessLogic.
 - **Localization** — pure .NET, no UI dependency, usable from any layer.
 - **Plugins.Sdk** — the plugin contract (`IOrientPyxPlugin`, `Discipline`, contexts, columns, settings, fields)
-  and the toolkit (`Toolkit/`: course patterns, `CourseMatcher`, `VariantMatcher`, `Punches`, `Ranking`, `Age`,
-  `TimeFormat`, `TextKey`, `CourseOrder`, `SiCard`) plus the shared simple types (`FinishStatus`, `FinishContext`,
-  `FinishStatusResult`, `SplitsView`…, `ControlPointType`, `ChipPunch`, `GeoPoint`/`MapPoint`). **No dependencies,
+  and the toolkit (`Toolkit/`) plus the shared simple types. **No dependencies,
   no knowledge of EF / files / UI — only the contract and pure algorithms.** Everything in it is public API with
   compatibility obligations: add only what is stable. Its `AssemblyVersion` is set explicitly (`1.0.0.0`) — the
   binary-compat version, bumped only on a breaking change; never tie it to the app's `Version`. `ApiVersion.Current`
   counts additive feature levels (2 = imported fields + reports, 3 = `ReportGroup.Settings`, 4 = `ResultColumnDef.Online`
-— a plugin column kept out of the online results, e.g. weighted relay's «T·K» = the leg's «Результат»); a plugin using them sets
+— a plugin column kept out of the online results, e.g. weighted relay's «T·K» = the leg's «Результат»; 5 = `FinishContext.MaxLate`
+— the group's «Макс. запізнення», past which rogaine / score-by-time give OVT); a plugin using them sets
   `MinApiVersion` to that level. New `IPluginBuilder` members get a default implementation. The three app projects import its namespaces globally
   (`<Using>` in their `.csproj`).
 
@@ -85,16 +64,6 @@ the UI shows only the selection / creation screens (gating in `MainWindowViewMod
   and `RemapLegacyPath` reads a stored path under it as the same path under the new root. The app-dir default is for
   local dev only.
 - The competition list is built by **scanning** `./events` (`IEventFolderScanner`).
-- The identifier can be changed later on the Information page (`IEventCatalogService.RenameIdentifierAsync`):
-  it renames the folder *and* rewrites `CompetitionInfo.Identifier` (the scanner reads it from the DB, so both
-  must move together). The event DB is released first (`IEventStore.ReleaseAsync` — WAL checkpoint +
-  `SqliteConnection.ClearAllPools()`), otherwise Windows refuses to move a folder holding an open file.
-- A competition is deleted from the picker (bin column / Delete key → `EventSelectionViewModel.DeleteCommand`): one
-  `ConfirmDialog` confirms and offers the archive («Зберегти архів і видалити» runs `IEventArchiveFlow.ExportAsync`
-  first; a cancelled/failed save deletes nothing). `IEventCatalogService.DeleteEventAsync` moves the log out, releases
-  the DB, moves `events/<id>` aside to `.deleted-<guid>` (all-or-nothing → `EventFolderInUseException`) then deletes
-  it, and clears a local `LastSessionRow` naming it; only a folder directly under the events path. Host-only
-  (`Wire.HostOnlyMethods`: the host refuses it over RPC, the station proxy fails it, the picker hides the bin).
 
 **Session rule (important):** the active competition/day is held **in-memory** by
 `ISessionService` for the running instance. The app DB only stores the last selection for
@@ -155,163 +124,21 @@ never an exception. Shared code asks the strategy — grid columns, control coun
 a specific id. **Adding a format = one new strategy class + one DI registration**
 (`BusinessLogicServiceCollectionExtensions`); do not reintroduce `switch`/`==` on a discipline in shared code.
 
-Day results are computed by `Services/Results/DayResultsCalculator` (internal, no DB access) from one
-`EventDaySnapshot` (now carrying the day's read-outs and scatter variants, read in the same transaction) plus
-`DayResultsAppData` (points rules, rank tables). Stages: competitors → start + finish status (`FinishEvaluator`) →
-`AdjustTime` (changed times rounded to a second; built-ins unchanged) → `Rank` per group (rogaine team ranking lives
-in `RogaineStrategy.Rank`) → points (formula uses `AdjustedTime`) → ranks (actual time, only if `AwardsRanks`).
-A read-out with no start from anywhere (no chip start, no start-protocol time, no relay leg start) is DNS in
-`FinishEvaluator` (both the calculator and the finish log go through it); «Мін. КП» is lowered by the disabled
-controls of the group's list. `CompetitionEditorService.ComputeDayResultsAsync` only reads the snapshot and calls it — pass the caller's snapshot
-when it has one. `FinishStatusResult.Missed` lists every missed control (maximum match, `MissedControls`); status
-and `Detail` still come from the greedy checks. Debug builds have «Файл → (Debug) Знімок результатів…» (JSON of
-every day's results) + `scripts/diff-results.ps1` to prove a refactoring left results unchanged.
-
-### Plugins
-
-Author-facing guide (contract, contexts, toolkit, versioning, examples): `website/content/plugins/` (published on the
-documentation site, «Власні плагіни»; `docs/plugin-api.md` only points there).
-
-A plugin is a DLL with one `IOrientPyxPlugin`; it registers `Discipline` subclasses (each `BasedOn` a built-in —
-the format's structure comes from it, the plugin overrides rules: `EvaluateFinish`, `BuildSplits`, `ResolveStart`,
-`AdjustTime`, `Rank`, `AwardsRanks`, `Columns`, `Settings`), participant fields and translated strings.
-- **Loading** (`DataAccess/Plugins/`): `PluginCatalog : IPluginCatalog` scans one folder, `<data root>/plugins`; before
-  loading it copies the standard plugins in from `<app dir>/plugins` (and, Debug, `<repo>/artifacts/plugins`) — a file
-  missing or older than the bundled one is replaced, a locked one skipped. Each plugin gets its own
-  `PluginLoadContext`; the SDK always resolves from the default context. Loading is lazy and happens right after
-  the app DB is migrated (`PluginStartup.RegisterStrings` in `App.axaml.cs`), because the switched-on list lives in
-  `AppSettingsRow.EnabledPluginsJson`. Every found plugin registers, but **stays off until switched on** on the
-  «Плагіни → Керування плагінами…» page (`PluginsViewModel`); `IPluginCatalog.IsEnabled`/`SetEnabledAsync`/`EnabledChanged`
-  switch it live (no restart: the provider, the type dropdowns, the banner and the menu follow). Any failure →
-  `PluginLoadError` (shown on that page); the app always starts. No hot reload of DLLs (a new file needs a restart).
-- **Adapter** (`BusinessLogic/Disciplines/Plugins/`): `DisciplineStrategyProvider` wraps each plugin
-  discipline in a `PluginDisciplineStrategy` (`All`/`For` skip the switched-off plugins' ones — `For` gives
-  `UnknownDisciplineStrategy`) over its `BasedOn` built-in (`base.*` runs the built-in through
-  `IDisciplineHost` with the contexts the core built). Every call into plugin code is guarded: on an exception the
-  built-in result is used, logged, and `PluginRuntimeErrors.FirstFailure` shows one banner per plugin per session.
-- **Strings**: a plugin's keys resolve as `"<pluginId>.<key>"` via `ILocalizationService.AddOverlay`; a key with no
-  translation falls back to en-US, then to the bare key (so plain text works).
-- **Settings** (Р-11): `PluginSettingsRow(EventDayId?, DisciplineId, Json)` in `event.db` — a day row for
-  `SettingScope.Day` values, a no-day row for `SettingScope.Competition`; `DisciplineSettings.Resolve` merges them
-  with the defaults. Edited on the plugin's own page: the top menu «Плагіни» lists one item per switched-on plugin
-  (built in `MainWindow.axaml.cs` from `MainWindowViewModel.PluginMenu`) → `PluginSettingsViewModel` (one singleton,
-  `PluginId` set before load): an auto-form card per discipline, day-scoped values for the day picked on the page;
-  saving re-points the session so pages recompute. The snapshot carries the rows
-  (`EventDaySnapshot.DisciplineSettings`) so the calculator and the read-out log see the same values.
-- **Imported fields** (API 2, Р-59…Р-62): `AddParticipantField(key, label, kind, FieldImport)` names the field in
-  files (`FieldImport.From("Pol", "sex")`) and translates values (`.Value("0", "Ж")`). The XML readers keep every
-  simple value of a record in `UofParticipant.Raw` (`[JsonIgnore]`); `ICompetitionEditorService.GetImportFileFieldsAsync`
-  lists what a file can fill (a checkbox each in the UOF/IOF import window → `UofParticipantData.FileFieldKeys`),
-  `GetImportFieldsAsync` the CSV mapping targets (switched-on plugins' fields not created yet included, matched by
-  label/key/import names). `PrepareImportFieldsAsync` (preview + import) moves the chosen raw values into `Fields` and
-  applies the translations; the import creates a missing plugin field that got a value. User fields match by name too.
-- **Reports** (API 2, Р-63…Р-66): `AddReport<T>()` — `Report.Build(ReportContext)` → `ReportDocument` (columns,
-  sections, `ReportRow` normal/caption/sub). `PluginReports.Enabled/Find` lists them (guarded); a plugin with reports
-  is a submenu in «Плагіни» (settings + reports). `CompetitionEditorService.BuildPluginReportAsync` builds the context
-  from `GetResultProtocolDataAsync` per day (+ `ParticipantViews`), calls the plugin (exception → `Error`), and
-  `PluginReportDocumentBuilder` maps it onto a `ResultProtocolDocument` (protocol header, officials, footer) — shown by
-  `PluginReportViewModel` (shared `ProtocolPreviewTable`, no drag: `IProtocolPreviewHost.CanReorderColumns`) and
-  written by `IResultProtocolWriter`. Report settings: `PluginSettingsRow` under the report id. Reports only read.
-- **Table settings**: `Setting.Table(key, label, columns, TableValue default)` — rows of text cells keyed by column
-  key, stored as a JSON array; edited in `SettingTableView` shown over the settings dialog
-  (`IDialogService.ShowSettingTableAsync` restores the previous dialog). `Toolkit.RangeTable` reads a «range × key →
-  number» table (nearest row outside the ranges, last row open — Р-47).
-- **Results**: a plugin's `ResultRow.Set` values land in `ParticipantDayResult.Extra` and show as extra day-grid
-  columns (`ResultExtras[key]`, red tint when `ResultColumnDef.Problem` says so); `MarkUnranked` →
-  `ParticipantDayResult.UnrankedReason` qualified as `"<pluginId>.<reason>"` (no place, no points; on a relay leg the
-  whole team; the protocol prints the translated reason after the name).
-- **Extra result columns** (§10.2): `ExtraResultColumn` (BusinessLogic/Models) — plugin columns keyed
-  `"<pluginId>.<key>"` and additional fields keyed `"field.<key>"`, listed per day in
-  `ResultProtocolData.ExtraColumns`. The Word protocol stores them as `ProtocolColumn.Extra` + `ProtocolColumnSetting.Key`
-  (built-ins keep the enum, so old templates read unchanged; `ColumnKey` = `builtin.<Name>` | extra key); the monitor
-  as `ResultColumn.Extra` keys in `ResultColumnSelection`. A stored extra key the day lacks is skipped on build and
-  kept on save. A plugin column shows only in groups of its discipline (`ResultProtocolGroup.PluginColumnKeys` /
-  `Shows`): the protocol section and the monitor group carry `HiddenColumns` — the .docx and the HTML leave them out
-  (the .docx sizes each column set on its own), the code-built previews give their slot to the column before
-  (`PreviewColumnSlots`). Online, extras are `OnlineDisplayConfig` entries (`Resolve(extras)`: a new plugin column shown on the
-  large screen, a field hidden; `Unresolved` keeps another day's) published in `display_config.columns` with a
-  `label`; values go in `results.extra` (jsonb — a project without the column → `IResultPublisher.ExtraUnsupported`,
-  rows sent without it) and `relay_teams.legs[].extra`; the spectator site lays relays out by the same config
-  (`docs/online-snapshot.md`). Everywhere «Час» is the clean time and «Результат» the counted one (a relay leg's
-  `AdjustedTime ?? LegTime`); a relay leg's running time is its own column `ResultColumn.Cumulative`
-  («Наростаючий», monitor/online — never the gap column).
-- **Unknown discipline** (plugin missing/disabled): `UnknownDisciplineStrategy` + the «Потрібен плагін» banner
-  above the page (`PluginNoticeViewModel`). `.opyx` export writes `plugins.json` (required plugins); import warns
-  about missing ones but proceeds.
-- **Release**: `build/publish.ps1` builds `plugins/OrientPyx.Plugins.sln` and copies `artifacts/plugins/*` into the
-  package's `plugins\` folder. Build plugins locally with `dotnet build plugins/OrientPyx.Plugins.sln`.
+**Plugins** (internals: `.claude/rules/plugins.md`; author guide: `website/content/plugins/`): a plugin is a DLL with one
+`IOrientPyxPlugin` that registers `Discipline` subclasses (each `BasedOn` a built-in), participant fields, strings
+and reports; it stays off until switched on («Плагіни → Керування плагінами…»); every call into plugin code is guarded
+(on an exception the built-in result is used), and the id of a missing/disabled plugin resolves to
+`UnknownDisciplineStrategy`.
 
 ## Platforms & packaging
 
-Windows and macOS are shipped; Linux runs from source only. On the `v<version>` tag GitHub Actions runs
-`build/publish.ps1` (Windows, `.github/workflows/release-windows.yml`) and `build/publish-mac.sh` (macOS,
-`release-macos.yml`); both pack with Velopack into one GitHub Release, each platform on its own channel (`win`,
-`osx-arm64`, `osx-x64`; both uploads use `--merge`). The release is created first — by `/new-version` (or the
-Windows workflow) with `gh release create`, the macOS workflow waits for it — so neither `vpk upload` ever creates
-a draft of its own (two drafts for one tag = the second publish fails with `tag_name already_exists`). A local
-`publish.ps1` builds the same package **unsigned** (`-Upload` = emergency fallback only). **Windows code signing**
-goes through the SignPath Foundation (free OSS certificate, publisher «SignPath Foundation»), which signs only
-artifacts of a GitHub-hosted Actions run: the workflow packs twice (`build/signpath/vpk-sign-hook.ps1`
-collects the files `vpk` would sign, request 1; the real pack swaps the signed copies in) and signs `Setup.exe`
-after packing (request 2); on for `secrets.SIGNPATH_API_TOKEN` + `vars.SIGNPATH_ORGANIZATION_ID`, unsigned
-otherwise. Signed files must say product `OrientPyx` and product version = the release — keep
-`src/Directory.Build.props` / `plugins/Directory.Build.props` on every project and list a new own binary in
-`build/signpath/SigningRules.ps1` + `artifact-configuration.xml`. How-to and status: `docs/code-signing.md`.
-Details and the optional Apple signing secrets: `build/README.md`. Keep the code portable:
-anything Windows-only (GDI printing in `DataAccess/Printing`, `FileAssociation`, Explorer) must be guarded by
-`OperatingSystem.IsWindows()` and degrade gracefully (the print services expose `IsSupported`); reveal/open
-files through `Presentation/Services/FileReveal.cs`, never by launching `explorer.exe` directly. On macOS the
-installed layout is the `.app` bundle with `UpdateMac` beside the exe (`Program.IsVelopackInstallLayout`) and
-data goes to `~/Library/Application Support/OrientPyx/data-root`. The `.opyx` association on macOS is the
-bundle's `build/mac/Info.plist` (copied as-is by `vpk pack --plist`, so keep its standard keys complete) and the
-file arrives as an `IActivatableLifetime` file activation handled in `App.axaml.cs`, not in `args`.
-
-Notable formats: **Mixed** (змішаний) judges against a course *pattern* (`<seq>` ordered runs,
-`[N …]` any-of blocks, nesting) like a set course. **Scatter** (розсіювання) has several valid
-orders (variants) per (day, group) stored in the `GroupCourseVariant` event-DB table (renamed from
-`ScatterVariant`); each runner's variant is auto-detected from their read-out (best-matching order,
-`Toolkit.VariantMatcher`) and then judged like a set course against it. A variant may also be a mixed
-pattern (matched through `CourseMatcher`, never expanded into orders). **Relay** (естафета) legs run the
-group's course, or — per `GroupDaySettings.CourseAssignmentMode` (Р-41) — a named course from the same
-`GroupCourseVariant` rows: `ByBib` (`LegCourseAssignment` per leg number, typed on «Команди» or brought by the course
-import — there is no separate leg-course file import), `TeamSet` (a course set per team — its own, else its
-leg numbers' `LegCourseAssignment` codes, else the group's — distributed over the read legs by
-`Toolkit.TeamCourseAssignment`, least missed controls, Р-42), `PerLeg` («своя на кожен етап»: leg N of every team
-runs a variant whose `GroupCourseVariant.Leg` = N — the «Етап» column the same «Групи» courses table shows only in this
-mode; several on one leg = the read-out's best match (`VariantMatcher.Best`), unread = «не визначено»; none = «дистанцію
-не призначено»; `Leg` is saved in every mode so switching modes loses nothing; a course re-imported under the same code
-keeps its leg; outputs show `RelayLegResult.ShownCourseCode`, null only for a code equal to the leg number — migration
-`GroupCourseVariantLeg` moved the former «code = leg number» rows into `Leg`). The former `ByLeg` mode is gone (migration
-`DropRelayByLeg` turns it into `ByBib` rows). `LegCourseAssignment.GroupId` (nullable) tells the row's group; the
-calculator ignores a row naming another group.
-
-**OCAD variations by number.** `IofXmlParser` keeps every variation in `IofCourse.AllVariants` (nothing merged — a
-relay's «1AAAAA» and «4AAAAA» run the same controls) besides the distinct `Variants`, and reads the file's number/leg
-assignments into `IofCourse.TeamCombinations` (2.0.3 `<TeamCombination>` by `CourseVariationId`, 3.0
-`TeamCourseAssignment` / `PersonCourseAssignment` by course name). «Розділення груп» (`SplitGroupsViewModel`) asks per
-course with variations «Розсіювання» / «Естафета» + «варіант за номером етапу» / «набір на команду»
-(`IofCourse.VariationUse`, default relay for a multi-leg OCAD relay, a relay day or an existing relay group);
-`ImportGroupsAsync` then makes a relay group (`LegCount` from the file, all variations, the assignments via
-`IEventStore.ReplaceGroupLegCourseAssignmentsAsync`) or a scatter one (all variations when numbered, else the distinct
-orders). «Змагання → Естафета → Варіанти за номерами» (beside «Команди»; `NumberVariantsViewModel`,
-`GetNumberVariantsAsync` → `NumberVariantsData`) lists number → variation for map handout: `Rows` (every stored
-assignment, with its own group and the group of the team/runner holding the number — `GroupMismatch` = the calculator
-never applies it, both cells red; F8 «Перенести в групу команди» rewrites the row's group) and, in a second table,
-`Unassigned` (legs of numbered teams in `ByBib`, or `TeamSet` without a set of their own; numbered runners of a
-non-relay group that has rows). The variation cell is a combo of the group's variants in both tables, saved at once via
-`SetLegCoursesAsync` (`LegCourseEntry.GroupId` = the row's group; blank removes the row); rows stay put until reload.
-The upper table exports like «Кількість карт».
-
-### The day a call works on
-
-`CompetitionEditorService` works on the session's day, except the finish-log methods (`ImportFinishReadoutsAsync`,
-`GetFinishReadoutLogAsync`/`RowsAsync`, `GetFinishSplitsAsync`, `GetSplitPrintDocumentAsync`,
-`GetFinishReadoutEditAsync`, `UpdateFinishReadoutAsync`) which take an optional `forDayId`: the method sets an
-`AsyncLocal` day override (`ResolveDayAsync` + `_dayOverride`, set in the calling method itself — an AsyncLocal set
-inside an awaited helper does not flow back) that every nested call sees through `CurrentDay`/`CurrentDayId`. The finish
-auto-read, the results monitor and online publishing each remember the day (and competition) they were started on and
-keep working for it when a page switches the session's day; only another competition (and, for the auto-read, its own
-day closed/deleted) stops them.
+Windows and macOS are shipped; Linux runs from source only. Keep the code portable: anything Windows-only (GDI
+printing in `DataAccess/Printing`, `FileAssociation`, Explorer) must be guarded by `OperatingSystem.IsWindows()`
+and degrade gracefully (the print services expose `IsSupported`); reveal/open files through
+`Presentation/Services/FileReveal.cs`, never by launching `explorer.exe` directly. Signed files must say product
+`OrientPyx` and product version = the release — keep `src/Directory.Build.props` / `plugins/Directory.Build.props`
+on every project and list a new own binary in `build/signpath/SigningRules.ps1` + `artifact-configuration.xml`.
+Release workflows, Velopack channels, SignPath and the macOS bundle: `.claude/rules/packaging.md` (and `/new-version`).
 
 ## Network mode («Спільна робота»: host + stations)
 
@@ -344,319 +171,56 @@ process that opens it), the others are **stations** that edit the same data live
 - **No file or app-DB access from BusinessLogic past these interfaces**: `CompetitionEditorService` has no
   `Directory.`/`File.` (day folders and imported XML go through `IEventFiles`; results app-data through
   `IResultsAppData`).
-- **Host** (`DataAccess/Network/Host`, Kestrel via `FrameworkReference Microsoft.AspNetCore.App`, minimal API, no
-  URL ACL): `/pair` (4-digit PIN → bearer token stored in `app.db` `StationTokens`), `/rpc/{iface}/{method}` (JSON
-  array of args; `Idempotency-Key` on writes; `/jobs` for the import), `/changes`, `/version`, `/files/*`, `/log`,
-  `/ping`; UDP discovery on 47831 (`DataAccess/Network/Discovery`), spoken `ConnectionCode` fallback. **Station**
-  (`DataAccess/Network/Station`): `RpcChannel` (timeouts/retries), `RpcProxy` (`DispatchProxy`), `RemoteChangeListener`,
-  `NetworkStation : INetworkClient`. Self-checks with one-click fixes: `IStationDiagnostics`
-  (`DataAccess/Network/Diagnostics`; nothing changes the OS silently, every fix is a button and is logged).
-- **UI**: «Файл → Спільна робота…» is a global overlay (reachable before a competition is selected, because a station
-  must connect first), the role indicator in the top bar, the `NetworkActivity` in the activities block and the
-  «немає зв'язку» banner (`NetworkNoticeViewModel`) that disables editing while reconnecting. «Очки» / «Розряди» are
-  read-only on a station.
-- **Flaky networks** (a mobile router silently drops long-lived connections; field test 2026-11-07): the station's
-  offline state comes only from `Station/ConnectionHealth` — offline = a failure **and** no answer of any kind for 15 s;
-  any answer clears it. A silent `/changes` (3 s heartbeat, ~10 s silence) is reopened quietly and resumed from
-  `Last-Event-ID` + stream epoch — never a banner by itself. `RpcChannel` retries within a window (`RpcRetryPolicy`:
-  reads 20 s, writes 60 s with one idempotency key; short first attempt; idle pooled connections closed after 4 s),
-  sends writes one at a time in call order, shows «Зберігається…» (`INetworkClient.DelayedWrites`) and a toast when a
-  write is abandoned (`WriteFailed`). The host runs keyed calls with `CancellationToken.None`. Details:
-  `docs/network-protocol.md`.
-- **Last session**: `LastSessionRow.Mode/HostId` — a station pointer is restored only after reconnecting to the same
-  host, never from the local folder. Builds: run `scripts/locked-build.ps1` when several terminals/agents build the
-  same checkout.
-
-## Additional participant fields
-
-A competition can define its own participant fields (Р-13…Р-19 in `docs/plugins-plan.md`): `CustomFieldDef`
-(key PK, label, kind Text|Number|Bool|Choice, choice options + synonyms as JSON, source `user`/`plugin:<id>`) and
-`ParticipantFieldValue(ParticipantId, Key, Value)` in `event.db`. Values are participant-level, deleted with the
-participant (`DeleteParticipantAsync`, delete-all, import clear-first) and with the field. The domain model is
-`CustomField` (BusinessLogic/Models) — `Normalize` is the single place a raw value becomes the stored one (choice
-synonym → value via `TextKey`, number comma/dot), `IsInvalid` drives the red cell. Service API on
-`ICompetitionEditorService`: `Get/Add/Update/DeleteCustomFieldAsync`, `SetParticipantFieldAsync`,
-`EnsurePluginFieldsAsync` (a plugin's `AddParticipantField` fields are created when its discipline is first used).
-Both participant tables add one `field.<key>` column per field (`Controls/Roster/CustomFieldColumns.cs`, binding the
-row's `Fields[key]` cell VM); export and the statement pick them up. CSV/Excel import maps onto `ImportTarget`
-(string-keyed: built-ins by their old enum names, `field.<key>`, `relay.teamNumber|teamName|leg`), remembers the last mapping per
-header set (`ImportMappingRow` in `event.db`, app default in `AppSettingsRow.ImportMappingsJson`) and can create a new
-field from a file column («+ Нове додаткове поле…»).
-
-## Relay (естафета)
-
-Built-in discipline `DisciplineId.Relay` (`RelayStrategy`, `CompetitorModel.TeamWithLegs`; rules Р-20…Р-44 in
-`docs/plugins-plan.md`, worked examples in `docs/relay-scenarios.md`). `RelayTeam` (day + group, number unique per
-day) holds the team; a runner is placed on a leg via `ParticipantDay.RelayTeamId` + `Leg`; the leg number «100.2»
-is computed (`Toolkit.RelayBib`), never written to `Participant.Number`. Group settings: `LegCount`,
-`MassStartTime`, restarts (`RestartTimesJson`, `RestartRanking`), `CourseAssignmentMode`. The calculator's relay
-pass (`DayResultsCalculator.Relay.cs`) judges legs in sequence (leg N starts at leg N−1's finish or the restart),
-sums adjusted leg times, ranks teams and copies place/points to every member; `TeamDayResult` /
-`RelayLegResult` carry the team and leg results, `ParticipantDayResult.Team/Leg/LegBib` link a runner to them.
-Pages/outputs: «Команди» (teams + legs), day-grid team/leg columns, read-out log, result/start protocols
-(`ResultProtocolGroup.RelayTeams`, sub-rows), import (CSV `relay.*` targets, IOF `EntryList` `TeamEntry`), draw
-(a team is the unit, leg 1 gets the minute), monitor (`MonitorRowKind.Team/Leg`), HTML splits (leg start + leg
-course), summary («за очками» counts relay points; «за часом» skips relay days, Р-39), online (`relay_teams`).
-- **A team may have no number** (`RelayTeam.Number` is `int?`): a UOF import makes its teams without numbers, the user
-  types them later (in step with OCAD). Show/sort it through `Models/RelayTeamNumbers` (`Text`/`Bib`/`SortKey`/`Label`
-  — blank number, blank «100.2», sorted last); such a team is skipped online (`relay_teams.num` is the key) and gets
-  no «за номером етапу» course; plugins see `TeamCompetitor.Number` = 0.
-- **A runner may be on a team without a leg** (`RelayTeamId` set, `Leg` null — «без етапу»): an import with more
-  runners than legs leaves the extras so; evaluated alone, never placed; listed in `RelayTeamRow.Unplaced` and in red
-  on «Команди»; `IEventStore.ReleaseRelayRunnerAsync` takes a runner off the team.
-- **UOF relay** (`UofXmlParser`): «3Е» in `ProgEvent` = the runner's relay day (`UofParticipant.RelayDayNumbers`),
-  `GrupRel` = the relay group there (`GroupOn(day)`), `Prim` = team name, `PsRel` = leg (`<RelayLeg>` is a region-team
-  number, not read). The import matches a number-less team by its exact name in the group, sets a missing `LegCount`
-  from the file, marks the relay group-days (`RelayGroupDay`) or makes a new all-relay day a relay day, never skips a
-  runner, and reports teams created / without a leg / without a team (`ParticipantImportResult`, `RelayImportReport`).
-  A **relay event of its own** (baz4051 «2-х етапні естафети»: no «Е» day and no `GrupRel` anywhere) is read otherwise:
-  `Group` = relay group, `Prim` = team, `RelayLeg` = leg (`PsRel` 0; a file filling `PsRel` keeps it); such rows are
-  `UofParticipant.RelayOnImportedDays` ([JsonIgnore]) and `ResolveImportedRelayDaysAsync` (editor, before the store)
-  gives them the import's days — the target day, else the file's days, else the competition's relay days, else every day.
-  After any participant import, `RelayDaySwitchOffer` asks per day with new teams whose own type is not a relay
-  (`GetRelayDaySwitchesAsync`) to make it one (`SwitchDayToRelayAsync`: groups keep what they run — the former type
-  becomes their own override, a built-in relay override is cleared).
-
-## Mass start («Масовий старт»)
-
-«Старт → Масовий старт» (`MassStartDrawViewModel` / `MassStartDrawView`, beside the two draws): one start per group,
-no minutes drawn. A row per group of the day (checkbox, «Поточний старт», editable «Старт»); with a relay on the day
-also «Етапів» and one «Перезапуск етапу N» column per leg 2…(longest relay) — `Restarts[i]` cells, disabled where the
-group has no such leg. Nothing is written until «Призначити старт» → `ICompetitionEditorService.ApplyMassStartAsync`
-(`CompetitionEditorService.MassStart.cs`, existing store writers only — no RPC change): every runner's
-`ParticipantDay.StartTime`; in a relay the leg-1 runners (and runners on no leg) get it, and the group's
-`MassStartTime` + `RestartTimesJson` are replaced (blank = no restart; legs beyond `LegCount` dropped). The typed
-values are page memory per day (`DrawSettingsKind.MassStart`, `DrawGroupRowSettings.Restarts`); a group with nothing
-remembered seeds from the competition (relay settings, else the runners' common start). Tests: `Core/MassStartTests`.
-This page is the only editor of a relay's mass start and restarts: the «Групи» relay strip edits legs, restart ranking
-and leg courses only, and its save re-reads the group's relay settings first so it never writes back stale ones.
-
-## Map counts («Кількість карт»)
-
-«Старт → Кількість карт» (`MapCountsViewModel` / `MapCountsView`): one read-only `SheetTable` over the whole
-competition — a row per group, a column per day with the group's headcount on that day (`null` = the group is
-not on the day, shown blank), a trailing «(без групи)» row (amber) for day members with no group, per-day totals in
-the table's status bar (`SheetColumnBuilder.Summary(path)` opts a column in), and an optional reserve (percent,
-rounded up, but at least N maps) that adds a «День N + запас» twin per day. Data: `ICompetitionEditorService.
-GetMapCountsAsync` → `MapCountsData` (BusinessLogic/Models/MapCounts.cs), joined to existing participants like the
-dashboard. Export reuses the participants' CSV/Excel flow (`IParticipantExportFlow.RunAsync(view, day, nameKey)`)
-over `SheetTable.ExportView()`. The reserve is page state only (not persisted).
-
-## Chip capacity (SportIdent card model)
-
-`Toolkit.SiCard.Identify(number)` maps a chip number onto its SportIdent card model and punch capacity by the
-SPORTident number ranges (Card 5 = 30, Card 6 = 64 (192 station-dependent), Card 8 = 30, Card 9 = 50, pCard 20,
-tCard 25, Card 10/11/SIAC = 128, fCard 20); an unknown number is `null` and never judged. `Models/ChipCapacity.
-NeededPunches(groupDayRow, strategy)` = max(course control count, longest named course / scatter variant) and is
-carried on `GroupOption.ControlCount`. Surfaces: «Чіпи» shows read-only «Тип картки» / «Відміток» columns; the
-day grid and the roster amber-tint a chip cell whose card holds fewer punches than the group's course + `SiCard.Reserve` (2 spare)
-(`ChipTooSmall` / `ChipCapacityTooltip` on both row VMs and `RosterDayCellViewModel`); «Сканування чіпів»
-holds such a chip back (`ChipScanCandidate.NeededPunches`) with «Пропустити» / «Присвоїти все одно», like a
-rental-note mismatch. **All of it is gated on the app-level «Тип відмітки» = SportIdent** (another system's numbers
-say nothing about the card): `ParticipantsViewModel.UsesSportIdentCardsAsync` feeds `ControlCount` = 0 otherwise,
-`ChipsViewModel.ShowCardColumns` / `ChipScanViewModel.ShowCardColumn` hide the columns; a Settings change applies on
-the next page load.
-
-## Finish alerts («Сповіщення…»)
-
-The finish auto-read signals a judge who is not looking at the screen: a rental chip due back → toast + calm two-note
-chime (`FinishAlert.CollectChip`); an unknown chip → three sharp beeps (`FinishAlert.UnknownChip`) the moment it is read,
-**before** its «Невідомий чіп» dialog opens (that dialog is an in-window overlay and the poller waits for it, so a
-minimized window would otherwise stall every later read silently); while the window is inactive both also show a
-Windows notification (click = restore + front) and flash the taskbar button / bounce the Dock icon.
-`Presentation/Services/DesktopAlerts` (`IDesktopAlerts`: `PlaySound` winmm on Windows, `afplay` on macOS,
-`paplay`/`aplay` on Linux; `FlashWindowEx` / `requestUserAttention:`; `ShowNotification`) plays WAVs generated by
-`AlertSoundSynth` (no audio assets; bump `Version` when a sound changes), never overlaps two sounds and drops a repeat
-of the same one within 1.5 s. Windows notifications are `WindowsToasts`: hand-written WinRT COM interop over
-`combase.dll` (no `net10.0-windows` TFM — the SDK projection would add ~25 MB), app id `OrientPyx` registered under
-`HKCU\Software\Classes\AppUserModelId` (no shortcut needed; removed by the Velopack uninstall hook), always
-`<audio silent="true"/>` (our sounds only), click via the toast's in-process `Activated` event (Windows 10 1809+; no
-macOS/Linux notifications). Windows shows ordinary toasts one at a time (the rest queue), so a `FinishAlert.CollectChip`
-toast carries tag `collect-chip` / group `finish` and replaces its predecessor, and a `FinishAlert.UnknownChip` one is
-`scenario="urgent"` (build 19041+, `WindowsToasts.SupportsImportant`) — shown outside the queue. The switches are per machine in `IUiPreferencesService` (`CollectChipToast`,
-`CollectChipSound`, `CollectChipSystemNotification`, `UnknownChipSound`, `UnknownChipSystemNotification`,
-`FlashWhenInactive`, all on by default), edited in `FinishAlertsViewModel` (the bell button on the auto-read panel;
-saved at once; «▶» = `Preview`, the eye = an example toast / `PreviewNotification`, which ignores the
-inactive-window rule / `PreviewAttention`, which minimizes the window and then flashes; the texts of both come from `FinishAlertTexts`). `DesktopAlerts.Muted` is set by the headless test host — tests never beep or pop a
-notification. Why not `Avalonia.Labs.Notifications`: its toast XML can't be made silent. Notes: `docs/system-notifications-plan.md`.
-
-## Editable tables (SheetTable)
-
-Every spreadsheet-style screen (control points, groups, days, chips, and the participant roster)
-uses the one shared `controls:SheetTable` (`Controls/Sheet/`), wrapped in a
-`Border Classes="card" ClipToBounds="True"`. It is a purpose-built control — **not** an Avalonia
-DataGrid — with a virtualized `ListBox` body and a code-built header; it owns its own scrollbars.
-The shell hosts pages **without an outer ScrollViewer** (see `ShellView.axaml`) so the table keeps
-a bounded height and scrolls internally; an outer ScrollViewer would hand it infinite height and
-make it render every row. (The old `SheetDataGrid` + `Avalonia.Controls.DataGrid` package were
-removed in favour of this.)
-
-Columns are built **in the View's code-behind**, not in XAML. Use the fluent `SheetColumnBuilder`
-(`Controls/Sheet/`) to declare columns — `Text(...)` (optionally a numeric `mask`, `enabledPath`,
-`opacityPath`, or rental-chip highlight), `Combo(...)`, `Date(...)`, `Custom(...)` for an arbitrary
-cell, and `DeleteAction(...)` for the trailing delete column — then assign `Sheet.Bands = builder.Bands`.
-Rebuild the bands on a language change and whenever the visible column set changes (headers are baked
-into the band model at build time). Wire keyboard delete via the table's `DeleteRequested` event and
-per-row delete buttons via the `DeleteAction` callback (capture Ctrl in a tunnel `PointerPressed` to
-support Ctrl+Click = skip confirm). `ChipsView.axaml.cs` is the simplest template; `GroupsView` shows
-conditional columns + per-cell enabled/opacity; `CompetitionDaysView` shows a multi-button action cell.
-
-The participant roster ("Мандатка") additionally needs a true two-tier (banded) header — per-day
-columns under a spanning band label — which it builds with the roster-specific `RosterColumnBuilder`
-/ `RosterCellFactory` (`Controls/Roster/`) and the table's `Days`/`Blocks` properties instead of `Bands`.
-
-**Selection and row actions.** A press-drag / Shift+click / Shift+arrow selects an Excel-style cell range; **Ctrl+A**
-selects the whole filtered, sorted view (outside a text edit). `SheetTable.SelectedRowItems` lists the rows the
-selection covers whatever columns it spans. A page may give a table one **row action** — `RowActionLabel`
-(rows → localized label, null = not offered) + `RowActionRequested` — shown in the cell context menu with the
-«F8» hint and run by F8 over the selected rows (right-click outside the selection = the clicked row alone). The
-roster uses it for **«Мандатку пройдено»** (`Participant.CheckedIn`, competition-level): the «Номер» cell turns
-green (`DayColumnBuilder.CheckedInBrush`), the toggle marks all selected rows when any is unmarked, else clears
-them, written by `SetParticipantsCheckedInAsync` (its own writer — `UpdateParticipantAsync` leaves the flag
-alone, like `PaysRaisedFee`); the roster's `StatusInfo` adds «Мандатка: пройшли X з Y». No column of its own; the «Номер» column's filter has a «За станом» mode (`CheckedInStatus`).
-
-**Cell controls must not be held by anything that outlives the row.** The body `ListBox` clears a container's content
-when it recycles it, so every scroll (and every arrow key that scrolls) builds the rows it reaches anew; a row that
-a long-lived object still references (the table, the page, a shared registry or options list) is never collected —
-≈1 MB a row, ~6 GB on a host after an hour of «Мандатка» (2026-11-07). So no `table.GetObservable(...)` /
-`registry.Changed +=` from a cell: push table-wide state onto the realised cells (`SheetLock.Apply`, called on build,
-on `ContainerPrepared` and on `IsLocked` change), or subscribe only while the control is in the visual tree
-(`ChipHighlight.Subscription`). Plain `Binding`s (DataContext or `Source =` an INPC/Avalonia object) are weak and fine.
-`tests/Ui/SheetSelectionMemoryTests` guards it (arrow keys + scrolling, roster and day grid).
-
-Column widths are content-sized then user-resizable; explicit fixed widths are set via the builder's
-`width:` argument. There is no star/`*` sizing — the table left-aligns content-width columns and
-scrolls horizontally.
-
-A table **persists its view** (column order, width, hidden set) in two layers, wired by setting
-`LayoutKey` (a stable id, e.g. `"participants.day"`) and `LayoutStore` (`ITableLayoutStore`, a
-singleton) on the `SheetTable` — every table in the app sets both.
-
-- **Per competition** — `events/<id>/views.json`, one JSON object keyed by table id. Written
-  automatically on every hide/reorder/resize, reloaded on build. No-op when no competition is selected.
-- **Application default** — `views-default.json` in the data root (`AppDatabasePaths.BaseDirectory`,
-  so it follows the installed build's redirected root). Written only when the user picks «Зберегти
-  вигляд для наступних змагань» in the table's columns menu, and only for that one table. A
-  competition with no view of its own seeds from it.
-
-`Load` returns the competition's own entry, else the app default. The columns menu also offers
-«Скинути вигляд таблиці» (`SheetTable.ResetLayout`), which drops the table's entry in *both* layers and
-restores the widths the columns were built with. Both files are sanitised on read (blank/duplicate
-keys, implausible widths dropped; an entry left with nothing reads as "no layout"), so a hand-edited or
-stale file always falls back to the build default rather than breaking the table.
+- Host / station internals, the network UI, flaky-network handling and last-session restore:
+  `.claude/rules/network-mode.md`.
 
 ## Undo / redo (Ctrl+Z / Ctrl+Y)
 
-Data-level undo (plan + rules У-1…У-19: `docs/undo-redo-plan.md`; user page `website/content/start/undo.md`). A step is
-a `Guid` flowing with the async call (`BusinessLogic/Services/Undo/UndoScope` — AsyncLocal step + owner, leased: a task
-that outlives its `Enter` no longer writes into the step); the station sends it as `X-OrientPyx-Undo-Step` and the
-host's `RpcDispatcher` enters it with the station's **token** as owner.
-- **Journal** (`DataAccess/Persistence/Undo/`): `UndoRecorder` (SaveChanges / transaction / command interceptors added
-  in `EventDbContextFactory.Create`) records every changed row (type, key, old/new values) into the in-memory
-  `UndoJournal.Shared` of the process that owns `event.db`, on commit only; a bulk statement (`ExecuteUpdate/Delete`,
-  raw DML) under a step makes it `NotUndoable`. `UndoStoreGuard` (inside the router, over the local `EventStore`) runs
-  reads under `UndoScope.Suppress()` (a read that seeds — the FSOU discount — never joins a step) and `Touch`es the step
-  for writes (empty ≠ unknown). Limits: 200 steps per (competition, owner), 200 000 changes, 20 000 per step.
-  `ReleaseAsync` forgets a competition's steps.
-- **Revert**: `IEventStore.RevertUndoStepAsync` (`UndoReverter`): net effect per row → checked against the DB (third
-  value / gone = conflict; value already back = skipped, `AlreadyReverted` when everything is) → the state AFTER the
-  revert checked for `UndoUniqueRules` (bib, chip per day, names — `TextKey`), `UndoReferenceRules` (every Guid
-  relation by convention) and closed days (`DayLocked`, step stays) → the saves replayed backwards, one `SaveChanges`
-  each (unique indexes see the original intermediate states). All or nothing, one transaction, journalled under the
-  revert's own step (redo = revert of the revert). `IEditHistoryService` wraps it and recomputes the points-rule copy
-  (`CompetitionInfo.PointsRulesJson` is never journalled — `UndoRecorder.ExcludedColumns`).
+Data-level undo journal (plan + rules: `docs/undo-redo-plan.md`; journal, revert and UI internals:
+`.claude/rules/undo.md`). When you change the schema or a store write:
+
 - **Schema changes**: a new Guid relation column → `UndoReferenceRules.All` (or `NotReferences`), a test keeps the list
   complete; a new service-level uniqueness → `UndoUniqueRules`; a new derived column → `ExcludedColumns`; a new bulk
   write method gives `NotUndoable` by itself. Keep store writes tracked (load → change → `SaveChanges`) on everything a
   table edit can reach; `MergeGroupAsync`, `DeleteParticipantAsync`, the relay team deletes, `ClearParticipants*` and
   the custom-field / discount deletes were converted for this.
-- **UI** (`Presentation/Services/Undo/`): `IUndoHistory` — undo/redo stacks per (page `UndoKey`, page `UndoDayId`),
-  100 each, cleared on another competition / role / `INetworkClient.HostRestarted`; `UndoGesture` decides the step
-  synchronously at the moment a value changes: an open `Begin(label)` gesture (paste / fill-down in `SheetTable`, page
-  multi-row actions), else the live cell's edit session (`LazyEditCell` opens it with «column — row»), else a new step;
-  `UndoGesture.Programmatic()` for program-made row changes (no step, redo kept). A page opts in with `UseUndo`,
-  captures with `CaptureUndo(label)` and runs each write through `RunUndoAsync(step, …)` (`PageViewModelBase`);
-  debounced pages override `FlushPendingWritesAsync` and flush before switching the day. Undo waits for those writes,
-  reverts under the busy overlay and awaits the page's `ReloadAsync` (whole-row DTO saves would otherwise write a stale
-  row back). Keys in `MainWindow.TryUndoKey` (not in a `TextBox`), the «Файл → Правка» submenu and the cell-menu items
-  (`SheetTable.UndoMenu`) all go through `EditMenuViewModel`. Not undoable (§10 of the plan): imports, draws, mass
-  start, copy between days, delete-all / delete day, the finish page, forms outside tables, app.db pages, system writes.
-  Entries hold only a Guid and a label — never a row VM. Tests: `Core/Undo/*`, `Ui/Undo*`.
 
-## How to build
+## Editable tables (SheetTable)
 
-```bash
-dotnet restore
-dotnet build
-```
+Every spreadsheet-style screen uses the one shared `controls:SheetTable` (`Controls/Sheet/`) — **not** an Avalonia
+DataGrid. Columns are built in the View's code-behind with `SheetColumnBuilder` (`Sheet.Bands = builder.Bands`), the
+shell hosts pages **without an outer ScrollViewer** (it would make the table render every row), and every table sets
+`LayoutKey` + `LayoutStore`. **Cell controls must not be held by anything that outlives the row** (≈1 MB leaked per
+row otherwise). Full conventions — roster banded header, selection and row actions, view persistence, the leak rule:
+`.claude/rules/sheet-table.md`.
 
-## How to test
+## Build, test, run
 
-```bash
-dotnet test tests/OrientPyx.Tests.sln
-```
-
-A separate solution (`tests/OrientPyx.Tests.sln`, xunit; guide in `tests/README.md`) so the app solution stays
-test-free. `Core/` tests wire the three layers through the real DI extensions over a temp data root and check:
-computed results against approved snapshots (`Golden/autotest.results.json` for the synthetic competition built
-by `Support/SyntheticCompetition.cs`; `tests/fixtures/<id>.results.json` next to git-ignored real `.opyx`
-fixtures), every document/export of every day, a sweep of day 1 through every discipline strategy, the plugin
-catalog, an `.opyx` round trip, plus rule-level tests of every discipline (set course, score, rogaine, mixed,
-scatter, relay with restarts and course modes, the two standard plugins), the read-out parsers and import, the
-CSV/IOF/UOF imports, every document builder, the draw, entry fees, custom fields and the editing service — each on a
-competition built by `Support/CompetitionBuilder.cs`. `Ui/` tests run the real `App` + `MainWindow` on Avalonia's headless
-platform with Skia (`Support/HeadlessApp.cs`), open every page through the root view model's commands and save
-screenshots to `tests/TestResults/<timestamp>/`. The snapshot format equals the Debug «Знімок результатів»
-(`scripts/diff-results.ps1`). Run the suite before a release and after any change to results, protocols or
-plugin loading; when a results change is intended, replace the golden with the written `.actual.json`.
+- Build: `dotnet build`. Plugins are a separate solution: `dotnet build plugins/OrientPyx.Plugins.sln`. Run
+  `scripts/locked-build.ps1` when several terminals/agents build the same checkout.
+- Run: `dotnet run --project src/OrientPyx.Presentation`.
+- Test: `dotnet test tests/OrientPyx.Tests.sln` — a separate solution (xunit; guide in `tests/README.md`) so the app
+  solution stays test-free. The snapshot format equals the Debug «Знімок результатів»
+  (`scripts/diff-results.ps1`). Run the suite before a release and after any change to results, protocols or
+  plugin loading; when a results change is intended, replace the golden with the written `.actual.json`.
 
 ## Documentation site (`website/`)
 
-User documentation, **Ukrainian only**, for the people running competitions — not for developers: task-first pages,
-on-screen names and menu paths («Старт → Жеребкування»), no class names. Writing rules: `website/README.md`. The one
-developer section is «Власні плагіни» (`website/content/plugins/`, the plugin API guide; authors get the SDK by cloning
-this repo and adding a project under `plugins/`). MkDocs Material, versions pinned in `website/requirements.txt` (keep
-`mkdocs` 1.x). `.github/workflows/docs.yml` publishes to GitHub Pages (`https://vadymkolesnyk.github.io/OrientPyx/`)
-on every `v*` tag (texts + screenshots of the release); a manual run republishes the branch's texts with the latest
-release's screenshots.
-- **Screenshots and demo competitions are generated, never committed** (`website/content/shots|demo/`, git-ignored):
-  the `DocShots` tests (`tests/OrientPyx.Tests/DocShots/`, `[DocShotFact]`, skipped unless `ORIENTPYX_DOCSHOTS` is set)
-  drive the headless app over the demo competitions of `DemoCompetitions.cs` (fictional people, seeded, one per format
-  + a two-day cup) and save `shots/<name>.png` + `manifest.json`; `DocShooter` crops to a control, frames controls,
-  draws open popups/flyouts in place. Never put a real path or machine name on a shot (mask it like the finish page's
-  read-out file). `scripts/docs.ps1` renders them when missing (`-Shots` = again) then previews; `-Build` = the strict
-  CI build.
-- **Generated pages** (`website/hooks.py`): «Довідник екранів» — one page per `Help.<Screen>` (sections per
-  `Help.<Screen>.<Block>`) straight from `uk-UA.json`; «Що нового» from the GitHub releases. The «?» dialog's
-  «Детальніше в документації» and «Довідка → Документація» open them through `Presentation/Services/DocsLinks.cs` —
-  its kebab rule must stay the hook's (`DocsLinksTests`). The hook gives each release heading the id `v<version>`:
-  the launch after an update (Velopack `OnRestarted` → `Program.UpdatedToVersion`) shows «OrientPyx оновлено»
-  (`AppUpdatedViewModel`) linking `DocsLinks.Changelog(version)` = `changelog/#v<version>`.
-- **Keeping it current**: `/new-version` Step 2b — `python website/tools/affected.py` lists the pages whose code changed
-  since the last tag (`website/docs-map.yml`), UI names renamed while still quoted in the docs, new strings and changed
-  help; update the pages, add shots, `scripts/docs.ps1 -Shots -Build`. A new page → `mkdocs.yml` nav + `docs-map.yml`.
-- The in-app «?» texts (`Help.*`) are the short form of the same content: `LocalizationTests.EveryHelpButtonHasItsText`
-  / `EveryHelpTextHasAButton` keep every «?» backed by uk + en text and every help text reachable (a page whose
-  view-model name differs from its help prefix overrides `HelpKeyPrefix`). `PluginDocsTests` keeps every public SDK
-  type in `website/content/plugins/api.md`.
-
-## How to run
-
-```bash
-dotnet run --project src/OrientPyx.Presentation
-```
-
-The window opens with a Ukrainian sidebar; the default page is Панель (Dashboard). Until a
-competition + day is selected the UI shows only the selection/creation screens. SQLite files
-are created on first run (`app.db` in the data root; per-competition `event.db` under `events/`).
+User documentation, **Ukrainian only**, for the people running competitions (MkDocs Material, published to GitHub
+Pages on every `v*` tag). **Screenshots and demo competitions are generated, never committed**
+(`website/content/shots|demo/`); never put a real path or machine name on a shot. Every «?» help button needs its
+`Help.*` text in both uk-UA and en-US (`LocalizationTests`), and every public SDK type must be listed in
+`website/content/plugins/api.md` (`PluginDocsTests`). Writing rules, generated pages, DocShots, keeping it current:
+`.claude/rules/docs-site.md`.
 
 ## Schema management
 
 EF Core **migrations** are the canonical way schema evolves, for both databases:
-`AppDbContext` (`./data/app.db`) and `EventDbContext` (per-competition `event.db`). Apply
-them at runtime with `Database.Migrate()` — the app DB on startup
-(`InitializeOrientPyxDatabase`) and each event DB when it is opened
-(`EventStore.EnsureCreatedAsync`, which now calls `MigrateAsync`). Add a new migration when
+`AppDbContext` (`./data/app.db`) and `EventDbContext` (per-competition `event.db`). They are
+applied at runtime through `DataAccess/Persistence/DatabaseMigrator` — the app DB on startup
+(`InitializeOrientPyxDatabase`) and each event DB when it is opened (`EventStore.EnsureCreatedAsync`,
+the competition list) — never `Database.Migrate()` directly: the migrator only reads an up-to-date
+database and clears a stale `__EFMigrationsLock` row (`.claude/rules/startup.md`). Add a new migration when
 you change an entity, e.g.:
 
 ```bash
@@ -674,57 +238,29 @@ Do not reintroduce `EnsureCreated` — it is incompatible with migrations.
 Do not add: Clean Architecture / CQRS / MediatR, Docker, or authentication.
 Keep the app lightweight and the four layers + plugin SDK structure above intact (no new projects in
 `OrientPyx.sln`; plugins live under `plugins/` and reference only the SDK; tests live under `tests/`). (The Supabase online-results
-publisher below is the one exception to "no cloud sync" — it is publish-only and stays confined to
+publisher (`.claude/rules/outputs.md`) is the one exception to "no cloud sync" — it is publish-only and stays confined to
 DataAccess.)
 
-(**Results monitor** — «Результати на монітор» (`MonitorResultsViewModel`): the generation loop ticks every second,
-builds the day's documents only when a file is due (its «Оновлення», default 5 s) and writes a file only when its
-content changed: the page `rezNN.html` and beside it `rezNN.data.js` (`MonitorFile.DataFileName`,
-`IMonitorHtmlWriter.WriteData` — one `orientPyxMonitor({...})` call, ASCII JSON). The open page (file://, so no
-`fetch`) loads that script every 2 s and swaps its header / groups in place when their stamps changed, keeping the
-group at the top of the screen at the same offset; a data file with another layout (timing, `PageVersion`) or none
-at all ⇒ the old reload at the top of a scroll cycle. Browser-checked in `Core/MonitorLiveDataTests`
-(`[BrowserFact]`: headless Edge/Chrome, skipped without one).)
+## Subsystem notes (`.claude/rules/`)
 
-(The result protocol — «Протоколи результатів» — now exports a per-group results protocol to a
-Word .docx via `IResultProtocolBuilder` (BusinessLogic) + `DocxResultProtocolWriter` (DataAccess,
-Open XML SDK). The template — orientation, ordered/visible columns, header text — is stored **per
-competition day** in `event.db` (`ResultProtocolSettingsRow`, JSON keyed on `EventDayId`, accessed via
-`ICompetitionEditorService.Get/SaveResultProtocolSettingsAsync(dayId)`); a day with no row is seeded from
-the app-level default (`AppSettingsRow.ResultProtocolJson` via `IAppSettingsService`). The page shows a
-**live document preview** (`ProtocolPreviewViewModel`) — the actual mock-up built from the same builder the
-export uses, filled with real participants of the selected day — whose column headers are drag-reorderable
-(code-built `Grid` via the shared `ProtocolPreviewTable` + `IProtocolPreviewHost`). The «Протоколи» top menu hosts it.
+These load automatically when you work with matching files; read the one that fits before planning a change there:
 
-The «Старт» menu also hosts two **start protocols** built on the same pattern (per-day template + live
-preview + .docx export, reusing `ResultProtocolDocument` + `DocxResultProtocolWriter`): «Стартовий протокол»
-(regular — one section per group, members ordered by start time within the group) and «Стартовий суддівський
-протокол» (judges — one section per start minute, members of that minute across all groups; undrawn runners
-in a trailing "no start time" section). Both run off one `StartProtocolsViewModel` (singleton, `Kind` set by
-the open command) → `IStartProtocolBuilder`/`StartProtocolBuilder` (BusinessLogic, produces a
-`ResultProtocolDocument`). Template stored per day **and per kind** in `event.db`
-(`StartProtocolSettingsRow`, JSON keyed on `(EventDayId, Kind)`) via
-`ICompetitionEditorService.Get/SaveStartProtocolSettingsAsync(dayId, kind)`; a missing row seeds from
-`StartProtocolSettings.Default(kind)`. Start columns are their own enum (`StartProtocolColumn`: Start/№/ПІБ/
-рік/клуб/регіон/ДЮСШ/тренер/кваліф./чіп/група). Source data: `GetStartProtocolDataAsync(dayId)` reads
-`ParticipantDay.StartTime`/`Chip`.)
+- `plugins.md` — plugin loading, adapter, strings, settings, imported fields, reports, table settings, plugin result
+  columns, extra result columns, unknown discipline, plugin release
+- `course-formats-relay.md` — Mixed / Scatter, relay course modes, OCAD variations by number, relay teams, UOF relay
+- `results-calculation.md` — `DayResultsCalculator` stages, the finish-log day override (`forDayId`)
+- `network-mode.md` — host & station internals, network UI, flaky networks, last-session restore
+- `custom-fields.md` — additional participant fields, CSV/Excel import mapping
+- `start-pages.md` — «Масовий старт», «Кількість карт»
+- `chips.md` — SportIdent card capacity
+- `finish-alerts.md` — finish sounds, Windows toasts, taskbar flash
+- `sheet-table.md` — SheetTable conventions, roster header, selection/row actions, view persistence, cell-leak rule
+- `undo.md` — undo journal, revert, UI histories
+- `docs-site.md` — the `website/` docs, DocShots, generated pages
+- `outputs.md` — results monitor, Word result/start protocols, online results publishing
+- `packaging.md` — release workflows, Velopack channels, SignPath signing, macOS bundle
+- `competition-folders.md` — renaming and deleting a competition folder
+- `startup.md` — loading window, `StartupTimeline` marks, ReadyToRun, `DatabaseMigrator` (stale migration lock), the
+  competition list's cost, starting with an archive
 
-(**Online live results** — «Онлайн-результати» (in the «Протоколи» top menu) publishes the active session day's
-already-computed results to a Supabase project that a separate, already-deployed React spectator frontend reads
-(repo `VadymKolesnyk/o-results`: `web/` + `online-db/schema.sql`; self-hosting how-to for users —
-`website/content/race-day/online-site.md`).
-OrientPyx only does the publisher side: a background process (`OnlineResultsViewModel`, surfaced in the top-bar
-activity block via `OnlineResultsActivity`) builds a snapshot each tick with `ICompetitionEditorService.
-GetOnlineResultsSnapshotAsync(dayId)` — which reuses `GetResultProtocolDataAsync`, so it's the same computed data
-the protocols show — and upserts it via `IResultPublisher`/`SupabaseResultPublisher` (DataAccess, PostgREST). The
-**connection keys** (Supabase URL, secret service-role key, public frontend URL, interval) are app-level: columns on
-`AppSettingsRow`, edited on the Settings page (`IAppSettingsService.Get/SaveOnlineApiSettingsAsync`,
-`OnlineApiSettings`). The **per-competition publish options** (slug, title, subtitle, standings/points flags) live
-per competition in `event.db` (`OnlinePublishSettingsRow`, JSON) via
-`ICompetitionEditorService.Get/SaveOnlinePublishSettingsAsync` (`OnlinePublishSettings`), seeded from the
-competition metadata. The service-role key never leaves the local app DB. Start numbers are optional: a runner
-without one (or the second holder of a shared one) goes under a stable negative `bib` (`OnlineResultRow.UnnumberedKey`,
-from the participant id — the same on every day; the site shows only a positive bib), and the publisher deletes that
-stand-in row once the runner gets a number (`PruneUnnumberedAsync`). Relay groups publish to a separate
-`relay_teams` table, never to `results`; a project without it just logs a warning — contract in
-`docs/online-snapshot.md`.)
+A new subsystem gets its own `paths`-scoped file there plus one line in this list — not a new section in this file.

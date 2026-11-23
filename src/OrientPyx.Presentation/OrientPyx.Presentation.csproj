@@ -39,11 +39,19 @@
     <AssemblyName>OrientPyx</AssemblyName>
   </PropertyGroup>
 
+  <!-- Published packages (build/publish.ps1, build/publish-mac.sh — always with a runtime identifier) are precompiled
+       (ReadyToRun): the .NET runtime ships that way, but Avalonia, EF Core and our own assemblies are IL only, so every
+       start JIT-compiled the whole start-up path again. Measured 2026-11-23: main window 3.8–4.7 s → 1.8–2.4 s; the
+       package grows by ~18 %. A plain build / dotnet run (no runtime identifier) is unaffected. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <PublishReadyToRun>true</PublishReadyToRun>
+  </PropertyGroup>
+
   <!-- Release identity. Bump <Version> for each release; the publish script passes the same value to
        Velopack so the installed app can tell it is out of date. See build/publish.ps1. Product / Company /
        Authors are shared by every src project in src/Directory.Build.props. -->
   <PropertyGroup>
-    <Version>0.9.4</Version>
+    <Version>0.9.5</Version>
   </PropertyGroup>
 
   <ItemGroup>

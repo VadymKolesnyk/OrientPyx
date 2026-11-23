@@ -28,9 +28,9 @@ namespace OrientPyx.DataAccess.Documents;
 ///   the cell (own order/count), code over cumulative with the leg split + points below; a control that
 ///   scores nothing for the runner (a repeat / off-course punch) is greyed out, as if not on the course.</item>
 /// </list>
-/// The CSS and the small detail-panel script are inlined so the file opens stand-alone, offline. The layout
-/// is responsive: on a phone the group sections go full-bleed with the identity columns pinned to the left
-/// while the КП columns scroll sideways. Every size is expressed in rem off a single root font-size, and a
+/// The CSS and the small detail-panel script are inlined so the file opens stand-alone, offline. On every
+/// screen the identity columns (place + name) stay pinned to the left while the КП columns scroll sideways;
+/// on a phone the group sections also go full-bleed and the name column narrows and wraps. Every size is expressed in rem off a single root font-size, and a
 /// two-finger pinch drives that one value from the script instead of using the browser's own zoom — so
 /// pulling back genuinely fits more controls on screen while the layout stays a layout (the sticky column
 /// keeps working, the dialog stays a centred card, the page never grows wider than the screen). The
@@ -626,6 +626,22 @@ table.splits thead th {
    competition with dozens of groups. contain-intrinsic-size keeps the scrollbar stable by remembering
    each section's last measured height, so scrolling does not jump. */
 .group { content-visibility: auto; contain-intrinsic-size: auto 700px; }
+/* «Місце» and «Прізвище» pin to the left edge as one unit while the КП columns scroll sideways — on every
+   screen, not only a phone (a long course overflows a monitor too). The place column has a fixed width and
+   the name sticks right after it; the width is in rem so it tracks the pinch-zoom scale and is the same
+   offset for the header and the body (their font sizes differ, so an em width would not line up), and it is
+   wide enough for the «Місце» caption, which would otherwise widen the column past the name's offset. */
+table.splits { --place-w: 2.75rem; }
+table.splits td.place, table.splits th.col-place {
+  position: sticky; left: 0; z-index: 2;
+  width: var(--place-w); min-width: var(--place-w); padding-left: 0.3em; padding-right: 0.3em;
+  background: var(--card);
+}
+table.splits td.name, table.splits th.col-name {
+  position: sticky; left: var(--place-w); z-index: 2;
+  background: var(--card); border-right: 1px solid var(--line);
+}
+table.splits th.col-place, table.splits th.col-name { z-index: 6; background: #eef1f6; }
 /* Shared structure for both the ordered (set-course) and scored (rogaine) split tables. */
 table.splits .col-name, table.splits td.name { text-align: left; }
 table.splits td.name { font-weight: 600; }
@@ -747,21 +763,12 @@ table.ordered tr.leg-row td.detail.picked {
      — the main source of stutter on a phone. The sticky group nav already keeps the reader oriented, so
      only the identity columns stay pinned here. */
   table.splits thead th { position: static; }
-  /* «Місце» and «Прізвище» pin to the left edge as one unit while the КП columns scroll sideways. Their
-     widths are in em so they track the pinch-zoom font scale instead of clipping the name when the text
-     grows. */
-  table.splits td.place, table.splits th.col-place {
-    position: sticky; left: 0; z-index: 2;
-    width: 2.4em; min-width: 2.4em; padding-left: 0.3em; padding-right: 0.3em; background: var(--card);
-  }
+  /* The pinned name column is narrow here and wraps, so the КП columns keep most of the screen. Its width
+     is in em so it tracks the pinch-zoom font scale instead of clipping the name when the text grows. */
   table.splits td.name, table.splits th.col-name {
-    position: sticky; left: 2.4em; z-index: 2;
     width: 7.5em; min-width: 7.5em; max-width: 7.5em;
-    background: var(--card); border-right: 1px solid var(--line);
     white-space: normal; overflow-wrap: anywhere;
   }
-  table.splits th.col-place, table.splits th.col-name { z-index: 6; background: #eef1f6; }
-  table.splits tr.dnf td.place, table.splits tr.dnf td.name { background: var(--card); }
   /* The dialog keeps its default centred-card behaviour here; only the touch targets grow a little. */
   #cp-detail h3 { font-size: 1rem; }
   #cp-detail .cp-close { font-size: 1.625rem; padding: 0 6px; }

@@ -13,7 +13,7 @@
 | `OrientPyx.Plugins.Sdk.Toolkit` | готові алгоритми, якими користується й сама програма |
 | `OrientPyx.Plugins.Sdk.Toolkit.Patterns` | розбір і перевірка шаблонів змішаного напрямку |
 
-Версія API — `ApiVersion.Current` = 4 (див. [`ApiVersion`](#apiversion)). Що з цього випливає для сумісності — у
+Версія API — `ApiVersion.Current` = 5 (див. [`ApiVersion`](#apiversion)). Що з цього випливає для сумісності — у
 [Поширення і версії](sharing.md#versions).
 
 ## Плагін {#plugin}
@@ -57,7 +57,7 @@
 
 ### `ApiVersion` {#apiversion}
 
-`public const int Current = 4` — версія API, яку надає програма. Нова версія лише **додає** можливості: плагін,
+`public const int Current = 5` — версія API, яку надає програма. Нова версія лише **додає** можливості: плагін,
 написаний для старішої, працює й далі. Несумісна зміна підняла б ще й мажорну версію збірки SDK.
 
 | Версія | Що додала |
@@ -66,9 +66,10 @@
 | 2 | імпорт додаткових полів (`FieldImport`, `AddParticipantField(…, FieldImport)`), звіти (`Report`, `AddReport<T>`), `ParticipantView.Dussh` і `Qualification` |
 | 3 | налаштування виду змагань групи у звіті (`ReportGroup.Settings`) |
 | 4 | колонка результатів поза онлайн-результатами (`ResultColumnDef.Online`) |
+| 5 | «Макс. запізнення» групи в перевірці відміток (`FinishContext.MaxLate`) |
 
 Плагін, який користується можливостями версії 2, ставить `MinApiVersion: 2` (версії 3 — `MinApiVersion: 3`, версії 4 —
-`MinApiVersion: 4`) — тоді
+`MinApiVersion: 4`, версії 5 — `MinApiVersion: 5`) — тоді
 старіша програма чесно скаже «Needs plugin API 2» на сторінці «Плагіни», замість помилки під час запуску.
 
 ### `ParticipantFieldDef`
@@ -135,8 +136,8 @@ public override FinishStatusResult EvaluateFinish(FinishContext ctx)
 |---|---|---|
 | `SetCourse` | «Заданий напрямок» | — |
 | `ScoreByCount` | «За вибором по кількості КП» | `FinishContext.RequiredControlCount` — «Мін. КП» групи |
-| `ScoreByTime` | «За вибором за часом» | КП мають бали; «Бали» = `BuildSplits(...).TotalPoints`; `EvaluateFinish` основи — OK з фінішем, DNF без нього (запізнення лише знімає бали, OVT не буває) |
-| `Rogaine` | «Рогейн» | команди (`CompetitorModel.Team`); «Бали» = `BuildSplits(...).TotalPoints`; перевизначений `Rank` **не викликається** — місця команд рахує вбудований рогейн |
+| `ScoreByTime` | «За вибором за часом» | КП мають бали; «Бали» = `BuildSplits(...).TotalPoints`; `EvaluateFinish` основи — OK з фінішем, DNF без нього; запізнення знімає бали, а більше ніж на `FinishContext.MaxLate` (порожньо — 30 хв) після контрольного часу — OVT |
+| `Rogaine` | «Рогейн» | команди (`CompetitorModel.Team`); «Бали» = `BuildSplits(...).TotalPoints`; OVT — як у `ScoreByTime`; перевизначений `Rank` **не викликається** — місця команд рахує вбудований рогейн |
 | `Mixed` | «Змішаний» | дистанція — шаблон у `FinishContext.CourseOrderText` |
 | `Scatter` | «Розсіювання» | варіанти дистанції в `FinishContext.CourseVariants` |
 | `Relay` | «Естафета» | естафетні команди (`CompetitorModel.TeamWithLegs`), `AwardsRanks` = false; правила викликаються для кожного етапу |
@@ -185,6 +186,7 @@ public override FinishStatusResult EvaluateFinish(FinishContext ctx)
 | `DateTimeOffset? StartTime` | старт, який повернув `ResolveStart` (для естафети — старт етапу). Без старту `EvaluateFinish` не викликається — програма сама ставить DNS |
 | `DateTimeOffset? FinishTime` | фініш зі зчитки; null — відмітки фінішу немає |
 | `TimeSpan? TimeLimit` | контрольний час групи на день; null — немає (і завжди null для етапу естафети) |
+| `TimeSpan? MaxLate` | API 5. «Макс. запізнення» групи: скільки після `TimeLimit` фініш ще зараховується (рогейн, «За вибором за часом»), пізніше — OVT; null — не задано (ці основи беруть 30 хв), і завжди null для етапу естафети |
 | `int? RequiredControlCount` | «Мін. КП» групи для «За вибором по кількості КП»; інші ігнорують |
 | `IReadOnlyList<CourseVariantData> CourseVariants` | варіанти розсіювання групи; порожньо для інших |
 | `SettingValues Settings`, `T Setting<T>(string key)` | налаштування виду змагань на цей день |

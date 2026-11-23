@@ -64,7 +64,7 @@ the updated model snapshot.
 Spreadsheet-style screens use the shared `controls:SheetTable` (NOT an Avalonia DataGrid),
 columns built in code-behind via `SheetColumnBuilder` → `Sheet.Bands`. Rebuild bands on
 language change and when the visible column set changes. The roster uses the two-tier
-`RosterColumnBuilder`/`Days`+`Blocks` instead. See `CLAUDE.md` → "Editable tables".
+`RosterColumnBuilder`/`Days`+`Blocks` instead. See `.claude/rules/sheet-table.md`.
 
 ## 6 — Build clean
 
@@ -75,5 +75,7 @@ Run `/build` (or `dotnet build OrientPyx.sln`). It must succeed with **0 warning
 
 - Sanity-check the feature actually runs (`/run`) if it has a runtime surface.
 - Confirm localization is in sync (`python build/check-localization.py`).
-- Update `CLAUDE.md`'s subsystem notes if the feature is a notable new subsystem.
+- If the feature is a notable new subsystem, write its notes into a new `paths`-scoped
+  `.claude/rules/<topic>.md` (or the existing one for its area) and add one line to the
+  «Subsystem notes» index at the end of `CLAUDE.md` — don't grow `CLAUDE.md` itself.
 - Commit only if the user asked; keep the four-layer structure intact.

@@ -751,7 +751,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     });
 
     /// <summary>Called once after construction to restore the last session or show the picker.</summary>
-    public async Task InitializeAsync()
+    /// <param name="restoreLastSession">False when the program was started to open a competition archive: the last
+    /// competition is then not opened first (<see cref="RestoreLastSessionAsync"/> does it if the archive is not
+    /// imported).</param>
+    public async Task InitializeAsync(bool restoreLastSession = true)
     {
         // BD work runs off the UI thread inside RunAsync; UI-state writes happen after the await.
         string savedLanguage = string.Empty;
@@ -762,7 +765,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             {
                 await _uiScale.InitializeAsync();
                 savedLanguage = await _appSettings.GetLanguageAsync();
-                return await _session.TryRestoreLastAsync();
+                return restoreLastSession && await _session.TryRestoreLastAsync();
             });
         }
         catch (Exception)
@@ -776,10 +779,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         // Restore the saved UI language (SetLanguage touches culture/UI, so apply after the await).
         ApplySavedLanguage(savedLanguage);
 
+        StartupTimeline.Mark(restored ? "last competition restored" : "no competition to restore");
         if (restored)
             ShowShell();
         else
             await ShowSelectionAsync();
+        StartupTimeline.Mark(restored ? "shell shown" : "competition list shown");
 
         // From here on a role switch swaps the competition list (the restore above may have connected the station).
         _lastRole = _mode.Role;
@@ -788,6 +793,23 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         // The host autostarts when it was switched on last time; never fatal (the overlay shows the error).
         await _network.AutoStartHostAsync();
+    }
+
+    /// <summary>Opens the last competition as a normal start would — after a start for an archive that was not imported.
+    /// Stays on the competition list when there is none to open.</summary>
+    public async Task RestoreLastSessionAsync()
+    {
+        if (_session.HasSelection)
+            return;
+        try
+        {
+            if (await _busy.RunAsync(() => _session.TryRestoreLastAsync()))
+                ShowShell();
+        }
+        catch (Exception)
+        {
+            // Logged by the busy service; the competition list stays.
+        }
     }
 
     // Applies a persisted language culture name at startup, if one was saved and is available.
@@ -952,22 +974,28 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     /// Imports an archive file the app was launched with (a double-clicked <c>.opyx</c>) — the same flow as
     /// File → Import competition, starting from the given file instead of the open-file dialog.
     /// </summary>
-    public Task ImportCompetitionFileAsync(string path) => AfterImportAsync(() => _archiveFlow.ImportFileAsync(path));
+    /// <summary>Imports a competition archive and opens it; true when it was imported.</summary>
+    public Task<bool> ImportCompetitionFileAsync(string path) => AfterImportAsync(() => _archiveFlow.ImportFileAsync(path));
 
-    private async Task AfterImportAsync(Func<Task<BusinessLogic.Models.EventSummary?>> import)
+    private async Task<bool> AfterImportAsync(Func<Task<BusinessLogic.Models.EventSummary?>> import)
     {
         IsSettingsOpen = false;
         var imported = await import();
         if (imported is null)
-            return;
+            return false;
 
-        // Refresh the picker so the new competition is in the list, then open it on its first day. If it cannot be
-        // opened (no days, gone from the list), the user stays on the refreshed picker.
+        // Open it on its first day straight from the import's summary — the competition list is read again whenever
+        // it is shown, so there is no need to read every competition for it now. If it cannot be opened (no days),
+        // the user lands on the list.
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         _dashboard.StopAutoRefresh();
         _session.Clear();
-        await ShowSelectionAsync();
-        if (await _selection.TryOpenAsync(imported.Identifier, dayNumber: null))
+        if (await _selection.OpenAsync(imported, dayNumber: null))
             _log.Action($"Opened the imported competition '{imported.Identifier}'");
+        else
+            await ShowSelectionAsync();
+        _log.Info($"Archive import: opened in {clock.ElapsedMilliseconds} ms.");
+        return true;
     }
 
     private async Task ChangeEventInternalAsync()

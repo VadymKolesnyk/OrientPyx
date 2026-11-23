@@ -140,6 +140,7 @@ internal sealed partial class DayResultsCalculator
 
             HashSet<string>? punchedAllowed = null;
             int? score = null;
+            int? scoreGross = null, scorePenalty = null;
             if (strategy.UsesControlPointPoints)
             {
                 var detail = ScoreDetail(strategy, readout, gs, startFinishCodes, disabledCodes, pointsByCode, resolvedStart);
@@ -148,6 +149,10 @@ internal sealed partial class DayResultsCalculator
                 // the team net (which folds in the team-min bonus instead).
                 score = detail.Net + (link.Bonus ?? 0);
                 punchedAllowed = detail.Punched;
+                // What the over-time penalty actually took off (a net clamped at 0 still adds up) — for the «Бали»
+                // tooltip and the protocol's «10 − 3» formula.
+                if (detail.Gross - detail.Net is var penalty and > 0)
+                    (scoreGross, scorePenalty) = (detail.Gross, penalty);
             }
 
             results[link.Id] = new ParticipantDayResult(
@@ -156,6 +161,8 @@ internal sealed partial class DayResultsCalculator
                 // Personal breakdown (the controls this chip scored). For a teamed runner the team pass
                 // replaces this with the team's common controls so the tooltip matches the team Бали.
                 ScoreBreakdown = punchedAllowed is { } pa ? CourseCodes.ScoreLines(pa, pointsByCode) : [],
+                ScoreGross = scoreGross,
+                ScorePenalty = scorePenalty,
                 Bonus = link.Bonus,
                 WasOnCourse = wasOnCourse,
                 // Personal-discipline поза конкурсом ⇒ marked «П/К», never placed (and left out of the ranking

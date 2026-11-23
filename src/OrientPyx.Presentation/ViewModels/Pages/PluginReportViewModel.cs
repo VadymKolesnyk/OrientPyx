@@ -309,6 +309,7 @@ public sealed partial class PluginReportViewModel : PageViewModelBase, IProtocol
         var report = PluginReports.Find(_plugins, ReportId);
         var name = ExportFileName.Build(Localization, report?.NameKey ?? ReportId, _session.CurrentEvent?.Name, "docx",
             _scope == ReportScope.Day ? SelectedDay?.Day : null,
+            multiDay: DayOptions.Count > 1,
             date: _session.CurrentEvent?.StartDate);
         return new ProtocolExportResult(bytes, name);
     }

@@ -73,9 +73,11 @@ public sealed class EventArchiveFlow : IEventArchiveFlow
     {
         // Inspect the archive (off the UI thread) to learn its identifier and whether it clashes.
         EventArchivePreview preview;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             preview = await _busy.RunAsync(() => _archive.PreviewImportAsync(path));
+            _log.Info($"Archive import: preview {clock.ElapsedMilliseconds} ms.");
         }
         catch (EventArchiveFormatException)
         {
@@ -101,8 +103,10 @@ public sealed class EventArchiveFlow : IEventArchiveFlow
 
         try
         {
+            clock.Restart();
             var result = await _busy.RunAsync(() =>
                 _archive.ImportAsync(path, decision.Identifier, decision.Overwrite));
+            _log.Info($"Archive import: unpacked and migrated {clock.ElapsedMilliseconds} ms.");
             var summary = result.Competition;
             var shared = result.SharedData;
             _log.Info($"Імпортовано змагання «{summary.Name}» як {summary.Identifier}; " +

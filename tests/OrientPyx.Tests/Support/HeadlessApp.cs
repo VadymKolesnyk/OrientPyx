@@ -39,8 +39,15 @@ public sealed class HeadlessApp : IAsyncLifetime
         _uiThread.Start();
         await _ready.Task.WaitAsync(TimeSpan.FromSeconds(60));
 
-        // The app restores the last session or shows the competition picker; a fresh data root ⇒ the picker.
-        await WaitUntilAsync(() => Vm.CurrentView is EventSelectionViewModel && !Vm.Busy.IsBusy, TimeSpan.FromSeconds(60));
+        // The app restores the last session or shows the competition picker. The data root is fresh, but the Core tests
+        // share its app.db and run alongside: one that selects a competition leaves it as the «last session», and the
+        // app then restores that instead — so once the start settled, go back to the picker the UI tests start from.
+        var app = (App)Application.Current!;
+        await WaitUntilAsync(() => app.StartupSettled.IsCompleted, TimeSpan.FromSeconds(60), "the start settled");
+        if (await OnUiAsync(() => Vm.CurrentView is not EventSelectionViewModel))
+            await OnUiAsync(() => Vm.ChangeEventCommand.ExecuteAsync(null));
+        await WaitUntilAsync(() => Vm.CurrentView is EventSelectionViewModel && !Vm.Busy.IsBusy, TimeSpan.FromSeconds(60),
+            "the competition picker after the start");
     }
 
     private void RunUi()
@@ -56,10 +63,23 @@ public sealed class HeadlessApp : IAsyncLifetime
 
             Dispatcher.UIThread.UnhandledException += (_, e) => UiErrors.Add(e.Exception);
 
-            Window = (MainWindow)lifetime.MainWindow!;
-            Vm = (MainWindowViewModel)Window.DataContext!;
-            Window.Show();
-            _ready.TrySetResult(true);
+            // The app shows its loading window first and builds the main window once the start-up work (databases,
+            // plugins) is done off the UI thread — so wait for it with the dispatcher running.
+            var app = (App)Application.Current!;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try
+                {
+                    Window = await app.MainWindowReady;
+                    Vm = (MainWindowViewModel)Window.DataContext!;
+                    Window.Show();
+                    _ready.TrySetResult(true);
+                }
+                catch (Exception ex)
+                {
+                    _ready.TrySetException(ex);
+                }
+            });
             Dispatcher.UIThread.MainLoop(_stop.Token);
         }
         catch (Exception ex)

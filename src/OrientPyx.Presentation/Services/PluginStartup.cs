@@ -8,6 +8,11 @@ namespace OrientPyx.Presentation.Services;
 /// overlay under the plugin id — the switched-off ones too, so switching one on needs no restart.</summary>
 public static class PluginStartup
 {
+    /// <summary>Loads the plugin assemblies (the catalog does it once, lazily) — any thread, after the app database is
+    /// migrated (the switched-on list lives there).</summary>
+    public static void Load(IServiceProvider services) => _ = services.GetRequiredService<IPluginCatalog>().Plugins;
+
+    /// <summary>Registers the plugins' strings — UI thread: the localization service raises its change there.</summary>
     public static void RegisterStrings(IServiceProvider services)
     {
         var catalog = services.GetRequiredService<IPluginCatalog>();

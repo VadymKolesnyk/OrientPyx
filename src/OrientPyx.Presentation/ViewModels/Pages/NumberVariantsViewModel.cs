@@ -336,7 +336,7 @@ public sealed partial class NumberVariantsViewModel : PageViewModelBase
     /// runs the save dialog.
     /// </summary>
     public Task<ParticipantExportResult?> ExportAsync(CsvParticipantData view) =>
-        _exportFlow.RunAsync(view, day: _session.CurrentDay, nameKey: "NumberVariants.NamePart");
+        _exportFlow.RunAsync(view, day: _session.CurrentDay, multiDay: DayOptions.Count > 1, nameKey: "NumberVariants.NamePart");
 }
 
 /// <summary>One choice of the variation combo: a variant of the row's group, «—» (none) or a code the group lacks.</summary>

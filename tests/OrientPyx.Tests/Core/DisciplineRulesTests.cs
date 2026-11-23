@@ -276,6 +276,9 @@ public sealed class DisciplineRulesTests
         Assert.Equal(9, r["Clean"].Score);
         Assert.Equal(FinishStatus.Ok, r["Late"].Status);      // late only costs points, never OVT
         Assert.Equal(5, r["Late"].Score);                     // 9 − 2 started minutes × 2
+        Assert.Equal(9, r["Late"].ScoreGross);                // a personal penalty rides on the result too
+        Assert.Equal(4, r["Late"].ScorePenalty);
+        Assert.Null(r["Clean"].ScorePenalty);
         Assert.Equal(3, r["Late"].ScoreBreakdown.Count);
         Assert.Equal(10, r["Bonus"].Score);                   // 6 + bonus 4
         Assert.Equal(4, r["Bonus"].Bonus);
@@ -285,6 +288,39 @@ public sealed class DisciplineRulesTests
         Assert.Equal(1, r["Bonus"].Place);
         Assert.Equal(2, r["Clean"].Place);
         Assert.Equal(3, r["Late"].Place);
+    }
+
+    [Fact]
+    public async Task ScoreByTime_FinishPastMaxLateIsOvt()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("sbtl"), discipline: DisciplineId.ScoreByTime);
+        await c.AddControlsAsync(1, "31");
+        await c.AddGroupAsync("Default", "31", s => s.TimeLimitSeconds = 20 * 60);        // blank «Макс. запізнення» = 30 min
+        await c.AddGroupAsync("Short", "31", s => { s.TimeLimitSeconds = 20 * 60; s.MaxLateSeconds = 5 * 60; });
+        await c.AddGroupAsync("None", "31", s => { s.TimeLimitSeconds = 20 * 60; s.MaxLateSeconds = 0; });
+        await c.AddGroupAsync("NoLimit", "31");
+        await c.AddRunnerAsync("Edge", "1", "1001", "Default", T(10, 0));
+        await c.AddRunnerAsync("Past", "2", "1002", "Default", T(10, 0));
+        await c.AddRunnerAsync("ShortOk", "3", "1003", "Short", T(10, 0));
+        await c.AddRunnerAsync("ShortPast", "4", "1004", "Short", T(10, 0));
+        await c.AddRunnerAsync("NoneLate", "5", "1005", "None", T(10, 0));
+        await c.AddRunnerAsync("Unlimited", "6", "1006", "NoLimit", T(10, 0));
+        await c.AddReadoutAsync(1, "1001", "31", T(10, 0), T(10, 50));       // exactly 30 min late — still counts
+        await c.AddReadoutAsync(1, "1002", "31", T(10, 0), T(10, 50, 1));
+        await c.AddReadoutAsync(1, "1003", "31", T(10, 0), T(10, 25));
+        await c.AddReadoutAsync(1, "1004", "31", T(10, 0), T(10, 25, 1));
+        await c.AddReadoutAsync(1, "1005", "31", T(10, 0), T(10, 20, 1));
+        await c.AddReadoutAsync(1, "1006", "31", T(10, 0), T(13, 0));
+
+        var r = await c.ResultsAsync();
+        Assert.Equal(FinishStatus.Ok, r["Edge"].Status);
+        Assert.Equal(FinishStatus.Ovt, r["Past"].Status);
+        Assert.Null(r["Past"].Place);
+        Assert.Equal(FinishStatus.Ok, r["ShortOk"].Status);
+        Assert.Equal(FinishStatus.Ovt, r["ShortPast"].Status);
+        Assert.Equal(FinishStatus.Ovt, r["NoneLate"].Status);   // 0 = OVT right after the time limit
+        Assert.Equal(FinishStatus.Ok, r["Unlimited"].Status);   // no time limit — no window either
+        Assert.Equal(FinishStatus.Ovt, (await RowAsync("1002")).Status); // the finish log judges the same
     }
 
     // ---- Rogaine -------------------------------------------------------------------------------------------
@@ -350,6 +386,33 @@ public sealed class DisciplineRulesTests
         var r = await c.ResultsAsync();
         Assert.Equal(2, r["X1"].Score); // 3 − 3 + min(5, 2)
         Assert.Equal(2, r["X2"].Bonus);
+    }
+
+    [Fact]
+    public async Task Rogaine_MemberPastMaxLateIsOvtAndLeavesTheTeamUnplaced()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("rogl"), discipline: DisciplineId.Rogaine);
+        await c.AddControlsAsync(1, "31");
+        await c.AddGroupAsync("Open", "31", s => s.TimeLimitSeconds = 60 * 60);
+        // Team Late: one member 31 min over the limit (default window 30 min) → OVT, the team gets no place.
+        await c.AddRunnerAsync("L1", "1", "1001", "Open", T(10, 0), p => p.Team = "Late");
+        await c.AddRunnerAsync("L2", "2", "1002", "Open", T(10, 0), p => p.Team = "Late");
+        await c.AddReadoutAsync(1, "1001", "31", T(10, 0), T(10, 50));
+        await c.AddReadoutAsync(1, "1002", "31", T(10, 0), T(11, 31));
+        // Team Edge: 29 min over — still placed, with the penalty.
+        await c.AddRunnerAsync("E1", "3", "1003", "Open", T(10, 0), p => p.Team = "Edge");
+        await c.AddRunnerAsync("E2", "4", "1004", "Open", T(10, 0), p => p.Team = "Edge");
+        await c.AddReadoutAsync(1, "1003", "31", T(10, 0), T(11, 29));
+        await c.AddReadoutAsync(1, "1004", "31", T(10, 0), T(10, 40));
+
+        var r = await c.ResultsAsync();
+        Assert.Equal(FinishStatus.Ovt, r["L2"].Status);
+        Assert.Equal(FinishStatus.Ok, r["L1"].Status);
+        Assert.Null(r["L1"].Place);
+        Assert.Null(r["L2"].Place);
+        Assert.Equal(FinishStatus.Ok, r["E1"].Status);
+        Assert.Equal(1, r["E1"].Place);
+        Assert.Equal(1, r["E2"].Place);
     }
 
     // ---- Mixed ---------------------------------------------------------------------------------------------

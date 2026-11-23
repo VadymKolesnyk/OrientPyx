@@ -44,6 +44,8 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        StartupTimeline.Start();
+
         // Velopack install/update/uninstall hooks. MUST run first: on those code paths it does its work
         // and exits the process before the UI is ever built. On a normal launch it returns immediately.
         // OnFirstRun fires on the first launch right after an install, OnRestarted on the relaunch after an update —
@@ -82,6 +84,7 @@ internal static class Program
             e.SetObserved();
         };
 
+        StartupTimeline.Mark("data root resolved");
         try
         {
             BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);

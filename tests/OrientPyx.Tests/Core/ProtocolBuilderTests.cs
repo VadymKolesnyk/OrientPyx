@@ -150,6 +150,65 @@ public sealed class ProtocolBuilderTests
     }
 
     [Fact]
+    public async Task ResultProtocol_ScoreSpellsOutPenaltyAndBonus()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("protsf"), discipline: DisciplineId.ScoreByTime);
+        var cps = await c.AddControlsAsync(1, "31", "32", "33");
+        var store = Sp.GetRequiredService<IEventStore>();
+        foreach (var cp in cps) { cp.Points = 3; await store.UpdateControlPointAsync(c.Folder, cp); }
+        await c.AddGroupAsync("Ч21", "31 32 33", s => { s.TimeLimitSeconds = 20 * 60; s.PenaltyPerMinute = 2m; });
+        await c.AddRunnerAsync("Clean", "1", "1001", "Ч21", T(10, 0));
+        await c.AddRunnerAsync("Late", "2", "1002", "Ч21", T(10, 0));
+        await c.AddRunnerAsync("Bonus", "3", "1003", "Ч21", T(10, 0), configureDay: d => d.Bonus = 4);
+        await c.AddRunnerAsync("Both", "4", "1004", "Ч21", T(10, 0), configureDay: d => d.Bonus = -1);
+        await c.AddReadoutAsync(1, "1001", "31 32 33", T(10, 0), T(10, 20));
+        await c.AddReadoutAsync(1, "1002", "31 32 33", T(10, 0), T(10, 21, 30)); // 2 started minutes × 2 = −4
+        await c.AddReadoutAsync(1, "1003", "31 32", T(10, 0), T(10, 15));
+        await c.AddReadoutAsync(1, "1004", "31 32 33", T(10, 0), T(10, 20, 30)); // −2, bonus −1
+
+        var doc = Sp.GetRequiredService<IResultProtocolBuilder>().Build(
+            await c.ProtocolDataAsync(), new ResultProtocolSettings(), ResultLabels());
+        var rows = Assert.Single(doc.Sections).Rows;
+        var name = Col(doc, "FullName"); var score = Col(doc, "Score");
+        var byName = rows.ToDictionary(r => r.Cells[name], r => r.Cells[score]);
+        Assert.Equal("9", byName["Clean"]);              // nothing to explain — a plain number
+        Assert.Equal("5 (9 − 4)", byName["Late"]);
+        Assert.Equal("10 (6 + 4)", byName["Bonus"]);
+        Assert.Equal("6 (9 − 2 − 1)", byName["Both"]);
+    }
+
+    [Fact]
+    public async Task ResultProtocol_RogaineTeamScoreSpellsOutTheTeamPenaltyAndBonus()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("protgf"), discipline: DisciplineId.Rogaine);
+        var cps = await c.AddControlsAsync(1, "31", "42");
+        var store = Sp.GetRequiredService<IEventStore>();
+        foreach (var cp in cps) { cp.Points = int.Parse(cp.Code[..1]); await store.UpdateControlPointAsync(c.Folder, cp); } // 3, 4
+        await c.AddGroupAsync("Open", "31 42", s => s.TimeLimitSeconds = 3600);
+        await c.AddRunnerAsync("X1", "1", "7011", "Open", T(10, 0), p => p.Team = "Xena", d => d.Bonus = 5);
+        await c.AddRunnerAsync("X2", "2", "7012", "Open", T(10, 0), p => p.Team = "Xena", d => d.Bonus = 2);
+        await c.AddReadoutAsync(1, "7011", "31 42", T(10, 0), T(10, 50));
+        await c.AddReadoutAsync(1, "7012", "42 31", T(10, 0), T(11, 1, 30)); // the team is 1:30 late → 2 × 1 = −2
+
+        var doc = Sp.GetRequiredService<IResultProtocolBuilder>().Build(
+            await c.ProtocolDataAsync(), new ResultProtocolSettings(), ResultLabels());
+        var rows = Assert.Single(doc.Sections).Rows;
+        var score = Col(doc, "Score");
+        Assert.True(rows[0].IsTeamHeader);
+        Assert.Equal("7 (7 − 2 + 2)", rows[0].Cells[score]); // team bonus = the smallest entered, 2
+        Assert.Equal("", rows[1].Cells[score]);              // members carry no score of their own
+    }
+
+    [Theory]
+    [InlineData(9, 0, 0, "9")]
+    [InlineData(7, 3, 0, "7 (10 − 3)")]
+    [InlineData(12, 0, 2, "12 (10 + 2)")]
+    [InlineData(9, 3, 2, "9 (10 − 3 + 2)")]
+    [InlineData(5, 3, -2, "5 (10 − 3 − 2)")]
+    public void ScoreFormula_LeavesOutZeroParts(int total, int penalty, int bonus, string expected) =>
+        Assert.Equal(expected, ScoreFormula.Format(total, penalty, bonus));
+
+    [Fact]
     public async Task Protocol_LeavesOutTheScoreColumnWhenNobodyHasAScore()
     {
         var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("noscore"));

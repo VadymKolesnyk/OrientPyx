@@ -5,10 +5,11 @@ namespace OrientPyx.Plugins.Sdk;
 /// change would also bump the assembly's major version.</summary>
 /// <remarks>2 — imported participant fields (<see cref="FieldImport"/>) and plugin reports (<see cref="Report"/>).
 /// 3 — a report reads the discipline settings of a group (<see cref="ReportGroup.Settings"/>).
-/// 4 — a result column can stay out of the online results (<see cref="ResultColumnDef.Online"/>).</remarks>
+/// 4 — a result column can stay out of the online results (<see cref="ResultColumnDef.Online"/>).
+/// 5 — the group's «Макс. запізнення» in the finish check (<see cref="FinishContext.MaxLate"/>).</remarks>
 public static class ApiVersion
 {
-    public const int Current = 4;
+    public const int Current = 5;
 }
 
 /// <summary>

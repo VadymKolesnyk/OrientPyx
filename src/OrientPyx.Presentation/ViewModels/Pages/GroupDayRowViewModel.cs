@@ -64,6 +64,11 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     [ObservableProperty]
     private string _timeLimitText;
 
+    /// <summary>«Макс. запізнення» (rogaine, score-by-time) as hh:mm:ss; an unset value shows the discipline's
+    /// default (30 min), like the penalty rate.</summary>
+    [ObservableProperty]
+    private string _maxLateText;
+
     /// <summary>«Етапів»: the relay group's leg count as typed in the grid. It is saved with the relay settings (not
     /// with the row), so a change goes to the page's own callback.</summary>
     [ObservableProperty]
@@ -153,6 +158,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         _requiredCountText = FormatInt(row.RequiredControlCount);
         _penaltyText = FormatDecimal(row.PenaltyPerMinute);
         _timeLimitText = FormatTime(row.TimeLimitSeconds);
+        _maxLateText = FormatTime(row.MaxLateSeconds);
         _legCountText = FormatInt(row.LegCount);
         _courseSetter = row.CourseSetter;
         _courseSetterCategory = row.CourseSetterCategory;
@@ -179,6 +185,9 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         // group set none — the user can still change or clear it (clearing falls back to the same default).
         if (_penaltyText.Length == 0 && Strategy.DefaultPenaltyPerMinute is { } rate)
             _penaltyText = FormatDecimal(rate);
+        // Likewise the late-finish window: a blank one shows the default (30 min) it falls back to.
+        if (_maxLateText.Length == 0 && Strategy.DefaultMaxLate is { } window)
+            _maxLateText = FormatTime((int)window.TotalSeconds);
 
         _initialized = true;
     }
@@ -274,6 +283,11 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
             if (penalty.Length == 0 && Strategy.DefaultPenaltyPerMinute is { } rate)
                 penalty = FormatDecimal(rate);
             PenaltyText = penalty;
+
+            var maxLate = FormatTime(row.MaxLateSeconds);
+            if (maxLate.Length == 0 && Strategy.DefaultMaxLate is { } window)
+                maxLate = FormatTime((int)window.TotalSeconds);
+            MaxLateText = maxLate;
         }
         finally
         {
@@ -420,6 +434,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     public bool UsesRequiredCount => Strategy.UsesColumn(GroupColumn.RequiredControlCount);
     public bool UsesPenalty => Strategy.UsesColumn(GroupColumn.PenaltyPerMinute);
     public bool UsesTimeLimit => Strategy.UsesColumn(GroupColumn.TimeLimit);
+    public bool UsesMaxLate => Strategy.UsesColumn(GroupColumn.MaxLate);
 
     public GroupDayRow ToRow() => new(
         SettingsId: _settingsId,
@@ -439,7 +454,8 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         RankLevel: SelectedRankLevel.Value,
         MasterCount: ParseInt(MasterCountText),
         MinBirthYear: ParseInt(MinBirthYearText),
-        MaxBirthYear: ParseInt(MaxBirthYearText));
+        MaxBirthYear: ParseInt(MaxBirthYearText),
+        MaxLateSeconds: ParseTime(MaxLateText));
 
     partial void OnNameChanged(string value) => QueueSave("Groups.Col.Name");
 
@@ -491,6 +507,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     partial void OnRequiredCountTextChanged(string value) => QueueSave("Groups.Col.RequiredCount");
     partial void OnPenaltyTextChanged(string value) => QueueSave("Groups.Col.Penalty");
     partial void OnTimeLimitTextChanged(string value) => QueueSave("Groups.Col.TimeLimit");
+    partial void OnMaxLateTextChanged(string value) => QueueSave("Groups.Col.MaxLate");
     partial void OnCourseSetterChanged(string value)
     {
         // The category hint only applies while the group inherits the course-setter name (see the
@@ -514,6 +531,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         OnPropertyChanged(nameof(UsesRequiredCount));
         OnPropertyChanged(nameof(UsesPenalty));
         OnPropertyChanged(nameof(UsesTimeLimit));
+        OnPropertyChanged(nameof(UsesMaxLate));
         OnPropertyChanged(nameof(IsScatter));
         OnPropertyChanged(nameof(IsRelay));
         OnPropertyChanged(nameof(LegCountDisplay));
@@ -525,6 +543,8 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
         // empty, mirroring the constructor — so a freshly-switched rogaine group reads "1" rather than blank.
         if (PenaltyText.Length == 0 && Strategy.DefaultPenaltyPerMinute is { } rate)
             PenaltyText = FormatDecimal(rate);
+        if (MaxLateText.Length == 0 && Strategy.DefaultMaxLate is { } window)
+            MaxLateText = FormatTime((int)window.TotalSeconds);
 
         QueueSave("Groups.Col.Discipline");
     }

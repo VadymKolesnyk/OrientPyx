@@ -32,6 +32,13 @@ public sealed record FinishContext
     public TimeSpan? TimeLimit { get; init; }
 
     /// <summary>
+    /// The group's «Макс. запізнення» for the day (API 5): how long after <see cref="TimeLimit"/> a finish still
+    /// counts in the score formats (rogaine, score-by-time) — a later one is OVT. Null when the group left it blank,
+    /// which those formats read as 30 min. Always null for a relay leg.
+    /// </summary>
+    public TimeSpan? MaxLate { get; init; }
+
+    /// <summary>
     /// The minimum number of allowed controls a runner must take to be classified — the group's
     /// «мін. к-сть КП» for a free-choice-by-count day. Null when the group set none, which the
     /// «за вибором по кількості КП» strategy reads as "every allowed control is

@@ -504,6 +504,9 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.Property<int?>("MasterCount")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("MaxLateSeconds")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Order")
                         .HasColumnType("INTEGER");
 
