@@ -52,8 +52,10 @@ public sealed class XmlImportFlow : IXmlImportFlow
         if (_session.CurrentDay is null || string.IsNullOrWhiteSpace(xml))
             return false;
 
-        // Parse up front (off the UI thread) so a malformed file is reported before the options modal.
-        var outcome = await _busy.RunAsync(() => Task.FromResult(Parse(xml)));
+        // Parse up front (off the UI thread) so a malformed file is reported before the options modal. A file of several
+        // races (IOF 3.0, one RaceCourseData each) reads the race numbered like the day; failing that, ask which one.
+        var dayNumber = _session.CurrentDay?.Number;
+        var outcome = await _busy.RunAsync(() => Task.FromResult(Parse(xml, dayNumber)));
         if (!outcome.Success)
         {
             await _dialogs.ShowImportOptionsAsync(new ImportOptionsViewModel(
@@ -62,6 +64,15 @@ public sealed class XmlImportFlow : IXmlImportFlow
                 messageKey: "Import.Error",
                 options: []));
             return false;
+        }
+        if (outcome.Data!.RaceUnresolved)
+        {
+            var race = await ChooseRaceAsync(outcome.Data.RaceNumbers);
+            if (race is null)
+                return false; // cancelled
+            outcome = await _busy.RunAsync(() => Task.FromResult(Parse(xml, race)));
+            if (!outcome.Success)
+                return false;
         }
 
         // Preprocessing: review/edit the groups each course splits into (e.g. "ЧЖ55" → "Ч55", "Ж55") and choose how a
@@ -120,15 +131,58 @@ public sealed class XmlImportFlow : IXmlImportFlow
                 message: string.Format(_localization.Get("Import.ScatterFallbackMessage"), names)));
         }
 
+        // Courses the file gives with a choice became «mixed» patterns — say which groups changed their type.
+        if (groupResult.MixedGroups.Count > 0)
+        {
+            var names = string.Join(", ", groupResult.MixedGroups);
+            await _dialogs.ShowImportOptionsAsync(ImportOptionsViewModel.Plain(
+                _localization,
+                titleKey: "Import.Title",
+                message: string.Format(_localization.Get("Import.MixedPatternMessage"), names)));
+        }
+
         return true;
     }
 
+    // The file holds several races and none is numbered like the day: one toggle per race, exactly one kept ticked
+    // (the first by default). Null when cancelled.
+    private async Task<int?> ChooseRaceAsync(IReadOnlyList<int> raceNumbers)
+    {
+        var options = raceNumbers
+            .Select((n, i) => new ImportOption(RaceKey(n), "Import.Race.Option", isChecked: i == 0, n))
+            .ToList();
+        foreach (var option in options)
+            option.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName != nameof(ImportOption.IsChecked))
+                    return;
+                if (option.IsChecked)
+                {
+                    foreach (var other in options.Where(o => !ReferenceEquals(o, option) && o.IsChecked))
+                        other.IsChecked = false;
+                }
+                else if (!options.Any(o => o.IsChecked))
+                    option.IsChecked = true; // one race always stays chosen
+            };
+
+        var result = await _dialogs.ShowImportOptionsAsync(new ImportOptionsViewModel(
+            _localization,
+            titleKey: "Import.Title",
+            messageKey: "Import.Race.Message",
+            options: options));
+        if (result is null)
+            return null;
+        return raceNumbers.FirstOrDefault(n => result.Get(RaceKey(n)), raceNumbers.FirstOrDefault());
+    }
+
+    private static string RaceKey(int raceNumber) => "race" + raceNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
     // Runs the synchronous parser and wraps success/failure so it can be marshalled off the UI thread.
-    private ParseOutcome Parse(string xml)
+    private ParseOutcome Parse(string xml, int? raceNumber)
     {
         try
         {
-            return ParseOutcome.Ok(_xmlParser.Parse(xml));
+            return ParseOutcome.Ok(_xmlParser.Parse(xml, raceNumber));
         }
         catch (IofXmlFormatException ex)
         {

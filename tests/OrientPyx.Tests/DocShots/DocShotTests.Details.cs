@@ -109,8 +109,12 @@ public sealed partial class DocShotTests
         // The result protocol's live preview, alone.
         await ProtocolPreviewShotAsync("protocols-preview", "Попередній перегляд протоколу результатів (день 1).");
 
-        // Day 2: the late entries without a chip — «Сканування чіпів» and «Відомість».
+        // Day 2: the late entries without a chip — «Перевірка готовності дня» (day 1 has no problems to show),
+        // «Сканування чіпів» and «Відомість».
         await _s.SetDayAsync(2);
+        await _s.PageAsync<DayReadinessViewModel>(vm => vm.OpenDayReadinessCommand);
+        await _s.ShotAsync("day-readiness", "«Старт → Перевірка готовності дня», день 2: пізні заявки без чіпа і «Перейти».");
+
         participants = await _s.PageAsync<ParticipantsViewModel>(vm => vm.OpenParticipantsCommand);
         await SelectParticipantsDayAsync(participants, roster: false);
         var table = await _s.FindAsync<SheetTable>("DayTable");

@@ -53,6 +53,8 @@ public sealed class OutputsTests
             var summaryDoc = summaryBuilder.Build(summaryData, summarySettings, Labels.Make<SummaryProtocolLabels>());
             Checks.IsDocx(sp.GetRequiredService<ISummaryProtocolWriter>().Write(summaryDoc));
             _ = summaryBuilder.RankGroups(summaryData, summarySettings);
+            // Every day in one IOF file (Event/Race + raceNumber, the running total).
+            await Checks.IofListsAreValidAsync(sp, days.Select(d => d.Id).ToArray());
 
             var statement = await editor.GetStatementDataAsync(null, roster.Select(r => r.ParticipantId).ToList());
             var statementSettings = await editor.GetStatementSettingsAsync() ?? await app.GetStatementSettingsAsync();
@@ -106,6 +108,7 @@ public sealed class OutputsTests
                 var splits = await editor.GetDaySplitsExportDataAsync(day.Id);
                 Checks.IsHtml(sp.GetRequiredService<ISplitHtmlWriter>().Write(sp.GetRequiredService<ISplitExportBuilder>()
                     .Build(splits, Labels.Make<SplitExportHeader>(), Labels.Make<SplitExportLabels>())));
+                await Checks.IofListsAreValidAsync(sp, day.Id);
 
                 var monitor = await editor.BuildMonitorPreviewAsync(day.Id, Labels.Make<MonitorFile>(),
                     ResultColumnSelection.Default, Labels.Make<MonitorLabels>());

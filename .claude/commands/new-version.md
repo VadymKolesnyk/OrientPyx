@@ -22,6 +22,18 @@ finished (Step 6) — that is where the packages are built, signed and uploaded.
 3. Do **not** require the working tree to be clean — the user's uncommitted work in
    progress *is* the content of this release. But do look at `git status` so you know
    what you are about to commit.
+4. **Start the full test suite in the background right now**, before asking for the version: CLAUDE.md requires a
+   green suite before a release, it takes ~9 min, and it needs nothing from the later steps — so it runs while the
+   user picks the version and you update the docs and write the notes, instead of after them. Check `ListAgents`
+   first and tell a busy peer session (SendMessage) that the release suite is starting. Run it through the build lock
+   with PowerShell, `run_in_background: true`, and note its task id:
+
+   ```powershell
+   ./scripts/locked-build.ps1 test tests/OrientPyx.Tests.sln *>&1 | Out-File -Encoding utf8 <scratchpad>/tests.log
+   ```
+
+   Do not wait for it here — its result is the gate at the start of Step 3. The `<Version>` bump in Step 2 does not
+   affect it.
 
 ## Step 1 — Determine the version
 
@@ -40,12 +52,13 @@ finished (Step 6) — that is where the packages are built, signed and uploaded.
   3. Show the user the three options as a short numbered list, say that without an answer in
      5 minutes the patch version is released, and that they can reply `1`/`2`/`3`,
      `patch`/`minor`/`major` or an explicit version. Then **end the turn** — do nothing else
-     (no commits, no edits, no further steps) while waiting.
+     (no commits, no edits, no further steps) while waiting; the test suite from Step 0 keeps running.
   4. Whichever comes first decides:
      - **The user answers** → stop the timer (`TaskStop` with its id) and use their choice;
        an explicit version is used as typed (strip any leading `v`). An answer that names no
        version (a question, «стоп», something unclear) → do not release: answer it / ask
-       again with `AskUserQuestion` — the user is here, no timer this time.
+       again with `AskUserQuestion` — the user is here, no timer this time. If the release is
+       called off, stop the test suite too (`TaskStop`).
      - **The timer's notification arrives** and the user has not answered → take the patch
        version, say so plainly («Відповіді не було 5 хв — випускаю patch <version>») and go on.
      - A timer notification arriving after the version was already chosen is ignored.
@@ -82,6 +95,10 @@ notes) regenerate by themselves; the hand-written pages do not.
    (helpers in `DocShooter.cs`; demo data in `DemoCompetitions.cs`) and reference it as `../shots/<name>.png`.
 4. Render and build exactly as CI will: `scripts/docs.ps1 -Shots -Build` (renders the screenshots through the build
    lock, then `mkdocs build --strict`). Fix every warning; look at the screenshots of the pages you touched.
+   It takes the same build lock as the test suite of Step 0, so it starts once the suite is done — that wait is
+   expected; never start a second suite. If this step changed `Help.*` texts or `website/content/plugins/api.md`
+   while the suite was already running, re-run just those checks afterwards:
+   `./scripts/locked-build.ps1 test tests/OrientPyx.Tests.sln --filter "FullyQualifiedName~LocalizationTests|FullyQualifiedName~PluginDocsTests"`.
 5. Nothing to change? Say so in the report and move on. Never skip step 4 when a page or a shot changed.
 
 ## Step 3 — Write the changelog / commit
@@ -89,6 +106,10 @@ notes) regenerate by themselves; the hand-written pages do not.
 - Gather what changed since the last release:
   `git log v<previous>..HEAD --oneline` **plus** the uncommitted changes in `git status`
   / `git diff --stat`. Read enough of the diff to describe the release honestly.
+- **Gate: the test suite of Step 0 must be green before anything is committed.** If it is still running, write the
+  release notes (below) while you wait for its notification. Read the summary line in `<scratchpad>/tests.log`
+  (`Passed!` / `Failed!` with the counts; the DocShots are skipped there — Step 2b runs them). Any failed test →
+  **stop**: report the failing tests to the user and do not commit, tag or push.
 - Stage everything: `git add -A`.
 - Create a commit on `main` whose message summarizes what changed since the previous
   version, in the user's usual concise style (a one-line subject like
@@ -150,6 +171,9 @@ The tag push (Step 5) started both package builds on GitHub Actions; nothing is 
   `vpk upload … --merge`.
 - **`Release macOS`** (`.github/workflows/release-macos.yml`): waits for the published release
   (up to 20 min), then builds `osx-arm64` / `osx-x64` and merges them into the same release.
+  Its job often sits **queued** for a free GitHub macOS runner before it starts (0.9.5: 10 min in the queue, 6 min
+  of work, while Windows and Docs were done in 4–5 min). That is normal, not a hang — tell the user it is queued
+  rather than waiting silently.
 
 Find and follow the runs:
 
@@ -204,6 +228,7 @@ The notes are already final (Step 3 → Step 5) — do **not** rewrite them for 
 
 Summarize for the user:
 - the released version and the previous one,
+- the test suite result (passed / failed / skipped),
 - the release URL (`gh release view v<version> --json url -q .url`),
 - whether the Windows and macOS packages landed (or that a workflow is still running / failed),
   and whether the Windows package is signed (and with which policy) or unsigned,

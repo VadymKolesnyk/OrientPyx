@@ -252,6 +252,7 @@ These load automatically when you work with matching files; read the one that fi
 - `network-mode.md` — host & station internals, network UI, flaky networks, last-session restore
 - `custom-fields.md` — additional participant fields, CSV/Excel import mapping
 - `start-pages.md` — «Масовий старт», «Кількість карт»
+- `day-readiness.md` — «Перевірка готовності дня»: the shared cell/list checks, «Перейти» (`SheetTable.RevealRow`), the dashboard tile
 - `chips.md` — SportIdent card capacity
 - `finish-alerts.md` — finish sounds, Windows toasts, taskbar flash
 - `sheet-table.md` — SheetTable conventions, roster header, selection/row actions, view persistence, cell-leak rule

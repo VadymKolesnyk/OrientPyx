@@ -95,14 +95,26 @@ public class Group
     /// optional). A null <paramref name="birthYear"/> never violates (an unknown birth date can't be
     /// judged). With no bounds set, nothing violates. Shared rule for the participant-table highlight.
     /// </summary>
-    public static bool ViolatesAgeWindow(int? birthYear, int? minBirthYear, int? maxBirthYear)
+    public static bool ViolatesAgeWindow(int? birthYear, int? minBirthYear, int? maxBirthYear) =>
+        CheckAgeWindow(birthYear, minBirthYear, maxBirthYear) is not null;
+
+    /// <summary>
+    /// Which bound of the age window a participant born in <paramref name="birthYear"/> breaches: too old (born before
+    /// <paramref name="minBirthYear"/>) or too young (born after <paramref name="maxBirthYear"/>), with that bound; null
+    /// when within the window or the year is unknown (<see cref="ViolatesAgeWindow"/>).
+    /// </summary>
+    public static AgeViolation? CheckAgeWindow(int? birthYear, int? minBirthYear, int? maxBirthYear)
     {
         if (birthYear is not { } year)
-            return false;
+            return null;
         if (minBirthYear is { } min && year < min)
-            return true;
+            return new AgeViolation(TooOld: true, min);
         if (maxBirthYear is { } max && year > max)
-            return true;
-        return false;
+            return new AgeViolation(TooOld: false, max);
+        return null;
     }
 }
+
+/// <summary>An age-window breach: <see cref="TooOld"/> (born before the earliest allowed year) or too young (born after
+/// the latest), and the breached <see cref="BoundYear"/>.</summary>
+public sealed record AgeViolation(bool TooOld, int BoundYear);

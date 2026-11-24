@@ -6,14 +6,23 @@ using OrientPyx.Localization;
 
 namespace OrientPyx.Presentation.ViewModels.Pages;
 
-/// <summary>One editable row in the days table. Wraps a single <see cref="EventDay"/>.</summary>
+/// <summary>
+/// One editable row in the days table. Wraps a single <see cref="EventDay"/>. An edit of the date, venue or discipline
+/// asks the page to save the row (debounced there) — there is no Save button.
+/// </summary>
 public sealed partial class DayRowViewModel : ObservableObject
 {
     private readonly Guid _id;
     private DateTimeOffset _createdAt;
     private readonly IDisciplineStrategyProvider _strategies;
-    // Suppresses the dirty flag while Apply copies stored values onto the row.
+    // The page's debounced save; called on every edit of an editable cell (never while Apply copies stored values).
+    private readonly Action<DayRowViewModel> _requestSave;
+    // Suppresses the dirty flag (and the save) while Apply copies stored values onto the row.
     private bool _applying;
+    // Bumped on every edit; a save that read the row at an older version leaves the row dirty (typed on meanwhile).
+    private int _editVersion;
+    // The last discipline the combo held: what a save writes while the combo is momentarily cleared.
+    private DisciplineId _discipline;
 
     [ObservableProperty]
     private DateTimeOffset? _date;
@@ -28,9 +37,8 @@ public sealed partial class DayRowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanDelete))]
     private bool _isActive;
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanSave))]
-    private bool _isDirty;
+    /// <summary>True while the row holds an edit not yet written — a refresh leaves its cells alone then.</summary>
+    public bool IsDirty { get; private set; }
 
     /// <summary>
     /// True while the day is closed for editing. Editable straight from the days grid, which is the one
@@ -41,7 +49,6 @@ public sealed partial class DayRowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(LockedDayNumber))]
     [NotifyPropertyChangedFor(nameof(CanEdit))]
     [NotifyPropertyChangedFor(nameof(CanDelete))]
-    [NotifyPropertyChangedFor(nameof(CanSave))]
     private bool _isLocked;
 
     /// <summary>
@@ -51,7 +58,7 @@ public sealed partial class DayRowViewModel : ObservableObject
     /// </summary>
     public int LockedDayNumber => IsLocked ? Number : 0;
 
-    /// <summary>False while the day is closed — the row's Save / «змінити номер» actions turn off with it.</summary>
+    /// <summary>False while the day is closed — the row's «змінити номер» action turns off with it.</summary>
     public bool CanEdit => !IsLocked;
 
     /// <summary>
@@ -60,13 +67,11 @@ public sealed partial class DayRowViewModel : ObservableObject
     /// </summary>
     public bool CanDelete => !IsActive && !IsLocked;
 
-    /// <summary>Save is offered only for a row with unsaved edits, and only while the day is open.</summary>
-    public bool CanSave => IsDirty && !IsLocked;
-
     public DayRowViewModel(EventDay day, bool isActive, ILocalizationService localization,
-        IDisciplineStrategyProvider strategies, string venuePlaceholder = "")
+        IDisciplineStrategyProvider strategies, Action<DayRowViewModel> requestSave, string venuePlaceholder = "")
     {
         _id = day.Id;
+        _requestSave = requestSave;
         _createdAt = day.CreatedAt;
         _strategies = strategies;
         Number = day.Number;
@@ -77,6 +82,7 @@ public sealed partial class DayRowViewModel : ObservableObject
 
         _disciplineOptions = DisciplineTypeOption.ListFor(strategies, localization, day.DefaultDiscipline);
         _selectedDiscipline = DisciplineOptions.First(o => o.Value == day.DefaultDiscipline);
+        _discipline = day.DefaultDiscipline;
 
         _isActive = isActive;
         _isLocked = day.IsLocked;
@@ -102,7 +108,7 @@ public sealed partial class DayRowViewModel : ObservableObject
 
     /// <summary>
     /// Copies a freshly-read day onto this row. The editable cells (date, venue, discipline) are left alone while
-    /// the row holds unsaved edits — the operator's typing wins over a refresh — and never mark the row dirty;
+    /// the row holds an edit not yet saved — the operator's typing wins over a refresh — and never mark the row dirty;
     /// the lock and the active flag always follow the store. Only a changed cell raises a property change.
     /// </summary>
     public void Apply(EventDay day, bool isActive)
@@ -142,21 +148,43 @@ public sealed partial class DayRowViewModel : ObservableObject
         Number = Number,
         Date = Date,
         Venue = (Venue ?? string.Empty).Trim(),
-        DefaultDiscipline = SelectedDiscipline.Value,
+        DefaultDiscipline = SelectedDiscipline?.Value ?? _discipline,
         IsLocked = IsLocked,
         CreatedAt = _createdAt
     };
 
-    public void MarkSaved() => IsDirty = false;
+    /// <summary>The edit counter, read together with <see cref="ToEntity"/> when a save starts.</summary>
+    public int EditVersion => _editVersion;
 
-    partial void OnDateChanged(DateTimeOffset? value) => MarkDirty();
-    partial void OnVenueChanged(string value) => MarkDirty();
-    partial void OnSelectedDisciplineChanged(DisciplineTypeOption value) => MarkDirty();
-
-    private void MarkDirty()
+    /// <summary>A save of the row as it stood at <paramref name="version"/> landed: the row is clean unless it was
+    /// edited again meanwhile (that edit has its own save queued).</summary>
+    public void MarkSaved(int version)
     {
-        if (!_applying)
-            IsDirty = true;
+        if (version == _editVersion)
+            IsDirty = false;
+    }
+
+    /// <summary>The store refused the edit (the day was closed meanwhile): the next refresh shows the stored values.</summary>
+    public void DiscardEdits() => IsDirty = false;
+
+    partial void OnDateChanged(DateTimeOffset? value) => Edited();
+    partial void OnVenueChanged(string value) => Edited();
+    // A combo clears its selection (null) when its list is swapped under it — that is no choice, so nothing to save.
+    partial void OnSelectedDisciplineChanged(DisciplineTypeOption value)
+    {
+        if (value is null)
+            return;
+        _discipline = value.Value;
+        Edited();
+    }
+
+    private void Edited()
+    {
+        if (_applying)
+            return;
+        _editVersion++;
+        IsDirty = true;
+        _requestSave(this);
     }
 
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e)

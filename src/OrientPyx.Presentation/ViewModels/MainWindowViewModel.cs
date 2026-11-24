@@ -76,10 +76,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly OnlineResultsViewModel _onlineResults;
     private readonly MonitorResultsViewModel _monitorResults;
     private readonly SplitsExportViewModel _splitsExport;
+    private readonly IofExportViewModel _iofExport;
     private readonly DrawViewModel _draw;
     private readonly ClassicDrawViewModel _classicDraw;
     private readonly MassStartDrawViewModel _massStartDraw;
     private readonly MapCountsViewModel _mapCounts;
+    private readonly DayReadinessViewModel _dayReadiness;
     private readonly NumberVariantsViewModel _numberVariants;
     private readonly PluginsViewModel _plugins;
     private readonly PluginSettingsViewModel _pluginSettings;
@@ -116,10 +118,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OnlineResultsViewModel onlineResults,
         MonitorResultsViewModel monitorResults,
         SplitsExportViewModel splitsExport,
+        IofExportViewModel iofExport,
         DrawViewModel draw,
         ClassicDrawViewModel classicDraw,
         MassStartDrawViewModel massStartDraw,
         MapCountsViewModel mapCounts,
+        DayReadinessViewModel dayReadiness,
         NumberVariantsViewModel numberVariants,
         PluginsViewModel plugins,
         PluginSettingsViewModel pluginSettings,
@@ -175,10 +179,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _onlineResults = onlineResults;
         _monitorResults = monitorResults;
         _splitsExport = splitsExport;
+        _iofExport = iofExport;
         _draw = draw;
         _classicDraw = classicDraw;
         _massStartDraw = massStartDraw;
         _mapCounts = mapCounts;
+        _dayReadiness = dayReadiness;
         _numberVariants = numberVariants;
         _plugins = plugins;
         _pluginSettings = pluginSettings;
@@ -236,6 +242,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _monitorResults.NavigateToSelfRequested += async (_, _) => await OpenMonitorResultsAsync();
         // Dashboard quick-action buttons route through here (the dashboard owns no page-open commands).
         _dashboard.QuickActionRequested += async (_, action) => await OnDashboardQuickActionAsync(action);
+        // «Перейти» on the day readiness check opens the page the problem is fixed on, at its row.
+        _dayReadiness.GoToRequested += async (_, issue) => await GoToReadinessIssueAsync(issue);
         // A plugin row's «Налаштування» opens that plugin's page; switching a plugin on/off rebuilds its menu items.
         _plugins.OpenSettingsRequested += async (_, pluginId) => await OpenPluginSettingsAsync(pluginId);
         // A plugin's discipline may be based on the relay, so switching it on/off can change the «Естафета» menu too.
@@ -279,7 +287,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                      _dashboard, _competitionInfo, _competitionDays, _controlPoints, _groups, _chips,
                      _finishRead, _participants, _relayTeams, _regions, _clubs, _dussh, _ranks, _points, _entryFees,
                      _protocols, _summaryProtocols, _startProtocols, _onlineResults, _monitorResults,
-                     _splitsExport, _draw, _classicDraw, _massStartDraw, _mapCounts, _numberVariants, _plugins, _pluginSettings, Settings, _network,
+                     _splitsExport, _iofExport, _draw, _classicDraw, _massStartDraw, _mapCounts, _dayReadiness, _numberVariants, _plugins, _pluginSettings, Settings, _network,
                  })
         {
             page.HelpRequested += OnPageHelpRequested;
@@ -527,6 +535,20 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private Task OpenIofExportAsync() => OpenIofExportKindAsync(BusinessLogic.Models.IofListKind.ResultList);
+
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private Task OpenIofStartListAsync() => OpenIofExportKindAsync(BusinessLogic.Models.IofListKind.StartList);
+
+    // «Результати → Експорт IOF XML» and «Старт → Стартовий протокол (IOF XML)» open the one page with its kind set.
+    private async Task OpenIofExportKindAsync(BusinessLogic.Models.IofListKind kind)
+    {
+        _iofExport.Kind = kind;
+        await _iofExport.LoadAsync();
+        _shell.SelectedPage = _iofExport;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
     private async Task OpenDrawAsync()
     {
         await _draw.LoadAsync();
@@ -538,6 +560,56 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     {
         await _mapCounts.LoadAsync();
         _shell.SelectedPage = _mapCounts;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanChangeEvent))]
+    private async Task OpenDayReadinessAsync()
+    {
+        // Loaded on every open: this machine's own writes on the other pages are not on the bus for it.
+        await _dayReadiness.LoadAsync();
+        _shell.SelectedPage = _dayReadiness;
+    }
+
+    // Routes a readiness problem to the page it is fixed on (by where, not by discipline) and asks that page to show the
+    // row: the participant on the day grid, the group, the team, the day; the draw / mass start / numbers pages open.
+    private async Task GoToReadinessIssueAsync(BusinessLogic.Models.ReadinessIssue issue)
+    {
+        if (!_session.HasSelection)
+            return;
+
+        switch (issue.Target)
+        {
+            case BusinessLogic.Models.ReadinessTarget.Participant when issue.LinkId is { } link:
+                await RevealAsync(_participants, link, ReadinessColumns.Participants(issue), OpenParticipantsAsync);
+                break;
+            case BusinessLogic.Models.ReadinessTarget.Group when issue.GroupSettingsId is { } settings:
+                await RevealAsync(_groups, settings, ReadinessColumns.Groups(issue), OpenGroupsAsync);
+                break;
+            case BusinessLogic.Models.ReadinessTarget.RelayTeam when issue.RelayTeamId is { } team:
+                await RevealAsync(_relayTeams, team, null, OpenRelayTeamsAsync);
+                break;
+            case BusinessLogic.Models.ReadinessTarget.Day when issue.DayId is { } day:
+                await RevealAsync(_competitionDays, day, ReadinessColumns.Days, OpenCompetitionDaysAsync);
+                break;
+            case BusinessLogic.Models.ReadinessTarget.Draw:
+                await OpenDrawAsync();
+                break;
+            case BusinessLogic.Models.ReadinessTarget.MassStart:
+                await OpenMassStartDrawAsync();
+                break;
+            case BusinessLogic.Models.ReadinessTarget.NumberVariants:
+                await OpenNumberVariantsAsync();
+                break;
+        }
+    }
+
+    // The row is asked for before the page loads (the participants page picks its day grid by it), taken by the page's
+    // view once shown — on attach for a first open, or by the notice when the view is already there.
+    private static async Task RevealAsync(PageViewModelBase page, Guid rowId, string? columnKey, Func<Task> open)
+    {
+        page.RequestReveal(rowId, columnKey);
+        await open();
+        page.NotifyPendingReveal();
     }
 
     [RelayCommand(CanExecute = nameof(CanChangeEvent))]
@@ -716,6 +788,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 break;
             case DashboardQuickAction.OnlineResults:
                 await OpenOnlineResultsAsync();
+                break;
+            case DashboardQuickAction.DayReadiness:
+                await OpenDayReadinessAsync();
                 break;
         }
     }
@@ -1056,9 +1131,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         OpenOnlineResultsCommand.NotifyCanExecuteChanged();
         OpenMonitorResultsCommand.NotifyCanExecuteChanged();
         OpenSplitsExportCommand.NotifyCanExecuteChanged();
+        OpenIofExportCommand.NotifyCanExecuteChanged();
+        OpenIofStartListCommand.NotifyCanExecuteChanged();
         OpenDrawCommand.NotifyCanExecuteChanged();
         OpenClassicDrawCommand.NotifyCanExecuteChanged();
         OpenMassStartDrawCommand.NotifyCanExecuteChanged();
+        OpenDayReadinessCommand.NotifyCanExecuteChanged();
         OpenPluginsCommand.NotifyCanExecuteChanged();
         OpenPluginSettingsCommand.NotifyCanExecuteChanged();
         OpenPluginReportCommand.NotifyCanExecuteChanged();

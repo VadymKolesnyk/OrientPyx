@@ -311,6 +311,36 @@ public abstract class PageViewModelBase : ViewModelBase
     {
     }
 
+    // ── «Перейти» (the day readiness check): a row to show once the page is open — set before it is loaded, taken by
+    // the view on attach (a first open: the page loads before its view exists) or on RevealRequested (already shown).
+
+    private PendingReveal? _pendingReveal;
+
+    /// <summary>Raised when a reveal is pending and the view is already on screen (see <see cref="NotifyPendingReveal"/>).</summary>
+    public event EventHandler? RevealRequested;
+
+    /// <summary>True while a requested row is still to be shown.</summary>
+    public bool HasPendingReveal => _pendingReveal is not null;
+
+    /// <summary>Asks the page to show the row <paramref name="id"/> (its rows' <c>Id</c>) and focus the cell of
+    /// <paramref name="columnKey"/> (a column key or a header's localization key) when next shown.</summary>
+    public virtual void RequestReveal(Guid id, string? columnKey = null) => _pendingReveal = new PendingReveal(id, columnKey);
+
+    /// <summary>The pending reveal, cleared (it applies once); null when none.</summary>
+    public PendingReveal? ConsumePendingReveal()
+    {
+        var reveal = _pendingReveal;
+        _pendingReveal = null;
+        return reveal;
+    }
+
+    /// <summary>Tells an attached view to take the pending reveal now (called once the page is loaded and shown).</summary>
+    public void NotifyPendingReveal()
+    {
+        if (_pendingReveal is not null)
+            RevealRequested?.Invoke(this, EventArgs.Empty);
+    }
+
     // ── Live data (the change bus)
     // A page that shows competition data calls ObserveData(areas) in its constructor and overrides ReloadAsync with
     // its load path. While the page is shown (IsActive, set by the shell), a change in one of its areas — a write by

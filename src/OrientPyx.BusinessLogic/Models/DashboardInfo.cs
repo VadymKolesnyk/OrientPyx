@@ -63,8 +63,15 @@ public sealed class DashboardInfo
 
     public int WithoutChip { get; init; }
 
-    /// <summary>Day members not yet assigned to a group (a pre-start data check).</summary>
+    /// <summary>Day members with no group of the day — none set, or theirs is no longer on the day (as the day table's
+    /// «без групи»; a pre-start data check).</summary>
     public int WithoutGroup { get; init; }
+
+    /// <summary>«Перевірка готовності дня»: how many errors / warnings the day's data has
+    /// (<c>ICompetitionEditorService.GetDayReadinessAsync</c>, from the same snapshot).</summary>
+    public int ReadinessErrors { get; init; }
+
+    public int ReadinessWarnings { get; init; }
 
     // --- Finish read & results (current day)
     /// <summary>Read-out rows logged for the current day.</summary>

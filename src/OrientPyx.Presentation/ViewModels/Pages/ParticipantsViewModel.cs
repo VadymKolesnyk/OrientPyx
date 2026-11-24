@@ -573,6 +573,15 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
         _drillInDayGrid = filter != ParticipantQuickFilter.None;
     }
 
+    /// <inheritdoc />
+    /// <remarks>The row is a day link (the readiness check's participant): like a dashboard drill-in it shows the day
+    /// grid — on a one-day competition too — until the page is left. Call before <see cref="LoadAsync"/>.</remarks>
+    public override void RequestReveal(Guid id, string? columnKey = null)
+    {
+        _drillInDayGrid = true;
+        base.RequestReveal(id, columnKey);
+    }
+
     /// <summary>
     /// Returns the pending quick filter and clears it (so it applies once). Day-grid filters only apply in
     /// day mode; returns <see cref="ParticipantQuickFilter.None"/> in roster mode. Called by the view when
@@ -788,7 +797,7 @@ public sealed partial class ParticipantsViewModel : PageViewModelBase
 
             // A pending quick filter (from a dashboard drill-in) targets the current day's chip/group
             // column, so force day mode for the current day regardless of the remembered roster choice.
-            if (_pendingQuickFilter != ParticipantQuickFilter.None)
+            if (_pendingQuickFilter != ParticipantQuickFilter.None || HasPendingReveal)
                 _rosterChosen = false;
 
             SelectedDay = ResolveSelectedDay();

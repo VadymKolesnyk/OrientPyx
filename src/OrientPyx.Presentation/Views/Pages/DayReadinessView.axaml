@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
+             xmlns:controls="using:OrientPyx.Presentation.Controls"
+             mc:Ignorable="d" d:DesignWidth="820" d:DesignHeight="640"
+             x:Class="OrientPyx.Presentation.Views.Pages.DayReadinessView"
+             x:DataType="pages:DayReadinessViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock.error">
+            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.warning">
+            <!-- Amber text, as the top bar's warning banner. -->
+            <Setter Property="Foreground" Value="#B45309" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.ok">
+            <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Heading + help + day picker (no lock: the page only reads) -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="{Binding Title, FallbackValue=''}" Classes="h1"
+                           FontSize="{ReflectionBinding TitleFontSize, Source={StaticResource UiScale}}" />
+                <TextBlock Text="{Binding Text}" Classes="subtitle"
+                           TextWrapping="Wrap" Margin="0,0,16,0" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <Button Classes="help" Command="{Binding ShowHelpCommand}"
+                        ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                <controls:DaySelector VerticalAlignment="Center"
+                                      ShowDays="{Binding ShowDaySelector}"
+                                      SearchWatermark="{Binding Localization[Common.Search]}"
+                                      DayOptions="{Binding DayOptions}"
+                                      SelectedDay="{Binding SelectedDay, Mode=TwoWay}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- «Помилок: X · Попереджень: Y» (red / amber), or «Проблем не знайдено» (green). -->
+        <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Margin="2,0,0,10"
+                   Text="{Binding Summary}"
+                   Classes.error="{Binding HasErrors}"
+                   Classes.warning="{Binding HasOnlyWarnings}"
+                   Classes.ok="{Binding IsClean}" />
+
+        <!-- The problems. Columns are built in code-behind (SheetColumnBuilder). -->
+        <Border Classes="card" ClipToBounds="True" IsVisible="{Binding !IsClean}">
+            <controls:SheetTable Name="Sheet"
+                                 ItemsSource="{Binding Rows}"
+                                 SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
+                                 Localization="{Binding Localization}"
+                                 LayoutStore="{Binding LayoutStore}"
+                                 LayoutKey="readiness.day" />
+        </Border>
+
+    </DockPanel>
+
+</UserControl>

@@ -43,7 +43,9 @@ pages:
     - src/OrientPyx.*ControlPoint*
     - src/OrientPyx.*Groups*
     - src/OrientPyx.*GroupDay*
-    - src/OrientPyx.*Iof*
+    - src/OrientPyx.*IofXmlParser*
+    - src/OrientPyx.*IofCourse*
+    - src/OrientPyx.*XmlImportFlow*
     - src/OrientPyx.*CourseDistance*
     - src/OrientPyx.*SplitGroups*
   prepare/chips.md:
@@ -60,6 +62,7 @@ pages:
     - src/OrientPyx.*Club*
     - src/OrientPyx.*Dussh*
     - src/OrientPyx.*Uof*
+    - src/OrientPyx.*IofEntryList*
   prepare/entry-fees.md:
     - src/OrientPyx.*EntryFee*
   prepare/draw.md:
@@ -69,6 +72,10 @@ pages:
     - src/OrientPyx.*MapCount*
     - src/OrientPyx.*NumberVariant*
     - src/OrientPyx.*StartOrder*
+    - src/OrientPyx.*IofExport*
+  prepare/readiness.md:
+    - src/OrientPyx.*Readiness*
+    - src/OrientPyx.Presentation/*Dashboard*
   race-day/finish.md:
     - src/OrientPyx.*FinishRead*
     - src/OrientPyx.*Readout*
@@ -90,6 +97,9 @@ pages:
     - src/OrientPyx.*Winners*
     - src/OrientPyx.*SplitsExport*
     - src/OrientPyx.*SplitsHtml*
+    - src/OrientPyx.*IofExport*
+    - src/OrientPyx.*IofXmlWriter*
+    - src/OrientPyx.BusinessLogic/Services/Iof/*
     - src/OrientPyx.*Docx*
   race-day/monitor-online.md:
     - src/OrientPyx.*Monitor*

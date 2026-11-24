@@ -125,6 +125,7 @@ public static class DataAccessServiceCollectionExtensions
 
         // Renders a day's splits to a UTF-8 HTML document (the builder is in BusinessLogic).
         services.AddSingleton<ISplitHtmlWriter, HtmlSplitWriter>();
+        services.AddSingleton<IIofXmlWriter, IofXmlWriter>();
 
         // Renders an on-screen results monitor page (self-contained, auto-refresh + auto-scroll HTML).
         services.AddSingleton<IMonitorHtmlWriter, HtmlMonitorWriter>();

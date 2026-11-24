@@ -74,9 +74,9 @@
             </WrapPanel>
         </Grid>
 
-        <!-- Competition-wide defaults, editable above the table (collapsible card — same pattern as the
-             finish-read auto-read panel). The global course-setter (начальник дистанції) and the default
-             points rule; a group may override either per day. The fields WrapPanel so a narrow window
+        <!-- Defaults for every group, editable above the table (collapsible card — same pattern as the
+             finish-read auto-read panel). The day's discipline, the global course-setter (начальник дистанції)
+             and the default points rule; a group may override each per day. The fields WrapPanel so a narrow window
              reflows them onto another line instead of pushing the controls off-screen. -->
         <Border DockPanel.Dock="Top" Classes="card" Padding="14" Margin="0,0,0,16">
             <StackPanel Spacing="10">
@@ -96,6 +96,22 @@
 
                 <WrapPanel Orientation="Horizontal" IsVisible="{Binding IsGlobalSettingsExpanded}"
                            IsEnabled="{Binding !IsDayLocked}">
+                    <!-- The selected day's own discipline (the same value as «Вид змагань» on «Змагання → Дні»): what
+                         every group of the day gets unless its own «Вид змагань» names another. Saved on pick. -->
+                    <StackPanel Spacing="4" Margin="0,0,28,8" VerticalAlignment="Bottom"
+                                ToolTip.Tip="{Binding Localization[Groups.GlobalSettings.DayDiscipline.Hint]}">
+                        <TextBlock Text="{Binding Localization[Groups.GlobalSettings.DayDiscipline]}" Classes="label" />
+                        <ComboBox Width="240"
+                                  ItemsSource="{Binding DayDisciplineOptions}"
+                                  SelectedItem="{Binding SelectedDayDiscipline, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="pages:DisciplineTypeOption">
+                                    <TextBlock Text="{Binding Label}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
+
                     <!-- Course-setter (name + category) -->
                     <StackPanel Spacing="4" Margin="0,0,28,8" VerticalAlignment="Bottom">
                         <TextBlock Text="{Binding Localization[Groups.GlobalSettings.CourseSetter]}" Classes="label" />

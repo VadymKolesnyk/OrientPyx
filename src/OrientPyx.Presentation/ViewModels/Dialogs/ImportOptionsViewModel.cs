@@ -145,6 +145,7 @@ public sealed partial class ImportScopeChoice : ObservableObject
             new UpdateFieldOption(ParticipantUpdateFields.Representative, "CsvImport.Field.Representative"),
             new UpdateFieldOption(ParticipantUpdateFields.FsouCode, "CsvImport.Field.FsouCode"),
             new UpdateFieldOption(ParticipantUpdateFields.IsFsouMember, "CsvImport.Field.IsFsouMember"),
+            new UpdateFieldOption(ParticipantUpdateFields.StartTime, "CsvImport.Field.StartTime"),
             new UpdateFieldOption(ParticipantUpdateFields.Payment, "CsvImport.Field.Payment", isChecked: true)
         ];
     }

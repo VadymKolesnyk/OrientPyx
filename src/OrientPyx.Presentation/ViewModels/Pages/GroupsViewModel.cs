@@ -81,7 +81,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         // Singleton VM: when the competition/day changes, drop the previous event's rows so the
         // page never shows stale data before it is next opened. The event can be raised on a pool
         // thread (session writes run inside RunAsync), so marshal LoadAsync onto the UI thread.
-        _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = OnSessionChangedAsync());
         // Live data (another station's writes) — see ReloadAsync.
         ObserveData(bus, session, mode,
             DataArea.Groups, DataArea.GroupDaySettings, DataArea.CourseVariants, DataArea.Days, DataArea.ControlPoints, DataArea.Competition, DataArea.Relay, DataArea.AppData);
@@ -118,6 +118,22 @@ public sealed partial class GroupsViewModel : PageViewModelBase
 
     [RelayCommand]
     private void ToggleGlobalSettings() => IsGlobalSettingsExpanded = !IsGlobalSettingsExpanded;
+
+    // ── The day's own discipline («Вид змагань дня»), in the same strip although it belongs to the day the page shows,
+    // not to the competition: it is what a group's «Вид змагань» «(за замовчуванням: …)» stands for. The same value as
+    // the «Вид змагань» column on «Змагання → Дні». Written at once (a combo — no debounce) through
+    // SetDayDisciplineAsync, then the session's day is re-pointed so every page follows.
+
+    // Guards the seeding in LoadCoreAsync so the setter doesn't write back what was just read.
+    private bool _seedingDayDiscipline;
+
+    /// <summary>Every registered discipline, plus the day's own when no strategy carries it (a missing plugin).</summary>
+    [ObservableProperty]
+    private IReadOnlyList<DisciplineTypeOption> _dayDisciplineOptions = [];
+
+    /// <summary>The day's default discipline; null with no day.</summary>
+    [ObservableProperty]
+    private DisciplineTypeOption? _selectedDayDiscipline;
 
     /// <summary>Opens the read-only help explaining how to write the «mixed» discipline's order pattern.</summary>
     [RelayCommand]
@@ -483,20 +499,8 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     }
 
     // Maps a parse error to a localized, human-readable message (with the offending token spliced in).
-    private string DescribeError(CoursePatternError error)
-    {
-        var key = error.Kind switch
-        {
-            CoursePatternErrorKind.UnbalancedBracket => "CoursePattern.Error.UnbalancedBracket",
-            CoursePatternErrorKind.ChoiceMissingColon => "CoursePattern.Error.ChoiceMissingColon",
-            CoursePatternErrorKind.ChoiceBadCount => "CoursePattern.Error.ChoiceBadCount",
-            CoursePatternErrorKind.EmptyChoiceBlock => "CoursePattern.Error.EmptyChoiceBlock",
-            CoursePatternErrorKind.ChoiceCountTooLarge => "CoursePattern.Error.ChoiceCountTooLarge",
-            CoursePatternErrorKind.EmptyOrderedBlock => "CoursePattern.Error.EmptyOrderedBlock",
-            _ => "CoursePattern.Error.Generic"
-        };
-        return string.Format(Localization.Get(key), error.Token);
-    }
+    private string DescribeError(CoursePatternError error) =>
+        string.Format(Localization.Get(CoursePatternErrors.KeyOf(error.Kind)), error.Token);
 
     // Type-specific columns are shown only when at least one row's effective discipline uses them.
     // (Course order, control count and time limit are used by every discipline, so they have no toggle.)
@@ -560,9 +564,22 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         await LoadCoreAsync(merge: false);
     }
 
+    // What the rows were read for: the competition, the day and the registered disciplines. A SessionChanged that keeps
+    // all three (the day's own row changed — its discipline chosen above or on «Дні», its lock) merges the rows in
+    // place, so the selected group and its editors stay; another competition or day, or a plugin switched on or off
+    // (the type dropdowns change), rebuilds the table.
+    private (string? Event, Guid? Day, string Disciplines) _loadedFor;
+
+    private (string? Event, Guid? Day, string Disciplines) SessionKey()
+        => (_session.CurrentEvent?.FolderPath, _session.CurrentDay?.Id, DisciplineTypeOption.RegisteredKey(_strategies));
+
+    private Task OnSessionChangedAsync()
+        => _loadedFor.Day is not null && _loadedFor == SessionKey() ? ReloadAsync() : LoadAsync();
+
     // Reads the day and either rebuilds the rows (first open / session switch) or merges them in place.
     private async Task LoadCoreAsync(bool merge)
     {
+        var loadingFor = SessionKey();
         // Both BD reads run off the UI thread; every collection/property write below happens
         // afterwards on the UI thread (SQLite has no real async I/O, so this can't stay inline).
         var hasDay = _session.CurrentDay is not null;
@@ -582,8 +599,7 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         _finishCode = controlPoints.FirstOrDefault(c => c.Type == ControlPointType.Finish)?.Code.Trim();
         // Every code of the day, so a course naming a code that is no КП (S1/F typed without start/finish boxes)
         // shows red before it turns the whole group MP.
-        _dayCodes = controlPoints.Select(c => c.Code.Trim()).Where(c => c.Length > 0)
-            .ToHashSet(OrientPyx.Plugins.Sdk.Toolkit.TextKey.Comparer);
+        _dayCodes = GroupCourseChecks.DayCodes(controlPoints);
 
         // The rule set is the one input the shared option lists are built from: a merge keeps the lists (and so
         // every row's combo items) while it is unchanged.
@@ -629,8 +645,10 @@ public sealed partial class GroupsViewModel : PageViewModelBase
 
         OnPropertyChanged(nameof(ShowDaySelector));
         RefreshDayLock();
+        _loadedFor = loadingFor;
 
         SeedCompetitionSettings(rebuildOptions: !sameRules);
+        SeedDayDiscipline(days.FirstOrDefault(d => d.Id == loadingFor.Day));
 
         // One shared per-group options list for this load (default sentinel + every rule). Kept across a merge
         // while the rules are the same — only the "(default: …)" sentinel's name follows the competition default.
@@ -722,6 +740,65 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         {
             _suppressInfoSave = false;
         }
+    }
+
+    // Shows the day's stored discipline in the strip. The option list is rebuilt only when the registered disciplines
+    // or a value they lack (a missing plugin) call for it, so an open combo keeps its items across a merge.
+    private void SeedDayDiscipline(EventDay? day)
+    {
+        _seedingDayDiscipline = true;
+        try
+        {
+            if (day is null)
+            {
+                SelectedDayDiscipline = null;
+                return;
+            }
+
+            var value = day.DefaultDiscipline;
+            var expected = _strategies.All.Select(s => s.Id).ToList();
+            if (expected.All(id => id != value))
+                expected.Add(value);
+            if (!DayDisciplineOptions.Select(o => o.Value).SequenceEqual(expected))
+                DayDisciplineOptions = DisciplineTypeOption.ListFor(_strategies, Localization, value);
+            SelectedDayDiscipline = DayDisciplineOptions.First(o => o.Value == value);
+        }
+        finally
+        {
+            _seedingDayDiscipline = false;
+        }
+    }
+
+    partial void OnSelectedDayDisciplineChanged(DisciplineTypeOption? value)
+    {
+        if (_seedingDayDiscipline || value is null || _session.CurrentDay is not { } day
+            || day.DefaultDiscipline == value.Value)
+            return;
+
+        _pendingSaves.Track(SaveDayDisciplineAsync(day.Id, value.Value));
+    }
+
+    private async Task SaveDayDisciplineAsync(Guid dayId, DisciplineId discipline)
+    {
+        EventDay? updated;
+        try
+        {
+            updated = await Task.Run(() => _editor.SetDayDisciplineAsync(dayId, discipline, CancellationToken.None));
+        }
+        catch
+        {
+            // Refused (the day was closed meanwhile, e.g. on another station) or failed: the strip shows the stored
+            // value again.
+            updated = null;
+        }
+
+        // The session caches the day (incl. its DefaultDiscipline) and every page reads it from there: re-pointing it
+        // raises SessionChanged, which merges this page's rows — each group's «(за замовчуванням: …)», its enabled
+        // cells and the type-specific columns follow the new day discipline.
+        if (updated is not null)
+            _session.UpdateCurrentDay(updated);
+        else
+            await LoadCoreAsync(merge: true);
     }
 
     // Builds the shared per-group points-rule options: a "(default: <competition default name>)" sentinel,

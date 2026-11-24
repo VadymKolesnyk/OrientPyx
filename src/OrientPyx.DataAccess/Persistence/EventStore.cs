@@ -1706,6 +1706,34 @@ public sealed partial class EventStore : IEventStore
         });
     }
 
+    public async Task<string?> GetIofExportJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default)
+    {
+        await using var db = EventDbContextFactory.Create(eventFolderPath);
+        var row = await db.IofExportSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(cancellationToken);
+        return row?.Json;
+    }
+
+    public async Task SaveIofExportJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default)
+    {
+        // Single competition-level row (Id = 1), same read-then-insert-or-update retry as the chip-scan set-up.
+        await UpsertWithUniqueRetryAsync(eventFolderPath, async db =>
+        {
+            var row = await db.IofExportSettings.FirstOrDefaultAsync(cancellationToken);
+            if (row is null)
+            {
+                row = new IofExportSettingsRow { Id = 1, Json = json };
+                db.IofExportSettings.Add(row);
+            }
+            else
+            {
+                row.Json = json;
+            }
+            await db.SaveChangesAsync(cancellationToken);
+        });
+    }
+
     public async Task<string?> GetOnlinePublishJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default)
     {
         await using var db = EventDbContextFactory.Create(eventFolderPath);
@@ -2264,7 +2292,8 @@ public sealed partial class EventStore : IEventStore
                         Order = ++linkOrderByDay[day.Id],
                         GroupId = group?.Id,
                         Chip = ImportedChip(src.Chip) ?? string.Empty,
-                        Payment = dayPayment ?? string.Empty
+                        Payment = dayPayment ?? string.Empty,
+                        StartTime = src.StartTime
                     };
                     db.ParticipantDays.Add(newLink);
                     // Track it so a later pass over the same participant updates this link instead of
@@ -2283,6 +2312,11 @@ public sealed partial class EventStore : IEventStore
                         link.Chip = chip;
                     if (dayPayment is not null)
                         link.Payment = dayPayment;
+                    // A start time from the file (IOF StartList); a null never clears a drawn one, and a day-only
+                    // import rewrites an existing link's start only when «Старт» is ticked.
+                    if (src.StartTime is { } startTime
+                        && (!currentDayOnly || scope.UpdateFields.HasFlag(ParticipantUpdateFields.StartTime)))
+                        link.StartTime = startTime;
                 }
 
                 var dayLink = priorLinks.First(x => x.EventDayId == day.Id);

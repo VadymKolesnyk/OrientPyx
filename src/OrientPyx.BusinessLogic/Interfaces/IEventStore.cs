@@ -430,6 +430,11 @@ public interface IEventStore
 
     Task SaveChipScanJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default);
 
+    /// <summary>The «Експорт IOF XML» page's saved options (<see cref="Models.IofExportSettings"/> JSON); null when none yet.</summary>
+    Task<string?> GetIofExportJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default);
+
+    Task SaveIofExportJsonAsync(string eventFolderPath, string json, CancellationToken cancellationToken = default);
+
     /// <summary>Null when none is stored — caller seeds from the competition metadata.</summary>
     Task<string?> GetOnlinePublishJsonAsync(string eventFolderPath, CancellationToken cancellationToken = default);
 

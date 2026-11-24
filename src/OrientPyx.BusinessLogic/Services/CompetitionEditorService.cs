@@ -21,6 +21,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     private readonly ICourseDistanceCalculator _distance;
     private readonly Disciplines.IDisciplineStrategyProvider _strategies;
     private readonly DayResultsCalculator _calculator;
+    private readonly Readiness.DayReadinessChecker _readiness;
     private readonly IEntryFeeCalculator _entryFees;
     private readonly IEventFiles _files;
     private readonly IResultsAppData _resultsAppData;
@@ -49,6 +50,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         _distance = distance;
         _strategies = strategies;
         _calculator = new DayResultsCalculator(strategies);
+        _readiness = new Readiness.DayReadinessChecker(strategies);
         _entryFees = entryFees;
     }
 
@@ -219,7 +221,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
         var folder = ev.FolderPath;
 
-        var participants = await _eventStore.GetParticipantsAsync(folder, cancellationToken);
+        // One snapshot of the day feeds the day counts, the results and the readiness check, so the tiles agree with
+        // each other; only the rental chips and the links of every day are read apart.
+        var snapshot = await _eventStore.GetDaySnapshotAsync(folder, day.Id, cancellationToken);
+        var participants = snapshot.Participants;
         var chips = await _eventStore.GetRentalChipsAsync(folder, cancellationToken);
         var allLinks = await _eventStore.GetAllParticipantDaysAsync(folder, cancellationToken);
 
@@ -239,11 +244,12 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         // orphans by joining to a participant; the dashboard counts raw links, so filter here too. This
         // keeps «Учасників на дні» and «На дистанції» honest even if a stale orphan lingers in an old DB.
         var participantIds = new HashSet<Guid>(participants.Select(p => p.Id));
-        var dayLinks = (await _eventStore.GetParticipantDaysAsync(folder, day.Id, cancellationToken))
+        var dayLinks = snapshot.Links
             .Where(l => participantIds.Contains(l.ParticipantId))
             .ToList();
-        var groupsToday = await _eventStore.GetGroupDaySettingsAsync(folder, day.Id, cancellationToken);
-        var readouts = await _eventStore.GetFinishReadoutsAsync(folder, day.Id, cancellationToken);
+        var groupsToday = snapshot.GroupDaySettings;
+        var readouts = snapshot.FinishReadouts;
+        var readiness = await BuildReadinessAsync(folder, day, snapshot, cancellationToken);
 
         // Start times (жеребкування): the day's earliest/latest assigned start and how many are drawn.
         var startTimes = dayLinks
@@ -253,10 +259,11 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         TimeSpan? firstStart = startTimes.Count > 0 ? startTimes.Min() : null;
         TimeSpan? lastStart = startTimes.Count > 0 ? startTimes.Max() : null;
         var withoutChip = dayLinks.Count(l => string.IsNullOrWhiteSpace(l.Chip));
-        var withoutGroup = dayLinks.Count(l => l.GroupId is null);
+        // As the day table shows «без групи»: none set, or the group is no longer one of the day's.
+        var withoutGroup = readiness.Issues.Count(i => i.Kind == ReadinessKind.NoGroup);
 
         // Computed exactly as the participant tables do.
-        var results = await ComputeDayResultsAsync(folder, day, cancellationToken);
+        var results = await ComputeDayResultsAsync(folder, day, cancellationToken, snapshot: snapshot);
 
         int finishedOk = 0, finishedProblem = 0, onCourse = 0;
         // Per-status finisher tally, kept in enum order so the dashboard badges read OK, MP, OVT, DNF, …
@@ -326,6 +333,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             StartsAssigned = startTimes.Count,
             WithoutChip = withoutChip,
             WithoutGroup = withoutGroup,
+            ReadinessErrors = readiness.Errors,
+            ReadinessWarnings = readiness.Warnings,
 
             ReadoutsToday = readouts.Count,
             FinishedOk = finishedOk,
@@ -368,6 +377,22 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         // A plugin discipline chosen for the first time brings its participant fields (Р-17).
         if (_strategies.For(day.DefaultDiscipline).PluginId is not null)
             await EnsurePluginFieldsAsync(cancellationToken);
+    }
+
+    public async Task<EventDay?> SetDayDisciplineAsync(
+        Guid dayId, DisciplineId discipline, CancellationToken cancellationToken = default)
+    {
+        if (_session.CurrentEvent is null)
+            return null;
+
+        var days = await _eventStore.GetDaysAsync(FolderPath, cancellationToken);
+        var day = days.FirstOrDefault(d => d.Id == dayId);
+        if (day is null || day.DefaultDiscipline == discipline)
+            return day;
+
+        day.DefaultDiscipline = discipline;
+        await UpdateDayAsync(day, cancellationToken);
+        return day;
     }
 
     public async Task DeleteDayAsync(Guid dayId, CancellationToken cancellationToken = default)
@@ -566,11 +591,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         // to the control-count of its LONGEST one — the grid's control-count cell reports that for a group with
         // several courses (its single-order field is unused then).
         var scatterVariants = await _eventStore.GetCourseVariantsAsync(FolderPath, CurrentDayId, cancellationToken);
-        var scatterByGroup = scatterVariants
-            .GroupBy(v => v.GroupId)
-            .ToDictionary(
-                g => g.Key,
-                g => (Count: g.Count(), MaxControls: g.Max(v => CourseOrder.CountCourseControls(v.CourseOrder))));
+        var scatterByGroup = GroupDayRows.VariantStats(scatterVariants);
 
         var rows = new List<GroupDayRow>(settings.Count);
         foreach (var s in settings)
@@ -609,6 +630,12 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var dayId = CurrentDayId;
         await EnsureDayEditableAsync(dayId, cancellationToken);
 
+        // The course names the file gave a variant (for the IOF export) stay with its code across a hand edit.
+        var sourceByCode = (await _eventStore.GetCourseVariantsAsync(FolderPath, dayId, cancellationToken))
+            .Where(v => v.GroupId == groupId && (v.SourceCourseName is not null || v.SourceCourseFamily is not null))
+            .GroupBy(v => v.Code.Trim(), TextKey.Comparer)
+            .ToDictionary(g => g.Key, g => g.First(), TextKey.Comparer);
+
         var order = 0;
         var rows = variants
             .Select(v => new GroupCourseVariant
@@ -619,6 +646,15 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 CourseOrder = (v.CourseOrder ?? string.Empty).Trim(),
                 Order = order++,
                 Leg = v.Leg is >= 1 ? v.Leg : null
+            })
+            .Select(v =>
+            {
+                if (sourceByCode.TryGetValue(v.Code, out var source))
+                {
+                    v.SourceCourseName = source.SourceCourseName;
+                    v.SourceCourseFamily = source.SourceCourseFamily;
+                }
+                return v;
             })
             // Drop fully-blank rows so an empty editor line never persists.
             .Where(v => v.Code.Length > 0 || v.CourseOrder.Length > 0)
@@ -880,6 +916,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         // override (day default applies).
         var dayIsScatter = _strategies.For(CurrentDayDefaultDiscipline).UsesCourseVariants;
         var dayIsRelay = IsRelay(CurrentDayDefaultDiscipline);
+        var dayIsMixed = _strategies.For(CurrentDayDefaultDiscipline).UsesCoursePattern;
+        var mixedGroups = new List<string>();
 
         // Collapse duplicate course names within the file (keep the first), so a repeated course
         // does not create a second group or fight itself for the same day row.
@@ -918,17 +956,26 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     .ToList()
                 : [];
             var legCount = isRelayCourse && course.CombinationLegCount > 0 ? course.CombinationLegCount : (int?)null;
+            // A single course the file gives with a choice (IOF 3.0: one of several controls, a run in any order) is a
+            // «mixed» pattern — judged against it, so a runner who took the other control is not MP.
+            var pattern = !isRelayCourse && !isScatter && !course.HasVariations && !string.IsNullOrWhiteSpace(course.Pattern)
+                ? course.Pattern.Trim()
+                : null;
+            var isMixed = pattern is not null;
 
             // The discipline override to store: Scatter for a genuine multi-order course; Relay for a relay course (none
-            // on a relay day — the day's own relay type applies); on a Scatter day a single-order course is pinned to
-            // SetCourse so it doesn't wrongly inherit Scatter; otherwise no override (the day default applies).
-            var scatterFallbackHere = !isScatter && !isRelayCourse && dayIsScatter;
+            // on a relay day — the day's own relay type applies); Mixed for a course with a choice (none on a mixed day);
+            // on a Scatter day a single-order course is pinned to SetCourse so it doesn't wrongly inherit Scatter;
+            // otherwise no override (the day default applies).
+            var scatterFallbackHere = !isScatter && !isRelayCourse && !isMixed && dayIsScatter;
             var disciplineOverride =
                 isScatter ? DisciplineId.Scatter
                 : isRelayCourse ? (dayIsRelay ? null : DisciplineId.Relay)
+                : isMixed ? (dayIsMixed ? null : DisciplineId.Mixed)
                 : scatterFallbackHere ? DisciplineId.SetCourse
                 : (DisciplineId?)null;
-            var courseOrder = string.Join(' ', course.ControlCodes.Select(c => c.Trim()).Where(c => c.Length > 0));
+            var courseOrder = pattern
+                ?? string.Join(' ', course.ControlCodes.Select(c => c.Trim()).Where(c => c.Length > 0));
             var distanceKm = ComputeDistance(course.ControlCodes, coordsByCode, mapByCode, data.MapScale);
 
             // Resolve (or create) the competition-level group for this course name.
@@ -952,15 +999,17 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 var isRelay = effective.Competitors == CompetitorModel.TeamWithLegs;
                 var keepsPattern = effective.UsesCoursePattern && CourseVariantData.IsPatternText(existing.CourseOrder);
 
-                if (!keepsPattern)
+                // A pattern the file brings replaces a hand-written one; a plain course keeps it.
+                if (!keepsPattern || isMixed)
                 {
                     existing.CourseOrder = courseOrder;
                     existing.DistanceKm = distanceKm;
                 }
 
                 // The type: the chosen relay makes the group a relay (a relay type it already has — a plugin's — stays);
-                // a multi-order course makes it Scatter; a group that was Scatter and is single-order now gets the
-                // import's own fallback; any other chosen type stays.
+                // a multi-order course makes it Scatter; a course with a choice makes it Mixed (a pattern type it already
+                // has stays); a group that was Scatter and is single-order now gets the import's own fallback; any
+                // other chosen type stays.
                 var wasScatter = existing.DisciplineOverride == DisciplineId.Scatter;
                 if (isRelayCourse)
                 {
@@ -969,6 +1018,11 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 }
                 else if (isScatter)
                     existing.DisciplineOverride = DisciplineId.Scatter;
+                else if (isMixed)
+                {
+                    if (!effective.UsesCoursePattern)
+                        existing.DisciplineOverride = disciplineOverride;
+                }
                 else if (wasScatter)
                     existing.DisciplineOverride = disciplineOverride;
 
@@ -991,6 +1045,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 }
                 if (scatterFallbackHere && wasScatter)
                     scatterFallback.Add(name);
+                if (isMixed)
+                    mixedGroups.Add(name);
                 updated++;
             }
             else
@@ -1013,11 +1069,16 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 await _eventStore.ReplaceGroupLegCourseAssignmentsAsync(folder, dayId, group.Id, assignments, cancellationToken);
                 if (scatterFallbackHere)
                     scatterFallback.Add(name);
+                if (isMixed)
+                    mixedGroups.Add(name);
                 added++;
             }
         }
 
-        return new GroupImportResult(Added: added, Updated: updated, ScatterFallbackGroups: scatterFallback);
+        return new GroupImportResult(Added: added, Updated: updated, ScatterFallbackGroups: scatterFallback)
+        {
+            MixedGroups = mixedGroups
+        };
     }
 
     // Persists a course's named variants (scatter orders / relay courses) for a group on a day, replacing any existing
@@ -1039,12 +1100,17 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     Code = v.Code,
                     CourseOrder = string.Join(' ', v.ControlCodes.Select(c => c.Trim()).Where(c => c.Length > 0)),
                     Order = order++,
-                    Leg = legsByCode is not null && legsByCode.TryGetValue(v.Code.Trim(), out var leg) ? leg : null
+                    Leg = legsByCode is not null && legsByCode.TryGetValue(v.Code.Trim(), out var leg) ? leg : null,
+                    SourceCourseName = Blank(v.SourceName),
+                    SourceCourseFamily = Blank(v.SourceFamily)
                 });
         }
 
         return _eventStore.ReplaceCourseVariantsForGroupAsync(folder, dayId, groupId, rows, cancellationToken);
     }
+
+    // A trimmed text, or null when it is blank.
+    private static string? Blank(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
 
     // Maps a course's running control codes to their positions and sums the straight-line distance.
     // Prefers paper-map positions (mm × scale) — the undistorted course distance orienteering software
@@ -2230,11 +2296,17 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var folder = FolderPath;
         // One transactional read: every list below is from the same snapshot (see GetDaySnapshotAsync).
         var snapshot = await _eventStore.GetDaySnapshotAsync(folder, dayId, cancellationToken);
-        var days = snapshot.Days;
-        var day = days.FirstOrDefault(d => d.Id == dayId);
+        var day = snapshot.Days.FirstOrDefault(d => d.Id == dayId);
         if (day is null)
             return new ResultProtocolData([]);
+        return (await ReadResultProtocolDataAsync(folder, snapshot, day, cancellationToken)).Data;
+    }
 
+    // The result protocol data of a day from its snapshot, with each link's computed result (shared with the IOF
+    // result list, so its rows, places and relay teams are the protocol's).
+    private async Task<(ResultProtocolData Data, IReadOnlyDictionary<Guid, ParticipantDayResult> ByLink)> ReadResultProtocolDataAsync(
+        string folder, EventDaySnapshot snapshot, EventDay day, CancellationToken cancellationToken)
+    {
         var links = DistinctLinks(snapshot.Links);
         var participants = snapshot.Participants;
         var groups = snapshot.Groups;
@@ -2317,14 +2389,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             var strategy = _strategies.For(discipline);
             var isTeam = strategy.Competitors == CompetitorModel.Team;
 
-            // Control count: blank order ⇒ unknown (null). For the «mixed» pattern the count is what the
-            // pattern requires (via the strategy), not a flat token count; other disciplines count the
-            // running controls minus the day's start/finish codes.
-            var controlCount = string.IsNullOrWhiteSpace(s.CourseOrder)
-                ? (int?)null
-                : strategy.UsesCoursePattern
-                    ? strategy.ControlCount(s.CourseOrder)
-                    : CountCourseControls(s.CourseOrder, countExcluded);
+            var controlCount = ControlCountOf(s, strategy, countExcluded);
             var rows = rowsByGroup.TryGetValue(s.GroupId, out var b) ? b : [];
             // Course-setter: the group's per-day override wins; else fall back to the competition default.
             var (setter, setterCat) = ResolveCourseSetter(s, info);
@@ -2345,11 +2410,22 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var fieldDefs = await _eventStore.GetCustomFieldDefsAsync(folder, cancellationToken);
         var disciplines = new[] { day.DefaultDiscipline }
             .Concat(settings.Select(s => s.DisciplineOverride ?? day.DefaultDiscipline));
-        return new ResultProtocolData(sections, OfficialsFrom(info))
+        var data = new ResultProtocolData(sections, OfficialsFrom(info))
         {
             ExtraColumns = ExtraResultColumn.ForDay(_strategies, disciplines, fieldDefs.Select(CustomField.From))
         };
+        return (data, results);
     }
+
+    // The group's control count as the protocol prints it: blank order ⇒ unknown (null). For the «mixed» pattern the
+    // count is what the pattern requires (via the strategy), not a flat token count; other disciplines count the
+    // running controls minus the day's start/finish codes and disabled controls (<paramref name="countExcluded"/>).
+    private static int? ControlCountOf(GroupDaySettings s, IDisciplineStrategy strategy, HashSet<string> countExcluded) =>
+        string.IsNullOrWhiteSpace(s.CourseOrder)
+            ? null
+            : strategy.UsesCoursePattern
+                ? strategy.ControlCount(s.CourseOrder)
+                : CountCourseControls(s.CourseOrder, countExcluded);
 
     // The relay group's teams for the start protocols (Р-36): each team with leg 1's start — the runner's drawn
     // start, else the group's mass start (Р-27) — and its runner rows by leg.
@@ -2802,6 +2878,15 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var folder = FolderPath;
         // One transactional read: every list below is from the same snapshot (see GetDaySnapshotAsync).
         var snapshot = await _eventStore.GetDaySnapshotAsync(folder, dayId, cancellationToken);
+        var day = snapshot.Days.FirstOrDefault(d => d.Id == dayId);
+        if (day is null)
+            return new StartProtocolData([]);
+        return ReadStartProtocolData(snapshot, day);
+    }
+
+    // The start protocol data of a day from its snapshot (shared with the IOF start list).
+    private StartProtocolData ReadStartProtocolData(EventDaySnapshot snapshot, EventDay day)
+    {
         var links = DistinctLinks(snapshot.Links);
         var participants = snapshot.Participants;
         var groups = snapshot.Groups;
@@ -2816,9 +2901,6 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var regionName = regions.ToDictionary(r => r.Id, r => r.Name);
         var clubName = clubs.ToDictionary(c => c.Id, c => c.Name);
         var dusshName = dusshes.ToDictionary(d => d.Id, d => d.Name);
-        var day = snapshot.Days.FirstOrDefault(d => d.Id == dayId);
-        if (day is null)
-            return new StartProtocolData([]);
 
         // Bucket each member's row under its group; a member with no group is skipped (a start protocol is
         // built per group / per minute, and a runner without a group has no section to land in). A relay runner
@@ -2845,12 +2927,12 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             {
                 relayRowByLink[link.Id] = new StartProtocolRow(
                     link.StartTime, RelayTeamNumbers.Bib(teamNo, leg), p.FullName, p.BirthDate, club, region, dussh,
-                    p.Coach, p.Rank, link.Chip.Trim(), gname, p.Team.Trim());
+                    p.Coach, p.Rank, link.Chip.Trim(), gname, p.Team.Trim()) { ParticipantId = p.Id };
                 continue;
             }
             bucket.Add(new StartProtocolRow(
                 link.StartTime, p.Number, p.FullName, p.BirthDate, club, region, dussh, p.Coach, p.Rank,
-                link.Chip.Trim(), gname, p.Team.Trim()));
+                link.Chip.Trim(), gname, p.Team.Trim()) { ParticipantId = p.Id });
         }
 
         // One section per group that runs on the day (in the day grid order), even when empty.
@@ -2953,7 +3035,6 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var readouts = await _eventStore.GetFinishReadoutsAsync(folder, dayId, cancellationToken);
 
         var byParticipant = participants.ToDictionary(p => p.Id);
-        var teamByParticipant = participants.ToDictionary(p => p.Id, p => p.Team.Trim());
         var groupName = groups.ToDictionary(g => g.Id, g => g.Name);
         var settingsByGroup = settings.ToDictionary(s => s.GroupId);
         var dayDefault = day.DefaultDiscipline;
@@ -2964,57 +3045,19 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var variantsByGroup = await LoadCourseVariantsAsync(
             folder, dayId, settingsByGroup, dayDefault, inputs.StartFinishCodes, inputs.DisabledCodes, cancellationToken);
 
-        // Latest read-out per chip (the "last read-out" rule), so a re-read chip uses its newest punches.
-        var latestByChip = new Dictionary<string, FinishReadout>(TextKey.Comparer);
-        foreach (var r in readouts)
-        {
-            var key = r.ChipNumber.Trim();
-            if (key.Length == 0)
-                continue;
-            if (!latestByChip.TryGetValue(key, out var cur) || r.Order > cur.Order)
-                latestByChip[key] = r;
-        }
-
         // The per-link results (status/time/score/place) — reused from the same pipeline the tables use.
         var results = await ComputeDayResultsAsync(folder, day, cancellationToken);
-
-        // Rogaine team-common controls, computed once per (group, team): a control counts for the team only
-        // when every member punched it. Members of a team share this set, so cache it by team key.
-        var teamCommonCache = new Dictionary<(Guid GroupId, string Team), IReadOnlySet<string>?>();
+        var splitsByLink = BuildDaySplitViews(
+            dayDefault, links, participants, settingsByGroup, inputs, readouts, variantsByGroup, results);
 
         var rowsByGroup = new Dictionary<Guid, List<SplitExportDataRow>>();
         foreach (var link in links)
         {
             if (link.GroupId is not { } gid || !byParticipant.TryGetValue(link.ParticipantId, out var p))
                 continue;
-
-            var chip = link.Chip.Trim();
-            if (chip.Length == 0 || !latestByChip.TryGetValue(chip, out var readout))
+            if (!splitsByLink.TryGetValue(link.Id, out var splits))
                 continue; // no read-out ⇒ nothing to show in a splits export
-
-            GroupDaySettings? gs = settingsByGroup.TryGetValue(gid, out var s) ? s : null;
-            var discipline = gs?.DisciplineOverride ?? dayDefault;
-            var strategy = _strategies.For(discipline);
-
-            IReadOnlySet<string>? teamCommon = null;
-            if (strategy.Competitors == CompetitorModel.Team)
-            {
-                var team = teamByParticipant.TryGetValue(link.ParticipantId, out var t) ? t : string.Empty;
-                var cacheKey = (gid, team);
-                if (!teamCommonCache.TryGetValue(cacheKey, out teamCommon))
-                {
-                    teamCommon = team.Length == 0
-                        ? null
-                        : ComputeTeamCommonControls(
-                            links, gid, team, teamByParticipant, settingsByGroup, latestByChip,
-                            inputs.StartFinishCodes, inputs.DisabledCodes);
-                    teamCommonCache[cacheKey] = teamCommon;
-                }
-            }
-
-            var scatterVariants = variantsByGroup.TryGetValue(gid, out var gv) ? gv : NoCourseVariants;
             var result = results.TryGetValue(link.Id, out var rr) ? rr : ParticipantDayResult.Empty;
-            var splits = BuildSplitsForLink(inputs, gs, discipline, link, readout, teamCommon, scatterVariants, result);
 
             if (!rowsByGroup.TryGetValue(gid, out var bucket))
             {
@@ -3064,6 +3107,75 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         }
 
         return new SplitExportData(sections);
+    }
+
+    /// <summary>
+    /// Every read-out member's splits on a day, by link id — the views the HTML and IOF split exports print. A link
+    /// without a group or without a read-out of its chip has none; a re-read chip uses its latest read-out (by
+    /// <c>Order</c>). Rogaine team-common controls are computed once per (group, team).
+    /// </summary>
+    private Dictionary<Guid, SplitsView> BuildDaySplitViews(
+        DisciplineId dayDefault,
+        IReadOnlyList<ParticipantDay> links,
+        IReadOnlyList<Participant> participants,
+        IReadOnlyDictionary<Guid, GroupDaySettings> settingsByGroup,
+        DaySplitInputs inputs,
+        IReadOnlyList<FinishReadout> readouts,
+        IReadOnlyDictionary<Guid, IReadOnlyList<CourseVariantData>> variantsByGroup,
+        IReadOnlyDictionary<Guid, ParticipantDayResult> results)
+    {
+        var teamByParticipant = participants.ToDictionary(p => p.Id, p => p.Team.Trim());
+
+        // Latest read-out per chip (the "last read-out" rule), so a re-read chip uses its newest punches.
+        var latestByChip = new Dictionary<string, FinishReadout>(TextKey.Comparer);
+        foreach (var r in readouts)
+        {
+            var key = r.ChipNumber.Trim();
+            if (key.Length == 0)
+                continue;
+            if (!latestByChip.TryGetValue(key, out var cur) || r.Order > cur.Order)
+                latestByChip[key] = r;
+        }
+
+        // Rogaine team-common controls, computed once per (group, team): a control counts for the team only
+        // when every member punched it. Members of a team share this set, so cache it by team key.
+        var teamCommonCache = new Dictionary<(Guid GroupId, string Team), IReadOnlySet<string>?>();
+
+        var views = new Dictionary<Guid, SplitsView>();
+        foreach (var link in links)
+        {
+            if (link.GroupId is not { } gid || !teamByParticipant.ContainsKey(link.ParticipantId))
+                continue;
+
+            var chip = link.Chip.Trim();
+            if (chip.Length == 0 || !latestByChip.TryGetValue(chip, out var readout))
+                continue;
+
+            GroupDaySettings? gs = settingsByGroup.TryGetValue(gid, out var s) ? s : null;
+            var discipline = gs?.DisciplineOverride ?? dayDefault;
+            var strategy = _strategies.For(discipline);
+
+            IReadOnlySet<string>? teamCommon = null;
+            if (strategy.Competitors == CompetitorModel.Team)
+            {
+                var team = teamByParticipant.TryGetValue(link.ParticipantId, out var t) ? t : string.Empty;
+                var cacheKey = (gid, team);
+                if (!teamCommonCache.TryGetValue(cacheKey, out teamCommon))
+                {
+                    teamCommon = team.Length == 0
+                        ? null
+                        : ComputeTeamCommonControls(
+                            links, gid, team, teamByParticipant, settingsByGroup, latestByChip,
+                            inputs.StartFinishCodes, inputs.DisabledCodes);
+                    teamCommonCache[cacheKey] = teamCommon;
+                }
+            }
+
+            var scatterVariants = variantsByGroup.TryGetValue(gid, out var gv) ? gv : NoCourseVariants;
+            var result = results.TryGetValue(link.Id, out var rr) ? rr : ParticipantDayResult.Empty;
+            views[link.Id] = BuildSplitsForLink(inputs, gs, discipline, link, readout, teamCommon, scatterVariants, result);
+        }
+        return views;
     }
 
     /// <summary>Per-day geometry/points/codes shared across every member's splits build.</summary>
@@ -4866,12 +4978,20 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var settings = await _eventStore.GetGroupDaySettingsAsync(folder, dayId, cancellationToken);
         var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
         var byId = groups.ToDictionary(g => g.Id);
+        // The asked day's own default discipline (the roster builds every day's options, not only the session's) and
+        // its named courses — the chip check takes the longest scatter variant / relay leg course (chips.md).
+        var day = (await _eventStore.GetDaysAsync(folder, cancellationToken)).FirstOrDefault(d => d.Id == dayId);
+        var dayDefault = day?.DefaultDiscipline ?? CurrentDayDefaultDiscipline;
+        var variants = GroupDayRows.VariantStats(await _eventStore.GetCourseVariantsAsync(folder, dayId, cancellationToken));
 
         var rows = new List<GroupDayRow>(settings.Count);
         foreach (var s in settings)
         {
             if (byId.TryGetValue(s.GroupId, out var group))
-                rows.Add(ToRow(s, group));
+            {
+                var stats = variants.GetValueOrDefault(s.GroupId);
+                rows.Add(GroupDayRows.Create(s, group, dayDefault, 0, stats.Count, stats.MaxControls));
+            }
         }
         return rows;
     }
@@ -6135,31 +6255,6 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         return new MapCountsData(days, rows);
     }
 
-    private GroupDayRow ToRow(GroupDaySettings s, Group group, int participantCount = 0, int scatterVariantCount = 0, int scatterMaxControlCount = 0) => new(
-        SettingsId: s.Id,
-        GroupId: s.GroupId,
-        Order: s.Order,
-        Name: group.Name,
-        CourseOrder: s.CourseOrder,
-        DistanceKm: s.DistanceKm,
-        DisciplineOverride: s.DisciplineOverride,
-        DayDefaultDiscipline: CurrentDayDefaultDiscipline,
-        TimeLimitSeconds: s.TimeLimitSeconds,
-        RequiredControlCount: s.RequiredControlCount,
-        PenaltyPerMinute: s.PenaltyPerMinute,
-        CourseSetter: s.CourseSetter,
-        CourseSetterCategory: s.CourseSetterCategory,
-        PointsRuleId: s.PointsRuleId,
-        RankLevel: s.RankLevel,
-        MasterCount: s.MasterCount,
-        // Age window lives on the group itself (shared across days), so it comes from the group, not the
-        // per-day settings.
-        MinBirthYear: group.MinBirthYear,
-        MaxBirthYear: group.MaxBirthYear,
-        ParticipantCount: participantCount,
-        ScatterVariantCount: scatterVariantCount,
-        ScatterMaxControlCount: scatterMaxControlCount,
-        MaxLateSeconds: s.MaxLateSeconds,
-        LegCount: Math.Max(1, s.LegCount ?? 1),
-        CourseMode: s.CourseAssignmentMode);
+    private GroupDayRow ToRow(GroupDaySettings s, Group group, int participantCount = 0, int scatterVariantCount = 0, int scatterMaxControlCount = 0) =>
+        GroupDayRows.Create(s, group, CurrentDayDefaultDiscipline, participantCount, scatterVariantCount, scatterMaxControlCount);
 }

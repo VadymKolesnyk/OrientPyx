@@ -29,6 +29,8 @@ public partial class ParticipantsView : UserControl
             Avalonia.Threading.Dispatcher.UIThread.Post(() => Focus());
             // Apply a quick filter requested before the page was shown (dashboard drill-in first open).
             ApplyPendingQuickFilter();
+            // And a row «Перейти» asked for (the day readiness check).
+            ApplyPendingReveal();
 
             // Focus does not stay on the page: the busy overlay of the first load and every closed modal
             // drop it (the focused control leaves the tree and nothing takes its place), after which a key
@@ -98,11 +100,28 @@ public partial class ParticipantsView : UserControl
         _vm.RosterColumnsChanged += OnRosterColumnsChanged;
         _vm.FocusGridRequested += OnFocusGridRequested;
         _vm.QuickFilterRequested += OnQuickFilterRequested;
+        _vm.RevealRequested += OnRevealRequested;
         _vm.IsFeeColumnVisible = IsFeeColumnVisible;
 
         // The VM may already hold a quick filter requested before this view got its DataContext (first
         // open via a dashboard drill-in). Apply it now; the attach handler / event covers the other orders.
         ApplyPendingQuickFilter();
+        ApplyPendingReveal();
+    }
+
+    private void OnRevealRequested(object? sender, System.EventArgs e) => ApplyPendingReveal();
+
+    // «Перейти» from the day readiness check: the participant's row on the day grid (the page forces day mode for it).
+    private void ApplyPendingReveal()
+    {
+        if (_vm is not { } vm)
+            return;
+        if (!vm.IsDayMode)
+        {
+            vm.ConsumePendingReveal();
+            return;
+        }
+        Controls.SheetReveal.Apply(vm, DayTable, id => vm.Participants.FirstOrDefault(r => r.Id == id));
     }
 
     // Stable column keys (DayColumnBuilder keys identity columns off their header key).
@@ -808,6 +827,7 @@ public partial class ParticipantsView : UserControl
             _vm.RosterColumnsChanged -= OnRosterColumnsChanged;
             _vm.FocusGridRequested -= OnFocusGridRequested;
             _vm.QuickFilterRequested -= OnQuickFilterRequested;
+            _vm.RevealRequested -= OnRevealRequested;
             _vm.IsFeeColumnVisible = null;
         }
         _vm = null;

@@ -120,7 +120,18 @@ public partial class RelayTeamsView : UserControl
         _vm.Localization.PropertyChanged += OnLocalizationChanged;
         _vm.FocusGridRequested += OnFocusGridRequested;
         _vm.ColumnsChanged += OnColumnsChanged;
+        _vm.RevealRequested += OnRevealRequested;
         BuildBands();
+        ApplyPendingReveal();
+    }
+
+    private void OnRevealRequested(object? sender, EventArgs e) => ApplyPendingReveal();
+
+    // «Перейти» from the day readiness check: the team's row (its legs and «без етапу» list show under the table).
+    private void ApplyPendingReveal()
+    {
+        if (_vm is { } vm)
+            SheetReveal.Apply(vm, Sheet, id => vm.Teams.FirstOrDefault(t => t.Id == id));
     }
 
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => BuildBands();
@@ -187,6 +198,7 @@ public partial class RelayTeamsView : UserControl
             _vm.Localization.PropertyChanged -= OnLocalizationChanged;
             _vm.FocusGridRequested -= OnFocusGridRequested;
             _vm.ColumnsChanged -= OnColumnsChanged;
+            _vm.RevealRequested -= OnRevealRequested;
         }
         _vm = null;
     }

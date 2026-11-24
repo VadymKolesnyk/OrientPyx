@@ -23,7 +23,7 @@ namespace OrientPyx.BusinessLogic.Services;
 /// anywhere, the relay group is <c>Group</c>, the team <c>Prim</c> and the leg <c>RelayLeg</c> (<c>PsRel</c> is 0 there;
 /// a file that fills <c>PsRel</c> keeps it as the leg). Such a runner is marked
 /// <see cref="UofParticipant.RelayOnImportedDays"/> — the import decides the relay day.
-/// An IOF 3.0 <c>&lt;EntryList&gt;</c> (relay <c>TeamEntry</c> included) is accepted too — see <see cref="IofEntryListReader"/>.
+/// An IOF 3.0 <c>&lt;EntryList&gt;</c> or <c>&lt;StartList&gt;</c> (relay teams included) is accepted too — see <see cref="IofEntryListReader"/>.
 /// </summary>
 public sealed class UofXmlParser : IUofXmlParser
 {
@@ -46,6 +46,9 @@ public sealed class UofXmlParser : IUofXmlParser
         // An IOF 3.0 EntryList (incl. relay TeamEntry) goes through the same participant import.
         if (root is not null && IofEntryListReader.IsEntryList(root))
             return IofEntryListReader.Read(root);
+        // An IOF 3.0 StartList (the program's own export) is a participant source too.
+        if (root is not null && IofEntryListReader.IsStartList(root))
+            return IofEntryListReader.ReadStartList(root);
         if (root is null || !LocalNameIs(root, "UOFData"))
             throw new UofXmlFormatException("The file is not a UOF participant document.");
 
@@ -145,7 +148,13 @@ public sealed class UofXmlParser : IUofXmlParser
             foreach (var attribute in record.Attributes().Where(a => !a.IsNamespaceDeclaration))
                 values.TryAdd(attribute.Name.LocalName, attribute.Value.Trim());
             foreach (var child in record.Elements().Where(e => !e.HasElements))
-                values.TryAdd(child.Name.LocalName, child.Value.Trim());
+            {
+                // A typed IOF person Id keeps its issuer: «Id:FSOU», «Id:Eventor»; an untyped one stays «Id».
+                var key = child.Name.LocalName;
+                if (key == "Id" && child.Attributes().FirstOrDefault(a => a.Name.LocalName == "type")?.Value.Trim() is { Length: > 0 } type)
+                    key = "Id:" + type;
+                values.TryAdd(key, child.Value.Trim());
+            }
         }
         return values;
     }

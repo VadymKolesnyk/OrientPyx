@@ -53,7 +53,7 @@ public sealed class ImportTests
         <EntryList xmlns="http://www.orienteering.org/datastandard/3.0" iofVersion="3.0">
           <Event><Name>Test</Name></Event>
           <TeamEntry>
-            <Id>7</Id><Name>Team A</Name>
+            <BibNumber>7</BibNumber><Name>Team A</Name>
             <Organisation><Name>Клуб А</Name></Organisation>
             <TeamEntryPerson><Person><Name><Family>Коваль</Family><Given>Олег</Given></Name></Person><Leg>1</Leg><ControlCard>8002001</ControlCard></TeamEntryPerson>
             <TeamEntryPerson><Person><Name><Family>Бондар</Family><Given>Ігор</Given></Name></Person><Leg>2</Leg><ControlCard>8002002</ControlCard></TeamEntryPerson>
@@ -348,5 +348,171 @@ public sealed class ImportTests
         Assert.Equal("Team A", team.Name);
         Assert.Equal("Коваль Олег", team.Legs.Single(l => l.Leg == 1).FullName);
         Assert.Equal("Бондар Ігор", team.Legs.Single(l => l.Leg == 2).FullName);
+    }
+
+    private const string IofNs = "xmlns=\"http://www.orienteering.org/datastandard/3.0\" iofVersion=\"3.0\"";
+
+    [Fact]
+    public void IofEntryList_RaceNumbersBecomeDays_TeamMembersInheritTheTeamsDays()
+    {
+        var data = new UofXmlParser().Parse($"""
+            <EntryList {IofNs}>
+              <PersonEntry><Person><Name><Family>А</Family><Given>Один</Given></Name></Person><RaceNumber>2</RaceNumber><RaceNumber>1</RaceNumber><RaceNumber>2</RaceNumber><RaceNumber>0</RaceNumber><Class><Name>Ч18</Name></Class></PersonEntry>
+              <PersonEntry><Person><Name><Family>Б</Family><Given>Два</Given></Name></Person><Class><Name>Ч18</Name></Class></PersonEntry>
+              <TeamEntry><BibNumber>5</BibNumber><Name>T</Name><Race>2</Race><Class><Name>Е</Name></Class>
+                <TeamEntryPerson><Person><Name><Family>В</Family><Given>Три</Given></Name></Person><Leg>1</Leg></TeamEntryPerson></TeamEntry>
+            </EntryList>
+            """);
+        Assert.Equal([2], data.Participants[0].DayNumbers);               // team member first
+        Assert.Equal([1, 2], data.Participants[1].DayNumbers);
+        Assert.Empty(data.Participants[2].DayNumbers);
+        Assert.Empty(data.Participants[0].RelayDayNumbers);
+    }
+
+    [Fact]
+    public void IofEntryList_PersonIdOrganisationCardAndBirthDateRules()
+    {
+        var data = new UofXmlParser().Parse($"""
+            <EntryList {IofNs}>
+              <PersonEntry><Person><Id type="Eventor">E1</Id><Id type="FSOU">F100</Id><Name><Family>А</Family><Given>Один</Given></Name><BirthDate>2005-03-14+05:00</BirthDate></Person>
+                <Organisation type="NationalRegion"><Name>Київ</Name></Organisation>
+                <ControlCard punchingSystem="Emit">111</ControlCard><ControlCard punchingSystem="SI">222</ControlCard><Class><Name>Ч</Name></Class></PersonEntry>
+              <PersonEntry><Person><Id>U7</Id><Name><Family>Б</Family><Given>Два</Given></Name></Person>
+                <Organisation type="Club"><Name>Клуб</Name></Organisation>
+                <ControlCard punchingSystem="Emit">333</ControlCard><ControlCard>444</ControlCard><Class><Name>Ч</Name></Class></PersonEntry>
+              <PersonEntry><Person><Id>U8</Id><Id type="Eventor">E9</Id><Name><Family>В</Family><Given>Три</Given></Name></Person>
+                <ControlCard punchingSystem="Emit">555</ControlCard><Class><Name>Ч</Name></Class></PersonEntry>
+            </EntryList>
+            """);
+        var a = data.Participants[0];
+        Assert.Equal("F100", a.FsouCode);
+        Assert.Equal("E1", a.Raw["Id:Eventor"]);
+        Assert.Equal("F100", a.Raw["Id:FSOU"]);
+        Assert.Equal("Київ", a.Region);
+        Assert.Equal("", a.Club);
+        Assert.Equal("222", a.Chip);
+        Assert.Equal(new DateTime(2005, 3, 14), a.BirthDate!.Value.DateTime);
+        var b = data.Participants[1];
+        Assert.Equal("U7", b.FsouCode);                                    // the only, untyped Id
+        Assert.Equal("Клуб", b.Club);
+        Assert.Equal("", b.Region);
+        Assert.Equal("444", b.Chip);                                       // no punchingSystem
+        var c = data.Participants[2];
+        Assert.Equal("", c.FsouCode);                                      // several Ids, none FSOU
+        Assert.Equal("U8", c.Raw["Id"]);
+        Assert.Equal("555", c.Chip);                                       // the first
+    }
+
+    [Fact]
+    public void IofEntryList_TeamWithoutBibStaysWithoutNumber_AndIsMatchedByName()
+    {
+        var data = new UofXmlParser().Parse($"""
+            <EntryList {IofNs}>
+              <TeamEntry><Id>1234567</Id><Name>Без номера</Name><Class><Name>Е</Name></Class>
+                <TeamEntryPerson><Person><Name><Family>А</Family><Given>Один</Given></Name></Person><Leg>1</Leg></TeamEntryPerson></TeamEntry>
+            </EntryList>
+            """);
+        var m = Assert.Single(data.Participants);
+        Assert.Null(m.RelayTeamNumber);
+        Assert.Equal("Без номера", m.RelayTeamName);
+        Assert.True(m.RelayOnImportedDays);
+        Assert.Equal("Е", m.RelayGroup);
+    }
+
+    private const string IofStarts = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <StartList xmlns="http://www.orienteering.org/datastandard/3.0" iofVersion="3.0">
+          <Event><Name>Test</Name></Event>
+          <ClassStart>
+            <Class><Name>Ч18</Name></Class>
+            <PersonStart>
+              <Person><Id type="FSOU">F1</Id><Name><Family>Петренко</Family><Given>Іван</Given></Name><BirthDate>2008-03-05</BirthDate></Person>
+              <Organisation><Name>Клуб А</Name></Organisation>
+              <Start><BibNumber>11</BibNumber><StartTime>2026-06-01T10:05:30+03:00</StartTime><ControlCard>8001234</ControlCard></Start>
+            </PersonStart>
+          </ClassStart>
+          <ClassStart>
+            <Class><Name>Ч21Е</Name></Class>
+            <TeamStart>
+              <Name>Team A</Name><BibNumber>7</BibNumber>
+              <Organisation><Name>Клуб Б</Name></Organisation>
+              <TeamMemberStart><Person><Name><Family>Коваль</Family><Given>Олег</Given></Name></Person>
+                <Start><BibNumber>7.1</BibNumber><Leg>1</Leg><StartTime>2026-06-01T11:00:00+03:00</StartTime><ControlCard>8002001</ControlCard></Start></TeamMemberStart>
+              <TeamMemberStart><Person><Name><Family>Бондар</Family><Given>Ігор</Given></Name></Person>
+                <Organisation><Name>Клуб В</Name></Organisation>
+                <Start><BibNumber>7-2</BibNumber><ControlCard>8002002</ControlCard></Start></TeamMemberStart>
+            </TeamStart>
+          </ClassStart>
+        </StartList>
+        """;
+
+    [Fact]
+    public void IofStartList_ReadsStartsBibsLegsAndTeams()
+    {
+        var data = new UofXmlParser().Parse(IofStarts);
+        Assert.Equal(3, data.Participants.Count);
+        var p = data.Participants[0];
+        Assert.Equal(("Петренко Іван", "Ч18", "11", "8001234", "F1"), (p.FullName, p.Group, p.Number, p.Chip, p.FsouCode));
+        Assert.Equal(new TimeSpan(10, 5, 30), p.StartTime);
+        var k = data.Participants[1];
+        Assert.Equal((7, "Team A", 1, "Клуб Б"), (k.RelayTeamNumber, k.RelayTeamName, k.RelayLeg, k.Club));
+        Assert.Equal(new TimeSpan(11, 0, 0), k.StartTime);
+        var b = data.Participants[2];
+        Assert.Equal((2, "Клуб В", (TimeSpan?)null), (b.RelayLeg, b.Club, b.StartTime));   // leg from the bib «7-2»
+    }
+
+    [Fact]
+    public void IofStartList_MultipleStartsGiveDaysAndTheFirstOnesValues()
+    {
+        var data = new UofXmlParser().Parse($"""
+            <StartList {IofNs}><ClassStart><Class><Name>Ч</Name></Class><PersonStart>
+              <Person><Name><Family>А</Family><Given>Один</Given></Name></Person>
+              <Start raceNumber="2"><StartTime>2026-06-02T09:00:00+03:00</StartTime></Start>
+              <Start raceNumber="1"><StartTime>2026-06-01T10:00:00+03:00</StartTime></Start>
+            </PersonStart></ClassStart></StartList>
+            """);
+        var p = Assert.Single(data.Participants);
+        Assert.Equal([1, 2], p.DayNumbers);
+        Assert.Equal(new TimeSpan(9, 0, 0), p.StartTime);
+    }
+
+    [Fact]
+    public async Task IofStartList_RoundTripsIntoAnEmptyCompetition_AndStartFlagGuardsCurrentDayImport()
+    {
+        var data = new UofXmlParser().Parse(IofStarts);
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("iofs"), discipline: DisciplineId.Relay);
+        await c.AddGroupAsync("Ч21Е", "31", s => s.LegCount = 2);
+        await c.AddGroupAsync("Ч18", "31");
+        await c.SelectAsync();
+        var editor = Sp.GetRequiredService<ICompetitionEditorService>();
+        var result = await editor.ImportParticipantsAsync(data, clearFirst: false, ParticipantImportScope.AllDays);
+        Assert.Equal(3, result.Added);
+
+        var roster = await editor.GetParticipantRosterAsync();
+        var ivan = roster.Single(r => r.FullName == "Петренко Іван");
+        Assert.Equal(("F1", "11", "Клуб А"), (ivan.FsouCode, ivan.Number, ivan.ClubName));
+        Assert.Equal(new DateTime(2008, 3, 5), ivan.BirthDate!.Value.DateTime);
+        Assert.Equal("8001234", ivan.Days[0].Chip);
+        Assert.Equal(new TimeSpan(10, 5, 30), ivan.Days[0].StartTime);
+        Assert.Equal(new TimeSpan(11, 0, 0), roster.Single(r => r.FullName == "Коваль Олег").Days[0].StartTime);
+
+        var team = Assert.Single((await editor.GetRelayTeamsDataAsync()).Teams, t => t.GroupId == c.Groups["Ч21Е"].Id);
+        Assert.Equal(7, team.Number);
+        Assert.Equal("Team A", team.Name);
+        Assert.Equal("Коваль Олег", team.Legs.Single(l => l.Leg == 1).FullName);
+        Assert.Equal("Бондар Ігор", team.Legs.Single(l => l.Leg == 2).FullName);
+
+        // «лише поточний день»: an existing link's start is rewritten only with the «Старт» flag; a null never clears.
+        var later = new UofXmlParser().Parse(IofStarts.Replace("10:05:30", "12:00:00"));
+        var keep = ParticipantImportScope.CurrentDay(1, ParticipantLinkField.FullName, ParticipantUpdateFields.None);
+        await editor.ImportParticipantsAsync(later, clearFirst: false, keep);
+        Assert.Equal(new TimeSpan(10, 5, 30),
+            (await editor.GetParticipantRosterAsync()).Single(r => r.FullName == "Петренко Іван").Days[0].StartTime);
+        var rewrite = ParticipantImportScope.CurrentDay(1, ParticipantLinkField.FullName, ParticipantUpdateFields.StartTime);
+        await editor.ImportParticipantsAsync(later, clearFirst: false, rewrite);
+        var after = await editor.GetParticipantRosterAsync();
+        Assert.Equal(new TimeSpan(12, 0, 0), after.Single(r => r.FullName == "Петренко Іван").Days[0].StartTime);
+        Assert.Equal(new TimeSpan(11, 0, 0), after.Single(r => r.FullName == "Коваль Олег").Days[0].StartTime);
+        Assert.Null(after.Single(r => r.FullName == "Бондар Ігор").Days[0].StartTime);
     }
 }

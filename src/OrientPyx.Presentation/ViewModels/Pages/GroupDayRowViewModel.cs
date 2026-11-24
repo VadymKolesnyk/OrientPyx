@@ -377,7 +377,7 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     /// The group runs several courses edited in the bottom table, not its single order: a scatter group (its
     /// variants), or a relay whose legs take named courses (any mode but «одна дистанція групи»).
     /// </summary>
-    public bool HasSeveralCourses => IsScatter || (IsRelay && _relayCourseMode != RelayCourseMode.Group);
+    public bool HasSeveralCourses => GroupCourseChecks.HasSeveralCourses(Strategy, _relayCourseMode);
 
     /// <summary>
     /// What the grid's course-order cell shows: «(різні)» for a group with several courses (they are edited in the
@@ -483,12 +483,9 @@ public sealed partial class GroupDayRowViewModel : ObservableObject
     /// Blank when the day has no control points yet (nothing to check against) or the group does not use its single
     /// order (a format that ignores it, or several courses checked in the bottom table).
     /// </summary>
-    public string UnknownCodes => _dayCodes.Count == 0 || !CanEditCourseOrderInline
+    public string UnknownCodes => !CanEditCourseOrderInline
         ? string.Empty
-        : string.Join(", ", System.Text.RegularExpressions.Regex.Matches(CourseOrder ?? string.Empty, @"\b[\p{L}\p{N}]+\b(?!\s*:)")
-            .Select(m => m.Value)
-            .Where(code => !_dayCodes.Contains(code))
-            .Distinct(OrientPyx.Plugins.Sdk.Toolkit.TextKey.Comparer));
+        : string.Join(", ", GroupCourseChecks.UnknownCodes(CourseOrder, _dayCodes));
 
     public bool HasUnknownCodes => UnknownCodes.Length > 0;
 

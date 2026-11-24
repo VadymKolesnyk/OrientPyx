@@ -22,7 +22,9 @@ namespace OrientPyx.BusinessLogic.Services;
 /// </summary>
 public sealed class IofXmlParser : IIofXmlParser
 {
-    public IofCourseData Parse(string xml)
+    public IofCourseData Parse(string xml) => Parse(xml, raceNumber: null);
+
+    public IofCourseData Parse(string xml, int? raceNumber)
     {
         if (string.IsNullOrWhiteSpace(xml))
             throw new IofXmlFormatException("The file is empty.");
@@ -44,10 +46,19 @@ public sealed class IofXmlParser : IIofXmlParser
         var version = DetectVersion(root);
         var isV3 = version.StartsWith("3.", StringComparison.Ordinal);
 
-        // 3.0 wraps the data in <RaceCourseData>; 2.0.3 keeps everything directly under the root.
-        var data = isV3
-            ? Child(root, "RaceCourseData") ?? root
-            : root;
+        // 3.0 wraps the data in <RaceCourseData> — one per race of a multi-race event (its @raceNumber, else its
+        // position); the race asked for is read, else the first one (flagged unresolved when there were several).
+        // 2.0.3 keeps everything directly under the root.
+        var races = isV3
+            ? root.Elements().Where(e => LocalNameIs(e, "RaceCourseData")).ToList()
+            : [];
+        var raceNumbers = races
+            .Select((r, i) => ParseInt(r.Attribute("raceNumber")?.Value) is { } n && n > 0 ? n : i + 1)
+            .ToList();
+        var raceIndex = raceNumber is { } wanted ? raceNumbers.IndexOf(wanted) : -1;
+        var data = !isV3 ? root
+            : races.Count == 0 ? root
+            : races[Math.Max(0, raceIndex)];
 
         var controls = isV3 ? ReadControlsV3(data) : ReadControlsV2(data);
 
@@ -59,12 +70,16 @@ public sealed class IofXmlParser : IIofXmlParser
                 .Select(c => c.Code),
             StringComparer.OrdinalIgnoreCase);
 
+        var multiRace = races.Count > 1;
         return new IofCourseData
         {
             Version = version,
             MapScale = ReadScale(data),
             Controls = controls,
-            Courses = isV3 ? ReadCoursesV3(data, startFinishCodes) : ReadCoursesV2(data, startFinishCodes)
+            Courses = isV3 ? ReadCoursesV3(data, startFinishCodes) : ReadCoursesV2(data, startFinishCodes),
+            RaceNumbers = multiRace ? raceNumbers : [],
+            RaceNumber = multiRace ? raceNumbers[Math.Max(0, raceIndex)] : null,
+            RaceUnresolved = multiRace && raceIndex < 0
         };
     }
 
@@ -151,12 +166,15 @@ public sealed class IofXmlParser : IIofXmlParser
                     AddCode(codes, Trim(ChildValue(cc, "ControlCode")));
                 AddCode(codes, Trim(ChildValue(variation, "FinishPointCode")));
 
+                var variationName = Trim(ChildValue(variation, "Name"));
                 raw.Add(new ParsedVariation(
-                    Trim(ChildValue(variation, "Name")),
+                    variationName,
                     Trim(ChildValue(variation, "CourseVariationId")),
                     codes,
-                    ParseInt(ChildValue(variation, "CourseLength")),
-                    ParseInt(ChildValue(variation, "CourseClimb"))));
+                    ParseMetres(ChildValue(variation, "CourseLength")),
+                    ParseMetres(ChildValue(variation, "CourseClimb")),
+                    SourceName: variationName.Length > 0 ? variationName : null,
+                    SourceFamily: name.Length > 0 ? name : null));
             }
 
             var courseId = Trim(ChildValue(course, "CourseId"));
@@ -238,13 +256,14 @@ public sealed class IofXmlParser : IIofXmlParser
         // type="Start|Finish|Control"> usage inside the courses. Build a code→type map from those
         // first and fall back to the (usually absent) `type` attribute on the definition.
         var typesFromCourses = ReadControlTypesFromCoursesV3(data);
+        var nonPunching = ReadNonPunchingCodesV3(data);
         var controls = new List<IofControl>();
 
         foreach (var element in data.Elements().Where(e => LocalNameIs(e, "Control")))
         {
             var code = Trim(ChildValue(element, "Id"));
-            if (string.IsNullOrEmpty(code))
-                continue;
+            if (string.IsNullOrEmpty(code) || nonPunching.Contains(code))
+                continue; // a crossing point / end of marked route has no station: not a control point
 
             var position = Child(element, "Position");
             var lat = ParseDouble(position?.Attribute("lat")?.Value);
@@ -295,9 +314,122 @@ public sealed class IofXmlParser : IIofXmlParser
         return types;
     }
 
+    /// <summary>
+    /// The codes a 3.0 file uses only as a crossing point or the end of a marked route (<c>type="CrossingPoint"</c> /
+    /// <c>"EndOfMarkedRoute"</c>): no station stands there, so they are no control point and no part of a running
+    /// order (else every runner would be MP on them). A <c>&lt;CourseControl&gt;</c>'s own type wins over its
+    /// control's; a code also used as an ordinary control anywhere is kept.
+    /// </summary>
+    private static HashSet<string> ReadNonPunchingCodesV3(XElement data)
+    {
+        var definedTypes = DefinedControlTypesV3(data);
+        var crossing = new HashSet<string>(StringComparer.Ordinal);
+        var punched = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var course in data.Elements().Where(e => LocalNameIs(e, "Course")))
+        foreach (var cc in course.Elements().Where(e => LocalNameIs(e, "CourseControl")))
+        {
+            foreach (var code in ControlAlternatives(cc))
+                (IsNonPunching(EffectiveTypeV3(cc, code, definedTypes)) ? crossing : punched).Add(code);
+        }
+        foreach (var (code, type) in definedTypes)
+            if (IsNonPunching(type))
+                crossing.Add(code);
+        crossing.ExceptWith(punched);
+        return crossing;
+    }
+
+    // The `type` written on each 3.0 <Control> definition, by code.
+    private static Dictionary<string, string> DefinedControlTypesV3(XElement data)
+    {
+        var types = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var element in data.Elements().Where(e => LocalNameIs(e, "Control")))
+        {
+            var code = Trim(ChildValue(element, "Id"));
+            var type = element.Attribute("type")?.Value;
+            if (code.Length > 0 && !string.IsNullOrWhiteSpace(type))
+                types.TryAdd(code, type.Trim());
+        }
+        return types;
+    }
+
+    // A <CourseControl>'s type: its own attribute, else the type of the control it names, else an ordinary control.
+    private static string EffectiveTypeV3(XElement courseControl, string code, IReadOnlyDictionary<string, string> definedTypes) =>
+        courseControl.Attribute("type")?.Value?.Trim() is { Length: > 0 } own ? own
+        : definedTypes.TryGetValue(code, out var defined) ? defined
+        : "Control";
+
+    private static bool IsNonPunching(string? type) => type is "CrossingPoint" or "EndOfMarkedRoute";
+
+    // The codes a <CourseControl> lists — usually one; several mean «punch one of them».
+    private static List<string> ControlAlternatives(XElement courseControl) =>
+        courseControl.Elements()
+            .Where(e => LocalNameIs(e, "Control"))
+            .Select(e => Trim(e.Value))
+            .Where(c => c.Length > 0)
+            .ToList();
+
+    /// <summary>
+    /// Reads one 3.0 course's running order: the codes (the first alternative of each <c>&lt;CourseControl&gt;</c>,
+    /// crossing points left out) and — when the course gives a choice — the «mixed» pattern of it (C4 / C5): a control
+    /// with several alternatives becomes <c>[1: 31 32]</c>, a run of controls marked <c>randomOrder="true"</c>
+    /// becomes <c>[N: …]</c> over all of them. Start and finish stay out of the pattern (the day's control types
+    /// define them). Null pattern for a plain ordered course.
+    /// </summary>
+    private static (List<string> Codes, string? Pattern) ReadRunningOrderV3(
+        XElement course, IReadOnlyDictionary<string, string> definedTypes)
+    {
+        var codes = new List<string>();
+        var tokens = new List<string>();
+        var randomRun = new List<string>();
+        var hasChoice = false;
+
+        void FlushRandom()
+        {
+            if (randomRun.Count > 1)
+            {
+                tokens.Add($"[{randomRun.Count.ToString(CultureInfo.InvariantCulture)}: {string.Join(' ', randomRun)}]");
+                hasChoice = true;
+            }
+            else if (randomRun.Count == 1)
+                tokens.Add(randomRun[0]);
+            randomRun.Clear();
+        }
+
+        foreach (var cc in course.Elements().Where(e => LocalNameIs(e, "CourseControl")))
+        {
+            var alternatives = ControlAlternatives(cc);
+            if (alternatives.Count == 0)
+                continue;
+            var type = EffectiveTypeV3(cc, alternatives[0], definedTypes);
+            if (IsNonPunching(type))
+                continue;
+
+            AddCode(codes, alternatives[0]);
+            if (type is "Start" or "Finish")
+            {
+                FlushRandom();
+                continue;
+            }
+
+            var item = alternatives.Count > 1 ? $"[1: {string.Join(' ', alternatives)}]" : alternatives[0];
+            hasChoice |= alternatives.Count > 1;
+            if (cc.Attribute("randomOrder")?.Value?.Trim() is "true" or "1")
+                randomRun.Add(item);
+            else
+            {
+                FlushRandom();
+                tokens.Add(item);
+            }
+        }
+        FlushRandom();
+
+        return (codes, hasChoice ? string.Join(' ', tokens) : null);
+    }
+
     private static IReadOnlyList<IofCourse> ReadCoursesV3(XElement data, IReadOnlySet<string> startFinishCodes)
     {
         var courses = new List<IofCourse>();
+        var definedTypes = DefinedControlTypesV3(data);
 
         // 3.0 gives each variant its own <Course>, linking them by a shared <CourseFamily>. Group the courses
         // by family (in first-seen order) so a scatter family's variants stay together; a course with no family
@@ -352,20 +484,22 @@ public sealed class IofXmlParser : IIofXmlParser
             var raw = new List<ParsedVariation>();
             foreach (var course in familyCourses)
             {
-                var codes = new List<string>();
-                foreach (var cc in course.Elements().Where(e => LocalNameIs(e, "CourseControl")))
-                    AddCode(codes, Trim(ChildValue(cc, "Control")));
+                var (codes, pattern) = ReadRunningOrderV3(course, definedTypes);
 
                 // The variant code is the course-name suffix past the family name (e.g. "…_розсіювання_A" → "A");
                 // BuildCourse falls back to A/B/… by order when the suffix is blank or duplicated. The full course
-                // name is the key the assignments refer to it by.
+                // name is the key the assignments refer to it by — and, with its family, kept for the IOF export.
                 var courseName = Trim(ChildValue(course, "Name"));
+                var family = Trim(ChildValue(course, "CourseFamily"));
                 raw.Add(new ParsedVariation(
                     VariantSuffix(courseName, displayName),
                     courseName,
                     codes,
-                    ParseInt(ChildValue(course, "Length")),
-                    ParseInt(ChildValue(course, "Climb"))));
+                    ParseMetres(ChildValue(course, "Length")),
+                    ParseMetres(ChildValue(course, "Climb")),
+                    Pattern: pattern,
+                    SourceName: courseName.Length > 0 ? courseName : null,
+                    SourceFamily: family.Length > 0 ? family : null));
             }
 
             courses.Add(BuildCourse(displayName, raw, startFinishCodes, picksByFamily.GetValueOrDefault(i) ?? []));
@@ -441,8 +575,11 @@ public sealed class IofXmlParser : IIofXmlParser
 
     // A single running order read from the file, before de-duplication: its file-supplied name (may be blank), the
     // key the file's assignments refer to it by (2.0.3 variation id, 3.0 course name), its control codes in order,
-    // and its stated length/climb.
-    private readonly record struct ParsedVariation(string Name, string Key, IReadOnlyList<string> Codes, int? Length, int? Climb);
+    // and its stated length/climb; plus its «mixed» pattern when the file gives a choice (3.0) and its name / family as
+    // the file wrote them (kept on the stored variant for the IOF export).
+    private readonly record struct ParsedVariation(
+        string Name, string Key, IReadOnlyList<string> Codes, int? Length, int? Climb,
+        string? Pattern = null, string? SourceName = null, string? SourceFamily = null);
 
     // One assignment read from the file: number + leg → the variation with this key (or, failing that, this name).
     private readonly record struct VariationPick(int Number, int Leg, string Key, string Name);
@@ -487,7 +624,10 @@ public sealed class IofXmlParser : IIofXmlParser
 
         var first = variations[0];
         if (variations.Count == 1)
-            return new IofCourse { Name = name, Length = first.Length, Climb = first.Climb, ControlCodes = first.Codes };
+            return new IofCourse
+            {
+                Name = name, Length = first.Length, Climb = first.Climb, ControlCodes = first.Codes, Pattern = first.Pattern
+            };
 
         // Codes: the file name when non-blank and not already used, else the next letter A, B, C… (skipping any
         // letter a file name already took). Distinct orders are coded first, then the repeats.
@@ -508,7 +648,11 @@ public sealed class IofXmlParser : IIofXmlParser
             codes[i] ??= NextCode(variations[i]);
 
         IofCourseVariant Variant(int i) =>
-            new(codes[i], variations[i].Codes, variations[i].Length, variations[i].Climb);
+            new(codes[i], variations[i].Codes, variations[i].Length, variations[i].Climb)
+            {
+                SourceName = variations[i].SourceName,
+                SourceFamily = variations[i].SourceFamily
+            };
 
         return new IofCourse
         {
@@ -649,6 +793,12 @@ public sealed class IofXmlParser : IIofXmlParser
     private static int? ParseInt(string? value) =>
         int.TryParse(value?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)
             ? n
+            : null;
+
+    // A length / climb in metres: xsd:double in IOF 3.0 («3420.0», «4.5»), rounded to whole metres.
+    private static int? ParseMetres(string? value) =>
+        ParseDouble(value) is { } d && double.IsFinite(d) && Math.Abs(d) < int.MaxValue
+            ? (int)Math.Round(d, MidpointRounding.AwayFromZero)
             : null;
 
     private static double? ParseDouble(string? value) =>

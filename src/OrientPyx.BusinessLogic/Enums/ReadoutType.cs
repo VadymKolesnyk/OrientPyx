@@ -13,3 +13,12 @@ public enum ReadoutType
     /// <summary>Sport Time CSV: named-header, windows-1251, DOW empty (weekday may be in parentheses after the time).</summary>
     SportTime = 1
 }
+
+/// <summary>Reading the stored «Тип відмітки».</summary>
+public static class ReadoutTypes
+{
+    /// <summary>The stored value as a <see cref="ReadoutType"/>; none stored or an out-of-range value (a future format
+    /// we don't know) degrades to the safe default, SportIdent.</summary>
+    public static ReadoutType FromStored(int? stored) =>
+        stored is { } v && Enum.IsDefined(typeof(ReadoutType), v) ? (ReadoutType)v : ReadoutType.SportIdent;
+}

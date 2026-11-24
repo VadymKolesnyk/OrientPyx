@@ -25,6 +25,13 @@ public interface ICompetitionEditorService
     /// </summary>
     Task<DashboardInfo> GetDashboardAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// «Перевірка готовності дня»: every problem of the day's data (no group, chip, start time; a chip too small; a group
+    /// without a course or with a code no КП has; a relay leg without a course…), errors first. Read from one day
+    /// snapshot; <see cref="DayReadiness.Empty"/> with no competition or for an unknown day.
+    /// </summary>
+    Task<DayReadiness> GetDayReadinessAsync(Guid dayId, CancellationToken cancellationToken = default);
+
     Task SaveInfoAsync(CompetitionInfo info, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -56,6 +63,13 @@ public interface ICompetitionEditorService
     Task<EventDay> AddDayAsync(CancellationToken cancellationToken = default);
 
     Task UpdateDayAsync(EventDay day, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets only the day's default discipline («Вид змагань дня», chosen in «Групи → Загальні налаштування»), on the
+    /// day as the database holds it — its date, venue and lock edited elsewhere stay. Returns the day as it now stands,
+    /// or null when there is no such day; a closed day refuses (<see cref="DayLockedException"/>).
+    /// </summary>
+    Task<EventDay?> SetDayDisciplineAsync(Guid dayId, DisciplineId discipline, CancellationToken cancellationToken = default);
 
     Task DeleteDayAsync(Guid dayId, CancellationToken cancellationToken = default);
 
@@ -535,6 +549,19 @@ public interface ICompetitionEditorService
         IReadOnlyList<Guid> participantIds, string fieldLabel, CancellationToken cancellationToken = default);
 
     /// <summary>The chip-scanning dialog's saved set-up for this competition; null when it was never saved.</summary>
+    /// <summary>
+    /// The raw data of an IOF 3.0 export («Експорт IOF XML»): for each of <paramref name="dayIds"/> (one, or several in
+    /// one file) the day's result protocol data with every runner's splits (<see cref="IofListKind.ResultList"/>) or its
+    /// start protocol data (<see cref="IofListKind.StartList"/>), the groups' strategy answers and the runners' extras;
+    /// for several days of results also the summary data and settings. Empty when no competition is open.
+    /// </summary>
+    Task<IofExportData> GetIofExportDataAsync(IReadOnlyList<Guid> dayIds, IofListKind kind, CancellationToken cancellationToken = default);
+
+    /// <summary>The «Експорт IOF XML» page's saved options; null when none are stored yet.</summary>
+    Task<IofExportSettings?> GetIofExportSettingsAsync(CancellationToken cancellationToken = default);
+
+    Task SaveIofExportSettingsAsync(IofExportSettings settings, CancellationToken cancellationToken = default);
+
     Task<ChipScanSettings?> GetChipScanSettingsAsync(CancellationToken cancellationToken = default);
 
     Task SaveChipScanSettingsAsync(ChipScanSettings settings, CancellationToken cancellationToken = default);
@@ -1138,6 +1165,10 @@ public readonly record struct GroupImportResult(
     int Added, int Updated, IReadOnlyList<string> ScatterFallbackGroups)
 {
     public GroupImportResult(int Added, int Updated) : this(Added, Updated, []) { }
+
+    /// <summary>Groups whose course the file gives with a choice («one of these controls», a run in any order — IOF 3.0)
+    /// and that were therefore imported as a «mixed» pattern («Змішаний»).</summary>
+    public IReadOnlyList<string> MixedGroups { get; init; } = [];
 }
 
 /// <summary>Outcome of a control-point import, for reporting back to the user.</summary>

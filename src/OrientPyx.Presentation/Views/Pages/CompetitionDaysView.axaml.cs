@@ -40,7 +40,18 @@ public partial class CompetitionDaysView : UserControl
         // handled by rebuilding the bands.
         _vm.Localization.PropertyChanged += OnLocalizationChanged;
         _vm.FocusGridRequested += OnFocusGridRequested;
+        _vm.RevealRequested += OnRevealRequested;
         BuildBands();
+        ApplyPendingReveal();
+    }
+
+    private void OnRevealRequested(object? sender, System.EventArgs e) => ApplyPendingReveal();
+
+    // «Перейти» from the day readiness check: the day's row, its «Вид змагань» cell.
+    private void ApplyPendingReveal()
+    {
+        if (_vm is { } vm)
+            SheetReveal.Apply(vm, Sheet, id => vm.Days.FirstOrDefault(d => d.Id == id));
     }
 
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => BuildBands();
@@ -80,10 +91,10 @@ public partial class CompetitionDaysView : UserControl
             // this is where the whole competition's state can be seen and set; the same lock also sits
             // next to the day selector on each per-day page.
             .Custom("DayLock.Col.Locked", BuildLockCell, width: 110)
-            // Actions: Save / Change-number / Delete. A custom cell so the Save/ChangeNumber buttons
-            // can bind to the VM's commands with the row as parameter. Wide enough by default for all
-            // three buttons (a custom cell isn't content-sized, so without a width it gets the 130 default).
-            .Custom("CompetitionDays.Col.Actions", BuildActionsCell, width: 290)
+            // Actions: Change-number / Delete (an edited cell saves itself — no Save button). A custom cell so the
+            // ChangeNumber button can bind to the VM's command with the row as parameter. Wide enough by default for
+            // both buttons (a custom cell isn't content-sized, so without a width it gets the 130 default).
+            .Custom("CompetitionDays.Col.Actions", BuildActionsCell, width: 210)
             .Bands;
     }
 
@@ -159,19 +170,10 @@ public partial class CompetitionDaysView : UserControl
 
     private Control BuildActionsCell()
     {
-        var save = new Button
-        {
-            Classes = { "ghost", "small" },
-            Command = _vm!.SaveDayCommand,
-            [!Button.ContentProperty] = new Binding("Localization[CompetitionDays.Save]"),
-            [!Button.CommandParameterProperty] = new Binding(),
-            [!InputElement.IsEnabledProperty] = new Binding(nameof(DayRowViewModel.CanSave))
-        };
-
         var changeNumber = new Button
         {
             Classes = { "ghost", "small" },
-            Command = _vm.ChangeDayNumberCommand,
+            Command = _vm!.ChangeDayNumberCommand,
             [!Button.ContentProperty] = new Binding("Localization[CompetitionDays.ChangeNumber]"),
             [!Button.CommandParameterProperty] = new Binding(),
             [!InputElement.IsEnabledProperty] = new Binding(nameof(DayRowViewModel.CanEdit)),
@@ -205,7 +207,7 @@ public partial class CompetitionDaysView : UserControl
             Spacing = 6,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(10, 0),
-            Children = { save, changeNumber, delete }
+            Children = { changeNumber, delete }
         };
     }
 
@@ -253,6 +255,7 @@ public partial class CompetitionDaysView : UserControl
         {
             _vm.Localization.PropertyChanged -= OnLocalizationChanged;
             _vm.FocusGridRequested -= OnFocusGridRequested;
+            _vm.RevealRequested -= OnRevealRequested;
         }
         _vm = null;
     }

@@ -113,6 +113,7 @@ public static class BusinessLogicServiceCollectionExtensions
         // Split (splits) export builder (layer-neutral: raw day splits → renderable document). The HTML
         // writer that renders the document is registered in DataAccess.
         services.AddSingleton<ISplitExportBuilder, SplitExportBuilder>();
+        services.AddSingleton<IIofExportBuilder, IofExportBuilder>();
 
         // Start draw (жеребкування): assigns a start time per competitor (random + "not consecutive").
         services.AddSingleton<IStartDrawService, StartDrawService>();

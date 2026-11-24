@@ -68,6 +68,10 @@ public sealed record UofParticipant
     /// <summary>Relay: the runner's leg; null ⇒ the team's next free leg (none free ⇒ on the team «без етапу»).</summary>
     public int? RelayLeg { get; init; }
 
+    /// <summary>The start time of day (IOF StartList <c>Start/StartTime</c>: the clock in its own offset); written to
+    /// <c>ParticipantDay.StartTime</c> on every day the row is entered on. Null = none, and never clears a stored one.</summary>
+    public TimeSpan? StartTime { get; init; }
+
     /// <summary>1-based day numbers the athlete runs (from ProgEvent). Empty means no days listed.</summary>
     public IReadOnlyList<int> DayNumbers { get; init; } = [];
 

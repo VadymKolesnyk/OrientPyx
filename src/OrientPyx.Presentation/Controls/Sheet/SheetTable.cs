@@ -1055,6 +1055,84 @@ public sealed class SheetTable : TemplatedControl
         return null;
     }
 
+    /// <summary>
+    /// Shows <paramref name="row"/> («Перейти» from another page): when the column filters or the search hide it, they
+    /// are cleared at once (no debounce); then the row is selected, scrolled into view and the cell of
+    /// <paramref name="columnKey"/> (a column's key or its header's localization key) focused — the selected row's current
+    /// column when it names no visible column.
+    /// False when the row is not in the table at all (or the table is not templated yet).
+    /// </summary>
+    public bool RevealRow(object row, string? columnKey = null)
+    {
+        if (_body is null)
+            return false;
+        if (RowIndexOf(row) < 0)
+        {
+            var inSource = false;
+            foreach (var item in ItemsSource ?? Array.Empty<object?>())
+                if (Equals(item, row))
+                {
+                    inSource = true;
+                    break;
+                }
+            if (!inSource)
+                return false;
+
+            ClearSearchNow();
+            if (_filters.Count > 0)
+            {
+                _filters.Clear();
+                _filterOrder.Clear();
+                FiltersChanged?.Invoke(this, EventArgs.Empty);
+            }
+            ApplySortedView();
+        }
+
+        var index = RowIndexOf(row);
+        if (index < 0)
+            return false;
+        var column = columnKey is null ? -1 : LeafIndexOf(columnKey);
+        if (column < 0)
+            column = Math.Clamp(_focusedColumn, 0, Math.Max(0, LeafColumnCount() - 1));
+
+        SelectedItem = row;
+        _body.SelectedItem = row;
+        _body.ScrollIntoView(index);
+        CollapseRange(index, column);
+        // The row may need a layout pass to realize; focus its cell once it exists (as MoveRow).
+        Dispatcher.UIThread.Post(FocusSelectedRowCell, DispatcherPriority.Loaded);
+        return true;
+    }
+
+    // Drops the search term now, without the debounced pass (the caller re-applies the view itself).
+    private void ClearSearchNow()
+    {
+        if (_globalSearch.Length == 0)
+            return;
+        _globalSearch = string.Empty;
+        _searchTerm = string.Empty;
+        _searchVariants = Array.Empty<string>();
+        // The box's change handler then sees the same (empty) term and schedules nothing.
+        if (_search is not null)
+            _search.Text = string.Empty;
+        if (_searchClear is not null)
+            _searchClear.IsVisible = false;
+    }
+
+    // The leaf index of a visible column (as BuildRow lays them out) by its key or its header key, or -1.
+    private int LeafIndexOf(string key)
+    {
+        var index = 0;
+        foreach (var band in _visibleBands)
+            foreach (var col in band.Columns)
+            {
+                if (col.Key == key || (col.HeaderKey.Length > 0 && col.HeaderKey == key))
+                    return index;
+                index++;
+            }
+        return -1;
+    }
+
     // The text a column renders for a row — the single source of truth shared by filtering, the values
     // picker and the cell "filter by this value" menu, so all three agree on "the value of this cell".
     // Combo/option columns read their label path; dates format to match the dd.MM.yyyy display.

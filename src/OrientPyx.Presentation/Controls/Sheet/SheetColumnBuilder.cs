@@ -266,6 +266,7 @@ public sealed class SheetColumnBuilder
 
     private SheetColumnBuilder Add(SheetColumn column, string headerKey)
     {
+        column.HeaderKey = headerKey;
         // Two columns on one key would share a filter, a hidden flag, a saved width and the filter popup's
         // anchor. Fold the header key (stable, language-independent) into the later one.
         if (_bands.Exists(b => b.Columns.Any(c => c.Key == column.Key)))

@@ -124,9 +124,9 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
 
             var entries = new List<SummaryRankedEntry>(ranked.Count + outOfRanking.Count);
             for (var i = 0; i < ranked.Count; i++)
-                entries.Add(new SummaryRankedEntry(ranked[i].Member, places[i], TotalText(ranked[i], byPoints)));
+                entries.Add(Entry(ranked[i], places[i], byPoints));
             foreach (var a in outOfRanking.OrderBy(a => a.Member.FullName, StringComparer.CurrentCultureIgnoreCase))
-                entries.Add(new SummaryRankedEntry(a.Member, null, TotalText(a, byPoints)));
+                entries.Add(Entry(a, null, byPoints));
 
             result.Add(new SummaryRankedGroup(group.Name, group.Order, entries));
         }
@@ -179,6 +179,13 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
     // The «Сума» text for an aggregate under the chosen mode: total points (2dp) or total time (hh:mm:ss).
     private static string TotalText(Aggregate a, bool byPoints) =>
         byPoints ? PointsTable.Format(a.TotalPoints) : FormatTime(a.TotalTimeSeconds);
+
+    private static SummaryRankedEntry Entry(Aggregate a, int? place, bool byPoints) =>
+        new(a.Member, place, TotalText(a, byPoints))
+        {
+            TotalPoints = a.TotalPoints,
+            TotalTime = TimeSpan.FromSeconds(Math.Round(a.TotalTimeSeconds))
+        };
 
     // The counted days, in the configured on-page order, resolved against the data's day list (a saved day that
     // no longer exists is dropped). Fall back to all days when no selection is stored.

@@ -12,12 +12,13 @@ using OrientPyx.Presentation.ViewModels.Dialogs;
 namespace OrientPyx.Presentation.ViewModels.Pages;
 
 /// <summary>
-/// Table of the current competition's days. Each row can edit its date, venue and discipline,
-/// and be made the active (current) day, which switches the running session.
-/// Opened from the "Competition → Days" top menu.
+/// Table of the current competition's days. Each row edits its date, venue and discipline straight in the table —
+/// the row saves itself in the background (debounced), no Save button. Opened from the "Competition → Days" top menu.
 /// </summary>
 public sealed partial class CompetitionDaysViewModel : PageViewModelBase
 {
+    private static readonly TimeSpan SaveDebounce = TimeSpan.FromMilliseconds(600);
+
     private readonly ICompetitionEditorService _editor;
     private readonly ISessionService _session;
     private readonly IBusyService _busy;
@@ -30,6 +31,15 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
     // The days table has no undo of its own (deleting / renumbering days is not undoable); it only drops the undo
     // histories of a day it deletes.
     private readonly IUndoHistory _undo;
+    private readonly Dictionary<Guid, CancellationTokenSource> _saveTimers = new();
+    private readonly PendingSaves _pendingSaves = new();
+    // The competition (and registered disciplines) the rows were read for: a SessionChanged that keeps both (a day
+    // switched, the active day's own row edited — here or on «Групи») merges the rows in place instead of rebuilding
+    // the table under the operator; a plugin switched on or off rebuilds it, so the type dropdowns follow.
+    private (string? Event, string Disciplines) _loadedFor;
+
+    private (string? Event, string Disciplines) SessionKey()
+        => (_session.CurrentEvent?.FolderPath, DisciplineTypeOption.RegisteredKey(_strategies));
 
     public CompetitionDaysViewModel(
         ILocalizationService localization,
@@ -58,7 +68,7 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         // Singleton VM: reload the day rows whenever the competition/day changes so a switched
         // event never leaves the previous competition's days on screen. The event may arrive on a
         // pool thread (session writes run inside RunAsync), so marshal LoadAsync onto the UI thread.
-        _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = LoadAsync());
+        _session.SessionChanged += (_, _) => Dispatcher.UIThread.Post(() => _ = OnSessionChangedAsync());
         // Live data (another station's writes) — see ReloadAsync.
         ObserveData(bus, session, mode,
             DataArea.Days, DataArea.Competition);
@@ -82,7 +92,7 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         => _dayLock.ExplainLockedCellAsync(dayNumber, merged);
 
     /// <summary>
-    /// The gate for a row action (save, renumber, delete): a closed day refuses, naming itself. The
+    /// The gate for a row action (renumber, delete): a closed day refuses, naming itself. The
     /// page-wide <c>EnsureDayEditableForActionAsync</c> can't be used here — it asks about the session's
     /// day, and every row on this page is a different day.
     /// </summary>
@@ -96,22 +106,35 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
     }
 
     /// <inheritdoc />
-    /// <remarks>Day rows save straight away (no debounce), so only the selection has to be kept.</remarks>
     protected override async Task ReloadAsync(CancellationToken cancellationToken = default)
     {
-        // The rows are merged in place (RowSync): the selection survives, a row with unsaved edits keeps them.
+        // The rows' pending saves land first (the reload then reads them back); the rows are merged in place
+        // (RowSync): the selection survives, a row typed on meanwhile keeps its edit.
+        await _pendingSaves.WaitAsync();
         await LoadCoreAsync(merge: true);
         if (SelectedRow is { } selected && !Days.Contains(selected))
             SelectedRow = null;
     }
 
+    /// <inheritdoc />
+    public override Task FlushPendingWritesAsync() => _pendingSaves.WaitAsync();
+
     /// <summary>Reloads the day rows from the current competition. Called when the page is shown.</summary>
-    public Task LoadAsync() => LoadCoreAsync(merge: false);
+    public Task LoadAsync()
+    {
+        CancelAllTimers();
+        return LoadCoreAsync(merge: false);
+    }
+
+    // Another competition (or none) rebuilds the table and drops the previous one's unsaved edits; the same one merges.
+    private Task OnSessionChangedAsync()
+        => _loadedFor.Event is not null && _loadedFor == SessionKey() ? ReloadAsync() : LoadAsync();
 
     // Reads the days and either rebuilds the rows (first open / session switch) or merges them in place.
     private async Task LoadCoreAsync(bool merge)
     {
         var activeNumber = _session.CurrentDay?.Number;
+        var loadingFor = SessionKey();
         // BD read runs off the UI thread; the collection is rebuilt afterwards on the UI thread.
         var (days, info) = await _busy.RunAsync(async () =>
         {
@@ -121,6 +144,7 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         });
 
         var venuePlaceholder = info?.Venue?.Trim() ?? string.Empty;
+        _loadedFor = loadingFor;
 
         if (!merge)
         {
@@ -131,7 +155,8 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         RowSync.Sync(Days, days,
             itemKey: day => day.Id,
             rowKey: row => row.Id,
-            create: day => new DayRowViewModel(day, day.Number == activeNumber, Localization, _strategies, venuePlaceholder),
+            create: day => new DayRowViewModel(day, day.Number == activeNumber, Localization, _strategies,
+                RequestRowSave, venuePlaceholder),
             update: (row, day) => row.Apply(day, day.Number == activeNumber));
     }
 
@@ -153,6 +178,8 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         if (row is null || !await EnsureRowEditableAsync(row))
             return;
 
+        // The row's pending edit lands under its current number before the day is renumbered.
+        await _pendingSaves.WaitAsync();
         var taken = Days.Where(d => d.Id != row.Id).Select(d => d.Number).ToHashSet();
         var dialog = new ChangeDayNumberViewModel(Localization, row.Number, taken);
         var newNumber = await _dialogs.ShowChangeDayNumberAsync(dialog);
@@ -173,22 +200,60 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
             await LoadAsync();
     }
 
-    [RelayCommand]
-    private async Task SaveDayAsync(DayRowViewModel? row)
+    // Invoked by a row on every edit of its date / venue / discipline (UI thread): restarts that row's debounce, so a
+    // venue typed letter by letter is one write. The write runs in the background — no busy overlay, no Save button.
+    private void RequestRowSave(DayRowViewModel row)
     {
-        if (row is null || !await EnsureRowEditableAsync(row))
-            return;
+        if (_saveTimers.TryGetValue(row.Id, out var existing))
+            existing.Cancel();
 
-        var entity = row.ToEntity();
-        await _busy.RunAsync(() => _editor.UpdateDayAsync(entity));
-        row.MarkSaved();
+        var cts = new CancellationTokenSource();
+        _saveTimers[row.Id] = cts;
+        _pendingSaves.Track(SaveRowDebouncedAsync(row, cts));
+    }
 
-        // The session caches the active day (incl. its DefaultDiscipline). When the edited row IS the
-        // active day, re-point the session so other pages (Participants, Groups) pick up a discipline
-        // change immediately — they read it from the session and refresh on SessionChanged. Without
-        // this they keep the stale discipline until the app is restarted.
-        if (row.IsActive)
-            await _busy.RunAsync(() => _session.SetCurrentDayAsync(entity));
+    private async Task SaveRowDebouncedAsync(DayRowViewModel row, CancellationTokenSource cts)
+    {
+        try
+        {
+            await Task.Delay(SaveDebounce, cts.Token);
+            // Deleted while the edit waited — nothing left to save.
+            if (!Days.Contains(row))
+                return;
+
+            // Snapshot the row on the UI thread, then run the synchronous SQLite write on the pool.
+            var version = row.EditVersion;
+            var entity = row.ToEntity();
+            await Task.Run(() => _editor.UpdateDayAsync(entity, CancellationToken.None));
+            row.MarkSaved(version);
+
+            // The session caches the active day (incl. its DefaultDiscipline): re-point it so the other pages
+            // (Participants, Groups, results) pick up the change at once — they refresh on SessionChanged.
+            if (row.IsActive)
+                _session.UpdateCurrentDay(entity);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            // Refused (the day was closed meanwhile, e.g. on another station) or failed: show what the store holds.
+            _log.Error($"Save day {row.Number}", ex);
+            row.DiscardEdits();
+            await LoadCoreAsync(merge: true);
+        }
+        finally
+        {
+            if (_saveTimers.TryGetValue(row.Id, out var current) && ReferenceEquals(current, cts))
+                _saveTimers.Remove(row.Id);
+        }
+    }
+
+    private void CancelAllTimers()
+    {
+        foreach (var cts in _saveTimers.Values)
+            cts.Cancel();
+        _saveTimers.Clear();
     }
 
     /// <summary>
@@ -219,6 +284,8 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
 
     private async Task ToggleDayLockCoreAsync(DayRowViewModel row)
     {
+        // An edit made right before closing the day lands first — closed, the day would refuse it.
+        await _pendingSaves.WaitAsync();
         if (row.IsLocked)
         {
             var confirm = new ConfirmDialogViewModel(
@@ -289,6 +356,8 @@ public sealed partial class CompetitionDaysViewModel : PageViewModelBase
         if (ReferenceEquals(SelectedRow, row))
             SelectedRow = GridSelection.NeighbourAfterRemoval(Days, row);
         Days.Remove(row);
+        if (_saveTimers.Remove(row.Id, out var pending))
+            pending.Cancel();
 
         var id = row.Id;
         _ = Task.Run(() => _editor.DeleteDayAsync(id));

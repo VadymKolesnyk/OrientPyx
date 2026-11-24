@@ -47,7 +47,18 @@ public partial class GroupsView : UserControl
         _vm.ColumnsChanged += OnColumnsChanged;
         _vm.FocusGridRequested += OnFocusGridRequested;
         _vm.PropertyChanged += OnViewModelPropertyChanged;
+        _vm.RevealRequested += OnRevealRequested;
         BuildBands();
+        ApplyPendingReveal();
+    }
+
+    private void OnRevealRequested(object? sender, System.EventArgs e) => ApplyPendingReveal();
+
+    // «Перейти» from the day readiness check: the group's row, its course (or type) cell.
+    private void ApplyPendingReveal()
+    {
+        if (_vm is { } vm)
+            SheetReveal.Apply(vm, Sheet, id => vm.Groups.FirstOrDefault(g => g.Id == id));
     }
 
     // The variants table shows the «Етап» column only for «своя на кожен етап».
@@ -339,6 +350,7 @@ public partial class GroupsView : UserControl
             _vm.ColumnsChanged -= OnColumnsChanged;
             _vm.FocusGridRequested -= OnFocusGridRequested;
             _vm.PropertyChanged -= OnViewModelPropertyChanged;
+            _vm.RevealRequested -= OnRevealRequested;
         }
         _vm = null;
     }

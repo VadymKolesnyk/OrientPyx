@@ -133,7 +133,8 @@ public enum ParticipantUpdateFields
     Representative = 1 << 9,
     FsouCode = 1 << 10,
     IsFsouMember = 1 << 11,
-    Payment = 1 << 12
+    Payment = 1 << 12,
+    StartTime = 1 << 13
 }
 
 /// <summary>Day-mapping mode of a participant import (see <see cref="ParticipantImportScope"/>).</summary>

@@ -68,6 +68,7 @@ public sealed class DisciplineSweepTests
                         var splits = await editor.GetDaySplitsExportDataAsync(day.Id);
                         Checks.IsHtml(sp.GetRequiredService<ISplitHtmlWriter>().Write(sp.GetRequiredService<ISplitExportBuilder>()
                             .Build(splits, Labels.Make<SplitExportHeader>(), Labels.Make<SplitExportLabels>())));
+                        await Checks.IofListsAreValidAsync(sp, day.Id);
                         var monitor = await editor.BuildMonitorPreviewAsync(day.Id, Labels.Make<MonitorFile>(),
                             ResultColumnSelection.Default, Labels.Make<MonitorLabels>());
                         if (monitor is not null)

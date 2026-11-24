@@ -33,6 +33,7 @@ public enum DashboardQuickAction
     ParticipantsOnCourse,
     MonitorResults,
     OnlineResults,
+    DayReadiness,
 }
 
 /// <summary>One finish-status badge on the «Фінішувало» tile: a language-neutral status code (OK, MP,
@@ -122,7 +123,9 @@ public sealed partial class DashboardViewModel : PageViewModelBase
         // Live data: every figure on the tiles — a broad set, the dashboard sums the whole day up.
         ObserveData(bus, session, mode,
             DataArea.Participants, DataArea.ParticipantDays, DataArea.Readouts, DataArea.Days, DataArea.Groups,
-            DataArea.GroupDaySettings, DataArea.Chips, DataArea.Competition, DataArea.Relay);
+            DataArea.GroupDaySettings, DataArea.Chips, DataArea.Competition, DataArea.Relay,
+            // The «Проблеми дня» tile reads the courses, the КП and the additional fields too.
+            DataArea.ControlPoints, DataArea.CourseVariants, DataArea.CustomFields);
         // The discipline name + "День N" label are localized; re-raise them on a language switch.
         Localization.PropertyChanged += (_, _) =>
         {
@@ -130,6 +133,8 @@ public sealed partial class DashboardViewModel : PageViewModelBase
             OnPropertyChanged(nameof(DayLabel));
             OnPropertyChanged(nameof(OnCourseElapsedLabel));
             OnPropertyChanged(nameof(OnCourseLastStartLabel));
+            OnPropertyChanged(nameof(ReadinessText));
+            OnPropertyChanged(nameof(ReadinessDetail));
         };
 
         // Ticks only while the dashboard is the shown page (see Start/StopAutoRefresh). A short
@@ -246,6 +251,28 @@ public sealed partial class DashboardViewModel : PageViewModelBase
     /// <summary>Whether to show the on-course elapsed caption.</summary>
     public bool HasOnCourseElapsed => OnCourseElapsedText.Length != 0;
 
+    // ── «Проблеми дня» (the day readiness check): N = errors + warnings — red with an error, amber with warnings only,
+    // «Усе готово» in green with none.
+
+    /// <summary>The day's data has an error.</summary>
+    public bool ReadinessHasErrors => Info.ReadinessErrors > 0;
+
+    /// <summary>Only warnings.</summary>
+    public bool ReadinessHasOnlyWarnings => Info.ReadinessErrors == 0 && Info.ReadinessWarnings > 0;
+
+    /// <summary>Nothing to fix.</summary>
+    public bool ReadinessIsClean => Info.ReadinessErrors == 0 && Info.ReadinessWarnings == 0;
+
+    /// <summary>The tile's big text: the problem count, or «Усе готово».</summary>
+    public string ReadinessText => ReadinessIsClean
+        ? Localization.Get("Dashboard.Stat.Readiness.None")
+        : (Info.ReadinessErrors + Info.ReadinessWarnings).ToString(System.Globalization.CultureInfo.CurrentCulture);
+
+    /// <summary>«помилок X · попереджень Y»; empty with none.</summary>
+    public string ReadinessDetail => ReadinessIsClean
+        ? string.Empty
+        : string.Format(Localization.Get("Dashboard.Stat.Readiness.Detail"), Info.ReadinessErrors, Info.ReadinessWarnings);
+
     /// <inheritdoc />
     /// <remarks>The tiles are recomputed figures; the day picker keeps its options when the days are unchanged.</remarks>
     protected override Task ReloadAsync(CancellationToken cancellationToken = default) => LoadAsync();
@@ -329,6 +356,11 @@ public sealed partial class DashboardViewModel : PageViewModelBase
         OnPropertyChanged(nameof(OnCourseLastStartText));
         OnPropertyChanged(nameof(OnCourseLastStartLabel));
         OnPropertyChanged(nameof(HasOnCourseLastStart));
+        OnPropertyChanged(nameof(ReadinessHasErrors));
+        OnPropertyChanged(nameof(ReadinessHasOnlyWarnings));
+        OnPropertyChanged(nameof(ReadinessIsClean));
+        OnPropertyChanged(nameof(ReadinessText));
+        OnPropertyChanged(nameof(ReadinessDetail));
 
         FinishedBadges.Clear();
         foreach (var s in value.FinishedByStatus)

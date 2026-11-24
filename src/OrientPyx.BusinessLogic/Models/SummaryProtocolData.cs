@@ -34,7 +34,14 @@ public sealed record SummaryRankedGroup(string GroupName, int Order, IReadOnlyLi
 
 /// <summary>One ranked member of a summary group: the member, their place (null when поза конкурсом), and the
 /// formatted total shown in the «Сума» column.</summary>
-public sealed record SummaryRankedEntry(SummaryProtocolParticipant Member, int? Place, string TotalText);
+public sealed record SummaryRankedEntry(SummaryProtocolParticipant Member, int? Place, string TotalText)
+{
+    /// <summary>The «Сума» as a number in the «за очками» mode (Σ points of the counted days).</summary>
+    public decimal TotalPoints { get; init; }
+
+    /// <summary>The «Сума» as a time in the «за часом» mode (Σ ranking times of the counted days).</summary>
+    public TimeSpan TotalTime { get; init; }
+}
 
 /// <summary>
 /// One participant in a group's summary: their identity fields plus the per-day computed result keyed by day id.

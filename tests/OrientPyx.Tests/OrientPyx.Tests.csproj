@@ -44,6 +44,8 @@
   <ItemGroup>
     <!-- Approved results of the synthetic competition (see Support/SyntheticCompetition.cs). -->
     <None Include="Golden\**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The official IOF Data Standard 3.0 schema the IOF XML export is validated against (see Iof/README.md). -->
+    <None Include="Iof\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

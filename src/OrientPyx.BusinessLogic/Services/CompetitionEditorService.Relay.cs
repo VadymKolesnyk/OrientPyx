@@ -2,6 +2,7 @@ using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Models;
+using OrientPyx.BusinessLogic.Services.Relay;
 
 namespace OrientPyx.BusinessLogic.Services;
 
@@ -397,96 +398,24 @@ public sealed partial class CompetitionEditorService
     {
         var teams = await _eventStore.GetRelayTeamsAsync(folder, day.Id, cancellationToken);
         var settings = await _eventStore.GetGroupDaySettingsAsync(folder, day.Id, cancellationToken);
-        var isRelayDay = teams.Count > 0
-            || IsRelay(day.DefaultDiscipline)
-            || settings.Any(s => IsRelay(s.DisciplineOverride ?? day.DefaultDiscipline));
-
-        var byLink = new Dictionary<Guid, RelayPlacement>();
+        var isRelayDay = RelayPlacements.IsRelayDay(day, teams, settings, IsRelay);
         if (teams.Count == 0)
-            return (byLink, isRelayDay);
-        var teamsById = teams.ToDictionary(t => t.Id);
-        var legCounts = settings.ToDictionary(s => s.GroupId, s => Math.Max(1, s.LegCount ?? 1));
-        var dayLinks = links.Where(l => l.EventDayId == day.Id && l.RelayTeamId is not null).ToList();
-        var legsByTeam = dayLinks.Where(l => l.Leg is not null)
-            .GroupBy(l => l.RelayTeamId!.Value)
-            .ToDictionary(g => g.Key, g => g.Select(l => l.Leg!.Value).ToHashSet());
+            return (new Dictionary<Guid, RelayPlacement>(), isRelayDay);
         var legCourses = await LoadLegCourseCheckAsync(folder, day, settings, cancellationToken);
-        foreach (var link in dayLinks)
-        {
-            if (!teamsById.TryGetValue(link.RelayTeamId!.Value, out var team))
-                continue;
-            var legCount = legCounts.TryGetValue(team.GroupId, out var count) ? count : 1;
-            byLink[link.Id] = new RelayPlacement(team.Id, team.Number, team.Name, link.Leg, legCount)
-            {
-                FilledLegs = legsByTeam.TryGetValue(team.Id, out var legs) ? legs.Count(l => l >= 1 && l <= legCount) : 0,
-                CourseIssue = link.Leg is { } leg && leg >= 1 && leg <= legCount ? legCourses?.IssueOf(team, leg) : null
-            };
-        }
-        return (byLink, isRelayDay);
+        return (RelayPlacements.Build(day, links, teams, settings, legCourses), isRelayDay);
     }
 
     // The day's leg-number courses, read only when some relay group of the day takes its courses «за номером етапу».
     private async Task<LegCourseCheck?> LoadLegCourseCheckAsync(
         string folder, EventDay day, IReadOnlyList<GroupDaySettings> settings, CancellationToken cancellationToken)
     {
-        var byBibGroups = settings
-            .Where(s => s.CourseAssignmentMode == RelayCourseMode.ByBib && IsRelay(s.DisciplineOverride ?? day.DefaultDiscipline))
-            .Select(s => s.GroupId)
-            .ToHashSet();
+        var byBibGroups = LegCourseCheck.ByBibGroups(day, settings, IsRelay);
         if (byBibGroups.Count == 0)
             return null;
         var assignments = await _eventStore.GetLegCourseAssignmentsAsync(folder, day.Id, cancellationToken);
         var variants = await _eventStore.GetCourseVariantsAsync(folder, day.Id, cancellationToken);
         var groups = await _eventStore.GetGroupsAsync(folder, cancellationToken);
-        return new LegCourseCheck(byBibGroups, assignments, variants, groups.ToDictionary(g => g.Id, g => g.Name.Trim()));
-    }
-
-    /// <summary>
-    /// Whether a leg number of a group «за номером етапу» (Р-41) has a course the results can use — by the rule the results
-    /// look it up with: the number's row for the leg naming the team's group or no group, its code one of the group's
-    /// courses. A row of another group is never applied (the course is then «given in another group»).
-    /// </summary>
-    private sealed class LegCourseCheck(
-        IReadOnlySet<Guid> byBibGroups,
-        IReadOnlyList<LegCourseAssignment> assignments,
-        IReadOnlyList<GroupCourseVariant> variants,
-        IReadOnlyDictionary<Guid, string> groupNames)
-    {
-        private readonly ILookup<(int Number, int Leg), LegCourseAssignment> _byNumber =
-            assignments.ToLookup(a => (a.TeamNumber, a.Leg));
-
-        private readonly Dictionary<Guid, HashSet<string>> _codes = variants
-            .GroupBy(v => v.GroupId)
-            .ToDictionary(g => g.Key, g => g.Select(v => v.Code.Trim()).ToHashSet(TextKey.Comparer));
-
-        private string GroupName(Guid groupId) => groupNames.GetValueOrDefault(groupId, string.Empty);
-
-        public RelayLegCourseIssue? IssueOf(RelayTeam team, int leg)
-        {
-            if (!byBibGroups.Contains(team.GroupId))
-                return null;
-            var group = GroupName(team.GroupId);
-            if (team.Number is not { } number)
-                return new RelayLegCourseIssue(RelayLegCourseIssueKind.NoTeamNumber, group, string.Empty);
-
-            var bib = RelayBib.Format(number, leg);
-            var rows = _byNumber[(number, leg)].ToList();
-            // The results take the first row of the team's group (or of no group) — a blank one included.
-            if (rows.FirstOrDefault(a => a.GroupId is null || a.GroupId == team.GroupId) is { } own)
-            {
-                var code = own.CourseKey.Trim();
-                if (code.Length == 0)
-                    return new RelayLegCourseIssue(RelayLegCourseIssueKind.NotAssigned, group, bib);
-                return _codes.TryGetValue(team.GroupId, out var codes) && codes.Contains(code)
-                    ? null
-                    : new RelayLegCourseIssue(RelayLegCourseIssueKind.UnknownCourse, group, bib, code);
-            }
-            // A row of a group that is gone reads as none given.
-            if (rows.FirstOrDefault(a => a.CourseKey.Trim().Length > 0 && a.GroupId is { } g && GroupName(g).Length > 0)
-                is { GroupId: { } other })
-                return new RelayLegCourseIssue(RelayLegCourseIssueKind.OtherGroup, group, bib, GroupName(other));
-            return new RelayLegCourseIssue(RelayLegCourseIssueKind.NotAssigned, group, bib);
-        }
+        return LegCourseCheck.For(byBibGroups, assignments, variants, groups);
     }
 
     public async Task<IReadOnlyDictionary<Guid, RelayPlacement>> GetRelayPlacementsAsync(

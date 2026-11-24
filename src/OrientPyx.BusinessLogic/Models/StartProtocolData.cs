@@ -75,4 +75,8 @@ public sealed record StartProtocolRow(
     string Chip,
     string GroupName,
     /// <summary>Team / команда of the runner; blank when none. Shown in the judges' protocol.</summary>
-    string Team = "");
+    string Team = "")
+{
+    /// <summary>The participant this row is — the IOF start list finds the runner's extras by it.</summary>
+    public Guid ParticipantId { get; init; }
+}

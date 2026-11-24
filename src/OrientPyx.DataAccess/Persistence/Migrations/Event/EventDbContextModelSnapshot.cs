@@ -451,6 +451,12 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                     b.Property<int>("Order")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("SourceCourseFamily")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceCourseName")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("EventDayId", "GroupId");
@@ -563,6 +569,21 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.Event
                         .IsUnique();
 
                     b.ToTable("ImportMappings");
+                });
+
+            modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.IofExportSettingsRow", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Json")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("IofExportSettings");
                 });
 
             modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.LegCourseAssignment", b =>

@@ -35,5 +35,14 @@ public class GroupCourseVariant
     /// other mode (only that mode reads it), so switching modes loses nothing.</summary>
     public int? Leg { get; set; }
 
+    /// <summary>The course / variation name exactly as the course-setting file wrote it (IOF 3.0 <c>Course/Name</c>,
+    /// 2.0.3 variation name), so the IOF export can name the runner's course as the file did — for a renamed or split
+    /// group too. Null for a variant typed by hand or imported before this was kept.</summary>
+    public string? SourceCourseName { get; set; }
+
+    /// <summary>The course family as the file wrote it (IOF 3.0 <c>CourseFamily</c>, 2.0.3 course name); null when
+    /// the file named none.</summary>
+    public string? SourceCourseFamily { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }

@@ -8,6 +8,19 @@
              x:Class="OrientPyx.Presentation.Views.Pages.DashboardView"
              x:DataType="pages:DashboardViewModel">
 
+    <UserControl.Styles>
+        <!-- «Проблеми дня»: red with an error, amber with warnings only, green when all is ready. -->
+        <Style Selector="TextBlock.readinessError">
+            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+        </Style>
+        <Style Selector="TextBlock.readinessWarning">
+            <Setter Property="Foreground" Value="#B45309" />
+        </Style>
+        <Style Selector="TextBlock.readinessOk">
+            <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+        </Style>
+    </UserControl.Styles>
+
     <DockPanel LastChildFill="True">
 
         <!-- Page heading + refresh -->
@@ -210,6 +223,22 @@
 
                 <!-- Stat tiles: same 232px rhythm, uniform 120px height so every tile in a row lines up. -->
                 <WrapPanel Orientation="Horizontal">
+
+                    <!-- Day's problems → Старт → Перевірка готовності дня -->
+                    <Button Classes="tile" Width="232" Height="120" Margin="0,0,14,14"
+                            Command="{Binding QuickActionCommand}"
+                            CommandParameter="{x:Static pages:DashboardQuickAction.DayReadiness}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Localization[Dashboard.Stat.Readiness]}" Classes="subtitle" />
+                            <TextBlock Text="{Binding ReadinessText}" Classes="h1" FontSize="30"
+                                       Classes.readinessError="{Binding ReadinessHasErrors}"
+                                       Classes.readinessWarning="{Binding ReadinessHasOnlyWarnings}"
+                                       Classes.readinessOk="{Binding ReadinessIsClean}" />
+                            <TextBlock Text="{Binding ReadinessDetail}" Classes="muted" FontSize="12"
+                                       TextWrapping="Wrap"
+                                       IsVisible="{Binding !ReadinessIsClean}" />
+                        </StackPanel>
+                    </Button>
 
                     <!-- Participants → Учасники -->
                     <Button Classes="tile" Width="232" Height="120" Margin="0,0,14,14"

@@ -52,6 +52,14 @@ non-relay group that has rows). The variation cell is a combo of the group's var
 `SetLegCoursesAsync` (`LegCourseEntry.GroupId` = the row's group; blank removes the row); rows stay put until reload.
 The upper table exports like «Кількість карт».
 
+**IOF 3.0 course details** (`IofXmlParser`): a file of several races reads the `RaceCourseData` whose `raceNumber` is the
+day number (`Parse(xml, raceNumber)`; none ⇒ `RaceUnresolved`, `XmlImportFlow` asks for the race); `CrossingPoint` /
+`EndOfMarkedRoute` controls are neither control points nor part of an order; a `CourseControl` with several `Control`s
+(«one of») or a run of `randomOrder="true"` becomes `IofCourse.Pattern` (`[1: 31 32]`, `[3: 41 42 43]`) and
+`ImportGroupsAsync` makes such a single course a «Змішаний» group (`GroupImportResult.MixedGroups`, reported); lengths
+are xsd:double, rounded. Every variant keeps the file's course name / family (`GroupCourseVariant.SourceCourseName` /
+`SourceCourseFamily`, carried by code across a hand edit) — the IOF export names the runner's course by it.
+
 ## Relay (естафета)
 
 Built-in discipline `DisciplineId.Relay` (`RelayStrategy`, `CompetitorModel.TeamWithLegs`; rules Р-20…Р-44 in

@@ -118,6 +118,72 @@ public sealed class HeadlessWorkflowTests
     }
 
     [Fact]
+    public async Task DaysPageSavesAnEditedRowByItself()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Core, TestIds.Next("ui_days_auto"));
+        await OpenCompetitionAsync(c.Summary.Identifier);
+        await _app.OnUiAsync(() => _app.Vm.OpenCompetitionDaysCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        var page = Assert.IsType<CompetitionDaysViewModel>(Shell().SelectedPage);
+        await _app.WaitUntilAsync(() => page.Days.Count == 1, what: "one day listed");
+        var row = page.Days[0];
+
+        // Typed into the cells — no Save button: the row writes itself after the debounce.
+        await _app.OnUiAsync(() =>
+        {
+            row.Venue = "Голосіївський ліс";
+            row.SelectedDiscipline = row.DisciplineOptions.First(o => o.Value == DisciplineId.Rogaine);
+        });
+        var store = Core.GetRequiredService<IEventStore>();
+        await _app.WaitUntilAsync(() =>
+        {
+            var day = store.GetDaysAsync(c.Folder).GetAwaiter().GetResult().Single();
+            return day.Venue == "Голосіївський ліс" && day.DefaultDiscipline == DisciplineId.Rogaine;
+        }, what: "the edited day saved");
+
+        // The active day: the session follows, and the table keeps the same row (merged, not rebuilt).
+        await _app.WaitUntilAsync(() => Session().CurrentDay?.DefaultDiscipline == DisciplineId.Rogaine,
+            what: "the session's day follows");
+        await _app.SettleAsync();
+        Assert.Same(row, page.Days.Single());
+        Assert.False(row.IsDirty);
+        AssertNoUiErrors();
+    }
+
+    [Fact]
+    public async Task GroupsGeneralSettingsSetTheDayDiscipline()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Core, TestIds.Next("ui_day_discipline"));
+        await c.AddGroupAsync("Ч21", "31 32");
+        await OpenCompetitionAsync(c.Summary.Identifier);
+        await _app.OnUiAsync(() => _app.Vm.OpenGroupsCommand.ExecuteAsync(null));
+        await _app.SettleAsync();
+        var groups = Assert.IsType<GroupsViewModel>(Shell().SelectedPage);
+        await _app.WaitUntilAsync(() => groups.Groups.Count == 1, what: "the group listed");
+        Assert.Equal(DisciplineId.SetCourse, groups.SelectedDayDiscipline?.Value);
+        var row = groups.Groups[0];
+        await _app.OnUiAsync(() => groups.SelectedGroup = row);
+
+        await _app.OnUiAsync(() =>
+            groups.SelectedDayDiscipline = groups.DayDisciplineOptions.First(o => o.Value == DisciplineId.Rogaine));
+        var store = Core.GetRequiredService<IEventStore>();
+        await _app.WaitUntilAsync(() =>
+            store.GetDaysAsync(c.Folder).GetAwaiter().GetResult().Single().DefaultDiscipline == DisciplineId.Rogaine,
+            what: "the day's discipline saved");
+        await _app.WaitUntilAsync(() => Session().CurrentDay?.DefaultDiscipline == DisciplineId.Rogaine,
+            what: "the session's day follows");
+
+        // The group with no type of its own takes the day's; the row and the selection survive (merged in place).
+        await _app.WaitUntilAsync(() => row.EffectiveDiscipline == DisciplineId.Rogaine,
+            what: "the group follows the day discipline");
+        await _app.SettleAsync();
+        Assert.Same(row, groups.Groups.Single());
+        Assert.Same(row, groups.SelectedGroup);
+        Assert.Equal(DisciplineId.Rogaine, groups.SelectedDayDiscipline?.Value);
+        AssertNoUiErrors();
+    }
+
+    [Fact]
     public async Task GroupsControlsChipsAndParticipantsPagesAddRows()
     {
         var c = await CompetitionBuilder.CreateAsync(Core, TestIds.Next("ui_rows"));

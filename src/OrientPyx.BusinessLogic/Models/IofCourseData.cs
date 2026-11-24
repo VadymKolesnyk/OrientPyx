@@ -21,6 +21,17 @@ public sealed class IofCourseData
 
     /// <summary>All courses found in the file, in file order. Empty for control-only files.</summary>
     public IReadOnlyList<IofCourse> Courses { get; init; } = [];
+
+    /// <summary>IOF 3.0: the <c>raceNumber</c> of every <c>&lt;RaceCourseData&gt;</c> when the file holds more than one
+    /// (one per race of a multi-race event); empty for a single-race file and for 2.0.3.</summary>
+    public IReadOnlyList<int> RaceNumbers { get; init; } = [];
+
+    /// <summary>The race whose courses were read (its <c>raceNumber</c>); null for a single-race file.</summary>
+    public int? RaceNumber { get; init; }
+
+    /// <summary>The file holds several races but none was asked for that it has — the courses are the first race's,
+    /// and the import should ask which race to use.</summary>
+    public bool RaceUnresolved { get; init; }
 }
 
 /// <summary>A single control point parsed from an IOF file.</summary>
@@ -93,6 +104,15 @@ public sealed class IofCourse
     /// <summary>How the import treats the variations — chosen per course in «Розділення груп»; scatter by default.</summary>
     public CourseVariationUse VariationUse { get; init; } = CourseVariationUse.Scatter;
 
+    /// <summary>
+    /// IOF 3.0: the course as a «mixed» pattern when the file gives it a choice — a <c>&lt;CourseControl&gt;</c> with
+    /// several <c>&lt;Control&gt;</c> («punch one of them» → <c>[1: 31 32]</c>) or a run of controls marked
+    /// <c>randomOrder="true"</c> («all, in any order» → <c>[3: 41 42 43]</c>). Null for a plain ordered course; then
+    /// <see cref="ControlCodes"/> is the whole truth (with a pattern it lists the first alternative of each choice, for
+    /// the distance). Ignored for a course with variations.
+    /// </summary>
+    public string? Pattern { get; init; }
+
     /// <summary>True when the file gives this course several variations — the import then asks how to use them.</summary>
     public bool HasVariations => AllVariants.Count > 1;
 
@@ -103,7 +123,15 @@ public sealed class IofCourse
 /// <summary>One valid running order of a scatter course parsed from an IOF file: a display <see cref="Code"/>
 /// (from the file's variant name, or A/B/… assigned by order) and the ordered control codes (start/finish
 /// included when present, exactly like <see cref="IofCourse.ControlCodes"/>).</summary>
-public sealed record IofCourseVariant(string Code, IReadOnlyList<string> ControlCodes, int? Length, int? Climb);
+public sealed record IofCourseVariant(string Code, IReadOnlyList<string> ControlCodes, int? Length, int? Climb)
+{
+    /// <summary>The variation's name as the file wrote it (3.0 <c>Course/Name</c>, 2.0.3 variation <c>Name</c>); null
+    /// when the file gave none. Stored on the variant so the IOF export names the course as the file did.</summary>
+    public string? SourceName { get; init; }
+
+    /// <summary>The family the file put the variation in (3.0 <c>CourseFamily</c>, 2.0.3 course name); null when none.</summary>
+    public string? SourceFamily { get; init; }
+}
 
 /// <summary>The variations of one number («StartNo» of a team, or a runner's bib): leg → variation code.</summary>
 public sealed record IofTeamCombination(int Number, IReadOnlyList<IofLegVariant> Legs);

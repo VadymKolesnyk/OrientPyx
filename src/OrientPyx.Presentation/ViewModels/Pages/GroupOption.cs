@@ -66,12 +66,11 @@ public sealed class GroupOption
     /// </summary>
     public string AgeViolationReason(int? birthYear)
     {
-        if (birthYear is not { } year)
+        if (BusinessLogic.Entities.Group.CheckAgeWindow(birthYear, MinBirthYear, MaxBirthYear) is not { } violation)
             return string.Empty;
-        if (MinBirthYear is { } min && year < min)
-            return string.Format(_localization.Get("Participants.AgeViolation.TooOld"), Label, min);
-        if (MaxBirthYear is { } max && year > max)
-            return string.Format(_localization.Get("Participants.AgeViolation.TooYoung"), Label, max);
-        return string.Empty;
+        return string.Format(_localization.Get(violation.TooOld
+                ? "Participants.AgeViolation.TooOld"
+                : "Participants.AgeViolation.TooYoung"),
+            Label, violation.BoundYear);
     }
 }

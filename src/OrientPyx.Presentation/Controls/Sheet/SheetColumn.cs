@@ -140,6 +140,10 @@ public sealed partial class SheetColumn : ObservableObject
     /// <summary>Resolved (already localized) sub-header text — e.g. "День 2", or an identity label.</summary>
     public string Header { get; set; } = string.Empty;
 
+    /// <summary>The header's localization key when the column was built from one (<see cref="SheetColumnBuilder"/>);
+    /// empty otherwise. Lets a page name a column by intent («Перейти» to the course cell).</summary>
+    public string HeaderKey { get; set; } = string.Empty;
+
     /// <summary>
     /// Day index into the row's <c>Days</c> collection for per-day cells (Group/Chip); ignored for
     /// identity/collapsed/action columns.

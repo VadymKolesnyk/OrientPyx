@@ -38,6 +38,11 @@ public sealed partial class DisciplineTypeOption : ObservableObject
         return options;
     }
 
+    /// <summary>The registered disciplines as one comparable key: it changes when a plugin is switched on or off, so
+    /// a page can tell a reload that must rebuild its type dropdowns from one that may merge its rows in place.</summary>
+    public static string RegisteredKey(IDisciplineStrategyProvider strategies)
+        => string.Join('\n', strategies.All.Select(s => s.Id.Value));
+
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e)
         => OnPropertyChanged(nameof(Label));
 }

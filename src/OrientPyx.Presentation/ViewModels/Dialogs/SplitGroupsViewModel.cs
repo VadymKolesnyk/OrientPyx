@@ -89,6 +89,7 @@ public sealed partial class SplitGroupsViewModel : ObservableObject
                     AllVariants = row.Source.AllVariants,
                     TeamCombinations = row.Source.TeamCombinations,
                     VariationUse = row.VariationUse,
+                    Pattern = row.Source.Pattern,
                 });
             }
         }
@@ -99,6 +100,8 @@ public sealed partial class SplitGroupsViewModel : ObservableObject
             MapScale = _source.MapScale,
             Controls = _source.Controls,
             Courses = courses,
+            RaceNumbers = _source.RaceNumbers,
+            RaceNumber = _source.RaceNumber,
         });
     }
 

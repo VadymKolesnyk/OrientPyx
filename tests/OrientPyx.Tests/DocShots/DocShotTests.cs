@@ -135,6 +135,9 @@ public sealed partial class DocShotTests
         await _s.PageAsync<SplitsExportViewModel>(vm => vm.OpenSplitsExportCommand);
         await _s.ShotAsync("splits-export", "«Результати → Спліти (HTML)».");
 
+        await _s.PageAsync<IofExportViewModel>(vm => vm.OpenIofExportCommand);
+        await _s.ShotAsync("iof-export", "«Результати → Експорт IOF XML».");
+
         var monitor = await _s.PageAsync<MonitorResultsViewModel>(vm => vm.OpenMonitorResultsCommand);
         await _s.ShotAsync("monitor", "«Результати → Результати на монітор».");
         await _s.OnUiAsync(() => monitor.AddFileCommand.Execute(null));

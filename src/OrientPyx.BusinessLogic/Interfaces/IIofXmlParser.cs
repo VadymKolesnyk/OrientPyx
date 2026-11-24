@@ -15,6 +15,13 @@ public interface IIofXmlParser
     /// content is not a recognised IOF CourseData document.
     /// </summary>
     IofCourseData Parse(string xml);
+
+    /// <summary>
+    /// Parses the document and, for an IOF 3.0 file with several races (one <c>&lt;RaceCourseData&gt;</c> each), reads
+    /// the race whose <c>raceNumber</c> is <paramref name="raceNumber"/>. A file without that race reads its first race
+    /// and sets <see cref="IofCourseData.RaceUnresolved"/>, so the caller can ask which one to use.
+    /// </summary>
+    IofCourseData Parse(string xml, int? raceNumber);
 }
 
 /// <summary>Raised when an XML document is not a recognisable IOF CourseData file.</summary>

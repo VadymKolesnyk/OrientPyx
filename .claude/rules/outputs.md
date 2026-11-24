@@ -5,10 +5,13 @@ paths:
   - "**/*Online*"
   - "**/*Publisher*"
   - "**/*Docx*"
+  - "**/*IofExport*"
+  - "**/*IofXmlWriter*"
+  - "**/Services/Iof/*"
   - "docs/online-snapshot.md"
 ---
 
-# Result outputs: monitor, Word protocols, online results
+# Result outputs: monitor, Word protocols, online results, IOF XML
 
 (Plugin and additional-field columns in these outputs: `.claude/rules/plugins.md`, «Extra result columns».)
 
@@ -63,3 +66,20 @@ from the participant id — the same on every day; the site shows only a positiv
 stand-in row once the runner gets a number (`PruneUnnumberedAsync`). Relay groups publish to a separate
 `relay_teams` table, never to `results`; a project without it just logs a warning — contract in
 `docs/online-snapshot.md`.)
+
+(**IOF XML export** — «Результати → Експорт IOF XML» / «Старт → Стартовий протокол (IOF XML)», one singleton
+`IofExportViewModel` (`Kind` set by the open command; plan and decisions: `docs/iof-xml-export-plan.md`). Data:
+`ICompetitionEditorService.GetIofExportDataAsync(dayIds, kind)` (`CompetitionEditorService.IofExport.cs`) — one
+snapshot per day, the protocol rows from `ReadResultProtocolDataAsync` / `ReadStartProtocolData` (shared with the Word
+protocols), the splits from `BuildDaySplitViews` (shared with the HTML splits), the groups' strategy answers as
+`IofClassInfo`, the runners' extras as `IofRunnerData`; several days of results also carry the summary data + settings
+(null settings → the page fills the app default, as «Підсумковий протокол» does). `IofExportBuilder` (BusinessLogic,
+helpers in `Services/Iof/`) builds the values-only IOF 3.0 tree (`Models/IofXmlDocument.cs`): a person per runner, a
+patrol per rogaine team (Leg 1, team result in `OverallResult`), a team per relay team (member per leg, team place on
+the last leg), several days = `Event/Race` + `@raceNumber` (= the day number) and the running «по сумі днів» total in
+individual groups (`ISummaryProtocolBuilder.RankGroups` per day N over the counted days ≤ N). A day still open ⇒
+`status="Snapshot"` and unread runners `Inactive`; closed ⇒ `Complete` / `DidNotStart`. A runner's course name is the
+course file's (`GroupCourseVariant.SourceCourseName/Family`, kept by the course import), else «група_код». `IofXmlWriter`
+(DataAccess/Documents) writes it in `IOF.xsd` order, UTF-8 without BOM, "\n". The page options persist per competition
+(`IofExportSettingsRow`, `Get/SaveIofExportJsonAsync`). Tests validate every output against the committed official
+schema `tests/OrientPyx.Tests/Iof/IOF.xsd` (`Checks.IsIofXml`) and compare `Golden/iof-*.xml`.)

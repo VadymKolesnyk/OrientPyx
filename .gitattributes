@@ -12,6 +12,8 @@
 *.manifest  text
 *.gitignore text
 *.sh        text eol=lf
+# The IOF XML export writes "\n" on every platform; its approved files are compared byte for byte.
+tests/OrientPyx.Tests/Golden/*.xml text eol=lf
 *.yml       text
 *.yaml      text
 *.plist     text

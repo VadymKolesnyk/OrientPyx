@@ -224,12 +224,8 @@ public sealed class AppSettingsService : IAppSettingsService
         return _appStore.SaveOnlineApiSettingsAsync(settings, cancellationToken);
     }
 
-    public async Task<ReadoutType> GetReadoutTypeAsync(CancellationToken cancellationToken = default)
-    {
-        var stored = await _appStore.GetReadoutTypeAsync(cancellationToken);
-        // An out-of-range stored value (future format we don't know) degrades to the safe default.
-        return stored is { } v && Enum.IsDefined(typeof(ReadoutType), v) ? (ReadoutType)v : ReadoutType.SportIdent;
-    }
+    public async Task<ReadoutType> GetReadoutTypeAsync(CancellationToken cancellationToken = default) =>
+        ReadoutTypes.FromStored(await _appStore.GetReadoutTypeAsync(cancellationToken));
 
     public Task SaveReadoutTypeAsync(ReadoutType readoutType, CancellationToken cancellationToken = default)
         => _appStore.SaveReadoutTypeAsync((int)readoutType, cancellationToken);

@@ -381,6 +381,10 @@
             <!-- Start: the start draw (жеребкування) and related start-list operations, while open -->
             <MenuItem Header="{Binding Localization[Menu.Start]}"
                       IsVisible="{Binding IsEventSelected}">
+                <!-- Every problem of the day's data, first: what to fix before the start -->
+                <MenuItem Header="{Binding Localization[Menu.Start.DayReadiness]}"
+                          Command="{Binding OpenDayReadinessCommand}" />
+                <Separator />
                 <MenuItem Header="{Binding Localization[Menu.Start.Draw]}"
                           Command="{Binding OpenDrawCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Start.ClassicDraw]}"
@@ -392,6 +396,8 @@
                           Command="{Binding OpenStartProtocolCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Start.StartProtocolJudges]}"
                           Command="{Binding OpenStartProtocolJudgesCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Start.IofStartList]}"
+                          Command="{Binding OpenIofStartListCommand}" />
                 <Separator />
                 <MenuItem Header="{Binding Localization[Menu.Start.MapCounts]}"
                           Command="{Binding OpenMapCountsCommand}" />
@@ -413,6 +419,8 @@
                           Command="{Binding OpenSummaryProtocolCommand}" />
                 <MenuItem Header="{Binding Localization[Menu.Protocols.Splits]}"
                           Command="{Binding OpenSplitsExportCommand}" />
+                <MenuItem Header="{Binding Localization[Menu.Protocols.IofExport]}"
+                          Command="{Binding OpenIofExportCommand}" />
                 <Separator />
                 <MenuItem Header="{Binding Localization[Menu.Protocols.OnlineResults]}"
                           Command="{Binding OpenOnlineResultsCommand}" />
