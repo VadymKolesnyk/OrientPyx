@@ -114,12 +114,12 @@ public sealed class PluginDisciplineTests
 
         var r = await c.ResultsAsync();
         Assert.Equal(T(0, 20), r["Man"].ResultTime);
-        Assert.Equal(T(0, 18, 12), r["Man"].AdjustedTime);     // age 46 → K 0.91
-        Assert.Equal(T(0, 22, 15), r["Woman"].AdjustedTime);   // age 30 → K 0.89
+        Assert.Equal(T(0, 17, 24), r["Man"].AdjustedTime);     // age 46 → K 0.870
+        Assert.Equal(T(0, 22, 15), r["Woman"].AdjustedTime);   // age 30 → K 0.890
         Assert.Equal(T(0, 20), r["Man"].Extra["time"]);         // «Час» — the clean leg time T
         Assert.Equal(T(0, 25), r["Woman"].Extra["time"]);
         Assert.Equal(T(0, 10), r["NoGender-1"].Extra["time"]);  // shown even when K is unknown
-        Assert.Equal(T(0, 40, 27), r["Man"].Team!.Time);
+        Assert.Equal(T(0, 39, 39), r["Man"].Team!.Time);
         Assert.Equal(1, r["Man"].Team!.Place);
         Assert.Equal("weighted.k.missing", r["NoGender-1"].UnrankedReason);
         Assert.Null(r["NoGender-1"].Team!.Place);
@@ -133,15 +133,15 @@ public sealed class PluginDisciplineTests
             new BusinessLogic.Models.ResultColumnSelection(["full_name", "weighted.time", "result_time", "gap", "cumulative"]),
             Labels.Make<BusinessLogic.Models.MonitorLabels>());
         var monitorRows = monitor!.Groups.Single().Cells;
-        Assert.Equal(["Man", "20:00", "18:12", "", "18:12"], monitorRows.Single(row => row.Values[0] == "Man").Values);
-        Assert.Equal(["Woman", "25:00", "22:15", "", "40:27"], monitorRows.Single(row => row.Values[0] == "Woman").Values);
+        Assert.Equal(["Man", "20:00", "17:24", "", "17:24"], monitorRows.Single(row => row.Values[0] == "Man").Values);
+        Assert.Equal(["Woman", "25:00", "22:15", "", "39:39"], monitorRows.Single(row => row.Values[0] == "Woman").Values);
 
         // Online: the leg carries both times and the extra column values (plugin columns and the «Стать» field) —
         // but not «T·K» (ResultColumnDef.Online = false): the site's «Результат» already is T·K.
         var online = await editor.GetOnlineResultsSnapshotAsync(c.Day(1).Id);
         var onlineLeg = online.Teams.Single(t => t.Number == 501).Legs[0];
         Assert.Equal(T(0, 20), onlineLeg.LegTime);           // «Час»
-        Assert.Equal(T(0, 18, 12), onlineLeg.Result);        // «Результат» = T·K
+        Assert.Equal(T(0, 17, 24), onlineLeg.Result);        // «Результат» = T·K
         Assert.Equal("Ч", onlineLeg.Extra["field.gender"]);
         Assert.True(onlineLeg.Extra.ContainsKey("weighted.k"));
         Assert.False(onlineLeg.Extra.ContainsKey("weighted.adj"));

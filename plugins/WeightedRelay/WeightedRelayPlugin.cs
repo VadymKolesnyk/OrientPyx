@@ -1,3 +1,4 @@
+using System.Globalization;
 using OrientPyx.Plugins.Sdk;
 using OrientPyx.Plugins.Sdk.Toolkit;
 
@@ -9,7 +10,7 @@ namespace WeightedRelay;
 /// </summary>
 public sealed class WeightedRelayPlugin : IOrientPyxPlugin
 {
-    public PluginInfo Info => new("weighted", "Зважена естафета", "1.4", MinApiVersion: 4,
+    public PluginInfo Info => new("weighted", "Зважена естафета", "1.5", MinApiVersion: 4,
         Author: "OrientPyx", Description: "Час етапу × коефіцієнт за віком і статтю; час команди = Σ T·K.");
 
     public void Register(IPluginBuilder p)
@@ -60,7 +61,7 @@ public sealed class WeightedRelayDiscipline : Discipline
     public override IEnumerable<ResultColumnDef> Columns =>
     [
         Column.Time("time", "column.time", r => r.Get<TimeSpan?>("time")),             // the leg's own time T
-        Column.Number("k", "column.k", r => r.Get<double?>("k"), format: "0.00",
+        Column.Number("k", "column.k", r => r.Get<double?>("k"), format: Coefficients.Format,
             problem: r => r.Get<bool>(MissingKey)),                                     // Р-48: red when unknown
         // Online «Результат» of a leg already is T·K — a column of its own there would only repeat it.
         Column.Time("adj", "column.adj", r => r.Get<TimeSpan?>("adj")) with { Online = false },
@@ -132,7 +133,7 @@ public sealed class CheckReport : Report
                 foreach (var (leg, runner, problem) in legs)
                     rows.Add(ReportRow.Sub(leg, runner?.Participant.FullName ?? ctx.Text("report.noRunner"),
                         runner?.Participant.BirthYear, runner?.Participant.Field("gender"),
-                        runner is null ? null : Coefficients.Of(table, runner.Participant, date), problem));
+                        runner is null ? null : Coefficients.Text(table, runner.Participant, date), problem));
             }
             if (rows.Count > 0)
                 sections.Add(new ReportSection { Title = group.Name, Rows = rows });
@@ -172,7 +173,8 @@ public sealed class CheckReport : Report
     }
 }
 
-/// <summary>The default coefficient table (§14): age range × gender.</summary>
+/// <summary>The default coefficient table (§14): age range × gender; age = the day's year − birth year, so «0–15» =
+/// «15 і молодші», «80+» = «80 і старші».</summary>
 internal static class Coefficients
 {
     public static readonly IReadOnlyList<TableColumnDef> Columns =
@@ -183,19 +185,22 @@ internal static class Coefficients
     ];
 
     public static readonly TableValue Default = TableValue.FromRows(Columns,
-        ["8–10", "0.80", "0.78"],
-        ["11–12", "0.86", "0.82"],
-        ["13–14", "0.92", "0.84"],
-        ["15–17", "0.97", "0.87"],
-        ["18–34", "1.00", "0.89"],
-        ["35–39", "0.98", "0.87"],
-        ["40–44", "0.95", "0.84"],
-        ["45–49", "0.91", "0.80"],
-        ["50–54", "0.88", "0.76"],
-        ["55–59", "0.84", "0.72"],
-        ["60–64", "0.80", "0.68"],
-        ["65–69", "0.76", "0.63"],
-        ["70+", "0.71", "0.58"]);
+        ["0–15", "0.950", "0.850"],
+        ["16–17", "0.990", "0.870"],
+        ["18–34", "1.000", "0.890"],
+        ["35–39", "0.975", "0.860"],
+        ["40–44", "0.920", "0.790"],
+        ["45–49", "0.870", "0.755"],
+        ["50–54", "0.830", "0.710"],
+        ["55–59", "0.785", "0.670"],
+        ["60–64", "0.745", "0.620"],
+        ["65–69", "0.695", "0.575"],
+        ["70–74", "0.640", "0.530"],
+        ["75–79", "0.585", "0.465"],
+        ["80+", "0.505", "0.395"]);
+
+    /// <summary>How K is shown: three decimals, as the table gives it (0.975, 0.755).</summary>
+    public const string Format = "0.000";
 
     /// <summary>The runner's K (Р-45…Р-47): age in the year of <paramref name="date"/> × gender; outside the table —
     /// the nearest row. Null without a birth year or gender, or when the table has no value for them (Р-48).</summary>
@@ -203,6 +208,10 @@ internal static class Coefficients
         participant.BirthYear is { } year && participant.Field("gender") is { } gender
             ? RangeTable.FromSetting(table).Lookup(Age.InYear(year, date), gender)
             : null;
+
+    /// <summary><see cref="Of"/> as the «K» column shows it; null when K cannot be found.</summary>
+    public static string? Text(TableValue? table, ParticipantView participant, DateOnly date) =>
+        Of(table, participant, date)?.ToString(Format, CultureInfo.InvariantCulture);
 }
 
 internal static class Strings

@@ -141,7 +141,7 @@ public abstract class MissedPenaltyDiscipline : Discipline
 ```csharp
 public sealed class WeightedRelayPlugin : IOrientPyxPlugin
 {
-    public PluginInfo Info => new("weighted", "Зважена естафета", "1.4", MinApiVersion: 4,
+    public PluginInfo Info => new("weighted", "Зважена естафета", "1.5", MinApiVersion: 4,
         Author: "OrientPyx", Description: "Час етапу × коефіцієнт за віком і статтю; час команди = Σ T·K.");
 
     public void Register(IPluginBuilder p)
@@ -196,7 +196,7 @@ public sealed class WeightedRelayDiscipline : Discipline
     public override IEnumerable<ResultColumnDef> Columns =>
     [
         Column.Time("time", "column.time", r => r.Get<TimeSpan?>("time")),   // чистий час етапу T
-        Column.Number("k", "column.k", r => r.Get<double?>("k"), format: "0.00",
+        Column.Number("k", "column.k", r => r.Get<double?>("k"), format: Coefficients.Format,
             problem: r => r.Get<bool>(MissingKey)),          // червона, коли K не визначено
         Column.Time("adj", "column.adj", r => r.Get<TimeSpan?>("adj")) with { Online = false },
     ];
@@ -213,7 +213,7 @@ public sealed class WeightedRelayDiscipline : Discipline
   у колонці «Результат» уже T·K.
 - `with { Online = false }` — «T·K» не публікується онлайн: на сайті «Результат» етапу і є T·K, окрема колонка
   лише повторювала б його. Онлайн лишаються «Час», «K» і «Результат».
-- Колонка «K» з форматом `"0.00"` і `problem` — клітинка червона, коли коефіцієнт визначити не вдалося.
+- Колонка «K» з форматом `"0.000"` (`Coefficients.Format`) і `problem` — клітинка червона, коли коефіцієнт визначити не вдалося.
 
 ### Таблиця коефіцієнтів
 
@@ -228,10 +228,12 @@ internal static class Coefficients
     ];
 
     public static readonly TableValue Default = TableValue.FromRows(Columns,
-        ["8–10", "0.80", "0.78"],
-        ["11–12", "0.86", "0.82"],
+        ["0–15", "0.950", "0.850"],
+        ["16–17", "0.990", "0.870"],
         // … ще 10 рядків …
-        ["70+", "0.71", "0.58"]);
+        ["80+", "0.505", "0.395"]);
+
+    public const string Format = "0.000";   // K з трьома знаками, як у таблиці (0.975, 0.755)
 
     // K учасника: вік у рік дня × стать; поза таблицею — найближчий рядок. null — немає року чи статі
     // (або K для них).
@@ -239,13 +241,18 @@ internal static class Coefficients
         participant.BirthYear is { } year && participant.Field("gender") is { } gender
             ? RangeTable.FromSetting(table).Lookup(Age.InYear(year, date), gender)
             : null;
+
+    // K так, як його показує колонка «K», — для звіту.
+    public static string? Text(TableValue? table, ParticipantView participant, DateOnly date) =>
+        Of(table, participant, date)?.ToString(Format, CultureInfo.InvariantCulture);
 }
 ```
 
 Ключі колонок «Ч» і «Ж» дорівнюють значенням поля «Стать» — тож значення поля можна прямо передати в
 `RangeTable.Lookup` як ключ колонки. Колонка `"range"` — діапазон віку; `RangeTable.FromSetting` читає її за
 замовчуванням. `TableValue.FromRows` будує значення за замовчуванням з позиційних рядків; кнопка «Скинути до
-типової» в редакторі таблиці повертає саме його. `Of` шукає K учасника — ним користуються і вид змагань, і звіт.
+типової» в редакторі таблиці повертає саме його. `Of` шукає K учасника — ним користуються і вид змагань, і звіт (звіт — через `Text`: число `double` звіт друкує з
+двома знаками, а K має три).
 
 ### Коефіцієнт для етапу
 
@@ -280,7 +287,7 @@ internal static class Coefficients
 - Вік — `Age.InYear(рік народження, ctx.Date)`: рік дня змагань мінус рік народження. Якщо дату дня не задано,
   програма бере дату найранішого фінішу дня.
 - `RangeTable.Lookup`: вік, менший за перший діапазон, бере перший рядок; більший за останній — останній
-  («70+»); у проміжку між рядками — найближчий.
+  («80+»); у проміжку між рядками — найближчий.
 - `MarkUnranked(MissingKey)` на етапі знімає з місця й очок **усю команду**, але її час рахується й показується.
   Причина — ключ рядків: у протоколі після прізвища друкується «K не визначено». Щойно організатор заповнить
   дату народження чи стать, результати перераховуються й команда отримує місце.
@@ -320,7 +327,7 @@ public sealed class CheckReport : Report
                 foreach (var (leg, runner, problem) in legs)
                     rows.Add(ReportRow.Sub(leg, runner?.Participant.FullName ?? ctx.Text("report.noRunner"),
                         runner?.Participant.BirthYear, runner?.Participant.Field("gender"),
-                        runner is null ? null : Coefficients.Of(table, runner.Participant, date), problem));
+                        runner is null ? null : Coefficients.Text(table, runner.Participant, date), problem));
             }
             if (rows.Count > 0)
                 sections.Add(new ReportSection { Title = group.Name, Rows = rows });

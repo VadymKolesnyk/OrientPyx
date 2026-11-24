@@ -236,7 +236,7 @@ public sealed class PluginExtensionsTests
         Assert.True(section.Rows[0].IsTeamHeader);
         Assert.Equal(["601", "Odd team", "", "", "", ""], section.Rows[0].Cells);
         Assert.True(section.Rows[1].IsSubRow);
-        Assert.Equal(["1", "Man", "1990", "Ч", "0.98", ""], section.Rows[1].Cells);   // 36 years in 2026 → «35–39»
+        Assert.Equal(["1", "Man", "1990", "Ч", "0.975", ""], section.Rows[1].Cells);   // 36 years in 2026 → «35–39»
         Assert.Equal("", section.Rows[2].Cells[4]);                                    // «M» — no K
         Assert.Contains("«M»", section.Rows[2].Cells[5]);
         Assert.Equal("немає року народження", section.Rows[4].Cells[5]);
@@ -250,7 +250,7 @@ public sealed class PluginExtensionsTests
         Assert.Equal(false, settings!.Values["onlyProblems"]);
         var all = await Editor.BuildPluginReportAsync("weighted.check", c.Day(1).Id, Labels());
         Assert.Equal(9, all.Document!.Sections.Single().Rows.Count);
-        Assert.Equal(["2", "Fine2", "1990", "Ж", "0.87", ""], all.Document.Sections.Single().Rows[8].Cells);
+        Assert.Equal(["2", "Fine2", "1990", "Ж", "0.860", ""], all.Document.Sections.Single().Rows[8].Cells);
 
         // K comes from the competition's own coefficient table, not the default one.
         await Editor.SaveDisciplineSettingsAsync(c.Day(1).Id, new DisciplineId("weighted.relay"),
@@ -259,8 +259,8 @@ public sealed class PluginExtensionsTests
                 ["k"] = new TableValue([new Dictionary<string, string?> { ["range"] = "0–99", ["Ч"] = "0.5", ["Ж"] = "0.4" }])
             });
         var edited = await Editor.BuildPluginReportAsync("weighted.check", c.Day(1).Id, Labels());
-        Assert.Equal("0.50", edited.Document!.Sections.Single().Rows[1].Cells[4]);
-        Assert.Equal("0.40", edited.Document.Sections.Single().Rows[8].Cells[4]);
+        Assert.Equal("0.500", edited.Document!.Sections.Single().Rows[1].Cells[4]);
+        Assert.Equal("0.400", edited.Document.Sections.Single().Rows[8].Cells[4]);
 
         // Everyone fixed: no sections, the «all good» line.
         await Editor.SavePluginReportSettingsAsync("weighted.check", c.Day(1).Id,
