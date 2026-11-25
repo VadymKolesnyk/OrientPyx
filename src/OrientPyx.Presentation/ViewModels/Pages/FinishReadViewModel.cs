@@ -172,6 +172,11 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
     [ObservableProperty]
     private bool _showScoreColumn;
 
+    /// <summary>True when the current day has relay teams — drives the «Команда» column after «ПІБ». Raised so the
+    /// View rebuilds its bands when it flips.</summary>
+    [ObservableProperty]
+    private bool _showTeamColumn;
+
     // --- Auto-read panel (in-memory only; never persisted, per the session rule)
 
     [ObservableProperty]
@@ -287,6 +292,7 @@ public sealed partial class FinishReadViewModel : PageViewModelBase
         var rows = log.Rows;
         RentalChips.Reset(chips.Select(c => c.Number));
         ShowScoreColumn = usesScore;
+        ShowTeamColumn = log.HasRelayTeams;
         _readoutType = readoutType;
         _counts = hasDay ? log.Counts : FinishReadoutCounts.Empty;
         RefreshCounts();

@@ -156,10 +156,11 @@ public partial class FinishReadView : UserControl
     private void OnLocalizationChanged(object? sender, PropertyChangedEventArgs e) => BuildBands();
 
     // Rebuild the columns when the «Бали» column's visibility flips (the day changed to/from a scoring
-    // discipline). Bands bake the visible column set at build time, so they must be rebuilt on a change.
+    // discipline) or the «Команда» one's (relay teams appeared/went). Bands bake the visible column set at build
+    // time, so they must be rebuilt on a change.
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(FinishReadViewModel.ShowScoreColumn))
+        if (e.PropertyName is nameof(FinishReadViewModel.ShowScoreColumn) or nameof(FinishReadViewModel.ShowTeamColumn))
             BuildBands();
     }
 
@@ -291,7 +292,9 @@ public partial class FinishReadView : UserControl
             // day with it), with a tooltip explaining why.
             .CellTint(nameof(FinishReadRowViewModel.CollectRentalChip), CollectRentalBrush,
                       nameof(FinishReadRowViewModel.CollectRentalChipTooltip))
-            .Text("FinishRead.Col.StartTime", nameof(FinishReadRowViewModel.StartTimeText), minWidth: 110)
+            // A relay leg started from the group's restart says so on hover.
+            .Text("FinishRead.Col.StartTime", nameof(FinishReadRowViewModel.StartTimeText), minWidth: 110,
+                  toolTipPath: nameof(FinishReadRowViewModel.StartTimeTooltip))
             .Text("FinishRead.Col.FinishTime", nameof(FinishReadRowViewModel.FinishTimeText), minWidth: 110)
             .Text("FinishRead.Col.ResultTime", nameof(FinishReadRowViewModel.ElapsedText), minWidth: 110);
 
@@ -302,9 +305,16 @@ public partial class FinishReadView : UserControl
                          sortPath: nameof(FinishReadRowViewModel.ScoreSort),
                          toolTipPath: nameof(FinishReadRowViewModel.ScoreTooltip));
 
-        Sheet.Bands = builder
+        builder
             .Text("FinishRead.Col.Number", nameof(FinishReadRowViewModel.ParticipantNumber), minWidth: 80)
-            .Text("FinishRead.Col.FullName", nameof(FinishReadRowViewModel.FullName), minWidth: 220)
+            .Text("FinishRead.Col.FullName", nameof(FinishReadRowViewModel.FullName), minWidth: 220);
+
+        // «Команда»: only on a day with relay teams — the runner's team name.
+        if (_vm.ShowTeamColumn)
+            builder.Text("FinishRead.Col.Team", nameof(FinishReadRowViewModel.TeamName), minWidth: 140);
+
+        Sheet.Bands = builder
+            // A relay leg's named course follows the group: «Ч21 · B».
             .Text("FinishRead.Col.Group", nameof(FinishReadRowViewModel.GroupName), minWidth: 140)
             // Place: 1-based rank within the group (blank when none), with a gold/silver/bronze badge on the podium.
             .Custom("FinishRead.Col.Place", BuildPlaceCell, minWidth: 70,

@@ -6,7 +6,7 @@ namespace OrientPyx.BusinessLogic.Models;
 /// carries the team (<see cref="ParticipantDayResult.Team"/>) and its own leg (<see cref="ParticipantDayResult.Leg"/>).
 /// </summary>
 /// <param name="Status">The effective status: the judge's override, else OK when every leg is OK (and the team is
-/// inside the time limit), else the worst leg status (DSQ &gt; MP &gt; OVT &gt; DNF &gt; DNS &gt; «очікує»).</param>
+/// inside the time limit), else the worst leg status (DSQ &gt; MP &gt; OVT &gt; DNF &gt; DNS &gt; not read yet).</param>
 /// <param name="Time">The team time Σ adjusted leg times (Р-32); null until every assigned leg has a time.</param>
 /// <param name="ActualTime">Finish of the last leg − start of leg 1; the time limit applies to it (Р-31).</param>
 public sealed record TeamDayResult(
@@ -54,14 +54,13 @@ public sealed record TeamDayResult(
 /// <param name="Leg">1-based leg number.</param>
 /// <param name="LinkId">The runner's participant-day link; null when the leg is not assigned.</param>
 /// <param name="Start">Where the leg's time starts: leg 1 — start punch / assigned / mass start; leg N — the previous
-/// leg's finish, or the restart (whichever is earlier).</param>
-/// <param name="Status">The leg's effective status (judge's override first); <see cref="FinishStatus.None"/> for a
-/// pending / unread leg.</param>
+/// leg's finish, or the restart (whichever is earlier). Null when there is none — the leg is DNS once read (Р-30).</param>
+/// <param name="Status">The leg's effective status (judge's override first); <see cref="FinishStatus.None"/> for an
+/// unread leg.</param>
 /// <param name="LegTime">finish − start of an OK leg.</param>
 /// <param name="AdjustedTime">The leg time after the discipline's adjustment (Р-6, rounded when changed).</param>
 /// <param name="Cumulative">Σ adjusted leg times up to and including this leg (Р-32); null after a leg without time.</param>
 /// <param name="Restarted">The leg started from the group's restart (Р-29).</param>
-/// <param name="Pending">«очікує»: the previous leg has no finish and there is no restart (Р-30).</param>
 public sealed record RelayLegResult(
     int Leg,
     Guid? LinkId,
@@ -72,8 +71,7 @@ public sealed record RelayLegResult(
     TimeSpan? LegTime,
     TimeSpan? AdjustedTime,
     TimeSpan? Cumulative,
-    bool Restarted,
-    bool Pending)
+    bool Restarted)
 {
     /// <summary>The leg's named course (Р-44, «Етап 2 — дистанція B»); null when the group runs one course for all
     /// legs, or — in a «набір на команду» / a «своя на кожен етап» leg with several courses — while the leg is not read

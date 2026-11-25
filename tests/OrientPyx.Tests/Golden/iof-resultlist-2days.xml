@@ -921,10 +921,7 @@
           <SplitTime status="Missing">
             <ControlCode>32</ControlCode>
           </SplitTime>
-          <SplitTime status="Missing">
-            <ControlCode>33</ControlCode>
-          </SplitTime>
-          <SplitTime status="Additional">
+          <SplitTime>
             <ControlCode>33</ControlCode>
             <Time>1120</Time>
           </SplitTime>

@@ -71,9 +71,6 @@ public sealed record FinishReadoutRow(
     /// <summary>Relay: the leg started from the group's restart (Р-29).</summary>
     public bool RelayRestarted { get; init; }
 
-    /// <summary>Relay: «очікує» — the previous leg has no finish and there is no restart (Р-30).</summary>
-    public bool RelayPending { get; init; }
-
     /// <summary>Relay: the leg's named course («дистанція B», Р-44); null when none is named or determined.</summary>
     public string? RelayCourseCode { get; init; }
 }

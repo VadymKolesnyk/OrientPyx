@@ -361,7 +361,7 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
                     ["leg_time"] = FormatTime(l.LegTime),
                     ["result_time"] = FormatTime(l.Result),
                     ["cumulative"] = FormatTime(l.Cumulative),
-                    ["status"] = l.Pending ? "pending" : MapStatus(l.Status, place: 1, l.Status != FinishStatus.None),
+                    ["status"] = MapStatus(l.Status, place: 1, l.Status != FinishStatus.None),
                     ["reason"] = StatusReason(l.Status),
                     ["restarted"] = l.Restarted,
                     ["extra"] = l.Extra,

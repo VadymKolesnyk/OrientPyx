@@ -697,7 +697,6 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
             FooterGeneratedLabel: Localization.Get("Protocols.Footer.Generated"),
             FooterPageLabel: Localization.Get("Protocols.Footer.Page"),
             RelayRestartMark: Localization.Get("Relay.Restart"),
-            RelayPendingMark: Localization.Get("Relay.Pending"),
             RelayVacantLeg: Localization.Get("Protocols.Relay.VacantLeg"),
             RelayCourseMark: Localization.Get("Relay.CourseOf"),
             RelayNoCourseMark: Localization.Get("Relay.NoCourse"),

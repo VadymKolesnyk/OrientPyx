@@ -147,7 +147,9 @@ public sealed class FinishReadDeskTests
         var editor = Sp.GetRequiredService<ICompetitionEditorService>();
         var localization = Sp.GetRequiredService<ILocalizationService>();
 
-        var row = (await editor.GetFinishReadoutRowsAsync()).Single(r => r.Id == readout.Id);
+        var log = await editor.GetFinishReadoutLogAsync();
+        Assert.False(log.HasRelayTeams);                             // no relay teams — no «Команда» column
+        var row = log.Rows.Single(r => r.Id == readout.Id);
         Assert.Equal(7, row.Score);
         Assert.Equal(3, row.Penalty);
         Assert.Equal(2, row.Bonus);

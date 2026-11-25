@@ -104,7 +104,7 @@ Guid, від −1 до −2³¹+1; збіг у межах дня зсуваєт�
 { "leg": 2, "bib": "100.2", "full_name": "…", "birth": "dd.MM.yyyy", "qual": "I", "club": "…", "region": "…",
   "course": "B", "start_time": "10:20:00",
   "leg_time": "00:25:00", "result_time": "00:23:45", "cumulative": "00:45:00",
-  "status": "finished|dsq|dns|running|pending", "reason": "MP", "restarted": false,
+  "status": "finished|dsq|dns|running", "reason": "MP", "restarted": false,
   "extra": { "weighted.time": "25:00", "weighted.k": "0.95", "field.gender": "Ч" } }
 ```
 
@@ -116,7 +116,7 @@ Guid, від −1 до −2³¹+1; збіг у межах дня зсуваєт�
   зарахований час (Р-32). `qual`, `club`, `region`, `start_time`, `result_time` додано 2026-11-11 — старіший
   OrientPyx їх не шле, сайт тоді показує `leg_time`.
 - `extra` — значення додаткових колонок (плагінів і додаткових полів) за ключем.
-- `status = pending` — етап «очікує» (попередній без фінішу й без перезапуску, Р-30).
+- `status = pending` більше не шлеться (з 2026-11-25): етап без фінішу попереднього й без перезапуску — `dns` (Р-30).
 - `course` — призначена дистанція етапу (Р-44), `null`, коли група біжить одну дистанцію.
 - Етап без бігуна — `full_name: null`.
 

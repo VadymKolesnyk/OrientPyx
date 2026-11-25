@@ -183,7 +183,7 @@ public sealed record SplitPrintRow(
 /// <summary>
 /// One control of the prescribed (correct) order, printed on the compact bottom line when a set-course
 /// passage broke the order. <see cref="Code"/> is the control code; <see cref="Taken"/> is false for a
-/// control the runner did not visit in order, which the renderer emphasises (bold) so the missing controls
+/// control the runner did not visit in order, which the renderer frames in a rectangle so the missing controls
 /// stand out on the single correct-order line.
 /// </summary>
 public sealed record SplitPrintCorrectRow(string Code, bool Taken);

@@ -195,16 +195,23 @@ internal sealed class ReceiptRenderer
         }
 
         // Bottom section (set-course MP only): the prescribed correct order on one compact line, the
-        // not-taken controls in bold. Printed once the whole passage has fit, below the table.
+        // not-taken controls framed. Printed once the whole passage has fit, below the table.
         if (_doc.CorrectOrder.Count > 0)
             DrawCorrectOrder(g, left, right, y, monoFont, monoBold);
 
         e.HasMorePages = false;
     }
 
+    // Frame of a missed control on the correct-order line, in em of the mono font: the digits' height (Consolas
+    // cap height ≈ 0.64 em), the gap between them and the frame, and the pen (1/100" ≈ 2 dots of a 203 dpi head).
+    private const float DigitHeightEm = 0.64f;
+    private const float FramePadXEm = 0.2f;
+    private const float FramePadYEm = 0.18f;
+    private const float FramePenWidth = 1f;
+
     // The correct-order section: the title then the prescribed codes laid out on one line ("31 32 33 …"),
-    // wrapping within the printable band when too long. Controls the runner did not take in order are drawn
-    // bold so the missing ones stand out, while the taken ones stay normal weight.
+    // wrapping within the printable band when too long. A control the runner did not take in order is framed
+    // in a thin rectangle (same weight as the rest), so the missing ones stand out at a glance.
     private void DrawCorrectOrder(System.Drawing.Graphics g, float left, float right, float y,
         System.Drawing.Font mono, System.Drawing.Font monoBold)
     {
@@ -212,21 +219,37 @@ internal sealed class ReceiptRenderer
         y += 4;
         y = DrawCentred(g, _labels.CorrectOrderTitle, monoBold, centreX, y);
 
+        // Typographic layout measures the glyphs alone (no GDI+ side padding), so a frame hugs its code and the
+        // gaps between codes are exact. The frame's height comes from the font's own metrics: centred on the
+        // digits, inside the line, so a framed code on the next line never touches this one's frame.
+        using var format = new System.Drawing.StringFormat(System.Drawing.StringFormat.GenericTypographic);
+        var family = mono.FontFamily;
+        var lineSpacing = (float)family.GetLineSpacing(mono.Style);
+        var textHeight = mono.GetHeight(g);
+        var em = textHeight * family.GetEmHeight(mono.Style) / lineSpacing;
+        var baseline = textHeight * family.GetCellAscent(mono.Style) / lineSpacing;
+        var frameTop = baseline - em * (DigitHeightEm + FramePadYEm);
+        var frameHeight = em * (DigitHeightEm + 2 * FramePadYEm);
+        var padX = em * FramePadXEm;
+        var gap = g.MeasureString("0", mono, int.MaxValue, format).Width;   // one monospace character
+        var lineHeight = textHeight + 3f;
+        using var pen = new System.Drawing.Pen(System.Drawing.Color.Black, FramePenWidth);
+
         // Lay tokens out left-to-right, wrapping to a new line when the next code would overflow the band.
-        var space = g.MeasureString(" ", mono).Width;
-        var lineHeight = mono.GetHeight(g) + 1.5f;
         float x = left;
         foreach (var c in _doc.CorrectOrder)
         {
-            var font = c.Taken ? mono : monoBold;
-            var w = g.MeasureString(c.Code, font).Width;
+            var pad = c.Taken ? 0f : padX;
+            var w = g.MeasureString(c.Code, mono, int.MaxValue, format).Width + 2 * pad;
             if (x > left && x + w > right)   // wrap: this code won't fit on the current line
             {
                 x = left;
                 y += lineHeight;
             }
-            g.DrawString(c.Code, font, System.Drawing.Brushes.Black, x, y);
-            x += w + space;
+            g.DrawString(c.Code, mono, System.Drawing.Brushes.Black, x + pad, y, format);
+            if (!c.Taken)
+                g.DrawRectangle(pen, x, y + frameTop, w, frameHeight);
+            x += w + gap;
         }
     }
 

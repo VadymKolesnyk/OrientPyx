@@ -444,6 +444,41 @@ public sealed class DisciplineRulesTests
         Assert.Equal(4, provider.For(DisciplineId.Mixed).ControlCount("<41 42> [2: 45 46 47]"));
     }
 
+    [Fact]
+    public async Task Mixed_SplitsSkipTheStartAndFinishCodesOfTheOrderAndKeepTheDisabledControls()
+    {
+        // The order names the day's start/finish boxes («С1 … Ф1», no S/F marker) and a disabled control (42).
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("mixsf"), discipline: DisciplineId.Mixed);
+        var dayId = c.Day(1).Id;
+        await Sp.GetRequiredService<IEventStore>().AddControlPointsAsync(c.Folder,
+        [
+            new ControlPoint { EventDayId = dayId, Order = 0, Code = "С1", Type = ControlPointType.Start },
+            new ControlPoint { EventDayId = dayId, Order = 1, Code = "41" },
+            new ControlPoint { EventDayId = dayId, Order = 2, Code = "42", IsDisabled = true },
+            new ControlPoint { EventDayId = dayId, Order = 3, Code = "45" },
+            new ControlPoint { EventDayId = dayId, Order = 4, Code = "46" },
+            new ControlPoint { EventDayId = dayId, Order = 5, Code = "47" },
+            new ControlPoint { EventDayId = dayId, Order = 6, Code = "Ф1", Type = ControlPointType.Finish },
+        ]);
+        await c.AddGroupAsync("Ч21", "С1 <41 42> [2: 45 46 47] Ф1");
+        await c.AddRunnerAsync("Ok", "1", "1001", "Ч21", T(10, 0));
+        var readout = await c.AddReadoutAsync(1, "1001", "41 46 45", T(10, 0), T(10, 20));
+
+        var r = await c.ResultsAsync();
+        Assert.Equal(FinishStatus.Ok, r["Ok"].Status);
+
+        var view = await Sp.GetRequiredService<ICompetitionEditorService>().GetFinishSplitsAsync(readout.Id);
+        Assert.NotNull(view);
+        Assert.All(view.Passage.Where(p => p.Kind == PassageKind.Control), p => Assert.True(p.OnCourse));
+        var codes = view.Expected.Select(e => e.Code).ToList();
+        Assert.DoesNotContain("С1", codes);
+        Assert.DoesNotContain("Ф1", codes);
+        Assert.Equal(4, codes.Count);
+        Assert.True(view.Expected.Single(e => e.Code == "42").Ignored);   // still listed as «вимкнено»
+        Assert.Equal(4, view.VisitedCount);
+        Assert.Equal(4, view.ExpectedCount);
+    }
+
     // ---- Scatter -------------------------------------------------------------------------------------------
 
     [Fact]

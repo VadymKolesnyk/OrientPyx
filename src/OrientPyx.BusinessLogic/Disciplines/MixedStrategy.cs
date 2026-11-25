@@ -81,14 +81,32 @@ public sealed class MixedStrategy : DisciplineStrategyBase
     /// The <b>expected</b> list is the pattern's controls, each flagged taken/missing. Because a free-choice
     /// block has no single "next" control, this layout does not compute per-leg course splits (only the
     /// row-to-row display legs) — the ordering is judged, the leg times are shown against the actual passage.
+    /// A plain order (no block) is laid out like a set course instead (<see cref="DisciplineStrategyBase.BuildOrderedSplits"/>).
     /// </summary>
     public override SplitsView BuildSplits(SplitsContext context)
     {
-        var pattern = CoursePattern.Parse(context.CourseOrderText);
-        var ignoredExpected = IgnoredCodes(context.ExpectedControls, pattern);
-        var ignored = context.DisabledControls.Count > 0 || ignoredExpected.Count > 0
-            ? new HashSet<string>(context.DisabledControls, StringComparer.OrdinalIgnoreCase)
-            : (IReadOnlySet<string>)ignoredExpected;
+        var disabled = new HashSet<string>(
+            context.DisabledControls.Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);
+        // The order's own start/finish boxes («С1 38 … Ф1», whatever they are called) become the pattern's markers:
+        // not controls, and the «правильний порядок» line reads «С1 38 … Ф1» instead of «S С1 38 … Ф1 F».
+        var (startBox, finishBox) = EdgeBoxes(context.CourseOrderText, context.ExpectedControls, disabled);
+        var pattern = CoursePattern.Parse(context.CourseOrderText, startBox, finishBox);
+        // Satisfied without a punch, exactly as EvaluateFinish judges them: the day's disabled controls, and every
+        // other pattern code the caller left out of ExpectedControls — a start/finish box written into the order.
+        // Their punches are dropped before matching, so requiring them broke the run at the very first item and the
+        // splits showed every control off-course on an OK result.
+        var ignored = IgnoredCodes(context.ExpectedControls, pattern);
+        ignored.UnionWith(disabled);
+
+        // A plain order (no <…>/[N: …] block — a relay leg's usual course) has one prescribed order, so its splits are
+        // built exactly like a set course's: the optimal alignment, where a missed КП marks only itself (the greedy
+        // walk below off-courses every later control after the first miss), plus the course legs. Against what the
+        // pattern requires, as EvaluateFinish judges it.
+        if (!CourseVariantData.IsPatternText(context.CourseOrderText))
+        {
+            var required = pattern.ControlCodes.Where(c => !ignored.Contains(c)).ToList();
+            return BuildOrderedSplits(context, required, _distance) with { PrescribedPattern = pattern.NormalizedOrder() };
+        }
 
         // Punch codes (trimmed, non-empty) in chip order, mapped back to their original punch for times/coords.
         var punches = context.Punches.Where(p => p.ControlCode.Trim().Length > 0).ToList();
@@ -149,6 +167,9 @@ public sealed class MixedStrategy : DisciplineStrategyBase
         foreach (var control in resolved)
         {
             var isIgnored = ignored.Contains(control.Code);
+            // A start/finish box written into the order is not a control: no row, not counted («взято 18 з 18»).
+            if (isIgnored && !disabled.Contains(control.Code))
+                continue;
             expected.Add(new ExpectedControl(
                 isIgnored ? 0 : ++seq, control.Code, Taken: control.Taken, Ignored: isIgnored));
         }
@@ -168,10 +189,29 @@ public sealed class MixedStrategy : DisciplineStrategyBase
         };
     }
 
+    // The first / last bare token of the order when it is a start / finish box: a code the caller left out of
+    // ExpectedControls (which drops the day's start/finish control-point types) that is not a disabled control. Told by
+    // type, so any name works («С1», «Ста1», «K1»). None when the caller gave no controls to compare against.
+    private static (string? Start, string? Finish) EdgeBoxes(
+        string courseOrder, IReadOnlyList<string> expectedControls, IReadOnlySet<string> disabled)
+    {
+        var tokens = courseOrder.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (tokens.Length == 0 || expectedControls.Count == 0)
+            return (null, null);
+
+        var controls = new HashSet<string>(expectedControls.Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);
+        bool IsBox(string token) =>
+            token.IndexOfAny(['<', '>', '[', ']', ':']) < 0 && !controls.Contains(token) && !disabled.Contains(token);
+
+        var start = IsBox(tokens[0]) ? tokens[0] : null;
+        var finish = tokens.Length > 1 && IsBox(tokens[^1]) ? tokens[^1] : null;
+        return (start, finish);
+    }
+
     // The pattern's controls that the caller dropped from ExpectedControls (the flattened allowed list) —
-    // i.e. the day's disabled («проблемні») controls that appear in this course. Comparing the pattern's
-    // codes against the flattened list recovers them without the strategy needing the day's full disabled set.
-    private static IReadOnlySet<string> IgnoredCodes(
+    // i.e. the day's disabled («проблемні») controls and start/finish codes that appear in this course. Comparing
+    // the pattern's codes against the flattened list recovers them without the strategy needing the day's sets.
+    private static HashSet<string> IgnoredCodes(
         IReadOnlyList<string> expectedControls, CoursePattern pattern)
     {
         var kept = new HashSet<string>(expectedControls.Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);

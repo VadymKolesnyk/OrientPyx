@@ -92,7 +92,7 @@ public sealed class ProtocolBuilderTests
         await c.AddReadoutAsync(1, "6021", "31", null, T(10, 15));
 
         var data = await c.ProtocolDataAsync();
-        var labels = ResultLabels() with { RelayVacantLeg = "— етап не призначено", RelayPendingMark = "очікує" };
+        var labels = ResultLabels() with { RelayVacantLeg = "— етап не призначено" };
         var relaySettings = new ResultProtocolSettings();
         relaySettings.Columns.Single(x => x.Column == ProtocolColumn.Number).Visible = true;
         var doc = Sp.GetRequiredService<IResultProtocolBuilder>().Build(data, relaySettings, labels);

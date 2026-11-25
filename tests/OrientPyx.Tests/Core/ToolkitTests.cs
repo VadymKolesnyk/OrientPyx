@@ -56,6 +56,44 @@ public sealed class ToolkitTests
         Assert.Equal("S <41 42> [2: 45 46 47] F", p.NormalizedOrder());
     }
 
+    [Fact]
+    public void CoursePattern_StartAndFinishAtTheEdgesAreNeverControls()
+    {
+        // OCAD's Cyrillic boxes, with any ending.
+        Assert.Equal(["41", "42"], CoursePattern.Parse("С1 <41 42> Ф1").ControlCodes);
+        Assert.Equal(2, CoursePattern.Parse("Ста1 41 42 Фін1").RequiredCount);
+        // Whatever the name, when the caller says it is the course's start/finish — and then it labels the markers.
+        var own = CoursePattern.Parse("K1 41 42 K9", "K1", "K9");
+        Assert.Equal(2, own.RequiredCount);
+        Assert.Equal("K1 41 42 K9", own.NormalizedOrder());
+        Assert.Equal("С1 41 42 Ф1", CoursePattern.Parse("С1 41 42 Ф1", "С1", "Ф1").NormalizedOrder());
+        // Nothing but the start and finish: no control at all.
+        Assert.Equal(0, CoursePattern.Parse("С1 Ф1").RequiredCount);
+        // A number is always a control, and a marker in the middle stays one.
+        Assert.Equal(3, CoursePattern.Parse("31 С1 32").RequiredCount);
+    }
+
+    [Fact]
+    public void CourseEnds_TakeTheBoxesTheOrderNamesElseTheDaysFirst()
+    {
+        var day = Guid.NewGuid();
+        ControlPoint Cp(string code, ControlPointType type) => new() { EventDayId = day, Code = code, Type = type };
+        var points = new List<ControlPoint>
+        {
+            Cp("Ста1", ControlPointType.Start), Cp("Ста2", ControlPointType.Start), Cp("31", ControlPointType.Regular),
+            Cp("Фін1", ControlPointType.Finish), Cp("Фін2", ControlPointType.Finish),
+        };
+
+        var named = CourseEnds.Of("Ста2 31 Фін2", points);
+        Assert.Equal("Ста2", named.StartCode);
+        Assert.Equal("Фін2", named.FinishCode);
+        var pattern = CourseEnds.Of("Ста2 <31 [1: 32 33]> Фін2", points);
+        Assert.Equal(("Ста2", "Фін2"), (pattern.StartCode, pattern.FinishCode));
+        var none = CourseEnds.Of("31", points);
+        Assert.Equal(("Ста1", "Фін1"), (none.StartCode, none.FinishCode));
+        Assert.Null(CourseEnds.Of("31", [Cp("31", ControlPointType.Regular)]).Start);
+    }
+
     [Theory]
     [InlineData("41 42 45 46", true)]
     [InlineData("41 42 47 45", true)]

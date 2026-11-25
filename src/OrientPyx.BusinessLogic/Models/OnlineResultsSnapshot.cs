@@ -85,7 +85,6 @@ public sealed record OnlineLegRow(
     TimeSpan? LegTime,
     TimeSpan? Cumulative,
     FinishStatus Status,
-    bool Pending,
     bool Restarted,
     /// <summary>Extra column values (plugin columns and additional fields) by <see cref="OnlineExtraColumn.Key"/>,
     /// already formatted; blank values left out.</summary>

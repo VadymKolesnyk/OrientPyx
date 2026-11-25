@@ -937,13 +937,14 @@ public override void Rank(RankingContext ctx) =>
 
 `OrientPyx.Plugins.Sdk.Toolkit.Patterns`. Мова шаблонів: `41 42 43` або `<41 42 43>` — КП по порядку;
 `[2: 45 46 47]` — будь-які 2 з переліку в будь-якому порядку; блоки вкладаються:
-`<30 [2: 41 42 43] 50>`. Старт `S…` на початку й фініш `F…` в кінці необов'язкові.
+`<30 [2: 41 42 43] 50>`. Старт на початку (`S…` або кириличне `С…`) і фініш у кінці (`F…` або `Ф…`) необов'язкові
+й не є КП; так само крайній токен, що дорівнює переданому в `Parse` коду старту чи фінішу, хоч би як він називався.
 
 ### `CoursePattern`
 
 | Член | Опис |
 |---|---|
-| `static CoursePattern Parse(string? text, string? startCode = null, string? finishCode = null)` | розбір; порожній текст — порожній шаблон (підходить до будь-чого). `startCode`/`finishCode` — лише для показу |
+| `static CoursePattern Parse(string? text, string? startCode = null, string? finishCode = null)` | розбір; порожній текст — порожній шаблон (підходить до будь-чого). `startCode`/`finishCode` — коди старту й фінішу дистанції: маркери для показу, а такий токен на краю шаблону — не КП |
 | `IReadOnlyList<string> ControlCodes` | усі коди шаблону по порядку запису, з повтореннями |
 | `int RequiredCount` | скільки відміток мінімально потрібно: блок `[N: …]` дає N |
 | `IReadOnlyList<CoursePatternError> Errors`, `bool IsValid` | помилки розбору; `IsValid` — помилок немає |

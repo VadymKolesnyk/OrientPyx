@@ -6,7 +6,11 @@ namespace OrientPyx.BusinessLogic.Models;
 /// </summary>
 /// <param name="Rows">The log rows, ordered by sequence (see <see cref="FinishReadoutRow"/>).</param>
 /// <param name="Counts">How many runners have read out and how many are still out.</param>
-public sealed record FinishReadoutLog(IReadOnlyList<FinishReadoutRow> Rows, FinishReadoutCounts Counts);
+public sealed record FinishReadoutLog(IReadOnlyList<FinishReadoutRow> Rows, FinishReadoutCounts Counts)
+{
+    /// <summary>The day has relay teams — the log then shows the «Команда» column.</summary>
+    public bool HasRelayTeams { get; init; }
+}
 
 /// <summary>
 /// The finish desk's head count for the current day.

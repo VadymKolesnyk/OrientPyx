@@ -383,8 +383,6 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
             case ProtocolColumn.Result:
                 if (result is null || runner is null)
                     return string.Empty;
-                if (result.Pending)
-                    return labels.RelayPendingMark;
                 return result.Status == FinishStatus.Ok
                     ? TimeFormat.Result(result.AdjustedTime ?? result.LegTime)
                     : ShortCode(result.Status);

@@ -43,6 +43,27 @@ public sealed class RuleFixesTests
     }
 
     [Fact]
+    public async Task SetCourse_TheSlipsCorrectOrderLeavesOutADisabledControl()
+    {
+        // The slip frames every not-taken control of the correct order as missed; a «проблемний» КП is no part of the
+        // order, so it must not be printed there as one.
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("slipdis"));
+        var cps = await c.AddControlsAsync(1, "31", "32", "33", "34");
+        await c.AddGroupAsync("Ч21", "31 32 33 34");
+        await c.AddRunnerAsync("Miss", "1", "1001", "Ч21", T(10, 0));
+        var readout = await c.AddReadoutAsync(1, "1001", "31 34", T(10, 0), T(10, 20));
+
+        var broken = cps.Single(p => p.Code == "33");
+        broken.IsDisabled = true;
+        await Store.UpdateControlPointAsync(c.Folder, broken);
+        Assert.Equal(FinishStatus.Mp, (await c.ResultsAsync())["Miss"].Status);   // 32 still missing
+
+        var slip = await Editor.GetSplitPrintDocumentAsync(readout.Id);
+        Assert.NotNull(slip);
+        Assert.Equal([("31", true), ("32", false), ("34", true)], slip.CorrectOrder.Select(x => (x.Code, x.Taken)));
+    }
+
+    [Fact]
     public async Task Rogaine_TeamNamesMatchTheWayTheProtocolGroupsThem()
     {
         var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("rogcase"), discipline: DisciplineId.Rogaine);

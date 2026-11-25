@@ -275,7 +275,7 @@ public sealed class IofExportBuilderTests
         var a2 = Guid.NewGuid();
         var b1 = Guid.NewGuid();
         RelayLegResult Leg(int leg, Guid id, DateTimeOffset start, DateTimeOffset finish, TimeSpan cumulative) =>
-            new(leg, Guid.NewGuid(), id, start, finish, FinishStatus.Ok, finish - start, finish - start, cumulative, false, false);
+            new(leg, Guid.NewGuid(), id, start, finish, FinishStatus.Ok, finish - start, finish - start, cumulative, false);
         var teamA = new TeamDayResult(Guid.NewGuid(), 101, "Вітер", Guid.Empty, FinishStatus.Ok, FinishStatus.Ok, null,
             TimeSpan.FromMinutes(45), TimeSpan.FromMinutes(45),
             [Leg(1, a1, At(11, 0), At(11, 20), TimeSpan.FromMinutes(20)), Leg(2, a2, At(11, 20), At(11, 45), TimeSpan.FromMinutes(45))])

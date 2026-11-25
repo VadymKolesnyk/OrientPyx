@@ -146,22 +146,28 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     /// walk the read-out uses.
     /// </summary>
     [RelayCommand]
-    private Task ShowCoursePatternCheckAsync() =>
-        SelectedGroup is { } row
-            ? _dialogs.ShowCoursePatternCheckAsync(
-                new CoursePatternCheckViewModel(Localization, row.CourseOrder, _startCode, _finishCode))
-            : Task.CompletedTask;
+    private Task ShowCoursePatternCheckAsync()
+    {
+        if (SelectedGroup is not { } row)
+            return Task.CompletedTask;
+        var ends = EndsOf(row.CourseOrder);
+        return _dialogs.ShowCoursePatternCheckAsync(
+            new CoursePatternCheckViewModel(Localization, row.CourseOrder, ends.StartCode, ends.FinishCode));
+    }
 
     /// <summary>
     /// Opens the «всі варіанти» modal: every concrete passage order the selected group's pattern allows,
     /// with each free-choice block expanded to all its choices and orders.
     /// </summary>
     [RelayCommand]
-    private Task ShowCoursePatternVariantsAsync() =>
-        SelectedGroup is { } row
-            ? _dialogs.ShowCoursePatternVariantsAsync(
-                new CoursePatternVariantsViewModel(Localization, row.CourseOrder, _startCode, _finishCode))
-            : Task.CompletedTask;
+    private Task ShowCoursePatternVariantsAsync()
+    {
+        if (SelectedGroup is not { } row)
+            return Task.CompletedTask;
+        var ends = EndsOf(row.CourseOrder);
+        return _dialogs.ShowCoursePatternVariantsAsync(
+            new CoursePatternVariantsViewModel(Localization, row.CourseOrder, ends.StartCode, ends.FinishCode));
+    }
 
     /// <summary>Competition-wide course-setter name (начальник дистанції). A group may override it per day.</summary>
     [ObservableProperty]
@@ -198,13 +204,15 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     // ── «Mixed» course-order pattern live preview
     // Only meaningful when the selected group's effective discipline is Mixed: the order field is then a
     // pattern, so we parse it on every keystroke and show either the normalized "S … F" order (valid) or
-    // the first structural error (invalid). The day's start/finish codes label the S/F markers.
+    // the first structural error (invalid). The course's own start/finish (CourseEnds — the boxes its order names,
+    // else the day's first ones) label the S/F markers and are never read as controls, whatever they are called.
 
-    private string? _startCode;
+    private IReadOnlyList<ControlPoint> _controlPoints = [];
 
     // The day's control point codes (start/finish included) — a course naming any other code shows red.
     private IReadOnlySet<string> _dayCodes = new HashSet<string>();
-    private string? _finishCode;
+
+    private CourseEnds EndsOf(string? courseOrder) => CourseEnds.Of(courseOrder, _controlPoints);
 
     /// <summary>True when the selected group runs the «mixed» discipline, so the pattern preview shows.</summary>
     [ObservableProperty]
@@ -482,7 +490,8 @@ public sealed partial class GroupsViewModel : PageViewModelBase
         }
 
         IsPatternPreviewVisible = true;
-        var pattern = CoursePattern.Parse(row.CourseOrder, _startCode, _finishCode);
+        var ends = EndsOf(row.CourseOrder);
+        var pattern = CoursePattern.Parse(row.CourseOrder, ends.StartCode, ends.FinishCode);
         IsPatternValid = pattern.IsValid;
         PatternPreviewText = pattern.IsValid
             ? pattern.NormalizedOrder()
@@ -494,7 +503,8 @@ public sealed partial class GroupsViewModel : PageViewModelBase
     {
         if (string.IsNullOrWhiteSpace(courseOrder))
             return string.Empty;
-        var pattern = CoursePattern.Parse(courseOrder, _startCode, _finishCode);
+        var ends = EndsOf(courseOrder);
+        var pattern = CoursePattern.Parse(courseOrder, ends.StartCode, ends.FinishCode);
         return pattern.IsValid ? "✓" : "✕ " + DescribeError(pattern.Errors[0]);
     }
 
@@ -593,10 +603,9 @@ public sealed partial class GroupsViewModel : PageViewModelBase
             return (d, r, p, i, cp);
         });
 
-        // The day's start/finish control codes — used only to label the «mixed» pattern preview's
-        // S … F markers with the actual boxes (falls back to "S"/"F" when a day has none set).
-        _startCode = controlPoints.FirstOrDefault(c => c.Type == ControlPointType.Start)?.Code.Trim();
-        _finishCode = controlPoints.FirstOrDefault(c => c.Type == ControlPointType.Finish)?.Code.Trim();
+        // The day's control points — each course's own start/finish box labels its pattern preview's S … F markers
+        // (falls back to "S"/"F" when a day has none set).
+        _controlPoints = controlPoints;
         // Every code of the day, so a course naming a code that is no КП (S1/F typed without start/finish boxes)
         // shows red before it turns the whole group MP.
         _dayCodes = GroupCourseChecks.DayCodes(controlPoints);

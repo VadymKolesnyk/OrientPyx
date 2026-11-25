@@ -14,10 +14,12 @@ namespace OrientPyx.Plugins.Sdk.Toolkit.Patterns;
 /// Blocks nest freely, e.g. <c>&lt;30 [2: 41 42 43] 50&gt;</c> = punch 30, then any two of 41/42/43 in
 /// any order, then 50. A top-level pattern is an implicit sequence of its items.
 ///
-/// <para>A start marker (<c>S</c>/<c>Start</c>/a token beginning with S) at the very beginning and a finish
-/// marker (<c>F</c>/<c>Finish</c>) at the very end are optional: they are shown around the order for clarity
-/// but are not required controls — the start/finish is defined by the day's control-point types, and those
-/// punches are removed before matching. A stray S/F token elsewhere is treated as an ordinary control.</para>
+/// <para>A start marker at the very beginning and a finish marker at the very end are optional: they are shown
+/// around the order for clarity but are not required controls — the start/finish is defined by the day's
+/// control-point types, and those punches are removed before matching. A marker is a non-numeric token beginning
+/// with a start/finish letter — Latin S/F or the Cyrillic С/Ф of Ukrainian OCAD exports («S1», «Start», «С1»,
+/// «Ста1», «Ф1», «Фін1»), as <see cref="CourseOrder.CountControls"/> counts them — or, whatever its name, the
+/// course's own start/finish code passed to <see cref="Parse"/>. A stray marker elsewhere is an ordinary control.</para>
 ///
 /// <para><see cref="Match"/> greedily walks the punches (start/finish already removed), marking which ones
 /// the pattern consumed (on-course) and reporting the first prescribed control it could not satisfy (the MP
@@ -57,14 +59,15 @@ public sealed class CoursePattern
 
     /// <summary>
     /// Parses a pattern string. A null/blank string yields an empty pattern (matches anything, count 0).
-    /// Optional <paramref name="startCode"/>/<paramref name="finishCode"/> are the day's actual start/finish
-    /// control codes, used only for the display markers (<see cref="StartMarker"/>/<see cref="FinishMarker"/>
-    /// and <see cref="NormalizedOrder"/>); parsing/matching never requires them.
+    /// Optional <paramref name="startCode"/>/<paramref name="finishCode"/> are the course's actual start/finish
+    /// control codes: shown as the display markers (<see cref="StartMarker"/>/<see cref="FinishMarker"/> and
+    /// <see cref="NormalizedOrder"/>), and a first/last token equal to them is a marker whatever its name — never a
+    /// required control.
     /// </summary>
     public static CoursePattern Parse(string? text, string? startCode = null, string? finishCode = null)
     {
         var errors = new List<CoursePatternError>();
-        var body = StripEdgeMarkers(text ?? string.Empty);
+        var body = StripEdgeMarkers(text ?? string.Empty, startCode?.Trim(), finishCode?.Trim());
         var items = ParseItems(body, errors);
         var root = items.Count == 1 ? items[0] : new SequenceItem(items);
 
@@ -191,11 +194,12 @@ public sealed class CoursePattern
 
     // ── Parsing
 
-    // Drops an optional leading start marker and trailing finish marker (S/Start… and F/Finish) from the
-    // pattern body so they are not parsed as required controls. Only the very first/last bare token is
-    // considered; a start/finish marker in the middle stays an ordinary control. Tokens inside a block are
-    // never touched (we only look before the first '<'/'[' and after the last '>'/']').
-    private static string StripEdgeMarkers(string text)
+    // Drops an optional leading start marker and trailing finish marker from the pattern body so they are not
+    // parsed as required controls: a marker-lettered token, or the course's own start/finish code. Only the very
+    // first/last bare token is considered; a start/finish marker in the middle stays an ordinary control. Tokens
+    // inside a block are never touched (we only look before the first '<'/'[' and after the last '>'/']'). An order
+    // of nothing but the start and finish («С1 Ф1») leaves an empty body.
+    private static string StripEdgeMarkers(string text, string? startCode, string? finishCode)
     {
         text = text.Trim();
         if (text.Length == 0)
@@ -203,25 +207,30 @@ public sealed class CoursePattern
 
         // Leading start marker: the first whitespace-delimited token, only if it sits before any bracket.
         var firstBreak = text.IndexOfAny([' ', '\t', '<', '[']);
-        if (firstBreak > 0 && IsStartMarker(text[..firstBreak]) && text[firstBreak] is ' ' or '\t')
-            text = text[(firstBreak + 1)..].TrimStart();
+        var first = firstBreak < 0 ? text : text[..firstBreak];
+        if (first.Length > 0 && (firstBreak < 0 || text[firstBreak] is ' ' or '\t') && IsMarker(first, IsStartMarker, startCode))
+            text = firstBreak < 0 ? string.Empty : text[(firstBreak + 1)..].TrimStart();
 
         // Trailing finish marker: the last token, only if it sits after any bracket.
         var lastBreak = text.LastIndexOfAny([' ', '\t', '>', ']']);
-        if (lastBreak >= 0 && lastBreak < text.Length - 1
-            && IsFinishMarker(text[(lastBreak + 1)..]) && text[lastBreak] is ' ' or '\t')
-            text = text[..lastBreak].TrimEnd();
+        var last = text[(lastBreak + 1)..];
+        if (last.Length > 0 && (lastBreak < 0 || text[lastBreak] is ' ' or '\t') && IsMarker(last, IsFinishMarker, finishCode))
+            text = lastBreak < 0 ? string.Empty : text[..lastBreak].TrimEnd();
 
         return text;
     }
 
-    // A start marker: "S"/"Start" (case-insensitive), or any non-numeric token starting with S.
-    private static bool IsStartMarker(string token) =>
-        token.Length > 0 && token[0] is 'S' or 's' && !ulong.TryParse(token, out _);
+    private static bool IsMarker(string token, Func<string, bool> byLetter, string? ownCode) =>
+        byLetter(token) || (!string.IsNullOrEmpty(ownCode) && string.Equals(token, ownCode, StringComparison.OrdinalIgnoreCase));
 
-    // A finish marker: "F"/"Finish" (case-insensitive), or any non-numeric token starting with F.
+    // A start marker: "S"/"Start"/"С1"/"Ста1" (case-insensitive) — any non-numeric token starting with the Latin S or
+    // the Cyrillic С (U+0421, a code point of its own, not the Latin C).
+    private static bool IsStartMarker(string token) =>
+        token.Length > 0 && token[0] is 'S' or 's' or 'С' or 'с' && !ulong.TryParse(token, out _);
+
+    // A finish marker: "F"/"Finish"/"Ф1"/"Фін1" (case-insensitive) — any non-numeric token starting with F or Ф.
     private static bool IsFinishMarker(string token) =>
-        token.Length > 0 && token[0] is 'F' or 'f' && !ulong.TryParse(token, out _);
+        token.Length > 0 && token[0] is 'F' or 'f' or 'Ф' or 'ф' && !ulong.TryParse(token, out _);
 
     // Splits a run of pattern text into top-level items (bare codes and bracketed blocks), respecting
     // nesting. Whitespace separates bare codes; '<'…'>' and '['…']' delimit blocks (matched by depth).

@@ -3186,10 +3186,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         Dictionary<string, GeoPoint> CoordsByCode,
         Dictionary<string, MapPoint> MapByCode,
         int? MapScale,
-        GeoPoint StartCoord,
-        GeoPoint FinishCoord,
-        MapPoint StartMap,
-        MapPoint FinishMap);
+        IReadOnlyList<ControlPoint> ControlPoints);
 
     // Assembles the per-day inputs once (the same values GetFinishSplitsAsync builds for a single readout).
     private static DaySplitInputs BuildDaySplitInputs(IReadOnlyList<ControlPoint> controlPoints)
@@ -3214,15 +3211,20 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         }
         var mapScale = controlPoints.Select(c => c.MapScale).FirstOrDefault(s => s is > 0);
 
-        var startCp = controlPoints.FirstOrDefault(c => c.Type is ControlPointType.Start);
-        var finishCp = controlPoints.FirstOrDefault(c => c.Type is ControlPointType.Finish);
-
         return new DaySplitInputs(
-            startFinishCodes, disabledCodes, pointsByCode, coordsByCode, mapByCode, mapScale,
-            StartCoord: startCp is null ? default : new GeoPoint(startCp.Latitude, startCp.Longitude),
-            FinishCoord: finishCp is null ? default : new GeoPoint(finishCp.Latitude, finishCp.Longitude),
-            StartMap: startCp is null ? default : new MapPoint(startCp.MapX, startCp.MapY),
-            FinishMap: finishCp is null ? default : new MapPoint(finishCp.MapX, finishCp.MapY));
+            startFinishCodes, disabledCodes, pointsByCode, coordsByCode, mapByCode, mapScale, controlPoints);
+    }
+
+    // The course order a runner's splits take their start and finish from (CourseEnds): the relay leg's own course,
+    // else the group's; a group that keeps its orders only as named courses (scatter) — the first of them.
+    private static string? EndsCourseOrder(
+        CourseVariantData? legCourse, GroupDaySettings? gs, IReadOnlyList<CourseVariantData> variants)
+    {
+        if (legCourse is not null)
+            return legCourse.CourseOrderText;
+        if (gs is not null && !string.IsNullOrWhiteSpace(gs.CourseOrder))
+            return gs.CourseOrder;
+        return variants.FirstOrDefault()?.CourseOrderText;
     }
 
     // Builds one member's SplitsView from the pre-loaded day inputs and their group/readout (the same context
@@ -3254,6 +3256,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         // A relay leg runs from its start in the sequence — the previous leg's finish or the restart (Р-28, Р-29).
         if (result?.Leg is { } leg && result.Team is not null)
             start = leg.Start;
+        // This course's own start and finish boxes (a day may have several).
+        var ends = CourseEnds.Of(EndsCourseOrder(legCourse, gs, scatterVariants), inputs.ControlPoints);
 
         var context = new SplitsContext
         {
@@ -3265,10 +3269,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             CoordsByCode = inputs.CoordsByCode,
             MapByCode = inputs.MapByCode,
             MapScale = inputs.MapScale,
-            StartCoord = inputs.StartCoord,
-            FinishCoord = inputs.FinishCoord,
-            StartMap = inputs.StartMap,
-            FinishMap = inputs.FinishMap,
+            StartCoord = ends.StartCoord,
+            FinishCoord = ends.FinishCoord,
+            StartMap = ends.StartMap,
+            FinishMap = ends.FinishMap,
             StartTime = start,
             FinishTime = readout.FinishTime,
             TimeLimit = gs?.TimeLimitSeconds is { } secs ? TimeSpan.FromSeconds(secs) : null,
@@ -3912,18 +3916,37 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 int? score = scored?.Score;
                 var result = placeByLink.TryGetValue(link.Id, out var pr) ? pr : null;
                 var place = result?.Place;
-                // A relay leg is judged in its sequence (start = previous leg's finish / restart, Р-28…Р-30), so the
-                // latest read-out of the chip shows the calculator's leg result instead of a lone evaluation.
-                var relayLeg = result?.Leg is { } rl && result.Team is not null
-                    && latestOrderByChip.TryGetValue(r.ChipNumber.Trim(), out var latestOrder) && latestOrder == r.Order ? rl : null;
+                // A relay leg is judged in its sequence, never alone (a lone leg 2 has no start of its own — DNS): the
+                // latest read-out of the chip shows the calculator's leg result, an earlier one is judged the same way —
+                // from the leg's start (Р-27…Р-30; leg 1: this read-out's own start punch) against the leg's course.
+                var relayLeg = result?.Leg is { } rl && result.Team is not null ? rl : null;
                 if (relayLeg is not null && r.ManualStatus is null)
                 {
-                    status = relayLeg.Pending ? FinishStatus.None : result!.Computed;
-                    // The leg's own course decides the detail (Р-41), not the group's course order.
-                    detail = status == FinishStatus.Mp ? result!.StatusDetail : string.Empty;
-                    detailKind = result!.StatusDetailKind;
-                    resolvedStart = relayLeg.Start;
-                    elapsed = !relayLeg.Pending && r.FinishTime is { } lf && relayLeg.Start is { } ls ? lf - ls : null;
+                    if (latestOrderByChip.TryGetValue(r.ChipNumber.Trim(), out var latestOrder) && latestOrder == r.Order)
+                    {
+                        status = result!.Computed;
+                        // The leg's own course decides the detail (Р-41), not the group's course order.
+                        detail = status == FinishStatus.Mp ? result.StatusDetail : string.Empty;
+                        detailKind = result.StatusDetailKind;
+                        resolvedStart = relayLeg.Start;
+                    }
+                    else
+                    {
+                        var teamGroup = result!.Team!.GroupId;
+                        var teamGs = settingsByGroup.TryGetValue(teamGroup, out var tgs) ? tgs : gs;
+                        var legStart = relayLeg.Leg == 1
+                            ? DayResultsCalculator.LegStart(_strategies.For(teamGs?.DisciplineOverride ?? dayDefault), 1, link,
+                                teamGs, r, previousFinish: null, restartAt: null, anyDate: r.FinishTime, out _)
+                            : relayLeg.Start;
+                        (status, detail, detailKind, resolvedStart) = EvaluateFinish(
+                            r, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup,
+                            s => DisciplineSettings.Resolve(s, snapshot.DisciplineSettings, dayId),
+                            new FinishEvaluator.RelayLegStart(legStart, relayLeg.Course, relayLeg.CourseUnassigned,
+                                relayLeg.CourseUnassigned ? result.StatusDetail : string.Empty),
+                            teamGroup);
+                    }
+                    // A read-out finished before its leg's start (a chip not cleared since an earlier run) shows no time.
+                    elapsed = r.FinishTime is { } lf && resolvedStart is { } ls && lf > ls ? lf - ls : null;
                 }
                 // «Відставання»: loss to the group leader, for a placed OK result whose time exceeds the
                 // leader's (the leader themselves and non-placed rows show none).
@@ -3951,7 +3974,6 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     RelayTeamName = result?.Team?.Name ?? string.Empty,
                     RelayLeg = result?.Leg?.Leg,
                     RelayRestarted = relayLeg?.Restarted ?? false,
-                    RelayPending = relayLeg?.Pending ?? false,
                     RelayCourseCode = result?.Leg?.ShownCourseCode
                 });
             }
@@ -3973,7 +3995,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             && !readHolders.Contains(l.ParticipantId)
             && IsOnCourse(placeByLink.TryGetValue(l.Id, out var res) ? res : ParticipantDayResult.Empty));
 
-        return new FinishReadoutLog(rows, new FinishReadoutCounts(readHolders.Count, onCourse, unknownChips.Count));
+        return new FinishReadoutLog(rows, new FinishReadoutCounts(readHolders.Count, onCourse, unknownChips.Count))
+        {
+            HasRelayTeams = snapshot.RelayTeams.Count > 0
+        };
     }
 
     // A day member still on course: no actual (chip) start, no finish and a blank status — the same three-field
@@ -4112,14 +4137,6 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         // Scale is uniform across a day's controls (captured per control at import); take the first stated.
         var mapScale = controlPoints.Select(c => c.MapScale).FirstOrDefault(s => s is > 0);
 
-        // Start/finish positions for the first (start → first control) and last (last control → finish) legs.
-        var startCp = controlPoints.FirstOrDefault(c => c.Type is ControlPointType.Start);
-        var finishCp = controlPoints.FirstOrDefault(c => c.Type is ControlPointType.Finish);
-        var startCoord = startCp is null ? default : new GeoPoint(startCp.Latitude, startCp.Longitude);
-        var finishCoord = finishCp is null ? default : new GeoPoint(finishCp.Latitude, finishCp.Longitude);
-        var startMap = startCp is null ? default : new MapPoint(startCp.MapX, startCp.MapY);
-        var finishMap = finishCp is null ? default : new MapPoint(finishCp.MapX, finishCp.MapY);
-
         GroupDaySettings? gs = link?.GroupId is { } gid && settingsByGroup.TryGetValue(gid, out var s) ? s : null;
         var discipline = gs?.DisciplineOverride ?? CurrentDayDefaultDiscipline;
 
@@ -4155,16 +4172,19 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 AssignedStart = link?.StartTime,
                 FinishTime = readout.FinishTime
             });
-        // A relay leg's splits run from the leg's start in the sequence — the previous leg's finish or the
-        // restart (Р-28, Р-29) — for the chip's latest read-out, which the results are built from.
+        // A relay leg's splits run from the leg's start in the sequence (Р-27…Р-29) — the previous leg's finish or the
+        // restart; leg 1 from its start punch, own start or the mass start — for every read-out of the chip (an
+        // earlier one too: the read-out log judges it the same way), against the leg's own course.
         CourseVariantData? legCourse = null;
-        if (link?.RelayTeamId is not null && _strategies.For(discipline).Competitors == CompetitorModel.TeamWithLegs
-            && !readouts.Any(o => o.Order > readout.Order && TextKey.Same(o.ChipNumber.Trim(), readout.ChipNumber.Trim())))
+        if (link?.RelayTeamId is not null && _strategies.For(discipline).Competitors == CompetitorModel.TeamWithLegs)
         {
             var dayResults = await ComputeDayResultsAsync(folder, CurrentDay, cancellationToken);
             if (dayResults.TryGetValue(link.Id, out var legResult) && legResult.Leg is { } leg)
             {
-                start = leg.Start;
+                start = leg.Leg == 1
+                    ? DayResultsCalculator.LegStart(_strategies.For(discipline), 1, link, gs, readout,
+                        previousFinish: null, restartAt: null, anyDate: readout.FinishTime, out _)
+                    : leg.Start;
                 // The leg's own named course (Р-44): the splits are judged against it, not the group's order.
                 legCourse = leg.Course
                     ?? (leg.CourseCode is { } code
@@ -4178,6 +4198,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             disabledInCourse = DisabledInCourse(legCourse.CourseOrderText, startFinishCodes, disabledCodes);
         }
 
+        // The first (start → first control) and last (last control → finish) legs run from / to this course's own
+        // boxes — a day may have several starts and finishes.
+        var ends = CourseEnds.Of(EndsCourseOrder(legCourse, gs, scatterVariants), controlPoints);
+
         var context = new SplitsContext
         {
             ExpectedControls = expected,
@@ -4188,10 +4212,10 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             CoordsByCode = coordsByCode,
             MapByCode = mapByCode,
             MapScale = mapScale,
-            StartCoord = startCoord,
-            FinishCoord = finishCoord,
-            StartMap = startMap,
-            FinishMap = finishMap,
+            StartCoord = ends.StartCoord,
+            FinishCoord = ends.FinishCoord,
+            StartMap = ends.StartMap,
+            FinishMap = ends.FinishMap,
             StartTime = start,
             FinishTime = readout.FinishTime,
             // Over-time penalty inputs (rogaine): the group's time limit and penalty rate. A null rate lets
@@ -4391,9 +4415,12 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     // its taken/missing flag so the renderer can bold the controls the runner did not visit in order.
     private static IReadOnlyList<SplitPrintCorrectRow> BuildCorrectOrderRows(IReadOnlyList<ExpectedControl> expected)
     {
+        // A disabled («проблемний») control is no part of the order and never missing — the splits panel marks it
+        // «∅» — so the slip leaves it out instead of framing it as a missed one.
         var list = new List<SplitPrintCorrectRow>(expected.Count);
         foreach (var c in expected)
-            list.Add(new SplitPrintCorrectRow(c.Code, c.Taken));
+            if (!c.Ignored)
+                list.Add(new SplitPrintCorrectRow(c.Code, c.Taken));
         return list;
     }
 
@@ -4485,11 +4512,13 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         HashSet<string> disabledCodes,
         DisciplineId dayDefault,
         IReadOnlyDictionary<Guid, IReadOnlyList<CourseVariantData>> variantsByGroup,
-        Func<IDisciplineStrategy, SettingValues>? settingsOf = null)
+        Func<IDisciplineStrategy, SettingValues>? settingsOf = null,
+        FinishEvaluator.RelayLegStart? relayLeg = null,
+        Guid? groupId = null)
     {
         var (result, start) = FinishEvaluator.Evaluate(
             _strategies, readout, link, settingsByGroup, startFinishCodes, disabledCodes, dayDefault, variantsByGroup,
-            settingsOf);
+            settingsOf, relayLeg, groupId);
         return (result.Status, result.Detail, result.DetailKind, start);
     }
 
@@ -5664,7 +5693,6 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                         LegTime: leg?.LegTime,
                         Cumulative: leg?.Cumulative,
                         Status: leg?.Status ?? FinishStatus.None,
-                        Pending: leg?.Pending ?? false,
                         Restarted: leg?.Restarted ?? false,
                         Extra: extra)
                     {
@@ -6017,7 +6045,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                         ? FormatSpan(legResult.AdjustedTime ?? legResult.LegTime)
                         : string.Empty,
                     ResultColumn.Cumulative => legResult?.Cumulative is { } cum ? FormatSpan(cum) : string.Empty,
-                    ResultColumn.Status => legResult is null || legResult.Pending
+                    ResultColumn.Status => legResult is null
                         ? string.Empty
                         : StatusCode(legResult.Status, legResult.Status != FinishStatus.None, labels),
                     ResultColumn.Extra => runner is null ? string.Empty : col.Extra?.Format(runner.Result, runner.Fields) ?? string.Empty,

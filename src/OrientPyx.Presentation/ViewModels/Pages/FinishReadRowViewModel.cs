@@ -67,6 +67,8 @@ public sealed class FinishReadRowViewModel : ObservableObject
         [nameof(ParticipantNumber)] = ParticipantNumber,
         [nameof(FullName)] = FullName,
         [nameof(GroupName)] = GroupName,
+        [nameof(TeamName)] = TeamName,
+        [nameof(StartTimeTooltip)] = StartTimeTooltip,
         [nameof(ScoreText)] = ScoreText,
         [nameof(ScoreTooltip)] = ScoreTooltip,
         [nameof(ScoreSort)] = ScoreSort,
@@ -130,25 +132,17 @@ public sealed class FinishReadRowViewModel : ObservableObject
     /// <summary>Full name when known; otherwise the localized "unknown chip" marker.</summary>
     public string FullName => _row.IsKnown ? _row.FullName : _localization.Get("FinishRead.Unknown");
 
-    /// <summary>Group when known; otherwise blank.</summary>
-    public string GroupName => _row.RelayTeamNumber is { } team
-        ? _row.GroupName + " · " + RelaySuffix(team)
+    /// <summary>Group when known; otherwise blank. A relay leg adds its named course — «Ч21 · B» (Р-44); the team
+    /// is a column of its own (<see cref="TeamName"/>) and the team/leg number is the «Номер» «100.2».</summary>
+    public string GroupName => _row.RelayCourseCode is { Length: > 0 } course
+        ? _row.GroupName + " · " + course
         : _row.GroupName;
 
-    // Relay: «команда 100 «Назва», етап 2 · перезапуск / очікує» (Р-29, Р-30).
-    private string RelaySuffix(int team)
-    {
-        var text = string.Format(_localization.Get("FinishRead.Relay.TeamLeg"), team, _row.RelayLeg ?? 0);
-        if (_row.RelayTeamName.Length > 0)
-            text += " «" + _row.RelayTeamName + "»";
-        if (_row.RelayCourseCode is { Length: > 0 } course)
-            text += " · " + string.Format(_localization.Get("Relay.CourseOf"), course);
-        if (_row.RelayRestarted)
-            text += " · " + _localization.Get("Relay.Restart");
-        if (_row.RelayPending)
-            text += " · " + _localization.Get("Relay.Pending");
-        return text;
-    }
+    /// <summary>Relay: the runner's team name («Команда» column, shown on a day with relay teams); blank otherwise.</summary>
+    public string TeamName => _row.RelayTeamName;
+
+    /// <summary>Hover text of the start cell: the leg started from the group's restart (Р-29); null — no tooltip — else.</summary>
+    public string? StartTimeTooltip => _row.RelayRestarted ? _localization.Get("FinishRead.Relay.RestartTooltip") : null;
 
     /// <summary>
     /// «Бали» for a point-scoring row: the total, and with an over-time penalty or a «Бонус» the sum spelled out from

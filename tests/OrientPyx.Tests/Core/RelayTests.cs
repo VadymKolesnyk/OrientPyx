@@ -84,16 +84,83 @@ public sealed class RelayTests
     }
 
     [Fact]
-    public async Task AnUnreadLegLeavesTheNextOnePending()
+    public async Task AReadLegWithoutAPreviousFinishIsDnsUntilThePreviousLegIsRead()
     {
+        // Р-30: a leg starts at the previous leg's finish; with none (the previous leg not read, or read without a
+        // finish punch) and no restart, the leg has no start — DNS, whatever its punches.
         var c = await BuildBasicAsync();
         var r = await c.ResultsAsync();
 
-        Assert.Equal(FinishStatus.None, r["103-2"].Status);
-        Assert.True(r["103-3"].Leg!.Pending);
-        Assert.Equal(FinishStatus.None, r["103-3"].Status);
+        Assert.Equal(FinishStatus.None, r["103-2"].Status);         // not read: still on course
+        Assert.Equal(FinishStatus.Dns, r["103-3"].Status);
+        Assert.Null(r["103-3"].Leg!.Start);
         Assert.Null(r["103-3"].ResultTime);
-        Assert.Equal(FinishStatus.None, r["103-1"].Team!.Status);
+        Assert.Equal(FinishStatus.Dns, r["103-1"].Team!.Status);
+
+        // Read without a finish punch: still no start for leg 3.
+        var noFinish = await c.AddReadoutAsync(1, "1032", "31 32 33", null, T(10, 40));
+        var store = Sp.GetRequiredService<IEventStore>();
+        noFinish.FinishTime = null;
+        await store.UpdateFinishReadoutAsync(c.Folder, noFinish);
+        r = await c.ResultsAsync();
+        Assert.Equal(FinishStatus.Dnf, r["103-2"].Status);
+        Assert.Equal(FinishStatus.Dns, r["103-3"].Status);
+
+        // A finish from the previous leg gives leg 3 its start: judged as usual.
+        await c.AddReadoutAsync(1, "1032", "31 32 33", null, T(10, 40));
+        r = await c.ResultsAsync();
+        Assert.Equal(FinishStatus.Ok, r["103-3"].Status);
+        Assert.Equal(T(0, 20), r["103-3"].ResultTime);
+        Assert.Equal(FinishStatus.Ok, r["103-1"].Team!.Status);
+    }
+
+    [Fact]
+    public async Task ALegOneWithNoStartAnywhereIsDns()
+    {
+        // Р-27: leg 1 runs from its start punch, else the runner's start time, else the mass start; none — DNS.
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("rdns1"), discipline: DisciplineId.Relay);
+        await c.AddControlsAsync(1, "31");
+        await c.AddGroupAsync("R", "31", s => s.LegCount = 1);
+        await c.AddRunnerAsync("NoStart", "", "7101", "R");
+        await c.AddRunnerAsync("OwnStart", "", "7201", "R", T(10, 0));
+        await c.AddRunnerAsync("Punched", "", "7301", "R");
+        await c.AddRelayTeamAsync("R", 71, "71", 1, ("NoStart", 1));
+        await c.AddRelayTeamAsync("R", 72, "72", 1, ("OwnStart", 1));
+        await c.AddRelayTeamAsync("R", 73, "73", 1, ("Punched", 1));
+        await c.AddReadoutAsync(1, "7101", "31", null, T(10, 20));
+        await c.AddReadoutAsync(1, "7201", "31", null, T(10, 20));
+        await c.AddReadoutAsync(1, "7301", "31", T(10, 5), T(10, 20));
+
+        var r = await c.ResultsAsync();
+        Assert.Equal(FinishStatus.Dns, r["NoStart"].Status);
+        Assert.Equal((FinishStatus.Ok, T(0, 20)), (r["OwnStart"].Status, r["OwnStart"].ResultTime!.Value));
+        Assert.Equal((FinishStatus.Ok, T(0, 15)), (r["Punched"].Status, r["Punched"].ResultTime!.Value));
+    }
+
+    [Fact]
+    public async Task AnEarlierReadOutOfALegChipIsJudgedFromTheLegsStartNotDns()
+    {
+        // The read-out log: leg 2's chip read twice — the first read missed 32. It is judged like the leg — from leg 1's
+        // finish — so MP, not DNS (a lone leg 2 has no start of its own); the latest read is the leg's result.
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("rearly"), discipline: DisciplineId.Relay);
+        await c.AddControlsAsync(1, "31", "32", "33");
+        await c.AddGroupAsync("R", "31 32 33", s => { s.LegCount = 2; s.MassStartTime = T(10, 0); });
+        await c.AddRunnerAsync("E-1", "", "8101", "R");
+        await c.AddRunnerAsync("E-2", "", "8102", "R");
+        await c.AddRelayTeamAsync("R", 81, "81", 1, ("E-1", 1), ("E-2", 2));
+        var leg1Early = await c.AddReadoutAsync(1, "8101", "31 32", null, T(10, 18));
+        await c.AddReadoutAsync(1, "8101", "31 32 33", null, T(10, 20));
+        var leg2Early = await c.AddReadoutAsync(1, "8102", "31 33", null, T(10, 35));
+        var leg2Late = await c.AddReadoutAsync(1, "8102", "31 32 33", null, T(10, 40));
+
+        var r = await c.ResultsAsync();
+        Assert.Equal(FinishStatus.Ok, r["E-2"].Status);
+
+        var rows = (await Sp.GetRequiredService<ICompetitionEditorService>().GetFinishReadoutRowsAsync()).ToDictionary(x => x.Id);
+        Assert.Equal((FinishStatus.Mp, "32", T(0, 15)), (rows[leg2Early.Id].Status, rows[leg2Early.Id].StatusDetail, rows[leg2Early.Id].Elapsed!.Value));
+        Assert.Equal((FinishStatus.Ok, T(0, 20)), (rows[leg2Late.Id].Status, rows[leg2Late.Id].Elapsed!.Value));
+        // Leg 1's earlier read runs from the mass start.
+        Assert.Equal((FinishStatus.Mp, T(0, 18)), (rows[leg1Early.Id].Status, rows[leg1Early.Id].Elapsed!.Value));
     }
 
     [Fact]
@@ -339,11 +406,23 @@ public sealed class RelayTests
         var vacant = page.Teams.Single(t => t.Number == 105).Legs.Single(l => l.Leg == 3);
         Assert.Null(vacant.LinkId);
 
-        var rows = await editor.GetFinishReadoutRowsAsync();
+        var log = await editor.GetFinishReadoutLogAsync();
+        Assert.True(log.HasRelayTeams);                              // the log shows the «Команда» column
+        var rows = log.Rows;
         var leg2 = rows.Single(x => x.ChipNumber == "1012");
         Assert.Equal(101, leg2.RelayTeamNumber);
         Assert.Equal(2, leg2.RelayLeg);
-        Assert.True(rows.Single(x => x.ChipNumber == "1033").RelayPending);
+        Assert.Equal(FinishStatus.Dns, rows.Single(x => x.ChipNumber == "1033").Status);   // leg 2 not read: no start
+
+        // «Група» is the group alone (+ the leg's named course), the team is its own column, the leg is the «Номер».
+        var localization = Sp.GetRequiredService<OrientPyx.Localization.ILocalizationService>();
+        var cell = new OrientPyx.Presentation.ViewModels.Pages.FinishReadRowViewModel(leg2, localization);
+        Assert.Equal(("101.2", "R", "Team 101"), (cell.ParticipantNumber, cell.GroupName, cell.TeamName));
+        Assert.Null(cell.StartTimeTooltip);
+        var onCourseB = new OrientPyx.Presentation.ViewModels.Pages.FinishReadRowViewModel(
+            leg2 with { RelayCourseCode = "B", RelayRestarted = true }, localization);
+        Assert.Equal("R · B", onCourseB.GroupName);
+        Assert.Equal(localization.Get("FinishRead.Relay.RestartTooltip"), onCourseB.StartTimeTooltip);
     }
 
     [Fact]
@@ -370,9 +449,9 @@ public sealed class RelayTests
         await c.SelectAsync();
         var editor = Sp.GetRequiredService<ICompetitionEditorService>();
         var online = await editor.GetOnlineResultsSnapshotAsync(c.Day(1).Id);
-        // Placed by place → finished «П/К» (105) → running by legs done, then cumulative (108; 109 before 103) →
-        // nothing done yet (110) → withdrawn (102, MP).
-        Assert.Equal([101, 106, 107, 105, 108, 109, 103, 110, 102], online.Teams.Select(t => t.Number));
+        // Placed by place → finished «П/К» (105) → running by legs done, then cumulative (108, 109) →
+        // nothing done yet (110) → withdrawn (102, MP) → DNS (103: leg 3 read with leg 2 not read).
+        Assert.Equal([101, 106, 107, 105, 108, 109, 110, 102, 103], online.Teams.Select(t => t.Number));
     }
 
     [Fact]
@@ -415,5 +494,100 @@ public sealed class RelayTests
         var unchanged = (await store.GetRelayTeamsAsync(c.Folder, day)).ToDictionary(t => t.Id, t => t.Number);
         Assert.Null(unchanged[teams[103].Id]);
         Assert.Equal(106, unchanged[teams[106].Id]);
+    }
+
+    [Fact]
+    public async Task LegSplitsSkipTheStartAndFinishBoxesWrittenIntoTheCourse()
+    {
+        // An OCAD relay course names its start and finish boxes («С1 … Ф1» — Cyrillic, so no S/F marker). The leg is
+        // judged OK; its splits on the finish panel and the slip must show every control taken, not all off-course.
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("rsplitsf"), discipline: DisciplineId.Relay);
+        var store = Sp.GetRequiredService<IEventStore>();
+        var dayId = c.Day(1).Id;
+        await c.AddControlsAsync(1, "31", "32", "33");
+        await store.AddControlPointsAsync(c.Folder,
+        [
+            new ControlPoint { EventDayId = dayId, Order = 10, Code = "С1", Type = ControlPointType.Start },
+            new ControlPoint { EventDayId = dayId, Order = 11, Code = "Ф1", Type = ControlPointType.Finish },
+        ]);
+        await c.AddGroupAsync("MixB", "С1 31 32 33 Ф1", s => { s.LegCount = 2; s.MassStartTime = T(10, 0); });
+        await c.SetCourseVariantsAsync("MixB", 1, ("AA", "С1 31 32 33 Ф1"), ("AB", "С1 33 32 31 Ф1"));
+        await c.SetRelayCourseModeAsync("MixB", 1, RelayCourseMode.ByBib);
+        await c.AddRunnerAsync("18-1", "", "181", "MixB");
+        await c.AddRunnerAsync("18-2", "", "182", "MixB");
+        await c.AddRelayTeamAsync("MixB", 18, "Команда 18", 1, ("18-1", 1), ("18-2", 2));
+        await store.UpsertLegCourseAssignmentsAsync(c.Folder, dayId,
+        [
+            new LegCourseAssignment { EventDayId = dayId, TeamNumber = 18, Leg = 1, CourseKey = "AA" },
+            new LegCourseAssignment { EventDayId = dayId, TeamNumber = 18, Leg = 2, CourseKey = "AB" },
+        ]);
+        await c.AddReadoutAsync(1, "181", "31 32 33", null, T(10, 20));
+        // Leg 2's chip read twice: the results use the latest; the earlier one is still judged on the leg's course.
+        var earlier = await c.AddReadoutAsync(1, "182", "33 32 31", null, T(10, 10));
+        var latest = await c.AddReadoutAsync(1, "182", "33 32 31", null, T(10, 40));
+
+        var r = await c.ResultsAsync();
+        Assert.Equal(FinishStatus.Ok, r["18-2"].Status);
+        Assert.Equal(FinishStatus.Ok, r["18-1"].Team!.Status);
+
+        var editor = Sp.GetRequiredService<ICompetitionEditorService>();
+        foreach (var readout in new[] { latest, earlier })
+        {
+            var view = await editor.GetFinishSplitsAsync(readout.Id);
+            Assert.NotNull(view);
+            Assert.Equal("AB", view.VariantCode);
+            Assert.Equal(["33", "32", "31"], view.Expected.Select(e => e.Code));
+            Assert.All(view.Expected, e => Assert.True(e.Taken));
+            Assert.Equal(3, view.VisitedCount);
+            Assert.Equal(3, view.ExpectedCount);
+            Assert.All(view.Passage.Where(p => p.Kind == PassageKind.Control), p => Assert.True(p.OnCourse));
+            // «Правильний порядок» names the course's own start and finish once, as markers (not «S С1 … Ф1 F»).
+            Assert.Equal("С1 33 32 31 Ф1", view.PrescribedPattern);
+        }
+
+        // Every read-out of the leg runs from the leg's start: leg 1's finish (Р-28).
+        var legStart = c.Date + T(10, 20);
+        Assert.Equal(legStart, (await editor.GetFinishSplitsAsync(latest.Id))!.Passage[0].Time);
+        Assert.Equal(legStart, (await editor.GetFinishSplitsAsync(earlier.Id))!.Passage[0].Time);
+
+        // The slip: no «*» (off-course) row.
+        var slip = await editor.GetSplitPrintDocumentAsync(latest.Id);
+        Assert.NotNull(slip);
+        Assert.Equal("AB", slip.VariantCode);
+        Assert.All(slip.Rows, row => Assert.True(row.OnCourse));
+    }
+
+    [Fact]
+    public async Task AMissedControlOnALegMarksOnlyItselfInTheSplits()
+    {
+        // A plain leg order is laid out like a set course: missing 32 leaves 33 and 34 on course (the greedy pattern
+        // walk used to off-course every control after the miss, and the slip put «*» on all of them).
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("rmiss"), discipline: DisciplineId.Relay);
+        await c.AddControlsAsync(1, "S1", "31", "32", "33", "34", "F1");
+        await c.AddGroupAsync("R", "S1 31 32 33 34 F1", s => { s.LegCount = 1; s.MassStartTime = T(10, 0); });
+        await c.AddRunnerAsync("Miss", "", "5001", "R");
+        await c.AddRelayTeamAsync("R", 501, "501", 1, ("Miss", 1));
+        var readout = await c.AddReadoutAsync(1, "5001", "31 33 34", null, T(10, 20));
+
+        var r = await c.ResultsAsync();
+        Assert.Equal(FinishStatus.Mp, r["Miss"].Status);
+        Assert.Equal("32", r["Miss"].StatusDetail);
+
+        var editor = Sp.GetRequiredService<ICompetitionEditorService>();
+        var view = await editor.GetFinishSplitsAsync(readout.Id);
+        Assert.NotNull(view);
+        var controls = view.Passage.Where(p => p.Kind == PassageKind.Control).ToList();
+        Assert.All(controls, p => Assert.True(p.OnCourse));
+        Assert.Equal(["31", "32", "33", "34"], view.Expected.Select(e => e.Code));
+        Assert.Equal([true, false, true, true], view.Expected.Select(e => e.Taken));
+        Assert.Equal((3, 4), (view.VisitedCount, view.ExpectedCount));
+        Assert.Equal("S1 31 32 33 34 F1", view.PrescribedPattern);
+        Assert.NotNull(controls.Single(p => p.Code == "34").Leg);       // 33 → 34 is a whole course leg
+
+        var slip = await editor.GetSplitPrintDocumentAsync(readout.Id);
+        Assert.NotNull(slip);
+        Assert.All(slip.Rows, row => Assert.True(row.OnCourse));
+        Assert.Equal([("31", true), ("32", false), ("33", true), ("34", true)],
+            slip.CorrectOrder.Select(x => (x.Code, x.Taken)));
     }
 }

@@ -112,7 +112,7 @@ internal sealed partial class DayResultsCalculator
             if (!byLeg.TryGetValue(leg, out var link))
             {
                 legs.Add(new RelayLegResult(leg, null, null, null, null, FinishStatus.None,
-                    null, null, null, Restarted: false, Pending: false)
+                    null, null, null, Restarted: false)
                 {
                     CourseCode = legCourse?.Course?.Code, Course = legCourse?.Course, CoursePerLeg = perLeg
                 });
@@ -123,46 +123,19 @@ internal sealed partial class DayResultsCalculator
             anyOutOfCompetitionMember |= link.OutOfCompetition;
             var readout = input.LatestByChip.TryGetValue(link.Chip.Trim(), out var r) ? r : null;
 
-            // Р-27 (leg 1) / Р-28…Р-30 (leg N): where this leg's time starts.
-            DateTimeOffset? start;
-            bool restarted = false, pending = false;
-            if (leg == 1)
-                start = strategy.ResolveStart(new StartContext
-                {
-                    ChipStart = readout?.StartTime,
-                    AssignedStart = link.StartTime ?? gs?.MassStartTime,
-                    FinishTime = readout?.FinishTime ?? anyDate
-                });
-            else
-            {
-                var restartAt = restarts.TryGetValue(leg, out var rt)
-                    ? DisciplineStrategyBase.CombineWithFinishDate(rt, previousFinish ?? readout?.FinishTime ?? anyDate)
-                    : null;
-                if (previousFinish is { } pf)
-                {
-                    restarted = restartAt is { } ra && ra < pf;
-                    start = restarted ? restartAt : pf;
-                }
-                else if (restartAt is not null)
-                {
-                    start = restartAt;
-                    restarted = true;
-                }
-                else
-                {
-                    start = null;
-                    pending = true;   // Р-30: no handoff and no restart — the leg waits
-                }
-            }
+            var restartAt = leg > 1 && restarts.TryGetValue(leg, out var rt)
+                ? DisciplineStrategyBase.CombineWithFinishDate(rt, previousFinish ?? readout?.FinishTime ?? anyDate)
+                : null;
+            var start = LegStart(strategy, leg, link, gs, readout, previousFinish, restartAt, anyDate, out var restarted);
 
             var (result, row) = EvaluateLeg(input, link, gs, team.GroupId, strategy, leg, start, useLegStart: true,
-                pending: pending, course: legCourses is null ? null : legCourse ?? LegCourse.Undetermined);
+                course: legCourses is null ? null : legCourse ?? LegCourse.Undetermined);
             if (row is not null && result.UnrankedReason is { } reason)
                 unranked ??= reason;   // Р-48: a leg withheld from ranking withholds the team
 
             cumulative = cumulative is { } c && result.AdjustedTime is { } at ? c + at : null;
             var legResult = new RelayLegResult(leg, link.Id, link.ParticipantId, start, readout?.FinishTime,
-                result.Status, result.ResultTime, result.AdjustedTime, cumulative, restarted, pending)
+                result.Status, result.ResultTime, result.AdjustedTime, cumulative, restarted)
             {
                 CourseCode = legCourse?.Course?.Code,
                 Course = legCourse?.Course,
@@ -209,6 +182,33 @@ internal sealed partial class DayResultsCalculator
             CourseSetOpen = courseSetOpen,
             UnrankedReason = unranked
         };
+    }
+
+    /// <summary>
+    /// Where a leg's time starts (Р-27…Р-29): leg 1 — the chip's start punch, else the runner's own start time, else the
+    /// group's mass start; leg N — the previous leg's finish, or the restart when that is earlier. Null — the leg is DNS
+    /// once read — when leg 1 has none of those, or leg N has neither a previous finish (the previous leg not read, or
+    /// read without a finish punch) nor a restart.
+    /// </summary>
+    internal static DateTimeOffset? LegStart(
+        IDisciplineStrategy strategy, int leg, ParticipantDay link, GroupDaySettings? gs, FinishReadout? readout,
+        DateTimeOffset? previousFinish, DateTimeOffset? restartAt, DateTimeOffset? anyDate, out bool restarted)
+    {
+        restarted = false;
+        if (leg == 1)
+            return strategy.ResolveStart(new StartContext
+            {
+                ChipStart = readout?.StartTime,
+                AssignedStart = link.StartTime ?? gs?.MassStartTime,
+                FinishTime = readout?.FinishTime ?? anyDate
+            });
+        if (previousFinish is { } pf)
+        {
+            restarted = restartAt is { } ra && ra < pf;
+            return restarted ? restartAt : pf;
+        }
+        restarted = restartAt is not null;
+        return restartAt;
     }
 
     /// <summary>A leg's course: the named course, or none could be assigned (<see cref="Detail"/> = the missing code).</summary>
@@ -347,7 +347,7 @@ internal sealed partial class DayResultsCalculator
         return match.Ok ? 0 : Math.Max(1, match.Missed.Count);
     }
 
-    // Р-33: DSQ > MP > OVT > DNF > DNS > «очікує» (None) > OK.
+    // Р-33: DSQ > MP > OVT > DNF > DNS > not read yet (None) > OK.
     private static int Severity(FinishStatus status) => status switch
     {
         FinishStatus.Dsq => 6,
@@ -360,12 +360,12 @@ internal sealed partial class DayResultsCalculator
     };
 
     /// <summary>
-    /// One leg: judged against the leg course from the sequence's start (Р-31), adjusted when OK (Р-6). A pending
-    /// leg (Р-30) gets no time and no status even when read; the judge's override still wins (Р-10).
+    /// One leg: judged against the leg course from the sequence's start (Р-31), adjusted when OK (Р-6). A read leg with
+    /// no start (<see cref="LegStart"/> null, Р-30) is DNS; the judge's override still wins (Р-10).
     /// </summary>
     private (ParticipantDayResult Result, ResultRow? Row) EvaluateLeg(
         RelayInputs input, ParticipantDay link, GroupDaySettings? gs, Guid? groupId, IDisciplineStrategy strategy,
-        int legNumber, DateTimeOffset? start, bool useLegStart, bool pending = false, LegCourse? course = null)
+        int legNumber, DateTimeOffset? start, bool useLegStart, LegCourse? course = null)
     {
         var readout = input.LatestByChip.TryGetValue(link.Chip.Trim(), out var r) ? r : null;
         if (readout is null)
@@ -378,21 +378,13 @@ internal sealed partial class DayResultsCalculator
         var wasOnCourse = readout.StartTime is not null || readout.FinishTime is not null
             || CourseCodes.SplitCodes(readout.Punches).Any(c => !input.StartFinishCodes.Contains(c));
 
-        FinishStatusResult finish;
-        DateTimeOffset? resolvedStart;
-        if (pending)
-        {
-            finish = FinishStatusResult.Of(FinishStatus.None);
-            resolvedStart = null;
-        }
-        else
-            (finish, resolvedStart) = FinishEvaluator.Evaluate(
-                _strategies, readout, link, input.SettingsByGroup, input.StartFinishCodes, input.DisabledCodes,
-                input.Day.DefaultDiscipline, input.VariantsByGroup, input.SettingsOf,
-                useLegStart
-                    ? new FinishEvaluator.RelayLegStart(start, course?.Course, course?.Unassigned ?? false, course?.Detail ?? string.Empty)
-                    : null,
-                groupId);
+        var (finish, resolvedStart) = FinishEvaluator.Evaluate(
+            _strategies, readout, link, input.SettingsByGroup, input.StartFinishCodes, input.DisabledCodes,
+            input.Day.DefaultDiscipline, input.VariantsByGroup, input.SettingsOf,
+            useLegStart
+                ? new FinishEvaluator.RelayLegStart(start, course?.Course, course?.Unassigned ?? false, course?.Detail ?? string.Empty)
+                : null,
+            groupId);
 
         var computed = finish.Status;
         var status = link.ResultStatusOverride ?? computed;

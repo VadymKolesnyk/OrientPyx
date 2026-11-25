@@ -1095,8 +1095,6 @@ public static class RelayText
 
     public static string Leg(RelayLegResult r, ILocalizationService loc)
     {
-        if (r.Pending)
-            return loc.Get("Relay.Pending");
         var parts = new List<string>();
         if (r.Status != FinishStatus.None)
             parts.Add(FinishStatusOptions.ShortCode(r.Status));
