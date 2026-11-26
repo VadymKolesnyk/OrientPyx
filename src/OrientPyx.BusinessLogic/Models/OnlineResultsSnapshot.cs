@@ -73,15 +73,14 @@ public sealed record OnlineTeamRow(
     decimal? Points,
     IReadOnlyList<OnlineLegRow> Legs);
 
-/// <summary>One leg of an <see cref="OnlineTeamRow"/>; a leg nobody runs has a blank <see cref="FullName"/>.</summary>
+/// <summary>One leg of an <see cref="OnlineTeamRow"/>; a leg nobody runs has a blank <see cref="FullName"/>. The leg's
+/// course variant is not published (the protocols and splits show it, the spectator site does not).</summary>
 public sealed record OnlineLegRow(
     int Leg,
     /// <summary>The leg number «100.2» (Р-23).</summary>
     string Bib,
     string FullName,
     string Birth,
-    /// <summary>The leg's course code (Р-44), or null when the group runs one course.</summary>
-    string? Course,
     TimeSpan? LegTime,
     TimeSpan? Cumulative,
     FinishStatus Status,

@@ -21,12 +21,19 @@ public sealed class SplitExportBuilder : ISplitExportBuilder
         var groups = new List<SplitExportGroup>(data.Groups.Count);
         foreach (var g in data.Groups.OrderBy(g => g.Order))
         {
-            var rows = Order(g.Rows)
-                .Select(r => BuildRow(r, labels))
-                .ToList();
+            var ordered = Order(g.Rows).ToList();
+            var rows = new List<SplitExportRow>(ordered.Count);
+            for (var i = 0; i < ordered.Count; i++)
+            {
+                var row = BuildRow(ordered[i], labels);
+                // A heavy line above each relay team after the first: the team's legs read as one block.
+                if (g.IsRelay && i > 0 && ordered[i].Result.Team?.TeamId != ordered[i - 1].Result.Team?.TeamId)
+                    row = row with { StartsTeam = true };
+                rows.Add(row);
+            }
 
             groups.Add(new SplitExportGroup(
-                g.Name, g.Layout, g.DistanceKm, g.ControlCount, g.Controls, g.HasPoints, rows));
+                g.Name, g.Layout, g.DistanceKm, g.ControlCount, g.Controls, g.HasPoints, g.IsRelay, rows));
         }
 
         var title = header.Title.Trim().Length > 0 ? header.Title.Trim() : labels.DefaultTitle;
@@ -63,7 +70,7 @@ public sealed class SplitExportBuilder : ISplitExportBuilder
         // The result column: a score for a point format, else the result time for an OK run; blank otherwise.
         var resultText = ok
             ? (r.Score is { } s ? s.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                : r.RankingTime is { } e && e >= TimeSpan.Zero ? e.ToString("h\\:mm\\:ss") : string.Empty)
+                : ShownTime.Result(r.RankingTime, r.TimeDecimals))
             : string.Empty;
 
         var placeText = ok && r.Place is { } p
@@ -80,7 +87,16 @@ public sealed class SplitExportBuilder : ISplitExportBuilder
 
         return new SplitExportRow(
             row.Number, row.FullName, row.Team, resultText, placeText, statusText, ok,
-            resultDetail, resultTooltip, row.Splits);
+            resultDetail, resultTooltip, row.Splits)
+        {
+            // A relay leg names its course the way every output does (blank for a «своя на кожен етап» course coded
+            // with the leg's own number); a scatter runner — the variant detected from the read-out.
+            Variant = (r.Leg is { } leg ? leg.ShownCourseCode : row.Splits.VariantCode)?.Trim() ?? string.Empty,
+            // «Наростаючий» from the 2nd leg on: on leg 1 it is the leg's own result.
+            CumulativeText = r.Leg is { Leg: > 1, Cumulative: { } cumulative } && cumulative >= TimeSpan.Zero
+                ? cumulative.ToString("h\\:mm\\:ss")
+                : string.Empty
+        };
     }
 
     // The penalty/bonus detail shown under the «Бали» total: a signed "−Y" penalty and/or "+B" bonus, joined

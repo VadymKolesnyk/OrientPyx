@@ -40,6 +40,10 @@ public sealed record TeamDayResult(
     /// <summary>Why a leg's discipline rule withheld the team from ranking (Р-48); null when ranked normally.</summary>
     public string? UnrankedReason { get; init; }
 
+    /// <summary>How many fractional digits <see cref="Time"/> is shown with (<see cref="ShownTime"/>): 0, or 1–3 when
+    /// another team of the group shows the same second but has another place.</summary>
+    public int TimeDecimals { get; init; }
+
     /// <summary>«Очки» of the team's place, shared by every member (Р-37).</summary>
     public decimal? Points { get; init; }
 
@@ -58,7 +62,7 @@ public sealed record TeamDayResult(
 /// <param name="Status">The leg's effective status (judge's override first); <see cref="FinishStatus.None"/> for an
 /// unread leg.</param>
 /// <param name="LegTime">finish − start of an OK leg.</param>
-/// <param name="AdjustedTime">The leg time after the discipline's adjustment (Р-6, rounded when changed).</param>
+/// <param name="AdjustedTime">The leg time after the discipline's adjustment (Р-6), with full precision.</param>
 /// <param name="Cumulative">Σ adjusted leg times up to and including this leg (Р-32); null after a leg without time.</param>
 /// <param name="Restarted">The leg started from the group's restart (Р-29).</param>
 public sealed record RelayLegResult(

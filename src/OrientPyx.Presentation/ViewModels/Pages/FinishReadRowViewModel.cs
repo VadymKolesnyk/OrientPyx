@@ -116,10 +116,9 @@ public sealed class FinishReadRowViewModel : ObservableObject
     public string FinishTimeText =>
         _row.FinishTime is { } t ? t.ToLocalTime().ToString("HH:mm:ss") : string.Empty;
 
-    /// <summary>Result (finish − start) as "H:mm:ss", or blank when either time is unknown.</summary>
-    public string ElapsedText => _row.Elapsed is { } e && e >= TimeSpan.Zero
-        ? e.ToString("h\\:mm\\:ss")
-        : string.Empty;
+    /// <summary>Result (finish − start) as "H:mm:ss" (with the tenths that break a tie of seconds with another
+    /// place), or blank when either time is unknown.</summary>
+    public string ElapsedText => ShownTime.Result(_row.Elapsed, _row.TimeDecimals);
 
     public bool IsKnown => _row.IsKnown;
 
@@ -193,7 +192,7 @@ public sealed class FinishReadRowViewModel : ObservableObject
     /// <summary>Loss to the group leader as "+H:mm:ss" for a placed runner behind the leader; blank for the
     /// leader themselves, a non-placed row, or a scoring day (no result time).</summary>
     public string GapText => _row.Gap is { } g && g > TimeSpan.Zero
-        ? "+" + g.ToString("h\\:mm\\:ss")
+        ? "+" + ShownTime.Result(g, _row.TimeDecimals)
         : string.Empty;
 
     /// <summary>

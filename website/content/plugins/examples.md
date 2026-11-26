@@ -141,7 +141,7 @@ public abstract class MissedPenaltyDiscipline : Discipline
 ```csharp
 public sealed class WeightedRelayPlugin : IOrientPyxPlugin
 {
-    public PluginInfo Info => new("weighted", "Зважена естафета", "1.5", MinApiVersion: 4,
+    public PluginInfo Info => new("weighted", "Зважена естафета", "1.6", MinApiVersion: 4,
         Author: "OrientPyx", Description: "Час етапу × коефіцієнт за віком і статтю; час команди = Σ T·K.");
 
     public void Register(IPluginBuilder p)
@@ -270,16 +270,14 @@ internal static class Coefficients
             return ctx.Time;
         }
 
-        // T·K округлюємо до секунди на кожному етапі — навіть при K = 1.00, коли програма
-        // незмінений час не округлила б. Так сума колонки «T·K» завжди дорівнює часу команди.
-        var adj = RoundToSecond(ctx.Time * coefficient);
+        // T·K — з повною точністю, як будь-який час; частки секунди програма відкине лише при показі,
+        // тож при K = 1 «T·K» = «Час».
+        var adj = ctx.Time * coefficient;
         ctx.Row.Set("k", coefficient);
         ctx.Row.Set("adj", adj);
         return adj;
     }
 
-    private static TimeSpan RoundToSecond(TimeSpan time) =>
-        TimeSpan.FromSeconds(Math.Round(time.TotalSeconds, MidpointRounding.AwayFromZero));
 }
 ```
 

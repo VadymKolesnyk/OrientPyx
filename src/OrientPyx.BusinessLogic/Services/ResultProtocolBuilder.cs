@@ -345,13 +345,13 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
             ProtocolColumn.Club => team.ClubName,
             ProtocolColumn.Region => team.RegionName,
             ProtocolColumn.Result => r is null ? string.Empty
-                : r.Status == FinishStatus.Ok ? TimeFormat.Result(r.Time) : ShortCode(r.Status),
+                : r.Status == FinishStatus.Ok ? ShownTime.Result(r.Time, r.TimeDecimals) : ShortCode(r.Status),
             ProtocolColumn.Place => r?.Place is { } p ? p.ToString(CultureInfo.InvariantCulture)
                 : r is { OutOfCompetition: true } ? ParticipantDayResult.OutOfCompetitionMark
                 : string.Empty,
             ProtocolColumn.Points => r?.Points is { } pts ? PointsTable.Format(pts) : string.Empty,
-            ProtocolColumn.Gap => r is { Place: not null, Time: { } t } && leader is { } lead && t > lead
-                ? "+" + (t - lead).ToString(@"h\:mm\:ss")
+            ProtocolColumn.Gap => r is { Place: not null, Time: { } t } && leader is { } lead
+                ? ShownTime.ResultGap(t, lead, r.TimeDecimals)
                 : string.Empty,
             _ => string.Empty
         };
@@ -465,13 +465,13 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
     private static string NameWithNote(ResultProtocolRow row, ProtocolLabels labels) =>
         UnrankedNote(row.Result, labels) is { } note ? $"{row.FullName} ({note})" : row.FullName;
 
-    // The «Відставання» column: the loss to the group leader as "+h:mm:ss", shown only for a placed result
-    // whose time exceeds the leader's. The leader themselves, an unplaced run (DNS/MP/поза конкурсом) and a
-    // point-scoring day with no times all show nothing — the same loss-to-leader convention the finish
-    // read-out and the monitor screens use.
+    // The «Відставання» column: the loss to the group leader as "+h:mm:ss" — the difference of the two times as
+    // they are shown (ShownTime.Gap) — only for a placed result shown behind the leader's. The leader themselves,
+    // an unplaced run (DNS/MP/поза конкурсом) and a point-scoring day with no times all show nothing — the same
+    // loss-to-leader convention the finish read-out and the monitor screens use.
     private static string GapCell(ParticipantDayResult r, TimeSpan? leader) =>
-        r.Place is not null && leader is { } lead && r.RankingTime is { } rt && rt > lead
-            ? "+" + (rt - lead).ToString(@"h\:mm\:ss")
+        r.Place is not null && leader is { } lead && r.RankingTime is { } rt
+            ? ShownTime.ResultGap(rt, lead, r.TimeDecimals)
             : string.Empty;
 
     // The place column: the 1-based rank, «П/К» for a personal-discipline out-of-competition runner (not
@@ -481,12 +481,12 @@ public sealed class ResultProtocolBuilder : IResultProtocolBuilder
         : r.OutOfCompetition ? ParticipantDayResult.OutOfCompetitionMark
         : string.Empty;
 
-    // An OK run shows its result time ("h:mm:ss"); any other status shows the standard short code (DNS / MP /
-    // …); a blank status (no read-out, no override) shows nothing.
+    // An OK run shows its result time ("h:mm:ss", with the tenths that break a tie of seconds — ShownTime); any
+    // other status shows the standard short code (DNS / MP / …); a blank status (no read-out, no override) shows nothing.
     private static string ResultCell(ParticipantDayResult r)
     {
         if (r.Status == FinishStatus.Ok)
-            return TimeFormat.Result(r.RankingTime);
+            return ShownTime.Result(r.RankingTime, r.TimeDecimals);
         return ShortCode(r.Status);
     }
 

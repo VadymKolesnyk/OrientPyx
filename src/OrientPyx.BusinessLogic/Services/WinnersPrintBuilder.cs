@@ -135,7 +135,7 @@ public sealed class WinnersPrintBuilder : IWinnersPrintBuilder
         {
             if (r.Score is { } score)
                 return score.ToString(CultureInfo.InvariantCulture);
-            return r.RankingTime is { } e && e >= TimeSpan.Zero ? e.ToString("h\\:mm\\:ss") : string.Empty;
+            return ShownTime.Result(r.RankingTime, r.TimeDecimals);
         }
         return ShortCode(r.Status);
     }

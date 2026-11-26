@@ -22,9 +22,9 @@ public static class ResultText
     public static string Finish(ParticipantDayResult r) =>
         r.FinishTime is { } t ? t.ToLocalTime().ToString("HH:mm:ss") : string.Empty;
 
-    /// <summary>Result time (finish − start) as "H:mm:ss", blank when no valid OK result.</summary>
-    public static string Result(ParticipantDayResult r) =>
-        r.RankingTime is { } e && e >= TimeSpan.Zero ? e.ToString("h\\:mm\\:ss") : string.Empty;
+    /// <summary>Result time (finish − start) as "H:mm:ss" — with the tenths when the second ties with another place
+    /// (<see cref="ShownTime"/>) — blank when no valid OK result.</summary>
+    public static string Result(ParticipantDayResult r) => ShownTime.Result(r.RankingTime, r.TimeDecimals);
 
     /// <summary>The standard short status code (OK / MP / …), blank for None.</summary>
     public static string Status(ParticipantDayResult r) => FinishStatusOptions.ShortCode(r.Status);

@@ -61,6 +61,10 @@ public sealed record FinishReadoutRow(
     /// </summary>
     public int? Penalty { get; init; }
 
+    /// <summary>How many fractional digits <see cref="Elapsed"/> and <see cref="Gap"/> are shown with — the result's
+    /// <see cref="ParticipantDayResult.TimeDecimals"/> (0 unless the second ties with another place).</summary>
+    public int TimeDecimals { get; init; }
+
     /// <summary>Relay: the runner's team number; null outside a relay (then the relay fields below are unused).</summary>
     public int? RelayTeamNumber { get; init; }
 

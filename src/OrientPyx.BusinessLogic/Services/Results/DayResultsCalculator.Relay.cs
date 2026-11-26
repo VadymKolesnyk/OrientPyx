@@ -405,7 +405,7 @@ internal sealed partial class DayResultsCalculator
         if (legTime is not { } time)
             return (result, null);
 
-        // (c) Adjust the leg time (Р-6, Р-49: a changed leg is rounded on its own, the team sums the rounded legs).
+        // (c) Adjust the leg time (Р-6, Р-49: full precision; the team sums the adjusted legs as they are).
         var row = new ResultRow
         {
             Id = link.Id,
@@ -429,7 +429,7 @@ internal sealed partial class DayResultsCalculator
         var changed = adjusted != time;
         return (result with
         {
-            AdjustedTime = changed ? RoundToSecond(adjusted) : time,
+            AdjustedTime = changed ? adjusted : time,
             Extra = row.Values.Count > 0 ? new Dictionary<string, object?>(row.Values) : result.Extra,
             UnrankedReason = QualifiedReason(strategy, row.UnrankedReason)
         }, row);
@@ -457,6 +457,11 @@ internal sealed partial class DayResultsCalculator
                 Results = results
             });
         }
+        // A team time showing the same second as a differently placed team gets the tenths that tell them apart.
+        foreach (var byGroup in teams.Values.GroupBy(t => t.GroupId).ToList())
+            foreach (var (id, d) in ShownTime.Decimals(byGroup, t => t.TeamId,
+                         t => t.Status == FinishStatus.Ok ? t.Time : null, t => t.Place, _ => null))
+                teams[id] = teams[id] with { TimeDecimals = d };
         CopyTeamsToMembers(teams, results);
     }
 

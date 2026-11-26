@@ -34,6 +34,11 @@ public sealed record SplitExportGroup(
     IReadOnlyList<string> Controls,
     /// <summary>True when the group scores points (rogaine), so the writer shows the points columns.</summary>
     bool HasPoints,
+    /// <summary>
+    /// A relay group: the rows are legs, team by team — the writer shows each runner's team, the running team time under the
+    /// leg's result (<see cref="SplitExportRow.CumulativeText"/>) and a heavy line above each team (<see cref="SplitExportRow.StartsTeam"/>).
+    /// </summary>
+    bool IsRelay,
     IReadOnlyList<SplitExportRow> Rows);
 
 /// <summary>
@@ -65,7 +70,22 @@ public sealed record SplitExportRow(
     /// there is no scored breakdown (no tooltip then).
     /// </summary>
     string ResultTooltip,
-    SplitsView Splits);
+    SplitsView Splits)
+{
+    /// <summary>
+    /// The course variant the runner ran: a scatter variant («A») or a relay leg's named course
+    /// (<see cref="RelayLegResult.ShownCourseCode"/>). Empty when the group runs one course — the writer shows the
+    /// «Варіант» column only when some row of the group has one.
+    /// </summary>
+    public string Variant { get; init; } = string.Empty;
+
+    /// <summary>A relay leg from the 2nd on: the team's running time after this leg («Наростаючий», Σ counted leg
+    /// times); empty on leg 1 (it equals the leg's own result), outside a relay and while the time is unknown.</summary>
+    public string CumulativeText { get; init; } = string.Empty;
+
+    /// <summary>The first row of a relay team after another team's rows — the writer draws a heavy line above it.</summary>
+    public bool StartsTeam { get; init; }
+}
 
 /// <summary>
 /// Localized labels and captions the split writer needs, gathered once by the page so the writer
@@ -79,6 +99,10 @@ public sealed record SplitExportLabels(
     string ColumnResult,
     string ColumnFinish,
     string ColumnScore,
+    /// <summary>Header of the course-variant column (scatter variant / relay leg course), e.g. "Варіант".</summary>
+    string ColumnVariant,
+    /// <summary>Caption (hover title) of a relay leg's running team time under its result, e.g. "Наростаючий".</summary>
+    string ColumnCumulative,
     string ControlPrefix,
     string DistanceLabel,
     /// <summary>Header for the scored-table per-runner "distance run by chip" column (e.g. "Дист., км").</summary>

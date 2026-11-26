@@ -3090,24 +3090,36 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             // where each runner writes their own passing order into positional КП columns.
             var isScatter = strategy.UsesCourseVariants;
             // A relay group whose legs run named courses (Р-44) has no single column set either.
-            var legCourses = strategy.Competitors == CompetitorModel.TeamWithLegs
-                && rows.Any(r => r.Result.Leg?.CourseCode is not null);
+            var isRelay = strategy.Competitors == CompetitorModel.TeamWithLegs;
+            var legCourses = isRelay && rows.Any(r => r.Result.Leg?.CourseCode is not null);
             // A free-order format without points («за вибором по кількості КП») has no prescribed column set either:
             // its own splits are the scored layout, each runner's passage in the order taken.
             var freeOrder = rows.Any(r => r.Splits.Layout == SplitsLayout.Scored);
-            var layout = isScored || isScatter || legCourses || freeOrder ? SplitsLayout.Scored : SplitsLayout.Ordered;
+            // Neither has a «змішаний» pattern with a choice block ([2: 45 46 47]): each runner takes their own controls
+            // in their own order, so its splits are laid out like a free-order format's (the passage in punch order).
+            var ownOrder = strategy.UsesCoursePattern && HasChoiceBlock(setting.CourseOrder);
+            var layout = isScored || isScatter || legCourses || freeOrder || ownOrder
+                ? SplitsLayout.Scored
+                : SplitsLayout.Ordered;
 
             // Disabled («проблемні») controls are dropped from the export's column header / count too, so the
             // table matches what was actually required and scored.
             var controls = CourseControls(setting.CourseOrder, startFinishCodes, disabledCodes);
+            // A choice pattern lists every option; the header counts what it requires, as the result protocol does.
+            var controlCount = ownOrder ? strategy.ControlCount(setting.CourseOrder) : controls.Count;
 
             sections.Add(new SplitExportDataGroup(
                 name, setting.Order, layout, setting.DistanceKm,
-                controls.Count, isScored, controls, rows));
+                controlCount, isScored, isRelay, controls, rows));
         }
 
         return new SplitExportData(sections);
     }
+
+    // A course pattern with an «any N of» block ([2: 45 46 47]) — the runners' orders differ. An ordered run (<41 42>)
+    // alone keeps one order for everyone.
+    private static bool HasChoiceBlock(string? courseOrder) =>
+        courseOrder is not null && courseOrder.Contains('[');
 
     /// <summary>
     /// Every read-out member's splits on a day, by link id — the views the HTML and IOF split exports print. A link
@@ -3948,11 +3960,15 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     // A read-out finished before its leg's start (a chip not cleared since an earlier run) shows no time.
                     elapsed = r.FinishTime is { } lf && resolvedStart is { } ls && lf > ls ? lf - ls : null;
                 }
-                // «Відставання»: loss to the group leader, for a placed OK result whose time exceeds the
-                // leader's (the leader themselves and non-placed rows show none).
+                // The tenths that break a tie of seconds with another place (ShownTime) — a relay leg's place is the
+                // team's, so its own time never needs them.
+                var timeDecimals = relayLeg is null ? result?.TimeDecimals ?? 0 : 0;
+                // «Відставання»: loss to the group leader as the two times are shown, for a placed OK result shown
+                // behind the leader's (the leader themselves and non-placed rows show none).
                 TimeSpan? gap = place is not null && result?.RankingTime is { } rt
-                    && link.GroupId is { } ggid && leaderTimeByGroup.TryGetValue(ggid, out var lead) && rt > lead
-                    ? rt - lead
+                    && link.GroupId is { } ggid && leaderTimeByGroup.TryGetValue(ggid, out var lead)
+                    && ShownTime.Gap(rt, lead, timeDecimals) is var shownGap && shownGap > TimeSpan.Zero
+                    ? shownGap
                     : null;
                 // Collect the rental chip on the holder's last day with it: rental chip, and no later day
                 // (higher number) has this participant running with the same chip.
@@ -3970,6 +3986,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                     // «X (Y − P + B)», as the calculator adds them.
                     Penalty = scored?.Penalty,
                     Bonus = score is not null ? link.Bonus : null,
+                    TimeDecimals = timeDecimals,
                     RelayTeamNumber = result?.Team?.Number,
                     RelayTeamName = result?.Team?.Name ?? string.Empty,
                     RelayLeg = result?.Leg?.Leg,
@@ -4330,7 +4347,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             IsRentalChip = isRental,
             GroupName = row.GroupName,
             VariantCode = view.VariantCode,
-            ResultText = resultElapsed is { } re ? re.ToString("h\\:mm\\:ss") : string.Empty,
+            ResultText = ShownTime.Result(resultElapsed, row.TimeDecimals),
             StatusText = status,
             StatusDetail = row.StatusDetail,
             StatusDetailKind = row.StatusDetailKind,
@@ -5662,7 +5679,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             .Where(x => x.Value.Length > 0)
             .ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
 
-    // §11.1: one row per relay team of the day, each with its legs (number «100.N», runner, course, times, status),
+    // §11.1: one row per relay team of the day, each with its legs (number «100.N», runner, times, status — not the
+    // leg's course variant),
     // in standing order (RelayTeamOrder; the spectator site sorts the same way on its own).
     private static List<OnlineTeamRow> OnlineTeams(
         ResultProtocolData data, IReadOnlyList<ExtraResultColumn> extraColumns, Func<string, string> groupName)
@@ -5689,7 +5707,6 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                         Bib: RelayBib.Format(number, l.Leg),
                         FullName: runner?.FullName ?? string.Empty,
                         Birth: runner?.BirthDate is { } bd ? bd.ToString("dd.MM.yyyy") : string.Empty,
-                        Course: leg?.ShownCourseCode,
                         LegTime: leg?.LegTime,
                         Cumulative: leg?.Cumulative,
                         Status: leg?.Status ?? FinishStatus.None,
@@ -5957,9 +5974,9 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 ResultColumn.Club => r.ClubName,
                 ResultColumn.Region => r.RegionName,
                 ResultColumn.StartTime => FormatClock(res.ActualStart?.ToLocalTime().TimeOfDay),
-                ResultColumn.ResultTime => res.Status == FinishStatus.Ok ? FormatSpan(res.RankingTime) : string.Empty,
-                ResultColumn.Gap => placed && leader is { } l && res.RankingTime is { } rt && rt > l
-                    ? "+" + FormatSpan(rt - l)
+                ResultColumn.ResultTime => res.Status == FinishStatus.Ok ? ShownTime.Span(res.RankingTime, res.TimeDecimals) : string.Empty,
+                ResultColumn.Gap => placed && leader is { } l && res.RankingTime is { } rt
+                    ? ShownTime.SpanGap(rt, l, res.TimeDecimals)
                     : string.Empty,
                 ResultColumn.Status => StatusText(res, labels),
                 ResultColumn.Score => res.Score?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
@@ -6014,8 +6031,8 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
                 ResultColumn.Team => t.Name,
                 ResultColumn.Club => t.ClubName,
                 ResultColumn.Region => t.RegionName,
-                ResultColumn.ResultTime => res?.Status == FinishStatus.Ok ? FormatSpan(res.Time) : string.Empty,
-                ResultColumn.Gap => placed && leader is { } l && res!.Time is { } tt && tt > l ? "+" + FormatSpan(tt - l) : string.Empty,
+                ResultColumn.ResultTime => res?.Status == FinishStatus.Ok ? ShownTime.Span(res.Time, res.TimeDecimals) : string.Empty,
+                ResultColumn.Gap => placed && leader is { } l && res!.Time is { } tt ? ShownTime.SpanGap(tt, l, res.TimeDecimals) : string.Empty,
                 ResultColumn.Status => res is null
                     ? labels.StatusRunning
                     : StatusCode(res.Status, res.Legs.Any(x => x.Status != FinishStatus.None), labels),

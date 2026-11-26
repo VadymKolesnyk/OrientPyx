@@ -356,7 +356,6 @@ public sealed class SupabaseResultPublisher : IResultPublisher, IDisposable
                     ["qual"] = NullIfEmpty(l.Qual),
                     ["club"] = NullIfEmpty(l.Club),
                     ["region"] = NullIfEmpty(l.Region),
-                    ["course"] = NullIfEmpty(l.Course),
                     ["start_time"] = FormatTime(l.StartTime),
                     ["leg_time"] = FormatTime(l.LegTime),
                     ["result_time"] = FormatTime(l.Result),

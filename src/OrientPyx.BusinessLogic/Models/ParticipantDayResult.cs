@@ -107,10 +107,17 @@ public sealed record ParticipantDayResult(
 
     /// <summary>
     /// The result time the runner is ranked by: <see cref="ResultTime"/> after the discipline's time adjustment
-    /// (Р-6), rounded to a whole second when the discipline changed it. Equal to <see cref="ResultTime"/> for the
-    /// built-in disciplines. Points by formula use it (Р-9); ranks use the actual <see cref="ResultTime"/> (Р-7).
+    /// (Р-6), with full precision (only its text drops the fraction — <see cref="ShownTime"/>). Equal to
+    /// <see cref="ResultTime"/> for the built-in disciplines. Points by formula use it (Р-9); ranks use the actual <see cref="ResultTime"/> (Р-7).
     /// </summary>
     public TimeSpan? AdjustedTime { get; init; }
+
+    /// <summary>
+    /// How many fractional digits <see cref="RankingTime"/> is shown with (<see cref="ShownTime"/>): 0 — whole
+    /// seconds; 1–3 when another result of the group shows the same second (and score) but has another place, so the
+    /// printed times tell the places apart. A relay runner keeps 0 (the team carries it).
+    /// </summary>
+    public int TimeDecimals { get; init; }
 
     /// <summary>
     /// The time shown as the result and measured for «Відставання» — the one the places are ranked by

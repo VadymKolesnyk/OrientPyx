@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Entities;
+using OrientPyx.BusinessLogic.Enums;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.BusinessLogic.Services;
@@ -422,4 +423,122 @@ public sealed class ProtocolBuilderTests
         Assert.False(rows[1].Splits.Expected.Single(e => e.Code == "31").Taken);
         Assert.Equal(new TimeSpan(0, 6, 40), rows[0].Splits.Passage.First(p => p.Code == "31").Leg); // 20 min spread over 3 legs
     }
+
+    private static async Task<(SplitExportDocument Doc, string Html)> SplitsAsync(CompetitionBuilder c)
+    {
+        await c.SelectAsync();
+        var data = await Sp.GetRequiredService<ICompetitionEditorService>().GetDaySplitsExportDataAsync(c.Day(1).Id);
+        var doc = Sp.GetRequiredService<ISplitExportBuilder>().Build(data, Labels.Make<SplitExportHeader>(), Labels.Make<SplitExportLabels>());
+        var html = System.Text.Encoding.UTF8.GetString(Sp.GetRequiredService<ISplitHtmlWriter>().Write(doc));
+        return (doc, html);
+    }
+
+    [Fact]
+    public async Task SplitsExport_RelayLegsShowCourseCumulativeAndTeamLines()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("splr"), discipline: DisciplineId.Relay);
+        await c.AddControlsAsync(1, "31", "32", "33");
+        await c.AddGroupAsync("R", "31 32", s => { s.LegCount = 2; s.MassStartTime = T(10, 0); });
+        await c.SetRelayCourseModeAsync("R", 1, RelayCourseMode.PerLeg);
+        await c.SetLegCoursesAsync("R", 1, ("A", 1, "31 32"), ("B", 2, "32 33"));
+        foreach (var runner in new[] { "A1", "A2", "B1", "B2" })
+            await c.AddRunnerAsync(runner, "", runner, "R");
+        await c.AddRelayTeamAsync("R", 601, "Alpha", 1, ("A1", 1), ("A2", 2));
+        await c.AddRelayTeamAsync("R", 602, "Beta", 1, ("B1", 1), ("B2", 2));
+        await c.AddReadoutAsync(1, "A1", "31 32", null, T(10, 20));
+        await c.AddReadoutAsync(1, "A2", "32 33", null, T(10, 45));
+        await c.AddReadoutAsync(1, "B1", "31 32", null, T(10, 22));
+        await c.AddReadoutAsync(1, "B2", "32 33", null, T(10, 50));
+
+        var (doc, html) = await SplitsAsync(c);
+        var group = Assert.Single(doc.Groups);
+        Assert.True(group.IsRelay);
+        Assert.Equal(SplitsLayout.Scored, group.Layout);           // the legs run different courses
+        var rows = group.Rows;
+        Assert.Equal(["A1", "A2", "B1", "B2"], rows.Select(r => r.FullName));
+        Assert.Equal(["A", "B", "A", "B"], rows.Select(r => r.Variant));
+        Assert.Equal(["", "0:45:00", "", "0:50:00"], rows.Select(r => r.CumulativeText)); // from the 2nd leg on
+        Assert.Equal([false, false, true, false], rows.Select(r => r.StartsTeam));       // a line above Beta
+
+        Assert.Contains(">ColumnVariant</th>", html);
+        Assert.DoesNotContain(">ColumnCumulative</th>", html);                          // under the result, no column
+        Assert.Contains("0:25:00<span class=\"sub-cumul\" title=\"ColumnCumulative\">0:45:00</span></td>", html);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(html, "<tr class=\"runner team-start\">"));
+        Assert.Contains("<span class=\"sub-team\">Alpha</span>", html);
+    }
+
+    [Fact]
+    public async Task SplitsExport_RelayOnOneCourse_KeepsTheControlTableWithoutAVariant()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("splr1"), discipline: DisciplineId.Relay);
+        await c.AddControlsAsync(1, "31", "32");
+        await c.AddGroupAsync("R", "31 32", s => { s.LegCount = 2; s.MassStartTime = T(10, 0); });
+        await c.AddRunnerAsync("A1", "", "A1", "R");
+        await c.AddRunnerAsync("A2", "", "A2", "R");
+        await c.AddRelayTeamAsync("R", 601, "Alpha", 1, ("A1", 1), ("A2", 2));
+        await c.AddReadoutAsync(1, "A1", "31 32", null, T(10, 20));
+        await c.AddReadoutAsync(1, "A2", "31 32", null, T(10, 45));
+
+        var (doc, html) = await SplitsAsync(c);
+        var group = Assert.Single(doc.Groups);
+        Assert.Equal(SplitsLayout.Ordered, group.Layout);
+        Assert.All(group.Rows, r => Assert.Equal("", r.Variant));
+        Assert.Equal(["", "0:45:00"], group.Rows.Select(r => r.CumulativeText));
+        Assert.DoesNotContain(">ColumnVariant</th>", html);
+        Assert.Contains("0:25:00<span class=\"sub-cumul\" title=\"ColumnCumulative\">0:45:00</span></td>", html);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(html, "class=\"sub-cumul\""));  // leg 1 has none
+        Assert.DoesNotContain("runner team-start", html);                                // one team: no line
+        Assert.Contains("<span class=\"sub-team\">Alpha</span>", html);
+    }
+
+    [Fact]
+    public async Task SplitsExport_ScatterShowsTheDetectedVariant()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("spls"), discipline: DisciplineId.Scatter);
+        await c.AddControlsAsync(1, "31", "32", "33");
+        await c.AddGroupAsync("S", "");
+        await c.SetCourseVariantsAsync("S", 1, ("A", "31 32 33"), ("B", "33 32 31"));
+        await c.AddRunnerAsync("Ann", "1", "1001", "S", T(10, 0));
+        await c.AddRunnerAsync("Bob", "2", "1002", "S", T(10, 0));
+        await c.AddReadoutAsync(1, "1001", "31 32 33", T(10, 0), T(10, 20));
+        await c.AddReadoutAsync(1, "1002", "33 32 31", T(10, 0), T(10, 24));
+
+        var (doc, html) = await SplitsAsync(c);
+        var group = Assert.Single(doc.Groups);
+        Assert.False(group.IsRelay);
+        Assert.Equal(["A", "B"], group.Rows.Select(r => r.Variant));
+        Assert.Contains(">ColumnVariant</th>", html);
+        Assert.Contains("<td class=\"variant\" rowspan=\"2\">B</td>", html);
+        Assert.DoesNotContain("sub-cumul\"", html);
+    }
+
+    [Fact]
+    public async Task SplitsExport_MixedWithAChoiceBlock_IsLaidOutPerRunnerWithLegTimes()
+    {
+        var c = await CompetitionBuilder.CreateAsync(Sp, TestIds.Next("splm"), discipline: DisciplineId.Mixed);
+        await c.AddControlsAsync(1, "31", "32", "33", "34", "35");
+        await c.AddGroupAsync("M", "31 [2: 32 33 34] 35");
+        await c.AddGroupAsync("P", "<31 32> 35");
+        await c.AddRunnerAsync("Ann", "1", "1001", "M", T(10, 0));
+        await c.AddRunnerAsync("Bob", "2", "1002", "M", T(10, 0));
+        await c.AddRunnerAsync("Cid", "3", "1003", "P", T(10, 0));
+        await c.AddReadoutAsync(1, "1001", "31 32 33 35", T(10, 0), T(10, 25));
+        await c.AddReadoutAsync(1, "1002", "31 34 32 35", T(10, 0), T(10, 30));
+        await c.AddReadoutAsync(1, "1003", "31 32 35", T(10, 0), T(10, 20));
+
+        var (doc, html) = await SplitsAsync(c);
+        var mixed = doc.Groups.Single(g => g.Name == "M");
+        Assert.Equal(SplitsLayout.Scored, mixed.Layout);           // everyone takes their own order
+        Assert.Equal(4, mixed.ControlCount);                        // what the pattern requires, not its 5 codes
+        Assert.All(mixed.Rows, r => Assert.True(r.IsOk));
+        // Each cell names the runner's own control, with the leg from the previous punch (25 min over 5 legs).
+        Assert.Contains("<span class=\"code\">34</span>", html);
+        Assert.Contains("<span class=\"leg\">5:00</span>", html);
+        Assert.Contains("<span class=\"leg\">6:00</span>", html);   // Bob: 30 min over 5 legs
+        Assert.DoesNotContain(">ColumnVariant</th>", html);
+
+        // One order for everyone (an ordered run only): the control table stays.
+        Assert.Equal(SplitsLayout.Ordered, doc.Groups.Single(g => g.Name == "P").Layout);
+    }
+
 }

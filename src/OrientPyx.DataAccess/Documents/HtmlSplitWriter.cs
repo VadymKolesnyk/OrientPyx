@@ -23,11 +23,16 @@ namespace OrientPyx.DataAccess.Documents;
 ///   gap — for the overall run and for the leg. A missed control in the middle of the run leaves only
 ///   its own column blank — the later controls still map onto their columns (the splits strategy matches the
 ///   prescribed course as a subsequence) — and a leg that would span a missed control carries no time.</item>
-///   <item><b>Scored</b> (rogaine / free order): a table with one row per runner and КП-1…КП-N positional
+///   <item><b>Scored</b> (rogaine / free order — and every group without one column set: scatter, relay leg
+///   courses, a «змішаний» pattern with a choice block): a table with one row per runner and КП-1…КП-N positional
 ///   columns (N = the longest passage in the group). Each runner writes their own visited control code into
-///   the cell (own order/count), code over cumulative with the leg split + points below; a control that
-///   scores nothing for the runner (a repeat / off-course punch) is greyed out, as if not on the course.</item>
+///   the cell (own order/count), code over cumulative with the leg split (from the cell to the left) + points
+///   below; a control that scores nothing for the runner (a repeat / off-course punch) is greyed out, as if not on
+///   the course.</item>
 /// </list>
+/// Both tables add a «Варіант» column when some runner of the group ran a named variant, and in a relay group the
+/// runner's team under the name, the team's running time after the leg («Наростаючий», from leg 2 on) under the leg's
+/// result and a heavy line above each team.
 /// The CSS and the small detail-panel script are inlined so the file opens stand-alone, offline. On every
 /// screen the identity columns (place + name) stay pinned to the left while the КП columns scroll sideways;
 /// on a phone the group sections also go full-bleed and the name column narrows and wraps. Every size is expressed in rem off a single root font-size, and a
@@ -209,11 +214,10 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
             RankInto(runners, col, r => r.Leg, r => r.LegRank);
         }
 
+        var showVariant = HasVariant(g);
+
         sb.Append("<div class=\"table-wrap\">\n<table class=\"splits ordered\">\n<thead>\n<tr>");
-        sb.Append("<th class=\"col-place\">").Append(Esc(labels.ColumnPlace)).Append("</th>");
-        sb.Append("<th class=\"col-name\">").Append(Esc(labels.ColumnName)).Append("</th>");
-        sb.Append("<th class=\"col-num\">").Append(Esc(labels.ColumnNumber)).Append("</th>");
-        sb.Append("<th class=\"col-result\">").Append(Esc(labels.ColumnResult)).Append("</th>");
+        WriteIdentityHeaders(sb, labels, labels.ColumnResult, showVariant);
         for (var i = 0; i < columns.Count; i++)
             sb.Append("<th class=\"col-cp\">").Append(Esc(labels.ControlPrefix)).Append('-').Append(i + 1)
               .Append("<span class=\"cp-code\">(").Append(Esc(columns[i])).Append(")</span></th>");
@@ -224,11 +228,11 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
         {
             var rowClass = runner.Row.IsOk ? "runner" : "runner dnf";
             // First (top) row: place, name, number, result, then the cumulative time + per-control rank.
-            sb.Append("<tr class=\"").Append(rowClass).Append("\">");
-            sb.Append("<td class=\"place\" rowspan=\"2\">").Append(Esc(runner.Row.PlaceText)).Append("</td>");
-            sb.Append("<td class=\"name\" rowspan=\"2\">").Append(Esc(runner.Row.FullName)).Append("</td>");
-            sb.Append("<td class=\"num\" rowspan=\"2\">").Append(Esc(runner.Row.Number)).Append("</td>");
-            sb.Append("<td class=\"result\" rowspan=\"2\">").Append(ResultCell(runner.Row)).Append("</td>");
+            sb.Append("<tr class=\"").Append(rowClass).Append(TeamStartClass(runner.Row)).Append("\">");
+            // A relay leg names its team under the runner, like the free-order table does for every row.
+            WriteIdentityCells(sb, runner.Row, showTeam: g.IsRelay, showVariant);
+            sb.Append("<td class=\"result\" rowspan=\"2\">").Append(ResultCell(runner.Row))
+              .Append(CumulativeLine(runner.Row, labels)).Append("</td>");
 
             for (var c = 0; c < columns.Count; c++)
                 WriteOrderedCumulativeCell(sb, runner, c, leadCumulative, bestLeg);
@@ -371,12 +375,10 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
         // Each runner's actual passage (controls in punch order) + their finish marker.
         var runners = g.Rows.Select(r => (Row: r, Passage: PassageControls(r.Splits))).ToList();
         var maxControls = runners.Count == 0 ? 0 : runners.Max(r => r.Passage.Count);
+        var showVariant = HasVariant(g);
 
         sb.Append("<div class=\"table-wrap\">\n<table class=\"splits scored\">\n<thead>\n<tr>");
-        sb.Append("<th class=\"col-place\">").Append(Esc(labels.ColumnPlace)).Append("</th>");
-        sb.Append("<th class=\"col-name\">").Append(Esc(labels.ColumnName)).Append("</th>");
-        sb.Append("<th class=\"col-num\">").Append(Esc(labels.ColumnNumber)).Append("</th>");
-        sb.Append("<th class=\"col-result\">").Append(Esc(g.HasPoints ? labels.ColumnScore : labels.ColumnResult)).Append("</th>");
+        WriteIdentityHeaders(sb, labels, g.HasPoints ? labels.ColumnScore : labels.ColumnResult, showVariant);
         sb.Append("<th class=\"col-dist\">").Append(Esc(labels.ColumnDistance)).Append("</th>");
         for (var i = 0; i < maxControls; i++)
             sb.Append("<th class=\"col-cp\">").Append(Esc(labels.ControlPrefix)).Append('-').Append(i + 1).Append("</th>");
@@ -388,14 +390,9 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
             var rowClass = row.IsOk ? "runner" : "runner dnf";
 
             // Top row: place, name, number, result, then each control's code + cumulative (Σ) + running pts.
-            sb.Append("<tr class=\"").Append(rowClass).Append("\">");
-            sb.Append("<td class=\"place\" rowspan=\"2\">").Append(Esc(row.PlaceText)).Append("</td>");
-            sb.Append("<td class=\"name\" rowspan=\"2\">").Append(Esc(row.FullName));
-            if (row.Team.Length > 0)
-                sb.Append("<span class=\"sub-team\">").Append(Esc(row.Team)).Append("</span>");
-            sb.Append("</td>");
-            sb.Append("<td class=\"num\" rowspan=\"2\">").Append(Esc(row.Number)).Append("</td>");
-            WriteScoredResultCell(sb, row);
+            sb.Append("<tr class=\"").Append(rowClass).Append(TeamStartClass(row)).Append("\">");
+            WriteIdentityCells(sb, row, showTeam: true, showVariant);
+            WriteScoredResultCell(sb, row, labels);
 
             // Distance the runner actually covered by chip: the sum of every leg's straight-line length
             // (start → first punch → … → finish), in the order they were punched. Blank when no control has
@@ -463,7 +460,7 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
         var counts = isControl && Counts(p, teamContext);
         var extra = !isControl ? "" : counts ? " scoring" : " unscored";
         sb.Append("<td class=\"leg-cell").Append(extra).Append("\">");
-        if (p.Leg is { } l)
+        if (CellLeg(p) is { } l)
             sb.Append("<span class=\"leg\">").Append(FormatClock(l)).Append("</span>");
         if (hasPoints && p.Points is { } pt)
         {
@@ -485,15 +482,22 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
     private static IReadOnlyList<PassagePunch> PassageControls(SplitsView splits) =>
         splits.Passage.Where(p => p.Kind == PassageKind.Control).ToList();
 
+    // The leg under a cell of the free-order table: from the punch in the cell to its left (row to row). An ordered
+    // view laid out here (scatter, a relay leg course, a «змішаний» choice pattern) keeps that in DisplayLeg — its Leg
+    // is the course leg, blank past an extra punch and never set by a choice pattern; a free-order view's Leg already
+    // is row to row.
+    private static TimeSpan? CellLeg(PassagePunch p) => p.DisplayLeg ?? p.Leg;
+
     // Total distance the runner ran by chip: every leg's straight-line length summed over the whole passage
-    // (the start marker carries no leg; each control and the finish carry the leg from the previous point).
+    // (the start marker carries no leg; each control and the finish carry the leg from the previous point — the row-
+    // to-row DisplayLegKm of an ordered view, whose LegKm covers only the course legs).
     // Null when no leg has a measured distance (no control coordinates), so the cell stays blank.
     private static decimal? ChipDistanceKm(SplitsView splits)
     {
         decimal sum = 0;
         var any = false;
         foreach (var p in splits.Passage)
-            if (p.LegKm is { } km)
+            if ((p.DisplayLegKm ?? p.LegKm) is { } km)
             {
                 sum += km;
                 any = true;
@@ -507,10 +511,50 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
 
     // ── Helpers
 
+    // The «Варіант» column shows only in a group where some runner ran a named variant (scatter, relay leg courses).
+    private static bool HasVariant(SplitExportGroup g) => g.Rows.Any(r => r.Variant.Length > 0);
+
+    // The leading header cells both tables share: place, name, number, the variant (when shown) and the result.
+    private static void WriteIdentityHeaders(
+        StringBuilder sb, SplitExportLabels labels, string resultHeader, bool showVariant)
+    {
+        sb.Append("<th class=\"col-place\">").Append(Esc(labels.ColumnPlace)).Append("</th>");
+        sb.Append("<th class=\"col-name\">").Append(Esc(labels.ColumnName)).Append("</th>");
+        sb.Append("<th class=\"col-num\">").Append(Esc(labels.ColumnNumber)).Append("</th>");
+        if (showVariant)
+            sb.Append("<th class=\"col-variant\">").Append(Esc(labels.ColumnVariant)).Append("</th>");
+        sb.Append("<th class=\"col-result\">").Append(Esc(resultHeader)).Append("</th>");
+    }
+
+    // Place, name (with the team under it when asked), number and the variant (when the column is shown) — each
+    // spanning the runner's two rows. The result cell follows, written by the table.
+    private static void WriteIdentityCells(
+        StringBuilder sb, SplitExportRow row, bool showTeam, bool showVariant)
+    {
+        sb.Append("<td class=\"place\" rowspan=\"2\">").Append(Esc(row.PlaceText)).Append("</td>");
+        sb.Append("<td class=\"name\" rowspan=\"2\">").Append(Esc(row.FullName));
+        if (showTeam && row.Team.Length > 0)
+            sb.Append("<span class=\"sub-team\">").Append(Esc(row.Team)).Append("</span>");
+        sb.Append("</td>");
+        sb.Append("<td class=\"num\" rowspan=\"2\">").Append(Esc(row.Number)).Append("</td>");
+        if (showVariant)
+            sb.Append("<td class=\"variant\" rowspan=\"2\">").Append(Esc(row.Variant)).Append("</td>");
+    }
+
+    // A relay leg's running team time («Наростаючий», from leg 2 on) as a small line under the leg's own result — the
+    // way the team sits under the runner's name; the caption rides along as the hover title. Empty otherwise.
+    private static string CumulativeLine(SplitExportRow row, SplitExportLabels labels) =>
+        row.CumulativeText.Length == 0
+            ? string.Empty
+            : $"<span class=\"sub-cumul\" title=\"{Esc(labels.ColumnCumulative)}\">{Esc(row.CumulativeText)}</span>";
+
+    // The extra class of a relay team's first row (after another team): the heavy separator line above it.
+    private static string TeamStartClass(SplitExportRow row) => row.StartsTeam ? " team-start" : string.Empty;
+
     // The scored (rogaine) result cell: the «Бали» total, with the penalty/bonus detail spelled out under it
     // and the full per-control breakdown carried as the cell title (the same tooltip the participant tables
     // show). For a non-OK status it falls back to the status badge.
-    private static void WriteScoredResultCell(StringBuilder sb, SplitExportRow row)
+    private static void WriteScoredResultCell(StringBuilder sb, SplitExportRow row, SplitExportLabels labels)
     {
         var title = row.ResultTooltip.Length > 0
             ? $" title=\"{Esc(row.ResultTooltip)}\""
@@ -519,6 +563,7 @@ public sealed class HtmlSplitWriter : ISplitHtmlWriter
         sb.Append(ResultCell(row));
         if (row.IsOk && row.ResultDetail.Length > 0)
             sb.Append("<span class=\"result-detail\">").Append(Esc(row.ResultDetail)).Append("</span>");
+        sb.Append(CumulativeLine(row, labels));
         sb.Append("</td>");
     }
 
@@ -653,6 +698,12 @@ table.splits td.result { font-weight: 600; }
 table.splits td.result .result-detail { display: block; font-weight: 400; color: var(--muted); font-size: 0.78em; }
 table.splits tr.dnf td.name { color: var(--dnf); }
 table.splits td.name .sub-team { display: block; font-weight: 400; color: var(--muted); font-size: 0.78em; }
+/* The course variant the runner ran (scatter variant / relay leg course). */
+table.splits td.variant { font-weight: 700; }
+/* A relay leg's running team time, small under the leg's result — like the team under the runner's name. */
+table.splits td.result .sub-cumul { display: block; font-weight: 400; color: var(--muted); font-size: 0.78em; }
+/* Relay: a heavy line above each team's first leg, so a team's legs read as one block. */
+table.splits tbody tr.runner.team-start > td { border-top: 2px solid #6b7280; }
 /* Ordered (set course): cumulative + per-control rank, top-3 (gold/silver/bronze) highlights. */
 table.ordered .cp-code { display: block; font-weight: 400; color: var(--muted); font-size: 0.8em; }
 table.ordered td.cp-cell .cum { font-weight: 600; }

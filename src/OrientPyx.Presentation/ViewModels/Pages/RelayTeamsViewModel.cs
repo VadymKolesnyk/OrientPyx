@@ -898,7 +898,7 @@ public sealed partial class RelayTeamRowViewModel : ObservableObject
 
     public string StatusText => Model.Result is { } r ? RelayText.TeamStatus(r, Localization) : string.Empty;
 
-    public string TimeText => Model.Result?.Time is { } t ? RelayText.Time(t) : string.Empty;
+    public string TimeText => Model.Result is { Time: { } t } r ? ShownTime.Result(t, r.TimeDecimals) : string.Empty;
 
     public string PlaceText => Model.Result is { } r
         ? r.Place?.ToString(CultureInfo.InvariantCulture)

@@ -10,7 +10,7 @@ namespace WeightedRelay;
 /// </summary>
 public sealed class WeightedRelayPlugin : IOrientPyxPlugin
 {
-    public PluginInfo Info => new("weighted", "Зважена естафета", "1.5", MinApiVersion: 4,
+    public PluginInfo Info => new("weighted", "Зважена естафета", "1.6", MinApiVersion: 4,
         Author: "OrientPyx", Description: "Час етапу × коефіцієнт за віком і статтю; час команди = Σ T·K.");
 
     public void Register(IPluginBuilder p)
@@ -82,17 +82,13 @@ public sealed class WeightedRelayDiscipline : Discipline
             return ctx.Time;
         }
 
-        // Р-49: every leg's T·K is rounded to a second — even with K = 1.00, where T·K equals T and the host
-        // (Р-6) would otherwise keep the unrounded time; so the «T·K» column always sums to the team time.
-        var adj = RoundToSecond(ctx.Time * coefficient);
+        // Р-49: T·K keeps its full precision, like every time; the host drops the fraction only when it shows it —
+        // so with K = 1 «T·K» shows exactly the «Час».
+        var adj = ctx.Time * coefficient;
         ctx.Row.Set("k", coefficient);
         ctx.Row.Set("adj", adj);
         return adj;
     }
-
-    // The value shown in «T·K» — the same rounding the host applies to the ranked time (Р-49).
-    private static TimeSpan RoundToSecond(TimeSpan time) =>
-        TimeSpan.FromSeconds(Math.Round(time.TotalSeconds, MidpointRounding.AwayFromZero));
 }
 
 /// <summary>

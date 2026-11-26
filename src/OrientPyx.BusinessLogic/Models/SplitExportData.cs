@@ -17,6 +17,8 @@ public sealed record SplitExportDataGroup(
     decimal? DistanceKm,
     int? ControlCount,
     bool HasPoints,
+    /// <summary>A relay group (rows are legs, team by team): the writer adds «Наростаючий» and the team lines.</summary>
+    bool IsRelay,
     /// <summary>Set-course prescribed running controls in order (table columns); empty for scored.</summary>
     IReadOnlyList<string> Controls,
     IReadOnlyList<SplitExportDataRow> Rows);

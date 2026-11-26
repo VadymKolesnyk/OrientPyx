@@ -260,6 +260,8 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
         ColumnResult: Localization.Get("Splits.Col.Result"),
         ColumnFinish: Localization.Get("Splits.Col.Finish"),
         ColumnScore: Localization.Get("Splits.Col.Score"),
+        ColumnVariant: Localization.Get("Splits.Col.Variant"),
+        ColumnCumulative: Localization.Get("Splits.Col.Cumulative"),
         ControlPrefix: Localization.Get("Splits.Col.ControlPrefix"),
         DistanceLabel: Localization.Get("Splits.Section.Distance"),
         ColumnDistance: Localization.Get("Splits.Col.Distance"),

@@ -179,7 +179,8 @@ internal sealed partial class DayResultsCalculator
         }
 
         // (c) Adjust: the discipline may correct an OK result's time (Р-6). Built-ins leave it unchanged, in
-        // which case AdjustedTime stays exactly ResultTime (no rounding).
+        // which case AdjustedTime stays exactly ResultTime. Either way the time keeps its full precision — only the
+        // shown text drops the fraction (ShownTime).
         var dayDate = DayDate(day, snapshot.FinishReadouts);
 
         // Relay (b)+(c): every team's legs in order, adjusted per leg.
@@ -222,7 +223,7 @@ internal sealed partial class DayResultsCalculator
                 continue;
             results[e.Link.Id] = result with
             {
-                AdjustedTime = changed ? RoundToSecond(adjusted) : time,
+                AdjustedTime = changed ? adjusted : time,
                 Extra = row.Values.Count > 0 ? new Dictionary<string, object?>(row.Values) : result.Extra,
                 UnrankedReason = QualifiedReason(e.Strategy, row.UnrankedReason)
             };
@@ -277,6 +278,7 @@ internal sealed partial class DayResultsCalculator
                 PointsByCode = pointsByCode,
                 Results = results
             });
+        AssignTimeDecimals(evaluated, results);
         if (teams.Count > 0)
         {
             foreach (var link in relayLinks)
@@ -301,14 +303,24 @@ internal sealed partial class DayResultsCalculator
         return results;
     }
 
-    // Р-6: an adjusted time is rounded to a whole second, half up.
     // A plugin's unranked reason is one of its own string keys; qualify it with the plugin id so the protocol can
     // show it through the plugin's strings («K не визначено», Р-48).
     private static string? QualifiedReason(IDisciplineStrategy strategy, string? reason) =>
         reason is null || strategy.PluginId is not { } pluginId ? reason : PluginStrings.Key(pluginId, reason);
 
-    private static TimeSpan RoundToSecond(TimeSpan time) =>
-        TimeSpan.FromSeconds(Math.Round(time.TotalSeconds, MidpointRounding.AwayFromZero));
+    // A result showing the same second (and score) as a differently placed one in its group gets the tenths that
+    // tell them apart (ShownTime). Relay runners are not here — their team carries it (RankRelay).
+    private static void AssignTimeDecimals(IEnumerable<Evaluated> evaluated, Dictionary<Guid, ParticipantDayResult> results)
+    {
+        foreach (var group in evaluated.GroupBy(e => e.Link.GroupId))
+        {
+            var decimals = ShownTime.Decimals(group.Select(e => (Id: e.Link.Id, Result: results[e.Link.Id])),
+                x => x.Id, x => x.Result.Status == FinishStatus.Ok ? x.Result.RankingTime : null,
+                x => x.Result.Place, x => x.Result.Score);
+            foreach (var (id, d) in decimals)
+                results[id] = results[id] with { TimeDecimals = d };
+        }
+    }
 
     // Р-46: the day's date, else the date of the earliest finish read-out, else today.
     private static DateOnly DayDate(EventDay day, IReadOnlyList<FinishReadout> readouts)

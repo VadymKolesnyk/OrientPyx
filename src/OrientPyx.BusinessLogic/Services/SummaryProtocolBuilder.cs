@@ -121,12 +121,13 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         foreach (var group in data.Groups.Where(g => IsIncluded(g, countedDays, settings)).OrderBy(g => g.Order))
         {
             var (ranked, places, outOfRanking) = RankGroup(group, countedDays, priorityDay, settings, byPoints);
+            var decimals = TotalDecimals(ranked, places, outOfRanking, byPoints);
 
             var entries = new List<SummaryRankedEntry>(ranked.Count + outOfRanking.Count);
             for (var i = 0; i < ranked.Count; i++)
-                entries.Add(Entry(ranked[i], places[i], byPoints));
+                entries.Add(Entry(ranked[i], places[i], byPoints, decimals.GetValueOrDefault(ranked[i])));
             foreach (var a in outOfRanking.OrderBy(a => a.Member.FullName, StringComparer.CurrentCultureIgnoreCase))
-                entries.Add(Entry(a, null, byPoints));
+                entries.Add(Entry(a, null, byPoints, decimals.GetValueOrDefault(a)));
 
             result.Add(new SummaryRankedGroup(group.Name, group.Order, entries));
         }
@@ -176,15 +177,27 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
             ? null
             : countedDays.FirstOrDefault(d => d.Id == settings.PriorityDayId) ?? countedDays.FirstOrDefault();
 
-    // The «Сума» text for an aggregate under the chosen mode: total points (2dp) or total time (hh:mm:ss).
-    private static string TotalText(Aggregate a, bool byPoints) =>
-        byPoints ? PointsTable.Format(a.TotalPoints) : FormatTime(a.TotalTimeSeconds);
+    // The «Сума» text for an aggregate under the chosen mode: total points (2dp) or total time (hh:mm:ss, with the
+    // tenths of a tie of seconds).
+    private static string TotalText(Aggregate a, bool byPoints, int decimals) =>
+        byPoints ? PointsTable.Format(a.TotalPoints) : ShownTime.TotalHours(a.TotalTime, decimals);
 
-    private static SummaryRankedEntry Entry(Aggregate a, int? place, bool byPoints) =>
-        new(a.Member, place, TotalText(a, byPoints))
+    // The digits a total time shows: the tenths (hundredths…) when its second ties with a total of another place
+    // (ShownTime.Decimals); none in the points mode.
+    private static Dictionary<Aggregate, int> TotalDecimals(
+        List<Aggregate> ranked, int[] places, List<Aggregate> outOfRanking, bool byPoints) =>
+        byPoints
+            ? new Dictionary<Aggregate, int>()
+            : ShownTime.Decimals(
+                ranked.Select((a, i) => (A: a, Place: (int?)places[i])).Concat(outOfRanking.Select(a => (A: a, Place: (int?)null))),
+                x => x.A, x => x.A.CountedResults > 0 ? x.A.TotalTime : null,
+                x => x.Place, _ => null);
+
+    private static SummaryRankedEntry Entry(Aggregate a, int? place, bool byPoints, int decimals) =>
+        new(a.Member, place, TotalText(a, byPoints, decimals))
         {
             TotalPoints = a.TotalPoints,
-            TotalTime = TimeSpan.FromSeconds(Math.Round(a.TotalTimeSeconds))
+            TotalTime = a.TotalTime
         };
 
     // The counted days, in the configured on-page order, resolved against the data's day list (a saved day that
@@ -260,14 +273,15 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         SummaryProtocolSettings settings, bool byPoints, int subCount)
     {
         var (ranked, places, outOfRanking) = RankGroup(group, countedDays, priorityDay, settings, byPoints);
+        var decimals = TotalDecimals(ranked, places, outOfRanking, byPoints);
 
         var rows = new List<IReadOnlyList<string>>(ranked.Count + outOfRanking.Count);
         for (var i = 0; i < ranked.Count; i++)
-            rows.Add(FormatRow(ranked[i], leadingColumns, countedDays, byPoints, place: places[i]));
+            rows.Add(FormatRow(ranked[i], leadingColumns, countedDays, byPoints, place: places[i], decimals.GetValueOrDefault(ranked[i])));
 
         // поза конкурсом — by name, no place (shown «П/К»).
         foreach (var a in outOfRanking.OrderBy(a => a.Member.FullName, StringComparer.CurrentCultureIgnoreCase))
-            rows.Add(FormatRow(a, leadingColumns, countedDays, byPoints, place: null));
+            rows.Add(FormatRow(a, leadingColumns, countedDays, byPoints, place: null, decimals.GetValueOrDefault(a)));
 
         return rows;
     }
@@ -340,7 +354,7 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         {
             ranked.Sort((a, b) =>
             {
-                var c = a.TotalTimeSeconds.CompareTo(b.TotalTimeSeconds);    // smaller total first
+                var c = a.TotalTime.CompareTo(b.TotalTime);                  // smaller total first
                 if (c != 0) return c;
                 if (!tieBreak) return ByName(a, b);
                 // priority-day time asc (a missing priority time sorts last)
@@ -354,7 +368,7 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
     private static int ByName(Aggregate a, Aggregate b) =>
         string.Compare(a.Member.FullName, b.Member.FullName, StringComparison.CurrentCultureIgnoreCase);
 
-    private static double PriorityTimeKey(Aggregate a) => a.PriorityTimeSeconds ?? double.MaxValue;
+    private static TimeSpan PriorityTimeKey(Aggregate a) => a.PriorityTime ?? TimeSpan.MaxValue;
 
     // Assigns 1-based places to the already-sorted ranked list, sharing a place when two adjacent entries are
     // equal on the mode's ranking keys (excluding name).
@@ -373,7 +387,7 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
 
     private static bool RankEqual(Aggregate a, Aggregate b, bool byPoints, bool tieBreak) => byPoints
         ? a.TotalPoints == b.TotalPoints && (!tieBreak || a.CountedResults == b.CountedResults && a.PriorityPoints == b.PriorityPoints)
-        : a.TotalTimeSeconds == b.TotalTimeSeconds && (!tieBreak || PriorityTimeKey(a) == PriorityTimeKey(b));
+        : a.TotalTime == b.TotalTime && (!tieBreak || PriorityTimeKey(a) == PriorityTimeKey(b));
 
     // Aggregates one member across the counted days.
     private static Aggregate BuildAggregate(
@@ -381,10 +395,10 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         SummaryProtocolDay? priorityDay, bool byPoints)
     {
         decimal totalPoints = 0;
-        double totalSeconds = 0;
+        var totalTime = TimeSpan.Zero;      // exact ticks, full precision (only the text drops the fraction)
         var counted = 0;
         decimal priorityPoints = 0;
-        double? prioritySeconds = null;
+        TimeSpan? priorityTime = null;
         var outOfCompetition = false;
 
         foreach (var day in countedDays)
@@ -406,22 +420,22 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
             {
                 if (r.Status == FinishStatus.Ok && r.RankingTime is { } t && t >= TimeSpan.Zero)
                 {
-                    totalSeconds += t.TotalSeconds;
+                    totalTime += t;
                     counted++;
                     outOfCompetition |= r.OutOfCompetition;
                     if (priorityDay is { } pd && pd.Id == day.Id)
-                        prioritySeconds = t.TotalSeconds;
+                        priorityTime = t;
                 }
             }
         }
 
-        return new Aggregate(member, totalPoints, totalSeconds, counted, priorityPoints, prioritySeconds, outOfCompetition);
+        return new Aggregate(member, totalPoints, totalTime, counted, priorityPoints, priorityTime, outOfCompetition);
     }
 
     // Formats one member's flat cell row: leading identity columns, then each counted day's sub-cells, then Сума.
     private static IReadOnlyList<string> FormatRow(
         Aggregate a, IReadOnlyList<SummaryColumn> leadingColumns,
-        IReadOnlyList<SummaryProtocolDay> countedDays, bool byPoints, int? place)
+        IReadOnlyList<SummaryProtocolDay> countedDays, bool byPoints, int? place, int totalDecimals)
     {
         var cells = new List<string>();
 
@@ -439,7 +453,7 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
                 cells.Add(DayPointsCell(r));
         }
 
-        cells.Add(byPoints ? PointsTable.Format(a.TotalPoints) : FormatTime(a.TotalTimeSeconds));
+        cells.Add(TotalText(a, byPoints, totalDecimals));
         return cells;
     }
 
@@ -473,17 +487,12 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
         if (r is null)
             return EmDash;
         if (r.Status == FinishStatus.Ok)
-            return r.RankingTime is { } t && t >= TimeSpan.Zero ? FormatTimeSpan(t) : EmDash;
+            return r.RankingTime is { } t && t >= TimeSpan.Zero ? ShownTime.TotalHours(t, r.TimeDecimals) : EmDash;
         return ShortCode(r.Status) is { Length: > 0 } code ? code : EmDash;
     }
 
     private static string DayPointsCell(ParticipantDayResult? r) =>
         r?.Points is { } pts ? PointsTable.Format(pts) : "0.00";
-
-    // "00:10:30" — two-digit-hour result time, matching the printed summary sheet.
-    private static string FormatTimeSpan(TimeSpan t) => TimeFormat.TotalHours(t);
-
-    private static string FormatTime(double seconds) => FormatTimeSpan(TimeSpan.FromSeconds(Math.Round(seconds)));
 
     // The em-dash placeholder shown for a day the participant did not run / has no result.
     private const string EmDash = "–";
@@ -520,9 +529,9 @@ public sealed class SummaryProtocolBuilder : ISummaryProtocolBuilder
     private sealed record Aggregate(
         SummaryProtocolParticipant Member,
         decimal TotalPoints,
-        double TotalTimeSeconds,
+        TimeSpan TotalTime,
         int CountedResults,
         decimal PriorityPoints,
-        double? PriorityTimeSeconds,
+        TimeSpan? PriorityTime,
         bool OutOfCompetition);
 }

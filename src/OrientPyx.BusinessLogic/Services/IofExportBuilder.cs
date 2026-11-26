@@ -229,7 +229,7 @@ public sealed class IofExportBuilder : IIofExportBuilder
                 var teamOk = teamStatus == IofResultStatus.OK;
                 var overall = new IofOverallResult(
                     lr?.Cumulative is { } c ? IofClock.Seconds(c) : null,
-                    isLast && teamOk && tr is { Place: not null, Time: { } tt } && best is { } b ? IofClock.Seconds(tt - b) : null,
+                    isLast && teamOk && tr is { Place: not null, Time: { } tt } && best is { } b ? IofClock.Seconds(tt) - IofClock.Seconds(b) : null,
                     isLast && teamOk ? tr?.Place : null,
                     teamStatus,
                     []);
@@ -297,7 +297,7 @@ public sealed class IofExportBuilder : IIofExportBuilder
             : null;
         var ok = status == IofResultStatus.OK;
         int? behind = ok && !info.UsesScore && r.Place is not null && r.RankingTime is { } own && leader is { } lead
-            ? IofClock.Seconds(own - lead)
+            ? IofClock.Seconds(own) - IofClock.Seconds(lead)
             : null;
 
         var scores = new List<IofScore>();
@@ -380,7 +380,7 @@ public sealed class IofExportBuilder : IIofExportBuilder
                         ? new IofOverallResult(null, null, place, IofResultStatus.OK, [new IofScore(PointsType, entry.TotalPoints)])
                         : new IofOverallResult(
                             IofClock.Seconds(entry.TotalTime),
-                            leader is { } l ? IofClock.Seconds(entry.TotalTime - l) : null,
+                            leader is { } l ? IofClock.Seconds(entry.TotalTime) - IofClock.Seconds(l) : null,
                             place, IofResultStatus.OK, []);
                 }
             }

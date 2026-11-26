@@ -10,8 +10,13 @@ paths:
 Day results are computed by `Services/Results/DayResultsCalculator` (internal, no DB access) from one
 `EventDaySnapshot` (now carrying the day's read-outs and scatter variants, read in the same transaction) plus
 `DayResultsAppData` (points rules, rank tables). Stages: competitors → start + finish status (`FinishEvaluator`) →
-`AdjustTime` (changed times rounded to a second; built-ins unchanged) → `Rank` per group (rogaine team ranking lives
-in `RogaineStrategy.Rank`) → points (formula uses `AdjustedTime`) → ranks (actual time, only if `AwardsRanks`).
+`AdjustTime` (full precision, changed or not — never rounded or cut in a calculation) → `Rank` per group (rogaine team ranking lives
+in `RogaineStrategy.Rank`) → points (formula uses `AdjustedTime`) → ranks (actual time, only if `AwardsRanks`). After ranking,
+`ShownTime.Decimals` sets `ParticipantDayResult.TimeDecimals` / `TeamDayResult.TimeDecimals` (0, or 1–3 for a result
+showing the same second and score as one with another place); every output formats a result through
+`ShownTime.Result/Span` with it and the gap through `ShownTime.ResultGap/SpanGap` (the difference of the shown times) —
+never `TimeSpan.ToString` on a result. `ShownTime` is text-only: places, points and sums (relay team, summary
+`Aggregate.TotalTime` in exact ticks) use the precise times.
 A read-out with no start from anywhere (no chip start, no start-protocol time, no relay leg start) is DNS in
 `FinishEvaluator` (both the calculator and the finish log go through it); «Мін. КП» is lowered by the disabled
 controls of the group's list. `CompetitionEditorService.ComputeDayResultsAsync` only reads the snapshot and calls it — pass the caller's snapshot
