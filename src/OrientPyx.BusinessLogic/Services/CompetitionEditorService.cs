@@ -6005,8 +6005,9 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     };
 
     // §11.4: a relay group on the monitor — one bold team row (place, №, name, club, team time, gap, status, points)
-    // with its legs under it (100.N, runner + course, leg start, leg result, «Наростаючий», status, plugin columns
-    // and fields). Teams in standing order (RelayTeamOrder), like the protocol.
+    // with its legs under it (100.N, runner, leg start, leg result, «Наростаючий», status, plugin columns and fields —
+    // not the leg's course variant, as online; the protocols and splits show it). Teams in standing order
+    // (RelayTeamOrder), like the protocol.
     private static List<MonitorRow> BuildRelayMonitorRows(
         ResultProtocolGroup g, IReadOnlyList<MonitorColumn> columns, MonitorLabels labels)
     {
@@ -6045,12 +6046,9 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             {
                 var runner = leg.Runner;
                 var legResult = runner?.Result.Leg ?? res?.Legs.FirstOrDefault(x => x.Leg == leg.Leg);
-                var name = runner?.FullName ?? string.Empty;
-                if (legResult?.ShownCourseCode is { Length: > 0 } course)
-                    name = name.Length > 0 ? $"{name} ({course})" : course;
                 var legValues = columns.Select(col => col.Column switch
                 {
-                    ResultColumn.FullName => name,
+                    ResultColumn.FullName => runner?.FullName ?? string.Empty,
                     ResultColumn.Bib => RelayTeamNumbers.Bib(t.Number, leg.Leg),
                     ResultColumn.Birth => runner?.BirthDate is { } bd ? bd.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) : string.Empty,
                     ResultColumn.Qual => runner?.Rank ?? string.Empty,

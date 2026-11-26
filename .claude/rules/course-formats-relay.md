@@ -30,7 +30,7 @@ leg numbers' `LegCourseAssignment` codes, else the group's — distributed over 
 runs a variant whose `GroupCourseVariant.Leg` = N — the «Етап» column the same «Групи» courses table shows only in this
 mode; several on one leg = the read-out's best match (`VariantMatcher.Best`), unread = «не визначено»; none = «дистанцію
 не призначено»; `Leg` is saved in every mode so switching modes loses nothing; a course re-imported under the same code
-keeps its leg; outputs show `RelayLegResult.ShownCourseCode` (except online results — the variant is not published), null only for a code equal to the leg number — migration
+keeps its leg; outputs show `RelayLegResult.ShownCourseCode` (except the monitor and online results — the variant is not shown there), null only for a code equal to the leg number — migration
 `GroupCourseVariantLeg` moved the former «code = leg number» rows into `Leg`). The former `ByLeg` mode is gone (migration
 `DropRelayByLeg` turns it into `ByBib` rows). `LegCourseAssignment.GroupId` (nullable) tells the row's group; the
 calculator ignores a row naming another group.
