@@ -3,6 +3,7 @@ using OrientPyx.BusinessLogic.Disciplines;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
+using OrientPyx.BusinessLogic.Services.Operations;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.ViewModels.Dialogs;
 
@@ -150,118 +151,13 @@ public sealed class CsvImportFlow : ICsvImportFlow
         return true;
     }
 
-    // Turns the mapped CSV rows into participant data. Every athlete runs on all existing days. On a relay day the
-    // team comes from «Номер команди» (+ «Етап»), or from a leg number «100.2» in the number column, which then
-    // is not written as the participant's own number (Р-23).
+    // Turns the mapped CSV rows into participant data (shared with the assistant's import, CsvParticipantMapper).
     internal static UofParticipantData BuildData(
         CsvParticipantData file,
         IReadOnlyDictionary<ImportTarget, int> map,
         IReadOnlyList<EventDay> days,
-        bool relay = false)
-    {
-        var dayNumbers = days.Select(d => d.Number).OrderBy(n => n).ToList();
-        var participants = new List<UofParticipant>(file.Rows.Count);
-
-        foreach (var row in file.Rows)
-        {
-            var name = Cell(row, map, ImportTarget.FullName);
-            // Skip rows with no name — they can't become a participant.
-            if (name.Length == 0)
-                continue;
-
-            var chip = Cell(row, map, ImportTarget.Chip);
-            if (chip is "0")
-                chip = string.Empty;
-
-            var number = Cell(row, map, ImportTarget.Number);
-            int? teamNumber = null;
-            int? leg = int.TryParse(Cell(row, map, ImportTarget.RelayLeg), out var l) && l > 0 ? l : null;
-            if (RelayBib.TryParse(Cell(row, map, ImportTarget.RelayTeamNumber), out var t, out var tl) && t > 0)
-            {
-                teamNumber = t;
-                leg ??= tl;
-            }
-            else if (relay && RelayBib.TryParse(number, out t, out tl) && tl is not null && t > 0)
-            {
-                teamNumber = t;
-                leg ??= tl;
-                number = string.Empty;
-            }
-
-            participants.Add(new UofParticipant
-            {
-                FullName = name,
-                Number = number,
-                Team = Cell(row, map, ImportTarget.Team),
-                BirthDate = ParseDate(Cell(row, map, ImportTarget.BirthDate)),
-                Region = Cell(row, map, ImportTarget.Region),
-                Club = Cell(row, map, ImportTarget.Club),
-                Dussh = Cell(row, map, ImportTarget.Dussh),
-                Group = Cell(row, map, ImportTarget.Group),
-                Chip = chip,
-                Rank = Cell(row, map, ImportTarget.Rank),
-                Representative = Cell(row, map, ImportTarget.Representative),
-                FsouCode = Cell(row, map, ImportTarget.FsouCode),
-                IsFsouMember = ParseBool(Cell(row, map, ImportTarget.IsFsouMember)),
-                Payment = Cell(row, map, ImportTarget.Payment),
-                Coach = Cell(row, map, ImportTarget.Coach),
-                DayNumbers = dayNumbers,
-                Fields = FieldCells(row, map),
-                RelayTeamNumber = teamNumber,
-                RelayTeamName = Cell(row, map, ImportTarget.RelayTeamName),
-                RelayLeg = teamNumber is null ? null : leg
-            });
-        }
-
-        return new UofParticipantData { Participants = participants };
-    }
-
-    // The additional-field cells of a row, by field key (normalised by the import, Р-18/Р-19).
-    private static IReadOnlyDictionary<string, string> FieldCells(
-        IReadOnlyList<string> row,
-        IReadOnlyDictionary<ImportTarget, int> map)
-    {
-        var fields = new Dictionary<string, string>();
-        foreach (var (target, i) in map)
-            if (target.FieldKey is { Length: > 0 } key && i >= 0 && i < row.Count)
-                fields[key] = row[i].Trim();
-        return fields;
-    }
-
-    private static string Cell(
-        IReadOnlyList<string> row,
-        IReadOnlyDictionary<ImportTarget, int> map,
-        ImportTarget field)
-    {
-        if (map.TryGetValue(field, out var i) && i >= 0 && i < row.Count)
-            return row[i].Trim();
-        return string.Empty;
-    }
-
-    // Treats common truthy spellings as a "yes"; everything else (incl. blank) is false.
-    private static readonly string[] TruthyValues = ["1", "+", "так", "yes", "y", "true"];
-
-    private static bool ParseBool(string value) =>
-        TruthyValues.Contains(value.Trim(), StringComparer.OrdinalIgnoreCase);
-
-    // Accepts the common date spellings (dd.MM.yyyy / yyyy-MM-dd / dd/MM/yyyy) and a bare year.
-    private static DateTimeOffset? ParseDate(string value)
-    {
-        var trimmed = value.Trim();
-        if (trimmed.Length == 0)
-            return null;
-
-        string[] formats = ["dd.MM.yyyy", "d.M.yyyy", "yyyy-MM-dd", "dd/MM/yyyy", "d/M/yyyy"];
-        if (DateTime.TryParseExact(trimmed, formats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
-            return new DateTimeOffset(date, TimeSpan.Zero);
-
-        // A bare 4-digit year → 1 January of that year (registration files sometimes carry only the year).
-        if (trimmed.Length == 4 && int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var year)
-            && year is >= 1900 and <= 2200)
-            return new DateTimeOffset(new DateTime(year, 1, 1), TimeSpan.Zero);
-
-        return null;
-    }
+        bool relay = false) =>
+        CsvParticipantMapper.BuildData(file, map, days, relay);
 
     // Reuses the import-options modal as a plain "title + message + OK" error box (no toggles).
     private Task ShowErrorAsync(string messageKey) =>

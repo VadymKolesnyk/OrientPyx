@@ -55,7 +55,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     }
 
     private string FolderPath =>
-        _session.CurrentEvent?.FolderPath
+        CurrentEvent?.FolderPath
         ?? throw new InvalidOperationException("No competition is currently selected.");
 
     // The day a call works on: the session's, unless the call named another one (ResolveDayAsync). AsyncLocal, so the
@@ -63,7 +63,16 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     // day while the pages show another.
     private readonly AsyncLocal<EventDay?> _dayOverride = new();
 
-    private EventDay? CurrentDay => _dayOverride.Value ?? _session.CurrentDay;
+    // The competition a call works on: the one an EditorScope pinned (an assistant call), else the session's.
+    private EventSummary? CurrentEvent => EditorScope.Current?.Competition ?? _session.CurrentEvent;
+
+    // The day: a finish-log override, else the scope's day, else the session's — the latter only while the session still
+    // shows the scope's competition (a scope pinned on another competition never borrows that one's day).
+    private EventDay? CurrentDay => _dayOverride.Value ?? (EditorScope.Current is { } scope
+        ? scope.Day ?? (string.Equals(scope.Competition.FolderPath, _session.CurrentEvent?.FolderPath, StringComparison.OrdinalIgnoreCase)
+            ? _session.CurrentDay
+            : null)
+        : _session.CurrentDay);
 
     private Guid CurrentDayId =>
         CurrentDay?.Id
@@ -73,13 +82,13 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         CurrentDay?.DefaultDiscipline ?? DisciplineId.SetCourse;
 
     /// <summary>
-    /// The day a call named instead of the session's: (true, null) for none / the session's own day, (true, day) for
+    /// The day a call named instead of its own: (true, null) for none / the day the call already works on, (true, day) for
     /// another existing day, (false, null) for an unknown one (the caller returns its "nothing" value). The CALLER
     /// sets <see cref="_dayOverride"/> — an AsyncLocal set inside this async helper would not flow back to it.
     /// </summary>
     private async Task<(bool Known, EventDay? Day)> ResolveDayAsync(Guid? dayId, CancellationToken cancellationToken)
     {
-        if (dayId is not { } id || id == _session.CurrentDay?.Id || _session.CurrentEvent is null)
+        if (dayId is not { } id || id == CurrentDay?.Id || CurrentEvent is null)
             return (true, null);
         var day = (await _eventStore.GetDaysAsync(FolderPath, cancellationToken)).FirstOrDefault(d => d.Id == id);
         return (day is not null, day);
@@ -140,7 +149,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public Task<CompetitionInfo?> GetInfoAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.FromResult<CompetitionInfo?>(null);
 
         return _eventStore.GetCompetitionInfoAsync(FolderPath, cancellationToken);
@@ -178,7 +187,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         // the host knows.
         var catalogue = await _resultsAppData.GetPointsRulesAsync(cancellationToken);
         var choices = catalogue.Select(r => new PointsRuleChoice(r, IsCompetitionCopy: false)).ToList();
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return choices;
 
         var info = await _eventStore.GetCompetitionInfoAsync(FolderPath, cancellationToken);
@@ -191,13 +200,13 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     }
 
     public Task RefreshPointsRuleCopiesAsync(CancellationToken cancellationToken = default)
-        => _session.CurrentEvent is null
+        => CurrentEvent is null
             ? Task.CompletedTask
             : _ruleCopies.RefreshAsync(FolderPath, cancellationToken);
 
     public async Task<bool> GetRosterEnabledAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return true;
 
         var info = await _eventStore.GetCompetitionInfoAsync(FolderPath, cancellationToken);
@@ -206,7 +215,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public Task SetRosterEnabledAsync(bool enabled, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.CompletedTask;
 
         return _eventStore.SetRosterEnabledAsync(FolderPath, enabled, cancellationToken);
@@ -214,7 +223,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<DashboardInfo> GetDashboardAsync(CancellationToken cancellationToken = default)
     {
-        var ev = _session.CurrentEvent;
+        var ev = CurrentEvent;
         var day = CurrentDay;
         if (ev is null || day is null)
             return new DashboardInfo { HasSelection = false };
@@ -348,7 +357,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public Task<IReadOnlyList<EventDay>> GetDaysAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.FromResult<IReadOnlyList<EventDay>>([]);
 
         return _eventStore.GetDaysAsync(FolderPath, cancellationToken);
@@ -382,7 +391,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     public async Task<EventDay?> SetDayDisciplineAsync(
         Guid dayId, DisciplineId discipline, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var days = await _eventStore.GetDaysAsync(FolderPath, cancellationToken);
@@ -454,7 +463,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public Task<IReadOnlyList<ControlPoint>> GetControlPointsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || CurrentDay is null)
+        if (CurrentEvent is null || CurrentDay is null)
             return Task.FromResult<IReadOnlyList<ControlPoint>>([]);
 
         return _eventStore.GetControlPointsAsync(FolderPath, CurrentDayId, cancellationToken);
@@ -495,7 +504,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         IReadOnlyCollection<Guid> disabledPointIds, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(disabledPointIds);
-        if (_session.CurrentEvent is null || CurrentDay is null)
+        if (CurrentEvent is null || CurrentDay is null)
             return 0;
 
         var dayId = CurrentDayId;
@@ -573,7 +582,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<IReadOnlyList<GroupDayRow>> GetGroupDayRowsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || CurrentDay is null)
+        if (CurrentEvent is null || CurrentDay is null)
             return [];
 
         var settings = await _eventStore.GetGroupDaySettingsAsync(FolderPath, CurrentDayId, cancellationToken);
@@ -611,7 +620,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<IReadOnlyList<CourseVariantRow>> GetCourseVariantsAsync(Guid groupId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || CurrentDay is null)
+        if (CurrentEvent is null || CurrentDay is null)
             return [];
 
         var rows = await _eventStore.GetCourseVariantsAsync(FolderPath, CurrentDayId, cancellationToken);
@@ -624,7 +633,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task SaveCourseVariantsAsync(Guid groupId, IReadOnlyList<CourseVariantRow> variants, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || CurrentDay is null)
+        if (CurrentEvent is null || CurrentDay is null)
             return;
 
         var dayId = CurrentDayId;
@@ -665,7 +674,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public Task<IReadOnlyList<Group>> GetGroupsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.FromResult<IReadOnlyList<Group>>([]);
 
         return _eventStore.GetGroupsAsync(FolderPath, cancellationToken);
@@ -815,7 +824,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<int> RecalculateGroupAgeWindowsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return 0;
 
         var folder = FolderPath;
@@ -1156,7 +1165,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public Task<IReadOnlyList<RentalChip>> GetRentalChipsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.FromResult<IReadOnlyList<RentalChip>>([]);
 
         return _eventStore.GetRentalChipsAsync(FolderPath, cancellationToken);
@@ -1193,7 +1202,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<IReadOnlyDictionary<string, string>> GetRentalChipHoldersAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return new Dictionary<string, string>();
 
         var folder = FolderPath;
@@ -1228,7 +1237,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<RentalChipHoldersByDay> GetRentalChipHoldersByDayAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return RentalChipHoldersByDay.Empty;
 
         var folder = FolderPath;
@@ -1267,7 +1276,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public Task<int> ClearRentalChipsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.FromResult(0);
 
         return _eventStore.DeleteAllRentalChipsAsync(FolderPath, cancellationToken);
@@ -1350,7 +1359,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(chips);
-        if (_session.CurrentEvent is null || chips.Count == 0)
+        if (CurrentEvent is null || chips.Count == 0)
             return new RentalChipBulkResult(0, 0);
 
         var folder = FolderPath;
@@ -1380,7 +1389,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public Task<IReadOnlyList<Region>> GetRegionsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.FromResult<IReadOnlyList<Region>>([]);
 
         return _eventStore.GetRegionsAsync(FolderPath, cancellationToken);
@@ -1395,7 +1404,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<Region?> AddRegionAsync(string name, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var trimmed = (name ?? string.Empty).Trim();
@@ -1439,7 +1448,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<IReadOnlyDictionary<Guid, int>> GetRegionParticipantCountsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return new Dictionary<Guid, int>();
 
         var folder = FolderPath;
@@ -1471,7 +1480,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public Task<IReadOnlyList<Club>> GetClubsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.FromResult<IReadOnlyList<Club>>([]);
 
         return _eventStore.GetClubsAsync(FolderPath, cancellationToken);
@@ -1486,7 +1495,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<Club?> AddClubAsync(string name, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var trimmed = (name ?? string.Empty).Trim();
@@ -1526,7 +1535,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<IReadOnlyDictionary<Guid, int>> GetClubParticipantCountsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return new Dictionary<Guid, int>();
 
         var folder = FolderPath;
@@ -1556,7 +1565,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public Task<IReadOnlyList<Dussh>> GetDusshesAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.FromResult<IReadOnlyList<Dussh>>([]);
 
         return _eventStore.GetDusshesAsync(FolderPath, cancellationToken);
@@ -1571,7 +1580,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<Dussh?> AddDusshAsync(string name, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var trimmed = (name ?? string.Empty).Trim();
@@ -1611,7 +1620,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<IReadOnlyDictionary<Guid, int>> GetDusshParticipantCountsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return new Dictionary<Guid, int>();
 
         var folder = FolderPath;
@@ -1641,7 +1650,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<IReadOnlyList<ParticipantDayRow>> GetParticipantDayRowsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || CurrentDay is null)
+        if (CurrentEvent is null || CurrentDay is null)
             return [];
 
         var folder = FolderPath;
@@ -1699,7 +1708,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<IReadOnlyList<ParticipantRosterRow>> GetParticipantRosterAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return [];
 
         var folder = FolderPath;
@@ -1832,7 +1841,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<ParticipantRosterRow?> AddRosterParticipantAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var folder = FolderPath;
@@ -1911,7 +1920,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return new CopyParticipantsResult(0, 0, 0, 0);
 
         // Only the target day is written, so a closed source day may still be copied FROM.
@@ -2128,7 +2137,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<int> CountParticipantsWithPaymentAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return 0;
 
         var folder = FolderPath;
@@ -2149,7 +2158,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task SetPaymentPerDayAsync(bool paymentPerDay, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return;
 
         var folder = FolderPath;
@@ -2269,7 +2278,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<IReadOnlyDictionary<Guid, ParticipantDayResult>> GetDayResultsByParticipantAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return new Dictionary<Guid, ParticipantDayResult>();
 
         var folder = FolderPath;
@@ -2290,7 +2299,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<ResultProtocolData> GetResultProtocolDataAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return new ResultProtocolData([]);
 
         var folder = FolderPath;
@@ -2535,7 +2544,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<ResultProtocolSettings?> GetResultProtocolSettingsAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var json = await _eventStore.GetResultProtocolJsonAsync(FolderPath, dayId, cancellationToken);
@@ -2561,7 +2570,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     public Task SaveResultProtocolSettingsAsync(Guid dayId, ResultProtocolSettings settings, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.CompletedTask;
 
         var json = System.Text.Json.JsonSerializer.Serialize(settings);
@@ -2572,7 +2581,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         Guid? dayId, IReadOnlyList<Guid> participantIds, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(participantIds);
-        if (_session.CurrentEvent is null || participantIds.Count == 0)
+        if (CurrentEvent is null || participantIds.Count == 0)
             return StatementData.Empty;
 
         var folder = FolderPath;
@@ -2697,7 +2706,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<StatementSettings?> GetStatementSettingsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var json = await _eventStore.GetStatementJsonAsync(FolderPath, cancellationToken);
@@ -2722,7 +2731,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     public Task SaveStatementSettingsAsync(StatementSettings settings, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.CompletedTask;
 
         var json = System.Text.Json.JsonSerializer.Serialize(settings);
@@ -2731,7 +2740,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<ChipScanSettings?> GetChipScanSettingsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var json = await _eventStore.GetChipScanJsonAsync(FolderPath, cancellationToken);
@@ -2751,7 +2760,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     public Task SaveChipScanSettingsAsync(ChipScanSettings settings, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.CompletedTask;
 
         var json = System.Text.Json.JsonSerializer.Serialize(settings);
@@ -2760,7 +2769,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<SummaryProtocolData> GetSummaryProtocolDataAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return SummaryProtocolData.Empty;
 
         var folder = FolderPath;
@@ -2843,7 +2852,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<SummaryProtocolSettings?> GetSummaryProtocolSettingsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var json = await _eventStore.GetSummaryProtocolJsonAsync(FolderPath, cancellationToken);
@@ -2863,7 +2872,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     public Task SaveSummaryProtocolSettingsAsync(SummaryProtocolSettings settings, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.CompletedTask;
 
         var json = System.Text.Json.JsonSerializer.Serialize(settings);
@@ -2872,7 +2881,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<StartProtocolData> GetStartProtocolDataAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return new StartProtocolData([]);
 
         var folder = FolderPath;
@@ -2955,7 +2964,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<StartProtocolSettings?> GetStartProtocolSettingsAsync(Guid dayId, StartProtocolKind kind, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var json = await _eventStore.GetStartProtocolJsonAsync(FolderPath, dayId, kind, cancellationToken);
@@ -2980,7 +2989,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     public Task SaveStartProtocolSettingsAsync(Guid dayId, StartProtocolKind kind, StartProtocolSettings settings, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.CompletedTask;
 
         var json = System.Text.Json.JsonSerializer.Serialize(settings);
@@ -2989,7 +2998,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<DrawSettings?> GetDrawSettingsAsync(Guid dayId, DrawSettingsKind kind, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var json = await _eventStore.GetDrawSettingsJsonAsync(FolderPath, dayId, kind, cancellationToken);
@@ -3009,7 +3018,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     public Task SaveDrawSettingsAsync(Guid dayId, DrawSettingsKind kind, DrawSettings settings, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.CompletedTask;
 
         var json = System.Text.Json.JsonSerializer.Serialize(settings);
@@ -3018,7 +3027,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<SplitExportData> GetDaySplitsExportDataAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return new SplitExportData([]);
 
         var folder = FolderPath;
@@ -3263,7 +3272,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         {
             ChipStart = readout.StartTime,
             AssignedStart = link.StartTime,
-            FinishTime = readout.FinishTime
+            FinishTime = CourseCodes.DateAnchor(readout)
         });
         // A relay leg runs from its start in the sequence — the previous leg's finish or the restart (Р-28, Р-29).
         if (result?.Leg is { } leg && result.Team is not null)
@@ -3527,7 +3536,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<DrawPrepData> GetDrawPrepDataAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return new DrawPrepData([]);
 
         var folder = FolderPath;
@@ -3678,7 +3687,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<StartOrderData> GetStartOrderDataAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return new StartOrderData([]);
 
         var folder = FolderPath;
@@ -3733,7 +3742,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<QuickWithdrawalData> GetQuickWithdrawalDataAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return new QuickWithdrawalData([]);
 
         var folder = FolderPath;
@@ -3778,7 +3787,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(assignments);
-        if (_session.CurrentEvent is null || assignments.Count == 0)
+        if (CurrentEvent is null || assignments.Count == 0)
             return 0;
 
         await EnsureDayEditableAsync(CurrentDayId, cancellationToken);
@@ -3797,7 +3806,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             return new FinishReadoutLog([], FinishReadoutCounts.Empty);
         if (otherDay is not null)
             _dayOverride.Value = otherDay;
-        if (_session.CurrentEvent is null || CurrentDay is null)
+        if (CurrentEvent is null || CurrentDay is null)
             return new FinishReadoutLog([], FinishReadoutCounts.Empty);
 
         var folder = FolderPath;
@@ -4025,7 +4034,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<bool> CurrentDayUsesScoreAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || CurrentDay is null)
+        if (CurrentEvent is null || CurrentDay is null)
             return false;
 
         var dayDefault = CurrentDayDefaultDiscipline;
@@ -4107,7 +4116,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             return null;
         if (otherDay is not null)
             _dayOverride.Value = otherDay;
-        if (_session.CurrentEvent is null || CurrentDay is null)
+        if (CurrentEvent is null || CurrentDay is null)
             return null;
 
         var folder = FolderPath;
@@ -4187,7 +4196,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             {
                 ChipStart = readout.StartTime,
                 AssignedStart = link?.StartTime,
-                FinishTime = readout.FinishTime
+                FinishTime = CourseCodes.DateAnchor(readout)
             });
         // A relay leg's splits run from the leg's start in the sequence (Р-27…Р-29) — the previous leg's finish or the
         // restart; leg 1 from its start punch, own start or the mass start — for every read-out of the chip (an
@@ -4558,6 +4567,17 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             _strategies, rows, settingsByGroup, dayDefault, startFinishCodes, disabledCodes);
     }
 
+    public async Task<int> CountKnownFinishReadoutsAsync(ChipReadData data, Guid dayId, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        if (CurrentEvent is null)
+            return 0;
+        // The same rule as the import below: a record whose content key is logged (or met earlier in the file) is skipped.
+        var seen = new HashSet<string>((await _eventStore.GetFinishReadoutsAsync(FolderPath, dayId, cancellationToken)).Select(r => r.ContentKey),
+            StringComparer.Ordinal);
+        return data.Records.Count(r => r.ChipNumber.Trim().Length > 0 && !seen.Add(ContentKeyFor(r)));
+    }
+
     public async Task<FinishReadoutImportResult> ImportFinishReadoutsAsync(ChipReadData data, CancellationToken cancellationToken = default, Guid? forDayId = null)
     {
         var (knownDay, otherDay) = await ResolveDayAsync(forDayId, cancellationToken);
@@ -4566,7 +4586,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         if (otherDay is not null)
             _dayOverride.Value = otherDay;
         ArgumentNullException.ThrowIfNull(data);
-        if (_session.CurrentEvent is null || CurrentDay is null)
+        if (CurrentEvent is null || CurrentDay is null)
             return default;
 
         var folder = FolderPath;
@@ -4653,7 +4673,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<int> ClearFinishReadoutsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || CurrentDay is null)
+        if (CurrentEvent is null || CurrentDay is null)
             return 0;
 
         var dayId = CurrentDayId;
@@ -4668,7 +4688,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             return null;
         if (otherDay is not null)
             _dayOverride.Value = otherDay;
-        if (_session.CurrentEvent is null || CurrentDay is null)
+        if (CurrentEvent is null || CurrentDay is null)
             return null;
 
         var folder = FolderPath;
@@ -4775,7 +4795,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         if (otherDay is not null)
             _dayOverride.Value = otherDay;
         ArgumentNullException.ThrowIfNull(edit);
-        if (_session.CurrentEvent is null || CurrentDay is null)
+        if (CurrentEvent is null || CurrentDay is null)
             return;
 
         var folder = FolderPath;
@@ -4993,7 +5013,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<bool> ToggleRentalChipAsync(string number, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return false;
 
         var trimmed = (number ?? string.Empty).Trim();
@@ -5017,7 +5037,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<IReadOnlyList<GroupDayRow>> GetGroupsForDayAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return [];
 
         var folder = FolderPath;
@@ -5085,7 +5105,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     {
         ArgumentNullException.ThrowIfNull(data);
         ArgumentNullException.ThrowIfNull(scope);
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return default;
 
         // An import rewrites the roster of whole days at once, so every day it touches must be open:
@@ -5190,7 +5210,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     {
         ArgumentNullException.ThrowIfNull(data);
         ArgumentNullException.ThrowIfNull(scope);
-        if (_session.CurrentEvent is null || scope.Mode != ParticipantImportMode.AllDays)
+        if (CurrentEvent is null || scope.Mode != ParticipantImportMode.AllDays)
             return ImportPreview.Empty;
 
         // The file's additional-field values as the import will write them (XML values by name, plugin translations),
@@ -5331,7 +5351,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     {
         ArgumentNullException.ThrowIfNull(data);
         ArgumentNullException.ThrowIfNull(scope);
-        if (_session.CurrentEvent is null || scope.Mode != ParticipantImportMode.CurrentDayOnly)
+        if (CurrentEvent is null || scope.Mode != ParticipantImportMode.CurrentDayOnly)
             return [];
 
         var folder = FolderPath;
@@ -5366,7 +5386,12 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
             var src = data.Participants[i];
             Participant? match = null;
             if (matchByName)
-                match = byName[ParticipantNameKey.Of(src.FullName)].FirstOrDefault();
+            {
+                // The namesake the store's import will pick (ImportNameMatch: birth date, year, club — else the first).
+                var clubId = clubs.FirstOrDefault(c => TextKey.Same(c.Value, src.Club.Trim())).Key;
+                match = ImportNameMatch.Pick(byName[ParticipantNameKey.Of(src.FullName)].ToList(), src.BirthDate,
+                    clubId == Guid.Empty ? null : clubId, p => p.BirthDate, p => p.ClubId);
+            }
             else if (src.FsouCode.Trim() is { Length: > 0 } code)
                 match = byCode.GetValueOrDefault(code);
             if (match is null)
@@ -5429,7 +5454,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     public async Task<DisciplineSettingsData?> GetDisciplineSettingsAsync(
         Guid dayId, DisciplineId disciplineId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var strategy = _strategies.For(disciplineId);
@@ -5444,7 +5469,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<IReadOnlyList<DisciplineId>> GetDayDisciplinesAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return [];
 
         var folder = FolderPath;
@@ -5463,7 +5488,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(values);
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return;
 
         var defs = _strategies.For(disciplineId).Settings;
@@ -5485,12 +5510,12 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<OnlinePublishSettings?> GetOnlinePublishSettingsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var folder = FolderPath;
         var info = await _eventStore.GetCompetitionInfoAsync(folder, cancellationToken);
-        var defaults = DefaultOnlinePublishSettings(info, _session.CurrentEvent);
+        var defaults = DefaultOnlinePublishSettings(info, CurrentEvent);
 
         var json = await _eventStore.GetOnlinePublishJsonAsync(folder, cancellationToken);
         if (string.IsNullOrWhiteSpace(json))
@@ -5517,7 +5542,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     public Task SaveOnlinePublishSettingsAsync(OnlinePublishSettings settings, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.CompletedTask;
 
         var json = System.Text.Json.JsonSerializer.Serialize(settings);
@@ -5557,7 +5582,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<OnlineResultsSnapshot> GetOnlineResultsSnapshotAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return OnlineResultsSnapshot.Empty;
 
         var folder = FolderPath;
@@ -5741,7 +5766,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<MonitorSettings?> GetMonitorSettingsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var json = await _eventStore.GetMonitorJsonAsync(FolderPath, cancellationToken);
@@ -5761,7 +5786,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     public Task SaveMonitorSettingsAsync(MonitorSettings settings, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.CompletedTask;
 
         var json = System.Text.Json.JsonSerializer.Serialize(settings);
@@ -5769,7 +5794,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     }
 
     public string? GetMonitorOutputDirectory() =>
-        _session.CurrentEvent is not { } ev || CurrentDay is not { } day
+        CurrentEvent is not { } ev || CurrentDay is not { } day
             ? null
             : _files.MonitorOutputDirectory(ev.FolderPath, ev.Identifier, day.Number);
 
@@ -5788,7 +5813,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         Guid dayId, MonitorLabels labels, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(labels);
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return [];
 
         var settings = await GetMonitorSettingsAsync(cancellationToken);
@@ -5801,14 +5826,14 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         var builtDay = days.FirstOrDefault(d => d.Id == dayId);
         if (builtDay is null)
             return [];
-        var dayFolder = _files.MonitorOutputDirectory(FolderPath, _session.CurrentEvent.Identifier, builtDay.Number);
+        var dayFolder = _files.MonitorOutputDirectory(FolderPath, CurrentEvent.Identifier, builtDay.Number);
 
         // Reuse the same computed data the protocols and online publish use — one section per group, each
         // member already carrying their result. Group rows are kept in the protocol order (placed finishers
         // first, then the rest), which is exactly the monitor order.
         var data = await GetResultProtocolDataAsync(dayId, cancellationToken);
         var info = await _eventStore.GetCompetitionInfoAsync(FolderPath, cancellationToken);
-        var subtitle = !string.IsNullOrWhiteSpace(info?.Name) ? info!.Name : _session.CurrentEvent.Name;
+        var subtitle = !string.IsNullOrWhiteSpace(info?.Name) ? info!.Name : CurrentEvent.Name;
 
         // Pre-compute, per group, the leader's clean result so the «Відставання» (gap) column can be filled.
         var groupsByName = data.Groups.ToDictionary(g => g.Name, TextKey.Comparer);
@@ -5834,12 +5859,12 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
         ArgumentNullException.ThrowIfNull(file);
         ArgumentNullException.ThrowIfNull(columns);
         ArgumentNullException.ThrowIfNull(labels);
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var data = await GetResultProtocolDataAsync(dayId, cancellationToken);
         var info = await _eventStore.GetCompetitionInfoAsync(FolderPath, cancellationToken);
-        var subtitle = !string.IsNullOrWhiteSpace(info?.Name) ? info!.Name : _session.CurrentEvent.Name;
+        var subtitle = !string.IsNullOrWhiteSpace(info?.Name) ? info!.Name : CurrentEvent.Name;
         var groupsByName = data.Groups.ToDictionary(g => g.Name, TextKey.Comparer);
 
         return BuildMonitorDocument(file, columns, data, groupsByName, subtitle, labels);
@@ -5848,12 +5873,12 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
     public async Task<MonitorPreviewSource?> GetMonitorPreviewSourceAsync(
         Guid dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var data = await GetResultProtocolDataAsync(dayId, cancellationToken);
         var info = await _eventStore.GetCompetitionInfoAsync(FolderPath, cancellationToken);
-        var subtitle = !string.IsNullOrWhiteSpace(info?.Name) ? info!.Name : _session.CurrentEvent.Name;
+        var subtitle = !string.IsNullOrWhiteSpace(info?.Name) ? info!.Name : CurrentEvent.Name;
         return new MonitorPreviewSource(data, subtitle);
     }
 
@@ -6078,7 +6103,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public Task<IReadOnlyList<ChipPriceOverride>> GetChipPriceOverridesAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.FromResult<IReadOnlyList<ChipPriceOverride>>([]);
 
         return _eventStore.GetChipPriceOverridesAsync(FolderPath, cancellationToken);
@@ -6102,7 +6127,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public Task<IReadOnlyList<EntryFeeDiscount>> GetEntryFeeDiscountsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.FromResult<IReadOnlyList<EntryFeeDiscount>>([]);
 
         return _eventStore.GetEntryFeeDiscountsAsync(FolderPath, cancellationToken);
@@ -6231,7 +6256,7 @@ public sealed partial class CompetitionEditorService : ICompetitionEditorService
 
     public async Task<MapCountsData> GetMapCountsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return MapCountsData.Empty;
 
         var folder = FolderPath;

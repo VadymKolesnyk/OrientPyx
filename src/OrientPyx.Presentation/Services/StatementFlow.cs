@@ -149,7 +149,10 @@ public sealed class StatementFlow : IStatementFlow
 
     // The localized labels the builder needs. Mirrors StatementViewModel.BuildLabels — the silent-print path
     // builds the document itself (no modal), so it resolves the same captions here.
-    private StatementLabels BuildLabels()
+    private StatementLabels BuildLabels() => CreateLabels(_localization);
+
+    /// <summary>The statement's labels in the current language (the statement flow and the assistant's export).</summary>
+    internal static StatementLabels CreateLabels(ILocalizationService _localization)
     {
         var headers = new Dictionary<StatementColumn, string>();
         var shortHeaders = new Dictionary<StatementColumn, string>();

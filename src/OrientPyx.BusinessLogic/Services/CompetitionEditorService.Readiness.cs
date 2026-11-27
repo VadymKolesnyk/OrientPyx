@@ -10,7 +10,7 @@ public sealed partial class CompetitionEditorService
 {
     public async Task<DayReadiness> GetDayReadinessAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return DayReadiness.Empty;
 
         var folder = FolderPath;

@@ -252,7 +252,10 @@ public sealed partial class SplitsExportViewModel : PageViewModelBase
         return v.Length > 0 ? v : placeholder;
     }
 
-    private SplitExportLabels BuildLabels() => new(
+    private SplitExportLabels BuildLabels() => CreateLabels(Localization);
+
+    /// <summary>The split export's labels in the current language (the page and the assistant's export).</summary>
+    internal static SplitExportLabels CreateLabels(ILocalizationService Localization) => new(
         DefaultTitle: Localization.Get("Splits.DefaultTitle"),
         ColumnPlace: Localization.Get("Splits.Col.Place"),
         ColumnName: Localization.Get("Splits.Col.Name"),

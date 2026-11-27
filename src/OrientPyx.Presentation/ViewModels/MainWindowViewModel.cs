@@ -145,10 +145,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         IToastService toasts,
         Services.IEventArchiveFlow archiveFlow,
         Services.ResultsDebugSnapshot resultsSnapshot,
-        EditMenuViewModel editMenu)
+        EditMenuViewModel editMenu,
+        ViewModels.Shared.McpConfirmBarViewModel mcpConfirm)
     {
         _resultsSnapshot = resultsSnapshot;
         EditMenu = editMenu;
+        McpConfirm = mcpConfirm;
         // Undo acts on the working shell only — not behind the selection screen or an overlay.
         editMenu.IsShellShown = () => IsEventSelected;
         _session = session;
@@ -317,6 +319,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>The «Правка» menu (undo / redo of the shown page) and the undo keys.</summary>
     public EditMenuViewModel EditMenu { get; }
+
+    /// <summary>The assistant's confirmation bar (MCP).</summary>
+    public ViewModels.Shared.McpConfirmBarViewModel McpConfirm { get; }
 
     public SettingsViewModel Settings { get; }
 
@@ -601,6 +606,42 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 await OpenNumberVariantsAsync();
                 break;
         }
+    }
+
+    /// <summary>
+    /// The assistant's «show_in_app» (MCP): opens one of the pages it may name — and, on the participants page, reveals
+    /// the participant's day row (<paramref name="participantLinkId"/>). False when nothing is open or the page is unknown.
+    /// Runs on the UI thread.
+    /// </summary>
+    public async Task<bool> ShowForAssistantAsync(string page, Guid? participantLinkId)
+    {
+        if (!_session.HasSelection)
+            return false;
+        IsSettingsOpen = false;
+        switch (page)
+        {
+            case "participants" or "roster" when participantLinkId is { } link:
+                await RevealAsync(_participants, link, null, OpenParticipantsAsync);
+                break;
+            case "participants" or "roster": await OpenParticipantsAsync(); break;
+            case "groups": await OpenGroupsAsync(); break;
+            case "controls": await OpenControlPointsAsync(); break;
+            case "days": await OpenCompetitionDaysAsync(); break;
+            case "info": await OpenCompetitionInfoAsync(); break;
+            case "finish": await OpenFinishReadAsync(); break;
+            case "results" or "protocols": await OpenProtocolsAsync(); break;
+            case "start_protocols": await OpenStartProtocolAsync(); break;
+            case "draw": await OpenDrawAsync(); break;
+            case "mass_start": await OpenMassStartDrawAsync(); break;
+            case "relay_teams": await OpenRelayTeamsAsync(); break;
+            case "readiness": await OpenDayReadinessAsync(); break;
+            case "dashboard": Navigate(_dashboard); break;
+            case "chips": await OpenChipsAsync(); break;
+            case "clubs": await OpenClubsAsync(); break;
+            case "regions": await OpenRegionsAsync(); break;
+            default: return false;
+        }
+        return true;
     }
 
     // The row is asked for before the page loads (the participants page picks its day grid by it), taken by the page's

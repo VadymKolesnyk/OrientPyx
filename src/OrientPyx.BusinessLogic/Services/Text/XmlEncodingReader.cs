@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace OrientPyx.Presentation.Services;
+namespace OrientPyx.BusinessLogic.Services.Text;
 
 /// <summary>
 /// Decodes raw XML bytes into a string using the encoding declared in the document's prolog

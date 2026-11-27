@@ -1,3 +1,4 @@
+using TextSearch = OrientPyx.BusinessLogic.Services.Text.TextSearch;
 using System;
 using System.Collections;
 using System.Collections.Specialized;

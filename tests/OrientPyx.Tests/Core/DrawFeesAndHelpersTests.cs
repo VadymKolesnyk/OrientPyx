@@ -3,6 +3,7 @@ using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
 using OrientPyx.BusinessLogic.Services;
+using OrientPyx.BusinessLogic.Services.Text;
 using OrientPyx.Presentation.Controls;
 using OrientPyx.Presentation.Services;
 using OrientPyx.Tests.Support;

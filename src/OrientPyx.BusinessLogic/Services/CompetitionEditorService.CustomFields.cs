@@ -10,7 +10,7 @@ public sealed partial class CompetitionEditorService
 {
     public async Task<IReadOnlyList<CustomField>> GetCustomFieldsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return [];
 
         // A plugin field appears as soon as its discipline is used (Р-17) — ensured here too, so a competition
@@ -23,7 +23,7 @@ public sealed partial class CompetitionEditorService
     public async Task<CustomField?> AddCustomFieldAsync(
         string label, CustomFieldKind kind, IReadOnlyList<ChoiceOption> options, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var name = (label ?? string.Empty).Trim();
@@ -46,7 +46,7 @@ public sealed partial class CompetitionEditorService
     public async Task UpdateCustomFieldAsync(CustomField field, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(field);
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return;
 
         var label = field.Label.Trim();
@@ -57,7 +57,7 @@ public sealed partial class CompetitionEditorService
 
     public async Task<bool> DeleteCustomFieldAsync(string key, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return false;
 
         // A plugin's field stays while the plugin's discipline is in use (Р-15).
@@ -75,7 +75,7 @@ public sealed partial class CompetitionEditorService
 
     public async Task<bool> IsCustomFieldLockedAsync(string key, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return false;
         var defs = await _eventStore.GetCustomFieldDefsAsync(FolderPath, cancellationToken);
         return defs.FirstOrDefault(f => f.Key == key) is { } def
@@ -86,7 +86,7 @@ public sealed partial class CompetitionEditorService
     public async Task<string> SetParticipantFieldAsync(
         Guid participantId, string key, string? value, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return value ?? string.Empty;
 
         var folder = FolderPath;
@@ -102,7 +102,7 @@ public sealed partial class CompetitionEditorService
     {
         ArgumentNullException.ThrowIfNull(participantIds);
         var key = CustomField.StatementPrintedKey;
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return new StatementPrintedMark(key, false);
 
         var folder = FolderPath;
@@ -125,7 +125,7 @@ public sealed partial class CompetitionEditorService
     {
         // Creating a plugin's fields is a system write: undoing the edit that caused it leaves the fields in place.
         using var noUndo = UndoScope.Suppress();
-        if (_session.CurrentEvent is null || _plugins is null)
+        if (CurrentEvent is null || _plugins is null)
             return;
 
         var used = await GetUsedPluginIdsAsync(cancellationToken);
@@ -167,7 +167,7 @@ public sealed partial class CompetitionEditorService
 
     public async Task<string?> GetImportMappingAsync(string headerSetHash, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is not null
+        if (CurrentEvent is not null
             && await _eventStore.GetImportMappingJsonAsync(FolderPath, headerSetHash, cancellationToken) is { Length: > 0 } own)
             return own;
 
@@ -178,7 +178,7 @@ public sealed partial class CompetitionEditorService
 
     public async Task SaveImportMappingAsync(string headerSetHash, string json, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is not null)
+        if (CurrentEvent is not null)
             await _eventStore.SaveImportMappingJsonAsync(FolderPath, headerSetHash, json, cancellationToken);
 
         var defaults = await _appStore.GetImportMappingsJsonAsync(cancellationToken);

@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace OrientPyx.Presentation.Services;
+namespace OrientPyx.BusinessLogic.Services.Text;
 
 /// <summary>
 /// Decodes raw CSV bytes into text. A CSV has no in-band encoding declaration, so we: trust a

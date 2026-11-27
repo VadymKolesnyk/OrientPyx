@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:pages="using:OrientPyx.Presentation.ViewModels.Pages"
              xmlns:controls="using:OrientPyx.Presentation.Controls"
+             xmlns:mcp="using:OrientPyx.Presentation.Services.Mcp"
              mc:Ignorable="d" d:DesignWidth="640" d:DesignHeight="520"
              x:Class="OrientPyx.Presentation.Views.Pages.SettingsView"
              x:DataType="pages:SettingsViewModel">
@@ -178,6 +179,113 @@
                         <TextBlock Text="{Binding Localization[Settings.OnlineSavedHint]}"
                                    Foreground="{DynamicResource SuccessBrush}" VerticalAlignment="Center" />
                     </StackPanel>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Assistant (local MCP server) -->
+        <Border Classes="card" Padding="22" DataContext="{Binding Mcp}" x:DataType="pages:McpSettingsViewModel">
+            <StackPanel Spacing="14">
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Localization[Mcp.Settings.Title]}" Classes="h2"
+                               VerticalAlignment="Center"
+                               FontSize="{ReflectionBinding SectionFontSize, Source={StaticResource UiScale}}" />
+                    <Button Classes="help"
+                            Command="{Binding $parent[UserControl].((pages:SettingsViewModel)DataContext).ShowBlockHelpCommand}"
+                            CommandParameter="Help.Settings.Mcp"
+                            ToolTip.Tip="{Binding Localization[Help.Tooltip]}" />
+                </StackPanel>
+                <TextBlock Text="{Binding Localization[Mcp.Settings.Hint]}" Classes="muted" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                    <ToggleSwitch Grid.Column="0" VerticalAlignment="Center"
+                                  IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                  OnContent="" OffContent="" />
+                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Localization[Mcp.Settings.Enable]}" FontWeight="Medium" />
+                        <TextBlock Text="{Binding StateText}" TextWrapping="Wrap" Classes="muted" />
+                    </StackPanel>
+                </Grid>
+                <Button Content="{Binding Localization[Mcp.Settings.ChoosePort]}" Classes="ghost small"
+                        IsVisible="{Binding HasProblem}" Command="{Binding ChoosePortCommand}" HorizontalAlignment="Left" />
+
+                <TextBlock Text="{Binding Localization[Mcp.Settings.Privacy.Note]}" Classes="muted" TextWrapping="Wrap" />
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Localization[Mcp.Settings.Mode]}" Classes="label" />
+                    <ComboBox ItemsSource="{Binding ModeOptions}" SelectedItem="{Binding SelectedMode, Mode=TwoWay}" MinWidth="320">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="pages:McpModeOption">
+                                <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBlock Text="{Binding ModeDescription}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Localization[Mcp.Settings.Mode.Hint]}" Classes="muted" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <StackPanel Spacing="6" IsVisible="{Binding IsEnabled}">
+                    <TextBlock Text="{Binding Localization[Mcp.Settings.Connect]}" Classes="label" />
+                    <WrapPanel Orientation="Horizontal">
+                        <Button Content="{Binding Localization[Mcp.Settings.Claude.Connect]}" Classes="accent" Margin="0,0,8,8"
+                                Command="{Binding ConnectClaudeDesktopCommand}" />
+                        <Button Content="{Binding Localization[Mcp.Settings.Claude.Config]}" Classes="ghost" Margin="0,0,8,8"
+                                Command="{Binding AddToClaudeConfigCommand}" />
+                    </WrapPanel>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                        <ComboBox Grid.Column="0" ItemsSource="{Binding ClientOptions}"
+                                  SelectedItem="{Binding SelectedClient, Mode=TwoWay}" HorizontalAlignment="Stretch">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="pages:McpClientOption">
+                                    <TextBlock Text="{Binding Label}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button Grid.Column="1" Classes="ghost" Click="OnCopyMcpConfigClick"
+                                Content="{Binding Localization[Mcp.Settings.CopyConfig]}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="6">
+                        <TextBlock Grid.Column="0" Text="{Binding Localization[Mcp.Settings.Token]}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1" Text="{Binding TokenShown}" VerticalAlignment="Center"
+                                   FontFamily="Consolas,Menlo,monospace" TextTrimming="CharacterEllipsis" />
+                        <Button Grid.Column="2" Classes="ghost" Padding="8,4" Command="{Binding ToggleRevealTokenCommand}"
+                                ToolTip.Tip="{Binding Localization[Mcp.Settings.TokenReveal]}">
+                            <Panel>
+                                <controls:Icon Kind="Eye" Size="17" IsVisible="{Binding !RevealToken}" />
+                                <controls:Icon Kind="EyeOff" Size="17" IsVisible="{Binding RevealToken}" />
+                            </Panel>
+                        </Button>
+                        <Button Grid.Column="3" Classes="ghost" Padding="8,4" Click="OnCopyMcpTokenClick"
+                                ToolTip.Tip="{Binding Localization[Mcp.Settings.TokenCopy]}">
+                            <controls:Icon Kind="Copy" Size="15" />
+                        </Button>
+                        <Button Grid.Column="4" Classes="ghost small" Command="{Binding NewTokenCommand}"
+                                Content="{Binding Localization[Mcp.Settings.NewToken]}" />
+                    </Grid>
+                </StackPanel>
+
+                <TextBlock Text="{Binding Message}" IsVisible="{Binding HasMessage}" TextWrapping="Wrap"
+                           Foreground="{DynamicResource AccentBrush}" />
+
+                <StackPanel Spacing="6" IsVisible="{Binding HasJournal}">
+                    <TextBlock Text="{Binding Localization[Mcp.Journal.Title]}" Classes="label" />
+                    <ItemsControl ItemsSource="{Binding JournalItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="mcp:McpJournalItem">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" Margin="0,2">
+                                    <TextBlock Grid.Column="0" Text="{Binding Time}" Classes="muted" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding Outcome}" Classes="muted" TextWrapping="Wrap"
+                                                   IsVisible="{Binding HasOutcome}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="2" Classes="ghost small" Command="{Binding UndoCommand}"
+                                            IsVisible="{Binding CanUndo}"
+                                            Content="{Binding $parent[UserControl].((pages:SettingsViewModel)DataContext).Localization[Mcp.Journal.Undo]}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </StackPanel>
             </StackPanel>
         </Border>

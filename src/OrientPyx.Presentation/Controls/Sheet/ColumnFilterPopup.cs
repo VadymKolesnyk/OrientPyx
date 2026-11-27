@@ -1,3 +1,4 @@
+using TextSearch = OrientPyx.BusinessLogic.Services.Text.TextSearch;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;

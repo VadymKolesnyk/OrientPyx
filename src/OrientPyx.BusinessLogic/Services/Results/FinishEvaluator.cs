@@ -51,7 +51,7 @@ internal static class FinishEvaluator
             {
                 ChipStart = readout.StartTime,
                 AssignedStart = link.StartTime,
-                FinishTime = readout.FinishTime
+                FinishTime = CourseCodes.DateAnchor(readout)
             });
 
         var context = new FinishContext

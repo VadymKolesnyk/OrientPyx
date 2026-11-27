@@ -668,7 +668,10 @@ public sealed partial class ProtocolsViewModel : PageViewModelBase, IProtocolPre
         return new WinnersPrintHeader(name, title, string.Join(" — ", dateParts));
     }
 
-    private ProtocolLabels BuildLabels()
+    private ProtocolLabels BuildLabels() => CreateLabels(Localization);
+
+    /// <summary>The result protocol's labels in the current language (the page and the assistant's export).</summary>
+    internal static ProtocolLabels CreateLabels(ILocalizationService Localization)
     {
         var headers = new Dictionary<ProtocolColumn, string>();
         var shortHeaders = new Dictionary<ProtocolColumn, string>();

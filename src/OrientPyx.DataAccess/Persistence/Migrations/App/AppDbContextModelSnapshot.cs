@@ -15,7 +15,7 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.App
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.9");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
 
             modelBuilder.Entity("OrientPyx.BusinessLogic.Entities.AppSettingsRow", b =>
                 {
@@ -56,6 +56,19 @@ namespace OrientPyx.DataAccess.Persistence.Migrations.App
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Language")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("McpEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("McpMode")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("McpPort")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("McpToken")
                         .IsRequired()
                         .HasColumnType("TEXT");
 

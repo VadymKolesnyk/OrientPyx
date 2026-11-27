@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using OrientPyx.BusinessLogic.DependencyInjection;
 using OrientPyx.DataAccess.DependencyInjection;
+using OrientPyx.DataAccess.Mcp;
 using OrientPyx.Localization.DependencyInjection;
 using OrientPyx.Presentation.Services;
 using OrientPyx.Presentation.ViewModels;
@@ -46,6 +47,14 @@ public static class PresentationServiceCollectionExtensions
         // Undo / redo (Ctrl+Z / Ctrl+Y): the per-page-and-day histories and the «Правка» menu.
         services.AddSingleton<Services.Undo.IUndoHistory, Services.Undo.UndoHistory>();
         services.AddSingleton<EditMenuViewModel>();
+
+        // The assistant (local MCP server): core + server from DataAccess, the window's side here.
+        services.AddOrientPyxMcp();
+        services.AddSingleton<ViewModels.Shared.McpConfirmBarViewModel>();
+        services.AddSingleton<Services.Mcp.McpActionJournal>();
+        services.AddSingleton<Services.Mcp.McpUi>();
+        services.AddSingleton<BusinessLogic.Interfaces.IMcpUi>(sp => sp.GetRequiredService<Services.Mcp.McpUi>());
+        services.AddSingleton<McpSettingsViewModel>();
 
         // Root + gating view models
         services.AddSingleton<MainWindowViewModel>();

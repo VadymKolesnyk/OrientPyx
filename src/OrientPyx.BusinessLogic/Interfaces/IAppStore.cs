@@ -1,5 +1,6 @@
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Models;
+using OrientPyx.BusinessLogic.Models.Mcp;
 using OrientPyx.BusinessLogic.Models.Network;
 
 namespace OrientPyx.BusinessLogic.Interfaces;
@@ -102,6 +103,13 @@ public interface IAppStore
     Task<NetworkSettings> GetNetworkSettingsAsync(CancellationToken cancellationToken = default);
 
     Task SaveNetworkSettingsAsync(NetworkSettings settings, CancellationToken cancellationToken = default);
+
+    // ── Assistant (local MCP server)
+
+    /// <summary>The MCP server settings of this machine (defaults — off, read only, nothing generated — when never saved).</summary>
+    Task<McpSettings> GetMcpSettingsAsync(CancellationToken cancellationToken = default);
+
+    Task SaveMcpSettingsAsync(McpSettings settings, CancellationToken cancellationToken = default);
 
     /// <summary>The tokens of the stations paired with this host.</summary>
     Task<IReadOnlyList<StationToken>> GetStationTokensAsync(CancellationToken cancellationToken = default);

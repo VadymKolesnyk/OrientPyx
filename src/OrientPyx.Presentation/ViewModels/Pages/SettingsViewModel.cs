@@ -55,9 +55,12 @@ public sealed partial class SettingsViewModel : PageViewModelBase
         IAppSettingsService settings,
         IUiScaleService uiScale,
         IBusyService busy,
-        IUpdateService updates)
+        IUpdateService updates,
+        McpSettingsViewModel mcp)
         : base(localization)
     {
+        Mcp = mcp;
+        Mcp.Reload();
         _settings = settings;
         _uiScale = uiScale;
         _busy = busy;
@@ -66,6 +69,9 @@ public sealed partial class SettingsViewModel : PageViewModelBase
         _ = LoadOnlineAsync();
         _ = LoadReadoutTypeAsync();
     }
+
+    /// <summary>The «Асистент (MCP)» block.</summary>
+    public McpSettingsViewModel Mcp { get; }
 
     // --- Updates
 

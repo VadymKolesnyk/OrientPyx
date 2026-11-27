@@ -162,7 +162,9 @@ process that opens it), the others are **stations** that edit the same data live
   call `ObserveData(bus, session, mode, areas…)` and override `PageViewModelBase.ReloadAsync` (coalesced 1/s, only while
   `IsActive`, deferred while `IsEditingCell`, own-origin events skipped; `DataArea.Any` for one competition — an undo —
   concerns only that one, and a hidden page's pending reload for competitions no longer open is dropped when shown).
-  `SessionService` listens too and refreshes `CurrentDay` / `CurrentEvent` after a remote change.
+  `SessionService` listens too and refreshes `CurrentDay` / `CurrentEvent` after a remote change. The assistant's writes
+  carry the origin `«<SelfOrigin>·mcp»` (a station tags them `X-OrientPyx-Origin-Tag`, the host stamps `«<station>·mcp»`),
+  so they reload the writer's own pages too (`.claude/rules/mcp.md`).
 - **Over the wire goes the identifier, never a host path**: the host's `RpcDispatcher` maps `eventFolderPath` /
   `EventSummary.FolderPath` ↔ `events/<identifier>` (validated with `EventIdentifier.IsValid`). On a station
   `EventSummary.FolderPath` **is** the identifier — treat it as an opaque key; never build a local path from it.
@@ -263,5 +265,7 @@ These load automatically when you work with matching files; read the one that fi
 - `competition-folders.md` — renaming and deleting a competition folder
 - `startup.md` — loading window, `StartupTimeline` marks, ReadyToRun, `DatabaseMigrator` (stale migration lock), the
   competition list's cost, starting with an archive
+- `mcp.md` — the assistant (local MCP server): tool catalogue + handlers, the writer (confirmation, `EditorScope`, undo
+  step, `·mcp` origin), the SQL sandbox, the stdio bridge, the window's side
 
 A new subsystem gets its own `paths`-scoped file there plus one line in this list — not a new section in this file.

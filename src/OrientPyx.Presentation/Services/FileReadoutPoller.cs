@@ -1,3 +1,4 @@
+using OrientPyx.BusinessLogic.Services.Text;
 using System.IO;
 using System.Text;
 using OrientPyx.BusinessLogic.Services.Undo;

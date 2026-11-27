@@ -21,7 +21,7 @@ public sealed class EditHistoryService : IEditHistoryService
 
     public async Task<UndoOutcome> RevertAsync(Guid stepId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is not { } competition)
+        if ((EditorScope.Current?.Competition ?? _session.CurrentEvent) is not { } competition)
             return new UndoOutcome(UndoRevertResult.Of(UndoRevertStatus.NotFound), Guid.Empty);
 
         var revertStep = Guid.NewGuid();

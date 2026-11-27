@@ -235,9 +235,10 @@ internal sealed class HostEndpoints
 
         // The undo step the station's write belongs to (absent or malformed ⇒ none).
         Guid? undoStep = Guid.TryParse(context.Request.Headers[Wire.UndoStepHeader].ToString(), out var step) ? step : null;
+        var mcp = string.Equals(context.Request.Headers[Wire.OriginTagHeader].ToString(), BusinessLogic.Services.Mcp.McpOrigin.Tag, StringComparison.Ordinal);
 
         Task<RpcOutcome> Execute(CancellationToken callToken) => _dispatcher.InvokeAsync(iface, method, args, station,
-            identifier => _stations.Touch(station.Token, identifier), callToken, undoStep);
+            identifier => _stations.Touch(station.Token, identifier), callToken, undoStep, mcp);
 
         // Any call that carries a key (the station sends one per write) is answered once per key. Such a call runs to
         // its end even when the station gives up waiting (a timed-out attempt on a dropped connection): the station

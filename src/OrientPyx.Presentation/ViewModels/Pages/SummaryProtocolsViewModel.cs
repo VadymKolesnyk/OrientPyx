@@ -754,7 +754,10 @@ public sealed partial class SummaryProtocolsViewModel : PageViewModelBase
         return new WinnersPrintHeader(name, title, settings.DateText);
     }
 
-    private SummaryProtocolLabels BuildLabels() => new(
+    private SummaryProtocolLabels BuildLabels() => CreateLabels(Localization);
+
+    /// <summary>The summary protocol's labels in the current language (the page and the assistant's export).</summary>
+    internal static SummaryProtocolLabels CreateLabels(ILocalizationService Localization) => new(
         DefaultTitle: Localization.Get("SummaryProtocol.DefaultTitle"),
         DayBand: Localization.Get("SummaryProtocol.DayBand"),
         ColSequence: Localization.Get("SummaryProtocol.Col.Sequence"),

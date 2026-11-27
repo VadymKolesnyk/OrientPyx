@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using OrientPyx.BusinessLogic.Models;
 
-namespace OrientPyx.Presentation.Controls;
+namespace OrientPyx.BusinessLogic.Services.Text;
 
 /// <summary>
 /// Fuzzy, layout-tolerant text matching shared by every search/filter box in the app.

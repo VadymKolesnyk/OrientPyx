@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using OrientPyx.DataAccess.Mcp;
 using OrientPyx.BusinessLogic.DependencyInjection;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
@@ -62,6 +63,10 @@ public sealed class TestEnvironment
         services.AddOrientPyxLocalization();
         services.AddOrientPyxBusinessLogic();
         services.AddOrientPyxDataAccess();
+        // The assistant (MCP) with a window stand-in that answers the confirmations as a test tells it.
+        services.AddOrientPyxMcp();
+        services.AddSingleton<TestMcpUi>();
+        services.AddSingleton<OrientPyx.BusinessLogic.Interfaces.IMcpUi>(sp => sp.GetRequiredService<TestMcpUi>());
         var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {
             ValidateOnBuild = true,

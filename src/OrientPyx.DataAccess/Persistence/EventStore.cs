@@ -264,6 +264,10 @@ public sealed partial class EventStore : IEventStore
         existing.Code = point.Code;
         existing.Latitude = point.Latitude;
         existing.Longitude = point.Longitude;
+        // The map position (from the course import, or the assistant's upsert_controls); the «КП» page round-trips it.
+        existing.MapX = point.MapX;
+        existing.MapY = point.MapY;
+        existing.MapScale = point.MapScale;
         existing.Type = point.Type;
         existing.Points = point.Points;
         existing.IsDisabled = point.IsDisabled;
@@ -2080,10 +2084,11 @@ public sealed partial class EventStore : IEventStore
             .Where(p => !string.IsNullOrWhiteSpace(p.FsouCode))
             .GroupBy(p => p.FsouCode.Trim(), TextKey.Comparer)
             .ToDictionary(g => g.Key, g => g.First(), TextKey.Comparer);
+        // Every namesake is kept: a row picks among them by birth date / year / club (ImportNameMatch), not the first.
         var byName = existingParticipants
             .Where(p => !string.IsNullOrWhiteSpace(p.FullName))
             .GroupBy(p => ParticipantNameKey.Of(p.FullName), StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
         var byId = existingParticipants.ToDictionary(p => p.Id);
         var linksByParticipant = existingLinks
             .GroupBy(l => l.ParticipantId)
@@ -2140,8 +2145,8 @@ public sealed partial class EventStore : IEventStore
             else if (matchByName)
             {
                 var nameKey = ParticipantNameKey.Of(src.FullName);
-                if (nameKey.Length > 0 && byName.TryGetValue(nameKey, out var matchedByName))
-                    participant = matchedByName;
+                if (nameKey.Length > 0 && byName.TryGetValue(nameKey, out var namesakes))
+                    participant = ImportNameMatch.Pick(namesakes, src.BirthDate, clubId, p => p.BirthDate, p => p.ClubId);
             }
             else if (code.Length > 0 && byFsouCode.TryGetValue(code, out var matched))
             {
@@ -2184,7 +2189,12 @@ public sealed partial class EventStore : IEventStore
                 // the same athlete) updates it rather than adding a duplicate.
                 var newNameKey = ParticipantNameKey.Of(participant.FullName);
                 if (newNameKey.Length > 0)
-                    byName.TryAdd(newNameKey, participant);
+                {
+                    if (byName.TryGetValue(newNameKey, out var same))
+                        same.Add(participant);
+                    else
+                        byName[newNameKey] = [participant];
+                }
                 if (code.Length > 0)
                     byFsouCode.TryAdd(code, participant);
             }

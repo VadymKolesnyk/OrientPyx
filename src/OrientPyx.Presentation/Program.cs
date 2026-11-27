@@ -44,6 +44,16 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // «OrientPyx --mcp-bridge» (the assistant's stdio bridge, started by a chat client such as Claude Desktop): first
+        // of all — before Velopack (its hooks never run with this argument) and before anything could print — so that
+        // nothing but JSON-RPC reaches stdout. It opens no database, no window, writes no last session (plan М8).
+        if (Array.IndexOf(args, DataAccess.Mcp.McpBridge.Argument) >= 0)
+        {
+            Console.SetOut(Console.Error);
+            Environment.Exit(DataAccess.Mcp.McpBridge.Run(McpEndpointPaths()));
+            return;
+        }
+
         StartupTimeline.Start();
 
         // Velopack install/update/uninstall hooks. MUST run first: on those code paths it does its work
@@ -112,6 +122,43 @@ internal static class Program
     /// </summary>
     /// <summary>What the data-root redirection did before the activity log existed; App logs these once it does.</summary>
     internal static List<string> StartupNotes { get; } = [];
+
+    /// <summary>
+    /// Where a running window writes its discovery file (<c>mcp-endpoint.json</c>), computed like
+    /// <see cref="RedirectDataRootIfInstalled"/> but without any of its side effects (no move, no rescue, no file
+    /// association): the installed data root (and the pre-0.7.17 one, still in use while a file was open), else the
+    /// folder of the exe.
+    /// </summary>
+    internal static IReadOnlyList<string> McpEndpointPaths()
+    {
+        var roots = new List<string>();
+        try
+        {
+            var appDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (IsVelopackInstallLayout(appDir))
+            {
+                var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                if (OperatingSystem.IsWindows())
+                {
+                    roots.Add(Path.Combine(localAppData, "OrientPyx-data"));
+                    roots.Add(Path.Combine(localAppData, "OrientPyx", "data-root"));
+                }
+                else
+                {
+                    roots.Add(Path.Combine(localAppData, "OrientPyx", "data-root"));
+                }
+            }
+            else
+            {
+                roots.Add(AppContext.BaseDirectory);
+            }
+        }
+        catch
+        {
+            roots.Add(AppContext.BaseDirectory);
+        }
+        return roots.Select(DataAccess.Mcp.McpEndpointFile.PathIn).ToList();
+    }
 
     private static void RedirectDataRootIfInstalled()
     {

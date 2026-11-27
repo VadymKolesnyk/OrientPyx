@@ -11,7 +11,7 @@ public sealed partial class CompetitionEditorService
 {
     public async Task<bool> CurrentDayHasRelayAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+        if (CurrentEvent is null || CurrentDay is null)
             return false;
         var settings = await _eventStore.GetGroupDaySettingsAsync(FolderPath, CurrentDayId, cancellationToken);
         return IsRelay(CurrentDayDefaultDiscipline) || settings.Any(s => IsRelay(s.DisciplineOverride ?? CurrentDayDefaultDiscipline));
@@ -19,7 +19,7 @@ public sealed partial class CompetitionEditorService
 
     public async Task<RelayMenuInfo> GetRelayMenuInfoAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return RelayMenuInfo.None;
 
         var folder = FolderPath;
@@ -92,7 +92,7 @@ public sealed partial class CompetitionEditorService
     {
         ArgumentNullException.ThrowIfNull(data);
         ArgumentNullException.ThrowIfNull(scope);
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return [];
 
         // The days the import put the file's relay rows on: a UOF row's relay days, a numbered row's days.
@@ -132,7 +132,7 @@ public sealed partial class CompetitionEditorService
 
     public async Task<EventDay?> SwitchDayToRelayAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
         var folder = FolderPath;
         var day = (await _eventStore.GetDaysAsync(folder, cancellationToken)).FirstOrDefault(d => d.Id == dayId);
@@ -164,11 +164,11 @@ public sealed partial class CompetitionEditorService
 
     public async Task<RelayTeamsData> GetRelayTeamsDataAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+        if (CurrentEvent is null || CurrentDay is null)
             return new RelayTeamsData([], [], []);
 
         var folder = FolderPath;
-        var day = _session.CurrentDay;
+        var day = CurrentDay;
         var snapshot = await _eventStore.GetDaySnapshotAsync(folder, day.Id, cancellationToken);
         var groupNames = snapshot.Groups.ToDictionary(g => g.Id, g => g.Name);
 
@@ -240,7 +240,7 @@ public sealed partial class CompetitionEditorService
 
     public async Task<RelayGroupSettings?> GetRelayGroupSettingsAsync(Guid groupId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+        if (CurrentEvent is null || CurrentDay is null)
             return null;
         var settings = await _eventStore.GetGroupDaySettingsAsync(FolderPath, CurrentDayId, cancellationToken);
         var gs = settings.FirstOrDefault(s => s.GroupId == groupId);
@@ -326,7 +326,7 @@ public sealed partial class CompetitionEditorService
 
     public async Task<int> SetLegCoursesAsync(IReadOnlyList<LegCourseEntry> entries, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || _session.CurrentDay is null || entries.Count == 0)
+        if (CurrentEvent is null || CurrentDay is null || entries.Count == 0)
             return 0;
         var dayId = CurrentDayId;
         await EnsureDayEditableAsync(dayId, cancellationToken);
@@ -369,6 +369,17 @@ public sealed partial class CompetitionEditorService
     {
         await EnsureDayEditableAsync(CurrentDayId, cancellationToken);
         await _eventStore.DeleteRelayTeamAsync(FolderPath, teamId, cancellationToken);
+    }
+
+    public async Task<bool> ReleaseRelayRunnerAsync(Guid participantId, CancellationToken cancellationToken = default)
+    {
+        var folder = FolderPath;
+        var dayId = CurrentDayId;
+        await EnsureDayEditableAsync(dayId, cancellationToken);
+        var link = (await _eventStore.GetParticipantDaysAsync(folder, dayId, cancellationToken)).FirstOrDefault(l => l.ParticipantId == participantId);
+        if (link is null || (link.RelayTeamId is null && link.Leg is null))
+            return false;
+        return await _eventStore.ReleaseRelayRunnerAsync(folder, link.Id, cancellationToken);
     }
 
     public async Task<bool> AssignRelayLegAsync(Guid teamId, int leg, Guid? participantId, CancellationToken cancellationToken = default)
@@ -421,7 +432,7 @@ public sealed partial class CompetitionEditorService
     public async Task<IReadOnlyDictionary<Guid, RelayPlacement>> GetRelayPlacementsAsync(
         Guid dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return new Dictionary<Guid, RelayPlacement>();
         var folder = FolderPath;
         var day = (await _eventStore.GetDaysAsync(folder, cancellationToken)).FirstOrDefault(d => d.Id == dayId);
@@ -439,7 +450,7 @@ public sealed partial class CompetitionEditorService
     public async Task<IReadOnlyDictionary<Guid, IReadOnlyList<RelayNumberCourse>>> GetRelayNumberCoursesAsync(
         Guid dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return new Dictionary<Guid, IReadOnlyList<RelayNumberCourse>>();
         var folder = FolderPath;
         var assignments = await _eventStore.GetLegCourseAssignmentsAsync(folder, dayId, cancellationToken);
@@ -481,7 +492,7 @@ public sealed partial class CompetitionEditorService
 
     private async Task<RelayEdit?> LoadRelayEditAsync(Guid dayId, Guid participantId, CancellationToken cancellationToken)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
         var folder = FolderPath;
         await EnsureDayEditableAsync(dayId, cancellationToken);

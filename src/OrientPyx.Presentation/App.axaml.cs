@@ -1,3 +1,4 @@
+using OrientPyx.BusinessLogic.Services.Text;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
@@ -210,6 +211,24 @@ public partial class App : Application
             // A failed restore is reported by InitializeAsync itself; the check still runs.
         }
         _startupSettled.TrySetResult();
+
+        // The assistant (MCP): off by default; when the user switched it on, it starts serving now (never earlier — the
+        // window and the competition restore come first). It stops with the window.
+        var mcp = services.GetRequiredService<BusinessLogic.Interfaces.IMcpServer>();
+        services.GetRequiredService<Services.Mcp.McpUi>().Attach(mcp);
+        desktop.Exit += (_, _) =>
+        {
+            try
+            {
+                // Off the UI thread: its continuations must not wait for the thread this handler blocks.
+                Task.Run(() => mcp.StopAsync()).Wait(TimeSpan.FromSeconds(3));
+            }
+            catch (Exception)
+            {
+                // closing anyway
+            }
+        };
+        _ = Task.Run(() => mcp.ApplySettingsAsync());
 
         await services.GetRequiredService<StartupUpdateCheck>().RunAsync();
     }

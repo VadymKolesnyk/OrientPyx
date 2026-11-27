@@ -16,7 +16,7 @@ public sealed partial class CompetitionEditorService
         IReadOnlyList<Guid> dayIds, IofListKind kind, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dayIds);
-        if (_session.CurrentEvent is null || dayIds.Count == 0)
+        if (CurrentEvent is null || dayIds.Count == 0)
             return IofExportData.Empty;
 
         var folder = FolderPath;
@@ -54,7 +54,7 @@ public sealed partial class CompetitionEditorService
 
     public async Task<IofExportSettings?> GetIofExportSettingsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return null;
 
         var json = await _eventStore.GetIofExportJsonAsync(FolderPath, cancellationToken);
@@ -73,7 +73,7 @@ public sealed partial class CompetitionEditorService
     public Task SaveIofExportSettingsAsync(IofExportSettings settings, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return Task.CompletedTask;
 
         var json = System.Text.Json.JsonSerializer.Serialize(settings);
@@ -170,7 +170,7 @@ public sealed partial class CompetitionEditorService
                 {
                     ChipStart = readout.StartTime,
                     AssignedStart = link.StartTime,
-                    FinishTime = readout.FinishTime
+                    FinishTime = CourseCodes.DateAnchor(readout)
                 });
             }
 

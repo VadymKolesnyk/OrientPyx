@@ -368,6 +368,14 @@ public interface ICompetitionEditorService
     Task RemoveParticipantFromDayAsync(Guid linkId, Guid participantId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Merges two entries of one person: <paramref name="mergeId"/> is deleted, the days only it ran move to
+    /// <paramref name="keepId"/> with everything on them (group, chip, start, status, relay leg …), a day both ran keeps
+    /// the kept one's entry, and the kept one's blank fields, additional fields and discounts are filled from it. Nothing
+    /// the kept one has is overwritten. Every day of the merged one must be open. Tracked writes — one undo step.
+    /// </summary>
+    Task<ParticipantMergeResult> MergeParticipantsAsync(Guid keepId, Guid mergeId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Hard-deletes a participant entirely (and all their day links), regardless of how many days they
     /// run. Used by the roster ("Мандатка") delete, where a participant may run on zero days and so has
     /// no link to remove. A no-op when the participant does not exist.
@@ -695,6 +703,11 @@ public interface ICompetitionEditorService
     /// different content are kept. Skipped records are still reported back (with the id of the row they
     /// duplicate) so the caller can act on a re-read — e.g. print the slip again — without a second row. </summary>
     Task<FinishReadoutImportResult> ImportFinishReadoutsAsync(ChipReadData data, CancellationToken cancellationToken = default, Guid? forDayId = null);
+
+    /// <summary>How many records of <paramref name="data"/> <see cref="ImportFinishReadoutsAsync"/> on day
+    /// <paramref name="dayId"/> would skip — already logged, or repeated within the file (the same content key). Reads only;
+    /// 0 with no competition.</summary>
+    Task<int> CountKnownFinishReadoutsAsync(ChipReadData data, Guid dayId, CancellationToken cancellationToken = default);
 
     /// <summary>Returns how many rows were removed.</summary>
     Task<int> ClearFinishReadoutsAsync(CancellationToken cancellationToken = default);
@@ -1036,6 +1049,10 @@ public interface ICompetitionEditorService
     /// <summary>Deletes a team; its runners stay on the day without a leg.</summary>
     Task DeleteRelayTeamAsync(Guid teamId, CancellationToken cancellationToken = default);
 
+    /// <summary>Takes the participant off their relay team on the current day (team and leg cleared; they stay on the
+    /// day in their group). False when they are not on the day or on no team.</summary>
+    Task<bool> ReleaseRelayRunnerAsync(Guid participantId, CancellationToken cancellationToken = default);
+
     /// <summary>Puts a participant on a leg (adding them to the day when needed) or, with null, clears the leg.</summary>
     Task<bool> AssignRelayLegAsync(Guid teamId, int leg, Guid? participantId, CancellationToken cancellationToken = default);
 
@@ -1088,6 +1105,12 @@ public interface ICompetitionEditorService
     /// many were stored.
     /// </summary>
     Task<int> SetLegCoursesAsync(IReadOnlyList<LegCourseEntry> entries, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The raw rows of a day plus its computed results and passages, from one snapshot — what the assistant's analytics
+    /// tables are built from (<c>AnalyticsDatasetBuilder</c>). Null when no competition / no such day.
+    /// </summary>
+    Task<Models.Mcp.AnalyticsDayData?> GetAnalyticsDayDataAsync(Guid dayId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Outcome of a participant import, for reporting back to the user.</summary>

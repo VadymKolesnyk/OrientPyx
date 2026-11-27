@@ -88,6 +88,51 @@ public sealed class UndoNetworkTests : IClassFixture<LoopbackHostFixture>
     }
 
     [Fact]
+    public async Task AStationsAssistantWriteIsStampedWithTheMcpOriginOnTheHost()
+    {
+        var c = await BuildAndOpenOnStationAsync();
+        var runner = c.Runners["Іваненко Іван"].Id;
+        var bus = _f.HostServices.GetRequiredService<IDataChangeBus>();
+        var origins = new List<string>();
+        void OnChanged(object? sender, DataChange change)
+        {
+            if (change.EventFolderPath.EndsWith(c.Summary.Identifier, StringComparison.OrdinalIgnoreCase))
+                lock (origins)
+                    origins.Add(change.Origin);
+        }
+        bus.Changed += OnChanged;
+        try
+        {
+            // The station's own write carries its name; its assistant's write (McpWriter sets the «·mcp» origin on the
+            // flow) is tagged, so the host stamps «<station>·mcp» and the station's pages reload after it too.
+            await StationStepAsync(editor => editor.SetParticipantDayChipAsync(runner, c.Day(1).Id, "2001"));
+            var mode = _f.StationServices.GetRequiredService<IWorkspaceMode>();
+            await StationStepAsync(async editor =>
+            {
+                BusinessLogic.Services.Network.DataChangeOrigin.Current = BusinessLogic.Services.Mcp.McpOrigin.For(mode);
+                try
+                {
+                    await editor.SetParticipantDayChipAsync(runner, c.Day(1).Id, "2002");
+                }
+                finally
+                {
+                    BusinessLogic.Services.Network.DataChangeOrigin.Current = null;
+                }
+            });
+            Assert.Equal("2002", await HostChipAsync(c));
+            lock (origins)
+            {
+                Assert.Contains(LoopbackHostFixture.StationName, origins);
+                Assert.Contains(BusinessLogic.Services.Mcp.McpOrigin.ForStation(LoopbackHostFixture.StationName), origins);
+            }
+        }
+        finally
+        {
+            bus.Changed -= OnChanged;
+        }
+    }
+
+    [Fact]
     public async Task AnotherDeviceWithTheSameStationNameCannotRevertTheStep()
     {
         var c = await BuildAndOpenOnStationAsync();

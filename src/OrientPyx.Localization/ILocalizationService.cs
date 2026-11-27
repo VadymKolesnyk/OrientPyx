@@ -31,4 +31,8 @@ public interface ILocalizationService : INotifyPropertyChanged
 
     /// <summary>Switches the active language. No-op if the culture is already active or unavailable.</summary>
     void SetLanguage(CultureInfo culture);
+
+    /// <summary>The keys of the current language starting with <paramref name="prefix"/> (the assistant lists the
+    /// program's help texts, <c>Help.*</c>).</summary>
+    IReadOnlyList<string> KeysStartingWith(string prefix) => [];
 }

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientPyx.BusinessLogic.Models;
+using OrientPyx.BusinessLogic.Services.Operations;
 using OrientPyx.Localization;
 
 namespace OrientPyx.Presentation.ViewModels.Dialogs;
@@ -52,7 +53,7 @@ public sealed partial class CsvMappingViewModel : ObservableObject
         var rows = ImportTarget.Builtins
             .Concat(includeRelay ? ImportTarget.Relay : [])
             .Select(t => new CsvFieldMapping(Localization, t, columns,
-                Pick(t, template, header, columns, () => Guess(Hints(t), header, columns))))
+                Pick(t, template, header, columns, () => Guess(t, header, columns))))
             .ToList();
         foreach (var field in fields ?? [])
         {
@@ -175,23 +176,10 @@ public sealed partial class CsvMappingViewModel : ObservableObject
         return columns[0];
     }
 
-    // Best-effort header match: pick the first column whose caption contains one of the keyword hints
-    // (case/space-insensitive). Returns "(skip)" when nothing looks right.
-    private static CsvColumnOption Guess(
-        string[] hints,
-        IReadOnlyList<string> header,
-        IReadOnlyList<CsvColumnOption> columns)
-    {
-        for (var i = 0; i < header.Count; i++)
-        {
-            var caption = Normalize(header[i]);
-            if (caption.Length == 0)
-                continue;
-            if (hints.Any(h => caption.Contains(h, StringComparison.Ordinal)))
-                return columns[i + 1]; // +1: index 0 is the "(skip)" sentinel
-        }
-        return columns[0];
-    }
+    // Best-effort header match (CsvParticipantMapper.Guess): the first column whose caption contains one of the target's
+    // keyword hints. Returns "(skip)" when nothing looks right.
+    private static CsvColumnOption Guess(ImportTarget target, IReadOnlyList<string> header, IReadOnlyList<CsvColumnOption> columns) =>
+        CsvParticipantMapper.Guess(target, header) is var i and >= 0 ? columns[i + 1] : columns[0]; // +1: index 0 is "(skip)"
 
     // An additional field is guessed by its name: the column headed exactly like it (its label, its key, or one of
     // the plugin's import names — «Стать», «Pol», «Gender»).
@@ -206,32 +194,6 @@ public sealed partial class CsvMappingViewModel : ObservableObject
         return columns[0];
     }
 
-    private static string Normalize(string s) =>
-        new string(s.Where(c => !char.IsWhiteSpace(c)).ToArray()).ToLowerInvariant();
-
-    // Lowercase, whitespace-free substrings (Ukrainian + English) hinting at each field.
-    private static string[] Hints(ImportTarget target) => target.Key switch
-    {
-        nameof(ImportTarget.FullName) => ["прізвище", "ім'я", "піб", "fio", "name", "учасник"],
-        nameof(ImportTarget.Number) => ["номер", "№", "нагрудний", "стартовийномер", "bib", "number", "startno", "start#"],
-        nameof(ImportTarget.Team) => ["команд", "team", "екіпаж"],
-        nameof(ImportTarget.BirthDate) => ["народж", "рікнар", "датанар", "birth", "born", "ддр", "дн"],
-        nameof(ImportTarget.Group) => ["група", "group", "категор"],
-        nameof(ImportTarget.Region) => ["регіон", "область", "region"],
-        nameof(ImportTarget.Club) => ["клуб", "club", "колектив", "команд"],
-        nameof(ImportTarget.Dussh) => ["дюсш", "сдюшор", "школа", "dussh"],
-        nameof(ImportTarget.Chip) => ["чіп", "чип", "card", "chip", "si"],
-        nameof(ImportTarget.Rank) => ["розряд", "кваліфік", "rank", "qualif"],
-        nameof(ImportTarget.Representative) => ["представник", "predst"],
-        nameof(ImportTarget.FsouCode) => ["кодфсоу", "foucode", "fsoucode", "кодфоу"],
-        nameof(ImportTarget.IsFsouMember) => ["членфсоу", "членфоу", "fsou"],
-        nameof(ImportTarget.Payment) => ["оплата", "сплата", "внесок", "payment", "pay"],
-        nameof(ImportTarget.Coach) => ["тренер", "trener", "coach"],
-        "relay.teamNumber" => ["номеркоманди", "№команди", "teamno", "teamnumber", "teamnr"],
-        "relay.teamName" => ["назвакоманди", "teamname"],
-        "relay.leg" => ["етап", "leg"],
-        _ => []
-    };
 }
 
 /// <summary>One row in the mapping modal: a target caption + a chosen source column.</summary>

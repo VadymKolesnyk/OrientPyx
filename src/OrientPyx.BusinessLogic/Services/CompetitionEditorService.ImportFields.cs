@@ -9,7 +9,7 @@ public sealed partial class CompetitionEditorService
 {
     public async Task<IReadOnlyList<ImportField>> GetImportFieldsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return [];
 
         var stored = await GetCustomFieldsAsync(cancellationToken);
@@ -41,7 +41,7 @@ public sealed partial class CompetitionEditorService
         UofParticipantData data, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(data);
-        if (_session.CurrentEvent is null || data.Participants.All(p => p.Raw.Count == 0))
+        if (CurrentEvent is null || data.Participants.All(p => p.Raw.Count == 0))
             return [];
 
         var found = new List<ImportFileField>();

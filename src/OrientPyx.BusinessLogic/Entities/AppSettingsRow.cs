@@ -145,4 +145,18 @@ public class AppSettingsRow
 
     /// <summary>The PIN last used for the host in <see cref="StationHostId"/>; re-sent on the next connect.</summary>
     public string StationPin { get; set; } = string.Empty;
+
+    // --- Assistant (local MCP server)
+
+    /// <summary>The local MCP server runs (off by default).</summary>
+    public bool McpEnabled { get; set; }
+
+    /// <summary><c>McpMode</c>: 0 read only, 1 every change confirmed, 2 only risky changes confirmed, 3 nothing confirmed.</summary>
+    public int McpMode { get; set; }
+
+    /// <summary>The loopback port chosen on the first start; 0 = not chosen yet.</summary>
+    public int McpPort { get; set; }
+
+    /// <summary>The bearer token of the HTTP clients; blank = not generated yet.</summary>
+    public string McpToken { get; set; } = string.Empty;
 }

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using OrientPyx.BusinessLogic.Entities;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
+using OrientPyx.BusinessLogic.Models.Mcp;
 using OrientPyx.BusinessLogic.Models.Network;
 
 namespace OrientPyx.DataAccess.Persistence;
@@ -419,6 +420,41 @@ public sealed class AppStore : IAppStore
         row.StationHostId = settings.StationHostId ?? string.Empty;
         row.StationDeviceId = settings.StationDeviceId ?? string.Empty;
         row.StationPin = settings.StationPin ?? string.Empty;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    // ── Assistant (local MCP server)
+
+    public async Task<McpSettings> GetMcpSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+            return new McpSettings();
+        return new McpSettings
+        {
+            Enabled = row.McpEnabled,
+            Mode = Enum.IsDefined((McpMode)row.McpMode) ? (McpMode)row.McpMode : McpMode.ReadOnly,
+            Port = row.McpPort,
+            Token = row.McpToken,
+        };
+    }
+
+    public async Task SaveMcpSettingsAsync(McpSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        await using var db = await _contextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.Settings.FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+        {
+            row = new AppSettingsRow { Id = 1 };
+            db.Settings.Add(row);
+        }
+
+        row.McpEnabled = settings.Enabled;
+        row.McpMode = (int)settings.Mode;
+        row.McpPort = settings.Port;
+        row.McpToken = settings.Token ?? string.Empty;
         await db.SaveChangesAsync(cancellationToken);
     }
 

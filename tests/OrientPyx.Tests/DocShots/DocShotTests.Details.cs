@@ -159,6 +159,14 @@ public sealed partial class DocShotTests
         await _s.SettleLongAsync();
         await _s.ShotAsync("settings-readout", "Блок «Тип відмітки» в налаштуваннях: SportIdent або Sport Time.",
             crop: await _s.CardOfAsync(readout));
+        var mcp = await _s.FindTextAsync(L("Mcp.Settings.Title"), c => c is TextBlock);
+        var mcpCard = await _s.CardOfAsync(mcp);
+        await _s.ResizeAsync(DocShooter.Width, 1100);           // room for the whole card above the status bar
+        await _s.OnUiAsync(() => mcpCard.BringIntoView());
+        await _s.SettleLongAsync();
+        await _s.ShotAsync("settings-mcp", "Блок «Асистент (MCP)» в налаштуваннях: перемикач і що дозволено асистенту.",
+            crop: mcpCard);
+        await _s.ResizeAsync(DocShooter.Width, DocShooter.Height);
         await _s.OnUiAsync(() => _s.Vm.CloseSettingsCommand.Execute(null));
         await _s.SettleLongAsync();
 

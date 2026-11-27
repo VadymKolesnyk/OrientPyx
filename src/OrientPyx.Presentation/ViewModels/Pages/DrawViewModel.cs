@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OrientPyx.BusinessLogic.Interfaces;
 using OrientPyx.BusinessLogic.Models;
+using OrientPyx.BusinessLogic.Services.Operations;
 using OrientPyx.BusinessLogic.Services;
 using OrientPyx.Localization;
 using OrientPyx.Presentation.Services;
@@ -293,36 +294,8 @@ public sealed partial class DrawViewModel : PageViewModelBase
     // Rebuilds the lanes from a saved arrangement. Group ids that no longer run on the day are skipped, and
     // any group the saved state doesn't mention (added since) lands in the first lane so nothing is lost.
     // Groups with no members are left out entirely, exactly as the auto-distribution does.
-    private void RestoreStartGroups(IReadOnlyList<DrawLaneSettings> lanes)
-    {
-        var byId = _loadedGroups
-            .Where(g => g.Members.Count > 0)
-            .ToDictionary(g => g.GroupId);
-
-        StartGroups.Clear();
-        var placed = new HashSet<Guid>();
-        foreach (var lane in lanes)
-        {
-            var column = new DrawStartGroupViewModel(StartGroups.Count, Localization);
-            foreach (var id in lane.GroupIds)
-            {
-                if (!byId.TryGetValue(id, out var group) || !placed.Add(id))
-                    continue;
-                column.Groups.Add(new DrawGroupItemViewModel(group));
-            }
-            StartGroups.Add(column);
-        }
-
-        if (StartGroups.Count == 0)
-            StartGroups.Add(new DrawStartGroupViewModel(0, Localization));
-
-        foreach (var group in _loadedGroups)
-        {
-            if (group.Members.Count == 0 || !placed.Add(group.GroupId))
-                continue;
-            StartGroups[0].Groups.Add(new DrawGroupItemViewModel(group));
-        }
-    }
+    private void RestoreStartGroups(IReadOnlyList<DrawLaneSettings> lanes) =>
+        ShowLanes(DrawLanes.Restore(_loadedGroups, lanes));
 
     // Writes the current page state onto the day so reopening the page restores it. Skipped while a load is
     // in progress (a load assigns the very properties that trigger this) and when no day is selected.
@@ -818,56 +791,17 @@ public sealed partial class DrawViewModel : PageViewModelBase
     /// greedily (largest first) into the lightest lane — the standard balanced split the CourseParser modal
     /// does. Used both by the «Авто» button and on day load.
     /// </summary>
-    private void DistributeIntoStartGroups(int target)
+    private void DistributeIntoStartGroups(int target) =>
+        ShowLanes(DrawLanes.Distribute(_loadedGroups, target)); // first-control clusters, LPT-balanced (shared with MCP)
+
+    private void ShowLanes(IEnumerable<IReadOnlyList<DrawGroup>> lanes)
     {
-        // Cluster the loaded groups into atoms keyed by first control point (indivisible across lanes).
-        // Groups with no members are skipped entirely — they don't start anyone and only add visual noise.
-        var atoms = new Dictionary<string, (List<DrawGroupItemViewModel> Items, int Sum)>();
-        foreach (var group in _loadedGroups)
-        {
-            if (group.Members.Count == 0)
-                continue;
-            var key = group.FirstControl;
-            if (!atoms.TryGetValue(key, out var atom))
-                atom = ([], 0);
-            atom.Items.Add(new DrawGroupItemViewModel(group));
-            atom = (atom.Items, atom.Sum + group.Members.Count);
-            atoms[key] = atom;
-        }
-
-        var atomList = atoms.Values.ToList();
-        if (atomList.Count == 0)
-        {
-            StartGroups.Clear();
-            StartGroups.Add(new DrawStartGroupViewModel(0, Localization));
-            return;
-        }
-
-        var k = Math.Max(1, Math.Min(target, atomList.Count));
-
-        // LPT: heaviest atom first, into the lightest current bucket.
-        atomList.Sort((a, b) => b.Sum.CompareTo(a.Sum));
-        var buckets = Enumerable.Range(0, k)
-            .Select(_ => (Items: new List<DrawGroupItemViewModel>(), Sum: 0))
-            .ToList();
-        foreach (var atom in atomList)
-        {
-            var best = 0;
-            for (var i = 1; i < buckets.Count; i++)
-                if (buckets[i].Sum < buckets[best].Sum)
-                    best = i;
-            buckets[best].Items.AddRange(atom.Items);
-            buckets[best] = (buckets[best].Items, buckets[best].Sum + atom.Sum);
-        }
-
-        // Heaviest lane first reads nicer; inside a lane the conventional order (elite, veterans, kids, rest).
-        buckets.Sort((a, b) => b.Sum.CompareTo(a.Sum));
         StartGroups.Clear();
-        foreach (var bucket in buckets)
+        foreach (var lane in lanes)
         {
             var column = new DrawStartGroupViewModel(StartGroups.Count, Localization);
-            foreach (var item in StartGroupOrder.Sort(bucket.Items, i => i.Name))
-                column.Groups.Add(item);
+            foreach (var group in lane)
+                column.Groups.Add(new DrawGroupItemViewModel(group));
             StartGroups.Add(column);
         }
     }

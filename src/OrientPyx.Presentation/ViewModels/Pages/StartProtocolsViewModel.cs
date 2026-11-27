@@ -611,8 +611,12 @@ public sealed partial class StartProtocolsViewModel : PageViewModelBase, IProtoc
     private string DefaultTitleKey =>
         Kind == StartProtocolKind.Judges ? "StartProtocols.DefaultTitle.Judges" : "StartProtocols.DefaultTitle.Regular";
 
-    private StartProtocolLabels BuildLabels()
+    private StartProtocolLabels BuildLabels() => CreateLabels(Localization, Kind);
+
+    /// <summary>A start protocol's labels in the current language (the page and the assistant's export).</summary>
+    internal static StartProtocolLabels CreateLabels(ILocalizationService Localization, StartProtocolKind kind)
     {
+        var DefaultTitleKey = kind == StartProtocolKind.Judges ? "StartProtocols.DefaultTitle.Judges" : "StartProtocols.DefaultTitle.Regular";
         var headers = new Dictionary<StartProtocolColumn, string>();
         var shortHeaders = new Dictionary<StartProtocolColumn, string>();
         foreach (StartProtocolColumn column in Enum.GetValues<StartProtocolColumn>())

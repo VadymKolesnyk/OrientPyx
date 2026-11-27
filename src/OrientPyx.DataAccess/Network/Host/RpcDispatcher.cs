@@ -39,7 +39,7 @@ internal sealed class RpcDispatcher
 
     public async Task<RpcOutcome> InvokeAsync(
         string ifaceName, string methodName, JsonElement[] args, StationContext station, Action<string?> touched,
-        CancellationToken cancellationToken, Guid? undoStep = null)
+        CancellationToken cancellationToken, Guid? undoStep = null, bool mcp = false)
     {
         if (!Wire.Interfaces.TryGetValue(ifaceName, out var iface))
             return RpcErrors.Outcome(404, RpcErrorKinds.NotFound, $"Unknown interface '{ifaceName}'.", typeof(KeyNotFoundException).FullName);
@@ -93,7 +93,7 @@ internal sealed class RpcDispatcher
         using var undoScope = undoStep is { } step ? UndoScope.Enter(step, station.Token) : UndoScope.Suppress();
         try
         {
-            DataChangeOrigin.Current = station.Name;
+            DataChangeOrigin.Current = mcp ? BusinessLogic.Services.Mcp.McpOrigin.ForStation(station.Name) : station.Name;
             var result = await RunAsync(target, method, Fill(mapped, method, null, cancellationToken), identifier, resultType);
             if (resultType == typeof(void))
                 return new RpcOutcome(204, null);

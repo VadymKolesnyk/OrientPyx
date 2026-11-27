@@ -38,6 +38,10 @@ public static class Wire
     /// </summary>
     public const string UndoStepHeader = "X-OrientPyx-Undo-Step";
 
+    /// <summary>A station's write made by its assistant (MCP): the host stamps the change «&lt;station&gt;·mcp», so the
+    /// station's own pages reload after it (they skip events with their own name only). Value: <c>mcp</c>.</summary>
+    public const string OriginTagHeader = "X-OrientPyx-Origin-Tag";
+
     public const string PairPath = "/pair";
 
     /// <summary>A station leaving for good (its «Відключитися»): the host drops its token and its row.</summary>

@@ -111,6 +111,10 @@ pages:
     - src/OrientPyx.*Supabase*
     - src/OrientPyx.*OnlineApiSettings*
     - docs/online-snapshot.md
+  start/assistant.md:
+    - src/OrientPyx.*/Mcp/*
+    - src/OrientPyx.*Mcp*
+    - docs/mcp-*
   race-day/network.md:
     - src/OrientPyx.DataAccess/Network/*
     - src/OrientPyx.*Network*

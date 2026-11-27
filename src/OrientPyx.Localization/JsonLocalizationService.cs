@@ -47,6 +47,9 @@ public sealed class JsonLocalizationService : ILocalizationService
 
     public string this[string key] => Get(key);
 
+    public IReadOnlyList<string> KeysStartingWith(string prefix) =>
+        _current.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).OrderBy(k => k, StringComparer.Ordinal).ToList();
+
     public string Get(string key)
     {
         if (string.IsNullOrEmpty(key))

@@ -9,6 +9,7 @@
         xmlns:dialogs="using:OrientPyx.Presentation.ViewModels.Dialogs"
         xmlns:dialogViews="using:OrientPyx.Presentation.Views.Dialogs"
         xmlns:services="using:OrientPyx.Presentation.Services"
+        xmlns:shared="using:OrientPyx.Presentation.ViewModels.Shared"
         mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="640"
         x:Class="OrientPyx.Presentation.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -451,6 +452,49 @@
         </Menu>
 
         </DockPanel>
+
+        <!-- The assistant (MCP) asks to allow a change (plan §7.3): non-modal, above every screen. -->
+        <Border DockPanel.Dock="Top" IsVisible="{Binding McpConfirm.IsVisible}"
+                Background="{DynamicResource SurfaceCard}" BorderBrush="{DynamicResource AccentBrush}"
+                BorderThickness="0,0,0,2" Padding="14,10">
+            <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                    <controls:Icon Grid.Column="0" Kind="Info" Size="20" VerticalAlignment="Top"
+                                   Foreground="{DynamicResource AccentBrush}" />
+                    <StackPanel Grid.Column="1" Spacing="2">
+                        <TextBlock Text="{Binding McpConfirm.Headline}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding McpConfirm.Subline}" Classes="muted" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding McpConfirm.QueueText}" Classes="muted" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+                        <Button Classes="ghost" Content="{Binding Localization[Mcp.Confirm.Details]}"
+                                IsVisible="{Binding McpConfirm.HasRows}"
+                                Command="{Binding McpConfirm.ToggleDetailsCommand}" />
+                        <Button Classes="accent" Content="{Binding Localization[Mcp.Confirm.Allow]}"
+                                Command="{Binding McpConfirm.AllowCommand}" />
+                        <Button Classes="ghost danger" Content="{Binding Localization[Mcp.Confirm.Reject]}"
+                                Command="{Binding McpConfirm.RejectCommand}" />
+                    </StackPanel>
+                </Grid>
+                <CheckBox Content="{Binding Localization[Mcp.Confirm.Remember]}"
+                          IsChecked="{Binding McpConfirm.RememberForSession, Mode=TwoWay}" Margin="32,0,0,0" />
+                <ScrollViewer IsVisible="{Binding McpConfirm.ShowDetails}" MaxHeight="220" Margin="32,0,0,0"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding McpConfirm.Rows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="shared:McpChangeRowItem">
+                                <Grid ColumnDefinitions="2*,1.2*,1.5*,1.5*" ColumnSpacing="8" Margin="0,1">
+                                    <TextBlock Grid.Column="0" Text="{Binding Subject}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Field}" Classes="muted" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="2" Text="{Binding Old}" Classes="muted" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="3" Text="{Binding New}" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </StackPanel>
+        </Border>
 
         <!-- Main content with the global settings overlay on top -->
         <Panel>

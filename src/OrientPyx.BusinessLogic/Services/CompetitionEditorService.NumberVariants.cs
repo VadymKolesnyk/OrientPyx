@@ -8,10 +8,10 @@ public sealed partial class CompetitionEditorService
 {
     public async Task<NumberVariantsData> GetNumberVariantsAsync(CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || _session.CurrentDay is null)
+        if (CurrentEvent is null || CurrentDay is null)
             return NumberVariantsData.Empty;
 
-        var day = _session.CurrentDay;
+        var day = CurrentDay;
         var snapshot = await _eventStore.GetDaySnapshotAsync(FolderPath, day.Id, cancellationToken);
         return NumberVariantRows.Build(day, snapshot, IsRelay);
     }

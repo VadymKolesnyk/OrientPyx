@@ -14,7 +14,7 @@ public sealed partial class CompetitionEditorService
     public async Task<PluginReportSettingsData?> GetPluginReportSettingsAsync(
         string reportId, Guid? dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null || PluginReports.Find(_plugins, reportId) is not { } report)
+        if (CurrentEvent is null || PluginReports.Find(_plugins, reportId) is not { } report)
             return null;
 
         var defs = report.StoredSettings;
@@ -32,7 +32,7 @@ public sealed partial class CompetitionEditorService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(values);
-        if (_session.CurrentEvent is null || PluginReports.Find(_plugins, reportId) is not { } report)
+        if (CurrentEvent is null || PluginReports.Find(_plugins, reportId) is not { } report)
             return;
 
         var defs = report.StoredSettings;
@@ -53,7 +53,7 @@ public sealed partial class CompetitionEditorService
         string reportId, Guid? dayId, PluginReportLabels labels, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(labels);
-        if (_session.CurrentEvent is null || PluginReports.Find(_plugins, reportId) is not { } report)
+        if (CurrentEvent is null || PluginReports.Find(_plugins, reportId) is not { } report)
             return PluginReportOutput.None;
 
         var folder = FolderPath;

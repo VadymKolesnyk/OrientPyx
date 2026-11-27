@@ -24,4 +24,21 @@ public partial class SettingsView : UserControl
 
         _ = clipboard.SetTextAsync(vm.OnlineServiceRoleKey);
     }
+
+    // «Скопіювати налаштування для…»: the chosen client's config piece (URL + token) to the clipboard.
+    private void OnCopyMcpConfigClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SettingsViewModel vm || TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
+            return;
+        _ = clipboard.SetTextAsync(vm.Mcp.ClientConfig());
+        vm.Mcp.Copied();
+    }
+
+    private void OnCopyMcpTokenClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SettingsViewModel vm || string.IsNullOrEmpty(vm.Mcp.Token) || TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
+            return;
+        _ = clipboard.SetTextAsync(vm.Mcp.Token);
+        vm.Mcp.Copied();
+    }
 }

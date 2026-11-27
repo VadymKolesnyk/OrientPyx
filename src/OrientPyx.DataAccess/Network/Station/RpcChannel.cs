@@ -171,6 +171,8 @@ public sealed class RpcChannel : IDisposable
         // The undo step is read here, on the caller's flow and before the write queue, and travels with every retry
         // (with the same idempotency key). Reads never carry one.
         var undoStep = kind == RpcCallKind.Read ? null : UndoScope.Current;
+        // The assistant's write (its origin ends in «·mcp», set by McpWriter on this flow) is tagged for the host.
+        var mcpWrite = kind != RpcCallKind.Read && BusinessLogic.Services.Mcp.McpOrigin.IsCurrent;
         var label = $"{iface}.{method}";
 
         HttpRequestMessage Build()
@@ -183,6 +185,8 @@ public sealed class RpcChannel : IDisposable
                 request.Headers.TryAddWithoutValidation(Wire.IdempotencyKeyHeader, key);
             if (undoStep is { } step)
                 request.Headers.TryAddWithoutValidation(Wire.UndoStepHeader, step.ToString("D"));
+            if (mcpWrite)
+                request.Headers.TryAddWithoutValidation(Wire.OriginTagHeader, BusinessLogic.Services.Mcp.McpOrigin.Tag);
             return request;
         }
 

@@ -14,6 +14,9 @@
     <PackageReference Include="ClosedXML" Version="0.105.0" />
     <PackageReference Include="DocumentFormat.OpenXml" Version="3.1.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.14" />
+    <!-- The local MCP server of the assistant («Асистент», docs/mcp-server-plan.md): Streamable HTTP on loopback in the
+         window's own process, and the stdio bridge («mcp-bridge» argument). Only the transport; the tools live in BusinessLogic. -->
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.4.0" />
     <!-- Pin the SQLitePCLRaw stack to 3.x: EF Core 10 pulls 2.1.11 transitively, whose native
          SQLite (lib.e_sqlite3) is flagged by GHSA-2m69-gcr7-jv3q. 3.0.3 ships the patched native lib. -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />

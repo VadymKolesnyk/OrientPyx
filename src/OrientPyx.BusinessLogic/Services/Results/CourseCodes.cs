@@ -60,6 +60,16 @@ internal static class CourseCodes
     internal static DateTimeOffset? CombineWithFinishDate(TimeSpan? startOfDay, DateTimeOffset? finish) =>
         DisciplineStrategyBase.CombineWithFinishDate(startOfDay, finish);
 
+    /// <summary>
+    /// The instant that dates a read-out for an assigned start of day (Р-5): its finish, else its last timed punch, else
+    /// the chip's start box. A runner read without a finish punch still started at their assigned time — without this
+    /// the start had no date and the read-out was judged DNS instead of DNF.
+    /// </summary>
+    internal static DateTimeOffset? DateAnchor(FinishReadout readout) =>
+        readout.FinishTime
+        ?? DecodePunchTimes(readout.PunchTimes).LastOrDefault(p => p.Time is not null)?.Time
+        ?? readout.StartTime;
+
     // Reverses EncodePunchTimes back into a punch list (codes + times) for the splits view. Tokens that
     // can't be parsed are skipped; a "-" time becomes null.
     internal static IReadOnlyList<ChipPunch> DecodePunchTimes(string? encoded)

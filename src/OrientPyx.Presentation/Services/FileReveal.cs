@@ -41,6 +41,26 @@ internal static class FileReveal
         }
     }
 
+    /// <summary>Opens a file with the program the OS associates with it (the assistant's <c>.mcpb</c> → Claude Desktop).
+    /// False when nothing could be started.</summary>
+    public static bool TryOpenFile(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return false;
+        try
+        {
+            if (OperatingSystem.IsMacOS())
+                Process.Start(new ProcessStartInfo("open") { ArgumentList = { path }, UseShellExecute = false });
+            else
+                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     /// <summary>Opens a folder in the OS file manager. Best-effort, never throws.</summary>
     public static void TryOpenFolder(string? folder)
     {

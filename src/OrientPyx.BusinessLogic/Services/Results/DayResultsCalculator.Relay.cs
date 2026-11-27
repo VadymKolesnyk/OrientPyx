@@ -200,7 +200,7 @@ internal sealed partial class DayResultsCalculator
             {
                 ChipStart = readout?.StartTime,
                 AssignedStart = link.StartTime ?? gs?.MassStartTime,
-                FinishTime = readout?.FinishTime ?? anyDate
+                FinishTime = (readout is null ? null : CourseCodes.DateAnchor(readout)) ?? anyDate
             });
         if (previousFinish is { } pf)
         {

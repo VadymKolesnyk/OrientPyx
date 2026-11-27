@@ -9,7 +9,7 @@ public sealed partial class CompetitionEditorService
 {
     public async Task<MassStartData> GetMassStartDataAsync(Guid dayId, CancellationToken cancellationToken = default)
     {
-        if (_session.CurrentEvent is null)
+        if (CurrentEvent is null)
             return new MassStartData([]);
 
         // One transactional read: links, teams and group settings agree with each other.
@@ -57,7 +57,7 @@ public sealed partial class CompetitionEditorService
         Guid dayId, IReadOnlyList<MassStartAssignment> groups, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(groups);
-        if (_session.CurrentEvent is null || groups.Count == 0)
+        if (CurrentEvent is null || groups.Count == 0)
             return new MassStartResult(0, 0);
 
         await EnsureDayEditableAsync(dayId, cancellationToken);
